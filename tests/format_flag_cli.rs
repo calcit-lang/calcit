@@ -68,7 +68,6 @@ fn graph_commands_accept_unified_format_values() {
   for base in [
     &["analyze", "call-graph"][..],
     &["analyze", "call-graph", "--counts"][..],
-    &["analyze", "count-calls"][..],
     &["analyze", "effects-graph"][..],
   ] {
     let with_format = |format: &'static str| {
@@ -105,10 +104,10 @@ fn graph_commands_accept_unified_format_values() {
 }
 
 #[test]
-fn graph_commands_keep_legacy_spellings_and_warn_on_unknown_values() {
+fn graph_commands_keep_legacy_spellings_and_reject_unknown_values() {
   for base in [
     &["analyze", "call-graph"][..],
-    &["analyze", "count-calls"][..],
+    &["analyze", "call-graph", "--counts"][..],
     &["analyze", "effects-graph"][..],
   ] {
     for legacy in ["text", "tree"] {
@@ -119,14 +118,22 @@ fn graph_commands_keep_legacy_spellings_and_warn_on_unknown_values() {
       assert!(!stdout(&output).trim_start().starts_with('{'), "{args:?}");
       assert!(!stderr(&output).contains("[Warn]"), "{args:?}: {}", stderr(&output));
     }
-    // Patch-safe: unknown values still print the human report, with a stderr warning.
+    // Since 0.31.0 an unknown value is an error instead of a fallback to the human report.
     let mut args = base.to_vec();
     args.extend(["--format", "yaml"]);
     let output = run(&args);
-    assert!(output.status.success(), "{args:?}: {}", stderr(&output));
-    assert!(!stdout(&output).trim_start().starts_with('{'), "{args:?}");
-    assert!(stderr(&output).contains("[Warn] Unsupported"), "{args:?}: {}", stderr(&output));
-    assert!(stderr(&output).contains("next non-patch release"), "{args:?}: {}", stderr(&output));
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(stdout(&output).is_empty(), "{args:?} should not report on stdout");
+    assert!(
+      stderr(&output).contains("Unsupported") && stderr(&output).contains("'yaml'"),
+      "{args:?}: {}",
+      stderr(&output)
+    );
+    assert!(
+      stderr(&output).contains("human (or text, tree), edn, or json"),
+      "{args:?}: {}",
+      stderr(&output)
+    );
   }
   let tree = run(&["analyze", "effects-graph", "--format", "tree"]);
   assert!(stdout(&tree).contains("Effects Graph"));
@@ -177,40 +184,42 @@ fn query_ns_schema_and_tree_show_accept_unified_format_values() {
 }
 
 #[test]
-fn legacy_json_switch_keeps_working_and_warns_on_stderr() {
-  let schema = run(&["query", "schema", MAIN_DEF, "--json"]);
-  let value = assert_json_document(&schema, "query schema --json");
-  assert_eq!(value["command"], "query.schema");
-  assert!(
-    stderr(&schema).contains("[Deprecated] `calcit query schema --json`"),
-    "{}",
-    stderr(&schema)
-  );
+fn removed_json_switch_names_format_json_and_ffi_export_keeps_it_deprecated() {
+  for (args, subject) in [
+    (&["query", "schema", MAIN_DEF, "--json"][..], "`calcit query schema --json`"),
+    (&["query", "def", MAIN_DEF, "--json"][..], "`calcit query def --json`"),
+    (
+      &["tree", "show", MAIN_DEF, "--path", "0", "--json"][..],
+      "`calcit tree show --json`",
+    ),
+    (
+      &["query", "schema", MAIN_DEF, "--json", "--format", "edn"][..],
+      "`calcit query schema --json`",
+    ),
+    (
+      &["query", "def", MAIN_DEF, "--json", "--format", "edn"][..],
+      "`calcit query def --json`",
+    ),
+  ] {
+    let output = run(args);
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(stdout(&output).is_empty(), "{args:?} should not report on stdout");
+    assert!(
+      stderr(&output).contains(&format!("{subject} was removed in 0.31.0; use `--format json`")),
+      "{args:?}: {}",
+      stderr(&output)
+    );
+  }
 
-  let def = run(&["query", "def", MAIN_DEF, "--json"]);
-  assert!(def.status.success(), "{}", stderr(&def));
-  assert!(stdout(&def).contains("## JSON"));
-  assert!(stderr(&def).contains("[Deprecated] `calcit query def --json`"), "{}", stderr(&def));
+  let def = run(&["query", "def", MAIN_DEF, "--format", "json"]);
+  let value = assert_json_document(&def, "query def --format json");
+  assert_eq!(value["command"], "query.def");
 
-  let show = run(&["tree", "show", MAIN_DEF, "--path", "0", "--json"]);
-  assert!(show.status.success(), "{}", stderr(&show));
-  assert!(
-    stderr(&show).contains("[Deprecated] `calcit tree show --json`"),
-    "{}",
-    stderr(&show)
-  );
-
-  let conflict = run(&["query", "schema", MAIN_DEF, "--json", "--format", "edn"]);
-  assert!(!conflict.status.success());
-  assert!(stderr(&conflict).contains("--json"), "{}", stderr(&conflict));
-
+  // `ffi export --json` stays deprecated: the calcit.std FFI inventory workflow still uses it.
   let ffi = run(&["ffi", "export", "--json"]);
   assert_json_document(&ffi, "ffi export --json");
   assert!(stderr(&ffi).contains("[Deprecated] `calcit ffi export --json`"), "{}", stderr(&ffi));
-
   for args in [
-    &["query", "def", MAIN_DEF, "--json", "--format", "edn"][..],
-    &["tree", "show", MAIN_DEF, "--path", "0", "--json", "--format", "edn"][..],
     &["ffi", "export", "--json", "--format", "edn"][..],
     &["ffi", "export", "--json", "--format", "human"][..],
   ] {
@@ -252,26 +261,28 @@ fn cursor_views_accept_edn() {
   let snapshot = dir.join("app.cirru");
   let set = run_in(Some(&dir), &snapshot, &["cursor", "set", MAIN_DEF, "--path", "0"]);
   assert!(set.status.success(), "{}", stderr(&set));
-  let mark = run_in(Some(&dir), &snapshot, &["cursor", "mark", "first"]);
+  let mark = run_in(Some(&dir), &snapshot, &["cursor", "marks", "set", "first"]);
   assert!(mark.status.success(), "{}", stderr(&mark));
 
-  for view in ["show", "marks"] {
-    let edn = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "edn"]);
-    assert_edn_document(&edn, &format!("cursor {view} --format edn"));
-    let json = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "json"]);
-    assert_json_document(&json, &format!("cursor {view} --format json"));
+  for view in [&["show"][..], &["marks"][..], &["marks", "list"][..]] {
+    let label = view.join(" ");
+    let edn = run_in(Some(&dir), &snapshot, &[&["cursor"][..], view, &["--format", "edn"]].concat());
+    assert_edn_document(&edn, &format!("cursor {label} --format edn"));
+    let json = run_in(Some(&dir), &snapshot, &[&["cursor"][..], view, &["--format", "json"]].concat());
+    assert_json_document(&json, &format!("cursor {label} --format json"));
   }
   let anchor = run_in(Some(&dir), &snapshot, &["cursor", "anchor"]);
   assert!(anchor.status.success(), "{}", stderr(&anchor));
-  let next = run_in(Some(&dir), &snapshot, &["cursor", "next"]);
+  let next = run_in(Some(&dir), &snapshot, &["cursor", "move", "next"]);
   assert!(next.status.success(), "{}", stderr(&next));
-  let copy = run_in(Some(&dir), &snapshot, &["cursor", "copy"]);
+  let copy = run_in(Some(&dir), &snapshot, &["cursor", "clipboard", "copy"]);
   assert!(copy.status.success(), "{}", stderr(&copy));
-  for view in ["region", "clipboard"] {
-    let edn = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "edn"]);
-    assert_edn_document(&edn, &format!("cursor {view} --format edn"));
-    let json = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "json"]);
-    assert_json_document(&json, &format!("cursor {view} --format json"));
+  for view in [&["anchor", "show"][..], &["clipboard"][..], &["clipboard", "show"][..]] {
+    let label = view.join(" ");
+    let edn = run_in(Some(&dir), &snapshot, &[&["cursor"][..], view, &["--format", "edn"]].concat());
+    assert_edn_document(&edn, &format!("cursor {label} --format edn"));
+    let json = run_in(Some(&dir), &snapshot, &[&["cursor"][..], view, &["--format", "json"]].concat());
+    assert_json_document(&json, &format!("cursor {label} --format json"));
   }
   let rejected = run_in(Some(&dir), &snapshot, &["cursor", "show", "--format", "yaml"]);
   assert!(!rejected.status.success());

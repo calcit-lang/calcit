@@ -136,8 +136,8 @@ caps version bump patch
 
 The project version belongs in `deps.cirru :version`. If it is missing, `caps` invocations that read the file print a
 migration warning; initialize it with `caps version set <version>`. `caps version get` and `caps version bump` fail when the
-field is missing, even if a legacy `calcit.cirru :version` field exists. `calcit config version` / `calcit config set version`
-are deprecated — use `caps version` instead.
+field is missing, even if a legacy `calcit.cirru :version` field exists. `calcit config version` was removed in 0.31.0 and
+`calcit config set version` is rejected — use `caps version` instead.
 
 ### Outdated
 

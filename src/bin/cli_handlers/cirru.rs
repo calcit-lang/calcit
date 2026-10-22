@@ -1,6 +1,6 @@
 //! Cirru subcommand handlers
 //!
-//! Handles: calcit cirru parse, format, parse-edn, show-guide
+//! Handles: calcit cirru parse, format, parse-edn
 
 use calcit::cli_args::{CirruCommand, CirruSubcommand};
 use std::io::Read;
@@ -12,7 +12,6 @@ pub fn handle_cirru_command(cmd: &CirruCommand) -> Result<(), String> {
     CirruSubcommand::Parse(opts) => handle_parse(&opts.code, opts.expr_one_liner, opts.validate),
     CirruSubcommand::Format(opts) => handle_format(&opts.json),
     CirruSubcommand::ParseEdn(opts) => handle_parse_edn(opts.edn.as_deref(), opts.file.as_deref()),
-    CirruSubcommand::ShowGuide(_) => handle_show_guide(),
   }
 }
 
@@ -147,20 +146,4 @@ fn handle_parse_edn(inline: Option<&str>, file: Option<&str>) -> Result<(), Stri
   println!("{json_str}");
 
   Ok(())
-}
-
-fn handle_show_guide() -> Result<(), String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
-  let guide_path = format!("{home_dir}/.config/calcit/docs/cirru-syntax.md");
-
-  match std::fs::read_to_string(&guide_path) {
-    Ok(content) => {
-      println!("{content}");
-      Ok(())
-    }
-    Err(_) => Err(format!(
-      "Cirru syntax guide not found at: {guide_path}\n\
-       Please ensure the docs folder is links to ~/.config/calcit/docs"
-    )),
-  }
 }

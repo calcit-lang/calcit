@@ -18,19 +18,14 @@ impl StructuredOutputFormat {
     }
   }
 
-  /// Lenient parser for the graph analyzers (`call-graph`, `count-calls`, `effects-graph`).
-  /// Besides `human|edn|json` it accepts the legacy `text` and `tree` spellings of `human`.
-  /// Any other value falls back to `human` with a stderr warning, because older releases
-  /// silently treated unknown values as text; it becomes an error in the next non-patch release.
-  pub(crate) fn parse_graph(raw: &str, command: &str) -> Self {
+  /// Parser for the graph analyzers (`call-graph`, `effects-graph` and `call-graph --counts`).
+  /// Besides `human|edn|json` it accepts the `text` and `tree` spellings of `human`;
+  /// any other value is an error.
+  pub(crate) fn parse_graph(raw: &str, command: &str) -> Result<Self, String> {
     match raw {
-      "tree" | "text" => Self::Human,
-      _ => Self::parse(raw, command).unwrap_or_else(|_| {
-        eprintln!(
-          "[Warn] Unsupported {command} format '{raw}'; falling back to human output. Expected human, edn, or json; unknown values become an error in the next non-patch release."
-        );
-        Self::Human
-      }),
+      "tree" => Ok(Self::Human),
+      _ => Self::parse(raw, command)
+        .map_err(|_| format!("Unsupported {command} format '{raw}'. Expected human (or text, tree), edn, or json.")),
     }
   }
 
@@ -60,24 +55,7 @@ impl StructuredOutputFormat {
   }
 }
 
-/// Resolves `--format` together with a legacy output-replacing `--json` switch.
-/// `--json` alone selects JSON (with a deprecation warning); combining it with
-/// `--format edn` is rejected because the two disagree.
-pub(crate) fn resolve_format_with_legacy_json(raw: &str, legacy_json: bool, command: &str) -> Result<StructuredOutputFormat, String> {
-  let format = StructuredOutputFormat::parse(raw, command)?;
-  if !legacy_json {
-    return Ok(format);
-  }
-  warn_deprecated_json_switch(command);
-  match format {
-    StructuredOutputFormat::Human | StructuredOutputFormat::Json => Ok(StructuredOutputFormat::Json),
-    StructuredOutputFormat::Edn => Err(format!(
-      "`{command}` got both `--json` and `--format edn`; drop the deprecated `--json`."
-    )),
-  }
-}
-
-/// Rejects a legacy appending `--json` switch combined with an explicit structured `--format`
+/// Rejects the legacy `ffi export --json` switch combined with an explicit `--format`
 /// other than `json` (which restates the switch's intent).
 pub(crate) fn reject_json_switch_conflict(command: &str, format: &str, allowed: &[&str]) -> Result<(), String> {
   if allowed.contains(&format) {
@@ -89,7 +67,7 @@ pub(crate) fn reject_json_switch_conflict(command: &str, format: &str, allowed: 
   }
 }
 
-/// Warns on stderr that a legacy `--json` switch is deprecated in favor of `--format json`.
+/// Warns on stderr that the legacy `ffi export --json` switch is deprecated in favor of `--format json`.
 pub(crate) fn warn_deprecated_json_switch(command: &str) {
   eprintln!(
     "[Deprecated] `calcit {command} --json` will be removed in a future non-patch release; use `--format json`. See docs/run/upgrade.md."
@@ -187,31 +165,23 @@ mod tests {
   }
 
   #[test]
-  fn graph_format_accepts_legacy_spellings_and_falls_back_for_unknown_values() {
-    for raw in ["text", "tree", "human", "yaml"] {
+  fn graph_format_accepts_human_spellings_and_rejects_unknown_values() {
+    for raw in ["text", "tree", "human"] {
       assert_eq!(
         StructuredOutputFormat::parse_graph(raw, "call-graph"),
-        StructuredOutputFormat::Human
+        Ok(StructuredOutputFormat::Human)
       );
     }
     assert_eq!(
       StructuredOutputFormat::parse_graph("edn", "call-graph"),
-      StructuredOutputFormat::Edn
+      Ok(StructuredOutputFormat::Edn)
     );
     assert_eq!(
       StructuredOutputFormat::parse_graph("json", "effects-graph"),
-      StructuredOutputFormat::Json
+      Ok(StructuredOutputFormat::Json)
     );
-  }
-
-  #[test]
-  fn legacy_json_switch_resolves_with_format() {
-    use StructuredOutputFormat::*;
-    assert_eq!(resolve_format_with_legacy_json("human", false, "query schema"), Ok(Human));
-    assert_eq!(resolve_format_with_legacy_json("human", true, "query schema"), Ok(Json));
-    assert_eq!(resolve_format_with_legacy_json("json", true, "query schema"), Ok(Json));
-    assert_eq!(resolve_format_with_legacy_json("edn", false, "query schema"), Ok(Edn));
-    assert!(resolve_format_with_legacy_json("edn", true, "query schema").is_err());
+    let error = StructuredOutputFormat::parse_graph("yaml", "call-graph").expect_err("unknown format should fail");
+    assert!(error.contains("Unsupported call-graph format 'yaml'"), "{error}");
   }
 
   #[test]

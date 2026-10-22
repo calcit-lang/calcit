@@ -141,7 +141,7 @@ fn snapshot_mutation_entrypoints_respect_a_live_old_writer_lock() {
       "--code",
       "quote 42",
     ],
-    vec!["cursor", "cut"],
+    vec!["cursor", "clipboard", "cut"],
     vec!["fix", "--apply", "--rule", "unnecessary-do-v1"],
   ];
   std::thread::scope(|scope| {

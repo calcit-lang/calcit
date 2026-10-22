@@ -1,5 +1,9 @@
-//! Deprecated CLI aliases (#1566) keep their stdout contract for one non-patch
-//! release, print a single migration hint on stderr, and match the replacement form.
+//! CLI entries deprecated in #1566 and #2033.
+//!
+//! Entries removed in 0.31.0 fail before argument parsing with one line naming the
+//! replacement, and never write the snapshot. The few deprecated aliases that ecosystem
+//! CI still calls keep their stdout contract, print a single migration hint on stderr,
+//! and match the replacement form.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -69,6 +73,30 @@ fn assert_alias_matches(snapshot: &Path, old: &[&str], new: &[&str], replacement
   );
 }
 
+/// A removed entry exits non-zero with an empty stdout, names its replacement on
+/// stderr, and leaves the snapshot file untouched.
+fn assert_removed(snapshot: &Path, old: &[&str], replacement: &str) {
+  let before = fs::read(snapshot).ok();
+  let output = run_calcit(snapshot, old);
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    !output.status.success(),
+    "{old:?} should be rejected\nstdout:\n{}",
+    String::from_utf8_lossy(&output.stdout)
+  );
+  assert!(output.stdout.is_empty(), "{old:?} should not report on stdout");
+  assert!(
+    stderr.contains("was removed in 0.31.0"),
+    "{old:?} should say it was removed: {stderr}"
+  );
+  assert!(stderr.contains(replacement), "{old:?} should name `{replacement}`: {stderr}");
+  assert!(
+    stderr.contains("docs/run/upgrade.md"),
+    "{old:?} should point at the upgrade notes: {stderr}"
+  );
+  assert_eq!(fs::read(snapshot).ok(), before, "{old:?} must not write the snapshot");
+}
+
 #[test]
 fn type_debt_aliases_match_weak_types_views() {
   let snapshot = Path::new("calcit/test.cirru");
@@ -95,18 +123,31 @@ fn type_debt_aliases_match_weak_types_views() {
     ],
     "weak-types --only coverage",
   );
-  assert_alias_matches(
+  assert_removed(
     snapshot,
     &["analyze", "deprecated", "--format", "json"],
-    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
     "weak-types --only deprecated-call",
   );
-  assert_alias_matches(
+  assert_removed(
     Path::new("calcit/test-wasm.cirru"),
     &["analyze", "dynamic-methods", "--format", "json"],
-    &["analyze", "weak-types", "--only", "dynamic-method", "--format", "json"],
     "weak-types --only dynamic-method",
   );
+  for (args, view) in [
+    (
+      &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"][..],
+      "calcit/test.cirru",
+    ),
+    (
+      &["analyze", "weak-types", "--only", "dynamic-method", "--format", "json"][..],
+      "calcit/test-wasm.cirru",
+    ),
+  ] {
+    let output = run_calcit(Path::new(view), args);
+    serde_json::from_slice::<serde_json::Value>(&output.stdout)
+      .unwrap_or_else(|error| panic!("{args:?} should print one JSON document: {error}"));
+    assert!(hint_lines(&output).is_empty(), "{args:?} must not print a hint");
+  }
 }
 
 /// Converts a Cirru EDN envelope to JSON with the key spelling of the JSON envelope (`-` as `_`).
@@ -484,7 +525,7 @@ fn check_public_alias_matches_check_only_namespace_scope() {
 }
 
 #[test]
-fn quality_and_query_aliases_keep_output_and_hint() {
+fn quality_alias_keeps_output_and_hint_and_query_aliases_are_removed() {
   let snapshot = Path::new("calcit/test.cirru");
   let quality = run_calcit(snapshot, &["analyze", "quality", "--format", "json"]);
   let hints = hint_lines(&quality);
@@ -492,27 +533,15 @@ fn quality_and_query_aliases_keep_output_and_hint() {
   assert!(hints[0].contains("--check-only") && hints[0].contains("weak-types"), "{}", hints[0]);
   serde_json::from_slice::<serde_json::Value>(&quality.stdout).expect("quality keeps one JSON document on stdout");
 
-  let pkg = run_calcit(snapshot, &["query", "pkg"]);
-  assert!(pkg.status.success());
-  assert_eq!(String::from_utf8_lossy(&pkg.stdout), "app\n");
-  assert!(hint_lines(&pkg)[0].contains("`calcit query config`"));
+  assert_removed(snapshot, &["query", "pkg"], "`calcit query config`");
   let config = run_calcit(snapshot, &["query", "config"]);
   assert!(String::from_utf8_lossy(&config.stdout).contains("Package: `app`"));
   assert!(hint_lines(&config).is_empty());
 
-  let modules = run_calcit(snapshot, &["query", "modules"]);
-  assert!(modules.status.success());
-  assert!(hint_lines(&modules)[0].contains("`calcit config modules`"));
+  assert_removed(snapshot, &["query", "modules"], "`calcit config modules`");
   let config_modules = run_calcit(snapshot, &["config", "modules"]);
+  assert!(config_modules.status.success());
   assert!(hint_lines(&config_modules).is_empty());
-  let module_lines = |output: &Output| {
-    String::from_utf8_lossy(&output.stdout)
-      .lines()
-      .filter(|line| line.starts_with("  "))
-      .map(str::to_owned)
-      .collect::<Vec<_>>()
-  };
-  assert_eq!(module_lines(&modules), module_lines(&config_modules));
 }
 
 struct TempProject(PathBuf);
@@ -544,16 +573,13 @@ impl Drop for TempProject {
 }
 
 #[test]
-fn batch_delete_alias_matches_edit_transaction() {
+fn batch_delete_is_removed_and_edit_transaction_replaces_it() {
   let legacy = TempProject::create("batch");
-  let output = run_calcit(
+  assert_removed(
     &legacy.snapshot(),
     &["tree", "batch-delete", "app.main/items", "--paths", "@2.1", "--paths", "@2.3"],
+    "edit transaction",
   );
-  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-  let hints = hint_lines(&output);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("edit transaction"), "{}", hints[0]);
 
   let transaction = TempProject::create("transaction");
   let output = run_calcit(
@@ -567,15 +593,14 @@ fn batch_delete_alias_matches_edit_transaction() {
   );
   assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
   assert!(hint_lines(&output).is_empty());
-
-  let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
-  assert_eq!(read(&legacy), read(&transaction));
-  assert!(read(&legacy).contains("[] 2 4"), "{}", read(&legacy));
+  let content = fs::read_to_string(transaction.snapshot()).expect("snapshot should read");
+  assert!(content.contains("[] 2 4"), "{content}");
 }
 
 #[test]
-fn batch_delete_transaction_operation_prints_the_hint() {
+fn batch_delete_transaction_operation_is_rejected_without_writing() {
   let project = TempProject::create("transaction-batch");
+  let before = fs::read_to_string(project.snapshot()).expect("snapshot should read");
   let output = run_calcit(
     &project.snapshot(),
     &[
@@ -585,31 +610,31 @@ fn batch_delete_transaction_operation_prints_the_hint() {
       r#"[["tree","batch-delete","app.main/items","--paths","@2.1","--paths","@2.3"]]"#,
     ],
   );
-  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  assert!(!output.status.success(), "a removed transaction operation should fail");
   let stderr = String::from_utf8_lossy(&output.stderr);
-  let hints = stderr
-    .lines()
-    .filter(|line| line.starts_with("[Deprecated] transaction operation 1 uses `tree batch-delete`"))
-    .collect::<Vec<_>>();
-  assert_eq!(hints.len(), 1, "{stderr}");
-  assert!(hints[0].contains("tree delete"), "{}", hints[0]);
-  assert!(!String::from_utf8_lossy(&output.stdout).contains("[Deprecated]"));
-  let content = fs::read_to_string(project.snapshot()).expect("snapshot should read");
-  assert!(content.contains("[] 2 4"), "{content}");
+  assert!(
+    stderr.contains("Transaction operation 1 uses `tree batch-delete`, which was removed in 0.31.0") && stderr.contains("tree delete"),
+    "{stderr}"
+  );
+  assert_eq!(before, fs::read_to_string(project.snapshot()).expect("snapshot should read"));
 }
 
 #[test]
-fn call_graph_aliases_match_call_graph_options() {
+fn call_graph_aliases_are_removed_in_favor_of_call_graph_options() {
   let snapshot = Path::new("calcit/test.cirru");
-  assert_alias_matches(
+  assert_removed(snapshot, &["analyze", "count-calls"], "call-graph --counts");
+  assert_removed(
     snapshot,
-    &["analyze", "count-calls"],
-    &["analyze", "call-graph", "--counts"],
+    &["analyze", "count-calls", "--sort", "name", "--format", "json"],
     "call-graph --counts",
   );
-  assert_alias_matches(
+  assert_removed(
     snapshot,
-    &["analyze", "count-calls", "--sort", "name", "--ns-prefix", "app.", "--include-core"],
+    &["analyze", "call-graph-diff", "HEAD", "--ns-prefix", "app.", "--max-depth", "2"],
+    "call-graph --diff",
+  );
+  let counts = run_calcit(
+    snapshot,
     &[
       "analyze",
       "call-graph",
@@ -620,20 +645,9 @@ fn call_graph_aliases_match_call_graph_options() {
       "app.",
       "--include-core",
     ],
-    "call-graph --counts",
   );
-  assert_alias_matches(
-    snapshot,
-    &["analyze", "count-calls", "--format", "json"],
-    &["analyze", "call-graph", "--counts", "--format", "json"],
-    "call-graph --counts",
-  );
-  assert_alias_matches(
-    snapshot,
-    &["analyze", "call-graph-diff", "HEAD", "--ns-prefix", "app.", "--max-depth", "2"],
-    &["analyze", "call-graph", "--diff", "HEAD", "--ns-prefix", "app.", "--max-depth", "2"],
-    "call-graph --diff",
-  );
+  assert!(counts.status.success(), "{}", String::from_utf8_lossy(&counts.stderr));
+  assert!(!counts.stdout.is_empty() && hint_lines(&counts).is_empty());
 
   for args in [
     &["analyze", "call-graph", "--counts", "--diff", "HEAD"][..],
@@ -647,18 +661,10 @@ fn call_graph_aliases_match_call_graph_options() {
 }
 
 #[test]
-fn js_escape_aliases_keep_output_and_name_no_replacement() {
+fn js_escape_aliases_are_removed_without_replacement() {
   let snapshot = Path::new("calcit/test.cirru");
-  for (args, expected) in [
-    (&["analyze", "js-escape", "a?"][..], "a_$q_"),
-    (&["analyze", "js-unescape", "a_$q_"][..], "a?"),
-  ] {
-    let output = run_calcit(snapshot, args);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
-    let hints = hint_lines(&output);
-    assert_eq!(hints.len(), 1, "{hints:?}");
-    assert!(hints[0].contains("has no replacement"), "{}", hints[0]);
+  for args in [&["analyze", "js-escape", "a?"][..], &["analyze", "js-unescape", "a_$q_"][..]] {
+    assert_removed(snapshot, args, "has no replacement");
   }
 }
 
@@ -695,44 +701,32 @@ impl Drop for GuidebookHome {
 }
 
 #[test]
-fn guidebook_aliases_match_docs_read() {
+fn guidebook_aliases_are_removed_and_docs_read_replaces_them() {
   let home = GuidebookHome::create("aliases");
-  for (old, new) in [
+  for (args, replacement) in [
     (
       &["docs", "read-lines", "cirru-syntax.md", "--start", "4", "--lines", "6"][..],
-      &["docs", "read", "cirru-syntax.md", "--start", "4", "--lines", "6"][..],
+      "docs read <file> --start",
     ),
-    (
-      &["docs", "read-lines", "cirru-syntax.md"][..],
-      &["docs", "read", "cirru-syntax.md", "--lines", "80"][..],
-    ),
-    (
-      &["docs", "read-lines", "no-such-doc.md", "--lines", "3"][..],
-      &["docs", "read", "no-such-doc.md", "--lines", "3"][..],
-    ),
+    (&["cirru", "show-guide"][..], "`calcit docs read cirru-syntax.md`"),
   ] {
-    let old_output = home.run(old);
-    let new_output = home.run(new);
-    assert_eq!(old_output.status.code(), new_output.status.code(), "{old:?} vs {new:?}");
-    assert_eq!(old_output.stdout, new_output.stdout, "{old:?} vs {new:?}");
-    let hints = hint_lines(&old_output);
-    assert_eq!(hints.len(), 1, "{hints:?}");
-    assert!(hints[0].contains("docs read <file> --start"), "{}", hints[0]);
-    assert!(hint_lines(&new_output).is_empty());
+    let output = home.run(args);
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(output.stdout.is_empty(), "{args:?} should not report on stdout");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+      stderr.contains("was removed in 0.31.0") && stderr.contains(replacement),
+      "{args:?}: {stderr}"
+    );
   }
   let ranged = home.run(&["docs", "read", "cirru-syntax.md", "--start", "4", "--lines", "6"]);
   assert!(String::from_utf8_lossy(&ranged.stdout).contains("Lines 5-10 of"));
+  let default_lines = home.run(&["docs", "read", "cirru-syntax.md", "--start", "0"]);
+  assert!(String::from_utf8_lossy(&default_lines.stdout).contains("Lines 1-80 of"));
   let rejected = home.run(&["docs", "read", "cirru-syntax.md", "Mistakes", "--lines", "6"]);
   assert!(!rejected.status.success() && rejected.stdout.is_empty());
 
-  // `cirru show-guide` keeps printing the raw guide; `docs read` renders the same file.
   let guide = fs::read_to_string("docs/cirru-syntax.md").expect("guide source");
-  let show_guide = home.run(&["cirru", "show-guide"]);
-  assert!(show_guide.status.success(), "{}", String::from_utf8_lossy(&show_guide.stderr));
-  assert_eq!(String::from_utf8_lossy(&show_guide.stdout), format!("{guide}\n"));
-  let hints = hint_lines(&show_guide);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("`calcit docs read cirru-syntax.md`"), "{}", hints[0]);
   let read = home.run(&["docs", "read", "cirru-syntax.md"]);
   assert!(read.status.success(), "{}", String::from_utf8_lossy(&read.stderr));
   let read_stdout = String::from_utf8_lossy(&read.stdout);
@@ -765,14 +759,15 @@ fn project_with_examples(name: &str) -> TempProject {
 }
 
 #[test]
-fn rm_example_alias_matches_edit_examples() {
+fn rm_example_is_removed_and_edit_examples_replaces_it() {
   let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
 
   let legacy = project_with_examples("rm-example");
-  let output = edit_ok(&legacy, &["edit", "rm-example", "app.main/items", "1"]);
-  let hints = hint_lines(&output);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("`calcit edit examples <ns/def>`"), "{}", hints[0]);
+  assert_removed(
+    &legacy.snapshot(),
+    &["edit", "rm-example", "app.main/items", "1"],
+    "`calcit edit examples <ns/def>`",
+  );
 
   let replacement = project_with_examples("examples");
   let output = edit_ok(
@@ -786,33 +781,34 @@ fn rm_example_alias_matches_edit_examples() {
     ],
   );
   assert!(hint_lines(&output).is_empty());
-  assert_eq!(read(&legacy), read(&replacement));
-  assert!(!read(&legacy).contains("first items"), "{}", read(&legacy));
+  assert!(!read(&replacement).contains("first items"), "{}", read(&replacement));
 
-  // The staged form prints its own hint and still removes the example.
+  // The staged form is rejected as a whole and writes nothing.
   let staged = project_with_examples("rm-example-transaction");
-  let output = edit_ok(
-    &staged,
+  let before = read(&staged);
+  let output = run_calcit(
+    &staged.snapshot(),
     &["edit", "transaction", "--code", r#"[["edit","rm-example","app.main/items","1"]]"#],
   );
+  assert!(!output.status.success());
   let stderr = String::from_utf8_lossy(&output.stderr);
-  let hints = stderr
-    .lines()
-    .filter(|line| line.starts_with("[Deprecated] transaction operation 1 uses `edit rm-example`"))
-    .collect::<Vec<_>>();
-  assert_eq!(hints.len(), 1, "{stderr}");
-  assert_eq!(read(&staged), read(&replacement));
+  assert!(
+    stderr.contains("Transaction operation 1 uses `edit rm-example`, which was removed in 0.31.0"),
+    "{stderr}"
+  );
+  assert_eq!(read(&staged), before);
 }
 
 #[test]
-fn ns_doc_alias_matches_edit_ns() {
+fn ns_doc_is_removed_and_edit_ns_replaces_it() {
   let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
 
   let legacy = TempProject::create("ns-doc");
-  let output = edit_ok(&legacy, &["edit", "ns-doc", "app.main", "Demo namespace."]);
-  let hints = hint_lines(&output);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("`calcit edit ns <ns>`"), "{}", hints[0]);
+  assert_removed(
+    &legacy.snapshot(),
+    &["edit", "ns-doc", "app.main", "Demo namespace."],
+    "`calcit edit ns <ns>`",
+  );
 
   let replacement = TempProject::create("edit-ns");
   let view = edit_ok(&replacement, &["query", "ns", "app.main", "--format", "cirru"]);
@@ -821,8 +817,7 @@ fn ns_doc_alias_matches_edit_ns() {
   let changed = view.replace("'NsEntry (:doc |)", "'NsEntry (:doc \"|Demo namespace.\")");
   let output = edit_ok(&replacement, &["edit", "ns", "app.main", "--code", &changed]);
   assert!(hint_lines(&output).is_empty());
-  assert_eq!(read(&legacy), read(&replacement));
-  assert!(read(&legacy).contains("Demo namespace."), "{}", read(&legacy));
+  assert!(read(&replacement).contains("Demo namespace."), "{}", read(&replacement));
 }
 
 #[test]
@@ -831,7 +826,6 @@ fn call_graph_json_stdout_is_one_document_and_honors_sort() {
   for args in [
     &["analyze", "call-graph", "--format", "json"][..],
     &["analyze", "call-graph", "--counts", "--format", "json"][..],
-    &["analyze", "count-calls", "--format", "json"][..],
   ] {
     let output = run_calcit(snapshot, args);
     assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
@@ -869,11 +863,10 @@ fn call_graph_json_stdout_is_one_document_and_honors_sort() {
   );
   assert_eq!(by_count.len(), by_name.len());
 
-  // An unknown sort key fails the same way in both forms, before any report.
+  // An unknown sort key fails before any report.
   for args in [
     &["analyze", "call-graph", "--counts", "--sort", "size"][..],
-    &["analyze", "count-calls", "--sort", "size"][..],
-    &["analyze", "count-calls", "--sort", "size", "--format", "json"][..],
+    &["analyze", "call-graph", "--counts", "--sort", "size", "--format", "json"][..],
   ] {
     let output = run_calcit(snapshot, args);
     assert_eq!(output.status.code(), Some(1), "{args:?} should be rejected");
@@ -891,7 +884,7 @@ fn docs_read_line_range_past_the_end_is_an_error() {
   let home = GuidebookHome::create("past-end");
   for args in [
     &["docs", "read", "cirru-syntax.md", "--start", "99999"][..],
-    &["docs", "read-lines", "cirru-syntax.md", "--start", "99999"][..],
+    &["docs", "read", "cirru-syntax.md", "--start", "99999", "--lines", "3"][..],
   ] {
     let output = home.run(args);
     assert_eq!(
@@ -914,8 +907,14 @@ fn docs_read_line_range_past_the_end_is_an_error() {
 }
 
 #[test]
-fn tree_insert_and_swap_match_the_legacy_leaves() {
+fn tree_insert_and_swap_replace_the_removed_leaves() {
   let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
+  let expected_items = |name: &str| match name {
+    "before" => Some("[] 1 9 2 3 4"),
+    "after" => Some("[] 1 2 9 3 4"),
+    "next" | "prev" => Some("[] 2 1 3 4"),
+    _ => None,
+  };
   let cases: [(&str, &[&str], &[&str], &str); 6] = [
     (
       "before",
@@ -995,21 +994,16 @@ fn tree_insert_and_swap_match_the_legacy_leaves() {
     ),
   ];
   for (name, old, new, replacement) in cases {
-    let legacy = TempProject::create(&format!("legacy-{name}"));
-    let merged = TempProject::create(&format!("merged-{name}"));
-    let before = read(&legacy);
-    let old_output = edit_ok(&legacy, old);
-    let new_output = edit_ok(&merged, new);
-    let hints = hint_lines(&old_output);
-    assert_eq!(hints.len(), 1, "{old:?}: {hints:?}");
-    assert!(hints[0].contains(replacement), "{}", hints[0]);
+    let project = TempProject::create(&format!("tree-{name}"));
+    let before = read(&project);
+    assert_removed(&project.snapshot(), old, replacement);
+    let new_output = edit_ok(&project, new);
     assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
-    assert!(
-      !String::from_utf8_lossy(&old_output.stdout).contains("[Deprecated]"),
-      "{old:?} must keep the hint off stdout"
-    );
-    assert_ne!(read(&legacy), before, "{old:?} should change the snapshot");
-    assert_eq!(read(&legacy), read(&merged), "{old:?} vs {new:?}");
+    let after = read(&project);
+    assert_ne!(after, before, "{new:?} should change the snapshot");
+    if let Some(expected) = expected_items(name) {
+      assert!(after.contains(expected), "{new:?} should produce `{expected}`:\n{after}");
+    }
   }
 }
 
@@ -1039,7 +1033,7 @@ fn tree_insert_and_swap_reject_unknown_positions_without_writing() {
 }
 
 #[test]
-fn tree_insert_and_swap_run_inside_transactions_and_legacy_ops_hint() {
+fn tree_insert_and_swap_run_inside_transactions_and_legacy_ops_fail() {
   let project = TempProject::create("transaction-merged");
   let output = edit_ok(
     &project,
@@ -1056,8 +1050,9 @@ fn tree_insert_and_swap_run_inside_transactions_and_legacy_ops_hint() {
   assert!(content.contains("[] 1 2 3 5 4"), "{content}");
 
   let legacy = TempProject::create("transaction-legacy");
-  let output = edit_ok(
-    &legacy,
+  let before = snapshot_text(&legacy);
+  let output = run_calcit(
+    &legacy.snapshot(),
     &[
       "edit",
       "transaction",
@@ -1065,21 +1060,19 @@ fn tree_insert_and_swap_run_inside_transactions_and_legacy_ops_hint() {
       r#"[["tree","insert-after","app.main/items","--path","@2.4","--code","quote 5"]]"#,
     ],
   );
+  assert!(!output.status.success(), "a removed transaction operation should fail");
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(
-    stderr.contains("[Deprecated] transaction operation 1 uses `tree insert-after`") && stderr.contains("tree insert --at after"),
+    stderr.contains("Transaction operation 1 uses `tree insert-after`, which was removed in 0.31.0")
+      && stderr.contains("`tree insert --at after`"),
     "{stderr}"
   );
+  assert_eq!(before, snapshot_text(&legacy));
 }
 
 #[test]
-fn host_procs_is_deprecated_without_replacement() {
-  let output = run_calcit(Path::new("calcit/test.cirru"), &["query", "host-procs"]);
-  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-  let hints = hint_lines(&output);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("has no replacement"), "{}", hints[0]);
-  assert!(!output.stdout.is_empty() && !String::from_utf8_lossy(&output.stdout).contains("[Deprecated]"));
+fn host_procs_is_removed_without_replacement() {
+  assert_removed(Path::new("calcit/test.cirru"), &["query", "host-procs"], "has no replacement");
 }
 
 fn snapshot_text(project: &TempProject) -> String {
@@ -1090,37 +1083,23 @@ fn snapshot_text(project: &TempProject) -> String {
 fn tree_insert_and_swap_guard_expectations_and_root_paths() {
   let project = TempProject::create("guards");
   let before = snapshot_text(&project);
-  for args in [
-    &[
-      "tree",
-      "insert",
-      "app.main/items",
-      "--at",
-      "after",
-      "--path",
-      "@2.1",
-      "--expect",
-      "quote 7",
-      "--code",
-      "quote 9",
-    ][..],
-    &[
-      "tree",
-      "insert-after",
-      "app.main/items",
-      "--path",
-      "@2.1",
-      "--expect",
-      "quote 7",
-      "--code",
-      "quote 9",
-    ][..],
-  ] {
-    let output = run_calcit(&project.snapshot(), args);
-    assert!(!output.status.success(), "{args:?} should be rejected");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("guard failed"), "{args:?}");
-    assert_eq!(before, snapshot_text(&project), "{args:?} must not write");
-  }
+  let args = [
+    "tree",
+    "insert",
+    "app.main/items",
+    "--at",
+    "after",
+    "--path",
+    "@2.1",
+    "--expect",
+    "quote 7",
+    "--code",
+    "quote 9",
+  ];
+  let output = run_calcit(&project.snapshot(), &args);
+  assert!(!output.status.success(), "{args:?} should be rejected");
+  assert!(String::from_utf8_lossy(&output.stderr).contains("guard failed"), "{args:?}");
+  assert_eq!(before, snapshot_text(&project), "{args:?} must not write");
   // The matching guard lets the same insert through.
   edit_ok(
     &project,
@@ -1254,7 +1233,8 @@ fn tree_insert_and_swap_resolve_cursor_and_maintain_it() {
   assert!(snapshot_text(&project).contains("[] 8 1 2 3 4 7"), "{}", snapshot_text(&project));
 }
 
-/// One cursor step: the legacy spelling, the merged spelling, and the replacement the hint names.
+/// One cursor step: the legacy spelling, the merged spelling, and the replacement the
+/// removal error names (empty when the legacy spelling is still current).
 type CursorStep<'a> = (&'a [&'a str], &'a [&'a str], &'a str);
 
 fn cursor_project(name: &str) -> TempProject {
@@ -1272,39 +1252,48 @@ fn cursor_json(project: &TempProject) -> String {
     .replace(&project.0.display().to_string(), "<project>")
 }
 
-/// Replays the legacy and merged spellings on two fresh projects and requires equal snapshots
-/// and cursor state after every step, one hint per legacy step, and none for the merged one.
+/// Replays the merged spellings on a fresh project. Before each step a removed legacy
+/// spelling is tried first: it must fail, name its replacement, and leave both the snapshot
+/// and the cursor state unchanged. Legacy spellings that are still current (empty
+/// replacement) must match the merged form.
 fn assert_cursor_steps_match(name: &str, setup: &[&str], steps: &[CursorStep]) {
-  let legacy = cursor_project(&format!("{name}-legacy"));
-  let merged = cursor_project(&format!("{name}-merged"));
-  edit_ok(&legacy, setup);
-  edit_ok(&merged, setup);
+  let project = cursor_project(&format!("{name}-merged"));
+  edit_ok(&project, setup);
   for (old, new, replacement) in steps {
-    let old_output = edit_ok(&legacy, old);
-    let new_output = edit_ok(&merged, new);
-    let hints = hint_lines(&old_output);
     if replacement.is_empty() {
-      assert!(hints.is_empty(), "{old:?} is not deprecated: {hints:?}");
-    } else {
-      assert_eq!(hints.len(), 1, "{old:?} should print exactly one hint: {hints:?}");
-      assert!(
-        hints[0].contains(replacement),
-        "{old:?} hint should name `{replacement}`: {}",
-        hints[0]
-      );
+      let old_output = edit_ok(&project, old);
+      assert!(hint_lines(&old_output).is_empty(), "{old:?} is not deprecated");
+      if old == new {
+        continue;
+      }
+      // The still-current bare forms are idempotent, so the merged form must agree.
+      let snapshot = snapshot_text(&project);
+      let cursor = cursor_json(&project);
+      let new_output = edit_ok(&project, new);
+      assert_eq!(old_output.stdout, new_output.stdout, "{old:?} vs {new:?}");
+      assert_eq!(snapshot_text(&project), snapshot, "{old:?} vs {new:?}");
+      assert_eq!(cursor_json(&project), cursor, "{old:?} vs {new:?}");
+      continue;
     }
-    assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
+    let snapshot = snapshot_text(&project);
+    let cursor = cursor_json(&project);
+    let old_output = run_calcit(&project.snapshot(), old);
+    assert!(!old_output.status.success(), "{old:?} should be rejected");
+    assert!(old_output.stdout.is_empty(), "{old:?} should not report on stdout");
+    let stderr = String::from_utf8_lossy(&old_output.stderr);
     assert!(
-      !String::from_utf8_lossy(&old_output.stdout).contains("[Deprecated]"),
-      "{old:?} must keep the hint off stdout"
+      stderr.contains("was removed in 0.31.0") && stderr.contains(replacement),
+      "{old:?} should name `{replacement}`: {stderr}"
     );
-    assert_eq!(snapshot_text(&legacy), snapshot_text(&merged), "{old:?} vs {new:?}");
-    assert_eq!(cursor_json(&legacy), cursor_json(&merged), "{old:?} vs {new:?}");
+    assert_eq!(snapshot_text(&project), snapshot, "{old:?} must not write the snapshot");
+    assert_eq!(cursor_json(&project), cursor, "{old:?} must not move the cursor");
+    let new_output = edit_ok(&project, new);
+    assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
   }
 }
 
 #[test]
-fn cursor_move_matches_the_legacy_navigation_leaves() {
+fn cursor_move_replaces_the_removed_navigation_leaves() {
   assert_cursor_steps_match(
     "move",
     &["cursor", "set", "app.main/items", "--path", "@2"],
@@ -1336,7 +1325,7 @@ fn cursor_move_matches_the_legacy_navigation_leaves() {
 }
 
 #[test]
-fn cursor_anchor_matches_clear_anchor_and_region() {
+fn cursor_anchor_replaces_clear_anchor_and_region() {
   assert_cursor_steps_match(
     "anchor",
     &["cursor", "set", "app.main/items", "--path", "@2.1"],
@@ -1359,7 +1348,7 @@ fn cursor_anchor_matches_clear_anchor_and_region() {
 }
 
 #[test]
-fn cursor_marks_match_mark_goto_and_rm_mark() {
+fn cursor_marks_replace_mark_goto_and_rm_mark() {
   assert_cursor_steps_match(
     "marks",
     &["cursor", "set", "app.main/items", "--path", "@2.1"],
@@ -1391,7 +1380,7 @@ fn cursor_marks_match_mark_goto_and_rm_mark() {
 }
 
 #[test]
-fn cursor_clipboard_matches_copy_cut_paste_and_clear() {
+fn cursor_clipboard_replaces_copy_cut_paste_and_clear() {
   assert_cursor_steps_match(
     "clipboard",
     &["cursor", "set", "app.main/items", "--path", "@2.1"],
@@ -1420,7 +1409,7 @@ fn cursor_clipboard_matches_copy_cut_paste_and_clear() {
 }
 
 #[test]
-fn cursor_apply_matches_slurp_barf_and_duplicate_leaves() {
+fn cursor_apply_replaces_slurp_barf_and_duplicate_leaves() {
   assert_cursor_steps_match(
     "apply",
     &["cursor", "set", "app.main/nested", "--path", "@2.2"],
@@ -1464,7 +1453,7 @@ fn cursor_apply_matches_slurp_barf_and_duplicate_leaves() {
 fn cursor_merged_forms_reject_invalid_values_without_writing() {
   let project = cursor_project("cursor-invalid");
   edit_ok(&project, &["cursor", "set", "app.main/nested", "--path", "@2.2"]);
-  edit_ok(&project, &["cursor", "copy"]);
+  edit_ok(&project, &["cursor", "clipboard", "copy"]);
   let snapshot_before = snapshot_text(&project);
   let cursor_before = cursor_json(&project);
   let cases: [(&[&str], &str); 24] = [
@@ -1563,4 +1552,48 @@ fn cursor_after_focus_works_with_the_merged_forms() {
     assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
     assert!(hint_lines(&output).is_empty(), "{args:?} must not print a hint");
   }
+}
+
+#[test]
+fn removed_entry_detection_reads_the_subcommand_path_only() {
+  // Top-level option values are not the subcommand: `--entry tree` precedes `cursor parent`.
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none", "--entry", "tree", "calcit/test.cirru", "cursor", "parent"])
+    .output()
+    .expect("calcit command should run");
+  assert!(!output.status.success());
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("`calcit cursor parent` was removed in 0.31.0") && stderr.contains("cursor move parent"),
+    "{stderr}"
+  );
+
+  // A positional value that spells a removed entry is not a command.
+  let output = run_calcit(Path::new("calcit/test.cirru"), &["query", "find", "query", "pkg"]);
+  assert!(
+    !String::from_utf8_lossy(&output.stderr).contains("was removed in 0.31.0"),
+    "{}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_arguments_are_reported_without_a_panic() {
+  use std::ffi::OsStr;
+  use std::os::unix::ffi::OsStrExt;
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg("calcit/test.cirru")
+    .arg("query")
+    .arg("def")
+    .arg(OsStr::from_bytes(b"app.main/\xff"))
+    .output()
+    .expect("calcit command should run");
+  assert_eq!(output.status.code(), Some(1));
+  assert!(output.stdout.is_empty());
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("Invalid utf8"), "{stderr}");
+  assert!(!stderr.contains("panicked"), "{stderr}");
 }

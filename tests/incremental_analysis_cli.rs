@@ -82,7 +82,7 @@ fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
   }
   args.extend(["--format", "json"]);
   let output = run_calcit(snapshot, &args);
-  assert_success(&output, "dynamic-methods");
+  assert_success(&output, "weak-types --only dynamic-method");
   serde_json::from_slice(&output.stdout).expect("dynamic method analysis stdout should contain one JSON envelope")
 }
 
@@ -792,7 +792,16 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
   fs::remove_file(&dependency_snapshot).expect("cached dependency should become unavailable");
   let incremental = run_calcit(
     &snapshot,
-    &["--compat-types", "analyze", "dynamic-methods", "--incremental", "--format", "json"],
+    &[
+      "--compat-types",
+      "analyze",
+      "weak-types",
+      "--only",
+      "dynamic-method",
+      "--incremental",
+      "--format",
+      "json",
+    ],
   );
   assert!(!incremental.status.success(), "incomplete incremental snapshot should fail");
   assert!(
@@ -801,6 +810,17 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
     String::from_utf8_lossy(&incremental.stderr)
   );
 
-  let uncached = run_calcit(&snapshot, &["--compat-types", "analyze", "dynamic-methods", "--format", "json"]);
+  let uncached = run_calcit(
+    &snapshot,
+    &[
+      "--compat-types",
+      "analyze",
+      "weak-types",
+      "--only",
+      "dynamic-method",
+      "--format",
+      "json",
+    ],
+  );
   assert!(!uncached.status.success(), "incomplete uncached snapshot should fail");
 }

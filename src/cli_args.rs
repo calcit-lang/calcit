@@ -376,10 +376,6 @@ pub struct AnalyzeCommand {
 pub enum AnalyzeSubcommand {
   /// analyze call graph structure from entry point; `--counts` counts calls, `--diff <ref>` compares against a Git ref
   CallGraph(CallGraphCommand),
-  /// [Deprecated] use `analyze call-graph --diff <ref>`
-  CallGraphDiff(CallGraphDiffCommand),
-  /// [Deprecated] use `analyze call-graph --counts`
-  CountCalls(CountCallsCommand),
   /// compare current snapshot (or one definition) against a Git ref with structured tree diff
   ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
@@ -390,20 +386,12 @@ pub enum AnalyzeSubcommand {
   CheckTypes(CheckTypesCommand),
   /// locate weakly-typed hotspots, type coverage, dynamic method dispatch, or deprecated calls (select with --only)
   WeakTypes(WeakTypesCommand),
-  /// [Deprecated] use `analyze weak-types --only dynamic-method`
-  DynamicMethods(DynamicMethodsCommand),
-  /// [Deprecated] use `analyze weak-types --only deprecated-call`
-  Deprecated(DeprecatedCommand),
   /// [Deprecated] legacy quality budgets; use `--check-only` plus `analyze weak-types`
   Quality(QualityCommand),
   /// run a declarative project verification profile
   Verify(VerifyCommand),
   /// decompose entry into State / Transform / Effect graph
   EffectsGraph(EffectsGraphCommand),
-  /// [Deprecated] no replacement; removed in the next non-patch release
-  JsEscape(JsEscapeCommand),
-  /// [Deprecated] no replacement; removed in the next non-patch release
-  JsUnescape(JsUnescapeCommand),
 }
 
 /// run a declarative project verification profile
@@ -434,24 +422,6 @@ pub struct CheckPublicCommand {
   /// emit aggregate counts without per-definition rows
   #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
-}
-
-/// [Deprecated] escape a Calcit symbol into JavaScript-safe identifier form; no replacement
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "js-escape")]
-pub struct JsEscapeCommand {
-  /// original Calcit symbol
-  #[argh(positional)]
-  pub symbol: String,
-}
-
-/// [Deprecated] decode escaped JavaScript identifier back to Calcit symbol (best-effort); no replacement
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "js-unescape")]
-pub struct JsUnescapeCommand {
-  /// escaped JavaScript identifier
-  #[argh(positional)]
-  pub symbol: String,
 }
 
 /// [Deprecated] use `analyze weak-types --only coverage [--coverage-level none,partial,full]`
@@ -520,42 +490,31 @@ pub struct WeakTypesCommand {
   pub incremental: bool,
 }
 
-/// [Deprecated] use `analyze weak-types --only dynamic-method`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "dynamic-methods")]
+/// options of `analyze weak-types --only dynamic-method`, normalized from `WeakTypesCommand`
+#[derive(PartialEq, Debug, Clone)]
 pub struct DynamicMethodsCommand {
   /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency namespaces
-  #[argh(switch)]
   pub deps: bool,
   /// emit aggregate counts without individual findings
-  #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
   /// reuse entry preprocessing findings when its dependency closure is unchanged
-  #[argh(switch)]
   pub incremental: bool,
 }
 
-/// [Deprecated] use `analyze weak-types --only deprecated-call`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "deprecated")]
+/// options of `analyze weak-types --only deprecated-call`, normalized from `WeakTypesCommand`
+#[derive(PartialEq, Debug, Clone)]
 pub struct DeprecatedCommand {
   /// exact namespace to analyze
-  #[argh(option)]
   pub ns: Option<String>,
   /// namespace prefix scope filter
-  #[argh(option)]
   pub ns_prefix: Option<String>,
   /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency/core namespaces
-  #[argh(switch)]
   pub deps: bool,
   /// emit aggregate counts without per-definition details
-  #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
 }
 
@@ -658,45 +617,33 @@ pub struct EffectsGraphCommand {
   pub color: bool,
 }
 
-/// [Deprecated] use `analyze call-graph --diff <ref>`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "call-graph-diff")]
+/// options of `analyze call-graph --diff <ref>`, normalized from `CallGraphCommand`
+#[derive(PartialEq, Debug, Clone)]
 pub struct CallGraphDiffCommand {
   /// git reference to compare against, e.g. HEAD~1, main, v0.1.0, or a commit SHA
-  #[argh(positional)]
   pub git_ref: String,
   /// directly specify root definition to analyze (format: ns/def). If omitted, uses current config init-fn
-  #[argh(option)]
   pub root: Option<String>,
   /// only show definitions whose namespace starts with this prefix
-  #[argh(option)]
   pub ns_prefix: Option<String>,
   /// include core/library calls in the output
-  #[argh(switch)]
   pub include_core: bool,
   /// maximum depth to traverse (0 = unlimited)
-  #[argh(option, default = "0")]
   pub max_depth: usize,
 }
 
-/// [Deprecated] use `analyze call-graph --counts`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "count-calls")]
+/// options of `analyze call-graph --counts`, normalized from `CallGraphCommand`
+#[derive(PartialEq, Debug, Clone)]
 pub struct CountCallsCommand {
   /// directly specify root definition to analyze (format: ns/def). If omitted, uses init-fn from config
-  #[argh(option)]
   pub root: Option<String>,
   /// only show definitions whose namespace starts with this prefix
-  #[argh(option)]
   pub ns_prefix: Option<String>,
   /// include core/library calls in the count
-  #[argh(switch)]
   pub include_core: bool,
   /// output format: human (default; legacy alias text), edn, or json
-  #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
   /// sort by: "count" (default, descending) or "name"
-  #[argh(option, default = "String::from(\"count\")")]
   pub sort: String,
 }
 
@@ -742,14 +689,10 @@ pub enum QuerySubcommand {
   Ns(QueryNsCommand),
   /// list definitions in a namespace
   Defs(QueryDefsCommand),
-  /// [Deprecated] use `query config`
-  Pkg(QueryPkgCommand),
   /// read project configs
   Config(QueryConfigCommand),
   /// read .calcit/error.cirru file
   Error(QueryErrorCommand),
-  /// [Deprecated] use `config modules`
-  Modules(QueryModulesCommand),
   /// read a definition's full code
   Def(QueryDefCommand),
   /// peek definition signature without full body
@@ -778,8 +721,6 @@ pub enum QuerySubcommand {
   TypeAt(QueryTypeAtCommand),
   /// gather bounded semantic context for one definition
   Context(QueryContextCommand),
-  /// [Deprecated] no replacement; removed in the next non-patch release
-  HostProcs(QueryHostProcsCommand),
   /// resolve a semantic path expression to numeric indices
   Path(QueryPathCommand),
   /// list @anchor annotations in a namespace
@@ -793,9 +734,6 @@ pub struct QuerySchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// [Deprecated] use `--format json`; emit one JSON envelope instead of Markdown-compatible human output
-  #[argh(switch)]
-  pub json: bool,
   /// output format: Markdown-compatible human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -862,15 +800,6 @@ pub struct QueryContextCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "host-procs")]
-/// [Deprecated] no replacement; removed in the next non-patch release
-pub struct QueryHostProcsCommand {
-  /// filter procs that contain this tag (e.g. log or :log)
-  #[argh(option)]
-  pub tag: Option<String>,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ns")]
 /// list namespaces, or show ns details if namespace provided
 pub struct QueryNsCommand {
@@ -903,11 +832,6 @@ pub struct QueryDefsCommand {
 // read-ns merged into ns command
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "pkg")]
-/// [Deprecated] use `query config`, which prints the package name
-pub struct QueryPkgCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "config")]
 /// read project configs (init_fn, reload_fn, version)
 pub struct QueryConfigCommand {
@@ -922,20 +846,12 @@ pub struct QueryConfigCommand {
 pub struct QueryErrorCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "modules")]
-/// [Deprecated] use `config modules`
-pub struct QueryModulesCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "def")]
 /// read a definition's full code, or builtin metadata when source is unavailable
 pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// [Deprecated] use `--format json`; appends fenced legacy JSON to Markdown-compatible human output
-  #[argh(switch)]
-  pub json: bool,
   /// output format: Markdown-compatible human (default), edn, json, or cirru (only `quote $ <definition>`, accepted by `edit def --overwrite --input-format cirru`)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -1157,8 +1073,6 @@ pub enum DocsSubcommand {
   Read(DocsReadCommand),
   /// read the embedded Agents guide or compact mutation contract
   Agents(DocsAgentsCommand),
-  /// [Deprecated] use `docs read <file> --start <n> --lines <n>`
-  ReadLines(DocsReadLinesCommand),
   /// check ```cirru code blocks in a markdown file via eval
   CheckMd(DocsCheckMdCommand),
   /// format fenced ```cirru code blocks in a markdown file
@@ -1378,24 +1292,6 @@ pub struct DocsAgentsCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "read-lines")]
-/// [Deprecated] use `docs read <file> --start <n> --lines <n>`
-pub struct DocsReadLinesCommand {
-  /// filename to read (e.g., "syntax.md")
-  #[argh(positional)]
-  pub filename: String,
-  /// starting line number (default: 0)
-  #[argh(option, default = "0")]
-  pub start: usize,
-  /// number of lines to read (default: 80)
-  #[argh(option, default = "80")]
-  pub lines: usize,
-  /// read docs from a specific installed module (e.g. respo.calcit)
-  #[argh(option)]
-  pub module: Option<String>,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "check-md")]
 /// check ```cirru code blocks in a markdown file via eval
 pub struct DocsCheckMdCommand {
@@ -1452,8 +1348,6 @@ pub enum CirruSubcommand {
   Format(CirruFormatCommand),
   /// parse Cirru EDN to JSON
   ParseEdn(CirruParseEdnCommand),
-  /// [Deprecated] use `docs read cirru-syntax.md`
-  ShowGuide(CirruShowGuideCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1491,11 +1385,6 @@ pub struct CirruParseEdnCommand {
   #[argh(option)]
   pub file: Option<String>,
 }
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "show-guide")]
-/// [Deprecated] use `docs read cirru-syntax.md`
-pub struct CirruShowGuideCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Remote library subcommands
@@ -1630,8 +1519,6 @@ pub enum EditSubcommand {
   Examples(EditExamplesCommand),
   /// add a single example to definition
   AddExample(EditAddExampleCommand),
-  /// [Deprecated] use `edit examples` with the remaining examples, or `edit ns`
-  RmExample(EditRmExampleCommand),
   /// add a named test to a definition
   AddTest(EditAddTestCommand),
   /// remove a named test from a definition
@@ -1650,8 +1537,6 @@ pub enum EditSubcommand {
   AddImport(EditAddImportCommand),
   /// remove an import rule from namespace
   RmImport(EditRmImportCommand),
-  /// [Deprecated] use `edit ns` with the changed `:ns` doc
-  NsDoc(EditNsDocCommand),
   /// describe incremental code changes and clear .calcit/error.cirru
   Inc(EditIncCommand),
   /// copy node from one path to another within a definition
@@ -1870,18 +1755,6 @@ pub struct EditAddExampleCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "rm-example")]
-/// [Deprecated] use `edit examples` with the remaining examples, or `edit ns`
-pub struct EditRmExampleCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// index of example to remove (0-based)
-  #[argh(positional)]
-  pub index: usize,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-test")]
 /// add a named test to a definition (input via --file, --code, or pipe via stdin)
 pub struct EditAddTestCommand {
@@ -2044,18 +1917,6 @@ pub struct EditRmImportCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "ns-doc")]
-/// [Deprecated] use `edit ns` with the changed `:ns` doc
-pub struct EditNsDocCommand {
-  /// namespace to update
-  #[argh(positional)]
-  pub namespace: String,
-  /// documentation text
-  #[argh(positional)]
-  pub doc: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "inc")]
 /// apply incremental changes (defs and namespaces) for downstream tooling
 pub struct EditIncCommand {
@@ -2100,18 +1961,11 @@ pub enum TreeSubcommand {
   Delete(TreeDeleteCommand),
   Insert(TreeInsertCommand),
   Swap(TreeSwapCommand),
-  InsertBefore(TreeInsertBeforeCommand),
-  InsertAfter(TreeInsertAfterCommand),
-  InsertChild(TreeInsertChildCommand),
-  AppendChild(TreeAppendChildCommand),
-  SwapNext(TreeSwapNextCommand),
-  SwapPrev(TreeSwapPrevCommand),
   Unwrap(TreeUnwrapCommand),
   Raise(TreeRaiseCommand),
   Wrap(TreeWrapCommand),
   SearchReplace(TreeSearchReplaceCommand),
   Rewrite(TreeStructuralCommand),
-  BatchDelete(TreeBatchDeleteCommand),
 }
 
 /// view tree node at specific path
@@ -2127,9 +1981,6 @@ pub struct TreeShowCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
-  /// [Deprecated] use `--format json`; appends a fenced JSON AST to Markdown-compatible human output
-  #[argh(switch)]
-  pub json: bool,
   /// output format: Markdown-compatible human (default), edn, or json (the selected node as a JSON AST document)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -2277,21 +2128,6 @@ pub struct TreeSearchReplaceCommand {
   pub selector: Option<String>,
 }
 
-/// [Deprecated] use `edit transaction` with one `tree delete` per path, highest index first
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "batch-delete")]
-pub struct TreeBatchDeleteCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// paths to delete (dot-separated, e.g. \"@3.2.1.8 @3.2.1.7 @3.2.1.6\"); deletes from highest to lowest
-  #[argh(option)]
-  pub paths: Vec<String>,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
 /// replace node at specific path
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "replace")]
@@ -2412,144 +2248,6 @@ pub struct TreeSwapCommand {
   pub depth: usize,
 }
 
-/// [Deprecated] use `tree insert --at before`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "insert-before")]
-pub struct TreeInsertBeforeCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// read syntax_tree from file; select its transport with --input-format
-  #[argh(option)]
-  pub file: Option<String>,
-  /// syntax_tree as inline text; select its transport with --input-format
-  #[argh(option, long = "code")]
-  pub code: Option<String>,
-  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
-  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
-  pub input_format: SyntaxInputFormat,
-  /// require the anchor node to equal this quoted Cirru node before inserting
-  #[argh(option)]
-  pub expect: Option<String>,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
-/// [Deprecated] use `tree insert --at after`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "insert-after")]
-pub struct TreeInsertAfterCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// read syntax_tree from file; select its transport with --input-format
-  #[argh(option)]
-  pub file: Option<String>,
-  /// syntax_tree as inline text; select its transport with --input-format
-  #[argh(option, long = "code")]
-  pub code: Option<String>,
-  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
-  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
-  pub input_format: SyntaxInputFormat,
-  /// require the anchor node to equal this quoted Cirru node before inserting
-  #[argh(option)]
-  pub expect: Option<String>,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
-/// [Deprecated] use `tree insert --at prepend-child`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "insert-child")]
-pub struct TreeInsertChildCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// read syntax_tree from file; select its transport with --input-format
-  #[argh(option)]
-  pub file: Option<String>,
-  /// syntax_tree as inline text; select its transport with --input-format
-  #[argh(option, long = "code")]
-  pub code: Option<String>,
-  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
-  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
-  pub input_format: SyntaxInputFormat,
-  /// require the parent node to equal this quoted Cirru node before inserting
-  #[argh(option)]
-  pub expect: Option<String>,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
-/// [Deprecated] use `tree insert --at append-child`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "append-child")]
-pub struct TreeAppendChildCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// read syntax_tree from file; select its transport with --input-format
-  #[argh(option)]
-  pub file: Option<String>,
-  /// syntax_tree as inline text; select its transport with --input-format
-  #[argh(option, long = "code")]
-  pub code: Option<String>,
-  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
-  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
-  pub input_format: SyntaxInputFormat,
-  /// require the parent node to equal this quoted Cirru node before appending
-  #[argh(option)]
-  pub expect: Option<String>,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
-/// [Deprecated] use `tree swap --with next`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "swap-next")]
-pub struct TreeSwapNextCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
-/// [Deprecated] use `tree swap --with prev`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "swap-prev")]
-pub struct TreeSwapPrevCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
-  #[argh(option)]
-  pub path: String,
-  /// max depth for result preview (0 = unlimited, default 2)
-  #[argh(option, default = "2")]
-  pub depth: usize,
-}
-
 /// splice all children of a node into its parent (inverse of wrap/rewrite)
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "unwrap")]
@@ -2622,34 +2320,13 @@ pub enum CursorSubcommand {
   Set(CursorSetCommand),
   Show(CursorShowCommand),
   Clear(CursorClearCommand),
-  Parent(CursorParentCommand),
-  Child(CursorChildCommand),
   Move(CursorMoveCommand),
-  Next(CursorNextCommand),
-  Prev(CursorPrevCommand),
-  Back(CursorBackCommand),
   Push(CursorPushCommand),
   Pop(CursorPopCommand),
   Anchor(CursorAnchorCommand),
-  ClearAnchor(CursorClearAnchorCommand),
-  Region(CursorRegionCommand),
-  Mark(CursorMarkCommand),
-  Goto(CursorGotoCommand),
   Marks(CursorMarksCommand),
-  RmMark(CursorRmMarkCommand),
-  Copy(CursorCopyCommand),
-  Cut(CursorCutCommand),
-  Paste(CursorPasteCommand),
   Clipboard(CursorClipboardCommand),
-  ClearClipboard(CursorClearClipboardCommand),
   Apply(CursorApplyCommand),
-  SlurpNext(CursorSlurpNextCommand),
-  SlurpPrev(CursorSlurpPrevCommand),
-  BarfLast(CursorBarfLastCommand),
-  BarfFirst(CursorBarfFirstCommand),
-  Duplicate(CursorDuplicateCommand),
-  Forward(CursorForwardCommand),
-  Backward(CursorBackwardCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2682,23 +2359,6 @@ pub struct CursorShowCommand {
 pub struct CursorClearCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "parent")]
-/// [Deprecated] use `cursor move parent`
-pub struct CursorParentCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "child")]
-/// [Deprecated] use `cursor move child`
-pub struct CursorChildCommand {
-  /// zero-based child index (defaults to the first child)
-  #[argh(positional)]
-  pub index: Option<usize>,
-  /// enter the last child instead of an explicit index
-  #[argh(switch)]
-  pub last: bool,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "move")]
 /// move the virtual cursor: parent, child [INDEX] [--last], next, prev, forward, backward, or back
 pub struct CursorMoveCommand {
@@ -2714,33 +2374,6 @@ pub struct CursorMoveCommand {
   /// steps for next, prev, forward, backward, or back (default 1)
   #[argh(option)]
   pub count: Option<usize>,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "next")]
-/// [Deprecated] use `cursor move next`
-pub struct CursorNextCommand {
-  /// number of siblings to skip
-  #[argh(option, default = "1")]
-  pub count: usize,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "prev")]
-/// [Deprecated] use `cursor move prev`
-pub struct CursorPrevCommand {
-  /// number of siblings to skip
-  #[argh(option, default = "1")]
-  pub count: usize,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "back")]
-/// [Deprecated] use `cursor move back`
-pub struct CursorBackCommand {
-  /// number of recorded cursor locations to rewind
-  #[argh(option, default = "1")]
-  pub count: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2766,38 +2399,6 @@ pub struct CursorAnchorCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "clear-anchor")]
-/// [Deprecated] use `cursor anchor clear`
-pub struct CursorClearAnchorCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "region")]
-/// [Deprecated] use `cursor anchor show`
-pub struct CursorRegionCommand {
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "mark")]
-/// [Deprecated] use `cursor marks set <name>`
-pub struct CursorMarkCommand {
-  /// mark name (letters, digits, underscore, and hyphen)
-  #[argh(positional)]
-  pub name: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "goto")]
-/// [Deprecated] use `cursor marks go <name>`
-pub struct CursorGotoCommand {
-  /// saved mark name
-  #[argh(positional)]
-  pub name: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "marks")]
 /// manage bounded named marks: `marks [list]`, `marks set <name>`, `marks go <name>`, `marks drop <name>`
 pub struct CursorMarksCommand {
@@ -2807,34 +2408,6 @@ pub struct CursorMarksCommand {
   /// output format for `list`: human (default), edn, or json
   #[argh(option)]
   pub format: Option<String>,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "rm-mark")]
-/// [Deprecated] use `cursor marks drop <name>`
-pub struct CursorRmMarkCommand {
-  /// saved mark name
-  #[argh(positional)]
-  pub name: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "copy")]
-/// [Deprecated] use `cursor clipboard copy`
-pub struct CursorCopyCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "cut")]
-/// [Deprecated] use `cursor clipboard cut`
-pub struct CursorCutCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "paste")]
-/// [Deprecated] use `cursor clipboard paste`
-pub struct CursorPasteCommand {
-  /// position relative to the cursor: before, after, prepend-child, append-child, replace
-  #[argh(option, default = "String::from(\"after\")")]
-  pub at: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2851,11 +2424,6 @@ pub struct CursorClipboardCommand {
   #[argh(option)]
   pub format: Option<String>,
 }
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "clear-clipboard")]
-/// [Deprecated] use `cursor clipboard clear`
-pub struct CursorClearClipboardCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "apply")]
@@ -2881,53 +2449,6 @@ pub struct CursorApplyCommand {
   pub at: Option<String>,
 }
 
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "slurp-next")]
-/// [Deprecated] use `cursor apply slurp-next`
-pub struct CursorSlurpNextCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "slurp-prev")]
-/// [Deprecated] use `cursor apply slurp-prev`
-pub struct CursorSlurpPrevCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "barf-last")]
-/// [Deprecated] use `cursor apply barf-last`
-pub struct CursorBarfLastCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "barf-first")]
-/// [Deprecated] use `cursor apply barf-first`
-pub struct CursorBarfFirstCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "duplicate")]
-/// [Deprecated] use `cursor apply duplicate`
-pub struct CursorDuplicateCommand {
-  /// position of the new copy relative to the cursor: before or after
-  #[argh(option, default = "String::from(\"after\")")]
-  pub at: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "forward")]
-/// [Deprecated] use `cursor move forward`
-pub struct CursorForwardCommand {
-  /// number of structural nodes to advance
-  #[argh(option, default = "1")]
-  pub count: usize,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "backward")]
-/// [Deprecated] use `cursor move backward`
-pub struct CursorBackwardCommand {
-  /// number of structural nodes to rewind
-  #[argh(option, default = "1")]
-  pub count: usize,
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Config command — top-level shortcut for configuration management
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2949,9 +2470,6 @@ pub enum ConfigSubcommand {
   Modules(ConfigModulesCommand),
   /// list entry-level type-slot bindings
   TypeSlots(ConfigTypeSlotsCommand),
-  /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
-  /// [Deprecated] prefer `caps version get/set/bump` which manages `deps.cirru :version`
-  Version(ConfigVersionCommand),
   /// set a configuration key to a value (package, mode, target, init-fn, reload-fn, description, feature-policy.<name>); use caps version for project versions
   Set(ConfigSetCommand),
   /// unset target, or remove a named entry with an explicit --entry
@@ -3002,15 +2520,6 @@ pub struct ConfigTypeSlotsCommand {
   /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "version")]
-/// [Deprecated] show or bump the snapshot-mirrored project version; prefer `caps version get/set/bump` to manage `deps.cirru :version`
-pub struct ConfigVersionCommand {
-  /// patch | minor | major to bump, or a semver string to set explicitly; omit to show current version
-  #[argh(positional)]
-  pub value: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

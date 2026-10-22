@@ -147,12 +147,8 @@ impl Tips {
   }
 }
 
-pub fn tip_prefer_oneliner_json_markdown(show_json: bool) -> Vec<String> {
-  let mut tips = vec!["Prefer `--code 'one-liner'` to avoid indentation issues; use `--json` to inspect a JSON AST.".to_owned()];
-  if !show_json {
-    tips.push("Add `--json` to append a fenced JSON AST.".to_owned());
-  }
-  tips
+pub fn tip_prefer_oneliner_json_markdown() -> Vec<String> {
+  vec!["Prefer `--code 'one-liner'` to avoid indentation issues; use `--format json` to inspect a JSON AST.".to_owned()]
 }
 
 /// Tip for discouraging root-level edits when path is empty during editing

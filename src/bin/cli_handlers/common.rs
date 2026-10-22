@@ -40,11 +40,6 @@ pub fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
   }
 }
 
-/// Convert Cirru syntax tree to JSON string
-pub fn cirru_to_json(node: &Cirru) -> String {
-  serde_json::to_string_pretty(&cirru_to_json_value(node)).unwrap_or_else(|_| "[]".to_string())
-}
-
 /// Render an explicit Markdown boundary around code or structured text.
 pub fn markdown_fenced_block(language: &str, content: &str) -> String {
   let longest_backtick_run = content.split(|character| character != '`').map(str::len).max().unwrap_or_default();

@@ -13,9 +13,7 @@ use super::cursor::{
 };
 use super::fix::{SOURCE_SCOPE_HEADS, source_reference_paths};
 use super::stdout::{cli_print as print, cli_println as println};
-use super::structured_output::{
-  StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn, resolve_format_with_legacy_json, warn_deprecated_json_switch,
-};
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn};
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, CalcitSyntax, DYNAMIC_TYPE, LocatedWarning};
@@ -23,7 +21,7 @@ use calcit::call_stack::CallStackList;
 use calcit::call_tree::{CallTreeAnalyzer, CallTreeConfig};
 use calcit::cli_args::{
   ConfigCommand, ConfigShowCommand, ConfigSubcommand, QueryAnchorsCommand, QueryCommand, QueryConfigCommand, QueryContextCommand,
-  QueryDefCommand, QueryDefsCommand, QueryHostProcsCommand, QueryPathCommand, QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
+  QueryDefCommand, QueryDefsCommand, QueryPathCommand, QuerySubcommand, QueryTypeAtCommand, QueryTypeCommand,
 };
 use calcit::data::cirru::code_to_calcit;
 use calcit::data::edn::format_edn_display;
@@ -904,14 +902,11 @@ fn resolve_query_cursor_references(cmd: &mut QueryCommand, input_path: &str) -> 
     QuerySubcommand::Context(opts) => opts.target = resolve_cursor_target_argument(input_path, &opts.target)?,
     QuerySubcommand::Ns(_)
     | QuerySubcommand::Defs(_)
-    | QuerySubcommand::Pkg(_)
     | QuerySubcommand::Config(_)
     | QuerySubcommand::Error(_)
-    | QuerySubcommand::Modules(_)
     | QuerySubcommand::Find(_)
     | QuerySubcommand::Next(_)
     | QuerySubcommand::Prev(_)
-    | QuerySubcommand::HostProcs(_)
     | QuerySubcommand::Path(_)
     | QuerySubcommand::Anchors(_) => {}
   }
@@ -977,8 +972,8 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str, entry: Option<
 
 /// Reject an unknown global `--entry` before any view runs, so views that only
 /// read the project Snapshot (or never load dependencies) do not silently ignore it.
-fn validate_query_entry(subcommand: &QuerySubcommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
-  if entry.is_none() || matches!(subcommand, QuerySubcommand::HostProcs(_)) {
+fn validate_query_entry(input_path: &str, entry: Option<&str>) -> Result<(), String> {
+  if entry.is_none() {
     return Ok(());
   }
   load_main_snapshot(input_path)?.select_entry(entry)
@@ -987,7 +982,7 @@ fn validate_query_entry(subcommand: &QuerySubcommand, input_path: &str, entry: O
 fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
   let mut resolved = cmd.clone();
   resolve_query_cursor_references(&mut resolved, input_path)?;
-  validate_query_entry(&resolved.subcommand, input_path, entry)?;
+  validate_query_entry(input_path, entry)?;
   match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => match (opts.format.as_str(), opts.namespace.as_deref()) {
       ("cirru", Some(namespace)) => handle_ns_cirru_view(input_path, namespace, entry),
@@ -999,15 +994,9 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Optio
       }
     },
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts, entry),
-    QuerySubcommand::Pkg(_) => handle_pkg(input_path),
     QuerySubcommand::Config(opts) => handle_config(input_path, opts),
     QuerySubcommand::Error(_) => handle_error(input_path),
-    QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
-      if opts.json {
-        super::structured_output::reject_json_switch_conflict("query def", &opts.format, &["human", "text", "json"])?;
-        warn_deprecated_json_switch("query def");
-      }
       let (ns, def) = parse_target(&opts.target)?;
       handle_def(input_path, ns, def, opts, entry)
     }
@@ -1070,13 +1059,12 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Optio
     QuerySubcommand::Prev(_) => handle_repeat_cursor_search(input_path, false),
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      let format = resolve_format_with_legacy_json(&opts.format, opts.json, "query schema")?;
+      let format = StructuredOutputFormat::parse(&opts.format, "query schema")?;
       handle_schema(input_path, ns, def, format, entry)
     }
     QuerySubcommand::Type(opts) => handle_type(input_path, opts, entry),
     QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts, entry),
     QuerySubcommand::Context(opts) => handle_context(input_path, opts, entry),
-    QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
     QuerySubcommand::Path(opts) => handle_query_path(input_path, opts, entry),
     QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts, entry),
   }
@@ -4560,37 +4548,6 @@ fn format_tags_display(tags: &HashSet<EdnTag>) -> String {
   items.join(",")
 }
 
-fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
-  let filter_tag = opts.tag.as_deref().map(parse_query_tag).transpose()?;
-  let mut items = calcit::builtins::list_registered_procs();
-
-  if let Some(tag) = &filter_tag {
-    items.retain(|(_, descriptor)| descriptor.tags.contains(tag));
-  }
-
-  if let Some(tag) = &filter_tag {
-    println!(
-      "{} {} (filtered by {})",
-      "Registered procs:".bold(),
-      items.len(),
-      format!(":{}", tag.ref_str()).yellow()
-    );
-  } else {
-    println!("{} {}", "Registered procs:".bold(), items.len());
-  }
-
-  for (name, descriptor) in items {
-    let tags = if descriptor.tags.is_empty() {
-      "-".dimmed().to_string()
-    } else {
-      format_tags_display(&descriptor.tags)
-    };
-    println!("  {}  {}", name.cyan(), tags.dimmed());
-  }
-
-  Ok(())
-}
-
 /// One-line signature for a namespace overview: the schema when declared,
 /// otherwise the declaration head such as `defn greet (name)`.
 fn definition_signature(entry: &snapshot::CodeEntry) -> String {
@@ -4677,12 +4634,6 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand, entry: Option<&str>) -
     }
   }
 
-  Ok(())
-}
-
-fn handle_pkg(input_path: &str) -> Result<(), String> {
-  let snapshot = load_main_snapshot(input_path)?;
-  println!("{}", snapshot.package);
   Ok(())
 }
 
@@ -4814,48 +4765,6 @@ fn handle_error(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_modules(input_path: &str) -> Result<(), String> {
-  if !Path::new(input_path).exists() {
-    return Err(format!("{input_path} does not exist"));
-  }
-
-  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
-  strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| {
-    eprintln!("\nFailed to parse file '{input_path}':");
-    eprintln!("{e}");
-    format!("Failed to parse file '{input_path}'")
-  })?;
-  let snapshot = snapshot::load_snapshot_data(&data, input_path)?;
-
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
-  let module_folder = calcit::project_module_folder(base_dir);
-
-  println!("{}", "Modules in project:".bold());
-
-  println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
-
-  for module_path in &snapshot.active_entry()?.modules {
-    match load_module_silent(module_path, base_dir, &module_folder) {
-      Ok(module_snapshot) => {
-        println!("  {} {}", module_snapshot.package.cyan(), format!("({module_path})").dimmed());
-      }
-      Err(_) => {
-        println!("  {} {}", module_path.yellow(), "(failed)".red());
-      }
-    }
-  }
-
-  if !snapshot.entries.is_empty() {
-    println!("\n{}", "Entries:".bold());
-    for name in snapshot.entries.keys() {
-      println!("  {}", name.cyan());
-    }
-  }
-
-  Ok(())
-}
-
 fn render_chunked_display(display: &ChunkedDisplay) -> String {
   let mut out = String::new();
   let _ = writeln!(&mut out, "## Chunked Cirru\n");
@@ -4965,28 +4874,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     out.push_str(&markdown_fenced_block("cirru", &format_query_schema(meta.schema.as_ref(), true)));
     let _ = writeln!(&mut out, "\n## Cirru\n");
     out.push_str(&markdown_fenced_block("text", meta.cirru_note));
-
-    if opts.json {
-      let _ = writeln!(&mut out, "\n## JSON\n");
-      out.push_str(&markdown_fenced_block(
-        "json",
-        &serde_json::json!({
-          "doc": meta.doc,
-          "examples": meta.examples.iter().map(cirru_to_json).collect::<Vec<_>>(),
-          "code": serde_json::Value::Null,
-          "schema": cirru_to_json(&snapshot::schema_edn_to_cirru(
-            &meta
-              .schema
-              .as_function()
-              .map(|annot| annot.to_schema_edn())
-              .unwrap_or(cirru_edn::Edn::Nil)
-          ).unwrap_or_else(|_| Cirru::Leaf(Arc::from("nil")))),
-          "builtin": true,
-          "kind": "special-proc"
-        })
-        .to_string(),
-      ));
-    }
 
     emit_cli_output(&out, false);
     return Ok(());
@@ -5131,12 +5018,6 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     let cirru_str =
       cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
     out.push_str(&markdown_fenced_block("cirru", &cirru_str));
-  }
-
-  if opts.json {
-    let _ = writeln!(&mut out, "\n## JSON\n");
-    let json = code_entry_to_json(code_entry)?;
-    out.push_str(&markdown_fenced_block("json", &serde_json::to_string_pretty(&json).unwrap()));
   }
 
   emit_cli_output(&out, render_to_stderr);

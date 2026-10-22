@@ -235,7 +235,7 @@ deftrait StorageHost (:length 'Number)
 Inspect the resulting contract with:
 
 ```text
-calcit query def namespace/StorageHost --json
+calcit query def namespace/StorageHost --format json
 ```
 
 The output includes the schema and `ffi` metadata, including host member names,
@@ -257,7 +257,7 @@ report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
 only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
 reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
 
-`calcit query def namespace/name --json` includes the normalized `ffi` metadata.
+`calcit query def namespace/name --format json` includes the normalized `ffi` metadata.
 The human-readable form prints an `FFI:` line, making `:names`, `:writable`,
 `:backend`, `:kind`, and `:target` inspectable without opening the snapshot.
 
@@ -365,7 +365,7 @@ deftrait QueryHost
   :writable $ #{} :text-content
 ```
 
-两种写法在类型系统、codegen 与 `calcit query def --json` 的归一化 `ffi` 输出上完全一致；不能同时使用
+两种写法在类型系统、codegen 与 `calcit query def --format json` 的归一化 `ffi` 输出上完全一致；不能同时使用
 `defexternal` 与显式 `:ffi`，否则报错。字段默认只读，只有列进 `:writable` 的字段可写。
 
 用 `calcit edit def` 写入时，`defexternal` 会在写盘时归一化 `:schema :: 'Trait`，非法简写（例如未知
@@ -667,7 +667,7 @@ When adding or reviewing a JS FFI adapter, check these in order:
    explicitly converts them to `Option<T>`?
 5. Are external fields declared on a trait, with only genuinely mutable fields
    listed in `:writable`?
-6. Does `calcit query def namespace/name --json` show the expected schema and FFI
+6. Does `calcit query def namespace/name --format json` show the expected schema and FFI
    metadata?
 7. Does an adapter body avoid a redundant top-level `do`? `defn`/`fn`/`let`/`let[]`
    bodies already evaluate their expressions in order and return the last one, so a
