@@ -46,6 +46,71 @@
             :args $ [] 'test-traits.external/Counter
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.external
+    'test-traits.identity $ %{} 'FileEntry
+      :defs $ {} $ 'make-marker
+        %{} 'CodeEntry
+          :doc "|Create a fresh nominal marker for shared equality, hashing and ordering regressions."
+          :code $ quote $ defn make-marker () (deftrait Marker)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Trait)
+            :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-aliases-and-fresh-traits-distinct)
+              :code $ quote $ let
+                  left $ make-marker
+                  right $ make-marker
+                  alias left
+                assert= true $ = left alias
+                assert= false $ = left right
+                assert= false $ = right left
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |orders-by-creation-not-comparison-history)
+              :code $ quote $ let
+                  left $ make-marker
+                  right $ make-marker
+                assert= 1 $ &compare right left
+                assert= -1 $ &compare left right
+                assert= 0 $ &compare left left
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |keeps-nominal-map-and-set-keys)
+              :code $ quote $ let
+                  left $ make-marker
+                  right $ make-marker
+                  values $ {} (left |left) (right |right)
+                  origins $ #{} left right left
+                assert= 2 $ count values
+                assert= (Option :some |left) (.get values left)
+                assert= (Option :some |right) (.get values right)
+                assert= 2 $ count origins
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |keeps-impl-origins-nominal)
+              :code $ quote $ let
+                  left $ make-marker
+                  right $ make-marker
+                  left-impl $ defimpl MarkerImpl left
+                  same-impl $ defimpl MarkerImpl left
+                  right-impl $ defimpl MarkerImpl right
+                  Item $ defenum Item $ :item
+                assert= true $ = left-impl same-impl
+                assert= false $ = left-impl right-impl
+                assert= 0 $ &compare left-impl same-impl
+                assert= 1 $ &compare right-impl left-impl
+                assert= true $ = (impl-traits Item left-impl) (impl-traits Item same-impl)
+                assert= false $ = (impl-traits Item left-impl) (impl-traits Item right-impl)
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |orders-definition-kinds-like-native)
+              :code $ quote $ let
+                  NominalRecord $ defstruct NominalRecord $ :value 'Number
+                  Choice $ defenum Choice $ :choice
+                  marker $ make-marker
+                  implementation $ defimpl MarkerImpl marker
+                assert= -1 $ &compare NominalRecord Choice
+                assert= -1 $ &compare Choice marker
+                assert= -1 $ &compare marker implementation
+                assert= 1 $ &compare implementation marker
+              :tags $ #{} :trait :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.identity
     'test-traits.main $ %{} 'FileEntry
       :defs $ {}
         'CoreShowImpl $ %{} 'CodeEntry (:doc |)

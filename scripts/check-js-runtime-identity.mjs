@@ -176,6 +176,23 @@ try {
   const traitMethod = runtimeA.newTag("render");
   const leftOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
   const rightOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
+  assert.equal(runtimeA._$n__$e_(leftOrigin, leftOrigin), true);
+  assert.equal(runtimeA._$n__$e_(leftOrigin, rightOrigin), false, "names do not establish nominal trait identity");
+  // Compare in reverse first: ordering cannot depend on first comparison use.
+  assert.equal(runtimeA._$n_compare(rightOrigin, leftOrigin), 1);
+  assert.equal(runtimeA._$n_compare(leftOrigin, rightOrigin), -1);
+  assert.equal(runtimeA._$n_compare(leftOrigin, leftOrigin), 0);
+  for (const map of [
+    new runtimeA.CalcitSliceMap([leftOrigin, "left", rightOrigin, "right"]),
+    new runtimeA.CalcitSliceMap([leftOrigin, "left", rightOrigin, "right"]).turnMap(),
+  ]) {
+    assert.equal(map.len(), 2);
+    assert.equal(map.get(leftOrigin), "left");
+    assert.equal(map.get(rightOrigin), "right");
+  }
+  assert.equal(runtimeA._$n_set_$o_count(runtimeA._SHA__$M_(leftOrigin, rightOrigin, leftOrigin)), 2);
+  const frozenTrait = Object.freeze(new runtimeA.CalcitTrait(runtimeA.newTag("Frozen"), [], []));
+  assert.equal(runtimeA.hashFunction(frozenTrait), runtimeA.hashFunction(frozenTrait), "hashing must not mutate a frozen definition");
   const calls = [];
   const makeImpl = (name, origin, result) => new runtimeA.CalcitImpl(
     runtimeA.newTag(name), [traitMethod], [() => { calls.push(result); return result; }], origin,
@@ -323,14 +340,14 @@ try {
     const values = runtimeA._SHA__$M_(operationDefinition, equivalentDefinition, other);
     assert.equal(runtimeA._$n_set_$o_count(values), 2);
   }
-  // Host-created trait objects can share the existing impl equality key.
+  // Reconstructed impls share a nominal origin only by retaining its reference.
   const sharedMethod = Object.freeze(() => "same");
   const sharedImplName = runtimeA.newTag("OperationShow");
   const implWithOrigin = (origin, method = sharedMethod) => new runtimeA.CalcitImpl(
     sharedImplName, [traitMethod], [method], origin,
   );
   const sharedOriginImpl = implWithOrigin(leftOrigin);
-  const equalOriginImpl = implWithOrigin(rightOrigin);
+  const equalOriginImpl = implWithOrigin(leftOrigin);
   const withImpl = (impl) => makeEnumDefinition("Operation", "app.left/Operation", "String", [impl]);
   const implDefinition = withImpl(sharedOriginImpl);
   const equalImplDefinition = withImpl(equalOriginImpl);
@@ -343,11 +360,12 @@ try {
     new runtimeA.CalcitSliceMap([implDefinition, "found"]),
     new runtimeA.CalcitSliceMap([implDefinition, "found"]).turnMap(),
   ]) {
-    assert.equal(map.get(equalImplDefinition), "found", "An equal EnumDef with a fresh trait origin must remain a usable key");
+    assert.equal(map.get(equalImplDefinition), "found", "An equal EnumDef with the same nominal origin remains a usable key");
   }
   const differentImpls = [
     implWithOrigin(leftOrigin, Object.freeze(() => "same")),
     implWithOrigin(leftOrigin, Object.freeze(() => "different")),
+    implWithOrigin(rightOrigin),
     implWithOrigin(null),
     implWithOrigin(new runtimeA.CalcitTrait(runtimeA.newTag("OtherShow"), [traitMethod], [null])),
     new runtimeA.CalcitImpl(runtimeA.newTag("OtherImpl"), [traitMethod], [sharedMethod], leftOrigin),
@@ -385,6 +403,45 @@ try {
   // Loading another runtime replaces ternary-tree's process-wide comparator.
   // Finish single-runtime collection checks before exercising reload identity.
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
+  // Runtime copies share a weak realm identity, not colliding local counters.
+  const foreignTrait = Object.freeze(new runtimeB.CalcitTrait(runtimeB.newTag("Frozen"), [], []));
+  const sharedMarkerName = runtimeA.newTag("MarkerImpl");
+  const markerImplA = new runtimeA.CalcitImpl(sharedMarkerName, [], [], frozenTrait);
+  const markerImplB = new runtimeB.CalcitImpl(sharedMarkerName, [], [], frozenTrait);
+  const foreignMarkerImpl = new runtimeB.CalcitImpl(sharedMarkerName, [], [], foreignTrait);
+  assert.equal(runtimeA.hashFunction(markerImplA), runtimeB.hashFunction(markerImplB));
+  for (const runtime of [runtimeA, runtimeB]) {
+    assert.equal("traitIdentity" in runtime, false, "the identity helper is not a new runtime entrypoint");
+    assert.ok(frozenTrait instanceof runtime.CalcitTrait);
+    assert.ok(foreignTrait instanceof runtime.CalcitTrait);
+    assert.ok(!(Object.create(runtime.CalcitTrait.prototype) instanceof runtime.CalcitTrait), "a prototype alone does not create a nominal trait");
+    assert.equal(runtime._$n__$e_(frozenTrait, frozenTrait), true);
+    assert.equal(runtime._$n__$e_(frozenTrait, foreignTrait), false);
+    assert.equal(runtime.hashFunction(frozenTrait), runtimeA.hashFunction(frozenTrait));
+    assert.equal(runtime.hashFunction(foreignTrait), runtimeA.hashFunction(foreignTrait));
+    assert.equal(runtime._$n_compare(foreignTrait, frozenTrait), 1);
+    assert.equal(runtime._$n_compare(frozenTrait, foreignTrait), -1);
+    assert.equal(runtime._$n__$e_(markerImplA, markerImplB), true);
+    assert.equal(runtime._$n_compare(markerImplA, markerImplB), 0);
+    assert.equal(runtime._$n__$e_(markerImplA, foreignMarkerImpl), false);
+    assert.equal(runtime._$n_compare(foreignMarkerImpl, markerImplA), 1);
+    for (const map of [
+      new runtime.CalcitSliceMap([frozenTrait, "original", foreignTrait, "foreign"]),
+      new runtime.CalcitSliceMap([frozenTrait, "original", foreignTrait, "foreign"]).turnMap(),
+    ]) {
+      assert.equal(map.get(frozenTrait), "original");
+      assert.equal(map.get(foreignTrait), "foreign");
+    }
+    for (const map of [
+      new runtime.CalcitSliceMap([markerImplA, "same", foreignMarkerImpl, "foreign"]),
+      new runtime.CalcitSliceMap([markerImplA, "same", foreignMarkerImpl, "foreign"]).turnMap(),
+    ]) {
+      assert.equal(map.get(markerImplB), "same");
+      assert.equal(map.get(foreignMarkerImpl), "foreign");
+    }
+    assert.equal(runtime._$n_set_$o_count(runtime._SHA__$M_(frozenTrait, foreignTrait, frozenTrait)), 2);
+    assert.equal(runtime._$n_set_$o_count(runtime._SHA__$M_(markerImplA, markerImplB, foreignMarkerImpl)), 2);
+  }
   assert.equal(runtimeB.foldl_shortcut, undefined, "the isolated runtime must really omit the public export");
   const privateShortcut = runtimeB._$n_list_$o_foldl_shortcut;
   const shortcutInputs = new runtimeB.CalcitSliceList([1, 2, 3]);

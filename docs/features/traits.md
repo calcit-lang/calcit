@@ -134,6 +134,10 @@ Implementation notes:
 - Trait identity is nominal at runtime. Two independently evaluated traits do not become equal merely because their printed names and method sets match.
 - This origin is used by `assert-traits` and `&trait-call`; methods from multiple unrelated impls are never merged to satisfy one trait.
 
+Trait 定义值使用本次求值创建的名义身份：已有值的别名仍相等，重新执行同一个声明则得到不同身份，即使打印名称和方法完全相同。
+Impl 的 origin 也按这个身份比较，不按 trait 短名合并。native 与 JavaScript 的相等、哈希和排序保持一致，Trait 可作为 Map/Set 的 key，容器表示转换不会改变查找结果。
+哈希数值和独立定义之间的排序只用于当前运行实例，不作为持久化 ID 或跨实例通信协议。
+
 ## Attach impls to struct/enum definitions
 
 `impl-traits` attaches impl records to a **struct/enum type**. In compatibility mode, user values retain the historical rule that later impls override earlier impls for the same method name ("last-wins"). Strict mode rejects that call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.

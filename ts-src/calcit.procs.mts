@@ -40,7 +40,7 @@ export * from "./js-list.mjs";
 export * from "./js-set.mjs";
 export * from "./js-primes.mjs";
 export * from "./js-enum-value.mjs";
-export * from "./js-trait.mjs";
+export { CalcitTrait } from "./js-trait.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
 export * from "./js-arity-helpers.mjs";
