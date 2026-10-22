@@ -796,6 +796,46 @@ fn contextual_callback_output_does_not_bind_output_only_generic() {
 }
 
 #[test]
+fn contextual_callback_without_input_keeps_output_slot_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    invoke $ fn (callback)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T))\n        :return 'T\n      callback\n  invoke $ fn () 1",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(result.is_ok(), "an unbound callback result slot must remain open: {result:?}");
+    assert!(
+      warnings.borrow().is_empty(),
+      "an unbound output slot must not report a false return mismatch"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_preserves_proven_parts_of_composite_output() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    check $ fn (key callback)\n      hint-fn $ {}\n        :generics $ [] 'K 'V\n        :args $ [] 'K (:: 'Fn $ {} (:return $ :: 'Map 'K 'V))\n        :return 'Unit\n      , &unit\n    bad $ fn ()\n      hint-fn $ {} (:args $ []) (:return $ :: 'Map 'String 'Bool)\n      {} $ |wrong true\n  check 1 bad",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    let warnings = warnings.borrow();
+    assert!(
+      result.is_ok(),
+      "the callback mismatch should be reported without aborting preprocessing: {result:?}"
+    );
+    assert!(
+      warnings
+        .iter()
+        .any(|warning| warning.message().contains("map<:number") && warning.message().contains("map<:string")),
+      "the proven Number key constraint must reject the callback's String-keyed map: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");

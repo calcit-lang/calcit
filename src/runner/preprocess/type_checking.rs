@@ -686,12 +686,19 @@ where
       } else {
         actual_type
       };
+      let deferred_callback_generics = super::all_output_only_callback_generics(ctx.generics, ctx.expected_types);
       let mask_unbound_callback_result = expected_type.resolve_to_nonoptional_fn().is_some()
-        && super::has_output_only_callback_generic(ctx.generics, std::slice::from_ref(expected_type))
-        && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if proof.result(&signature.return_type).is_none());
+        && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
+          if crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&signature.return_type))
+            .iter()
+            .any(|name| deferred_callback_generics.contains(name))
+            && proof.result(&signature.return_type).is_none());
       let expected_for_proof = if mask_unbound_callback_result && let CalcitTypeAnnotation::Fn(signature) = expected_type.as_ref() {
         let mut signature = signature.as_ref().clone();
-        signature.return_type = crate::calcit::type_annotation::DYNAMIC_TYPE.clone();
+        // Preserve the return shape and every binding already established by
+        // ordinary arguments. Only unresolved slots become Dynamic, so a
+        // known `Map<Number, _>` constraint cannot be erased wholesale.
+        signature.return_type = proof.result_or_open(&signature.return_type);
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
       } else {
         expected_type.clone()

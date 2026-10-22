@@ -7962,6 +7962,31 @@ mod tests {
   }
 
   #[test]
+  fn call_type_proof_keeps_proven_return_shape_when_payload_is_open() {
+    let key = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("K")));
+    let value = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("V")));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let returned_map = CalcitTypeAnnotation::Map(key.clone(), value.clone());
+    let mut proof = CallTypeProof::new(
+      &[Arc::from("K"), Arc::from("V")],
+      std::slice::from_ref(&key),
+      std::slice::from_ref(&number),
+    );
+
+    assert!(proof.prove(&number, &key).is_proven());
+    assert_eq!(
+      proof.result(&returned_map),
+      None,
+      "the unresolved payload must remain distinguishable"
+    );
+    assert_eq!(
+      proof.result_or_open(&returned_map),
+      Arc::new(CalcitTypeAnnotation::Map(number, DYNAMIC_TYPE.clone())),
+      "opening an unproved payload must retain the Map and its proven key type"
+    );
+  }
+
+  #[test]
   fn inferred_never_keeps_generic_bindings_and_ref_invariance_sound() {
     let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let number = Arc::new(CalcitTypeAnnotation::Number);

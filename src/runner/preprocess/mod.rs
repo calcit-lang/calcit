@@ -1078,8 +1078,23 @@ fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitT
   output_only
 }
 
-fn has_output_only_callback_generic(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> bool {
-  !output_only_callback_generics(generics, arguments).is_empty()
+fn all_output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+  let mut output_only = HashSet::new();
+  for argument in arguments {
+    let Some(callback) = argument.resolve_to_nonoptional_fn() else {
+      continue;
+    };
+    let mut callback_inputs = callback.arg_types.clone();
+    callback_inputs.extend(callback.rest_type.iter().cloned());
+    let input_variables = crate::calcit::type_annotation::free_type_variable_names(&callback_inputs);
+    let output_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&callback.return_type));
+    for variable in output_variables {
+      if generics.contains(&variable) && !input_variables.iter().any(|input| input == &variable) {
+        output_only.insert(variable);
+      }
+    }
+  }
+  output_only
 }
 
 pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
@@ -13415,50 +13430,62 @@ pub fn preprocess_defn(
       } else {
         detected_return_type.clone()
       };
+      let unbound_contextual_output = infer_contextual_callback
+        && !detected_return_type.contains_type_var()
+        && expected_fn_schema.as_ref().is_some_and(|expected| {
+          expected.arg_types.is_empty() && expected.rest_type.is_none() && expected.return_type.contains_type_var()
+        });
       // Keep independently inferred callable metadata, but diagnose a definite
       // contextual shape contradiction at the callback's actual return. Empty
       // seed slots are provisional inference, not declared output restrictions.
-      let checked_return_type = contextual_return_constraint
-        .filter(|expected| {
-          if type_inference::has_inferred_empty_slot(expected)
-            || matches!(
-              detected_return_type.as_ref(),
-              CalcitTypeAnnotation::Never
-                | CalcitTypeAnnotation::Dynamic
-                | CalcitTypeAnnotation::DynFn
-                | CalcitTypeAnnotation::Syntax(_)
-            )
-          {
-            return false;
-          }
-          if matches!(expected.as_ref(), CalcitTypeAnnotation::TypeVar(_))
-            && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::TypeVar(_))
-          {
-            let actual = detected_return_type.clone();
-            let returned_input_binder = expected_fn_schema.as_ref().is_some_and(|signature| {
-              signature.arg_types.iter().chain(signature.rest_type.iter()).any(|input| {
-                body_types
-                  .call_type_proof(&[], std::slice::from_ref(input), std::slice::from_ref(&actual))
-                  .prove(&actual, input)
-                  .is_proven()
-              })
-            });
-            // A callback may derive its result type from one of its own
-            // inputs (for example a Self-preserving method). That is valid
-            // evidence for the enclosing result even when the result binder
-            // is otherwise output-only. A captured, unrelated binder is not
-            // an input and still needs an identity-aware proof below.
-            if returned_input_binder {
+      let checked_return_type = if unbound_contextual_output {
+        // With no callback inputs, a generic result slot is caller-owned but
+        // has no evidence yet. Check the body against its actual result while
+        // preserving the open generic in the generated callable schema.
+        detected_return_type.clone()
+      } else {
+        contextual_return_constraint
+          .filter(|expected| {
+            if type_inference::has_inferred_empty_slot(expected)
+              || matches!(
+                detected_return_type.as_ref(),
+                CalcitTypeAnnotation::Never
+                  | CalcitTypeAnnotation::Dynamic
+                  | CalcitTypeAnnotation::DynFn
+                  | CalcitTypeAnnotation::Syntax(_)
+              )
+            {
               return false;
             }
-            return !body_types
-              .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(&actual))
-              .prove(&actual, expected)
-              .is_proven();
-          }
-          !return_type_hint.is_compatible_with(expected)
-        })
-        .unwrap_or_else(|| return_type_hint.clone());
+            if matches!(expected.as_ref(), CalcitTypeAnnotation::TypeVar(_))
+              && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::TypeVar(_))
+            {
+              let actual = detected_return_type.clone();
+              let returned_input_binder = expected_fn_schema.as_ref().is_some_and(|signature| {
+                signature.arg_types.iter().chain(signature.rest_type.iter()).any(|input| {
+                  body_types
+                    .call_type_proof(&[], std::slice::from_ref(input), std::slice::from_ref(&actual))
+                    .prove(&actual, input)
+                    .is_proven()
+                })
+              });
+              // A callback may derive its result type from one of its own
+              // inputs (for example a Self-preserving method). That is valid
+              // evidence for the enclosing result even when the result binder
+              // is otherwise output-only. A captured, unrelated binder is not
+              // an input and still needs an identity-aware proof below.
+              if returned_input_binder {
+                return false;
+              }
+              return !body_types
+                .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(&actual))
+                .prove(&actual, expected)
+                .is_proven();
+            }
+            !return_type_hint.is_compatible_with(expected)
+          })
+          .unwrap_or_else(|| return_type_hint.clone())
+      };
       if !matches!(head, CalcitSyntax::DefWasmImport) {
         if let Some(returned_expr) = processed_body.last() {
           reject_strict_bare_enum_constructor_value(
