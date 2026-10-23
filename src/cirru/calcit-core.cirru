@@ -8998,7 +8998,7 @@
                       :generics $ [] 'T
                       :args $ [] 'T
                       :return 'T
-                    value
+                    do value
                 assert= 7 $ same 7
                 assert= |text $ same |text
                 assert= (Option :none)
