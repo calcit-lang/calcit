@@ -8639,11 +8639,16 @@ fn emit_core_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
 /// Lower Calcit console output through a private Preview 1 adapter.
 fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let fd = if name == "eprintln" { 2 } else { 1 };
-  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let values = emit_print_arguments(ctx, args)?;
+  for (index, (value, type_info)) in values.into_iter().zip(type_infos).enumerate() {
     if index > 0 {
       emit_wasi_write_literal(ctx, fd, " ")?;
     }
-    let ptr = emit_turn_string_from_local(ctx, value);
+    let ptr = emit_print_string_from_local_with_type(ctx, value, type_info);
     emit_wasi_write_string(ctx, fd, ptr);
   }
   emit_wasi_write_literal(ctx, fd, "\n")?;
@@ -8653,11 +8658,16 @@ fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
 
 fn emit_wasi_component_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let interface = if name == "eprintln" { "stderr" } else { "stdout" };
-  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let values = emit_print_arguments(ctx, args)?;
+  for (index, (value, type_info)) in values.into_iter().zip(type_infos).enumerate() {
     if index > 0 {
       emit_wasi_component_write_literal(ctx, interface, " ")?;
     }
-    let ptr = emit_turn_string_from_local(ctx, value);
+    let ptr = emit_print_string_from_local_with_type(ctx, value, type_info);
     emit_wasi_component_write_string(ctx, interface, ptr)?;
   }
   emit_wasi_component_write_literal(ctx, interface, "\n")?;

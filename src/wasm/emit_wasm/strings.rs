@@ -808,7 +808,7 @@ pub(super) fn emit_turn_string_from_local_with_type(
 }
 
 /// Convert a pre-evaluated value using print syntax, where Tags keep their `:` prefix.
-fn emit_print_string_from_local_with_type(
+pub(super) fn emit_print_string_from_local_with_type(
   ctx: &mut WasmGenCtx,
   v_local: u32,
   type_info: Arc<crate::wasm::host::calcit::CalcitTypeAnnotation>,
