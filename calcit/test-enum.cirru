@@ -131,6 +131,22 @@
           :tests $ [] $ %{} 'TestEntry (:name |unqualified-local-type-remains-lexical)
             :code $ quote $ assert= |Ada (read-local-type)
             :tags $ #{} :enum :local-type-shadow :unit
+        'read-runtime-local-type $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-runtime-local-type ()
+            let
+                Payload $ defstruct LocalPayload $ :value 'Number
+                read $ fn (record)
+                  hint-fn $ {}
+                    :args $ [] 'Payload
+                    :return 'Number
+                  :value record
+              read $ Payload :value 7
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |function-local-struct-keeps-binding-identity)
+            :code $ quote $ assert= 7 (read-runtime-local-type)
+            :tags $ #{} :enum :local-type-shadow :unit
         'read-shadowed-local-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-shadowed-local-type ()
             let
