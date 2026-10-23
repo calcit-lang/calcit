@@ -236,10 +236,12 @@ An Option turned back into nil reports `W_OPTION_ERASED_TO_NIL`: `.unwrap-or X n
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
 `(:none) nil` branch of a `match` on an Option. The signature promises absence
 is explicit while the value is again nil-or-T. Keep the Option, choose a
-concrete default, or handle both variants with `match`. `:js-ffi` definitions,
-functions that declare a `JsNullish` return, and macro-generated code are not
-reported: those places hand nil to a JS host by contract. For now the report is
-a note: `--check-only` lists it and still passes, and it becomes a blocking
+concrete default, or handle both variants with `match`. Macro-generated code,
+direct JavaScript host arguments, `JsNullish` parameters,
+and tail-return expressions in functions that declare a `JsNullish` return are
+not reported. A `JsNullish` return does not exempt business erasures in local
+binding initializers or other non-tail expressions. For now the report is a
+note: `--check-only` lists it and still passes, and it becomes a blocking
 warning once the ecosystem libraries have migrated.
 
 Strict project source also rejects hand-written representation primitives with
@@ -430,17 +432,17 @@ There are two ways to specify return types:
 
 Use `hint-fn` with schema map at the start of a local function body:
 
-Declare a local implementation's signature with a Map hint in the function body:
+局部实现的签名优先写在函数体开头的 Map 注解中：
 
 ```cirru
 let
     add-one $ fn (x)
-      hint-fn $ {} (:args $ [] :number) (:return :number)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
       + x 1
-  assert-type (add-one 1) :number
+  assert-type (add-one 1) 'Number
 ```
 
-The two-argument form is only for checking an annotation against a local function whose complete signature is already proven; it cannot create a concrete signature for an open or unannotated function. It does not execute or refine the function, and it cannot supply missing argument or return evidence.
+两参数形式 `hint-fn f schema` 暂时保留兼容。目标已有完整签名时，该签名必须能够证明所请求的合同；例如 `Dynamic` 返回不能改写为 `Number`。无签名 `fn` 目标仍走旧的元数据补充路径，因此不能把这条兼容路径当作完整类型证明。新代码与迁移代码应把 Map 注解放进函数体，让参数和返回值在实现所在位置接受检查。
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 

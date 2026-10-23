@@ -53,16 +53,23 @@ for (const [label, source, diagnostic] of [
   ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /hint-fn target must be an existing local function/],
   ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /hint-fn target must be an existing local function/],
   ["conflicting return", "let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)", /hint-fn schema conflicts with the existing local function signature/],
-  ["open local signature cannot be narrowed by a hint", `let ((f (fn (value)
-    hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)
-    if (number? value) |wrong value)))
-  hint-fn f $ {} (:args $ [] 'Number) (:return 'Number)
-  &+ (f 7) 1`, /hint-fn schema is not statically proven by the existing local function signature/],
   ["conflicting input", `let
     f $ fn (n)
       hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
       &+ n 1
   hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
+  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
+  ["open result restated as concrete", `let
+    f $ fn (value)
+      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)
+      if (number? value) |wrong value
+  hint-fn f $ {} (:args $ [] 'Number) (:return 'Number)
+  &+ (f 7) 1`, /hint-fn schema conflicts with the existing local function signature: got fn\(dynamic\) -> dynamic/],
+  ["concrete input widened to open", `let
+    f $ fn (n)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &+ n 1
+  hint-fn f $ {} (:args $ [] 'Dynamic) (:return 'Number)
   f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
   ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
   ["nullable function target", `fn (callback)
@@ -196,7 +203,7 @@ try {
     ["immediate mutation", `${guard}\n  ((fn () (set! f 1) f))`, /E_FN_RETURN_UNPROVEN/],
     ["escaping from an immediate function", `${guard}\n  let ((get-value ((fn () (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],
     ["assertion lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (assert-type f 'Fn) (replace) f`, /E_FN_RETURN_UNPROVEN/],
-    ["hint lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (hint-fn f ({} (:args ([])) (:return 'Number))) (replace) f`, /(?:E_FN_RETURN_UNPROVEN|hint-fn schema is not statically proven)/],
+    ["hint lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (hint-fn f ({} (:args ([])) (:return 'Number))) (replace) f`, /E_FN_RETURN_UNPROVEN/],
     ["mutated local condition cannot hide a captured writer", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((run? false)) (set! run? true) (when run? (replace))) f`, /E_FN_RETURN_UNPROVEN/],
     ["same-named user predicate", "when (not (fake/js-present? f)) (raise |expected-function)\n  , f", /E_FN_RETURN_UNPROVEN/],
   ]) {

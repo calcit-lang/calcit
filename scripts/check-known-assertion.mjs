@@ -202,10 +202,14 @@ try {
       // rejection harness to verify all compiler entrances and unchanged source.
       const binderSnapshot = join(project, "lexical-binder.cirru");
       const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
-      for (const [inner, bodyHint, nestedCapture, codeEntryGeneric] of [
+      for (const [inner, bodyHint, nestedCapture, codeEntryGeneric, viaMacro] of [
         ["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true],
         // Renaming the outer contract does not turn an inner owner into a capture.
         ["T", true, false, "C"], ["U", true, false, "C"], ["T", true, true, "C"], ["U", true, true, "C"],
+        // A macro template declaring the quantifier still returns the caller's
+        // argument; reject it at that argument rather than the template head.
+        ["T", false, false, undefined, true], ["U", false, false, undefined, true],
+        ["T", true, false, undefined, true], ["U", true, false, "C", true],
       ]) {
         await copyFile("calcit/add.cirru", binderSnapshot);
         runBinder("query", "config", "--format", "edn");
@@ -214,9 +218,14 @@ try {
         const returned = nestedCapture
           ? `        let\n            capture $ fn ()\n              hint-fn $ {} (:args $ []) (:return '${inner})\n              , value\n          capture`
           : "        , value";
+        const callback = viaMacro
+          ? "make-callback value"
+          : `fn (other)\n        hint-fn $ {}\n          :args $ [] '${inner}\n          :return '${inner}\n          :generics $ [] '${inner}\n${returned}`;
         const operations = [
+          ...(viaMacro ? [["edit", "def", "app.main/make-callback", "--input-format", "cirru", "--code",
+            `quote $ defmacro make-callback (captured)\n  quasiquote $ fn (other)\n    hint-fn $ {} (:args $ [] '${inner}) (:return '${inner}) (:generics $ [] '${inner})\n    , ~captured`]] : []),
           ["edit", "def", "app.main/producer", "--input-format", "cirru", "--code",
-            `quote $ defn producer (value)\n${bodyHint ? `  hint-fn $ ${contract}\n` : ""}  let\n      callback $ fn (other)\n        hint-fn $ {}\n          :args $ [] '${inner}\n          :return '${inner}\n          :generics $ [] '${inner}\n${returned}\n    &+ (callback 1) 1`],
+            `quote $ defn producer (value)\n${bodyHint ? `  hint-fn $ ${contract}\n` : ""}  let\n      callback $ ${callback}\n    &+ (callback 1) 1`],
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
             "quote $ defn main! () (producer |outer)"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
@@ -237,7 +246,7 @@ try {
         const sourcePath = returnLeaves[0].path;
         const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
         const original = await readFile(binderSnapshot);
-        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-${codeEntryGeneric ?? "body"}-js`);
+        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-${codeEntryGeneric ?? "body"}-${!!viaMacro}-js`);
         for (const args of [
           ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
           ["fix", "--workflow", "strict", "--verify", "--format", "json"],
@@ -305,6 +314,11 @@ try {
           label: `bound-captured-${inner}`, diagnostic: /E_ERASED_GENERIC_RELATION/, schema: sliceableUnit,
           source: `defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] '${inner}) (:return '${inner}) (:generics $ [] '${inner}) (:where $ {} ('${inner} Sliceable))\n        , value\n    transform |other\n    , &unit`,
         })),
+        {
+          // A sibling binder satisfying the same trait is still not the returned binder.
+          label: "bound-sibling-same-trait", diagnostic: /E_ERASED_GENERIC_RELATION/, schema: plainUnit,
+          source: "defn producer (value)\n  let\n      pick $ fn (a b)\n        hint-fn $ {} (:args $ [] 'A 'B) (:return 'A) (:generics $ [] 'A 'B) (:where $ {} ('A ToString) ('B ToString))\n        , b\n    pick value 1\n    , &unit",
+        },
         {
           label: "bound-shadow-not-inherited", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/, schema: sliceableUnit,
           source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)\n        .slice other 0 (Option :some 1)\n    transform value\n    , &unit",
@@ -703,7 +717,7 @@ try {
       assert.equal(silent.status, 0, `${silent.stdout}\n${silent.stderr}`);
       const silentSummary = JSON.parse(silent.stdout);
       assert.equal(silentSummary.failed, 0);
-      assert.equal(silentSummary.executed, 5);
+      assert.equal(silentSummary.executed, 7);
       assert.doesNotMatch(silent.stderr, /unit-stderr|log-first-argument|log-second-argument/);
       const nativeFailure = spawnSync(binary, [snapshot, "--init-fn", "app.main/failing-log", "--reload-fn", "app.main/failing-log"], options);
       assert.notEqual(nativeFailure.status, 0);

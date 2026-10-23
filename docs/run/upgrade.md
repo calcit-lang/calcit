@@ -374,7 +374,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 | `match x ((:some v) v) ((:none) nil)` | 让函数返回 Option，调用方处理两个分支 |
 | 把缺失值交给 DOM 或其他宿主 API | 在 `:js-ffi` 适配函数里把转换写成宿主调用的直接参数，传给形参声明为 `JsNullish` 的函数，或让适配函数的返回类型声明为 `JsNullish` |
 
-宏展开生成、在源码里没有对应位置的调用，直接作为 JS 宿主调用参数的写法（`js/…` 全局、`.!method` 原生方法的前缀与后缀调用、`new`、`js-array`、`js-object`、`js-set`/`aset`、external-object 方法的前缀与后缀调用、目标为宿主属性的 `set!`），直接作为形参声明为 `JsNullish` 的函数参数的写法，以及返回类型声明为 `JsNullish` 的函数里的写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。`:js-ffi` feature 本身不再豁免整个定义：先绑定到局部变量、`set!` 到局部变量、或被 `nil?`/`if` 等业务代码消费的 nil 仍会报告。Nil passed directly as a JS host call argument stays quiet; the `:js-ffi` feature alone no longer exempts the whole definition.`either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
+宏展开生成、在源码里没有对应位置的调用，直接作为 JS 宿主调用参数的写法（`js/…` 全局、`.!method` 原生方法的前缀与后缀调用、`new`、`js-array`、`js-object`、`js-set`/`aset`、external-object 方法的前缀与后缀调用、目标为宿主属性的 `set!`），直接作为形参声明为 `JsNullish` 的函数参数的写法，以及返回类型声明为 `JsNullish` 的函数中的尾部返回写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。同一函数里的业务绑定初始化和其他非尾部表达式仍会报告。`:js-ffi` feature 本身不再豁免整个定义。Nil passed directly as a JS host call argument stays quiet; only tail-return expressions are exempt in functions declaring a `JsNullish` return, while local business initializers remain advisory. The `:js-ffi` feature alone no longer exempts a whole definition. `either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
 迁移前可用 `calcit calcit.cirru analyze weak-types --only option-nil-roundtrip` 列出全部位置。
 
 ## 0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型
@@ -456,7 +456,7 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 
 ## 0.31.0 校验 hint-fn 的实际合同位置
 
-需要为局部实现补充签名时，在函数体开头使用 `hint-fn $ {} (:args $ [] 'String) (:return 'String)`。两参数形式 `hint-fn f $ {} ...` 只用于核对已有完整函数签名，不能为未标注或开放的局部函数补造参数、返回类型；核对后可继续传递或调用 `f`。
+需要为局部实现补充签名时，在函数体开头使用 `hint-fn $ {} (:args $ [] 'String) (:return 'String)`。两参数形式 `hint-fn f $ {} ...` 暂时保留兼容：已有完整签名必须能证明请求的合同，无签名 `fn` 仍走旧的元数据补充路径。迁移时把合同移到实际函数体，随后直接传递或调用 `f`。
 函数体的 Map 不包 `:: 'Fn`；后者仍用于 CodeEntry schema 和嵌套函数类型。
 旧版静默接受的错误 schema、非函数目标、与已有签名矛盾的注解、零参数或多余参数现在会在预处理时报错；`hint-fn schema (fn ...)` 不是回调包装器。
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
@@ -470,6 +470,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 显式 `:args` / `:rest` 还须符合真实参数列表；固定参数不能靠注解变成收集剩余实参的 List。现有 async 和 feature 声明继续保留。
 每个函数只写一份直接的 body Map 注解；重复的 `hint-fn $ {} ...` 会报 `E_SCHEMA_DEF_MISMATCH`，即使内容相同也不再只取第一份。将 `:args`、`:return`、`:where`、`:async` 等字段合并到同一份 Map；不同嵌套函数各自的注解和已有局部函数的两参数形式不合并。
 已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
+目标已有签名时，两参数形式只能收窄到该签名能证明的合同：可以把开放的 Dynamic 参数写成具体类型，但不能把 Dynamic 返回改写成 Number，也不能把已声明的 Number 参数放宽为 Dynamic。此类注解以“hint-fn schema conflicts with the existing local function signature”在预处理时报错；迁移方法是在函数体内收窄并声明真实返回类型，而不是在外部改写合同。
 
 ## 0.31.0 用 Emptyable 保留空值的接收者类型
 
