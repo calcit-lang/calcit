@@ -479,14 +479,28 @@ const runWasm = async (tests) => {
       (imports[namespace] ??= {})[name] = () => { throw new Error(`unexpected host call: ${namespace}.${name}`); };
     }
     if (imports.math) for (const name of Object.keys(imports.math)) if (typeof Math[name] === "function") imports.math[name] = Math[name];
+    let stderrTrace = [];
     if (imports.io?.log_str) imports.io.log_str = (ptr) => { trace.push(readValue(ptr)); return 0; };
     if (imports.io?.log_value) imports.io.log_value = (value) => { trace.push(readValue(value)); return 0; };
+    if (imports.io?.log_line) imports.io.log_line = (channel, ptr) => {
+      const line = readValue(ptr);
+      if (channel === 2) stderrTrace.push(line);
+      else if (channel === 1) trace.push(line);
+      else throw new Error(`invalid WASM log channel: ${channel}`);
+      return 0;
+    };
     instance = new WebAssembly.Instance(module, imports);
     for (const test of group) {
       trace = [];
+      stderrTrace = [];
       try {
         instance.exports[test.fn]();
-        record(test, "wasm", "pass", "", trace);
+        const expectedStderr = test.name === "registered-stderr-returns-unit" ? ["", "unit-stderr"] : [];
+        if (JSON.stringify(stderrTrace) !== JSON.stringify(expectedStderr)) {
+          record(test, "wasm", "fail", `stderr trace mismatch: expected ${JSON.stringify(expectedStderr)}, got ${JSON.stringify(stderrTrace)}`, trace);
+        } else {
+          record(test, "wasm", "pass", "", trace);
+        }
       } catch (error) {
         const message = String(error?.stack ?? error).split("\n").slice(0, 2);
         record(test, "wasm", "fail", [...trace, ...message, ...trapsReached(test)].join("\n"), trace);

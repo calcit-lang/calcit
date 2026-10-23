@@ -872,6 +872,38 @@ pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
+/// Join pre-evaluated values as `str-spaced` would, leaving the string pointer local.
+pub(super) fn emit_str_spaced_locals(ctx: &mut WasmGenCtx, values: &[u32]) -> u32 {
+  if values.is_empty() {
+    let zero = ctx.alloc_i32(0);
+    let (ptr, _) = emit_str_alloc(ctx, zero);
+    return ptr;
+  }
+
+  let one = ctx.alloc_i32(1);
+  let (space_ptr, space_content) = emit_str_alloc(ctx, one);
+  ctx.emit(Instruction::LocalGet(space_content));
+  ctx.emit(Instruction::I32Const(0x20));
+  ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
+
+  let first = emit_turn_string_from_local(ctx, values[0]);
+  let acc = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(first));
+  ctx.emit(Instruction::LocalSet(acc));
+
+  for value in &values[1..] {
+    concat_two_i32_ptrs(ctx, acc, space_ptr);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(acc));
+
+    let next = emit_turn_string_from_local(ctx, *value);
+    concat_two_i32_ptrs(ctx, acc, next);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(acc));
+  }
+  acc
+}
+
 // ===========================================================================
 // __str_new — exported FFI helper for JS → WASM string passing.
 //

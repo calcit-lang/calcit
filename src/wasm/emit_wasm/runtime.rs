@@ -112,6 +112,14 @@ static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
       params: vec![ValType::F64],
       results: vec![ValType::F64],
     },
+    // IO: log one formatted line; channel is 1 for stdout or 2 for stderr,
+    // and the second parameter is a pointer to a tagged heap string.
+    HostImport {
+      module: "io".into(),
+      name: "log_line".into(),
+      params: vec![ValType::F64; 2],
+      results: vec![],
+    },
     // IO: read file contents as string (ptr to path in heap)
     HostImport {
       module: "io".into(),

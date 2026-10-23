@@ -6735,7 +6735,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        return emit_core_print(ctx, &args_list);
+        return emit_core_print(ctx, name, &args_list);
       }
       if let Ok(proc) = name.parse::<CalcitProc>() {
         return emit_proc_call(ctx, &proc, &args_list);
@@ -6791,7 +6791,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        return emit_core_print(ctx, &args_list);
+        return emit_core_print(ctx, name, &args_list);
       }
       Err(format!("unsupported registered proc in WASM: {name}"))
     }
@@ -8614,20 +8614,19 @@ fn emit_print_arguments(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<u32
 }
 
 /// Evaluate every argument before invoking the embedded host logger.
-fn emit_core_print(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  let log_idx = resolve_host_import(ctx, "io", "log_value")?;
-  if args.is_empty() {
-    let empty = *ctx.string_pool.get("").ok_or("missing empty logging string literal")?;
-    ctx.emit(f64_const(empty as f64));
-    ctx.emit(Instruction::Call(log_idx));
-    ctx.emit(Instruction::Drop);
-  } else {
-    for value in emit_print_arguments(ctx, args)? {
-      ctx.emit(Instruction::LocalGet(value));
-      ctx.emit(Instruction::Call(log_idx));
-      ctx.emit(Instruction::Drop);
-    }
-  }
+fn emit_core_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let log_idx = resolve_host_import(ctx, "io", "log_line")?;
+  let values = emit_print_arguments(ctx, args)?;
+  let visible_values = args
+    .iter()
+    .zip(values)
+    .filter_map(|(arg, value)| (!matches!(arg, Calcit::Nil)).then_some(value))
+    .collect::<Vec<_>>();
+  let line = emit_str_spaced_locals(ctx, &visible_values);
+  ctx.emit(f64_const(if name == "eprintln" { 2.0 } else { 1.0 }));
+  ctx.emit(Instruction::LocalGet(line));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Call(log_idx));
   ctx.emit(f64_const(0.0)); // Unit
   Ok(())
 }
@@ -12647,6 +12646,16 @@ mod tests {
       },
     ];
     assert_eq!(index_host_imports(&imports).get(&("io".into(), "log_value".into())), Some(&0));
+  }
+
+  #[test]
+  fn core_log_line_import_carries_channel_and_string_without_status_result() {
+    let import = host_imports_for_target(WasmTarget::Core)
+      .into_iter()
+      .find(|import| import.module == "io" && import.name == "log_line")
+      .expect("core target registers the line logger");
+    assert_eq!(import.params, vec![ValType::F64; 2]);
+    assert!(import.results.is_empty());
   }
 
   #[test]

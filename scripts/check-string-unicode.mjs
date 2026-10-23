@@ -108,6 +108,7 @@ try {
   };
   if (imports.io?.log_value) imports.io.log_value = captureString;
   if (imports.io?.log_str) imports.io.log_str = captureString;
+  if (imports.io?.log_line) imports.io.log_line = (_channel, ptr) => captureString(ptr);
   wasm = new WebAssembly.Instance(module, imports);
   for (const [index, assertion] of assertions.entries()) {
     assert.doesNotThrow(() => wasm.exports[`wasm-case-${index}`](), JSON.stringify(assertion));
