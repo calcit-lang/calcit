@@ -5457,7 +5457,7 @@ fn preprocess_list_call(
                 .find_map(|argument| source_location_in_namespace(argument, file_ns))
                 .map(|location| location.def.to_string())
                 .unwrap_or_else(|| trait_def_name.clone());
-              let external_object = js_ffi::definition_is_external_object(file_ns, &signature_owner);
+              let external_object = trait_definition_is_external_object(file_ns, &signature_owner);
               if !external_object && let Some((message, source)) = type_inference::check_trait_method_signatures(&processed_args) {
                 return Err(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Type,
@@ -8910,6 +8910,10 @@ fn macro_name_is_external_object(macro_info: &crate::calcit::CalcitMacro, file_n
   if macro_info.name.as_ref() != "deftrait" {
     return false;
   }
+  trait_definition_is_external_object(file_ns, def_name)
+}
+
+fn trait_definition_is_external_object(file_ns: &str, def_name: &str) -> bool {
   let metadata_external = js_ffi::definition_is_external_object(file_ns, def_name);
   metadata_external
     || program::lookup_def_code(file_ns, def_name)

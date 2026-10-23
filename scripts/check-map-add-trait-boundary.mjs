@@ -126,6 +126,8 @@ async function checkTraitBoundaries() {
       ["dynamic-argument", "(:: 'Fn ({} (:args ([] 'Number 'Dynamic)) (:return 'Number)))"],
       ["dynamic-result", "(:: 'Fn ({} (:args ([] 'Number)) (:return 'Dynamic)))"],
       ["nested-dynamic", "(:: 'Fn ({} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)))"],
+      ["named-dynamic-argument", "(:: 'Fn ({} (:args ([] (:: 'Option 'Dynamic))) (:return 'Number)))"],
+      ["named-dynamic-result", "(:: 'Fn ({} (:args ([] 'Number)) (:return (:: 'Option 'Dynamic))))"],
       ["dynamic-callback", "(:: 'Fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Dynamic))))) (:return 'Number)))"],
       ["dynamic-rest", "(:: 'Fn ({} (:args ([] 'Number)) (:rest 'Dynamic) (:return 'Number)))"],
     ]) {
@@ -140,6 +142,19 @@ async function checkTraitBoundaries() {
           return true;
         }, `${name}: invalid method metadata must fail before execution or codegen`);
       }
+    }
+    // Computed metadata still reaches the same validator at native runtime.
+    for (const signature of [
+      ":: 'Fn $ {} (:args $ [] $ :: 'Option 'Dynamic) (:return 'Number)",
+      ":: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Dynamic)",
+    ]) {
+      setRuntimeBody(`let\n    signature $ fn ()\n      quote $ ${signature}\n  &trait::new :ComputedSignature $ [] $ [] :value (signature)`);
+      assert.throws(() => run(snapshot, ...selection), error => {
+        const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+        assert.match(detail, /Check passed/);
+        assert.match(detail, /&trait::new does not allow Dynamic inside method signatures/);
+        return true;
+      }, "computed named type arguments must be validated at native runtime");
     }
     setRuntimeBody("&unit");
     run(snapshot, "config", "set", "target", "native");
