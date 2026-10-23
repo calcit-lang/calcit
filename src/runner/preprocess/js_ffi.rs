@@ -371,7 +371,7 @@ pub(super) fn check_typed_js_field_operation(
   }
   let Some((field_trait, field_type)) = find_trait_field_type(&external_traits, field_name) else {
     let message = format!(
-      "[Warn] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; declare the field on the external trait, use a dynamic key, or use raw `aget`/`aset`"
+      "[Warn] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; check the actual host and receiver type, use a minimal external-object capability that declares this field, and validate the host with `js-cast` at the `:js-ffi` boundary; read `calcit docs read js-interop.md --full` for capability contracts"
     );
     gen_check_warning_code_at(
       message,
