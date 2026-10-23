@@ -4979,6 +4979,67 @@ fn strict_workflow_keeps_declared_macro_logs_out_of_structured_reports() {
 }
 
 #[test]
+fn strict_workflow_reports_a_spread_definition_that_fails_preprocessing() {
+  // #2121: a type error inside a definition with a spread call must stay a
+  // located workflow diagnostic instead of aborting the plan without a report.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/spread-open",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn spread-open (x) (* x (+ & ([] 1 2)))",
+      ],
+    ),
+    "add spread definition",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/spread-open",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+      ],
+    ),
+    "declare spread definition contract",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let output = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!output.status.success(), "the open argument must stay rejected");
+  let report = parse_stdout(&output);
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|diagnostic| { diagnostic["code"] == "E_CALL_ARGUMENT_UNPROVEN" && diagnostic["definition"] == "app.main/spread-open" }),
+    "{report}"
+  );
+  let spread = report["data"]["suggestions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|suggestion| suggestion["rule_id"] == "spread-call-proof-v1")
+    .expect("the spread call remains for review");
+  assert_eq!(spread["definition"], "app.main/spread-open");
+  assert_eq!(spread["applicability"], "requires-review");
+  assert!(spread["replacement"].is_null());
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "verification is read-only");
+}
+
+#[test]
 fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
   // #1717: the Map branch of core `contains?` must not inherit the List index
   // requirement, while a Tag index on a known List stays rejected.
