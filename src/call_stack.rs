@@ -322,6 +322,17 @@ pub(crate) fn find_preferred_macro_location(stack: &CallStackList) -> Option<Nod
     .or_else(|| macro_locations.into_iter().next())
 }
 
+/// A macro call on the stack written in `ns/def`, when that definition's
+/// source is part of the expansion currently being preprocessed.
+pub(crate) fn find_macro_location_in_def(stack: &CallStackList, ns: &str, def: &str) -> Option<NodeLocation> {
+  stack
+    .0
+    .iter()
+    .filter(|item| item.kind == StackKind::Macro)
+    .filter_map(|item| find_location_in_calcit(&item.code).or_else(|| item.args.iter().find_map(find_location_in_calcit)))
+    .find(|location| location.ns.as_ref() == ns && location.def.as_ref() == def)
+}
+
 fn find_stack_examples(stack: &CallStackList) -> Option<(String, String, Vec<String>)> {
   let mut macro_fallback: Option<(String, String, Vec<String>)> = None;
 

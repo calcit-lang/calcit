@@ -27,7 +27,7 @@ use crate::{
     SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
     validate_definition_schema_shape,
   },
-  call_stack::{CallStackList, StackKind, find_preferred_macro_location},
+  call_stack::{CallStackList, StackKind, find_macro_location_in_def, find_preferred_macro_location},
   codegen, program, runner,
 };
 
@@ -13682,8 +13682,16 @@ pub fn preprocess_defn(
           CallTypeCheckInfo {
             file_ns: ctx.file_ns,
             def_name: def_name.as_ref(),
-            call_location: find_preferred_macro_location(ctx.call_stack)
-              .filter(|location| location.def.as_ref() != GENERATED_DEF)
+            // A macro may place a caller-written expression in the generated
+            // return position; its proof debt belongs to that caller source,
+            // not to the template that produced the function head.
+            call_location: processed_body
+              .iter()
+              .rev()
+              .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+              .and_then(Calcit::get_location)
+              .and_then(|returned| find_macro_location_in_def(ctx.call_stack, &returned.ns, &returned.def))
+              .or_else(|| find_preferred_macro_location(ctx.call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
               .or_else(|| ctx.call_location.clone())
               .or(Some(definition_location.clone())),
           },
