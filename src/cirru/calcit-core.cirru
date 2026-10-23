@@ -8520,9 +8520,25 @@
                   fn (x) :number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|函数类型元数据：在函数体中使用 (hint-fn schema)，或使用 (hint-fn f schema) 为已有局部函数补充类型。schema 支持 :args、:return、:generics、:where 和 :async。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递 f，或将 hint-fn 写在 fn 的函数体中。\n只接受一个 schema Map，或已有局部函数加 schema Map。函数体 Map 不包 :: 'Fn；错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
+          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。schema 是 Map，支持 :args、:return、:generics、:where 和 :async；函数体 Map 不包 :: 'Fn，CodeEntry 的 :schema 则使用完整的 :: 'Fn 类型注解。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
+            quote $ let
+                increment $ fn (n)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  &+ n 1
+              assert= 4 $ increment 3
+            quote $ let
+                same $ fn (value)
+                  hint-fn $ {}
+                    :generics $ [] 'T
+                    :args $ [] 'T
+                    :return 'T
+                  , value
+              assert= |text $ same |text
+              assert= (Option :some nil) $ same $ Option :some nil
           :schema $ :: 'Dynamic
           :tags $ #{} :async :builtin :internal :syntax
           :tests $ []
