@@ -8993,12 +8993,12 @@
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |local-generic-hint-preserves-option-values)
               :code $ quote $ let
-                  same $ fn (value) value
-                  metadata $ hint-fn same $ {}
-                    :generics $ [] 'T
-                    :args $ [] 'T
-                    :return 'T
-                assert= nil metadata
+                  same $ fn (value)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] 'T
+                      :return 'T
+                    value
                 assert= 7 $ same 7
                 assert= |text $ same |text
                 assert= (Option :none)
