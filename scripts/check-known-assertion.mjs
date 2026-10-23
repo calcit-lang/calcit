@@ -3011,7 +3011,7 @@ try {
       bad.push(...detailed.keys());
       const badReturns = [
         "let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Number)))))) (empty)",
-        "let ((f (fn (x) (+ x 1))) (wrong (fn () (hint-fn ({} (:args ([])) (:return 'Number))) 3 (hint-fn f ({} (:args ([] 'Number)) (:return 'Number)))))) (wrong)",
+        "let ((f (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (+ x 1))) (wrong (fn () (hint-fn ({} (:args ([])) (:return 'Number))) 3 (hint-fn f ({} (:args ([] 'Number)) (:return 'Number)))))) (wrong)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) callback))) facade (fn (x) x)",
