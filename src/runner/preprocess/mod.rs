@@ -16404,6 +16404,7 @@ mod tests {
 
   #[test]
   fn helper_recursion_scan_rejects_qualified_recur_before_concrete_return() {
+    let _state = lock_preprocess_test_state();
     // Test the compiled import representation independently of earlier CLI checks.
     let recur = core_import("recur", "tests.helper-inference");
     let body = Calcit::from(vec![Calcit::from(vec![recur]), Calcit::Number(1.0)]);
@@ -16414,6 +16415,7 @@ mod tests {
 
   #[test]
   fn direct_self_tail_lowering_keeps_non_tail_and_shadowed_calls() {
+    let _state = lock_preprocess_test_state();
     let ns = "tests.tail-call";
     let def = "walk";
     let self_import = Calcit::Import(CalcitImport {
@@ -22101,6 +22103,8 @@ mod tests {
 
   #[test]
   fn rewrites_omitted_option_struct_field_to_none() {
+    // Omitted fields allocate a core Option import in the shared DefId index.
+    let _state = lock_preprocess_test_state();
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
     use cirru_parser::Cirru;
