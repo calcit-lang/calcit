@@ -36,7 +36,7 @@ use crate::wasm::host::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::wasm::host::calcit::type_annotation::TypeBindings;
 use crate::wasm::host::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
-  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, ImportInfo, MethodKind, NullableOrigin,
+  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, DYNAMIC_TYPE, ImportInfo, MethodKind, NullableOrigin,
 };
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{
@@ -6735,7 +6735,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        return emit_core_print(ctx, &args_list);
+        return emit_core_print(ctx, name, &args_list);
       }
       if let Ok(proc) = name.parse::<CalcitProc>() {
         return emit_proc_call(ctx, &proc, &args_list);
@@ -6791,7 +6791,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        return emit_core_print(ctx, &args_list);
+        return emit_core_print(ctx, name, &args_list);
       }
       Err(format!("unsupported registered proc in WASM: {name}"))
     }
@@ -8614,20 +8614,19 @@ fn emit_print_arguments(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<u32
 }
 
 /// Evaluate every argument before invoking the embedded host logger.
-fn emit_core_print(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  let log_idx = resolve_host_import(ctx, "io", "log_value")?;
-  if args.is_empty() {
-    let empty = *ctx.string_pool.get("").ok_or("missing empty logging string literal")?;
-    ctx.emit(f64_const(empty as f64));
-    ctx.emit(Instruction::Call(log_idx));
-    ctx.emit(Instruction::Drop);
-  } else {
-    for value in emit_print_arguments(ctx, args)? {
-      ctx.emit(Instruction::LocalGet(value));
-      ctx.emit(Instruction::Call(log_idx));
-      ctx.emit(Instruction::Drop);
-    }
-  }
+fn emit_core_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let log_idx = resolve_host_import(ctx, "io", "log_line")?;
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let values = emit_print_arguments(ctx, args)?;
+  let visible_values = values.into_iter().zip(type_infos).collect::<Vec<_>>();
+  let line = emit_str_spaced_locals(ctx, &visible_values);
+  ctx.emit(f64_const(if name == "eprintln" { 2.0 } else { 1.0 }));
+  ctx.emit(Instruction::LocalGet(line));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Call(log_idx));
   ctx.emit(f64_const(0.0)); // Unit
   Ok(())
 }
@@ -8635,11 +8634,16 @@ fn emit_core_print(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> 
 /// Lower Calcit console output through a private Preview 1 adapter.
 fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let fd = if name == "eprintln" { 2 } else { 1 };
-  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let values = emit_print_arguments(ctx, args)?;
+  for (index, (value, type_info)) in values.into_iter().zip(type_infos).enumerate() {
     if index > 0 {
       emit_wasi_write_literal(ctx, fd, " ")?;
     }
-    let ptr = emit_turn_string_from_local(ctx, value);
+    let ptr = emit_print_string_from_local_with_type(ctx, value, type_info);
     emit_wasi_write_string(ctx, fd, ptr);
   }
   emit_wasi_write_literal(ctx, fd, "\n")?;
@@ -8649,11 +8653,16 @@ fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
 
 fn emit_wasi_component_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let interface = if name == "eprintln" { "stderr" } else { "stdout" };
-  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let values = emit_print_arguments(ctx, args)?;
+  for (index, (value, type_info)) in values.into_iter().zip(type_infos).enumerate() {
     if index > 0 {
       emit_wasi_component_write_literal(ctx, interface, " ")?;
     }
-    let ptr = emit_turn_string_from_local(ctx, value);
+    let ptr = emit_print_string_from_local_with_type(ctx, value, type_info);
     emit_wasi_component_write_string(ctx, interface, ptr)?;
   }
   emit_wasi_component_write_literal(ctx, interface, "\n")?;
@@ -9930,6 +9939,7 @@ fn build_string_pool(
   strings.push("true".into());
   strings.push("false".into());
   strings.extend(tag_index.keys().cloned());
+  strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
   if needs_edn_format {
     strings.extend(
       [
@@ -12647,6 +12657,16 @@ mod tests {
       },
     ];
     assert_eq!(index_host_imports(&imports).get(&("io".into(), "log_value".into())), Some(&0));
+  }
+
+  #[test]
+  fn core_log_line_import_carries_channel_and_string_without_status_result() {
+    let import = host_imports_for_target(WasmTarget::Core)
+      .into_iter()
+      .find(|import| import.module == "io" && import.name == "log_line")
+      .expect("core target registers the line logger");
+    assert_eq!(import.params, vec![ValType::F64; 2]);
+    assert!(import.results.is_empty());
   }
 
   #[test]

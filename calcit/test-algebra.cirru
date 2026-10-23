@@ -29,10 +29,13 @@
         'AlgebraBoxApplyImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxApplyImpl AlgebraApply
             .apply $ fn (box fs)
+              hint-fn $ {}
+                :args $ [] 'test-algebra.main/AlgebraBox0 'test-algebra.main/AlgebraBox0
+                :return 'Dynamic
               let
                   f $ &struct:get fs :value
                 if (fn? f)
-                  assoc box :value $ f $ &struct:get box :value
+                  .assoc box :value $ f $ &struct:get box :value
                   raise "|AlgebraBox apply expects a function value"
           :examples $ []
           :schema $ :: 'Impl
@@ -45,13 +48,21 @@
         'AlgebraBoxMapImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMapImpl AlgebraMap
             .map $ fn (box f)
-              assoc box :value $ f $ &struct:get box :value
+              hint-fn $ {}
+                :args $ [] 'test-algebra.main/AlgebraBox0 $ :: 'Fn
+                  {} (:return 'Dynamic)
+                    :args $ [] 'Dynamic
+                :return 'Dynamic
+              .assoc box :value $ f $ &struct:get box :value
           :examples $ []
           :schema $ :: 'Impl
         'AlgebraBoxMappendImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMappendImpl AlgebraMappend
             .mappend $ fn (a b)
-              assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
+              hint-fn $ {}
+                :args $ [] 'test-algebra.main/AlgebraBox0 'test-algebra.main/AlgebraBox0
+                :return 'Dynamic
+              .assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
           :schema $ :: 'Impl
         'AlgebraMap $ %{} 'CodeEntry (:doc |)

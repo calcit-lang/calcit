@@ -5518,7 +5518,7 @@
                   , not-a-number
                 assert=
                   {} $ not-a-number 2
-                  assoc
+                  .assoc
                     {} $ not-a-number 1
                     , not-a-number 2
               :tags $ #{} :core :unit
@@ -5864,6 +5864,13 @@
                 assert= &unit $ echo
                 assert= &unit $ println |unit-stdout
                 assert= &unit $ echo |unit-echo
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-preserves-zero-bool-and-tag-formatting)
+              :code $ quote $ do
+                assert= &unit $ println 0 false :unit-log-tag
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-preserves-nil-arguments)
+              :code $ quote $ assert= &unit $ println nil |unit-log-nil-middle nil
               :tags $ #{} :core :log :unit
             %{} 'TestEntry (:name |registered-log-callback-returns-unit)
               :code $ quote $ assert= ([] &unit &unit)
@@ -8966,6 +8973,19 @@
                     callback 7
                 assert= 8 $ invoke inc
               :tags $ #{} :hint-syntax :unit
+            %{} 'TestEntry (:name |local-hint-narrows-open-input)
+              :code $ quote $ let
+                  measure $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    if (number? value) value 0
+                  metadata $ hint-fn measure $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                assert= nil metadata
+                assert= 8 $ &+ (measure 7) 1
+              :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
@@ -11797,12 +11817,12 @@
                   cache $ assert-type
                     ref $ {}
                     :: 'Ref $ :: 'Map 'Fn 'Number
-                reset! cache $ assoc @cache inc 1
-                reset! cache $ assoc @cache inc 2
+                reset! cache $ .assoc @cache inc 1
+                reset! cache $ .assoc @cache inc 2
                 assert= (Option :some 2) (.get @cache inc)
-                reset! cache $ assoc @cache dec 3
+                reset! cache $ .assoc @cache dec 3
                 assert= 2 $ count @cache
-                reset! cache $ dissoc @cache inc
+                reset! cache $ .dissoc @cache inc
                 assert= (Option :none) (.get @cache inc)
                 assert= (Option :some 3) (.get @cache dec)
                 assert= 1 $ count @cache

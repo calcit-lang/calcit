@@ -1847,7 +1847,7 @@ export let to_lispy_string = (...args: CalcitValue[]): string => {
 
 /** helper function for println, js only */
 export let printable = (...args: CalcitValue[]): string => {
-  return args.map((x) => toString(x, false)).join(" ");
+  return args.map((x) => x === null ? "" : toString(x, false)).join(" ");
 };
 
 // Unix epoch milliseconds from the system clock, which is not monotonic.

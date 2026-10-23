@@ -19,6 +19,15 @@ const inst = new WebAssembly.Instance(mod, {
     cos: Math.cos,
   },
   io: {
+    // log_line(channel, ptr) — one formatted line, routed to stdout (1) or stderr (2).
+    log_line: (channel, ptr) => {
+      if (channel !== 1 && channel !== 2) throw new Error(`io.log_line received invalid channel ${channel}`);
+      const text = readWasmStr(ptr);
+      if (text === null) throw new Error("io.log_line expected a tagged string pointer");
+      (channel === 2 ? console.error : console.log)("[wasm-println]", text);
+      wasmLog.push(text);
+      return 0;
+    },
     // log_value(v: f64) — decode v and print using host memory view
     log_value: (v) => {
       const text = readWasmStr(v);
@@ -682,10 +691,10 @@ check("wasm-ffi-add(20, 22)", 42, e["wasm-ffi-add"], 20, 22);
 // --- println host import test ---
 wasmLog.length = 0;
 e["test-println"]();
-if (wasmLog[0] === 42) {
+if (wasmLog[0] === "42") {
   console.log("  test-println() logged 42  OK");
 } else {
-  console.log(`  test-println() logged ${wasmLog[0]}  FAIL (expected 42)`);
+  console.log(`  test-println() logged ${wasmLog[0]}  FAIL (expected \"42\")`);
   fail++;
 }
 
