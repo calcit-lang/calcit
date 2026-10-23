@@ -59,6 +59,18 @@ for (const [label, source, diagnostic] of [
       &+ n 1
   hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
   f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
+  ["open result restated as concrete", `let
+    f $ fn (value)
+      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)
+      if (number? value) |wrong value
+  hint-fn f $ {} (:args $ [] 'Number) (:return 'Number)
+  &+ (f 7) 1`, /hint-fn schema conflicts with the existing local function signature: got fn\(dynamic\) -> dynamic/],
+  ["concrete input widened to open", `let
+    f $ fn (n)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &+ n 1
+  hint-fn f $ {} (:args $ [] 'Dynamic) (:return 'Number)
+  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
   ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
   ["nullable function target", `fn (callback)
   hint-fn $ {}

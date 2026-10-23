@@ -9034,6 +9034,19 @@
                     callback 7
                 assert= 8 $ invoke inc
               :tags $ #{} :hint-syntax :unit
+            %{} 'TestEntry (:name |local-hint-narrows-open-input)
+              :code $ quote $ let
+                  measure $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    if (number? value) value 0
+                  metadata $ hint-fn measure $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                assert= nil metadata
+                assert= 8 $ &+ (measure 7) 1
+              :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
