@@ -74,6 +74,21 @@ fn selected_entry_keeps_structured_output_a_single_document() {
       cirru_edn::parse(&out).unwrap_or_else(|error| panic!("stdout should be one EDN document: {error}\n{out}"));
       assert!(out.contains(PAGE_ONLY_TARGET), "EDN should name the target:\n{out}");
     }
+
+    let defs = run_query(Some("page"), &["defs", "page-icons.core", "--format", format]);
+    let text = assert_success(&defs);
+    if format == "json" {
+      let value = parse_single_json(&defs);
+      assert_eq!(value["command"], "query.defs");
+      assert_eq!(
+        value["data"]["definitions"],
+        serde_json::json!([{ "name": "comp-icon" }, { "name": "main!" }])
+      );
+      assert_eq!(value["data"]["count"], 2);
+    } else {
+      cirru_edn::parse(&text).expect("dependency defs should be one EDN document");
+      assert!(text.contains("comp-icon"));
+    }
   }
 }
 
@@ -118,4 +133,8 @@ fn unknown_entry_is_rejected_even_for_project_definitions() {
       .is_some_and(|message| message.contains("Unknown entry `missing`")),
     "structured failure should carry the entry error: {value}"
   );
+
+  let defs = run_query(Some("missing"), &["defs", "app.main", "--format", "json"]);
+  assert!(!defs.status.success());
+  assert_eq!(parse_single_json(&defs)["command"], "query.defs");
 }

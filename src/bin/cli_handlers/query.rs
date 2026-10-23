@@ -919,6 +919,7 @@ fn structured_query_request(cmd: &QueryCommand) -> Option<(QueryRenderFormat, &'
     QuerySubcommand::TypeAt(opts) => (opts.format.as_str(), "query.type-at", opts.target.as_str()),
     QuerySubcommand::Context(opts) => (opts.format.as_str(), "query.context", opts.target.as_str()),
     QuerySubcommand::Def(opts) => (opts.format.as_str(), "query.def", opts.target.as_str()),
+    QuerySubcommand::Defs(opts) => (opts.format.as_str(), "query.defs", opts.namespace.as_str()),
     QuerySubcommand::Search(opts) => (opts.format.as_str(), "query.search", opts.pattern.as_str()),
     QuerySubcommand::SearchExpr(opts) => (opts.format.as_str(), "query.search-expr", opts.pattern.as_str()),
     _ => return None,
@@ -4546,6 +4547,8 @@ fn definition_signature(entry: &snapshot::CodeEntry) -> String {
 }
 
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand, entry: Option<&str>) -> Result<(), String> {
+  let format = parse_query_render_format(&opts.format)?;
+  let filter_tag = opts.tag.as_deref().map(parse_query_tag).transpose()?;
   let namespace = &opts.namespace;
   let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
@@ -4554,14 +4557,48 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand, entry: Option<&str>) -
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  let filter_tag = opts.tag.as_deref().map(parse_query_tag).transpose()?;
-
   let mut defs: Vec<&String> = file_data.defs.keys().collect();
   defs.sort();
   let total = defs.len();
 
   if let Some(tag) = &filter_tag {
     defs.retain(|def| file_data.defs[*def].tags.contains(tag));
+  }
+
+  if format != QueryRenderFormat::Human {
+    let definitions = defs
+      .iter()
+      .map(|name| {
+        let mut definition = serde_json::json!({ "name": name });
+        if opts.signatures {
+          definition["signature"] = serde_json::json!(definition_signature(&file_data.defs[*name]));
+        }
+        definition
+      })
+      .collect::<Vec<_>>();
+    let data = serde_json::json!({
+      "namespace": namespace,
+      "count": defs.len(),
+      "definition_count": total,
+      "filters": {
+        "tag": filter_tag.as_ref().map(EdnTag::ref_str),
+        "signatures": opts.signatures,
+      },
+      "definitions": definitions,
+    });
+    let fingerprint = serde_json::to_string(&data).map_err(|error| format!("Failed to encode definition list: {error}"))?;
+    return emit_query_structured(
+      &SemanticQueryEnvelope {
+        schema_version: 1,
+        command: "query.defs",
+        revision: semantic_revision(&["query.defs", &fingerprint]),
+        data,
+        diagnostics: vec![],
+        next: vec![],
+      },
+      format,
+      "definition list",
+    );
   }
 
   if let Some(tag) = &filter_tag {
