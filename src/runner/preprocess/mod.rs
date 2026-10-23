@@ -14057,13 +14057,15 @@ pub fn preprocess_hint_fn(
   if args.len() == 2 {
     let target_raw = args.first().expect("two-argument hint has a target");
     let mut local = target_form.expect("two-argument hint target was preprocessed");
-    if !local.type_info.is_compatible_with(type_entry.as_ref()) {
+    if !local.type_info.is_proven_for(type_entry.as_ref()) {
+      let detail = if local.type_info.is_compatible_with(type_entry.as_ref()) {
+        "hint-fn schema is not statically proven by the existing local function signature"
+      } else {
+        "hint-fn schema conflicts with the existing local function signature"
+      };
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!(
-          "hint-fn schema conflicts with the existing local function signature: got {}, requested {}",
-          local.type_info, type_entry
-        ),
+        format!("{detail}: got {}, requested {}", local.type_info, type_entry),
         ctx.call_stack,
         target_raw.get_location(),
       ));
