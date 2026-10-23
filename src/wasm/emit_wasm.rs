@@ -8621,12 +8621,7 @@ fn emit_core_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
     .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
     .collect::<Vec<_>>();
   let values = emit_print_arguments(ctx, args)?;
-  let visible_values = args
-    .iter()
-    .zip(values)
-    .zip(type_infos)
-    .filter_map(|((arg, value), type_info)| (!matches!(arg, Calcit::Nil)).then_some((value, type_info)))
-    .collect::<Vec<_>>();
+  let visible_values = values.into_iter().zip(type_infos).collect::<Vec<_>>();
   let line = emit_str_spaced_locals(ctx, &visible_values);
   ctx.emit(f64_const(if name == "eprintln" { 2.0 } else { 1.0 }));
   ctx.emit(Instruction::LocalGet(line));

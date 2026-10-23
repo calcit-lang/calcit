@@ -498,6 +498,7 @@ const runWasm = async (tests) => {
         const expectedStdout = {
           "registered-stdout-returns-unit": ["", "", "unit-stdout", "unit-echo"],
           "registered-log-preserves-zero-bool-and-tag-formatting": ["0 false :unit-log-tag"],
+          "registered-log-preserves-nil-arguments": [" unit-log-nil-middle "],
           "registered-log-callback-returns-unit": ["callback-a", "callback-b"],
           "registered-log-arguments-evaluate-once-in-order": [
             "log-first-argument",
