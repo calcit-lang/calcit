@@ -8474,6 +8474,9 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
   if let Some(enum_name) = declared_enum_name {
     return Some(enum_name);
   }
+  if let Some(enum_name) = lowered_core_enum_constructor_name(value) {
+    return Some(enum_name.to_owned());
+  }
   match items.first().and_then(canonical_absence_operation_name) {
     Some("find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin" | "enum-definition") => {
       Some("Option".to_owned())
@@ -8654,6 +8657,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
     .iter()
     .take(structural_arg_count)
     .filter_map(|value| {
+      // A literal `Option :some x` is a deliberate construction, not a migrated nullable API result.
+      if lowered_core_enum_constructor_name(value).is_some() {
+        return None;
+      }
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
       Some((value, enum_name))
     })
