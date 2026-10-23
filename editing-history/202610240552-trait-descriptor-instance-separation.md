@@ -11,11 +11,12 @@
 - 直接声明复用 source-backed trait origin，不在每次值推断中重跑构造器。源占位与其声明可对应，两个实际求值出的 runtime ID 仍严格不同，不因名称相同合并。
 - 描述值没有实例 impl 表是已知的空表，而不是缺失证据；复用现有缺失方法错误拒绝对描述值的实例方法调用。
 - 显式 trait 调用沿原声明解析方法中的类型引用，不让导入别名把实例合同错当成描述值合同。输入检查与返回推导复用同一解析，不跳过校验。
+- 移除描述值/实例混淆后，原 JS FFI 继承测试暴露出有方向证明只接受自身 TypeRef、不接受父 trait TypeRef 的缺口。复用已校验的 requires 图证明子到父，不允许反向、同名异来源或损坏 schema 借用父能力，不恢复实例到描述值的旧兼容规则。
 
 ## 验证与边界
 
 合法语言语义放在现有 trait fixture 的 definition `:tests`：描述值列表读写、Trait 参数传递、身份相等、局部和正常 namespace 导入别名选择显式 trait 方法；原断言保留。拒绝场景扩展现有 proof harness：直接值、局部/导入别名、identity 转发、列表回调和直接方法调用都在普通、独立 proof、完整 strict、native 与 JS 编译入口检查，并验证无源码写回与无可执行产物。
 
-私有 Rust 回归只扩展已有名义匹配测试，检查不能由稳定语言接口直接构造的 source placeholder / runtime ID 类型关系。完整 Cargo、check-all、Agent 协议和已有 typed-FFI 回归仍是验收门槛；不是仅以目标 fixture 通过代替全量验证。
+私有 Rust 回归扩展已有名义匹配与 requires 证明测试，检查不能由稳定语言接口直接构造的 source placeholder / runtime ID 和损坏类型元数据关系。实际继承行为继续由原 JS FFI 附带测试与 harness 验证，不复制到新运行器。完整 Cargo、check-all、Agent 协议和已有 typed-FFI 回归仍是验收门槛；不是仅以目标 fixture 通过代替全量验证。
 
 描述值相等的运行时规则不变，未消除已有的开放/unsafe 边界，不新增依赖或发布版本。本批不表示所有 trait 或泛型证明缺口已经解决，也不改变 0.30.1 维护线。

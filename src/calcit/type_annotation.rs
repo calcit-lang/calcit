@@ -5701,8 +5701,15 @@ impl CalcitTypeAnnotation {
       // A trait name reference and its resolved trait denote the same nominal
       // type; a trait is not a schema alias, so the TypeRef fallback below
       // would otherwise report a mismatch (for example inside Fn arguments).
-      (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args))
+      (Self::TypeRef(name, args), Self::Trait(trait_def))
         if args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()) =>
+      {
+        Proven
+      }
+      (Self::Trait(trait_def), Self::TypeRef(name, args))
+        if args.is_empty()
+          && trait_def.validate_reachable_method_schemas().is_ok()
+          && Self::trait_upcasts_to_type_ref(trait_def, name) =>
       {
         Proven
       }
@@ -7698,6 +7705,17 @@ mod tests {
     composite.requires = Arc::new(vec![required.clone()]);
     let annotation = CalcitTypeAnnotation::Trait(Arc::new(composite));
     assert!(annotation.satisfies_trait_bound(required.as_ref()));
+    let parent_ref = CalcitTypeAnnotation::TypeRef(Arc::from("app.display/Display"), Arc::new(vec![]));
+    assert!(
+      annotation.is_proven_for(&parent_ref),
+      "an implemented child capability proves its named parent"
+    );
+    assert!(
+      !CalcitTypeAnnotation::Trait(required.clone())
+        .is_proven_for(&CalcitTypeAnnotation::TypeRef(Arc::from("app.widget/Widget"), Arc::new(vec![]))),
+      "a parent capability does not prove its child"
+    );
+    assert!(!annotation.is_proven_for(&CalcitTypeAnnotation::TypeRef(Arc::from("other.display/Display"), Arc::new(vec![]))));
 
     let invalid = CalcitTrait {
       runtime_id: None,
@@ -7707,10 +7725,14 @@ mod tests {
       defaults: Arc::new(vec![None]),
       method_types: Arc::new(vec![]),
       member_kinds: Arc::new(vec![crate::calcit::CalcitTraitMemberKind::Method]),
-      requires: Arc::new(vec![]),
+      requires: Arc::new(vec![required]),
     };
     let invalid_annotation = CalcitTypeAnnotation::Trait(Arc::new(invalid.clone()));
     assert!(!invalid_annotation.satisfies_trait_bound(&invalid));
+    assert!(
+      !invalid_annotation.is_proven_for(&parent_ref),
+      "an invalid child cannot lend its parent's evidence"
+    );
     let caller_name: Arc<str> = Arc::from("T");
     let capabilities = Arc::new(HashMap::from([(caller_name.clone(), Arc::new(invalid_annotation))]));
     let mut proof = CallTypeProof::default().with_caller_capabilities(Some(capabilities));
