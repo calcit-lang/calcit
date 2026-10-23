@@ -2558,6 +2558,34 @@ fn normalize_static_metadata_form(value: &Calcit) -> Calcit {
   }
 }
 
+/// Check quoted method metadata without evaluating computed declarations.
+pub(crate) fn check_trait_method_signatures(args: &CalcitList) -> Option<(String, &Calcit)> {
+  let Calcit::List(methods) = args.get(1)? else {
+    return None;
+  };
+  if !methods.first().is_some_and(is_list_constructor) {
+    return None;
+  }
+  for entry in methods.iter().skip(1) {
+    let Some((name, type_form)) = extract_impl_pair(entry) else {
+      continue;
+    };
+    let Calcit::List(quoted) = type_form else {
+      continue;
+    };
+    if quoted.len() != 2 || !matches!(quoted.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) {
+      continue;
+    }
+    let Some(name) = extract_impl_field_name(name) else {
+      continue;
+    };
+    if let Err(error) = builtins::meta::parse_trait_method_signature(name.ref_str(), quoted.get(1)?) {
+      return Some((error.msg, type_form));
+    }
+  }
+  None
+}
+
 fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
   let mut args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
   // Parents are evaluated trait values at runtime; statically, resolve each

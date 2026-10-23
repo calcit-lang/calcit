@@ -692,6 +692,18 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
           :tests $ []
+            %{} 'TestEntry (:name |computed-method-metadata-evaluates-once)
+              :code $ quote $ let
+                  calls $ ref 0
+                  signature $ fn ()
+                    swap! calls inc
+                    quote $ :: 'Fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                  built $ &trait::new :ComputedSignature $ [] $ [] :value (signature)
+                assert= :trait $ type-of built
+                assert= 1 @calls
+              :tags $ #{} :trait :unit
             %{} 'TestEntry (:name |accepts-external-field-pair)
               :code $ quote $ assert= false
                 throws-at-expansion? $ deftrait Host $ :icons 'Dynamic

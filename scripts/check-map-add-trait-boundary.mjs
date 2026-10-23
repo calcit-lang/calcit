@@ -120,7 +120,57 @@ async function checkTraitBoundaries() {
         return true;
       }, "an unsupported default body must fail macro validation on every target");
     }
-    console.log("Map .add / Add trait boundary passed on native, generated JS, and strict duplicate/default rejection");
+    // Reuse runtime method validation before declaring a quoted signature checked.
+    for (const [name, signature] of [
+      ["direct-dynamic", "'Dynamic"],
+      ["dynamic-argument", "(:: 'Fn ({} (:args ([] 'Number 'Dynamic)) (:return 'Number)))"],
+      ["dynamic-result", "(:: 'Fn ({} (:args ([] 'Number)) (:return 'Dynamic)))"],
+      ["nested-dynamic", "(:: 'Fn ({} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)))"],
+      ["named-dynamic-argument", "(:: 'Fn ({} (:args ([] (:: 'Option 'Dynamic))) (:return 'Number)))"],
+      ["named-dynamic-result", "(:: 'Fn ({} (:args ([] 'Number)) (:return (:: 'Option 'Dynamic))))"],
+      ["dynamic-callback", "(:: 'Fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Dynamic))))) (:return 'Number)))"],
+      ["dynamic-rest", "(:: 'Fn ({} (:args ([] 'Number)) (:rest 'Dynamic) (:return 'Number)))"],
+    ]) {
+      setRuntimeBody(`let\n    InvalidSignature $ deftrait InvalidSignature $ .value ${signature}\n  , &unit`);
+      for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+        assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+          const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+          assert.match(detail, /preprocessing/);
+          assert.doesNotMatch(detail, /Check passed/);
+          assert.match(detail, /&trait::new does not allow Dynamic (?:in|inside) method signatures/);
+          assert.match(detail, /at test-traits\.main\/test-explicit-trait-call @/);
+          return true;
+        }, `${name}: invalid method metadata must fail before execution or codegen`);
+      }
+    }
+    // Computed metadata still reaches the same validator at native runtime.
+    for (const signature of [
+      ":: 'Fn $ {} (:args $ [] $ :: 'Option 'Dynamic) (:return 'Number)",
+      ":: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Dynamic)",
+    ]) {
+      setRuntimeBody(`let\n    signature $ fn ()\n      quote $ ${signature}\n  &trait::new :ComputedSignature $ [] $ [] :value (signature)`);
+      assert.match(run(snapshot, ...selection, "--check-only"), /Check passed/);
+      assert.throws(() => run(snapshot, ...selection), error => {
+        const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+        assert.doesNotMatch(detail, /preprocessing/);
+        assert.match(detail, /&trait::new does not allow Dynamic inside method signatures/);
+        return true;
+      }, "computed named type arguments must be validated at native runtime");
+    }
+    setRuntimeBody("&unit");
+    run(snapshot, "config", "set", "target", "native");
+    run(snapshot, "edit", "def", "test-traits.main/RejectedSignature", "--input-format", "cirru", "--code",
+      "quote $ deftrait RejectedSignature $ .value $ :: 'Fn $ {} (:args $ [] 'Number 'Dynamic) (:return 'Number)");
+    for (const mode of [["--check-only", "--ns", "test-traits.main"], ["--check-only", "--all-defs"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "json"]]) {
+      assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+        const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+        assert.match(detail, /&trait::new does not allow Dynamic inside method signatures/);
+        assert.match(detail, /test-traits\.main\/RejectedSignature/);
+        return true;
+      }, `a cold unreferenced trait declaration must fail ${mode.join(" ")}`);
+    }
+    console.log("Trait boundaries passed: native/JS semantics, duplicate/default rejection, and static signatures across compiler targets and cold strict checks");
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }

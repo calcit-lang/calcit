@@ -209,10 +209,11 @@ fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
 fn method_on_impl_traits_alias_reports_the_failed_trait_load() {
   // #1712: a trait that fails to load leaves the `impl-traits` alias without impls;
   // the method call must surface that failure instead of `unknown method`.
+  // #2128: the invalid signature is now reported at its declaration during preprocessing.
   let output = run_calcit(Path::new("tests/fixtures/enum-impl-load-error.cirru"), &["--check-only"]);
   assert!(!output.status.success(), "a trait that fails to load must fail checking");
   let stderr = String::from_utf8_lossy(&output.stderr);
-  assert!(stderr.contains("receiver type `app.core/%Atom` failed to load"), "stderr: {stderr}");
+  assert!(stderr.contains("at app.core/HookAtomOps"), "stderr: {stderr}");
   assert!(
     stderr.contains("does not allow Dynamic inside method signatures"),
     "stderr: {stderr}"

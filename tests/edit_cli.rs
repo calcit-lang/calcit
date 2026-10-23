@@ -562,7 +562,7 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
       "write trait through the public editor",
     );
   };
-  write_trait("quote $ deftrait MobileInfo (:any 'Bool)");
+  write_trait("quote $ deftrait MobileInfo (:any $ :: 'Fn $ {} (:args $ []) (:return 'Bool))");
   assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "strict trait fixture");
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonicalize trait fixture");
   let original = fs::read(&snapshot).unwrap();

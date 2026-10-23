@@ -660,10 +660,49 @@ pub fn enum_definition(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 && xs.len() != 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 or 3 arguments, but received:", xs);
+/// Apply the same method contract restrictions to static declarations and runtime metadata.
+fn validate_trait_method_signature(method_type: &CalcitTypeAnnotation, type_form: &Calcit) -> Result<(), CalcitErr> {
+  fn contains_dynamic(annotation: &CalcitTypeAnnotation) -> bool {
+    use CalcitTypeAnnotation as T;
+    match annotation {
+      T::Dynamic => true,
+      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Nullable(inner, _) => contains_dynamic(inner),
+      T::Map(k, v) => contains_dynamic(k) || contains_dynamic(v),
+      T::Fn(info) => {
+        info.arg_types.iter().any(|t| contains_dynamic(t))
+          || info.rest_type.as_ref().is_some_and(|t| contains_dynamic(t))
+          || contains_dynamic(info.return_type.as_ref())
+      }
+      T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) => args.iter().any(|t| contains_dynamic(t)),
+      _ => false,
+    }
   }
+
+  if matches!(method_type, CalcitTypeAnnotation::Dynamic) {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("&trait::new does not allow Dynamic in method signatures, use :fn (DynFn) if needed: {type_form}"),
+    ));
+  }
+  if !matches!(method_type, CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!(
+        "&trait::new expects method type to be :fn or a typed fn schema like (:: :fn ({{}} (:args ...) (:return ...))), but received: {type_form}"
+      ),
+    ));
+  }
+  if matches!(method_type, CalcitTypeAnnotation::Fn(_)) && contains_dynamic(method_type) {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("&trait::new does not allow Dynamic inside method signatures: {type_form}"),
+    ));
+  }
+  Ok(())
+}
+
+/// Preserve quoted type syntax while sharing parsing and validation across both phases.
+pub(crate) fn parse_trait_method_signature(name: &str, type_form: &Calcit) -> Result<Arc<CalcitTypeAnnotation>, CalcitErr> {
   fn normalize_type_form(form: &Calcit) -> Calcit {
     match form {
       Calcit::List(list) => {
@@ -685,6 +724,22 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   }
 
+  let type_form_value = match type_form {
+    Calcit::CirruQuote(ys) => cirru_to_calcit(ys),
+    _ => type_form.to_owned(),
+  };
+  let type_form_value = normalize_type_form(&type_form_value);
+  let method_type = calcit::with_type_annotation_warning_context(format!("&trait::new:{name}"), || {
+    CalcitTypeAnnotation::parse_type_annotation_form(&type_form_value)
+  });
+  validate_trait_method_signature(&method_type, &type_form_value)?;
+  Ok(method_type)
+}
+
+pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 && xs.len() != 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 or 3 arguments, but received:", xs);
+  }
   let name = match &xs[0] {
     Calcit::Symbol { sym, .. } => cirru_edn::EdnTag::new(sym.as_ref()),
     Calcit::Tag(tag) => tag.to_owned(),
@@ -695,22 +750,6 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
     }
   };
-  fn contains_dynamic(annotation: &CalcitTypeAnnotation) -> bool {
-    use CalcitTypeAnnotation as T;
-    match annotation {
-      T::Dynamic => true,
-      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Nullable(inner, _) => contains_dynamic(inner),
-      T::Map(k, v) => contains_dynamic(k) || contains_dynamic(v),
-      T::Fn(info) => {
-        info.arg_types.iter().any(|t| contains_dynamic(t))
-          || info.rest_type.as_ref().is_some_and(|t| contains_dynamic(t))
-          || contains_dynamic(info.return_type.as_ref())
-      }
-      T::Struct(_, args) | T::Enum(_, args) => args.iter().any(|t| contains_dynamic(t)),
-      _ => false,
-    }
-  }
-
   let (methods, method_types) = match &xs[1] {
     Calcit::List(list) => {
       let mut items = Vec::with_capacity(list.len());
@@ -734,36 +773,7 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 );
               }
             };
-            let type_form = entry.get(1).unwrap();
-            let type_form_value = match type_form {
-              Calcit::CirruQuote(ys) => cirru_to_calcit(ys),
-              _ => type_form.to_owned(),
-            };
-            let type_form_value = normalize_type_form(&type_form_value);
-            let context_label = format!("&trait::new:{}", name.ref_str());
-            let method_type = calcit::with_type_annotation_warning_context(context_label, || {
-              CalcitTypeAnnotation::parse_type_annotation_form(&type_form_value)
-            });
-            if matches!(method_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-              return CalcitErr::err_str(
-                CalcitErrKind::Type,
-                format!("&trait::new does not allow Dynamic in method signatures, use :fn (DynFn) if needed: {type_form_value}"),
-              );
-            }
-            if !matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
-              return CalcitErr::err_str(
-                CalcitErrKind::Type,
-                format!(
-                  "&trait::new expects method type to be :fn or a typed fn schema like (:: :fn ({{}} (:args ...) (:return ...))), but received: {type_form_value}"
-                ),
-              );
-            }
-            if matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && contains_dynamic(method_type.as_ref()) {
-              return CalcitErr::err_str(
-                CalcitErrKind::Type,
-                format!("&trait::new does not allow Dynamic inside method signatures: {type_form_value}"),
-              );
-            }
+            let method_type = parse_trait_method_signature(name.ref_str(), entry.get(1).unwrap())?;
             items.push(name);
             types.push(method_type);
           }
