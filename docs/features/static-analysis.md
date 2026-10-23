@@ -432,18 +432,17 @@ There are two ways to specify return types:
 
 Use `hint-fn` with schema map at the start of a local function body:
 
-When a function is already bound, the two-argument form refines that local binding for all later expressions in the same lexical scope:
+局部实现的签名优先写在函数体开头的 Map 注解中：
 
 ```cirru
 let
-    add-one $ fn (x) + x 1
-  hint-fn add-one $ {}
-    :args $ [] :number
-    :return :number
-  assert-type (add-one 1) :number
+    add-one $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      + x 1
+  assert-type (add-one 1) 'Number
 ```
 
-This refinement is static metadata; it does not execute the function. Put it before calls that should use the signature. The one-argument form below remains the preferred form inside the function itself.
+两参数形式 `hint-fn f schema` 暂时保留兼容。目标已有完整签名时，该签名必须能够证明所请求的合同；例如 `Dynamic` 返回不能改写为 `Number`。无签名 `fn` 目标仍走旧的元数据补充路径，因此不能把这条兼容路径当作完整类型证明。新代码与迁移代码应把 Map 注解放进函数体，让参数和返回值在实现所在位置接受检查。
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 

@@ -1292,10 +1292,9 @@
         'test-fn-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-inference ()
             let
-                f $ fn (x) (+ x 1)
-              hint-fn f $ {}
-                :args $ [] 'Number
-                :return 'Number
+                f $ fn (x)
+                  hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                  + x 1
               assert-type (f 1) 'Number
               assert-type
                 apply f $ [] 1
