@@ -4147,12 +4147,15 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
       let struct_def = match t.as_ref() {
         // As above, only the explicit struct-construction path unwraps a
         // StructDef into the nominal metadata of the instance being created.
-        CalcitTypeAnnotation::StructDef(struct_def) => struct_def.as_ref().to_owned(),
-        _ => t.resolve_to_struct()?,
+        // Share the bound definition object: a definition created inside a
+        // function has no source `definition_ref`, so this lexical binding
+        // is the only identity a same-scope annotation can be proven against.
+        CalcitTypeAnnotation::StructDef(struct_def) => struct_def.clone(),
+        _ => Arc::new(t.resolve_to_struct()?),
       };
       Some(CalcitStructValue {
-        struct_ref: Arc::new(struct_def.clone()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
+        struct_ref: struct_def,
       })
     }),
   }

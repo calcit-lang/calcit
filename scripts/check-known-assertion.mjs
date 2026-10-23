@@ -77,6 +77,10 @@ try {
         execFileSync(binary, ["calcit/test-enum.cirru", "fix", "--rule", "concrete-return-proof-v1",
           "--ns", "test-enum.main", "--def", definition, "--format", "edn"], options);
       }
+      // A struct defined inside a function has no source declaration; its let
+      // binding is its identity. Another same-shaped definition stays distinct.
+      execFileSync(binary, ["calcit/test-enum.cirru", "fix", "--rule", "callable-contract-proof-v1",
+        "--ns", "test-enum.main", "--def", "read-runtime-local-type", "--format", "edn"], options);
       const recursiveSnapshot = join(project, "recursive-nominal.cirru");
       await copyFile("calcit/add.cirru", recursiveSnapshot);
       const runRecursive = (...args) => execFileSync(binary, [recursiveSnapshot, ...args], options);
@@ -143,6 +147,31 @@ try {
           assert.deepEqual(await readFile(recursiveSnapshot), original);
         }
         await assertRejectedArtifacts(output, `shadowed ${typeName}`, /E_ASSERT_TYPE_MISMATCH/, true);
+      }
+      {
+        runRecursive("query", "def", "app.main/main!", "--format", "edn");
+        const operations = [
+          ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+            "quote $ defn main! ()\n  let\n      Payload $ defstruct LocalPayload (:value 'Number)\n      Other $ defstruct LocalPayload (:value 'Number)\n      read $ fn (record)\n        hint-fn $ {} (:args $ [] 'Payload) (:return 'Number)\n        :value record\n    read $ Other :value 7"],
+          ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+        ];
+        const code = JSON.stringify(operations);
+        const preview = JSON.parse(runRecursive("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+        runRecursive("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const original = await readFile(recursiveSnapshot);
+        for (const args of [
+          ["fix", "--rule", "callable-contract-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "edn"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "edn"],
+        ]) {
+          const result = spawnSync(binary, [recursiveSnapshot, ...args], options);
+          if (result.error) throw result.error;
+          const details = `${result.stdout}\n${result.stderr}`;
+          assert.equal(result.status, 1, `distinct local struct definitions: ${args.join(" ")}\n${details}`);
+          assert.match(details, /E_CALL_ARGUMENT_UNPROVEN/);
+          assert.match(details, /app\.main\/main!/);
+          assert.deepEqual(await readFile(recursiveSnapshot), original);
+        }
       }
       // #2213: a resolved trait call checks its method contract even when its
       // result is discarded. The builtin's transport schema is not that contract.
