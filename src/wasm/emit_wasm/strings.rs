@@ -502,11 +502,10 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       let mut tags: Vec<_> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
       tags.sort_by_key(|(_, id)| *id);
       for (name, id) in tags {
-        let text = format!(":{name}");
         let ptr = *ctx
           .string_pool
-          .get(&text)
-          .ok_or_else(|| format!("missing WASM tag string literal: {text}"))?;
+          .get(&name)
+          .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
         ctx.emit(Instruction::LocalGet(tag));
         ctx.emit(f64_const(id as f64));
         ctx.emit(Instruction::F64Eq);
@@ -808,6 +807,55 @@ pub(super) fn emit_turn_string_from_local_with_type(
   str_i32
 }
 
+/// Convert a pre-evaluated value using print syntax, where Tags keep their `:` prefix.
+fn emit_print_string_from_local_with_type(
+  ctx: &mut WasmGenCtx,
+  v_local: u32,
+  type_info: Arc<crate::wasm::host::calcit::CalcitTypeAnnotation>,
+) -> u32 {
+  use crate::wasm::host::calcit::CalcitTypeAnnotation;
+
+  if !matches!(type_info.as_ref(), CalcitTypeAnnotation::Tag) {
+    return emit_turn_string_from_local_with_type(ctx, v_local, type_info);
+  }
+
+  let tag = ctx.alloc_local();
+  let result = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(v_local));
+  ctx.emit(Instruction::LocalSet(tag));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
+
+  let mut tags: Vec<_> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
+  tags.sort_by_key(|(_, id)| *id);
+  for (name, id) in tags {
+    let text = format!(":{name}");
+    let ptr = *ctx
+      .string_pool
+      .get(&text)
+      .unwrap_or_else(|| panic!("missing WASM print tag string literal: {text}"));
+    ctx.emit(Instruction::LocalGet(tag));
+    ctx.emit(f64_const(id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+    ctx.emit(f64_const(ptr as f64));
+    ctx.emit(Instruction::LocalSet(result));
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(result));
+  let str_i32 = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(str_i32));
+  str_i32
+}
+
 /// `str args...` — convert each non-nil arg to string and concatenate all.
 /// Intercept for the variadic `str` call, bypassing the core library definition.
 pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
@@ -907,7 +955,7 @@ pub(super) fn emit_str_spaced_locals(
   ctx.emit(Instruction::I32Const(0x20));
   ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
 
-  let first = emit_turn_string_from_local_with_type(ctx, values[0].0, values[0].1.clone());
+  let first = emit_print_string_from_local_with_type(ctx, values[0].0, values[0].1.clone());
   let acc = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(first));
   ctx.emit(Instruction::LocalSet(acc));
@@ -917,7 +965,7 @@ pub(super) fn emit_str_spaced_locals(
     ctx.emit(Instruction::I32TruncF64U);
     ctx.emit(Instruction::LocalSet(acc));
 
-    let next = emit_turn_string_from_local_with_type(ctx, value.0, value.1.clone());
+    let next = emit_print_string_from_local_with_type(ctx, value.0, value.1.clone());
     concat_two_i32_ptrs(ctx, acc, next);
     ctx.emit(Instruction::I32TruncF64U);
     ctx.emit(Instruction::LocalSet(acc));

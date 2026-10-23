@@ -495,6 +495,13 @@ const runWasm = async (tests) => {
       stderrTrace = [];
       try {
         instance.exports[test.fn]();
+        const expectedStdout = test.name === "registered-log-preserves-zero-bool-and-tag-formatting"
+          ? ["0 false :unit-log-tag"]
+          : null;
+        if (expectedStdout !== null && JSON.stringify(trace) !== JSON.stringify(expectedStdout)) {
+          record(test, "wasm", "fail", `stdout trace mismatch: expected ${JSON.stringify(expectedStdout)}, got ${JSON.stringify(trace)}`, trace);
+          continue;
+        }
         const expectedStderr = test.name === "registered-stderr-returns-unit" ? ["", "unit-stderr"] : [];
         if (JSON.stringify(stderrTrace) !== JSON.stringify(expectedStderr)) {
           record(test, "wasm", "fail", `stderr trace mismatch: expected ${JSON.stringify(expectedStderr)}, got ${JSON.stringify(stderrTrace)}`, trace);
