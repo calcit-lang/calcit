@@ -560,6 +560,19 @@
             %{} 'TestEntry (:name |preserves-empty-rest)
               :code $ quote $ assert= ([]) (inherited-rest-binders 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'lexical-capture-callback $ %{} 'CodeEntry
+          :doc "|Generates a callback capturing the caller's T without redeclaring it."
+          :code $ quote $ defmacro lexical-capture-callback (captured)
+            quasiquote $ fn ()
+              hint-fn $ {}
+                :args $ []
+                :return 'T
+              , ~captured
+          :examples $ []
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] 'Syntax
         'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-capture (value)
             let
@@ -752,6 +765,49 @@
               :code $ quote $ assert= ([] |outer)
                 lexical-generic-shadow-capture $ [] |outer
               :tags $ #{} :generic :lexical-binder :unit
+        'lexical-identity-callback $ %{} 'CodeEntry
+          :doc "|Generates a callback that owns its quantifier and returns its own argument."
+          :code $ quote $ defmacro lexical-identity-callback ()
+            quasiquote $ fn (other)
+              hint-fn $ {}
+                :args $ [] 'T
+                :return 'T
+                :generics $ [] 'T
+              , other
+          :examples $ []
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ []
+        'lexical-macro-capture $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-macro-capture (value)
+            let
+                capture $ lexical-capture-callback value
+              capture
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-outer-number)
+              :code $ quote $ assert= 1 (lexical-macro-capture 1)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-outer-string)
+              :code $ quote $ assert= |outer (lexical-macro-capture |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+        'lexical-macro-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-macro-identity (value)
+            let
+                local-id $ lexical-identity-callback
+              &+ (local-id 1)
+                count $ local-id $ [] value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |instantiates-generated-binder-per-call)
+            :code $ quote $ assert= 2 (lexical-macro-identity |outer)
+            :tags $ #{} :generic :lexical-binder :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
