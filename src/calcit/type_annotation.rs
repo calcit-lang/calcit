@@ -5320,13 +5320,9 @@ impl CalcitTypeAnnotation {
       (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
       (Self::Variadic(a), Self::Variadic(b)) => a.compatible_with_bindings(b, bindings),
       (Self::Custom(a), Self::Custom(b)) if let (Calcit::Trait(actual), Calcit::Trait(expected)) = (a.as_ref(), b.as_ref()) => {
-        // Source placeholders can describe their evaluated declaration, but
-        // two evaluated nominal identities never collapse by name.
-        if actual.runtime_id.is_some() && expected.runtime_id.is_some() {
-          actual == expected
-        } else {
-          Self::trait_references_match(actual, expected)
-        }
+        // The shared relation preserves qualified source placeholders and
+        // keeps two evaluated nominal identities distinct.
+        Self::trait_references_match(actual, expected)
       }
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       (Self::StructValue(a), Self::StructValue(b)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
@@ -7795,6 +7791,37 @@ mod tests {
       !metadata.is_proven_for(&capability),
       "a descriptor does not implement its own trait"
     );
+
+    let descriptor_value = Calcit::Trait(metadata.as_trait_definition().unwrap().clone());
+    assert!(value_matches_type_annotation(&descriptor_value, &metadata));
+    assert!(value_matches_type_annotation(&descriptor_value, &source_metadata));
+    for value in [
+      Calcit::Number(1.0),
+      Calcit::Nil,
+      Calcit::Unit,
+      Calcit::Bool(true),
+      Calcit::tag("DomElement"),
+    ] {
+      assert!(
+        !value_matches_type_annotation(&value, &metadata),
+        "a non-descriptor must not satisfy concrete descriptor metadata: {value}"
+      );
+      assert!(!value_matches_type_annotation(&value, &source_metadata));
+    }
+    assert!(!value_matches_type_annotation(
+      &Calcit::Trait(other_metadata.as_trait_definition().unwrap().clone()),
+      &metadata
+    ));
+    assert!(!value_matches_type_annotation(&Calcit::Trait(bare_placeholder), &metadata));
+    assert!(!value_matches_type_annotation(
+      &Calcit::Trait(CalcitTrait::new_reference("other.dom/DomElement")),
+      &source_metadata
+    ));
+    assert!(value_matches_type_annotation(
+      &Calcit::Trait(source_metadata.as_trait_definition().unwrap().clone()),
+      &metadata
+    ));
+    assert!(!value_matches_type_annotation(&descriptor_value, &capability));
 
     let namespace = "tests.runtime-trait-descriptor";
     let reference = |name: &str| {
@@ -11106,6 +11133,9 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         "enum-def" => matches!(value, Calcit::EnumDef(_)),
         _ => true, // unknown custom types: be permissive
       },
+      Calcit::Trait(expected) => {
+        matches!(value, Calcit::Trait(actual) if CalcitTypeAnnotation::trait_references_match(actual, expected))
+      }
       _ => true,
     },
     // Generic type variables cannot be checked at runtime; allow any value
