@@ -827,6 +827,9 @@ pub struct QueryDefsCommand {
   /// show each definition's signature (schema, or its declaration head when untyped) instead of a [schema] marker
   #[argh(switch)]
   pub signatures: bool,
+  /// output format: Markdown-compatible human (default), edn, or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 // read-ns merged into ns command

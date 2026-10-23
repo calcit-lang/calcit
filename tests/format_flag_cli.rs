@@ -304,3 +304,256 @@ fn quality_accepts_edn_and_ns_rejects_unknown_values() {
     stderr(&rejected)
   );
 }
+
+/// This is a read-only CLI serialization/enumeration contract, not a language semantic test.
+#[test]
+fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing() {
+  let directory = tempfile::tempdir().expect("isolated query project");
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy(FIXTURE, &snapshot).unwrap();
+  let call = |args: &[&str]| run_in(Some(directory.path()), &snapshot, args);
+  let operations = serde_json::json!([
+    ["edit", "add-ns", "test-effects-graph.enumeration"],
+    ["edit", "add-ns", "test-effects-graph.empty"],
+    [
+      "edit",
+      "def",
+      "test-effects-graph.enumeration/*cache",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defatom *cache ({} (:secret 99))"
+    ],
+    [
+      "edit",
+      "def",
+      "test-effects-graph.enumeration/has-value?",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn has-value? (x) $ some? x"
+    ],
+    [
+      "edit",
+      "def",
+      "test-effects-graph.enumeration/λ-计数!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn λ-计数! (x) $ + x 1"
+    ],
+    [
+      "edit",
+      "schema",
+      "test-effects-graph.enumeration/λ-计数!",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      "--input-format",
+      "cirru"
+    ],
+    ["edit", "tags", "test-effects-graph.enumeration/λ-计数!", "macro,unit"],
+    ["edit", "tags", "test-effects-graph.enumeration/has-value?", "unit"],
+    [
+      "edit",
+      "add-test",
+      "test-effects-graph.enumeration/λ-计数!",
+      "original-test",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ assert= 2 $ λ-计数! 1"
+    ],
+    [
+      "edit",
+      "add-example",
+      "test-effects-graph.enumeration/λ-计数!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ λ-计数! 1"
+    ]
+  ])
+  .to_string();
+  let before = fs::read(&snapshot).unwrap();
+  let preview = assert_json_document(
+    &call(&["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"]),
+    "preview enumeration fixture",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  assert_json_document(
+    &call(&[
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--expect-revision",
+      preview["scoped_revision"].as_str().unwrap(),
+      "--format",
+      "json",
+    ]),
+    "create enumeration fixture",
+  );
+  let before_queries = fs::read(&snapshot).unwrap();
+  let list = assert_json_document(
+    &call(&["query", "defs", "test-effects-graph.enumeration", "--format", "json"]),
+    "defs json",
+  );
+  assert_eq!(list["schema_version"], 1);
+  assert_eq!(list["command"], "query.defs");
+  assert!(list["revision"].as_str().unwrap().starts_with("md5:"));
+  assert_eq!(list["diagnostics"], serde_json::json!([]));
+  assert_eq!(list["next"], serde_json::json!([]));
+  assert_eq!(
+    list["data"],
+    serde_json::json!({
+      "namespace": "test-effects-graph.enumeration", "count": 3, "definition_count": 3,
+      "filters": {"tag": null, "signatures": false},
+      "definitions": [{"name": "*cache"}, {"name": "has-value?"}, {"name": "λ-计数!"}]
+    })
+  );
+  let ns = assert_json_document(
+    &call(&["query", "ns", "test-effects-graph.enumeration", "--format", "json"]),
+    "namespace count",
+  );
+  assert_eq!(list["data"]["definition_count"], ns["data"]["definition_count"]);
+  assert_eq!(
+    stdout(&call(&["query", "defs", "test-effects-graph.enumeration"])),
+    "Definitions: 3\n  *cache\n  has-value? [:unit]\n  λ-计数! [:macro,:unit] [schema]\n"
+  );
+  for definition in list["data"]["definitions"].as_array().unwrap() {
+    let target = format!("test-effects-graph.enumeration/{}", definition["name"].as_str().unwrap());
+    let value = assert_json_document(&call(&["query", "def", &target, "--raw", "--format", "json"]), "enumerated def");
+    if target.ends_with("λ-计数!") {
+      assert_eq!(value["data"]["tests"][0]["name"], "original-test");
+      assert_eq!(value["data"]["examples"].as_array().unwrap().len(), 1);
+    }
+  }
+  let signatures = assert_json_document(
+    &call(&[
+      "query",
+      "defs",
+      "test-effects-graph.enumeration",
+      "--signatures",
+      "--format",
+      "json",
+    ]),
+    "defs signatures",
+  );
+  assert_eq!(signatures["data"]["definitions"][0]["signature"], "(untyped) defatom *cache");
+  assert_eq!(signatures["data"]["definitions"][1]["signature"], "(untyped) defn has-value? $ x");
+  assert!(
+    signatures["data"]["definitions"][2]["signature"]
+      .as_str()
+      .unwrap()
+      .contains("'Number")
+  );
+  let human = stdout(&call(&["query", "defs", "test-effects-graph.enumeration", "--signatures"]));
+  for definition in signatures["data"]["definitions"].as_array().unwrap() {
+    assert!(human.contains(definition["signature"].as_str().unwrap()));
+  }
+  let filtered = assert_json_document(
+    &call(&[
+      "query",
+      "defs",
+      "test-effects-graph.enumeration",
+      "--tag",
+      "macro",
+      "--format",
+      "json",
+    ]),
+    "filtered defs",
+  );
+  assert_eq!(filtered["data"]["count"], 1);
+  assert_eq!(filtered["data"]["definition_count"], 3);
+  assert_eq!(filtered["data"]["definitions"], serde_json::json!([{ "name": "λ-计数!" }]));
+  let colon = assert_json_document(
+    &call(&[
+      "query",
+      "defs",
+      "test-effects-graph.enumeration",
+      "--tag",
+      ":macro",
+      "--format",
+      "json",
+    ]),
+    "colon tag",
+  );
+  assert_eq!(filtered, colon, "equivalent tag spellings share the result revision");
+  assert_ne!(filtered["revision"], list["revision"]);
+  assert_ne!(signatures["revision"], list["revision"]);
+  let edn_output = call(&[
+    "query",
+    "defs",
+    "test-effects-graph.enumeration",
+    "--tag",
+    ":macro",
+    "--format",
+    "edn",
+  ]);
+  assert_edn_document(&edn_output, "defs edn");
+  let edn = cirru_edn::parse(&stdout(&edn_output)).unwrap();
+  let expected = cirru_edn::parse(&format!(
+    "{{}} (:schema-version 1) (:command |query.defs) (:revision |{}) (:diagnostics $ []) (:next $ [])\n  :data $ {{}} (:namespace |test-effects-graph.enumeration) (:count 1) (:definition-count 3)\n    :filters $ {{}} (:tag |macro) (:signatures false)\n    :definitions $ [] $ {{}} (:name |λ-计数!)",
+    filtered["revision"].as_str().unwrap()
+  )).unwrap();
+  assert_eq!(edn, expected, "EDN and JSON envelopes carry equivalent data");
+  for args in [
+    vec!["query", "defs", "test-effects-graph.empty", "--format", "json"],
+    vec![
+      "query",
+      "defs",
+      "test-effects-graph.enumeration",
+      "--tag",
+      "absent",
+      "--format",
+      "json",
+    ],
+  ] {
+    let empty = assert_json_document(&call(&args), "empty enumeration");
+    assert_eq!(empty["data"]["count"], 0);
+    assert_eq!(empty["data"]["definitions"], serde_json::json!([]));
+    assert_eq!(
+      empty["data"]["definition_count"],
+      if args[2] == "test-effects-graph.empty" { 0 } else { 3 }
+    );
+  }
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before_queries,
+    "all enumeration/follow-up queries are read-only"
+  );
+}
+
+#[test]
+fn query_defs_errors_keep_structured_stdout_and_reject_unknown_formats() {
+  for format in ["edn", "json"] {
+    for (namespace, tag, expected_code) in [
+      ("missing.namespace", "unit", "E_QUERY_TARGET_NOT_FOUND"),
+      ("test-effects-graph.main", ":", "E_QUERY_FAILED"),
+    ] {
+      let output = run(&["query", "defs", namespace, "--tag", tag, "--format", format]);
+      assert!(!output.status.success());
+      if format == "edn" {
+        assert_edn_stdout(&output, "defs error");
+        assert!(stdout(&output).contains(expected_code));
+      } else {
+        let value = assert_json_stdout(&output, "defs error");
+        assert_eq!(value["command"], "query.defs");
+        assert!(value["data"].is_null());
+        assert!(value["revision"].is_null());
+        assert_eq!(value["diagnostics"][0]["code"], expected_code);
+        assert_eq!(value["diagnostics"][0]["severity"], "error");
+        assert_eq!(value["diagnostics"][0]["target"], namespace);
+      }
+    }
+  }
+  let output = run_in(
+    None,
+    Path::new("does-not-exist.cirru"),
+    &["query", "defs", "app.main", "--format", "yaml"],
+  );
+  assert!(!output.status.success());
+  assert!(output.stdout.is_empty());
+  assert!(stderr(&output).contains("Unsupported query output format 'yaml'"));
+  assert!(!stderr(&output).contains("does not exist"), "reject format before Snapshot I/O");
+}

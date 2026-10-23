@@ -9,6 +9,21 @@ const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? ".
 
 const scenarios = [
   {
+    name: "namespace definition enumeration with signatures",
+    args: ["calcit/test-types.cirru", "query", "defs", "test-types.main", "--signatures", "--format", "json"],
+    check(result) {
+      assert.equal(result.command, "query.defs");
+      assert.match(result.revision, /^md5:/);
+      const { definitions, count, definition_count, filters } = result.data;
+      assert.equal(count, definition_count);
+      assert.equal(count, definitions.length);
+      assert.deepEqual(filters, { tag: null, signatures: true });
+      const names = definitions.map(item => item.name);
+      assert.deepEqual(names, [...names].sort());
+      assert.match(definitions.find(item => item.name === "add-numbers").signature, /'Number/);
+    },
+  },
+  {
     name: "complete definition metadata",
     args: ["calcit/test.cirru", "query", "def", "app.main/main!", "--raw", "--format", "json"],
     check(result) {

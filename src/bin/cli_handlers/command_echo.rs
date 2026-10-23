@@ -659,7 +659,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps, value "format" => &opts.format; default "human")
     }
     QuerySubcommand::Defs(opts) => {
-      echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none")
+      echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none", switch "signatures" => opts.signatures, value "format" => &opts.format; default "human")
     }
     QuerySubcommand::Config(_) | QuerySubcommand::Error(_) | QuerySubcommand::Next(_) | QuerySubcommand::Prev(_) => {}
     QuerySubcommand::Def(opts) => echo_items!(

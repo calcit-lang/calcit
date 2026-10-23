@@ -142,6 +142,25 @@ calcit query defs app.main --signatures
 `(untyped) defn helper $ x`），值本身不进入概览。不带 `--signatures` 时只用 `[schema]` 标记是否声明了 schema。
 了解一个模块时先看这个概览，再按需对单个定义使用 `schema`、`examples`、`context`。
 
+自动化遍历定义时使用现有枚举的结构化格式，不解析 human 行的缩进，也不读取 Snapshot 文本：
+
+```bash
+calcit query defs app.main --format edn
+calcit query defs app.main --tag macro --signatures --format edn
+# JSON-only 工具链可显式选择 JSON
+calcit query defs app.main --format json
+```
+
+输出为单个 `query.defs` 信封，包含 `schema-version`、`revision`、`data`、`diagnostics` 和 `next`。
+`data.namespace` 是命名空间，`data.definitions` 按名称排序，每项提供原始 `name`；用
+`namespace/name` 继续调用 `query def` 即可读取原代码、tests 与 examples。`count` 是本次返回数量，
+`definition-count` 是命名空间未筛选的总数量，与 `query ns <ns>` 一致。空命名空间返回空列表和零数量。
+`filters.tag` 记录去掉前导冒号的标签或 nil，`filters.signatures` 记录是否请求签名；
+只有传 `--signatures` 时，每项才包含与 human 概览相同的 `signature`，未声明类型时仍标明 `(untyped)`，不把声明头当成已证明类型。
+JSON 使用对应的 snake_case 字段；EDN 使用原生 tag 和 kebab-case 字段，两者语义相同。
+`revision` 表示当前枚举结果，不是编辑命令的 Snapshot/scoped revision 写入守卫。
+命名空间不存在、标签无效或 entry 不存在时，结构化输出仍为单个诊断信封，命令以非零状态退出。
+
 ### Read Code (`def`)
 
 ```bash
