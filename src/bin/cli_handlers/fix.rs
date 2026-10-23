@@ -1080,6 +1080,21 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   StructuredOutputFormat::parse(&options.format, "fix")?;
+  // Retired rules answer first so flags such as `--include-attached` cannot hide the older-CLI guidance.
+  if let Some(rule) = options.rule.as_deref()
+    && RETIRED_CORE_API_028_RULES.contains(&rule)
+  {
+    return Err(format!(
+      "Fix rule `{rule}` was retired in 0.29.0 together with the core aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` for a remaining method call and an unknown-name warning with the preferred spelling for a remaining function call."
+    ));
+  }
+  if let Some(rule) = options.rule.as_deref()
+    && RETIRED_CORE_API_030_RULES.contains(&rule)
+  {
+    return Err(format!(
+      "Fix rule `{rule}` was retired in 0.31.0 together with the core names it migrated. Run it with a 0.30.x Calcit CLI before upgrading; in this CLI, a remaining call reports an unknown-name warning with the preferred spelling."
+    ));
+  }
   if options.include_attached {
     let selected = selected_rule_ids(options);
     let unsupported = selected
@@ -1191,20 +1206,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(format!(
       "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`, `{CORE_API_028_V1_PRESET}`, `{CORE_API_029_V1_PRESET}`."
-    ));
-  }
-  if let Some(rule) = options.rule.as_deref()
-    && RETIRED_CORE_API_028_RULES.contains(&rule)
-  {
-    return Err(format!(
-      "Fix rule `{rule}` was retired in 0.29.0 together with the core aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` for a remaining method call and an unknown-name warning with the preferred spelling for a remaining function call."
-    ));
-  }
-  if let Some(rule) = options.rule.as_deref()
-    && RETIRED_CORE_API_030_RULES.contains(&rule)
-  {
-    return Err(format!(
-      "Fix rule `{rule}` was retired in 0.31.0 together with the core names it migrated. Run it with a 0.30.x Calcit CLI before upgrading; in this CLI, a remaining call reports an unknown-name warning with the preferred spelling."
     ));
   }
   if let Some(rule) = options.rule.as_deref()

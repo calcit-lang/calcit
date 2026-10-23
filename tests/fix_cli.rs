@@ -8407,11 +8407,15 @@ fn rules_retired_in_0_31_report_the_older_cli() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
   for rule in ["case-default-to-match-v1", "core-function-alias-v1"] {
-    let output = run_fix(&snapshot, &["--rule", rule, "--format", "json"]);
-    assert!(!output.status.success(), "{rule} must be rejected");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("retired in 0.31.0"), "{rule} stderr: {stderr}");
-    assert!(stderr.contains("0.30.x Calcit CLI"), "{rule} stderr: {stderr}");
+    for extra in [&[][..], &["--include-attached"][..]] {
+      let mut args = vec!["--rule", rule, "--format", "json"];
+      args.extend_from_slice(extra);
+      let output = run_fix(&snapshot, &args);
+      assert!(!output.status.success(), "{rule} {extra:?} must be rejected");
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(stderr.contains("retired in 0.31.0"), "{rule} {extra:?} stderr: {stderr}");
+      assert!(stderr.contains("0.30.x Calcit CLI"), "{rule} {extra:?} stderr: {stderr}");
+    }
   }
 }
 
