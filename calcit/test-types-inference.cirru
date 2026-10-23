@@ -1563,9 +1563,9 @@
         'write-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-nominal-absence-fields (fields number text result)
             -> fields
-              assoc :number $ Option :some number
-              assoc :text $ Option :some text
-              assoc :result result
+              .assoc :number $ Option :some number
+              .assoc :text $ Option :some text
+              .assoc :result result
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'test-types-inference.main/NominalAbsenceFields)
             :args $ [] 'test-types-inference.main/NominalAbsenceFields 'Number 'String $ :: 'Result 'Number 'String
@@ -1591,8 +1591,8 @@
                   value $ Option :some 3
                   values $ [] $ Option :some 1
                   mapping $ {} $ :number (Option :some 1)
-                  changed-list $ assoc values 0 value
-                  changed-map $ assoc mapping :number value
+                  changed-list $ .assoc values 0 value
+                  changed-map $ .assoc mapping :number value
                 assert= ([] value) changed-list
                 assert=
                   {} $ :number value

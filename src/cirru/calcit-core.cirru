@@ -5583,7 +5583,7 @@
                   , not-a-number
                 assert=
                   {} $ not-a-number 2
-                  assoc
+                  .assoc
                     {} $ not-a-number 1
                     , not-a-number 2
               :tags $ #{} :core :unit
@@ -11865,12 +11865,12 @@
                   cache $ assert-type
                     ref $ {}
                     :: 'Ref $ :: 'Map 'Fn 'Number
-                reset! cache $ assoc @cache inc 1
-                reset! cache $ assoc @cache inc 2
+                reset! cache $ .assoc @cache inc 1
+                reset! cache $ .assoc @cache inc 2
                 assert= (Option :some 2) (.get @cache inc)
-                reset! cache $ assoc @cache dec 3
+                reset! cache $ .assoc @cache dec 3
                 assert= 2 $ count @cache
-                reset! cache $ dissoc @cache inc
+                reset! cache $ .dissoc @cache inc
                 assert= (Option :none) (.get @cache inc)
                 assert= (Option :some 3) (.get @cache dec)
                 assert= 1 $ count @cache
