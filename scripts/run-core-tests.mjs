@@ -495,9 +495,16 @@ const runWasm = async (tests) => {
       stderrTrace = [];
       try {
         instance.exports[test.fn]();
-        const expectedStdout = test.name === "registered-log-preserves-zero-bool-and-tag-formatting"
-          ? ["0 false :unit-log-tag"]
-          : null;
+        const expectedStdout = {
+          "registered-stdout-returns-unit": ["", "", "unit-stdout", "unit-echo"],
+          "registered-log-preserves-zero-bool-and-tag-formatting": ["0 false :unit-log-tag"],
+          "registered-log-callback-returns-unit": ["callback-a", "callback-b"],
+          "registered-log-arguments-evaluate-once-in-order": [
+            "log-first-argument",
+            "log-second-argument",
+            "first second",
+          ],
+        }[test.name] ?? null;
         if (expectedStdout !== null && JSON.stringify(trace) !== JSON.stringify(expectedStdout)) {
           record(test, "wasm", "fail", `stdout trace mismatch: expected ${JSON.stringify(expectedStdout)}, got ${JSON.stringify(trace)}`, trace);
           continue;
