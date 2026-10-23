@@ -48,6 +48,8 @@ deftrait MyFoo $ .foo
     :return 'String
 ```
 
+普通 trait 的完整方法签名使用具体类型或显式声明的泛型；方法参数、返回值、容器和嵌套回调中的 `Dynamic` 沿用现有的拒绝规则。`deftrait` 中静态声明的这些签名会在预处理阶段报告定义位置。未提供完整合同的 `'Fn` 仍保留既有动态方法语义；需要保留输入、存储与返回之间的类型关系时，优先使用泛型合同。
+
 ## Implement a trait
 
 Use `defimpl` to create a nominal impl value for a trait.

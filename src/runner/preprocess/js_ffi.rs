@@ -568,6 +568,11 @@ pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
     return false;
   };
   let Some((ns, def)) = def_ref.rsplit_once('/') else { return false };
+  definition_is_external_object(ns, def)
+}
+
+/// Read the declaration's FFI kind without constructing or evaluating its trait.
+pub(super) fn definition_is_external_object(ns: &str, def: &str) -> bool {
   let Some(ffi) = program::lookup_def_ffi(ns, def) else {
     return false;
   };

@@ -5450,6 +5450,22 @@ fn preprocess_list_call(
                 .find(|frame| frame.ns.as_ref() == file_ns && !matches!(frame.kind, StackKind::Macro))
                 .map(|frame| frame.def.to_string())
                 .unwrap_or_else(|| def_name.to_string());
+              // Reachable declarations may be compiled beneath a caller frame;
+              // quoted signature nodes still identify their owning CodeEntry.
+              let signature_owner = processed_args
+                .iter()
+                .find_map(|argument| source_location_in_namespace(argument, file_ns))
+                .map(|location| location.def.to_string())
+                .unwrap_or_else(|| trait_def_name.clone());
+              let external_object = js_ffi::definition_is_external_object(file_ns, &signature_owner);
+              if !external_object && let Some((message, source)) = type_inference::check_trait_method_signatures(&processed_args) {
+                return Err(CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Type,
+                  message,
+                  call_stack,
+                  source_location_in_namespace(source, file_ns).or_else(|| call_location.clone()),
+                ));
+              }
               type_inference::check_trait_requires_declaration(&processed_args, file_ns, &trait_def_name)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
             }
@@ -8894,17 +8910,7 @@ fn macro_name_is_external_object(macro_info: &crate::calcit::CalcitMacro, file_n
   if macro_info.name.as_ref() != "deftrait" {
     return false;
   }
-  let metadata_external = program::lookup_def_ffi(file_ns, def_name).is_some_and(|ffi| match ffi {
-    cirru_edn::Edn::Struct(value) => value
-      .pairs
-      .iter()
-      .find(|(key, _)| key.ref_str() == "kind")
-      .is_some_and(|(_, value)| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    cirru_edn::Edn::Map(value) => value
-      .get(&cirru_edn::Edn::Tag(EdnTag::new("kind")))
-      .is_some_and(|value| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    _ => false,
-  });
+  let metadata_external = js_ffi::definition_is_external_object(file_ns, def_name);
   metadata_external
     || program::lookup_def_code(file_ns, def_name)
       .and_then(|code| resolve_trait_def_from_source_code(&code, file_ns))
