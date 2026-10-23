@@ -5816,7 +5816,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Calcit::Fn { info, .. } => Self::from_calcit_fn(info),
-      Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
+      Calcit::Import(import) => Self::from_import(import, Self::from_calcit).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
           Self::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone(), proc.arity())
@@ -5917,7 +5917,7 @@ impl CalcitTypeAnnotation {
     }))
   }
 
-  fn from_import(import: &CalcitImport) -> Option<Self> {
+  fn from_import<T>(import: &CalcitImport, classify: impl FnOnce(&Calcit) -> T) -> Option<T> {
     let mut short_circuit = false;
     let mut pushed = false;
 
@@ -5940,7 +5940,7 @@ impl CalcitTypeAnnotation {
 
     let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
       .or_else(|| lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref()))
-      .map(|value| CalcitTypeAnnotation::from_calcit(&value));
+      .map(|value| classify(&value));
 
     if pushed {
       IMPORT_RESOLUTION_STACK.with(|stack| {
@@ -7749,6 +7749,12 @@ mod tests {
 
   #[test]
   fn nominal_trait_matching_does_not_reverse_unqualified_placeholders() {
+    let _guard = crate::program::lock_program_test_state();
+    register_program_lookups(
+      crate::program::lookup_runtime_ready,
+      crate::program::lookup_def_code,
+      crate::program::lookup_def_schema,
+    );
     let bare_placeholder = CalcitTrait::new_reference("DomElement");
     let runtime_trait = CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]);
 
@@ -7789,6 +7795,36 @@ mod tests {
       !metadata.is_proven_for(&capability),
       "a descriptor does not implement its own trait"
     );
+
+    let namespace = "tests.runtime-trait-descriptor";
+    let reference = |name: &str| {
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(namespace),
+        def: Arc::from(name),
+        info: Arc::new(crate::calcit::ImportInfo::SameFile { at_def: Arc::from("test") }),
+        def_id: None,
+      })
+    };
+    crate::program::write_runtime_ready(
+      namespace,
+      "Descriptor",
+      Calcit::Trait(metadata.as_trait_definition().unwrap().clone()),
+    )
+    .unwrap();
+    crate::program::write_runtime_ready(namespace, "Alias", reference("Descriptor")).unwrap();
+    for value in [reference("Descriptor"), reference("Alias")] {
+      let inferred = infer_runtime_value_type(&value);
+      assert_eq!(inferred.as_ref(), &metadata, "runtime imports retain descriptor identity");
+      assert!(!inferred.is_proven_for(&capability));
+      assert!(inferred.is_proven_for(&metadata_kind));
+      assert!(matches!(CalcitTypeAnnotation::from_calcit(&value), CalcitTypeAnnotation::Trait(_)));
+    }
+    crate::program::write_runtime_ready(namespace, "CycleA", reference("CycleB")).unwrap();
+    crate::program::write_runtime_ready(namespace, "CycleB", reference("CycleA")).unwrap();
+    assert!(matches!(
+      infer_runtime_value_type(&reference("CycleA")).as_ref(),
+      CalcitTypeAnnotation::Dynamic
+    ));
   }
 
   fn symbol(name: &str) -> Calcit {
@@ -11180,6 +11216,9 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     },
     Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned()))),
     Calcit::Trait(definition) => Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(definition.clone())))),
+    Calcit::Import(import) => {
+      CalcitTypeAnnotation::from_import(import, infer_runtime_value_type).unwrap_or_else(|| DYNAMIC_TYPE.clone())
+    }
     _ => Arc::new(CalcitTypeAnnotation::from_calcit(value)),
   }
 }
