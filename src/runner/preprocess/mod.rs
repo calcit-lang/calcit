@@ -23257,7 +23257,7 @@ mod tests {
   }
 
   #[test]
-  fn local_hint_fn_refines_later_function_references() {
+  fn local_hint_fn_rejects_unproven_open_function_signatures() {
     use crate::data::cirru::code_to_calcit;
 
     let hint_form = Cirru::List(vec![
@@ -23281,25 +23281,14 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
 
-    let resolved_hint =
-      preprocess_expr(&hint, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local hint-fn");
-    let annotation = scope_types.get("f").expect("hint-fn should refine the lexical binding");
-    let CalcitTypeAnnotation::Fn(fn_annotation) = annotation.as_ref() else {
-      panic!("expected complete function annotation, got {annotation:?}");
-    };
-    assert!(matches!(fn_annotation.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number)));
-    assert!(matches!(fn_annotation.return_type.as_ref(), CalcitTypeAnnotation::Number));
+    let error = preprocess_expr(&hint, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack)
+      .expect_err("an open DynFn must not be refined by a hint");
     assert!(
-      matches!(resolved_hint, Calcit::List(ref xs) if matches!(xs.get(1), Some(Calcit::Local(local)) if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn(_)))),
-      "the annotation target should carry the refined type"
+      error
+        .to_string()
+        .contains("hint-fn schema is not statically proven by the existing local function signature")
     );
-
-    let call = code_to_calcit(&Cirru::List(vec![Cirru::leaf("f"), Cirru::leaf("1")]), "tests.hint", "demo", vec![])
-      .expect("parse local function call");
-    let resolved_call =
-      preprocess_expr(&call, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local function call");
-    let inferred = infer_type_from_expr(&resolved_call, &scope_types).expect("infer hinted local call return");
-    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
+    assert!(matches!(scope_types.get("f"), Some(annotation) if matches!(annotation.as_ref(), CalcitTypeAnnotation::DynFn)));
   }
 
   #[test]
