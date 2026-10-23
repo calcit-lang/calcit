@@ -14127,7 +14127,16 @@ pub fn preprocess_hint_fn(
   if args.len() == 2 {
     let target_raw = args.first().expect("two-argument hint has a target");
     let mut local = target_form.expect("two-argument hint target was preprocessed");
-    if !local.type_info.is_compatible_with(type_entry.as_ref()) {
+    // A known local signature must prove the requested contract directionally;
+    // Dynamic results cannot be narrowed by restating them as a concrete type.
+    // An unsigned `fn` keeps the legacy compatibility relation while the
+    // two-argument form is migrated to body hints (#2172).
+    let proven = if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) {
+      local.type_info.is_compatible_with(type_entry.as_ref())
+    } else {
+      local.type_info.is_proven_for(type_entry.as_ref())
+    };
+    if !proven {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
         format!(

@@ -470,6 +470,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 显式 `:args` / `:rest` 还须符合真实参数列表；固定参数不能靠注解变成收集剩余实参的 List。现有 async 和 feature 声明继续保留。
 每个函数只写一份直接的 body Map 注解；重复的 `hint-fn $ {} ...` 会报 `E_SCHEMA_DEF_MISMATCH`，即使内容相同也不再只取第一份。将 `:args`、`:return`、`:where`、`:async` 等字段合并到同一份 Map；不同嵌套函数各自的注解和已有局部函数的两参数形式不合并。
 已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
+目标已有签名时，两参数形式只能收窄到该签名能证明的合同：可以把开放的 Dynamic 参数写成具体类型，但不能把 Dynamic 返回改写成 Number，也不能把已声明的 Number 参数放宽为 Dynamic。此类注解以“hint-fn schema conflicts with the existing local function signature”在预处理时报错；迁移方法是在函数体内收窄并声明真实返回类型，而不是在外部改写合同。
 
 ## 0.31.0 用 Emptyable 保留空值的接收者类型
 
