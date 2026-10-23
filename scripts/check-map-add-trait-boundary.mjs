@@ -149,9 +149,10 @@ async function checkTraitBoundaries() {
       ":: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Dynamic)",
     ]) {
       setRuntimeBody(`let\n    signature $ fn ()\n      quote $ ${signature}\n  &trait::new :ComputedSignature $ [] $ [] :value (signature)`);
+      assert.match(run(snapshot, ...selection, "--check-only"), /Check passed/);
       assert.throws(() => run(snapshot, ...selection), error => {
         const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
-        assert.match(detail, /Check passed/);
+        assert.doesNotMatch(detail, /preprocessing/);
         assert.match(detail, /&trait::new does not allow Dynamic inside method signatures/);
         return true;
       }, "computed named type arguments must be validated at native runtime");
