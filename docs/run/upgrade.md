@@ -2011,8 +2011,9 @@ FFI value 在 adapter 边界完成 validate/convert。显式声明的 `Dynamic` 
 ```cirru
 let
     xs $ [] 1 2 3
-    predicate $ fn (x) > x 1
-  hint-fn predicate $ {} (:args $ [] 'Number) (:return 'Bool)
+    predicate $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Bool)
+      > x 1
   let
       idx $ find-index xs predicate
       safe-idx $ idx .unwrap-or 0

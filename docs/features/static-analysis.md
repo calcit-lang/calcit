@@ -430,18 +430,17 @@ There are two ways to specify return types:
 
 Use `hint-fn` with schema map at the start of a local function body:
 
-When a function is already bound, the two-argument form refines that local binding for all later expressions in the same lexical scope:
+Declare a local implementation's signature with a Map hint in the function body:
 
 ```cirru
 let
-    add-one $ fn (x) + x 1
-  hint-fn add-one $ {}
-    :args $ [] :number
-    :return :number
+    add-one $ fn (x)
+      hint-fn $ {} (:args $ [] :number) (:return :number)
+      + x 1
   assert-type (add-one 1) :number
 ```
 
-This refinement is static metadata; it does not execute the function. Put it before calls that should use the signature. The one-argument form below remains the preferred form inside the function itself.
+The two-argument form is only for checking an annotation against a local function whose complete signature is already proven; it cannot create a concrete signature for an open or unannotated function. It does not execute or refine the function, and it cannot supply missing argument or return evidence.
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 
