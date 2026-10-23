@@ -695,12 +695,12 @@
             %{} 'TestEntry (:name |computed-method-metadata-evaluates-once)
               :code $ quote $ let
                   calls $ ref 0
-                  signature $ fn ()
-                    swap! calls inc
+                  signature $ fn () (swap! calls inc)
                     quote $ :: 'Fn $ {}
                       :args $ [] 'Number
                       :return 'Number
-                  built $ &trait::new :ComputedSignature $ [] $ [] :value (signature)
+                  built $ &trait::new :ComputedSignature $ []
+                    [] :value $ signature
                 assert= :trait $ type-of built
                 assert= 1 @calls
               :tags $ #{} :trait :unit
@@ -831,28 +831,38 @@
             let
                 opt-some $ Option :some 1
                 opt-none $ assert-type (Option :none) (:: 'Option 'Number)
-                res-ok $ %ok 1
-                res-err $ assert-type (%err |oops) (:: 'Result 'Number 'String)
-                step $ fn (x) (inc x)
+                res-ok $ Result :ok 1
+                res-err $ assert-type (Result :err |oops) (:: 'Result 'Number 'String)
+                step $ fn (x)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  inc x
               assert-type opt-some $ :: 'Option 'Number
               assert-type opt-none $ :: 'Option 'Number
               assert-type res-ok $ :: 'Result 'Number 'String
               assert-type res-err $ :: 'Result 'Number 'String
               assert= (Option :some 2) (opt-some .map step)
               assert= (Option :none) (opt-none .map step)
-              assert= (%ok 2) (res-ok .map step)
-              assert= (%err |oops) (res-err .map step)
+              assert= (Result :ok 2) (res-ok .map step)
+              assert= (Result :err |oops) (res-err .map step)
               assert= (Option :some 2)
                 opt-some .map $ fn (x) (inc x)
             let
                 opt-some $ Option :some 1
                 opt-none $ assert-type (Option :none) (:: 'Option 'Number)
-                res-ok $ %ok 1
-                res-err $ assert-type (%err |oops) (:: 'Result 'Number 'String)
+                res-ok $ Result :ok 1
+                res-err $ assert-type (Result :err |oops) (:: 'Result 'Number 'String)
                 to-some $ fn (x)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return $ :: 'Option 'Number
                   Option :some $ inc x
                 to-ok $ fn (x)
-                  %ok $ inc x
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return $ :: 'Result 'Number 'String
+                  Result :ok $ inc x
               assert= true $ opt-some .some?
               assert= true $ opt-none .none?
               assert= 1 $ opt-some .unwrap-or 9
@@ -873,10 +883,10 @@
                   assert-type (Option :none) (:: 'Option 'Number)
                   , .unwrap-or 9
                 , .round
-              assert= (%ok 2) (res-ok .and-then to-ok)
-              assert= (%err |oops) (res-err .and-then to-ok)
-              assert= (%ok 1) (res-ok .map-err turn-tag)
-              assert= (%err :oops) (res-err .map-err turn-tag)
+              assert= (Result :ok 2) (res-ok .and-then to-ok)
+              assert= (Result :err |oops) (res-err .and-then to-ok)
+              assert= (Result :ok 1) (res-ok .map-err turn-tag)
+              assert= (Result :err :oops) (res-err .map-err turn-tag)
             let
                 open-map $ assert-type
                   {} (:a 1) (:b |x)
@@ -900,7 +910,7 @@
                   map-indexed open-list $ fn (idx value) ([] idx value)
             println "|  Option/Result map: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-qualified-contains-boundary $ %{} 'CodeEntry (:doc "|验证同名 trait 方法在显式调用与 Contains 泛型约束下保持各自来源。")
           :code $ quote $ defn test-qualified-contains-boundary ()
