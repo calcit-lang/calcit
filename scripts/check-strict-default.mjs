@@ -649,7 +649,7 @@ if (!evalResult.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) 
   throw new Error(`default strict eval returned an unexpected value:\n${evalResult.stdout}`);
 }
 
-const optionMethod = run(["eval", ".unwrap-or (%some 1) 2"]);
+const optionMethod = run(["eval", ".unwrap-or (Option :some 1) 2"]);
 expectStatus(optionMethod, 0, "strict core Option receiver method");
 if (!optionMethod.stdout.split("\n").some((line) => line.trim().endsWith(": 1"))) {
   throw new Error(`strict core Option receiver method returned an unexpected value:\n${optionMethod.stdout}`);
@@ -681,7 +681,7 @@ if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) 
 
 for (const [label, args] of [
   ["generic live Option payload mismatch", "(Option :some 1) (Option :some |x)"],
-  ["generic Ref bottom payload invariance", "(atom (Option :none)) (atom (Option :some |x))"],
+  ["generic Ref bottom payload invariance", "(ref (Option :none)) (ref (Option :some |x))"],
   ["generic Number does not widen to nullable", "1 nil"],
   ["generic nil does not widen to Number", "nil 1"],
   ["generic String does not widen to nullable", "|text nil"],

@@ -35,7 +35,7 @@ Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处�
 
 CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输出。需要稳定字段与自动分支时，Calcit 自有工作流优先选择 `--format edn`，因为 Cirru EDN 会保留 tag、symbol 等原生数据语义；只有对接 JSON-only 工具或既有 JSON consumer 时才显式选择 `--format json`。尚未提供 EDN 的旧命令可暂时使用 JSON，后续按共享 envelope 逐步迁移，不应为此增加新顶层入口。
 
-遇到 `%some`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
+遇到 `%ok`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
 
 查询方法先核对 `status` 与参数、返回类型；`open` 不等于已证明可安全调用，展示顺序也不表示名称优先级。`query type` 的 `definition` 是继续查 `query examples '<definition>'` 的定位线索，不是另一种推荐调用写法。例如 String `.includes?` 的示例位于 `calcit.core/&str:includes?`，Map `.contains-key?` 位于 `calcit.core/&map:contains?`，List `.fold` 位于 `calcit.core/fold`；这些示例展示应用方法调用。`query examples` 当前输出 Markdown-compatible 文本，尚不接受 `--format edn`，不要给它套用其他查询命令的格式参数。Option 判断可先用 `query type ":: 'Option 'Number" --format edn` 确认 `.none?`，再查询 `calcit.core/option:none?` 的直接名义构造示例。
 
@@ -416,7 +416,7 @@ calcit test '<namespace>/<definition>'
 
 读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。查询不再给方法分配首选/兼容角色；名字的语义与迁移路线通过现有 API 命名文档和升级指南查询，不能仅凭 `proven` 或列表顺序猜测首选。
 
-创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` / `defatom` 是同一实现的兼容旧名，不要在新代码中生成；已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
+创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` 已在 0.31.0 删除；旧 `defatom` 仍是兼容名，已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移为 `defref`。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
 
 Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-watch! ref :key`；`!` 表示修改 watcher 注册状态，并不表示所有可能失败的操作都要加后缀。callback 接收新值和旧值，返回 `Unit`；重复注册或移除缺失 key 仍会报错。旧 `add-watch` 已在 0.29.0 删除；旧 `remove-watch` 暂留兼容，不建议 Agent 生成新的应用调用；未知同名用户函数不能仅凭拼写自动迁移。
 
@@ -647,7 +647,7 @@ List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 
 
 List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用 `.join-string`。旧 `.join` 方法已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD`；需要自动迁移时先用 0.28.x 的 CLI 运行 `core-list-intersperse-v1`。前缀 `join` 使用 `core-function-alias-v1` 单独迁移；附带区域可传 `--include-attached` 纳入证明，未知 macro 保留 review。
 
-Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧前缀 `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List；旧 `.values` 方法已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD`，需要自动迁移时先用 0.28.x 的 CLI 运行 `core-map-distinct-values-v1`。前缀 `vals` 使用 `core-function-alias-v1` 单独迁移；附带区域可传 `--include-attached` 纳入证明，开放接收者和用户方法仍需人工核对。
+Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；它返回去重 Set，不是保留重复值的 List；旧 `.values` 方法已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD`，需要自动迁移时先用 0.28.x 的 CLI 运行 `core-map-distinct-values-v1`。前缀 `vals` 已在 0.31.0 删除，写下它会得到 "removed from calcit.core" 诊断，按提示改用 `distinct-values`；需要自动迁移时用 0.30.x 的 CLI 运行 `core-function-alias-v1`。
 
 0.29.0 中旧 `option:*` / `result:*` 方法 helper 仍作为 core method 的内部兼容实现保留，不应在新应用代码中直接调用。剩余集中迁移与应用兼容入口的计划退场窗口为 **0.31.0**；版本号不是删除授权。0.30.1 只提前纳入十三个缺失值原语的 Option 返回及 `&get-env` 参数变化，升级步骤见 [升级手册](run/upgrade.md)，不授权其他旧入口提前删除。真实消费者仍须在匹配的发布版依赖上完成迁移、严格检查和运行测试，逐项处置 `requires-review`，核对 Agent 文档与受影响 backend，并使 core method 实现与待删入口解耦。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；条件未满足就保留兼容入口，不能仅凭 fix 预览为空删除，也不恢复已在 0.29.0 删除的入口。
 

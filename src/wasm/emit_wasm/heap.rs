@@ -153,7 +153,7 @@ fn emit_align_heap_ptr(ctx: &mut WasmGenCtx) {
 
 /// Allocate a nominal `Option` enum using the same memory layout as `%::`.
 ///
-/// `payload_local = None` emits `%none`; `Some(local)` emits `%some local`.
+/// `payload_local = None` emits `Option :none`; `Some(local)` emits `Option :some local`.
 /// Keeping this helper at the WASM boundary prevents optimized emitters from
 /// leaking their internal nil / numeric sentinel representation.
 pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>) -> Result<(), String> {

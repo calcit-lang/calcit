@@ -5584,7 +5584,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 53,
+      macro_count, 52,
       "update the audited bundled macro inventory when core macros change"
     );
   }
@@ -5987,26 +5987,6 @@ mod tests {
         _ => unreachable!(),
       }
     }
-
-    let CalcitTypeAnnotation::Macro(case_default) = core_file.defs["case-default"].schema.as_ref() else {
-      panic!("case-default should load as MacroSignature");
-    };
-    assert!(case_default.is_strict());
-    assert!(case_default.capabilities.is_empty());
-    assert!(matches!(
-      case_default.required_inputs.as_slice(),
-      [
-        crate::calcit::MacroSyntaxType::Expr(item),
-        crate::calcit::MacroSyntaxType::Expr(default)
-      ] if matches!(item.as_ref(), CalcitTypeAnnotation::Dynamic)
-        && matches!(default.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
-    assert!(matches!(case_default.rest_input, Some(crate::calcit::MacroSyntaxType::SyntaxList)));
-    assert!(matches!(
-      case_default.expansion,
-      crate::calcit::MacroExpansionType::Expr(ref inner)
-        if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
 
     for def_name in ["{}", "%{}", "{,}"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {

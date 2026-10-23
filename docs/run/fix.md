@@ -117,7 +117,7 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 升级函数形式兼容名时，可显式把附带测试与示例纳入同一次预览：
 
 ```bash
-calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn
+calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
 ```
@@ -128,13 +128,13 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前支持显式的 `core-function-alias-v1`、`core-identity-conversion-v1` 与 `core-ref-constructor-v1` 等改名规则。
+当前支持显式的 `core-identity-conversion-v1` 与 `core-ref-constructor-v1` 等改名规则。
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
 `redundant-do-v1` 与 `single-expression-do-v1` 也支持附带区域，复用原 body 规则。
 最外层多表达式 `do` 保留，只有真实 variadic body 内的 wrapper 能拆开；单表达式 wrapper 可直接解包。
 quoted data 不改写，未知宏中无法证明执行上下文的区域保留 review。
-`core-nominal-constructor-v1` 支持把附带调用的 `%some` / `%none` / `%ok` / `%err` 改为 Option/Result 直接构造。
+`core-nominal-constructor-v1` 支持把附带调用的 `%ok` / `%err` 改为 Result 直接构造（`%some` / `%none` 已在 0.31.0 删除，迁移见升级指南）。
 嵌套 payload 保留原位置并只求值一次；一等函数值、名义类型遮蔽或未知宏来源要求 review。
 项目的 `named-enum-constructor-v1`、`named-struct-constructor-v1` 也支持附带区域，
 复用定义来源、字段完整性和嵌套 payload 证明，保留字段在源码中的求值顺序。
@@ -179,8 +179,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   可能被局部绑定捕获，给出 `requires-review`。原型本身是 `~proto` 或字段由 `~@` 拼接时不给建议；
   `defmacro` 中模板外的展开期代码与 `quote` 数据保持不变。
 - `core-nominal-constructor-v1` 是 0.25.0 的 Option/Result 构造器迁移试点：把编译器已解析到
-  `calcit.core/%some/%none/%ok/%err`、且实参数量匹配的调用改为 `Option :some/:none` 或
-  `Result :ok/:err`。嵌套构造在一次 guarded subtree replacement 内完成，每个 payload 仍按原位置
+  `calcit.core/%ok/%err`、且实参数量匹配的调用改为 `Result :ok/:err`（0.31.0 删除 `%some/%none` 后，
+  它们的迁移需在升级前用 0.30.x 的 CLI 运行本规则）。嵌套构造在一次 guarded subtree replacement 内完成，每个 payload 仍按原位置
   求值一次；局部遮蔽、函数值引用和未经证明的 macro 展开不自动改写。当前须显式指定 `--rule`，
   不静默修改已有升级 preset；旧 helper 从 0.25.0 标记弃用，在真实消费者迁移且至少经过一个版本窗口后
   才考虑移除，最早为 0.26.0。试点只扫描所选 definition 的源码 `:code`；definition-attached
@@ -189,7 +189,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `value .some?` / `value .none?`。只有编译器已解析到对应 core helper、接收者静态类型
   能证明分派到同一个 Option 方法的源码调用才自动改写。取值调用仍改为 `value .unwrap`
   或 `value .unwrap-or fallback`；唯一的空值 fallback 特例是
-  `option:unwrap-or (%none) fallback` 与 `option:unwrap-or (Option :none) fallback`：源码引用须证明构造器
+  `option:unwrap-or (Option :none) fallback`：源码引用须证明构造器
   来自 core、没有 payload，且 fallback 有具体类型、目标方法契约为 `proven`，才允许改写。
   源码中推断为短名
   `Option<T>` 时先按当前命名空间解析；同名项目类型不得仅凭拼写当成 core Option。接收者和备用值仍
@@ -224,9 +224,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit.core/some?` 的源码引用改为 `calcit.core/non-nil?`。当前 CLI 用 `--rule` 选择它时会报错并给出该提示；残留的
   `some?` 调用在检查时报告未知名字，告警末尾给出 `non-nil?`。同版本删除的函数 `join-str`、`add-watch`、`cpu-time`
   分别改写为 `join-string`、`add-watch!`、`monotonic-time-ms`，残留调用得到同样的提示。
-- `core-function-alias-v1` 把编译器已解析到 core 兼容函数 `vals` 的源码引用改为 `distinct-values`。新名转发全部参数，因此只改名字，参数求值次数与结果不变；局部同名 binding、quoted data 与未知 macro 不自动改写，跨 macro 的引用只给 `requires-review`；作为一等值（非调用头）使用的引用也只给 `requires-review`，因为新名是独立函数，函数身份不同。这是独立的显式规则，**不**包含在已发布的 `core-api-0.28-v1`；用 `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` 预览，核对 revision 后带 `--expect-revision` 应用并重复预览。`optionally`、`join`、`section-by`、`merge-dynamic`、`concat-dynamic` 已在 0.31.0 删除，迁移需在升级 CLI 前用 0.30.x 的同名规则，见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
-- `core-ref-constructor-v1` 把 Ref 构造的兼容旧名改为首选名：`atom` → `ref`、`defatom` → `defref`。读取器把 `atom` 与 `ref` 解析为同一个内建实现，因此代码中所有被求值的 `atom` 都直接改写，Ref 身份与求值次数不变；`defatom` 是按名字解析的 core 语法，只在调用头位置、且所在 namespace 没有同名定义或 import、没有同名局部绑定、不在 quasiquote 模板中、外层也没有未知 macro 时自动改写，其余情况给出 `requires-review`。quoted data 与注释跳过。先用 `calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用，重复预览只应剩下需要 review 的项。本规则包含在 `core-api-0.29-v1`，`core-api-0.28-v1` 与 surface preset 保持原定义。
-- `case-default-to-match-v1` 把已弃用的 `case-default item default (pattern value)...` 改写为 `match item (pattern value)... (_ default)`。只有全部模式都是字面量（tag、字符串、数字、bool）时才自动改写：此时 `case-default` 宏自身就展开为这段 `match`，求值次数、未命中时的默认值与 native/JS/WASM 行为都不变。嵌套的 `case-default` 合并在外层的一次替换中。模式含表达式、变量或 enum tuple（宏会走 `&case` 比较值）、调用位于 quasiquote 模板中、`case-default` 或 `match` 被局部绑定/定义/import 遮蔽、或外层宏可能读取该参数时，给出 `requires-review`，由人工改写为 `match` 或 `cond`。外层是保持参数原样求值的 core macro（如 `let`、`when`、`cond`）时直接通过；外层是其他宏时，只有宏源码对承载该调用的参数只做 `~` / `~@` 拼接（rest 参数另允许 `count` / `empty?`），且拼接位置外层都是函数、语法或同类 core macro 时才通过，例如 Respo 的 `defcomp`；`->` 等线程宏会改写参数位置，总是需要 review。先用 `calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `case-default` 清零后，与 `case-default` 一起在下一个非 patch 版本退场。
+- `core-function-alias-v1` 与 `case-default-to-match-v1` 已随 `vals`、`case-default` 在 0.31.0 退场（`optionally`、`join`、`section-by`、`merge-dynamic`、`concat-dynamic` 同批退场）；仍有这些调用的项目须在升级 CLI 前用 0.30.x 的 CLI 运行同名规则，见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
+- `core-ref-constructor-v1` 把 Ref 构造的兼容旧名 `defatom` 改为 `defref`（`atom` 已在 0.31.0 删除，旧调用需在升级前用 0.30.x 的 CLI 运行本规则，或按诊断手工改为 `ref`）。`defatom` 是按名字解析的 core 语法，只在调用头位置、且所在 namespace 没有同名定义或 import、没有同名局部绑定、不在 quasiquote 模板中、外层也没有未知 macro 时自动改写，其余情况给出 `requires-review`。quoted data 与注释跳过。先用 `calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用，重复预览只应剩下需要 review 的项。本规则包含在 `core-api-0.29-v1`，`core-api-0.28-v1` 与 surface preset 保持原定义。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
@@ -363,7 +362,7 @@ calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
 
 应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。使用已发布 `0.28.0-alpha.2` 的 Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
 
-先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%some/%none/%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 的冻结范围保持原有定义；strict workflow 的证明检查另见下节。
+先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 的冻结范围保持原有定义；strict workflow 的证明检查另见下节。
 
 单独迁移 Option/Result 构造 helper 时，先在真实项目中预览 `requires-review` 与 `machine-applicable`
 的区别，再应用并重新预览确认幂等。应用前必须确认项目 `deps.cirru` 所锁定的 Calcit 版本与运行的 CLI 一致：

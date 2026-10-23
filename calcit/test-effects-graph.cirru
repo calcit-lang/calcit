@@ -8,6 +8,14 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
+    'test-effects-graph.lib $ %{} 'FileEntry
+      :defs $ {} $ 'lib-effect
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lib-effect () (inc 1)
+          :examples $ []
+          :tags $ #{} :file
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-effects-graph.lib
     'test-effects-graph.main $ %{} 'FileEntry
       :defs $ {}
         '*store $ %{} 'CodeEntry (:doc |)
@@ -29,10 +37,6 @@
           :examples $ []
         'cancel-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cancel-helper (task) (.cancel! task)
-          :examples $ []
-        'case-default-helper $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn case-default-helper (x d)
-            case-default x (d) (1 |one)
           :examples $ []
         'collection-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collection-helper (xs) (.empty? xs) (.contains? xs 1)
@@ -69,7 +73,6 @@
             nested-async-hint-helper inc
             scope-helper $ [] 1
             shadow-helper inc inc inc $ [] 1
-            case-default-helper 1 inc
             declared-caller
             tag-caller
           :examples $ []
@@ -77,6 +80,10 @@
         'missing-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn missing-helper () (missing.ns/thing 1)
           :examples $ []
+        'mixed-tagged $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn mixed-tagged () (inc 1)
+          :examples $ []
+          :tags $ #{} :deprecated :log
         'native-method-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn native-method-helper (el) (.!focus el)
           :examples $ []
@@ -120,10 +127,6 @@
             hint-fn $ {} $ :async false
             , x
           :examples $ []
-        'mixed-tagged $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn mixed-tagged () (inc 1)
-          :examples $ []
-          :tags $ #{} :deprecated :log
         'tag-caller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tag-caller () (deprecated-only) (mixed-tagged) (lib-effect)
           :examples $ []
@@ -134,12 +137,5 @@
           :code $ quote $ defn write-helper (path) (.write-text! path |done)
           :examples $ []
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns test-effects-graph.main $ :require $ test-effects-graph.lib :refer $ lib-effect
-    'test-effects-graph.lib $ %{} 'FileEntry
-      :defs $ {}
-        'lib-effect $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn lib-effect () (inc 1)
-          :examples $ []
-          :tags $ #{} :file
-      :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns test-effects-graph.lib
+        :code $ quote $ ns test-effects-graph.main
+          :require $ test-effects-graph.lib :refer $ lib-effect

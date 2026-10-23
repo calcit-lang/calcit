@@ -41,7 +41,7 @@
               :tags $ #{} :unit
             %{} 'TestEntry (:name |explicit-rest-prefix)
               :code $ quote $ let
-                  calls $ atom 0
+                  calls $ ref 0
                   sink $ fn (label & values)
                     hint-fn $ {}
                       :args $ [] 'String

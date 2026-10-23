@@ -16,7 +16,7 @@ const traitSnapshot = resolve("calcit/test-traits.cirru");
 export function traitRejectionCases() {
   const duplicateStruct = (impls, effect = false) => `let
     Person $ impl-traits Person0 ${impls}
-    p $ %{} Person $ :name |Alice${effect ? "\n    counter $ atom 0" : ""}
+    p $ %{} Person $ :name |Alice${effect ? "\n    counter $ ref 0" : ""}
   assert= true $ try
     do
       &trait-call MyFoo :foo p${effect ? " $ reset! counter $ + @counter 1" : ""}

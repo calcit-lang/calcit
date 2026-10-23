@@ -22,7 +22,7 @@ All map operations return new maps — the original is never mutated.
 - **Access**: `m.get :a`, `m.contains-key? :a`
 - **Modify**: `assoc m :c 3`, `dissoc m :a`, `update m :a inc`
 - **Transform**: `map-kv m f`, `filter-map-kv m f`, `merge m1 m2`
-- **Keys/Values**: `keys m`, `vals m`, `to-pairs m`
+- **Keys/Values**: `keys m`, `distinct-values m`, `to-pairs m`
 
 ## Creating Maps
 
@@ -208,14 +208,14 @@ let
   ; => (#{} ([] :a 1) ([] :b 2))
 ```
 
-### `keys` and `vals`
+### `keys` and `distinct-values`
 
 ```cirru
 let
     m $ {} (:x 10) (:y 20)
   println $ keys m
   ; => (#{} :x :y)
-  println $ vals m
+  println $ distinct-values m
   ; => (#{} 10 20)
 ```
 

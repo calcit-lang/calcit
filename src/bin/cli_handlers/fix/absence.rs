@@ -3,7 +3,7 @@
 //! turning a lazy fallback into an eager function argument. Other uses require
 //! review rather than guessing a producer or application return contract.
 
-use super::case_default::{ContextSubject, MacroHeadCache, unstable_macro_context};
+use super::macro_context::{ContextSubject, MacroHeadCache, unstable_macro_context};
 use super::*;
 use calcit::calcit::NullableOrigin;
 

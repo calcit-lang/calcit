@@ -161,7 +161,7 @@ pub(crate) enum DataShapeNode {
   CirruQuote,
   Optional(usize),
   /// A nominal `Option<T>` accepted from an ordinary runtime value. Missing
-  /// struct fields become `%none`; present raw values become `%some value`.
+  /// struct fields become `Option :none`; present raw values become `Option :some value`.
   MapOption {
     nominal: Arc<CalcitEnumDef>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,

@@ -150,7 +150,7 @@
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
           :code $ quote $ def query-search-node-kinds
-            [] %none $ %none
+            [] Option $ Option :none
           :examples $ []
           :schema $ :: 'List 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -161,20 +161,20 @@
         'test-anonymous-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing tuple")
             assert= :enum $ type-of $ :: :a :b
-            assert= (%some :a)
+            assert= (Option :some :a)
               nth (:: :a :b) 0
-            assert= (%some :b)
+            assert= (Option :some :b)
               nth (:: :a :b) 1
-            assert= (%some :c)
+            assert= (Option :some :c)
               nth (:: :a :b :c) 2
             assert= 2 $ count $ :: :a :b
             assert= 3 $ count $ :: :a :b :c
             assert= 4 $ count $ :: :a :b :c :d
-            assert= (%some :a)
+            assert= (Option :some :a)
               get (:: :a :b) 0
-            assert= (%some :b)
+            assert= (Option :some :b)
               get (:: :a :b) 1
-            assert= (%some :c)
+            assert= (Option :some :c)
               get (:: :a :b :c) 2
             assert= true $ contains? (:: :a :b :c) 2
             assert= (:: 1 0)
@@ -223,17 +223,17 @@
               assert= (f1 :a :b) ([] :a :b nil)
               assert= (f1 :a :b :c) ([] :a :b :c)
               assert= (f2 1)
-                [] 1 (%none) (%none)
+                [] 1 (Option :none) (Option :none)
               assert=
-                f2 2 $ %some |ready
-                [] 2 (%some |ready) (%none)
+                f2 2 $ Option :some |ready
+                [] 2 (Option :some |ready) (Option :none)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
         'test-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
-                *a $ atom 1
+                *a $ ref 1
               assert= 1 $ .deref *a
               assert= 1 $ &atom:deref *a
             assert= 1 $ .deref $ %:: AtomBox :atom 1
@@ -385,9 +385,9 @@
           :code $ quote $ fn () (log-title "|Testing JSON")
             let
                 parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
-              assert= (%some |demo) (get parsed :name)
+              assert= (Option :some |demo) (get parsed :name)
               assert=
-                %some $ [] 1 nil true
+                Option :some $ [] 1 nil true
                 get parsed :items
               assert= (Result :ok false)
                 get-in parsed $ [] :meta :flag
@@ -411,7 +411,7 @@
                     assert-type a0-tuple 'Tuple
                     assert= true $ any? (&enum:impls a0-tuple)
                       fn (impl)
-                        = (impl-origin impl) (%some NumTrait)
+                        = (impl-origin impl) (Option :some NumTrait)
               assert-traits a0 NumTrait calcit.core/Debug
               let
                   a1 $ .inc a0
@@ -435,7 +435,7 @@
             assert= 2 @*ref-demo
             assert= :ref $ type-of *ref-demo
             let
-                *l $ atom 1
+                *l $ ref 1
               reset! *l 2
               assert= 2 @*l
             let
@@ -451,10 +451,10 @@
                 v $ %:: ValueBox :value 1
               assert-type v ValueBox
               assert= 2 $ .deref v
-              assert= (%some 1) (nth v 1)
+              assert= (Option :some 1) (nth v 1)
             let
-                *b $ atom 0
-                *c $ atom 0
+                *b $ ref 0
+                *c $ ref 0
               add-watch! *b :change $ fn (current prev)
                 do
                   reset! *c $ assert-type current 'Number
@@ -463,8 +463,8 @@
               assert= 1 @*b
               assert= 1 @*c
             let
-                watched $ atom 0
-                notifications $ atom 0
+                watched $ ref 0
+                notifications $ ref 0
               assert= &unit $ add-watch! watched :change $ fn (current prev) (assert= 1 current) (assert= 0 prev)
                 reset! notifications $ inc @notifications
                 , &unit

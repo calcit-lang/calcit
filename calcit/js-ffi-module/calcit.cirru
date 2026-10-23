@@ -87,7 +87,7 @@
               :tags $ #{} :unit
             %{} 'TestEntry (:name |single-evaluation)
               :code $ quote $ let
-                  calls $ atom 0
+                  calls $ ref 0
                   host $ js-cast
                     do (swap! calls inc) (make-counter-host 3)
                     , 'CounterHost

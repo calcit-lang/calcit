@@ -21,7 +21,7 @@
             :args $ [] 'Dynamic
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes consume-dynamic reachable.")
           :code $ quote $ defn main! ()
-            consume-dynamic $ %some 1
+            consume-dynamic $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

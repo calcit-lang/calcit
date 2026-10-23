@@ -223,8 +223,8 @@
               assert= :enum-def $ type-of enum-with-impls
               assert= true $ any? (&enum:impls ok)
                 fn (impl)
-                  = (impl-origin impl) (%some ResultTrait)
-              assert= (%some enum-with-result-impls) (enum-definition ok)
+                  = (impl-origin impl) (Option :some ResultTrait)
+              assert= (Option :some enum-with-result-impls) (enum-definition ok)
               assert= "|(%:: 'Result :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
@@ -269,8 +269,8 @@
                 println |second: second-item
                 println |rest: rest-items
                 println |count: list-len
-                assert= (%some 1) first-item
-                assert= (%some 2) second-item
+                assert= (Option :some 1) first-item
+                assert= (Option :some 2) second-item
                 assert= 5 list-len
             , "|List method checks passed"
           :examples $ []
@@ -352,7 +352,7 @@
                 println |split: splitted
                 assert= |hello sliced
                 assert= 11 text-len
-                assert= (%some |h) first-char
+                assert= (Option :some |h) first-char
                 assert= true starts
             , "|String method checks passed"
           :examples $ []
@@ -395,7 +395,7 @@
                   rest-elems $ .rest typed-list
                 println "|Typed list access - first:" first-elem
                 println "|Typed list access - count:" list-size
-                assert= (%some 1) first-elem
+                assert= (Option :some 1) first-elem
                 assert= 5 list-size
             ; "字符串也有类型相关的方法"
             let
@@ -407,7 +407,7 @@
                 println "|Typed string access - count:" str-len
                 println "|Typed string access - first:" str-first
                 assert= 11 str-len
-                assert= (%some |t) str-first
+                assert= (Option :some |t) str-first
             , "|Typed method access checks passed"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)

@@ -869,8 +869,6 @@ fn clause_form_start(head: &Calcit) -> Option<usize> {
   };
   match name.as_str() {
     "case" | "match" | "tag-match" | "struct-match" => Some(2),
-    // `case-default value default clauses...`: the default is an ordinary expression.
-    "case-default" => Some(3),
     "cond" => Some(1),
     _ => None,
   }
@@ -2901,8 +2899,6 @@ mod tests {
     );
     // `let`, `let[]` and `&doseq` bindings shadow parameters; only `&doseq`'s own tag remains.
     assert_eq!(effects["shadow-helper"], pair("effect", "&doseq"));
-    // The default of `case-default` is an expression, not a clause.
-    assert_eq!(effects["case-default-helper"], pair(UNKNOWN_EFFECT_KIND, "d"));
     // `:tags` on a project definition is an explicit declaration, reported at its call sites;
     // the callee's own pure body adds nothing.
     assert_eq!(

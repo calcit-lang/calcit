@@ -38,8 +38,6 @@ const CORE_OPTION_METHOD_RULE: &str = "core-option-method-v1";
 const CORE_OPTION_METHOD_DIAGNOSTIC: &str = "FIX_CORE_OPTION_METHOD";
 const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
-const CORE_FUNCTION_ALIAS_RULE: &str = "core-function-alias-v1";
-const CORE_FUNCTION_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_FUNCTION_ALIAS";
 const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
 const CORE_IDENTITY_CONVERSION_DIAGNOSTIC: &str = "FIX_CORE_IDENTITY_CONVERSION";
 const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
@@ -64,8 +62,6 @@ const CALLABLE_CONTRACT_PROOF_RULE: &str = "callable-contract-proof-v1";
 const NOMINAL_WRITE_PROOF_RULE: &str = "nominal-write-proof-v1";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
-const CASE_DEFAULT_MATCH_RULE: &str = "case-default-to-match-v1";
-const CASE_DEFAULT_MATCH_DIAGNOSTIC: &str = "FIX_CASE_DEFAULT_MATCH";
 const CORE_ABSENCE_RULE: &str = "core-absence-to-public-v1";
 const CORE_ABSENCE_DIAGNOSTIC: &str = "FIX_CORE_ABSENCE_TO_PUBLIC";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
@@ -493,9 +489,7 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_predicate_rename = selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
-    || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
-    || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE);
+  let core_predicate_rename = selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -699,14 +693,6 @@ pub(crate) fn handle_fix_command(
       CoreNominalMethodKind::Result,
     )?);
   }
-  if selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE) {
-    suggestions.extend(plan_core_predicate_rename_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      CorePredicateRename::Vals,
-    )?);
-  }
   if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
     suggestions.extend(plan_core_identity_conversion_fixes(
       &source_snapshot,
@@ -716,13 +702,6 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
     suggestions.extend(plan_core_ref_constructor_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
-  if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
-    suggestions.extend(case_default::plan_case_default_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -1230,7 +1209,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
-        | CORE_FUNCTION_ALIAS_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
@@ -1244,7 +1222,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CALLABLE_CONTRACT_PROOF_RULE
         | NOMINAL_WRITE_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
-        | CASE_DEFAULT_MATCH_RULE
         | CORE_ABSENCE_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
@@ -1252,7 +1229,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1299,10 +1276,8 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
-        | CORE_FUNCTION_ALIAS_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_REF_CONSTRUCTOR_RULE
-        | CASE_DEFAULT_MATCH_RULE
         | CORE_ABSENCE_RULE
     ) {
       return vec![match rule {
@@ -1319,10 +1294,8 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
-        CORE_FUNCTION_ALIAS_RULE => CORE_FUNCTION_ALIAS_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
-        CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
@@ -1432,13 +1405,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
-    CORE_FUNCTION_ALIAS_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_FUNCTION_ALIAS_DIAGNOSTIC,
-      evidence_source: "compiler-resolved-reference",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
     CORE_IDENTITY_CONVERSION_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
@@ -1449,14 +1415,7 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_REF_CONSTRUCTOR_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
-      evidence_source: "reader-resolved-builtin-proc-and-unshadowed-core-syntax",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CASE_DEFAULT_MATCH_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CASE_DEFAULT_MATCH_DIAGNOSTIC,
-      evidence_source: "literal-patterns-and-core-macro-expansion",
+      evidence_source: "unshadowed-core-syntax",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -1935,9 +1894,9 @@ fn plan_definition_rename(
 }
 
 mod absence;
-mod case_default;
 mod compiler_review;
 mod local_rename;
+mod macro_context;
 pub(crate) use local_rename::{SOURCE_SCOPE_HEADS, source_reference_paths};
 pub(crate) mod schema_synthesis;
 mod spread_call;
@@ -3222,16 +3181,6 @@ struct CoreNominalConstructor {
 fn core_nominal_constructor(name: &str) -> Option<CoreNominalConstructor> {
   let definition = name.rsplit_once('/').map_or(name, |(_, definition)| definition);
   match definition {
-    "%some" => Some(CoreNominalConstructor {
-      nominal: "Option",
-      variant: ":some",
-      arity: 1,
-    }),
-    "%none" => Some(CoreNominalConstructor {
-      nominal: "Option",
-      variant: ":none",
-      arity: 0,
-    }),
     "%ok" => Some(CoreNominalConstructor {
       nominal: "Result",
       variant: ":ok",
@@ -3644,7 +3593,7 @@ fn plan_core_nominal_method_source(
     .filter(|usage| {
       usage.target_ns.as_ref() == "calcit.core"
         && match kind {
-          CoreNominalMethodKind::Option => matches!(usage.target_def.as_ref(), "%none" | "Option"),
+          CoreNominalMethodKind::Option => usage.target_def.as_ref() == "Option",
           CoreNominalMethodKind::Result => matches!(usage.target_def.as_ref(), "%err" | "Result"),
         }
     })
@@ -3769,9 +3718,8 @@ fn plan_core_nominal_method_source(
         }) || (method.method == ".unwrap-or"
           && matches!(receiver, Cirru::List(parts) if match kind {
             CoreNominalMethodKind::Option =>
-              matches!(parts.as_slice(), [Cirru::Leaf(name)] if matches!(name.as_ref(), "%none" | "calcit.core/%none"))
-                || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
-                  if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"),
+              matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
+                if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"),
             CoreNominalMethodKind::Result =>
               matches!(parts.as_slice(), [Cirru::Leaf(name), _] if matches!(name.as_ref(), "%err" | "calcit.core/%err"))
                 || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
@@ -3911,35 +3859,15 @@ fn plan_core_nominal_method_source(
   Ok(suggestions)
 }
 
-#[derive(Clone, Copy)]
-enum CorePredicateRename {
-  Vals,
-}
-
-impl CorePredicateRename {
-  /// Function aliases are distinct functions, so only direct calls are equivalent.
-  fn requires_call_head(self) -> bool {
-    matches!(self, Self::Vals)
-  }
-
-  fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
-    match self {
-      Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
-    }
-  }
-}
-
 fn supports_attached_migrations(rule: &str) -> bool {
   matches!(
     rule,
     REMOVED_DATA_API_RULE
-      | CORE_FUNCTION_ALIAS_RULE
       | CORE_NOMINAL_CONSTRUCTOR_RULE
       | CORE_OPTION_METHOD_RULE
       | CORE_RESULT_METHOD_RULE
       | CORE_IDENTITY_CONVERSION_RULE
       | CORE_REF_CONSTRUCTOR_RULE
-      | CASE_DEFAULT_MATCH_RULE
       | CORE_ABSENCE_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
@@ -4009,42 +3937,6 @@ fn plan_attached_fixes(
             }
           }
         }
-        let alias = CorePredicateRename::Vals;
-        let (old, new, rule_id, _) = alias.names();
-        if selected_rules.contains(&rule_id) && cirru_contains_target_reference(source, namespace, "calcit.core", old) {
-          let label = format!("{namespace}/{definition} {region}[{index}]");
-          match plan_attached_source_rewrite_with(
-            source,
-            namespace,
-            &format!("&calcit:fix-attached:{definition}:{region}:{index}"),
-            &label,
-            AttachedRewriteTarget {
-              namespace: "calcit.core",
-              definition: old,
-              allow_preserving_macros: true,
-            },
-            &|leaf, path| {
-              if alias.requires_call_head() && path.last() != Some(&0) {
-                return Err(format!("`{old}` is a first-class value; `{new}` has a different function identity"));
-              }
-              semantic_rename_leaf_replacement(leaf, old, "calcit.core", new).map(|_| Cirru::leaf(format!("calcit.core/{new}")))
-            },
-          ) {
-            Ok(Some(rewrite)) => {
-              *source = rewrite.code;
-              origins.extend(rewrite.origin_chain.into_iter().map(|mut origin| {
-                origin["rule_id"] = rule_id.into();
-                origin
-              }));
-              region_rules.push(rule_id);
-            }
-            Ok(None) => {}
-            Err(error) => {
-              blockers.push(error);
-              region_rules.push(rule_id);
-            }
-          }
-        }
         // Re-prove each rule against the source produced by preceding rules.
         // Subtree replacements may change coordinates or fingerprints of nested calls.
         for selected_rule in selected_rules {
@@ -4105,12 +3997,6 @@ fn plan_attached_fixes(
               &synthetic_def,
               &wrapper,
             ));
-          }
-          if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
-            match case_default::plan_case_default_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
           }
           if selected_rules.contains(&CORE_ABSENCE_RULE) {
             match absence::plan_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
@@ -4209,148 +4095,7 @@ fn plan_attached_fixes(
   Ok(suggestions)
 }
 
-fn plan_core_predicate_rename_fixes(
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  selected_definitions: &[(String, String)],
-  rule: CorePredicateRename,
-) -> Result<Vec<FixSuggestion>, String> {
-  let (old_name, _, _, _) = rule.names();
-  let mut suggestions = Vec::new();
-  for (namespace, definition) in selected_definitions {
-    let entry = snapshot
-      .files
-      .get(namespace)
-      .and_then(|file| file.defs.get(definition))
-      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
-      continue;
-    }
-    if !program::lookup_def_id("calcit.core", old_name)
-      .is_some_and(|target| program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target)))
-    {
-      // Avoid re-tracing unrelated declaration definitions.
-      continue;
-    }
-    suggestions.extend(plan_core_predicate_rename_source(
-      snapshot_file,
-      namespace,
-      definition,
-      &entry.code,
-      rule,
-    )?);
-  }
-  Ok(suggestions)
-}
-
-/// Share resolved predicate references and reader call-head proofs with attached source.
-fn plan_core_predicate_rename_source(
-  snapshot_file: &str,
-  namespace: &str,
-  definition: &str,
-  source: &Cirru,
-  rule: CorePredicateRename,
-) -> Result<Vec<FixSuggestion>, String> {
-  let (old_name, new_name, rule_id, diagnostic_code) = rule.names();
-  let mut suggestions = Vec::new();
-  if list_head(source) == Some("defmacro") {
-    return Ok(suggestions);
-  }
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
-  let usages =
-    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-      .map_err(|failure| failure.msg)?;
-  let mut planned = BTreeMap::<Vec<usize>, (String, String, Vec<String>, Option<String>)>::new();
-  for usage in &usages {
-    if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != old_name {
-      continue;
-    }
-    let Some(location) = &usage.location else {
-      continue;
-    };
-    if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
-      continue;
-    }
-    let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-    let node = navigate_to_path(source, &path)?;
-    let Cirru::Leaf(source_leaf) = node else {
-      continue;
-    };
-    let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), old_name, "calcit.core", new_name) else {
-      continue;
-    };
-    let macro_origin = usage.macro_origin.clone();
-    // Preferred aliases are separate forwarding functions, so a first-class
-    // reference changes function identity even though direct calls agree.
-    let first_class_alias = rule.requires_call_head() && path.last() != Some(&0);
-    let review = if first_class_alias {
-      Some(format!(
-        "`{old_name}` is used as a first-class value, and `{new_name}` is a separate function with its own identity; review before renaming."
-      ))
-    } else {
-      (!macro_origin
-        .iter()
-        .all(|origin| preserves_nominal_method_call_through_macro(origin)))
-      .then(|| {
-        format!(
-          "The core reference crosses macro expansion {}; review whether the macro observes the source spelling.",
-          macro_origin.join(" -> ")
-        )
-      })
-    };
-    planned
-      .entry(path)
-      .and_modify(|(_, _, origins, current_review)| {
-        for origin in &macro_origin {
-          if !origins.contains(origin) {
-            origins.push(origin.clone());
-          }
-        }
-        if current_review.is_none() {
-          *current_review = review.clone();
-        }
-      })
-      .or_insert_with(|| (source_leaf.to_string(), replacement, macro_origin, review));
-  }
-
-  for (target_path, (original_leaf, replacement, macro_origin, review)) in planned {
-    let original_node = Cirru::leaf(original_leaf.as_str());
-    let replacement_node = Cirru::leaf(replacement.as_str());
-    let machine_applicable = review.is_none();
-    let message = review.unwrap_or_else(|| format!("Use the preferred core name `{new_name}`; the direct calls have equivalent results and preserve argument evaluation. First-class function identity is not rewritten."));
-    suggestions.push(FixSuggestion {
-      rule_id,
-      diagnostic_code,
-      semantic_layer: "surface",
-      source_file: snapshot_file.to_owned(),
-      definition: format!("{namespace}/{definition}"),
-      path: format!("code{}", format_path(&target_path)),
-      fingerprint: node_fingerprint(&original_node),
-      origin_chain: vec![serde_json::json!({
-        "kind": "compiler-resolved-core-predicate",
-        "target": format!("calcit.core/{old_name}"),
-        "replacement": format!("calcit.core/{new_name}"),
-        "macro_origin": macro_origin,
-      })],
-      original: quoted_json(&original_node),
-      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-      applicability: if machine_applicable {
-        "machine-applicable"
-      } else {
-        "requires-review"
-      },
-      message,
-      target_path,
-      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-        original: original_leaf,
-        replacement,
-      }),
-    });
-  }
-  Ok(suggestions)
-}
-
-/// Plan `atom` -> `ref` and `defatom` -> `defref` in definition code.
+/// Plan `defatom` -> `defref` in definition code.
 fn plan_core_ref_constructor_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -4374,14 +4119,12 @@ fn plan_core_ref_constructor_fixes(
   Ok(suggestions)
 }
 
-/// The reader turns both `atom` and `ref` into the same built-in proc before any
-/// scope lookup, so any evaluated `atom` leaf keeps its identity after the
-/// rename, including inside a quasiquote template: the template already holds
-/// `(&proc ref)` and no local, definition or import can shadow either spelling
-/// at the expansion site. `defatom` is
-/// core syntax resolved by name, so it is renamed only as a call head that no
-/// namespace definition, import, local binding, macro template or unknown
-/// macro context can observe; other occurrences require review.
+/// `defatom` is core syntax resolved by name, so it is renamed only as a call
+/// head that no namespace definition, import, local binding, macro template or
+/// unknown macro context can observe; other occurrences require review. The
+/// local `atom` constructor was removed in 0.31.0 and is no longer rewritten:
+/// the reader no longer resolves it, so a remaining `atom` leaf has no proof of
+/// meaning the removed built-in.
 fn plan_core_ref_constructor_source(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -4399,12 +4142,10 @@ fn plan_core_ref_constructor_source(
   let shadowed = |name: &str| local_bindings.contains(name) || namespace_binds_name(snapshot, namespace, name);
   occurrences
     .into_iter()
-    .map(|(target_path, old_name, in_template)| {
-      let syntax = old_name == "defatom";
-      let new_name = if syntax { "defref" } else { "ref" };
-      let review = if !syntax {
-        None
-      } else if target_path.last() != Some(&0) {
+    .map(|(target_path, in_template)| {
+      let old_name = "defatom";
+      let new_name = "defref";
+      let review = if target_path.last() != Some(&0) {
         Some("`defatom` is not a call head here; review whether this leaf is meant as core syntax.".to_owned())
       } else if let Some(name) = ["defatom", "defref"].into_iter().find(|name| shadowed(name)) {
         Some(format!(
@@ -4429,7 +4170,7 @@ fn plan_core_ref_constructor_source(
         path: format!("code{}", format_path(&target_path)),
         fingerprint: node_fingerprint(&original_node),
         origin_chain: vec![serde_json::json!({
-          "kind": if syntax { "unshadowed-core-syntax" } else { "reader-resolved-builtin-proc" },
+          "kind": "unshadowed-core-syntax",
           "target": format!("calcit.core/{old_name}"),
           "replacement": format!("calcit.core/{new_name}"),
         })],
@@ -4442,7 +4183,7 @@ fn plan_core_ref_constructor_source(
         },
         message: review.unwrap_or_else(|| {
           format!(
-            "Use the preferred Ref constructor `{new_name}`; `{old_name}` is the same built-in implementation, so evaluation and Ref identity are unchanged."
+            "Use the preferred Ref definition `{new_name}`; `{old_name}` is the same built-in implementation, so evaluation and Ref identity are unchanged."
           )
         }),
         target_path,
@@ -4455,20 +4196,15 @@ fn plan_core_ref_constructor_source(
     .collect()
 }
 
-/// Collect `atom` / `defatom` leaves outside quoted data and comments, marking
-/// leaves that sit in a quasiquote template outside any unquote.
-fn collect_ref_constructor_leaves(
-  node: &Cirru,
-  path: &mut Vec<usize>,
-  in_template: bool,
-  output: &mut Vec<(Vec<usize>, &'static str, bool)>,
-) {
+/// Collect `defatom` leaves outside quoted data and comments, marking leaves
+/// that sit in a quasiquote template outside any unquote.
+fn collect_ref_constructor_leaves(node: &Cirru, path: &mut Vec<usize>, in_template: bool, output: &mut Vec<(Vec<usize>, bool)>) {
   match node {
-    Cirru::Leaf(leaf) => match leaf.as_ref() {
-      "atom" => output.push((path.clone(), "atom", in_template)),
-      "defatom" => output.push((path.clone(), "defatom", in_template)),
-      _ => {}
-    },
+    Cirru::Leaf(leaf) => {
+      if leaf.as_ref() == "defatom" {
+        output.push((path.clone(), in_template));
+      }
+    }
     Cirru::List(items) => {
       let in_template = match items.first().and_then(leaf_value) {
         Some("quote" | "cirru-quote" | ";") => return,

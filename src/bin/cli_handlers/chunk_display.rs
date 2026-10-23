@@ -5,7 +5,7 @@ use cirru_parser::Cirru;
 
 use super::common::format_path;
 
-const CORE_BOUNDARY_FORMS: &[&str] = &["let", "&let", "cond", "if", "when", "case-default", "fn", "loop", "do", "->"];
+const CORE_BOUNDARY_FORMS: &[&str] = &["let", "&let", "cond", "if", "when", "fn", "loop", "do", "->"];
 
 const CORE_FORM_ALIASES: &[(&str, &str)] = &[
   ("defn", "defn"),
@@ -16,7 +16,6 @@ const CORE_FORM_ALIASES: &[(&str, &str)] = &[
   ("cond", "cond"),
   ("if", "if"),
   ("when", "when"),
-  ("case-default", "case"),
   ("loop", "loop"),
   ("do", "do"),
   ("->", "flow"),

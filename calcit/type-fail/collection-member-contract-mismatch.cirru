@@ -60,10 +60,10 @@
             ([] |a |b) .apply $ [] inc
             &list:apply ([] |a |b) ([] inc)
             (&{} :a 1) .merge $ &{} :b :bad
-            remove-watch (atom 1) |change
-            add-watch! (atom |x) |change $ fn (current previous) &unit
-            add-watch! (atom |x) :change inc
-            remove-watch! (atom 1) |change
+            remove-watch (ref 1) |change
+            add-watch! (ref |x) |change $ fn (current previous) &unit
+            add-watch! (ref |x) :change inc
+            remove-watch! (ref 1) |change
             interleave ([] 1 2) ([] :bad)
             partial-generic-check (&{} :a |bad) 1
             partial-variadic-check (&{} :a |bad) (&{} 1 2)

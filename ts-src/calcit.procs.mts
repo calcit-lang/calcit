@@ -24,7 +24,7 @@ import {
 } from "./calcit-data.mjs";
 import { typeBoundsIdentity } from "./js-type-form.mjs";
 
-import { CalcitRef, atom } from "./js-ref.mjs";
+import { CalcitRef, ref } from "./js-ref.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStructDef } from "./js-struct-def.mjs";
@@ -581,7 +581,7 @@ export let defatom = (path: string, x: CalcitValue): CalcitValue => {
   return v;
 };
 
-export { atom, ref } from "./js-ref.mjs";
+export { ref } from "./js-ref.mjs";
 
 export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);
@@ -2341,7 +2341,7 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     }
     case "ref":
       if (!(input instanceof CalcitRef)) return fail(path, `expected atom, got ${typed_edn_kind(input)}`);
-      return atom(decode_typed_edn_node(graph, node.inner, input.value, `${path}.value`, depth + 1, fail));
+      return ref(decode_typed_edn_node(graph, node.inner, input.value, `${path}.value`, depth + 1, fail));
     case "struct": {
       if (!(input instanceof CalcitStructValue)) {
         return fail(path, `expected struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
@@ -2549,7 +2549,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       return input === null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
     case "ref":
       if (!(input instanceof CalcitRef)) return map_decode_error(path, `expected atom, got ${typed_edn_kind(input)}`);
-      return atom(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
+      return ref(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
     case "enum": {
       if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null) {
         return map_decode_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);

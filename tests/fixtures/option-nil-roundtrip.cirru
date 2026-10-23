@@ -167,11 +167,11 @@
           :tests $ []
             %{} 'TestEntry (:name |reader-absence)
               :code $ quote $ assert= nil
-                reader-value $ atom $ Option :none
+                reader-value $ ref $ Option :none
               :tags $ #{} :option-nil-roundtrip :unit
             %{} 'TestEntry (:name |reader-present-nil)
               :code $ quote $ assert= nil
-                reader-value $ atom $ Option :some nil
+                reader-value $ ref $ Option :some nil
               :tags $ #{} :option-nil-roundtrip :unit
         'threaded-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn threaded-value (value) (value .unwrap-or nil)

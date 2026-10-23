@@ -87,7 +87,7 @@ calcit eval "echo |done"
 - **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
 - **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `Point :x 1 :y 2`
 - **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
-- **Refs**: `ref 0` - mutable references (`atom` is the compatibility name)
+- **Refs**: `ref 0` - mutable references
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
 ## Basic Syntax
@@ -242,7 +242,7 @@ let
 - `&map:assoc`, `&map:dissoc` - add/remove entries
 - `&map:merge` - merge maps
 - `m .contains-key? key` / `&map:contains?` 检查键；`m .contains-value? value` / `&map:includes?` 检查值。两者不能互换。
-- `keys`, `vals` - extract keys/values
+- `keys`, `distinct-values` - extract keys / the de-duplicated value Set
 - `to-pairs`, `pairs-map` - convert to/from pairs
 - `pairs-map` 逐项检查输入是否为两项 List，重复键保留最后一个值。`List<List<T>>` 可推导为 `Map<T,T>`；异构键值对保留 `Map<Dynamic,Dynamic>`。需要独立的键和值类型时，用带类型的 `foldl` 初值与 `assoc` 构建 Map，让回调保留真实类型关系。
 - `map-list-kv` - collect `List<U>` with a typed `Fn(K,V)->U` callback
@@ -330,7 +330,7 @@ let
 
 ### Ref/Atom Operations
 
-- `ref` - create a local Ref (`atom` is the compatibility name)
+- `ref` - create a local Ref
 - `defref` - define a namespaced Ref that keeps its state across hot reload (`defatom` is the compatibility name)
 - `&atom:deref` or `deref` - read value
 - `reset!` - set value
@@ -352,7 +352,6 @@ let
 - `when`, `when-not` - single-branch conditionals
 - `cond` - multi-way conditional; requires a final `(true value)` branch
 - `case` - 值分派兼容宏；模式全是字面量时展开为 `match`，新代码请直接用 `match`
-- `case-default` - 已弃用，改用 `match` 加末尾 `_` 分支
 - `&case` - internal case macro，仅处理表达式模式
 - `match` - 对具名和匿名 enum 使用首选的原生模式匹配；也支持 tag/字符串/数字等字面量模式
 - `struct-match` - 按 StructDef 分支并绑定 struct 值

@@ -36,7 +36,6 @@ const NON_BINDING_CORE_MACROS: &[&str] = &[
   "assert=",
   "assert-detect",
   "case",
-  "case-default",
   "&case",
   "cond",
   "do",

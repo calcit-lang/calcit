@@ -327,7 +327,7 @@ definition ordering and global `cursor_index` assignment.
 
 结构化搜索结果包含摘要、带 `code@...` 路径的定义，以及匹配的 Cirru 树。每条定义与匹配都包含
 `source` 和表示 package/module 路径的 `origin`。`node_kind` 区分 `leaf`、`call` 和 `expr`，
-因此裸 `%none` 叶子与 `(%none)` 中的被调用项不必再靠父树猜测。`--parent-path` 可返回叶子匹配的
+因此裸 `Option` 叶子与 `(%ok 1)` 这类调用中的被调用项不必再靠父树猜测。`--parent-path` 可返回叶子匹配的
 可编辑父路径。EDN stdout 是单个带版本的 envelope；JSON 只作为显式互操作投影。默认 source 且未显式
 指定 `--entry` 时，project/core namespace 过滤仍沿用浅加载，不会装载无关依赖模块。
 

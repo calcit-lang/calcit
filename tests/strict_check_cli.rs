@@ -338,7 +338,7 @@ fn large_case_under_a_dependency_chain_checks_without_aborting() {
   edit_definition(
     &snapshot,
     "lookup",
-    &format!("quote $ defn lookup (name) $ case-default name -1 {patterns}"),
+    &format!("quote $ defn lookup (name) $ match name {patterns} (_ -1)"),
     true,
   );
   let invalid = run_calcit(&snapshot, &["--check-only"]);

@@ -2331,7 +2331,18 @@ fn gen_js_func(
     String::new()
   } else {
     let option_start = args.param_len() - trailing_option_count;
-    let none_call = format!("{var_prefix}{}()", escape_var("%none"));
+    // An omitted trailing Option parameter starts as the lowered `Option :none`.
+    let none_expr = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      Calcit::Import(CalcitImport {
+        ns: calcit::CORE_NS.into(),
+        def: "Option".into(),
+        info: Arc::new(ImportInfo::Core { at_ns: Arc::from(at_ns) }),
+        def_id: None,
+      }),
+      Calcit::tag("none"),
+    ]);
+    let none_call = to_js_code_inline(&none_expr, passed_defs.ns, &local_defs, passed_defs.file_imports, tags, None)?;
     fixed_arg_names
       .iter()
       .enumerate()
@@ -3598,8 +3609,8 @@ mod tests {
     )
     .expect("Option defaults should compile");
     assert!(
-      code.contains("optional = $clt._PCT_none();"),
-      "omitted Option should be initialized with %none:\n{code}"
+      code.contains("optional = $clt._PCT__$o__$o_($clt.Option, _t_.none);"),
+      "omitted Option should be initialized with Option :none:\n{code}"
     );
   }
 

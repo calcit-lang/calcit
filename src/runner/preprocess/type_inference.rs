@@ -290,19 +290,29 @@ fn merge_if_branch_types(
   }
 }
 
+/// Whether `expr` is the lowered `Option :none` construction (no payload).
+fn is_core_option_none_construction(items: &CalcitList) -> bool {
+  matches!(
+    (items.len(), items.first(), items.get(1), items.get(2)),
+    (3, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import)), Some(Calcit::Tag(variant)))
+      if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option" && variant.ref_str() == "none"
+  )
+}
+
 fn nominal_constructor_variant(expr: &Calcit) -> Option<&'static str> {
   let Calcit::List(items) = expr else { return None };
+  if is_core_option_none_construction(items) {
+    return Some("none");
+  }
   match items.first()? {
     Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => match def.as_ref() {
       "%ok" => Some("ok"),
       "%err" => Some("err"),
-      "%none" if items.len() == 1 => Some("none"),
       _ => None,
     },
     Calcit::Registered(name) => match name.as_ref() {
       "%ok" | "calcit.core/%ok" => Some("ok"),
       "%err" | "calcit.core/%err" => Some("err"),
-      "%none" | "calcit.core/%none" if items.len() == 1 => Some("none"),
       _ => None,
     },
     _ => None,
@@ -313,17 +323,7 @@ fn nominal_constructor_variant(expr: &Calcit) -> Option<&'static str> {
 // but never grant this exception to an open Option that could contain a payload.
 fn core_option_none_without_payload(expr: &Calcit, actual_type: &CalcitTypeAnnotation, expected_type: &CalcitTypeAnnotation) -> bool {
   let Calcit::List(items) = expr else { return false };
-  let is_core_none = match (items.len(), items.first(), items.get(1)) {
-    (1, Some(Calcit::Import(CalcitImport { ns, def, .. })), _) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%none",
-    (1, Some(Calcit::Fn { info, .. }), _) => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "%none",
-    (1, Some(Calcit::Registered(name)), _) => name.as_ref() == "calcit.core/%none",
-    (3, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import))) => {
-      import.ns.as_ref() == "calcit.core"
-        && import.def.as_ref() == "Option"
-        && matches!(items.get(2), Some(Calcit::Tag(variant)) if variant.ref_str() == "none")
-    }
-    _ => false,
-  };
+  let is_core_none = is_core_option_none_construction(items);
   is_core_none
     && match actual_type {
       CalcitTypeAnnotation::TypeRef(name, args) => {
@@ -1164,7 +1164,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
 
-  let is_core_enum_constructor = ns == calcit::CORE_NS && matches!(def, "%some" | "%none" | "%ok" | "%err");
+  let is_core_enum_constructor = ns == calcit::CORE_NS && matches!(def, "%ok" | "%err");
 
   // A definition schema is the public contract and is stronger evidence than
   // a Dynamic return inferred from its implementation body. Read it before
@@ -1340,7 +1340,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
       return None;
     }
   }
-  // A constructor such as `%none` has no payload from which to infer one or
+  // A constructor such as `%err` has no payload from which to infer one or
   // more generic arguments. Preserve its nominal enum identity with Dynamic
   // type arguments, but do not synthesize partial types for ordinary functions.
   for generic in info.generics.iter() {
@@ -4157,6 +4157,25 @@ mod tests {
     }
   }
 
+  fn option_import(ns: &str) -> Calcit {
+    Calcit::Import(CalcitImport {
+      ns: Arc::from(ns),
+      def: Arc::from("Option"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.option"),
+      }),
+      def_id: None,
+    })
+  }
+
+  fn option_none_construction(ns: &str) -> Calcit {
+    Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      option_import(ns),
+      Calcit::tag("none"),
+    ])
+  }
+
   fn proc_call(proc: CalcitProc, args: Vec<Calcit>) -> Calcit {
     let mut items = Vec::with_capacity(args.len() + 1);
     items.push(Calcit::Proc(proc));
@@ -4514,7 +4533,7 @@ mod tests {
     let concrete = option(Arc::new(CalcitTypeAnnotation::Number));
     let open = option(calcit::DYNAMIC_TYPE.clone());
     let value = Calcit::Registered(Arc::from("unknown-option"));
-    let none = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%none"))]);
+    let none = option_none_construction("calcit.core");
     assert_eq!(merge_option_absence_branch(&none, &open, &value, &concrete), Some(concrete.clone()));
     assert_eq!(merge_option_absence_branch(&value, &concrete, &none, &open), Some(concrete.clone()));
     assert!(merge_option_absence_branch(&value, &concrete, &value, &open).is_none());
@@ -4528,9 +4547,14 @@ mod tests {
       Arc::from("calcit.core/Option"),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]),
     );
-    let none = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%none"))]);
-    let some = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%some")), Calcit::Number(1.0)]);
-    let shadowed = Calcit::from(vec![Calcit::Registered(Arc::from("app/%none"))]);
+    let none = option_none_construction("calcit.core");
+    let some = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      option_import("calcit.core"),
+      Calcit::tag("some"),
+      Calcit::Number(1.0),
+    ]);
+    let shadowed = option_none_construction("app");
     assert!(core_option_none_without_payload(&none, &open, &expected));
     assert!(!core_option_none_without_payload(&some, &open, &expected));
     assert!(!core_option_none_without_payload(&shadowed, &open, &expected));

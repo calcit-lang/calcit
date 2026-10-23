@@ -1127,16 +1127,21 @@ fn reset_value_erases_contract(value: &Calcit, expected: &CalcitTypeAnnotation, 
           .enumerate()
           .any(|(index, item)| reset_value_erases_contract(item, if index % 2 == 0 { key } else { val }, scope));
       }
-      (Some(Calcit::Import(import)), _) if import.ns.as_ref() == calcit::CORE_NS && expected.is_option_type() => {
-        if import.def.as_ref() == "%none" && items.len() == 1 {
-          return false;
-        }
-        if import.def.as_ref() == "%some"
-          && items.len() == 2
-          && let T::TypeRef(_, args) = expected
-          && let Some(inner) = args.first()
-        {
-          return reset_value_erases_contract(&items[1], inner, scope);
+      (Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), _) if expected.is_option_type() => {
+        let is_core_option = matches!(items.get(1), Some(Calcit::Import(import))
+          if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option");
+        match items.get(2) {
+          Some(Calcit::Tag(variant)) if is_core_option && variant.ref_str() == "none" && items.len() == 3 => return false,
+          Some(Calcit::Tag(variant))
+            if is_core_option
+              && variant.ref_str() == "some"
+              && items.len() == 4
+              && let T::TypeRef(_, args) = expected
+              && let Some(inner) = args.first() =>
+          {
+            return reset_value_erases_contract(&items[3], inner, scope);
+          }
+          _ => {}
         }
       }
       _ => {}

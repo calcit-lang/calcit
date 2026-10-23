@@ -701,7 +701,6 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
-    |calcit.core/case-default $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0

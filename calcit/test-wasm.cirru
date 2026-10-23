@@ -456,12 +456,12 @@
           :code $ quote $ defwasm-export test-enum-map-set-equality ()
             if
               &=
-                %some $ &{} :item $ %some 1
-                %some $ &{} :item $ %some 1
+                Option :some $ &{} :item $ Option :some 1
+                Option :some $ &{} :item $ Option :some 1
               if
                 &=
-                  %some $ #{} 1 2
-                  %some $ #{} 2 1
+                  Option :some $ #{} 1 2
+                  Option :some $ #{} 2 1
                 , 1 0
               , 0
           :examples $ []
@@ -471,12 +471,12 @@
           :code $ quote $ defwasm-export test-enum-map-set-inequality ()
             if
               &=
-                %some $ &{} :item $ %some 1
-                %some $ &{} :item $ %some 2
+                Option :some $ &{} :item $ Option :some 1
+                Option :some $ &{} :item $ Option :some 2
               , 0 $ if
                 &=
-                  %some $ #{} 1 2
-                  %some $ #{} 1 3
+                  Option :some $ #{} 1 2
+                  Option :some $ #{} 1 3
                 , 0 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -484,21 +484,21 @@
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()
             if
-              &= (%some 1) (%some 1)
+              &= (Option :some 1) (Option :some 1)
               if
                 &=
-                  [] $ %some 1
-                  [] $ %some 1
+                  [] $ Option :some 1
+                  [] $ Option :some 1
                 if
                   &=
-                    &{} :item $ %some 1
-                    &{} :item $ %some 1
+                    &{} :item $ Option :some 1
+                    &{} :item $ Option :some 1
                   if
                     &=
-                      %some $ %some 1
-                      %some $ %some 1
+                      Option :some $ Option :some 1
+                      Option :some $ Option :some 1
                     if
-                      &= (%none) (%none)
+                      &= (Option :none) (Option :none)
                       if
                         &= (:: :ok 1) (:: :ok 1)
                         , 1 0
@@ -513,11 +513,11 @@
         'test-enum-structural-inequality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-inequality ()
             if
-              &= (%some 1) (%some 2)
+              &= (Option :some 1) (Option :some 2)
               , 0 $ if
                 &= (:: :ok 1) (:: :err 1)
                 , 0 $ if
-                  &= (%none) (%some 1)
+                  &= (Option :none) (Option :some 1)
                   , 0 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -531,6 +531,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-update-nth $ %{} 'CodeEntry
+          :doc "|update an enum slot by index; an index past the payloads traps"
+          :code $ quote $ defwasm-export test-enum-update-nth (i)
+            &enum:nth
+              update (:: :a 1 2) i $ fn (x) (&+ x 10)
+              , i
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
         'test-filter-map-kv $ %{} 'CodeEntry
           :doc "|Typed filter-map-kv keeps two transformed entries and drops one."
           :code $ quote $ defwasm-export test-filter-map-kv ()
@@ -540,7 +549,8 @@
                     if (&> v 1)
                       %:: MapEntryDecision :keep k $ &* v 10
                       %:: MapEntryDecision :drop
-              &+ (&map:count output) (option:unwrap $ &map:get output :c)
+              &+ (&map:count output)
+                option:unwrap $ &map:get output :c
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -791,14 +801,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-enum-update-nth $ %{} 'CodeEntry (:doc "|update an enum slot by index; an index past the payloads traps")
-          :code $ quote $ defwasm-export test-enum-update-nth (i)
-            &enum:nth
-              update (:: :a 1 2) i $ fn (x) (&+ x 10)
-              , i
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
         'test-list-nth $ %{} 'CodeEntry (:doc "|list nth element")
           :code $ quote $ defwasm-export test-list-nth (i)
             &list:nth ([] 10 20 30 40) i
@@ -938,7 +940,9 @@
           :code $ quote $ defwasm-export test-map-bucket-update (a b)
             &let
               m $ &map:assoc (&{} a 10 b 20) b 99
-              &+ (option:unwrap $ &map:get m a) (option:unwrap $ &map:get m b)
+              &+
+                option:unwrap $ &map:get m a
+                option:unwrap $ &map:get m b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -1071,7 +1075,9 @@
           :code $ quote $ defwasm-export test-map-two-keys-sum (a b)
             &let
               m $ &{} a 10 b 20
-              &+ (option:unwrap $ &map:get m a) (option:unwrap $ &map:get m b)
+              &+
+                option:unwrap $ &map:get m a
+                option:unwrap $ &map:get m b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -1160,7 +1166,7 @@
             :args $ []
         'test-option-some-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-some-method ()
-            (%some 1) .some?
+            (Option :some 1) .some?
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1169,7 +1175,7 @@
             :tags $ #{} :wasm
         'test-option-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-unwrap-or ()
-            (%none) .unwrap-or 7
+            (Option :none) .unwrap-or 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1444,7 +1450,7 @@
             let
                 offset 4
                 option-value $ .unwrap-or
-                  .map (%some 3)
+                  .map (Option :some 3)
                     fn (x)
                       hint-fn $ {}
                         :args $ [] 'Number
@@ -1481,7 +1487,7 @@
           :code $ quote $ defwasm-export test-static-option-result-methods ()
             let
                 option-value $ .unwrap-or
-                  .map (%some 3) wasm-add-four
+                  .map (Option :some 3) wasm-add-four
                   , 0
                 result-value $ .unwrap-or
                   .map (%ok 5) wasm-add-four
@@ -1607,7 +1613,9 @@
         'test-str-nth $ %{} 'CodeEntry (:doc "|nth character at index 1 of hello is e")
           :code $ quote $ defwasm-export test-str-nth ()
             if
-              = (option:unwrap $ &str:nth |hello 1) |e
+              =
+                option:unwrap $ &str:nth |hello 1
+                , |e
               , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1723,7 +1731,9 @@
             &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (option:unwrap $ &struct:definition point) Point
+                &=
+                  option:unwrap $ &struct:definition point
+                  , Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1838,8 +1848,12 @@
                 m $ &{} a 10 other 20
               if
                 and
-                  = (option:unwrap $ &map:get m b) 10
-                  = (option:unwrap $ &map:get m other) 20
+                  =
+                    option:unwrap $ &map:get m b
+                    , 10
+                  =
+                    option:unwrap $ &map:get m other
+                    , 20
                 , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1887,7 +1901,9 @@
               point $ %{} Point (:x 1) (:y 2)
               &let
                 m $ &struct:to-map point
-                &+ (option:unwrap $ &map:get m :x) (option:unwrap $ &map:get m :y)
+                &+
+                  option:unwrap $ &map:get m :x
+                  option:unwrap $ &map:get m :y
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

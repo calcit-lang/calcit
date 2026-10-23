@@ -171,13 +171,13 @@
             let
                 a $ {} $ :a 1
                 b $ option:unwrap $ get a :a
-                ret $ js-await $ case-default b
-                  new js/Promise $ fn (resolve _reject)
+                ret $ js-await $ match b
+                  1 $ new js/Promise $ fn (resolve reject) (resolve |one)
+                  2 $ new js/Promise $ fn (resolve reject) (resolve |two)
+                  _ $ new js/Promise $ fn (resolve _reject)
                     js/setTimeout
                       fn () $ resolve |one
                       , 100
-                  1 $ new js/Promise $ fn (resolve reject) (resolve |one)
-                  2 $ new js/Promise $ fn (resolve reject) (resolve |two)
               assert= ret |one
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
