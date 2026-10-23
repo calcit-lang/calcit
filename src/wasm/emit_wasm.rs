@@ -36,7 +36,7 @@ use crate::wasm::host::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::wasm::host::calcit::type_annotation::TypeBindings;
 use crate::wasm::host::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
-  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, ImportInfo, MethodKind, NullableOrigin,
+  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, DYNAMIC_TYPE, ImportInfo, MethodKind, NullableOrigin,
 };
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{
@@ -8616,11 +8616,16 @@ fn emit_print_arguments(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<u32
 /// Evaluate every argument before invoking the embedded host logger.
 fn emit_core_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let log_idx = resolve_host_import(ctx, "io", "log_line")?;
+  let type_infos = args
+    .iter()
+    .map(|arg| infer_wasm_static_type(ctx, arg).unwrap_or_else(|| DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
   let values = emit_print_arguments(ctx, args)?;
   let visible_values = args
     .iter()
     .zip(values)
-    .filter_map(|(arg, value)| (!matches!(arg, Calcit::Nil)).then_some(value))
+    .zip(type_infos)
+    .filter_map(|((arg, value), type_info)| (!matches!(arg, Calcit::Nil)).then_some((value, type_info)))
     .collect::<Vec<_>>();
   let line = emit_str_spaced_locals(ctx, &visible_values);
   ctx.emit(f64_const(if name == "eprintln" { 2.0 } else { 1.0 }));
@@ -9929,6 +9934,7 @@ fn build_string_pool(
   strings.push("true".into());
   strings.push("false".into());
   strings.extend(tag_index.keys().cloned());
+  strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
   if needs_edn_format {
     strings.extend(
       [

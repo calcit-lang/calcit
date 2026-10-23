@@ -502,10 +502,11 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       let mut tags: Vec<_> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
       tags.sort_by_key(|(_, id)| *id);
       for (name, id) in tags {
+        let text = format!(":{name}");
         let ptr = *ctx
           .string_pool
-          .get(&name)
-          .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
+          .get(&text)
+          .ok_or_else(|| format!("missing WASM tag string literal: {text}"))?;
         ctx.emit(Instruction::LocalGet(tag));
         ctx.emit(f64_const(id as f64));
         ctx.emit(Instruction::F64Eq);
@@ -758,7 +759,15 @@ fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
 /// Convert a pre-evaluated f64 value local to a string i32 pointer local.
 /// Equivalent to `emit_turn_string` but takes a local instead of a Calcit expression.
 pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) -> u32 {
-  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  emit_turn_string_from_local_with_type(ctx, v_local, crate::wasm::host::calcit::DYNAMIC_TYPE.clone())
+}
+
+pub(super) fn emit_turn_string_from_local_with_type(
+  ctx: &mut WasmGenCtx,
+  v_local: u32,
+  type_info: Arc<crate::wasm::host::calcit::CalcitTypeAnnotation>,
+) -> u32 {
+  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo};
   use std::sync::Arc;
   // Map a temporary name to the pre-evaluated local
   let sym: Arc<str> = Arc::from("__ts_arg__");
@@ -767,12 +776,13 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
     at_def: Arc::from("__ts"),
   });
   let prev = ctx.locals.insert(sym.as_ref().to_owned(), v_local);
+  let prev_type = ctx.local_types.insert(sym.as_ref().to_owned(), type_info.clone());
   let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym.clone(),
     info: dummy_info,
     location: None,
-    type_info: DYNAMIC_TYPE.clone(),
+    type_info,
   });
   let _ = emit_turn_string(ctx, std::slice::from_ref(&expr));
   match prev {
@@ -781,6 +791,14 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
     }
     None => {
       ctx.locals.remove(sym.as_ref());
+    }
+  }
+  match prev_type {
+    Some(t) => {
+      ctx.local_types.insert(sym.as_ref().to_owned(), t);
+    }
+    None => {
+      ctx.local_types.remove(sym.as_ref());
     }
   }
   // emit_turn_string leaves f64 on stack; convert to i32 local
@@ -873,7 +891,10 @@ pub(super) fn emit_str_spaced(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 }
 
 /// Join pre-evaluated values as `str-spaced` would, leaving the string pointer local.
-pub(super) fn emit_str_spaced_locals(ctx: &mut WasmGenCtx, values: &[u32]) -> u32 {
+pub(super) fn emit_str_spaced_locals(
+  ctx: &mut WasmGenCtx,
+  values: &[(u32, Arc<crate::wasm::host::calcit::CalcitTypeAnnotation>)],
+) -> u32 {
   if values.is_empty() {
     let zero = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero);
@@ -886,7 +907,7 @@ pub(super) fn emit_str_spaced_locals(ctx: &mut WasmGenCtx, values: &[u32]) -> u3
   ctx.emit(Instruction::I32Const(0x20));
   ctx.emit(Instruction::I32Store8(super::mem_arg_byte(0)));
 
-  let first = emit_turn_string_from_local(ctx, values[0]);
+  let first = emit_turn_string_from_local_with_type(ctx, values[0].0, values[0].1.clone());
   let acc = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(first));
   ctx.emit(Instruction::LocalSet(acc));
@@ -896,7 +917,7 @@ pub(super) fn emit_str_spaced_locals(ctx: &mut WasmGenCtx, values: &[u32]) -> u3
     ctx.emit(Instruction::I32TruncF64U);
     ctx.emit(Instruction::LocalSet(acc));
 
-    let next = emit_turn_string_from_local(ctx, *value);
+    let next = emit_turn_string_from_local_with_type(ctx, value.0, value.1.clone());
     concat_two_i32_ptrs(ctx, acc, next);
     ctx.emit(Instruction::I32TruncF64U);
     ctx.emit(Instruction::LocalSet(acc));
