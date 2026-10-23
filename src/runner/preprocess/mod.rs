@@ -20639,6 +20639,12 @@ mod tests {
     )
     .expect("unknown external field remains a warning");
     assert_eq!(unknown_warnings.borrow()[0].code(), Some("W_JS_FFI_UNKNOWN_FIELD"));
+    let unknown_message = unknown_warnings.borrow()[0].message().to_owned();
+    assert!(unknown_message.contains("minimal external-object capability"));
+    assert!(unknown_message.contains("`js-cast` at the `:js-ffi` boundary"));
+    assert!(unknown_message.contains("calcit docs read js-interop.md --full"));
+    assert!(!unknown_message.contains("dynamic key"));
+    assert!(!unknown_message.contains("raw `aget`/`aset`"));
 
     let mismatch_warnings = RefCell::new(vec![]);
     check_typed_js_field_operation(

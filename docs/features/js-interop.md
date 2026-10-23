@@ -257,6 +257,11 @@ report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
 only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
 reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
 
+`W_JS_FFI_UNKNOWN_FIELD` 的修复先核对实际宿主与接收者能力。优先复用只声明宿主确实支持
+成员的最小 external-object capability，需要窄化时在 `:js-ffi` 边界通过 `js-cast` 受检转换；
+检查范围见本页“方法调用体验”。同一静态字段改为动态 key 或 raw 访问只是绕过声明，
+不会获得字段类型证明；真正开放的宿主访问继续遵循下文的显式动态边界说明。
+
 `calcit query def namespace/name --format json` includes the normalized `ffi` metadata.
 The human-readable form prints an `FFI:` line, making `:names`, `:writable`,
 `:backend`, `:kind`, and `:target` inspectable without opening the snapshot.
