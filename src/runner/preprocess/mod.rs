@@ -8657,6 +8657,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
     .iter()
     .take(structural_arg_count)
     .filter_map(|value| {
+      // A literal `Option :some x` is a deliberate construction, not a migrated nullable API result.
+      if lowered_core_enum_constructor_name(value).is_some() {
+        return None;
+      }
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
       Some((value, enum_name))
     })

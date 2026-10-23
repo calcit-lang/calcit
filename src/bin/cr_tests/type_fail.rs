@@ -2234,32 +2234,6 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
-fn direct_option_constructors_keep_legacy_use_warnings() {
-  run_with_large_stack(|| {
-    let entries = load_snippet_entries("do\n  nil? $ Option :none\n  = (Option :some 1) 1\n  = (Option :some 1) (Option :some 1)");
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("direct Option constructors should preprocess with warnings");
-
-    let warnings = warnings.borrow();
-    let legacy_uses = warnings
-      .iter()
-      .filter(|warning| warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE"))
-      .collect::<Vec<_>>();
-    for operation in ["nil?", "="] {
-      assert!(
-        legacy_uses
-          .iter()
-          .any(|warning| warning.message().contains(&format!("`{operation}` consumes nominal enum `Option`"))),
-        "direct constructor under `{operation}` should warn, got: {warnings:?}"
-      );
-    }
-    assert_eq!(legacy_uses.len(), 2, "Option-to-Option equality stays exempt: {legacy_uses:?}");
-  });
-}
-
-#[test]
 fn parse_cirru_list_rejects_non_string_before_runtime() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("parse-cirru-list 1");
