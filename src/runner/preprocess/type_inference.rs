@@ -4057,7 +4057,27 @@ pub(crate) fn extract_field_name(field_arg: &Calcit) -> Option<&str> {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn resolve_program_value_for_preprocess(ns: &str, def: &str, def_id: Option<u32>) -> Option<Calcit> {
+  if let Some(value) = program::lookup_runtime_ready(ns, def) {
+    return Some(value);
+  }
   let call_stack = CallStackList::default();
+  // Preserve runtime lookup's existing cache selection. Preparing a missing
+  // entry must not initiate a new proof audit of already compiled metadata.
+  if program::lookup_compiled_def(ns, def).is_none() && program::has_def_code(ns, def) {
+    super::ensure_ns_def_compiled(ns, def, &RefCell::new(vec![]), &call_stack).ok()?;
+  }
+  let pending = super::PREPROCESS_COMPILE_GUARD.with(|guard| {
+    guard
+      .borrow()
+      .iter()
+      .filter_map(|(namespace, definition)| program::lookup_def_id(namespace, definition))
+      .collect::<HashSet<_>>()
+  });
+  if !pending.is_empty() && program::compiled_initializer_has_pending_dependency(ns, def, &pending) {
+    // Declaration-based inference can read the nominal shape while its impl
+    // is compiling. Executing that attachment now would cache a transient failure.
+    return None;
+  }
   runner::evaluate_symbol_from_program(def, ns, def_id, &call_stack).ok()
 }
 

@@ -534,6 +534,52 @@ fn snapshot_fallback_preserves_dependency_metadata() {
 }
 
 #[test]
+fn initializer_metadata_probe_defers_transitive_pending_dependencies() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let pending = ensure_def_id("tests.initializer", "pending");
+  let helper = ensure_def_id("tests.initializer", "helper");
+  let value = ensure_def_id("tests.initializer", "value");
+  let unrelated = ensure_def_id("tests.initializer", "unrelated");
+  let mut function = compiled_def_for_test(helper, vec![pending]);
+  function.kind = CompiledDefKind::Fn;
+  write_compiled_def("tests.initializer", "helper", function);
+  let mut initializer = compiled_def_for_test(value, vec![helper]);
+  initializer.kind = CompiledDefKind::LazyValue;
+  write_compiled_def("tests.initializer", "value", initializer);
+
+  assert!(compiled_initializer_has_pending_dependency(
+    "tests.initializer",
+    "value",
+    &HashSet::from([pending])
+  ));
+  assert!(!compiled_initializer_has_pending_dependency(
+    "tests.initializer",
+    "helper",
+    &HashSet::from([pending])
+  ));
+  assert!(!compiled_initializer_has_pending_dependency(
+    "tests.initializer",
+    "value",
+    &HashSet::from([unrelated])
+  ));
+  assert!(!compiled_initializer_has_pending_dependency(
+    "tests.initializer",
+    "missing",
+    &HashSet::from([pending])
+  ));
+  assert!(lookup_runtime_cell("tests.initializer", "value").is_none());
+
+  // A completed recursive dependency graph must terminate without becoming pending.
+  write_compiled_def("tests.initializer", "pending", compiled_def_for_test(pending, vec![value]));
+  assert!(!compiled_initializer_has_pending_dependency(
+    "tests.initializer",
+    "value",
+    &HashSet::new()
+  ));
+}
+
+#[test]
 fn write_runtime_ready_normalizes_thunk_into_lazy_cell() {
   let _guard = lock_program_test_state();
   reset_program_test_state();

@@ -552,6 +552,35 @@ pub fn lookup_compiled_def(ns: &str, def: &str) -> Option<CompiledDef> {
   file.defs.get(def).cloned()
 }
 
+/// Metadata probes must not execute an initializer through an unfinished compile dependency.
+pub(crate) fn compiled_initializer_has_pending_dependency(ns: &str, def: &str, pending: &HashSet<DefId>) -> bool {
+  let program = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
+  let Some(root) = program.get(ns).and_then(|file| file.defs.get(def)) else {
+    return false;
+  };
+  if root.kind != CompiledDefKind::LazyValue {
+    return false;
+  }
+  let mut queue = vec![root.def_id];
+  let mut visited = HashSet::new();
+  while let Some(id) = queue.pop() {
+    if pending.contains(&id) {
+      return true;
+    }
+    if !visited.insert(id) {
+      continue;
+    }
+    if let Some(compiled) = program
+      .values()
+      .flat_map(|file| file.defs.values())
+      .find(|entry| entry.def_id == id)
+    {
+      queue.extend(compiled.deps.iter().copied());
+    }
+  }
+  false
+}
+
 fn with_compiled_def<T>(ns: &str, def: &str, f: impl FnOnce(&CompiledDef) -> T) -> Option<T> {
   let program = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
   let file = program.get(ns)?;

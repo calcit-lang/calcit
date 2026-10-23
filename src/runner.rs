@@ -1274,6 +1274,15 @@ mod tests {
       Calcit::Enum(e) => {
         assert_eq!(e.tag.as_ref(), &Calcit::tag("none"));
         assert!(e.extra.is_empty());
+        let definition = e.sum_type.as_ref().expect("runtime Option retains its nominal definition");
+        assert_eq!(definition.definition_ref().map(|name| name.as_ref()), Some("calcit.core/Option"));
+        assert!(
+          definition
+            .impls()
+            .iter()
+            .any(|implementation| matches!(implementation.get("unwrap"), Some(Calcit::Fn { .. }))),
+          "deferred metadata probes must not erase the completed Option method table"
+        );
       }
       other => panic!("expected Option :none, got {other}"),
     }
@@ -1299,17 +1308,23 @@ mod tests {
   #[test]
   fn strict_macro_may_emit_runtime_env_read_without_capability() {
     on_large_stack(|| {
-      let _guard = load_core_for_env_tests();
-      let runtime_call = Calcit::from(vec![
-        Calcit::Proc(CalcitProc::GetEnv),
-        Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
-      ]);
-      let body = vec![Calcit::from(vec![
-        Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.runner")),
-        runtime_call,
-      ])];
-      let emitting_macro = strict_test_macro("emit-env", body, HashSet::new());
-      assert_option_none(&call_zero_arg_macro(&emitting_macro).expect("emitting runtime effect stays pure"));
+      for prewarm in [None, Some("OptionOpsImpl")] {
+        let _guard = load_core_for_env_tests();
+        if let Some(definition) = prewarm {
+          preprocess::ensure_ns_def_compiled(CORE_NS, definition, &RefCell::new(vec![]), &CallStackList::default())
+            .expect("preprocess a nominal implementation before its enum is initialized");
+        }
+        let runtime_call = Calcit::from(vec![
+          Calcit::Proc(CalcitProc::GetEnv),
+          Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
+        ]);
+        let body = vec![Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.runner")),
+          runtime_call,
+        ])];
+        let emitting_macro = strict_test_macro("emit-env", body, HashSet::new());
+        assert_option_none(&call_zero_arg_macro(&emitting_macro).expect("emitting runtime effect stays pure"));
+      }
     });
   }
 
