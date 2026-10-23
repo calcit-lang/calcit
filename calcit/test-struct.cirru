@@ -26,7 +26,11 @@
           :code $ quote $ defimpl BirdImpl BirdTrait
             .show $ fn (self)
               println $ &struct:get self :name
-            .rename $ fn (self name) (assoc self :name name)
+            .rename $ fn (self name)
+              hint-fn $ {}
+                :args $ [] 'test-struct.main/Lagopus0 'String
+                :return 'test-struct.main/Lagopus0
+              .assoc self :name name
           :examples $ []
           :schema $ :: 'Impl
         'BirdShape $ %{} 'CodeEntry (:doc |)
@@ -841,7 +845,7 @@
               assert-detect identity $ &struct:matches? p1 p2
               assert-detect not $ &struct:matches? p1 c1
               &let
-                p4 $ assoc p1 :age 30
+                p4 $ .assoc p1 :age 30
                 assert= 20 $ :age p1
                 assert= 30 $ :age p4
               inside-js: $ js/console.log $ to-js-data p1
@@ -858,7 +862,7 @@
               assert-detect identity $ contains? p1 :name
               assert-detect not $ contains? p1 :surname
               assert= 3 $ count p1
-              assert= 21 $ :age $ assoc p1 :age 21
+              assert= 21 $ :age $ .assoc p1 :age 21
               assert= 20 $ :age p1
               let
                   read-open $ fn (value)
