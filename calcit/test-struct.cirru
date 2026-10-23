@@ -29,7 +29,7 @@
             .rename $ fn (self name)
               hint-fn $ {}
                 :args $ [] 'test-struct.main/Lagopus0 'String
-                :return 'test-struct.main/Lagopus0
+                :return 'Dynamic
               .assoc self :name name
           :examples $ []
           :schema $ :: 'Impl

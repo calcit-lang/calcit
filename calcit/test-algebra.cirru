@@ -31,7 +31,7 @@
             .apply $ fn (box fs)
               hint-fn $ {}
                 :args $ [] 'test-algebra.main/AlgebraBox0 'test-algebra.main/AlgebraBox0
-                :return 'test-algebra.main/AlgebraBox0
+                :return 'Dynamic
               let
                   f $ &struct:get fs :value
                 if (fn? f)
@@ -52,7 +52,7 @@
                 :args $ [] 'test-algebra.main/AlgebraBox0 $ :: 'Fn
                   {} (:return 'Dynamic)
                     :args $ [] 'Dynamic
-                :return 'test-algebra.main/AlgebraBox0
+                :return 'Dynamic
               .assoc box :value $ f $ &struct:get box :value
           :examples $ []
           :schema $ :: 'Impl
@@ -61,7 +61,7 @@
             .mappend $ fn (a b)
               hint-fn $ {}
                 :args $ [] 'test-algebra.main/AlgebraBox0 'test-algebra.main/AlgebraBox0
-                :return 'test-algebra.main/AlgebraBox0
+                :return 'Dynamic
               .assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
           :schema $ :: 'Impl
