@@ -456,7 +456,7 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 
 ## 0.31.0 校验 hint-fn 的实际合同位置
 
-函数体使用 `hint-fn $ {} (:args $ [] 'String) (:return 'String)`；已有局部函数使用 `hint-fn f $ {} ...`，随后直接传递或调用 `f`。
+需要为局部实现补充签名时，在函数体开头使用 `hint-fn $ {} (:args $ [] 'String) (:return 'String)`。两参数形式 `hint-fn f $ {} ...` 只用于核对已有完整函数签名，不能为未标注或开放的局部函数补造参数、返回类型；核对后可继续传递或调用 `f`。
 函数体的 Map 不包 `:: 'Fn`；后者仍用于 CodeEntry schema 和嵌套函数类型。
 旧版静默接受的错误 schema、非函数目标、与已有签名矛盾的注解、零参数或多余参数现在会在预处理时报错；`hint-fn schema (fn ...)` 不是回调包装器。
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
