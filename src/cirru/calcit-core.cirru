@@ -8686,7 +8686,9 @@
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |local-hint-is-nil)
               :code $ quote $ let
-                  f $ fn (x) (+ x 1)
+                  f $ fn (x)
+                    hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                    + x 1
                   metadata $ hint-fn f $ {}
                     :args $ [] 'Number
                     :return 'Number
@@ -8720,7 +8722,9 @@
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |targeted-body-hint-is-nil)
               :code $ quote $ let
-                  f $ fn (x) (+ x 1)
+                  f $ fn (x)
+                    hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                    + x 1
                   annotate $ fn () 3 $ hint-fn f
                     {}
                       :args $ [] 'Number
