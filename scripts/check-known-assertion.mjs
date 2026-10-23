@@ -703,7 +703,7 @@ try {
       assert.equal(silent.status, 0, `${silent.stdout}\n${silent.stderr}`);
       const silentSummary = JSON.parse(silent.stdout);
       assert.equal(silentSummary.failed, 0);
-      assert.equal(silentSummary.executed, 5);
+      assert.equal(silentSummary.executed, 7);
       assert.doesNotMatch(silent.stderr, /unit-stderr|log-first-argument|log-second-argument/);
       const nativeFailure = spawnSync(binary, [snapshot, "--init-fn", "app.main/failing-log", "--reload-fn", "app.main/failing-log"], options);
       assert.notEqual(nativeFailure.status, 0);

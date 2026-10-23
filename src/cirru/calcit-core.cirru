@@ -5930,6 +5930,13 @@
                 assert= &unit $ println |unit-stdout
                 assert= &unit $ echo |unit-echo
               :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-preserves-zero-bool-and-tag-formatting)
+              :code $ quote $ do
+                assert= &unit $ println 0 false :unit-log-tag
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-preserves-nil-arguments)
+              :code $ quote $ assert= &unit $ println nil |unit-log-nil-middle nil
+              :tags $ #{} :core :log :unit
             %{} 'TestEntry (:name |registered-log-callback-returns-unit)
               :code $ quote $ assert= ([] &unit &unit)
                 map ([] |callback-a |callback-b)
