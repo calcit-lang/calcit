@@ -4033,3 +4033,43 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
     }
   });
 }
+
+#[test]
+fn generic_return_kind_guard_cannot_forge_payload_type() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let forge = |branch: &str| {
+      format!(
+        "let\n    forge $ fn (x)\n      hint-fn $ {{}}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'T\n      if (list? x) {branch} $ raise |expected-list\n  , &unit"
+      )
+    };
+    // A kind guard on `x: T` says nothing about the members `T` was bound to.
+    for branch in ["([] |wrong)", "(let ((y ([] |wrong))) y)"] {
+      let entries = load_snippet_entries(&forge(branch));
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("a forged List payload must not prove the generic return");
+      assert!(
+        matches!(error.code.as_deref(), Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION")),
+        "{branch}: {error}"
+      );
+      let location = error
+        .location
+        .as_ref()
+        .expect("the producer diagnostic must keep its source location");
+      assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+      assert_eq!(location.def.as_ref(), "main!", "{error}");
+    }
+    // Returning the guarded input itself, or a local alias of it, keeps `T`.
+    for branch in ["x", "(let ((y x)) y)"] {
+      let entries = load_snippet_entries(&forge(branch));
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|error| panic!("{branch}: the guarded input still proves T: {error}"));
+    }
+  });
+}
