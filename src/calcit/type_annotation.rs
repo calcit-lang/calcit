@@ -5305,10 +5305,9 @@ impl CalcitTypeAnnotation {
       }
       (Self::StructDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => true,
       (Self::EnumDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => true,
-      (Self::Trait(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
-      (Self::TraitSet(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
       (Self::Custom(actual), Self::Custom(expected))
-        if Self::custom_keyword_matches(expected, "impl") && matches!(actual.as_ref(), Calcit::Impl(_)) =>
+        if (Self::custom_keyword_matches(expected, "impl") && matches!(actual.as_ref(), Calcit::Impl(_)))
+          || (Self::custom_keyword_matches(expected, "trait") && matches!(actual.as_ref(), Calcit::Trait(_))) =>
       {
         true
       }
@@ -5320,6 +5319,15 @@ impl CalcitTypeAnnotation {
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
       (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
       (Self::Variadic(a), Self::Variadic(b)) => a.compatible_with_bindings(b, bindings),
+      (Self::Custom(a), Self::Custom(b)) if let (Calcit::Trait(actual), Calcit::Trait(expected)) = (a.as_ref(), b.as_ref()) => {
+        // Source placeholders can describe their evaluated declaration, but
+        // two evaluated nominal identities never collapse by name.
+        if actual.runtime_id.is_some() && expected.runtime_id.is_some() {
+          actual == expected
+        } else {
+          Self::trait_references_match(actual, expected)
+        }
+      }
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       (Self::StructValue(a), Self::StructValue(b)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
       (Self::StructValue(a), Self::Struct(b, _)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
@@ -6176,6 +6184,7 @@ impl CalcitTypeAnnotation {
           Self::canonical_type_symbol_name(tag.ref_str()).expect("known canonical type symbol"),
         ))
       }
+      Self::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_)) => Edn::Symbol(Arc::from("Trait")),
       Self::Custom(value) => calcit_type_to_edn(value.as_ref()),
       Self::Enum(e, args) => {
         if args.is_empty() {
@@ -6205,6 +6214,17 @@ impl CalcitTypeAnnotation {
       Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
       _ => Edn::Symbol(Arc::from("Dynamic")),
+    }
+  }
+
+  /// Concrete metadata is distinct from the capability of an implemented value.
+  pub(crate) fn as_trait_definition(&self) -> Option<&CalcitTrait> {
+    match self {
+      Self::Custom(value) => match value.as_ref() {
+        Calcit::Trait(definition) => Some(definition),
+        _ => None,
+      },
+      _ => None,
     }
   }
 
@@ -7726,6 +7746,26 @@ mod tests {
     assert!(
       CalcitTypeAnnotation::trait_references_match(&qualified_placeholder, &qualified_runtime),
       "qualified definition identity keeps the intentional reverse-match path"
+    );
+
+    let metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(qualified_runtime.clone())));
+    let source_metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(qualified_placeholder)));
+    let other_runtime =
+      CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]).with_definition_ref("respo.dom", "DomElement");
+    let other_metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(other_runtime)));
+    assert!(metadata.is_proven_for(&source_metadata));
+    assert!(source_metadata.is_proven_for(&metadata));
+    assert!(
+      !metadata.is_proven_for(&other_metadata),
+      "evaluated metadata IDs must remain distinct"
+    );
+    let capability = CalcitTypeAnnotation::Trait(Arc::new(qualified_runtime));
+    let metadata_kind = CalcitTypeAnnotation::from_tag_name("trait");
+    assert!(metadata.is_proven_for(&metadata_kind));
+    assert!(!capability.is_proven_for(&metadata_kind), "a capability is not a descriptor value");
+    assert!(
+      !metadata.is_proven_for(&capability),
+      "a descriptor does not implement its own trait"
     );
   }
 
@@ -11117,6 +11157,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
       None => Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     },
     Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned()))),
+    Calcit::Trait(definition) => Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(definition.clone())))),
     _ => Arc::new(CalcitTypeAnnotation::from_calcit(value)),
   }
 }

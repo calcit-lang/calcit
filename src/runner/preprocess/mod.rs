@@ -2277,6 +2277,15 @@ fn resolve_program_trait_refs_for_body(annotation: Arc<CalcitTypeAnnotation>) ->
   })
 }
 
+/// A descriptor alias retains its declaring trait's method contract.
+fn resolve_trait_method_type(trait_def: &CalcitTrait, annotation: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let qualified = match trait_def.definition_ref.as_deref().and_then(|name| name.rsplit_once('/')) {
+    Some((ns, _)) => resolve_namespace_type_refs_for_body(annotation, ns),
+    None => annotation,
+  };
+  resolve_program_trait_refs_for_body(qualified)
+}
+
 fn unwrap_named_body_parameter_type(annotation: Arc<CalcitTypeAnnotation>, parameter: Option<&Arc<str>>) -> Arc<CalcitTypeAnnotation> {
   let Some(parameter) = parameter else {
     return annotation;
@@ -8278,16 +8287,18 @@ fn validate_explicit_trait_call(
         ));
       }
     },
-    Some(local @ Calcit::Local(_)) => match resolve_type_value(local, scope_types).as_deref() {
-      Some(CalcitTypeAnnotation::Trait(definition)) => definition.as_ref().to_owned(),
-      _ => {
-        return Err(reject(
-          "E_UNPROVEN_TRAIT_CALL",
-          "&trait-call requires a statically resolved trait definition; this local value has no nominal trait identity".to_owned(),
-          local.get_location().or_else(|| head.get_location()),
-        ));
+    Some(local @ Calcit::Local(_)) => {
+      match resolve_type_value(local, scope_types).and_then(|annotation| annotation.as_trait_definition().cloned()) {
+        Some(definition) => definition,
+        _ => {
+          return Err(reject(
+            "E_UNPROVEN_TRAIT_CALL",
+            "&trait-call requires a statically resolved trait definition; this local value has no nominal trait identity".to_owned(),
+            local.get_location().or_else(|| head.get_location()),
+          ));
+        }
       }
-    },
+    }
     _ => {
       return Err(reject(
         "E_UNPROVEN_TRAIT_CALL",
@@ -8315,11 +8326,11 @@ fn validate_explicit_trait_call(
       head.get_location(),
     ));
   }
-  if let Some(signature) = trait_def
+  let method_type = trait_def
     .method_index(method_name)
     .and_then(|index| trait_def.method_types.get(index))
-    .and_then(|annotation| annotation.as_function())
-  {
+    .map(|annotation| resolve_trait_method_type(&trait_def, annotation.clone()));
+  if let Some(signature) = method_type.as_deref().and_then(CalcitTypeAnnotation::as_function) {
     let method_args = args.skip(2).expect("trait and method operands were checked");
     let normalized;
     let (checked_args, checked_signature) = if method_args
@@ -10449,6 +10460,10 @@ fn get_impls_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Calc
 
   if let CalcitTypeAnnotation::Custom(value) = type_value {
     match value.as_ref() {
+      // Descriptors have no attached instance impl table. This is a known
+      // empty set, not missing evidence that permits dynamic dispatch.
+      Calcit::Trait(_) => return Some(vec![]),
+      Calcit::Tag(tag) if tag.ref_str() == "trait" => return Some(vec![]),
       Calcit::Import(import) => {
         return match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
           Some(value) => collect_impls_from_value(&value),

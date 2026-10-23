@@ -155,6 +155,18 @@
               :args $ [] 'test-traits.main/Greeting
           :examples $ []
           :schema $ :: 'Trait
+          :tests $ []
+            %{} 'TestEntry (:name |local-descriptor-call)
+              :code $ quote $ let
+                  descriptor Greeting
+                  receiver $ Greeter :name |Ada
+                assert= "|hello Ada" $ &trait-call descriptor :greeting receiver
+              :tags $ #{} :trait-metadata :unit
+            %{} 'TestEntry (:name |imported-descriptor-call)
+              :code $ quote $ let
+                  Prototype $ impl-traits Greeter MetadataGreetingImpl
+                assert= |hello-from-metadata $ &trait-call metadata/GreetingAlias :greeting $ Prototype :name |Ada
+              :tags $ #{} :trait-metadata :unit
         'GreetingImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl GreetingImpl Greeting
             .greeting $ fn (g)
@@ -171,6 +183,11 @@
           :code $ quote $ defimpl LabeledImpl Labeled
             .label $ fn (g)
               :name $ assert-type g Greeter
+          :examples $ []
+          :schema $ :: 'Impl
+        'MetadataGreetingImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl MetadataGreetingImpl metadata/Greeting
+            .greeting $ fn (_value) |hello-from-metadata
           :examples $ []
           :schema $ :: 'Impl
         'MyBar $ %{} 'CodeEntry (:doc "|Trait for tuple override test")
@@ -454,6 +471,26 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
+        'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn retain-trait-metadata ()
+            let
+                descriptors $ [] Greeting
+                descriptor $ &list:nth descriptors 0
+                forward-metadata $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] 'Trait
+                    :return 'Trait
+                  , value
+              forward-metadata $ identity descriptor
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Trait)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |descriptor-storage)
+            :code $ quote $ let
+                descriptor $ retain-trait-metadata
+              assert= :trait $ type-of descriptor
+              assert= Greeting descriptor
+            :tags $ #{} :trait-metadata :unit
         'test-add-trait $ %{} 'CodeEntry (:doc "|Test Add trait")
           :code $ quote $ defn test-add-trait () (println "|Testing Add trait...") (; Number addition)
             assert= 3 $ + 1 2
@@ -988,7 +1025,24 @@
               type-of $ trait-listener-host $ fn (value) &unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.main
-          :require $ calcit.test :refer $ throws?
+          :require
+            calcit.test :refer $ throws?
+            test-traits.metadata :as metadata
+    'test-traits.metadata $ %{} 'FileEntry
+      :defs $ {}
+        'Greeting $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait Greeting
+            .greeting $ :: 'Fn $ {}
+              :args $ [] 'test-traits.metadata/Greeting
+              :return 'String
+          :examples $ []
+          :schema $ :: 'Trait
+        'GreetingAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def GreetingAlias Greeting
+          :examples $ []
+          :schema $ :: 'Trait
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.metadata
     'test-traits.struct-identity $ %{} 'FileEntry
       :defs $ {} $ 'comparison-contract?
         %{} 'CodeEntry (:doc |)
