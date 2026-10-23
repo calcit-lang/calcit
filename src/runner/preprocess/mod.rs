@@ -9708,7 +9708,7 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
       Some("`.join` returned a List with the separator inserted; use `.intersperse` for that List, or `.join-string` to build a String")
     }
     (T::Map(_, _), "values") => Some(
-      "`.values` returned the de-duplicated values as a Set; use `.distinct-values` for that Set (`.vals` and `vals` are the function forms)",
+      "`.values` returned the de-duplicated values as a Set; use `.distinct-values` for that Set (the function form is `distinct-values`)",
     ),
     (T::List(_), "contains?") => {
       Some("`.contains?` checked a List position, not an element; use `.contains-index?` for a position or `.includes?` for an element")

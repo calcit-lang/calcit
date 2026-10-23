@@ -40,9 +40,6 @@ const ARGUMENT_PRESERVING_CORE_MACROS: &[&str] = &[
   "is-not=",
 ];
 
-/// Every enclosing call must be a function, syntax, a core macro that keeps its
-/// argument forms unchanged, or a macro whose source only forwards the argument
-/// holding this call, so no macro observes the spelling.
 /// The call being moved, and the extra macros that pass its form through
 /// unchanged on top of `ARGUMENT_PRESERVING_CORE_MACROS`.
 #[derive(Clone, Copy)]
@@ -51,6 +48,9 @@ pub(super) struct ContextSubject<'a> {
   pub(super) transparent: &'a [&'a str],
 }
 
+/// Every enclosing call must be a function, syntax, a core macro that keeps its
+/// argument forms unchanged, or a macro whose source only forwards the argument
+/// holding this call, so no macro observes the spelling.
 pub(super) fn unstable_macro_context(
   snapshot: &Snapshot,
   snapshot_file: &str,

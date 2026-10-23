@@ -106,6 +106,8 @@ const RETIRED_CORE_API_028_RULES: [&str; 10] = [
   "core-collection-combine-v1",
   "core-non-nil-predicate-v1",
 ];
+// Rules whose old names were removed in 0.31.0; only 0.30.x CLIs ship them.
+const RETIRED_CORE_API_030_RULES: [&str; 2] = ["case-default-to-match-v1", "core-function-alias-v1"];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
 
@@ -1196,6 +1198,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(format!(
       "Fix rule `{rule}` was retired in 0.29.0 together with the core aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` for a remaining method call and an unknown-name warning with the preferred spelling for a remaining function call."
+    ));
+  }
+  if let Some(rule) = options.rule.as_deref()
+    && RETIRED_CORE_API_030_RULES.contains(&rule)
+  {
+    return Err(format!(
+      "Fix rule `{rule}` was retired in 0.31.0 together with the core names it migrated. Run it with a 0.30.x Calcit CLI before upgrading; in this CLI, a remaining call reports an unknown-name warning with the preferred spelling."
     ));
   }
   if let Some(rule) = options.rule.as_deref()

@@ -1497,7 +1497,7 @@ WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `non-nil? 
 
 旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 `Optional<String>`（WASI `get-env` 已改为返回名义 `Option`）；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
 
-```cirru.no-check
+```cirru
 assert= true $ non-nil? false
 
 assert= true $ non-nil? 0
@@ -1511,7 +1511,7 @@ assert= true $ non-nil? $ Option :none
 
 使用 `non-nil?` 表示“值不为 nil”。旧 `some?` 已在 0.29.0 删除，它从未表示 Option variant 判断。`Option :none` 本身是一个非 nil 的名义值，因此 `non-nil? $ Option :none` 仍返回 true；要判断 Option variant，请使用 `.some?`、`.none?` 或原生 `match`。
 
-```cirru.no-check
+```cirru
 assert= true $ non-nil? false
 
 assert= true $ non-nil? 0

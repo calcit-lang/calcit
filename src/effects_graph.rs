@@ -679,10 +679,7 @@ impl EffectsGraphAnalyzer {
     {
       let target = extract_state_target(list, name);
       record_state_operator(name, &target, list, current_ns, &mut out.state);
-      if matches!(
-        name.as_str(),
-        "defref" | "defatom" | "ref" | "atom" | "reset!" | "swap!" | "deref" | "set!"
-      ) {
+      if matches!(name.as_str(), "defref" | "defatom" | "ref" | "reset!" | "swap!" | "deref" | "set!") {
         return;
       }
     }
@@ -1088,7 +1085,7 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defref" | "defatom" | "reset!" | "swap!" | "ref" | "atom" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
+    "defref" | "defatom" | "reset!" | "swap!" | "ref" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
   )
 }
 
@@ -1100,7 +1097,7 @@ fn record_state_operator(
   state: &mut Vec<StateItem>,
 ) {
   let kind = match op_name {
-    "defref" | "defatom" | "ref" | "atom" => "atom-def",
+    "defref" | "defatom" | "ref" => "atom-def",
     "reset!" | "swap!" => "atom-write",
     "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
     "deref" => "atom-read",
@@ -1136,18 +1133,18 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     }
     "defref" | "defatom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
     // A local `(ref init)` has no name of its own; index 1 is the initializer.
-    "ref" | "atom" => "?".to_string(),
+    "ref" => "?".to_string(),
     _ => op_name.to_string(),
   }
 }
 
 /// Position of the initial value in a Ref constructor call:
 /// `(defref name init)` / `(defatom name init)` take it at index 2,
-/// local `(ref init)` / `(atom init)` at index 1.
+/// local `(ref init)` at index 1.
 fn ref_constructor_init_index(op_name: &str) -> Option<usize> {
   match op_name {
     "defref" | "defatom" => Some(2),
-    "ref" | "atom" => Some(1),
+    "ref" => Some(1),
     _ => None,
   }
 }
@@ -1867,7 +1864,7 @@ pub fn analyze_effects_graph(
 fn is_meaningful_call_target(ns: &str, def: &str, include_core: bool) -> bool {
   if matches!(
     def,
-    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defref" | "defatom" | "reset!" | "swap!" | "deref" | "ref" | "atom"
+    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defref" | "defatom" | "reset!" | "swap!" | "deref" | "ref"
   ) {
     return false;
   }
@@ -2936,7 +2933,6 @@ mod tests {
   fn ref_constructors_read_initializer_at_their_own_position() {
     for (head, args, name) in [
       ("ref", vec!["1"], "?"),
-      ("atom", vec!["1"], "?"),
       ("defref", vec!["*counter", "1"], "*counter"),
       ("defatom", vec!["*counter", "1"], "*counter"),
     ] {

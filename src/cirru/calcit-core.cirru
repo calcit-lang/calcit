@@ -5005,6 +5005,19 @@
                     _ |other
                   assert= 1 $ deref counter
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |literal-patterns-use-match)
+              :code $ quote $ let
+                  pick $ fn (x)
+                    match x (:mount |m) (:update |u) (|text |s) (1 |n) (true |b) (nil |nil) (_ |other)
+                assert= |m $ pick :mount
+                assert= |u $ pick :update
+                assert= |s $ pick |text
+                assert= |n $ pick 1
+                assert= |b $ pick true
+                assert= |nil $ pick nil
+                assert= |other $ pick :unknown
+                assert= |other $ pick 2
+              :tags $ #{} :core :unit
         'ceil $ %{} 'CodeEntry
           :doc "|公开的向上舍入函数。ceil n 接收 Number，返回不小于 n 的最小整数值，返回类型仍为 Number；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation

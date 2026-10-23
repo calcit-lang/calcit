@@ -8402,6 +8402,20 @@ fn retired_core_alias_rules_point_to_the_0_28_cli() {
 }
 
 #[test]
+fn rules_retired_in_0_31_report_the_older_cli() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for rule in ["case-default-to-match-v1", "core-function-alias-v1"] {
+    let output = run_fix(&snapshot, &["--rule", rule, "--format", "json"]);
+    assert!(!output.status.success(), "{rule} must be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("retired in 0.31.0"), "{rule} stderr: {stderr}");
+    assert!(stderr.contains("0.30.x Calcit CLI"), "{rule} stderr: {stderr}");
+  }
+}
+
+#[test]
 fn ref_migration_preserves_resolved_nominal_struct_schemas() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

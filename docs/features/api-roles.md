@@ -112,7 +112,7 @@ String 的 `.len`（旧 `.count` 方法已在 0.29.0 删除）、`.get/.nth/.sli
 
 下面是**当前旧契约的反例**，说明为什么不能只凭词形替换；对应 definition `:tests` 会随等价迁移一起保留这些断言：
 
-```cirru.no-check
+```cirru
 do
   assert= true $ non-nil? $ Option :none
   assert= false $
