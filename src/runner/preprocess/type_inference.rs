@@ -2939,7 +2939,7 @@ fn infer_typed_method_result<'a>(
   };
   let Some(receiver_bindings) = actual_types
     .first()
-    .and_then(|receiver| method_receiver_bindings(receiver, signature))
+    .and_then(|receiver| method_receiver_bindings(receiver, signature, Some(scope_types)))
   else {
     return calcit::DYNAMIC_TYPE.clone();
   };

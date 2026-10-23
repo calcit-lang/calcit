@@ -379,6 +379,11 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'Greeting
+          :tests $ [] $ %{} 'TestEntry (:name |qualified-trait-receiver)
+            :code $ quote $ assert=
+              describe-greeting $ Greeter :name |Ada
+              , "|hello Ada / Ada"
+            :tags $ #{} :trait-bound :unit
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []

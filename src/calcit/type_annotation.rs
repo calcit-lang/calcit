@@ -279,10 +279,31 @@ pub(crate) fn proves_trait_bound(
   capabilities: Option<&TypeBindings>,
 ) -> bool {
   let capability = match actual {
-    CalcitTypeAnnotation::TypeVar(name) => capabilities.and_then(|items| items.get(name)),
+    CalcitTypeAnnotation::TypeVar(name) => capabilities.and_then(|items| items.get(name)).map(AsRef::as_ref),
     _ => None,
   };
-  capability.map_or(actual, AsRef::as_ref).is_proven_for(required)
+  let Some(capability) = capability else {
+    return actual.is_proven_for(required);
+  };
+  let provided = match capability {
+    CalcitTypeAnnotation::Trait(trait_def) => std::slice::from_ref(trait_def),
+    CalcitTypeAnnotation::TraitSet(traits) => traits.as_slice(),
+    _ => return false,
+  };
+  match required {
+    CalcitTypeAnnotation::Trait(required) => provided
+      .iter()
+      .any(|actual| CalcitTypeAnnotation::trait_annotation_proves(actual, required)),
+    CalcitTypeAnnotation::TraitSet(required) => required.iter().all(|required| {
+      provided
+        .iter()
+        .any(|actual| CalcitTypeAnnotation::trait_annotation_proves(actual, required))
+    }),
+    CalcitTypeAnnotation::TypeRef(reference, args) if args.is_empty() => provided.iter().any(|actual| {
+      actual.validate_reachable_method_schemas().is_ok() && CalcitTypeAnnotation::trait_upcasts_to_type_ref(actual, reference)
+    }),
+    _ => false,
+  }
 }
 
 /// One call's inference variables are distinct from the caller's rigid variables.
@@ -512,6 +533,16 @@ impl CallTypeProof {
       return TypeProof::Proven;
     }
     let expected = expected.substitute_type_vars(&self.renaming);
+    if matches!(actual, CalcitTypeAnnotation::TypeVar(name)
+      if self.caller_capabilities.as_deref().is_some_and(|items| items.contains_key(name)))
+    {
+      let required = expected.substitute_type_vars(&self.bindings);
+      // A bound provides an interface, not a replacement for the caller's
+      // identity. Only trait obligations may consume this evidence.
+      if proves_trait_bound(actual, &required, self.caller_capabilities.as_deref()) {
+        return TypeProof::Proven;
+      }
+    }
     let instantiated_actual;
     let actual = if let (CalcitTypeAnnotation::Fn(actual_signature), CalcitTypeAnnotation::Fn(expected_signature)) =
       (actual, expected.as_ref())
@@ -7560,6 +7591,75 @@ mod tests {
   }
 
   #[test]
+  fn caller_capabilities_prove_trait_arguments_without_erasing_identity() {
+    let caller_name: Arc<str> = Arc::from("T");
+    let caller = CalcitTypeAnnotation::TypeVar(caller_name.clone());
+    let parent = Arc::new(CalcitTrait::new_reference("tests.call-capability/Label"));
+    let mut greeting = CalcitTrait::new_reference("tests.call-capability/Greeting");
+    greeting.requires = Arc::new(vec![parent.clone()]);
+    let greeting = Arc::new(greeting);
+    let unrelated = Arc::new(CalcitTrait::new_reference("tests.other-capability/Greeting"));
+
+    for capability in [
+      CalcitTypeAnnotation::Trait(greeting.clone()),
+      CalcitTypeAnnotation::TraitSet(Arc::new(vec![greeting.clone(), unrelated.clone()])),
+    ] {
+      let capabilities = Arc::new(HashMap::from([(caller_name.clone(), Arc::new(capability))]));
+      let mut proof = CallTypeProof::default().with_caller_capabilities(Some(capabilities.clone()));
+      for required in [
+        CalcitTypeAnnotation::Trait(greeting.clone()),
+        CalcitTypeAnnotation::Trait(parent.clone()),
+        CalcitTypeAnnotation::TraitSet(Arc::new(vec![greeting.clone(), parent.clone()])),
+        CalcitTypeAnnotation::TypeRef(Arc::from("tests.call-capability/Greeting"), Arc::new(vec![])),
+        CalcitTypeAnnotation::TypeRef(Arc::from("tests.call-capability/Label"), Arc::new(vec![])),
+      ] {
+        assert!(
+          proof.prove(&caller, &required).is_proven(),
+          "a declared capability must satisfy {required:?}"
+        );
+        assert!(proof.bindings.is_empty(), "capability evidence must not bind the caller");
+      }
+      for required in [
+        CalcitTypeAnnotation::TypeVar(Arc::from("Other")),
+        CalcitTypeAnnotation::Number,
+        CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)),
+        CalcitTypeAnnotation::TypeRef(Arc::from("tests.missing-capability/Greeting"), Arc::new(vec![])),
+        CalcitTypeAnnotation::TypeRef(
+          Arc::from("tests.call-capability/Greeting"),
+          Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+        ),
+        CalcitTypeAnnotation::TraitSet(Arc::new(vec![
+          parent.clone(),
+          Arc::new(CalcitTrait::new_reference("tests.missing-capability/Greeting")),
+        ])),
+      ] {
+        assert!(
+          !proof.prove(&caller, &required).is_proven(),
+          "a capability must not manufacture {required:?}"
+        );
+      }
+      assert!(
+        !proof
+          .prove(&CalcitTypeAnnotation::Dynamic, &CalcitTypeAnnotation::Trait(parent.clone()))
+          .is_proven(),
+        "an open value cannot borrow another variable's capability"
+      );
+      let callee_name: Arc<str> = Arc::from("U");
+      let callee = Arc::new(CalcitTypeAnnotation::TypeVar(callee_name.clone()));
+      let mut transport = CallTypeProof::new(&[callee_name], std::slice::from_ref(&callee), &[Arc::new(caller.clone())])
+        .with_caller_capabilities(Some(capabilities));
+      assert!(transport.prove(&caller, &callee).is_proven());
+      assert_eq!(transport.result(&callee).as_deref(), Some(&caller));
+    }
+
+    assert!(
+      !CallTypeProof::default()
+        .prove(&caller, &CalcitTypeAnnotation::Trait(greeting))
+        .is_proven()
+    );
+  }
+
+  #[test]
   fn transitive_trait_requirements_prove_bounds_but_invalid_schemas_do_not() {
     let required = Arc::new(
       CalcitTrait::new(
@@ -7591,6 +7691,18 @@ mod tests {
     };
     let invalid_annotation = CalcitTypeAnnotation::Trait(Arc::new(invalid.clone()));
     assert!(!invalid_annotation.satisfies_trait_bound(&invalid));
+    let caller_name: Arc<str> = Arc::from("T");
+    let capabilities = Arc::new(HashMap::from([(caller_name.clone(), Arc::new(invalid_annotation))]));
+    let mut proof = CallTypeProof::default().with_caller_capabilities(Some(capabilities));
+    assert!(
+      !proof
+        .prove(
+          &CalcitTypeAnnotation::TypeVar(caller_name),
+          &CalcitTypeAnnotation::TypeRef(Arc::from("app.invalid/Broken"), Arc::new(vec![]))
+        )
+        .is_proven(),
+      "a qualified name must not hide malformed capability metadata"
+    );
   }
 
   #[test]

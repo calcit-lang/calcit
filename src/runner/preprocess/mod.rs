@@ -309,11 +309,15 @@ impl SourceExpressionEvidence {
     let capability = self.generic_capability.as_ref()?;
     let methods = static_method_descriptors(capability)?;
     let traits = trait_list_from_type(capability)?;
+    let mut scope = ScopeTypes::new();
+    if let CalcitTypeAnnotation::TypeVar(name) = receiver.as_ref() {
+      scope.bind_generic_capability(name.clone(), capability.clone());
+    }
     Some(
       methods
         .into_iter()
         .map(|method| {
-          let contract = static_method_contract_with_impls(receiver, &method.name, Some(&traits), None);
+          let contract = static_method_contract_with_impls(receiver, &method.name, Some(&traits), None, Some(&scope));
           (method, contract)
         })
         .collect(),
@@ -8049,13 +8053,15 @@ struct MethodArgumentContext {
 fn method_receiver_bindings(
   receiver: &CalcitTypeAnnotation,
   signature: &CalcitFnTypeAnnotation,
+  scope: Option<&ScopeTypes>,
 ) -> Option<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> {
   let expected = signature.arg_types.first().or(signature.rest_type.as_ref())?;
   let mut bindings = HashMap::new();
-  receiver
-    .prove_with_bindings(expected, &mut bindings)
-    .is_proven()
-    .then_some(bindings)
+  if receiver.prove_with_bindings(expected, &mut bindings).is_proven() {
+    return Some(bindings);
+  }
+  let mut proof = scope?.call_type_proof(&[], &[], &[]);
+  proof.prove(receiver, expected).is_proven().then_some(bindings)
 }
 
 /// Resolve method inputs before callback bodies are checked, using the actual
@@ -8096,7 +8102,7 @@ fn expected_method_argument_types(
     }
   };
   let fn_annotation = signature.as_function()?;
-  let bindings = method_receiver_bindings(type_value, fn_annotation)?;
+  let bindings = method_receiver_bindings(type_value, fn_annotation, Some(scope_types))?;
   if specialized_types.is_none() {
     // A receiver starts the invocation; later input evidence can still keep
     // its shared payload open. Do not freeze the first input into a concrete
@@ -9835,7 +9841,7 @@ fn validate_method_call(
   if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
     if let Some(signature) = type_inference::method_call_signature(head, args, scope_types) {
       let mut signature = signature.as_ref().clone();
-      if let Some(bindings) = method_receiver_bindings(&type_value, &signature) {
+      if let Some(bindings) = method_receiver_bindings(&type_value, &signature, Some(scope_types)) {
         Arc::make_mut(&mut signature.generics).extend(bindings.keys().cloned());
       }
       // Query metadata specializes a receiver for display. Invocation proof
@@ -10951,13 +10957,13 @@ fn refined_impl_method_schema(
 pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str) -> StaticMethodContract {
   let traits = trait_list_from_type(receiver);
   let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
-  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref())
+  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref(), None)
 }
 
 fn scoped_static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str, scope: &ScopeTypes) -> StaticMethodContract {
   let traits = trait_list_for_receiver(receiver, scope);
   let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
-  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref())
+  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref(), Some(scope))
 }
 
 /// Resolve a complete method list while loading the receiver's implementation
@@ -10970,7 +10976,7 @@ pub fn static_method_contracts(receiver: &CalcitTypeAnnotation) -> Option<Vec<(S
     descriptors
       .into_iter()
       .map(|descriptor| {
-        let contract = static_method_contract_with_impls(receiver, &descriptor.name, traits.as_deref(), impls.as_deref());
+        let contract = static_method_contract_with_impls(receiver, &descriptor.name, traits.as_deref(), impls.as_deref(), None);
         (descriptor, contract)
       })
       .collect(),
@@ -10982,6 +10988,7 @@ fn static_method_contract_with_impls(
   method_name: &str,
   traits: Option<&[Arc<CalcitTrait>]>,
   impls: Option<&[Arc<CalcitImpl>]>,
+  scope: Option<&ScopeTypes>,
 ) -> StaticMethodContract {
   let bare_name = method_name.trim_start_matches('.');
   let (schema, definition) = if let Some(traits) = traits {
@@ -11077,7 +11084,7 @@ fn static_method_contract_with_impls(
   let Some(expected_receiver) = signature.arg_types.first().or(signature.rest_type.as_ref()) else {
     return StaticMethodContract::open_with_definition("selected method schema has no receiver parameter", definition);
   };
-  let Some(bindings) = method_receiver_bindings(receiver, signature) else {
+  let Some(bindings) = method_receiver_bindings(receiver, signature, scope) else {
     return StaticMethodContract::open_with_definition(
       format!(
         "receiver {} cannot prove schema receiver {}",
@@ -19059,7 +19066,7 @@ mod tests {
     );
     let traits = [trait_def];
     let mismatched = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String));
-    let open = static_method_contract_with_impls(&mismatched, ".same", Some(&traits), None);
+    let open = static_method_contract_with_impls(&mismatched, ".same", Some(&traits), None, None);
     assert_eq!(open.status, "open");
     assert_eq!(open.definition.as_deref(), Some("app.contracts/Same"));
     assert!(open.detail.unwrap().contains("cannot prove schema receiver"));
@@ -19067,7 +19074,7 @@ mod tests {
     assert!(open.return_type.is_none());
 
     let matched = CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Number));
-    let proven = static_method_contract_with_impls(&matched, ".same", Some(&traits), None);
+    let proven = static_method_contract_with_impls(&matched, ".same", Some(&traits), None, None);
     assert_eq!(proven.status, "proven");
     assert_eq!(proven.arg_types.unwrap()[0].describe(), "number");
     assert_eq!(proven.return_type.unwrap().describe(), "number");

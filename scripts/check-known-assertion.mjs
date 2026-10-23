@@ -412,6 +412,23 @@ try {
       }
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "lexical-binder", "--backend", "native,js"], { ...options, stdio: "inherit" });
+      // A caller-owned bound proves its qualified trait and required parents,
+      // without replacing the receiver's lexical generic identity.
+      const traitSnapshot = "calcit/test-traits.cirru";
+      const traitSource = await readFile(traitSnapshot);
+      const traitProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
+        "--ns", "test-traits.main", "--def", "describe-greeting", "--format", "json"], options));
+      assert.deepEqual(traitProof.diagnostics, [], "retain qualified trait capabilities in independent proof");
+      assert.equal(traitProof.data.changed, false);
+      const traitReceiver = JSON.parse(execFileSync(binary, [traitSnapshot, "query", "type-at",
+        "test-traits.main/describe-greeting", "--path", "code@3.1.0", "--format", "json"], options)).data;
+      assert.equal(traitReceiver.inferred_type, "'T", "capabilities do not replace caller identity");
+      for (const name of [".greeting", ".label"]) {
+        const method = traitReceiver.static_methods.find(method => method.name === name);
+        assert.equal(method?.status, "proven", `${name}: retain the declared qualified capability`);
+        assert.equal(method.return_type, "string");
+      }
+      assert.deepEqual(await readFile(traitSnapshot), traitSource);
       // Runtime replay alone cannot catch a false rejection in the independent
       // audit. In particular, a bounded mapper's quantified output must first be
       // instantiated from its receiver, not escape as its callback-local binder.
