@@ -162,7 +162,7 @@ try {
     [runtimeA._$n_atom_$o_deref],
   );
   runtimeA.register_calcit_builtin_impls({ ref: new runtimeA.CalcitSliceList([refDerefImpl]) });
-  assert.equal(runtimeA.invoke_method("deref", runtimeA.atom(7)), 7, "dynamic Ref fallback must use the registered Ref impl table");
+  assert.equal(runtimeA.invoke_method("deref", runtimeA.ref(7)), 7, "dynamic Ref fallback must use the registered Ref impl table");
 
   // Host-created impl tables bypass source preprocessing. Runtime dispatch
   // still cannot choose between two implementations of one nominal origin.
@@ -574,7 +574,7 @@ try {
     "typed EDN decoding must reject non-Nil input for the Nil node"
   );
 
-  const effectRef = runtimeA.atom(1);
+  const effectRef = runtimeA.ref(1);
   const watchKey = runtimeA.newTag("runtime-unit-check");
   const watchCalls = [];
   const watchCallback = (next, previous) => watchCalls.push([next, previous]);

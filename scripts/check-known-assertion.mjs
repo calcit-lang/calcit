@@ -1744,8 +1744,8 @@ try {
       (await import(pathToFileURL(join(resetOutput, "app.main.mjs")).href)).main_$x_();
       assert.deepEqual(await readFile(resetSnapshot), resetSource);
 
-      // The numeric global-atom contract is already supported on WASM; local
-      // atom allocation and generic Ref forwarding remain explicit boundaries.
+      // The numeric global-ref contract is already supported on WASM; local
+      // ref allocation and generic Ref forwarding remain explicit boundaries.
       const resetWasm = join(project, "reset-global.wasm.cirru");
       await copyFile("tests/fixtures/deep-recursion.cirru", resetWasm);
       const resetWasmRun = (...args) => execFileSync(binary, [resetWasm, ...args], options);
@@ -3005,7 +3005,7 @@ try {
           ["expected `map<:tag,list<:string>>`", "got `map<:tag,list<:number>>`"]],
         ["assert-type (#{} 1) (:: 'Set 'String)",
           ["expected `set<:string>`", "got `set<:number>`"]],
-        ["assert-type (atom 1) (:: 'Ref 'String)",
+        ["assert-type (ref 1) (:: 'Ref 'String)",
           ["expected `ref<:string>`", "got `ref<:number>`"]],
       ]);
       bad.push(...detailed.keys());
@@ -3216,7 +3216,7 @@ try {
     local-imported $ RecursiveComponent :tree imported-tree
     idle-signal $ RecursiveSignal :idle
     signal-holder $ RecursiveSignalHolder :signal idle-signal
-    node-cell $ atom $ assert-type (Option :none) $ :: 'Option 'calcit.assert-evidence/RecursiveNode
+    node-cell $ ref $ assert-type (Option :none) $ :: 'Option 'calcit.assert-evidence/RecursiveNode
     from-wrapper $ RecursiveComponent :tree $ make-empty-tree
     from-import $ RecursiveComponent :tree $ wrappers/empty-tree
     broad $ BroadNodeHolder :cell (RecursiveCell :value leaf) :tree $ Option :some leaf
@@ -3261,10 +3261,10 @@ try {
   assert= 42 $ let ((value |kept) (render (fn () (require-string-expression value)))) (render)
   assert= 42 $ loop
       n 0
-      cell $ atom $ assert-type (Option :none) $ :: 'Option 'Dynamic
+      cell $ ref $ assert-type (Option :none) $ :: 'Option 'Dynamic
     hint-fn $ {} (:args $ [] 'Number $ :: 'Ref $ :: 'Option 'Dynamic) (:return 'Number)
     if (&< n 1)
-      recur 1 $ atom $ assert-type (Option :some 7) $ :: 'Option 'Dynamic
+      recur 1 $ ref $ assert-type (Option :some 7) $ :: 'Option 'Dynamic
       , 42
   assert= 1 $ loop
       n 0
@@ -3385,10 +3385,10 @@ try {
         ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
         ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
         // A Ref's payload is fixed at construction; an empty initializer needs explicit Option<T> context (#1737).
-        ["empty-ref-wrong-write", "let ((cell (atom (assert-type (Option :none) (:: 'Option 'Number))))) (reset! cell (Option :some |wrong))"],
-        ["empty-ref-alias-write", "let ((cell (atom (assert-type (Option :none) (:: 'Option 'Number)))) (alias cell)) (reset! alias (Option :some |wrong))"],
-        ["empty-ref-unannotated-write", "let ((cell (atom (Option :none)))) (reset! cell (Option :some 7))"],
-        ["invariant-loop-ref", "let ((fixed (assert-type (atom (Option :some 7)) (:: 'Ref (:: 'Option 'Number))))) (loop ((n 0) (cell (atom (assert-type (Option :none) (:: 'Option 'Dynamic))))) (hint-fn ({} (:args ([] 'Number (:: 'Ref (:: 'Option 'Dynamic)))) (:return 'Number))) (if (&< n 1) (recur 1 fixed) 42))"],
+        ["empty-ref-wrong-write", "let ((cell (ref (assert-type (Option :none) (:: 'Option 'Number))))) (reset! cell (Option :some |wrong))"],
+        ["empty-ref-alias-write", "let ((cell (ref (assert-type (Option :none) (:: 'Option 'Number)))) (alias cell)) (reset! alias (Option :some |wrong))"],
+        ["empty-ref-unannotated-write", "let ((cell (ref (Option :none)))) (reset! cell (Option :some 7))"],
+        ["invariant-loop-ref", "let ((fixed (assert-type (ref (Option :some 7)) (:: 'Ref (:: 'Option 'Number))))) (loop ((n 0) (cell (ref (assert-type (Option :none) (:: 'Option 'Dynamic))))) (hint-fn ({} (:args ([] 'Number (:: 'Ref (:: 'Option 'Dynamic)))) (:return 'Number))) (if (&< n 1) (recur 1 fixed) 42))"],
         ["explicit-loop-contract", "loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some |wrong)) (option:unwrap-or value 0))"],
         ["explicit-loop-unknown-update", "(fn (flag) (loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some (if flag 7 |wrong))) (option:unwrap-or value 0)))) true"],
         ["wrong-empty-family", "let ((absent-tree (Option :none))) (RecursiveSignalHolder :signal absent-tree)"],

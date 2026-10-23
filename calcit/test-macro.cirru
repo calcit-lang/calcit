@@ -157,22 +157,22 @@
         'test-if-let $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|if let")
             assert= 6 $ if-let
-              a $ %some $ + 1 2 3
+              a $ Option :some $ + 1 2 3
               , a 0
             assert= 0 $ if-let
               a $ get (&{}) :a
               + 1 2
               , 0
             assert= 2 $ if-let
-              a $ %none
+              a $ Option :none
               , 1 2
-            assert= (%none)
+            assert= (Option :none)
               when-let
-                a $ %none
+                a $ Option :none
                 , 1 2
-            assert= (%some 2)
+            assert= (Option :some 2)
               when-let
-                a $ %some 10
+                a $ Option :some 10
                 , 1 2
           :examples $ []
           :schema $ :: 'Dynamic

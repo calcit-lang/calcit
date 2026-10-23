@@ -227,7 +227,7 @@
           :code $ quote $ defn edn-nominal-roundtrip-main! ()
             let
                 outcome $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
-                envelope $ EdnEnvelope :request-id |r1 :note (%some "|hello world") :outcome outcome
+                envelope $ EdnEnvelope :request-id |r1 :note (Option :some "|hello world") :outcome outcome
                 typed-result $ assert-type (%ok outcome) (:: 'Result 'app.main/EdnOutcome 'String)
               match
                 edn-parse-outcome $ format-cirru-edn outcome

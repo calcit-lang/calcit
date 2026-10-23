@@ -1234,6 +1234,14 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "0.31.0",
       "use `fold-while` with a reducer returning `ControlFlow :continue acc` or `ControlFlow :break value`; it returns the accumulator when no step breaks, so pass the old default explicitly where it differs",
     )),
+    "case-default" => Some((
+      "0.31.0",
+      "use `match` with the default as the final `_` branch (`match x (:a 1) (_ default)`); use `cond` when a pattern is an expression",
+    )),
+    "%some" => Some(("0.31.0", "use `Option :some value`")),
+    "%none" => Some(("0.31.0", "use `Option :none`")),
+    "atom" => Some(("0.31.0", "use `ref`")),
+    "vals" => Some(("0.31.0", "use `distinct-values`, or the method `.distinct-values`")),
     "apply-args" => Some(("0.31.0", "use `loop ((param value) ...) body`")),
     "let-sugar" => Some(("0.31.0", "use `let` and `let[]` directly")),
     "list-match" => Some(("0.31.0", "use `match (destruct-list xs) ((:none) ...) ((:some head tail) ...)`")),
@@ -2486,14 +2494,14 @@ enum GeneratedPathOutcome {
 impl GeneratedPathOutcome {
   fn found(self, value: Calcit, file_ns: &str) -> Calcit {
     match self {
-      Self::Option => generated_core_call("%some", vec![value], file_ns),
+      Self::Option => generated_core_call("Option", vec![Calcit::tag("some"), value], file_ns),
       Self::Result => generated_core_call("Result", vec![Calcit::tag("ok"), value], file_ns),
     }
   }
 
   fn missing(self, file_ns: &str) -> Calcit {
     match self {
-      Self::Option => generated_core_call("%none", vec![], file_ns),
+      Self::Option => generated_core_call("Option", vec![Calcit::tag("none")], file_ns),
       Self::Result => generated_core_call(
         "Result",
         vec![
@@ -2753,11 +2761,11 @@ fn preprocess_generated_specialization(
 }
 
 fn generated_optional_value(value: Calcit, file_ns: &str) -> Calcit {
-  generated_core_call("%some", vec![value], file_ns)
+  generated_core_call("Option", vec![Calcit::tag("some"), value], file_ns)
 }
 
 fn generated_absent_value(file_ns: &str) -> Calcit {
-  generated_core_call("%none", vec![], file_ns)
+  generated_core_call("Option", vec![Calcit::tag("none")], file_ns)
 }
 
 fn generated_optional_index_access(
@@ -4082,7 +4090,7 @@ fn preprocess_list_call(
   if should_emit_project_source_lint(file_ns) && (is_constructor_named("%{}?") || is_constructor_named("&%{}?")) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      "partial Struct constructors `%{}?` and `&%{}?` have been removed; use `%{}` and provide every field explicitly, using `%none` for fields declared as Option<T>",
+      "partial Struct constructors `%{}?` and `&%{}?` have been removed; use `%{}` and provide every field explicitly, using `Option :none` for fields declared as Option<T>",
       "E_PARTIAL_STRUCT_NIL_FILL",
       call_stack,
       call_location,
@@ -6403,14 +6411,10 @@ fn try_rewrite_struct_enum_constructor_head_call(
         .get(field_idx)
         .is_some_and(|field_type| field_type.is_option_type())
       {
-        // Nominal Option fields use the typed `%none` variant when omitted.
+        // Nominal Option fields use the typed `Option :none` variant when omitted.
         // Keep legacy Optional<T> fields on their historical nil representation.
-        struct_items.push(Calcit::from(vec![Calcit::Import(CalcitImport {
-          ns: calcit::CORE_NS.into(),
-          def: "%none".into(),
-          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-          def_id: None,
-        })]));
+        // The caller preprocesses the rewritten constructor, which lowers this call.
+        struct_items.push(generated_core_call("Option", vec![Calcit::tag("none")], file_ns));
       } else {
         struct_items.push(Calcit::Nil);
       }
@@ -8450,6 +8454,21 @@ fn nominal_enum_type_name(annotation: &CalcitTypeAnnotation) -> Option<String> {
   }
 }
 
+/// Name of the core enum built by a lowered `Option :some x` / `Result :ok x` constructor call.
+fn lowered_core_enum_constructor_name(value: &Calcit) -> Option<&str> {
+  let Calcit::List(items) = value else {
+    return None;
+  };
+  match (items.first(), items.get(1)) {
+    (Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(CalcitImport { ns, def, .. })))
+      if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "Option" | "Result") =>
+    {
+      Some(def.as_ref())
+    }
+    _ => None,
+  }
+}
+
 fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
   if let Some(value_type) = resolve_type_value(value, scope_types)
     && let Some(enum_name) = nominal_enum_type_name(value_type.as_ref())
@@ -8471,11 +8490,13 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
   if let Some(enum_name) = declared_enum_name {
     return Some(enum_name);
   }
+  if let Some(enum_name) = lowered_core_enum_constructor_name(value) {
+    return Some(enum_name.to_owned());
+  }
   match items.first().and_then(canonical_absence_operation_name) {
-    Some(
-      "%some" | "%none" | "find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin"
-      | "enum-definition",
-    ) => Some("Option".to_owned()),
+    Some("find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin" | "enum-definition") => {
+      Some("Option".to_owned())
+    }
     Some("%ok" | "%err" | "parse-float" | "get-in") => Some("Result".to_owned()),
     _ => None,
   }
@@ -8652,6 +8673,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
     .iter()
     .take(structural_arg_count)
     .filter_map(|value| {
+      // A literal `Option :some x` is a deliberate construction, not a migrated nullable API result.
+      if lowered_core_enum_constructor_name(value).is_some() {
+        return None;
+      }
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
       Some((value, enum_name))
     })
@@ -8663,7 +8688,12 @@ fn warn_on_nominal_enum_legacy_absence_use(
   // Equality between values of the same nominal enum is intentional and safe.
   // A nominal value compared with a payload or a Dynamic value, however, is a
   // common migration bug after a nullable API starts returning Option/Result.
-  if matches!(operation, "=" | "&=") && nominal_args.len() == args.len() && nominal_args.iter().all(|(_, current)| current == enum_name)
+  if matches!(operation, "=" | "&=")
+    && args.iter().all(|arg| {
+      nominal_enum_expression_name(arg, scope_types)
+        .or_else(|| lowered_core_enum_constructor_name(arg).map(str::to_owned))
+        .is_some_and(|current| &current == enum_name)
+    })
   {
     return;
   }
@@ -8780,7 +8810,7 @@ fn warn_on_nominal_enum_truthiness(
   };
 
   let guidance = if enum_name == "Option" {
-    "use `option:some?`, `option:none?`, or native `match`; `%none` is a truthy nominal value"
+    "use `option:some?`, `option:none?`, or native `match`; `Option :none` is a truthy nominal value"
   } else {
     "use native `match` to select a nominal enum variant explicitly"
   };
@@ -9688,7 +9718,7 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
       Some("`.join` returned a List with the separator inserted; use `.intersperse` for that List, or `.join-string` to build a String")
     }
     (T::Map(_, _), "values") => Some(
-      "`.values` returned the de-duplicated values as a Set; use `.distinct-values` for that Set (`.vals` and `vals` are the function forms)",
+      "`.values` returned the de-duplicated values as a Set; use `.distinct-values` for that Set (the function form is `distinct-values`)",
     ),
     (T::List(_), "contains?") => {
       Some("`.contains?` checked a List position, not an element; use `.contains-index?` for a position or `.includes?` for an element")
@@ -12816,7 +12846,7 @@ pub fn preprocess_defn(
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
-          "legacy `?` parameters implicitly bind omitted arguments to nil; remove `?`, declare trailing parameters as Option<T>, and pass `%some value` or `%none` explicitly when omission sugar is not used",
+          "legacy `?` parameters implicitly bind omitted arguments to nil; remove `?`, declare trailing parameters as Option<T>, and pass `Option :some value` or `Option :none` explicitly when omission sugar is not used",
           "E_LEGACY_OPTIONAL_PARAM",
           ctx.call_stack,
           find_preferred_macro_location(ctx.call_stack).or(Some(NodeLocation::new(
@@ -18176,7 +18206,12 @@ mod tests {
       "Option-to-Option equality should stay valid"
     );
 
-    let option_constructor = Calcit::from(vec![core_head("%some"), Calcit::Number(1.0)]);
+    let option_constructor = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      core_head("Option"),
+      Calcit::tag("some"),
+      Calcit::Number(1.0),
+    ]);
     let constructor_equality_args = CalcitList::from(&[option_value.to_owned(), option_constructor.to_owned()] as &[Calcit]);
     let constructor_equality_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
@@ -18250,11 +18285,11 @@ mod tests {
       "a Set literal with Option elements should remain warning-free before generic return inference"
     );
 
-    let literal_option_list = Calcit::from(vec![Calcit::Proc(CalcitProc::List), option_constructor.to_owned()]);
+    let literal_option_list = Calcit::from(vec![Calcit::Proc(CalcitProc::List), option_value.to_owned()]);
     let list_contains_option_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
       &core_head("contains?"),
-      &CalcitList::from(&[literal_option_list, option_constructor.to_owned()] as &[Calcit]),
+      &CalcitList::from(&[literal_option_list, option_value.to_owned()] as &[Calcit]),
       &ScopeTypes::new(),
       "tests.option-migration",
       "demo",
@@ -18266,15 +18301,11 @@ mod tests {
       "List contains? checks an index, so it must not use the element-membership exemption"
     );
 
-    let mixed_literal_option_set = Calcit::from(vec![
-      Calcit::Proc(CalcitProc::Set),
-      option_constructor.to_owned(),
-      Calcit::Number(1.0),
-    ]);
+    let mixed_literal_option_set = Calcit::from(vec![Calcit::Proc(CalcitProc::Set), option_value.to_owned(), Calcit::Number(1.0)]);
     let mixed_literal_option_membership_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
       &core_head("includes?"),
-      &CalcitList::from(&[mixed_literal_option_set, option_constructor] as &[Calcit]),
+      &CalcitList::from(&[mixed_literal_option_set, option_value.to_owned()] as &[Calcit]),
       &ScopeTypes::new(),
       "tests.option-migration",
       "demo",
@@ -18800,7 +18831,7 @@ mod tests {
           code_to_calcit(&source_call, "tests.strict-nil", "build-profile", vec![]).expect("parse source partial Struct constructor");
         let source_error = preprocess_test_expr(&source_code).expect_err("removed constructor must fail before expansion");
         assert_eq!(source_error.code.as_deref(), Some("E_PARTIAL_STRUCT_NIL_FILL"));
-        assert!(source_error.msg.contains("%none"));
+        assert!(source_error.msg.contains("Option :none"));
       }
     }
   }
@@ -22114,11 +22145,12 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))));
     assert!(matches!(items.get(3), Some(Calcit::Str(value)) if value.as_ref() == "Alice"));
     let Some(Calcit::List(none_call)) = items.get(5) else {
-      panic!("expected omitted Option field to become a %none call");
+      panic!("expected omitted Option field to become an `Option :none` call");
     };
     assert!(
-      matches!(none_call.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%none")
+      matches!(none_call.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "Option")
     );
+    assert!(matches!(none_call.get(1), Some(Calcit::Tag(variant)) if variant.ref_str() == "none"));
     assert!(warnings.borrow().is_empty());
   }
 

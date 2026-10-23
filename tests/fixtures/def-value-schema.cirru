@@ -406,14 +406,14 @@
         'direct-controller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct-controller ()
             let
-                received $ atom 0
+                received $ ref 0
                 dispatch! $ fn (op)
                   hint-fn $ {}
                     :args $ [] 'Number
                     :return 'Unit
                   reset! received op
                   , &unit
-                controller $ Controller :dispatch $ atom dispatch!
+                controller $ Controller :dispatch $ ref dispatch!
               assert-type controller $ :: Controller Number
               (deref (:dispatch controller))
                 , 7
@@ -427,7 +427,7 @@
               :tags $ #{} :ref-callback-inference
             %{} 'TestEntry (:name |empty-nominal-callback-input)
               :code $ quote $ let
-                  controller $ Controller :dispatch $ atom
+                  controller $ Controller :dispatch $ ref
                     fn (items)
                       hint-fn $ {}
                         :args $ [] $ :: List 'app.callback-left/Item
@@ -551,7 +551,7 @@
         'generic-controller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn generic-controller (dispatch! op)
             let
-                controller $ Controller :dispatch $ atom dispatch!
+                controller $ Controller :dispatch $ ref dispatch!
               assert-type controller $ :: Controller 'T
               (deref (:dispatch controller))
                 , op
@@ -564,7 +564,7 @@
             :generics $ [] 'T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
             :code $ quote $ let
-                received $ atom |before
+                received $ ref |before
               generic-controller
                 fn (op)
                   hint-fn $ {}
@@ -728,7 +728,7 @@
                     :args $ [] Number
                     :return Unit
                   , &unit
-                controller $ Controller :dispatch $ atom dispatch!
+                controller $ Controller :dispatch $ ref dispatch!
               (deref (:dispatch controller))
                 , |wrong
               , &unit
@@ -741,7 +741,7 @@
                     :args $ [] Number
                     :return Unit
                   , &unit
-                controller $ Controller :dispatch $ atom dispatch!
+                controller $ Controller :dispatch $ ref dispatch!
               reset! (:dispatch controller)
                 fn (op)
                   hint-fn $ {}
@@ -2891,7 +2891,7 @@
               :tags $ #{} :short-circuit-proof :unit
             %{} 'TestEntry (:name |single-evaluation)
               :code $ quote $ let
-                  calls $ atom 0
+                  calls $ ref 0
                 assert= false $ and false $ do
                   reset! calls $ inc $ deref calls
                   , true

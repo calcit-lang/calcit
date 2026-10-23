@@ -360,7 +360,7 @@ match action
   _ nil
 ```
 
-The first argument is the value to match, followed by pattern-result pairs and an optional final `_` branch. Useful for lifecycle hooks, event handling, and state machine transitions. The older `case-default action nil ...` form (default as the second argument) is deprecated; it still works and expands to the same `match` when all patterns are literals.
+The first argument is the value to match, followed by pattern-result pairs and an optional final `_` branch. Useful for lifecycle hooks, event handling, and state machine transitions. `case-default` was removed in 0.31.0; write the default as the final `_` branch, or use `cond` when a pattern is an expression.
 
 ## Working with Files
 

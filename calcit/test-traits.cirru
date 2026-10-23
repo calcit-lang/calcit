@@ -478,7 +478,7 @@
                 m $ {} (:a 1) (:b 2)
                 st $ #{} 1 2 3
                 s |hello
-                opt $ %some 1
+                opt $ Option :some 1
                 Person $ impl-traits Person0 MyFooImpl
                 p $ %{} Person $ :name |Alice
                 ZapPerson $ impl-traits Person0 MyZapAImpl
@@ -829,8 +829,8 @@
         'test-option-result-map $ %{} 'CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
             let
-                opt-some $ %some 1
-                opt-none $ assert-type (%none) (:: 'Option 'Number)
+                opt-some $ Option :some 1
+                opt-none $ assert-type (Option :none) (:: 'Option 'Number)
                 res-ok $ %ok 1
                 res-err $ assert-type (%err |oops) (:: 'Result 'Number 'String)
                 step $ fn (x) (inc x)
@@ -838,27 +838,27 @@
               assert-type opt-none $ :: 'Option 'Number
               assert-type res-ok $ :: 'Result 'Number 'String
               assert-type res-err $ :: 'Result 'Number 'String
-              assert= (%some 2) (opt-some .map step)
-              assert= (%none) (opt-none .map step)
+              assert= (Option :some 2) (opt-some .map step)
+              assert= (Option :none) (opt-none .map step)
               assert= (%ok 2) (res-ok .map step)
               assert= (%err |oops) (res-err .map step)
-              assert= (%some 2)
+              assert= (Option :some 2)
                 opt-some .map $ fn (x) (inc x)
             let
-                opt-some $ %some 1
-                opt-none $ assert-type (%none) (:: 'Option 'Number)
+                opt-some $ Option :some 1
+                opt-none $ assert-type (Option :none) (:: 'Option 'Number)
                 res-ok $ %ok 1
                 res-err $ assert-type (%err |oops) (:: 'Result 'Number 'String)
                 to-some $ fn (x)
-                  %some $ inc x
+                  Option :some $ inc x
                 to-ok $ fn (x)
                   %ok $ inc x
               assert= true $ opt-some .some?
               assert= true $ opt-none .none?
               assert= 1 $ opt-some .unwrap-or 9
               assert= 9 $ opt-none .unwrap-or 9
-              assert= (%some 2) (opt-some .and-then to-some)
-              assert= (%none) (opt-none .and-then to-some)
+              assert= (Option :some 2) (opt-some .and-then to-some)
+              assert= (Option :none) (opt-none .and-then to-some)
               assert= true $ res-ok .ok?
               assert= true $ res-err .err?
               assert= 1 $ res-ok .unwrap-or 9
@@ -870,7 +870,7 @@
                 res-err .unwrap-or 9
                 , .round
               assert= 9 $
-                  assert-type (%none) (:: 'Option 'Number)
+                  assert-type (Option :none) (:: 'Option 'Number)
                   , .unwrap-or 9
                 , .round
               assert= (%ok 2) (res-ok .and-then to-ok)
@@ -884,8 +884,8 @@
                 open-list $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
                 present $ get open-map :a
               do
-                assert= (%some 1) present
-                assert= (%some |x) (nth open-list 1)
+                assert= (Option :some 1) present
+                assert= (Option :some |x) (nth open-list 1)
                 assert= 1 $ option:unwrap-or present 0
                 assert= 1 $ option:fold present
                   fn () 0

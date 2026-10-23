@@ -2,7 +2,7 @@
 //! - defined with `defref`, a namespaced ref that retains its value after hot swapping
 //! - created with `ref`, a piece of local mutable state
 //!
-//! `defatom` and `atom` are compatibility spellings that read into the same syntax and proc.
+//! `defatom` is the compatibility spelling of `defref`; `atom` was removed in 0.31.0.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
@@ -126,7 +126,7 @@ pub fn defref(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, cal
 /// dead simple counter for ID generator, better use nanoid in business
 static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
-/// proc `ref`, also reached through the compatibility spelling `atom`
+/// proc `ref`
 pub fn new_ref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(value) => Ok(quick_build_atom(value.to_owned())),

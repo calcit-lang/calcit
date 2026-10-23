@@ -285,22 +285,22 @@
           :tests $ []
             %{} 'TestEntry (:name |assigned-value-retains-scalar-and-alias-types)
               :code $ quote $ let
-                  source $ atom 1
+                  source $ ref 1
                 assert= 2 $ assign-number source 2
                 assert= 2 $ deref source
                 assert= 3 $ assign-alias source 3
                 assert= 3 $ deref source
-                assert= false $ assign-alias (atom true) false
-                assert= &unit $ assign-alias (atom &unit) &unit
+                assert= false $ assign-alias (ref true) false
+                assert= &unit $ assign-alias (ref &unit) &unit
                 assert= nil $ assign-open nil
               :tags $ #{} :reset-proof :types :unit
             %{} 'TestEntry
               :name |assigned-value-retains-nominal-and-container-types
               :code $ quote $ let
                   initial $ Option :some |before
-                  source $ atom $ Option :some |before
-                  values $ atom $ [] 1
-                  mapping $ atom $ {} (:a 1)
+                  source $ ref $ Option :some |before
+                  values $ ref $ [] 1
+                  mapping $ ref $ {} (:a 1)
                 assert= (Option :some |after)
                   assign-option source $ Option :some |after
                 assert= (Option :none)
@@ -314,8 +314,8 @@
             %{} 'TestEntry
               :name |target-before-value-once-and-errors-do-not-write
               :code $ quote $ let
-                  source $ atom 1
-                  order $ atom 0
+                  source $ ref 1
+                  order $ ref 0
                   target $ fn ()
                     hint-fn $ {}
                       :args $ []
@@ -346,7 +346,7 @@
         'assign-open $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-open (value)
             let
-                source $ atom value
+                source $ ref value
               reset! source value
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -708,7 +708,7 @@
               println |EDN: data
               assert= true $ any? (&struct:impls data)
                 fn (impl)
-                  = (impl-origin impl) (%some BirdTrait)
+                  = (impl-origin impl) (Option :some BirdTrait)
             let
                 l1 $ %{} Lagopus $ :name |LagopusA
               println |EDN: $ format-cirru-edn l1
@@ -871,7 +871,7 @@
                       :return $ :: 'List $ :: 'Option 'Dynamic
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
-                  [] (%some 20) (%some |Chen) (%none) (%none)
+                  [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
                   read-open p1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -954,7 +954,7 @@
         'try-effect-order $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-effect-order (fail?)
             let
-                events $ atom $ [] |start
+                events $ ref $ [] |start
               try
                 let ()
                   reset! events $ .append (deref events) |body
@@ -1047,7 +1047,7 @@
         'try-lazy! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-lazy! ()
             let
-                counter $ atom 0
+                counter $ ref 0
               assert= 7 $ try 7 $ let () (reset! counter 1)
                 fn (message) 0
               deref counter

@@ -38,7 +38,7 @@ use std::sync::OnceLock;
 pub(super) enum RewriteOrigin {
   /// `recv .method args` resolved to a direct callable.
   MethodInline,
-  /// `get` / `nth` / `first` / `last` lowered to guarded `%some` / `%none`.
+  /// `get` / `nth` / `first` / `last` lowered to guarded `Option :some` / `Option :none`.
   TypedAccess,
   /// A trait-bounded method call lowered to `&trait-call`.
   TraitCall,
@@ -796,7 +796,7 @@ mod tests {
     validate(&call, &[warning, other_warning], &[evidence, unrelated]).expect("every matching source occurrence was checked");
   }
 
-  /// #1378: `%none` was re-inferred as `Option<Dynamic>` and erased the payload.
+  /// #1378: `Option :none` was re-inferred as `Option<Dynamic>` and erased the payload.
   #[test]
   fn lowering_that_erases_a_payload_type_is_reported_with_both_forms() {
     let node = Calcit::from(vec![local("lowered", calcit::DYNAMIC_TYPE.clone()), Calcit::Number(1.0)]);

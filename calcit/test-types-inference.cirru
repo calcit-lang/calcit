@@ -366,7 +366,7 @@
             let
                 parsed $ if enabled (%ok 1) (%err |missing)
                 value $ match parsed
-                  (:ok n) (%some n)
+                  (:ok n) (Option :some n)
                   (:err error) (raise error)
               value .unwrap
           :examples $ []
@@ -418,7 +418,7 @@
             :tags $ #{} :unit
         'infer-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-none-fallback ()
-            option:unwrap-or (%none) 7
+            option:unwrap-or (Option :none) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -427,7 +427,7 @@
             :tags $ #{} :unit
         'infer-option-none-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-none-predicate ()
-            option:none? $ %some 1
+            option:none? $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -456,7 +456,7 @@
             :tags $ #{} :unit
         'infer-option-some-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-some-predicate ()
-            option:some? $ %some 1
+            option:some? $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -466,7 +466,7 @@
         'infer-raise-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-left (enabled)
             let
-                value $ if enabled (raise |missing-left) (%some 2)
+                value $ if enabled (raise |missing-left) (Option :some 2)
               value .unwrap
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -480,7 +480,7 @@
         'infer-raise-right $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-right (enabled)
             let
-                value $ if enabled (%some 1) (raise |missing-right)
+                value $ if enabled (Option :some 1) (raise |missing-right)
               value .unwrap
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -948,7 +948,7 @@
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |path-inputs-evaluate-once)
               :code $ quote $ let
-                  calls $ atom 0
+                  calls $ ref 0
                   base $ fn () (swap! calls inc)
                     {} $ :data 7
                   key $ fn () (swap! calls inc) :data
@@ -1395,8 +1395,8 @@
                 miss-index $ str-find-index |abc |z
               assert= 1 raw-hit-index
               assert= -1 raw-miss-index
-              assert= (%some 1) hit-index
-              assert= (%none) miss-index
+              assert= (Option :some 1) hit-index
+              assert= (Option :none) miss-index
               assert-type raw-hit-index 'Number
               assert-type raw-miss-index 'Number
               assert-type hit-index $ :: 'Option 'Number
@@ -1538,7 +1538,7 @@
         'test-ref-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-ref-inference ()
             let
-                r $ atom 1
+                r $ ref 1
               assert-type r $ :: 'Ref 'Number
               let
                   x $ &atom:deref r

@@ -239,9 +239,9 @@
                 assert-type none-value $ :: 'Maybe1 'Dynamic
                 assert-type pair-value $ :: 'Duo 'Number 'String
                 assert-type swapped-value $ :: 'Duo 'Number 'String
-                assert= (%some 1)
+                assert= (Option :some 1)
                   unwrap-maybe $ %:: Maybe1 :some 1
-                assert= (%none)
+                assert= (Option :none)
                   unwrap-maybe $ %:: Maybe1 :none
                 assert= :pair $ &enum:nth pair-value 0
                 assert= 1 $ &enum:nth pair-value 1
@@ -348,8 +348,8 @@
         'unwrap-maybe $ %{} 'CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote $ defn unwrap-maybe (v)
             match v
-              (:none) (%none)
-              (:some item) (%some item)
+              (:none) (Option :none)
+              (:some item) (Option :some item)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'test-enum.main/Maybe1 'T

@@ -43,7 +43,7 @@ aliases:
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
 | 日志 Unit 返回与零/单参数 stdout | supported | core 宿主导入 `io.log_line(channel: f64, ptr: f64) -> ()`：channel `1/2` 分别表示 stdout/stderr，ptr 指向 tagged heap string；宿主每次写一行（含换行，空字符串也要输出空行），失败应抛错，不返回成功状态。WASI 使用标准通道 | `calcit.core/dbg#registered-stdout-returns-unit`、`registered-log-callback-returns-unit` |
 | stderr 与多参数单行日志 | supported | core 以 `channel=1/2` 区分 stdout/stderr，每次表层调用只发出一次 host call；WASI 使用标准通道。全部参数先按从左到右顺序求值，再格式化输出 | `calcit.core/dbg#registered-stderr-returns-unit`、`registered-log-arguments-evaluate-once-in-order` |
-| 局部 `ref`（兼容名 `atom`）、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
+| 局部 `ref`、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
 | 运行时 quote 值、`macroexpand`、`format-to-lisp` 非静态表达式 | unsupported | 宏在编译前展开，不受影响 | `calcit.core/deftrait#requires-head-accepts-bare-and-quoted`、`calcit.core/data-view#classifies-symbol-struct-ref` 排除项 |
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |

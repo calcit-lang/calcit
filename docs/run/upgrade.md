@@ -529,7 +529,7 @@ Emptyable 的方法合同为 `Self -> Self`；这里的 `Self` 是方法声明�
 
 `range-bothway` 的人工迁移不能复制带副作用的实参表达式。历史运行时的 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参。
 
-升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，`round?` 运行 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway`、`foldl-shortcut` 逐处人工改写。0.31.0 的 `core-function-alias-v1` 只保留 `vals` → `distinct-values`；`core-integer-predicate-v1` 随 `round?` 删除，`core-api-0.28-v1` 因此只剩 `core-identity-conversion-v1` 一条规则，`core-api-0.29-v1` 剩 2 条。
+升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，`round?` 运行 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway`、`foldl-shortcut` 逐处人工改写。`core-function-alias-v1` 的最后一项 `vals` 也随后续的“删除已弃用的核心名字”一节退场，0.31.0 的 CLI 不再提供该规则；`core-integer-predicate-v1` 随 `round?` 删除，`core-api-0.28-v1` 因此只剩 `core-identity-conversion-v1` 一条规则，`core-api-0.29-v1` 剩 2 条。
 
 `integer?` 现在直接是内建实现，`round?` 原有的测试随之移到 `integer?`。JS runtime 不再导出 `foldl_shortcut`；core 内部的 `any?` / `every?` 继续使用私有的 `&list:foldl-shortcut`，行为不变。
 
@@ -539,10 +539,41 @@ Emptyable 的方法合同为 `Self -> Self`；这里的 `Self` 是方法声明�
 [Warn] unknown `section-by` in app.main/main!, locals {}; `section-by` was removed from calcit.core in 0.31.0, use `chunks`
 ```
 
+## 0.31.0 删除已弃用的核心名字
+
+0.31.0 再从 `calcit.core` 删除以下名字。Respo（#295）、Respo UI（#124）、js-ffi（#186）、Reel（#86）、Recollect（#102）和 cumulo-reel（#73）的默认分支已完成迁移并合并，源码、附带测试与示例中不再调用这些名字。
+
+| 已删除 | 改写为 |
+|---|---|
+| `%some x` | `Option :some x` |
+| `%none` | `Option :none` |
+| `atom x` | `ref x` |
+| `vals m` | `distinct-values m`，或方法 `m .distinct-values`；结果是去重的 `Set`，与旧 `vals` 相同 |
+| `case-default x default (pattern value) ...` | `match x (pattern value) ... (_ default)`；模式是表达式或变量时改用 `cond` |
+
+`%some`、`%none` 只是 `Option :some` / `Option :none` 的旧入口，编译器自己生成的 Option 值（如 `get` 缺失、省略的 `Option` 字段）现在直接生成 `Option :some` / `Option :none`，与 `Result :ok` 的做法一致。`%ok` / `%err` 不在本批，继续保留。`atom` 只删除调用名，JS runtime 同样不再导出 `atom`，改用 `ref`；`defatom` 仍保留，`core-ref-constructor-v1` 继续把它迁移为 `defref`。EDN 的 `atom` 编码标签与这里的函数无关，保持不变。
+
+升级前仍用 0.30.x 的 CLI 迁移，各自预览后带 `--expect-revision` 应用，随后运行项目测试：
+
+```bash
+calcit calcit.cirru fix --rule core-nominal-constructor-v1 --include-attached --format edn   # %some / %none
+calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn       # atom
+calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn        # vals
+calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn      # case-default
+```
+
+0.31.0 的 CLI 不再提供 `core-function-alias-v1` 与 `case-default-to-match-v1`；`core-nominal-constructor-v1` 只保留 `%ok` / `%err`，`core-ref-constructor-v1` 只保留 `defatom`。`core-api-0.29-v1` 仍含 `core-identity-conversion-v1` 与 `core-ref-constructor-v1` 两条规则。`case-default-to-match-v1` 对模式含表达式的调用只给 `requires-review`，这类调用需逐处人工改为 `match` 或 `cond`。
+
+残留调用在检查时报告未知名字，告警末尾给出删除版本和改写方式，裸名、`:refer`、`:as` 别名和 `calcit.core/` 前缀写法都会得到同样的提示：
+
+```text
+[Warn] unknown `vals` in app.main/main!, locals {}; `vals` was removed from calcit.core in 0.31.0, use `distinct-values`, or the method `.distinct-values`
+```
+
 ### 限制
 
-- `%some` / `%none` / `%ok` / `%err`、`atom`、`vals` 仍有下游调用，本版保留。
-- `case-default` 仍被 Respo UI 的源码与 js-ffi 的示例使用，本版保留。
+- `%ok` / `%err` 仍有下游调用，本版保留。
+- `defatom` 仍有下游调用，本版保留。
 
 ## 0.30.1 底层缺失值原语直接返回 Option
 
@@ -1375,15 +1406,15 @@ calcit calcit.cirru tree show app.main/main! --path @3 --format edn
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
-| `%some` / `%none` / `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
-| `vals` | `distinct-values` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
+| `%some` / `%none`（0.31.0 已删除）/ `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
+| `vals`（0.31.0 已删除） | `distinct-values` | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
 | `round?` | `integer?` / `.integer?` | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | List `.add` | `.append`，返回新的同型 List，不修改原集合 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |
 | List/Map/Set `.count` | `.len`，保留原集合长度语义 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；未知接收者、自定义 Countable 与泛型 bound 需人工审阅；String 旧方法已删除，见上文 |
 | FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
-| `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
+| `case-default`（0.31.0 已删除） | `match`，默认值写成末尾 `_` 分支 | 使用 0.30.x 的 CLI：`case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
 | `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
@@ -1435,7 +1466,7 @@ calcit .calcit/modules/calcit.std/calcit.cirru query examples 'calcit.std.proces
 
 ### Ref 构造名
 
-`Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变。自本次变更起它们带 `:deprecated` 标记，`calcit analyze deprecated` 会列出调用点，使用 `deprecatedCalls` 预算的项目升级前请先运行 `calcit fix --rule core-ref-constructor-v1`；已知活跃下游（Respo、Recollect 等）默认分支已无调用。
+`Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变（`atom` 已在 0.31.0 删除，见“删除已弃用的核心名字”一节）。自本次变更起它们带 `:deprecated` 标记，`calcit analyze deprecated` 会列出调用点，使用 `deprecatedCalls` 预算的项目升级前请先运行 `calcit fix --rule core-ref-constructor-v1`；已知活跃下游（Respo、Recollect 等）默认分支已无调用。
 
 ```bash
 calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn
@@ -2164,8 +2195,8 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 ```
 
-函数形式的 `vals`、`turn-string`、`remove-watch`
-均由其定义文档提供首选名；`optionally`、`join`、`turn-str` 已在 0.31.0 删除，见上方删除表，不需要另一份迁移名称表。
+函数形式的 `turn-string`、`remove-watch`
+均由其定义文档提供首选名；`vals`、`optionally`、`join`、`turn-str` 已在 0.31.0 删除，见上方删除表，不需要另一份迁移名称表。
 普通函数成功预处理时，弃用报告用编译器解析目标排除局部同名参数并识别 namespace alias；
 quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧函数调用。
 无法预处理的定义保留保守 source 报告，仍需修正原编译问题后重新检查。
@@ -2173,30 +2204,7 @@ quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧
 不要仅为压低预算删除断言或放宽类型。fix 的附带扫描需显式选择 `--include-attached`，
 先审阅 preview，再以新 revision 应用，随后重放 `:tests` 和业务入口。
 
-`case-default` 已标记 `:deprecated`，首选原生 `match`。所有模式都是字面量时两者等价，迁移时把第二个参数（默认值）挪到末尾的 `_` 分支：
-
-```cirru.no-check
-; 旧写法
-case-default kind style-default
-  :primary style-primary
-  :danger style-danger
-
-; 新写法
-match kind
-  :primary style-primary
-  :danger style-danger
-  _ style-default
-```
-
-字面量模式的调用可以批量迁移：
-
-```bash
-calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn
-calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn \
-  --apply --expect-revision <revision>
-```
-
-规则只自动改写与宏展开完全一致的调用，其余给出 `requires-review`。模式是表达式或变量时 `match` 不适用，改用 `cond`。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。入口本身仍保留，随后续非 patch 版本再评估删除。
+`case-default` 已在 0.31.0 删除，首选原生 `match`，迁移方式见“删除已弃用的核心名字”一节。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。
 
 旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
 若旧 Snapshot 已经包含结构化 `CodeEntry` 和 canonical `:entries`，可用当前 `edit schema` 显式补齐严格
@@ -2231,7 +2239,7 @@ Snapshot 加载的 legacy runtime `Fn` / whole-`Dynamic` macro 会更早在 load
 类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
 不承诺该泛型关系；开放容器直接用通用入口：`Map<K,Dynamic>` 用 `merge`，`List<Dynamic>` 用 `concat`，
 泛型参数绑定为 `Dynamic` 即可，不要再在业务代码里直接使用 `&merge` / `&list:concat`。旧的
-`merge-dynamic` / `concat-dynamic` 已弃用，由 `core-function-alias-v1` 迁移。
+`merge-dynamic` / `concat-dynamic` 已弃用；`core-function-alias-v1` 已在 0.31.0 退役，需在升级前用 0.30.x 的 CLI 运行该规则迁移。
 非 strict 模式保持原有兼容行为，便于渐进迁移。
 
 当开放 `Dynamic`（或同形容器中的 `Dynamic` 成员）进入包含 Struct / Enum 的封闭参数契约时，

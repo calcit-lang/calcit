@@ -42,7 +42,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |keeps-dynamic-lookup)
-            :code $ quote $ assert= (%some |Ada)
+            :code $ quote $ assert= (Option :some |Ada)
               dynamic-struct-field $ {} $ :name |Ada
             :tags $ #{} :migration
         'fixable $ %{} 'CodeEntry (:doc "|Exact removed API call.")
@@ -52,8 +52,8 @@
             :args $ [] 'Enum
             :return $ :: 'calcit.core/Option 'EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |returns-enum-definition)
-            :code $ quote $ assert= (%some Option)
-              fixable $ %some 1
+            :code $ quote $ assert= (Option :some Option)
+              fixable $ Option :some 1
             :tags $ #{} :migration
         'legacy-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn legacy-enum () (%:: FixPersonChoice :none)
@@ -131,8 +131,8 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] $ :: 'calcit.core/Option 'fix-command.main/FixPerson
           :tests $ [] $ %{} 'TestEntry (:name |keeps-option-receiver)
-            :code $ quote $ assert= (%none)
-              option-struct-field $ %some $ FixPerson :name |Ada :age 1
+            :code $ quote $ assert= (Option :none)
+              option-struct-field $ Option :some $ FixPerson :name |Ada :age 1
             :tags $ #{} :migration
         'quoted-legacy-constructor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn quoted-legacy-constructor ()
@@ -187,7 +187,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Tag
           :tests $ [] $ %{} 'TestEntry (:name |keeps-runtime-key)
-            :code $ quote $ assert= (%some |Ada)
+            :code $ quote $ assert= (Option :some |Ada)
               runtime-struct-field (FixPerson :name |Ada :age 1) :name
             :tags $ #{} :migration
         'shadowed $ %{} 'CodeEntry
@@ -242,7 +242,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'fix-command.main/FixPersonChoice
           :tests $ [] $ %{} 'TestEntry (:name |keeps-enum-union-receiver)
-            :code $ quote $ assert= (%none)
+            :code $ quote $ assert= (Option :none)
               union-struct-field $ FixPersonChoice :person $ FixPerson :name |Ada :age 1
             :tags $ #{} :migration
         'unknown-struct-field $ %{} 'CodeEntry (:doc |)
@@ -251,7 +251,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |keeps-unknown-field-for-review)
-            :code $ quote $ assert= (%none)
+            :code $ quote $ assert= (Option :none)
               unknown-struct-field $ FixPerson :name |Ada :age 1
             :tags $ #{} :migration
       :ns $ %{} 'NsEntry (:doc "|Fix command fixture.")

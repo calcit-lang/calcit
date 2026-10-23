@@ -2128,7 +2128,7 @@ mod type_query_tests {
 
   #[test]
   fn definition_return_schema_propagates_into_if_branches() {
-    let mut nodes = cirru_parser::parse("fn ()\n  if true %none (%none)").expect("test function should parse");
+    let mut nodes = cirru_parser::parse("fn ()\n  if true (Option :none) (Option :none)").expect("test function should parse");
     let mut entry = snapshot::CodeEntry::from_code(nodes.remove(0));
     let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from("calcit.core/Option"),
@@ -2142,28 +2142,6 @@ mod type_query_tests {
       assert_eq!(expected, option_number);
       assert_eq!(source, "if branch inherited from definition return schema");
     }
-  }
-
-  #[test]
-  fn type_at_recovers_implicit_core_constructor_schema_after_preprocess_failure() {
-    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let snapshot = load_core_snapshot().expect("core snapshot should load");
-    prepare_program_for_type_query_on_cli_stack(snapshot);
-    let source = Calcit::Symbol {
-      sym: Arc::from("%none"),
-      info: Arc::new(calcit::calcit::CalcitSymbolInfo {
-        at_ns: Arc::from("tests.type-at"),
-        at_def: Arc::from("demo"),
-      }),
-      location: None,
-    };
-
-    let inferred = infer_type_at_target(&source, None).expect("implicit core constructor should retain its schema");
-    let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
-      panic!("expected constructor function schema, got {inferred:?}");
-    };
-    assert!(signature.arg_types.is_empty());
-    assert!(signature.return_type.to_brief_string().contains("Option"));
   }
 
   #[test]
@@ -2585,21 +2563,14 @@ fn expected_type_at_path(
 }
 
 /// Prefer processed static evidence. Unresolved source symbols cannot borrow
-/// a same-named global schema, except the implicit core `%none` constructor.
+/// a same-named global schema.
 pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
-  if let Calcit::Symbol { sym, .. } = source {
+  if let Calcit::Symbol { .. } = source {
     // A source symbol has no lexical resolution. A same-named definition is
     // not evidence when preprocessing failed or could not correlate the node.
     return processed
       .filter(|node| !matches!(node, Calcit::Symbol { .. }))
-      .and_then(runner::preprocess::infer_static_type_from_expr)
-      .or_else(|| {
-        if processed.is_some() || sym.as_ref() != "%none" {
-          return None;
-        }
-        let core = program::lookup_def_schema(calcit::calcit::CORE_NS, sym);
-        (!matches!(core.as_ref(), CalcitTypeAnnotation::Dynamic)).then_some(core)
-      });
+      .and_then(runner::preprocess::infer_static_type_from_expr);
   }
   processed
     .and_then(runner::preprocess::infer_static_type_from_expr)

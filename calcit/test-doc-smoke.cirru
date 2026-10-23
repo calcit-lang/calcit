@@ -50,7 +50,7 @@
             :args $ []
         'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
-            assert= (%some DocTrait) (impl-origin DocTraitImpl)
+            assert= (Option :some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -84,7 +84,7 @@
                     str-spaced |native-dot $ :name x
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson $ :name |Bob
-              assert= (%some DocTrait) (impl-origin DotImpl)
+              assert= (Option :some DocTrait) (impl-origin DotImpl)
               assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)

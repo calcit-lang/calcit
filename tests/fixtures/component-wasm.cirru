@@ -228,12 +228,12 @@
             :return $ :: 'Option 'Number
           :tests $ []
             %{} 'TestEntry (:name |round-trips-some)
-              :code $ quote $ assert= (%some 7)
-                echo-option-number $ %some 7
+              :code $ quote $ assert= (Option :some 7)
+                echo-option-number $ Option :some 7
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |round-trips-none)
-              :code $ quote $ assert= (%none)
-                echo-option-number $ %none
+              :code $ quote $ assert= (Option :none)
+                echo-option-number $ Option :none
               :tags $ #{} :wasm
         'echo-option-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-option-text (value) value
@@ -242,8 +242,8 @@
             :args $ [] $ :: 'Option 'String
             :return $ :: 'Option 'String
           :tests $ [] $ %{} 'TestEntry (:name |round-trips-text)
-            :code $ quote $ assert= (%some "|你好")
-              echo-option-text $ %some "|你好"
+            :code $ quote $ assert= (Option :some "|你好")
+              echo-option-text $ Option :some "|你好"
             :tags $ #{} :wasm
         'echo-profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-profile (value) value
@@ -433,7 +433,7 @@
             :args $ []
         'sample-profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sample-profile ()
-            Profile :name |Ada :active true :scores ([] 1 2 3) :stats (ProfileStats :score 7) :maybe-name (%some |Ada) :outcome $ %ok $ [] 4 5
+            Profile :name |Ada :active true :scores ([] 1 2 3) :stats (ProfileStats :score 7) :maybe-name (Option :some |Ada) :outcome $ %ok $ [] 4 5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
             :args $ []

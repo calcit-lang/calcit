@@ -1081,7 +1081,7 @@ fn classify_code_nil(parent: Option<&WeakCodeParent>) -> &'static str {
     Some("do") => "do-step",
     Some("[]") => "list-item",
     Some("{}") | Some("&{}") | Some("#{}") => "collection-item",
-    Some("cond") | Some("case") | Some("case-default") => "branch",
+    Some("cond") | Some("case") => "branch",
     _ => "literal",
   }
 }

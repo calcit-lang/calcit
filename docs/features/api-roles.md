@@ -52,7 +52,7 @@ leads_to:
 | Role | Preferred public form | Legacy or implementation form |
 | --- | --- | --- |
 | Type and variant | `Option<T>` with `:some` / `:none`; `Result<T,E>` with `:ok` / `:err` | A bare type name is not a constructed value. |
-| Constructor | `Option :some value`, `Result :err error`, `Person :name name` | Migrate `%some`, `%none`, `%ok`, `%err` with `core-nominal-constructor-v1` when the call is statically resolved. |
+| Constructor | `Option :some value`, `Result :err error`, `Person :name name` | Migrate `%ok`, `%err` with `core-nominal-constructor-v1` when the call is statically resolved. `%some` and `%none` were removed in 0.31.0; the migration is `Option :some value` / `Option :none`. |
 | Receiver method | `value .unwrap`, `text .includes? fragment` | `option:unwrap value` and `&str:includes? text fragment` are implementation paths, not preferred application calls. Preview proven Option rewrites with `calcit fix --rule core-option-method-v1 --format edn`. |
 | Module function | `parse-float source`, imported `module/function` | Use when there is no natural typed receiver; do not introduce a parallel public `type:verb` spelling. |
 | Internal helper / primitive | No public spelling promised | `option:unwrap` is a core helper; `&str:includes?` and `&list:count` are runtime primitives. Trace them for implementation, not API discovery. |
@@ -63,7 +63,7 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 
 | 遇到的写法 | 新代码首选 | 迁移与限制 |
 | --- | --- | --- |
-| `%some value`、`%none`、`%ok value`、`%err error` | `Option :some value`、`Option :none`、`Result :ok value`、`Result :err error` | `core-nominal-constructor-v1` 只改写解析到 core 且保序可证明的调用；被遮蔽或当函数值传递时人工确认 |
+| `%ok value`、`%err error`（`%some`、`%none` 已在 0.31.0 删除） | `Result :ok value`、`Result :err error`（`Option :some value`、`Option :none`） | `core-nominal-constructor-v1` 只改写解析到 core 且保序可证明的调用；被遮蔽或当函数值传递时人工确认 |
 | `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；core 空 Option 可由具体 fallback 补足类型，其他开放类型、未知 macro、函数值引用仍需人工确认 |
 | `result:unwrap-or result fallback` | `result .unwrap-or fallback` | `core-result-method-v1` 只改写目标方法已证明的调用；core `:err` 可由具体 fallback 确定成功类型，同时保留错误类型；开放 Result、`:ok` 动态值和遮蔽调用仍需审阅 |
 | `option:some?` / `option:none?`、`result:ok?` / `result:err?` | `value .some?` / `.none?`、`value .ok?` / `.err?` | 沿用对应 Option / Result 方法规则，仍须证明接收者名义类型及同一 core 方法；裸 Dynamic 不能借 Bool 返回值绕过类型检查 |
@@ -144,7 +144,7 @@ do
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 与 List `.reduce` 已在 0.29.0 删除，前缀 `reduce` 与 `.foldl` 的退场留给 [#1458](https://github.com/calcit-lang/calcit/issues/1458) | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
 | `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 已在 0.31.0 删除 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string`；List `.join-str` 与前缀 `join-str` 已在 0.29.0 删除 | 保留 List<T>、原有显示规则和空 List 结果；不与返回 List 的 `intersperse` 混淆 |
-| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
+| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 已在 0.31.0 删除 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | `foldl-shortcut xs init default f`，reducer 返回 `:: Bool acc` | **已引入** `fold-while xs init f` 与 `ControlFlow`：reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值；旧入口用 Bool 元组表示停止，并在从未停止时返回额外的 `default` | 前缀 `foldl-shortcut` 已在 0.31.0 删除；语义不同，没有自动 fix，按 `upgrade.md` 的对照人工改写 |
 | `section-by xs n: (List<T>, Number) -> List<List<T>>`，按固定长度切段 | **已引入** `chunks`，语义与 Rust `chunks(n)` 一致：最后一段可以更短，`n` 小于 1 时报错；`-by` 后缀在 `group-by`、`sort-by` 中接收函数，这里接收数字，故改名 | 前缀 `section-by` 已在 0.31.0 删除；升级前用 0.30.x 的 `core-function-alias-v1` 迁移直接调用，一等函数引用只给 `requires-review` |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map`；List `.bind` 已在 0.29.0 删除 | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
@@ -164,7 +164,7 @@ List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.
 
 List 文本拼接使用 `join-string` / `.join-string`，逐项按原有显示规则转为文本并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。0.29.0 起 `join-string` 直接拥有实现，旧 List `.join-str` 方法与前缀 `join-str` 均已删除；方法的自动迁移需用 0.28.x 的 CLI 运行 `core-list-join-string-v1`，前缀调用人工改写为 `join-string`。
 
-Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法已在 0.29.0 删除，曾提供的 `core-map-distinct-values-v1` 仅 0.28.x 的 CLI 可用；前缀 `vals`、开放接收者与用户方法不按名字改写。
+Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法已在 0.29.0 删除，曾提供的 `core-map-distinct-values-v1` 仅 0.28.x 的 CLI 可用；前缀 `vals` 已在 0.31.0 删除（诊断提示改用 `distinct-values`，规则 `core-function-alias-v1` 仅 0.30.x 的 CLI 可用）；开放接收者与用户方法不按名字改写。
 
 List 展平映射优先使用 `.flat-map`：回调对每个元素调用一次，返回 List 并按顺序展平一层，类型从 `List<T>` 与 `Fn(T)->List<U>` 推断为 `List<U>`。旧 List `.bind` 已在 0.29.0 删除，自动迁移需用 0.28.x 的 CLI 运行 `core-list-flat-map-v1`；前缀 `mapcat` 暂留，Fn `.bind` 不按名字替换。
 
@@ -199,7 +199,7 @@ do
 
 | 当前契约 | 决策 | 类型/失败与迁移限制 |
 | --- | --- | --- |
-| `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
+| `Option/Result/Struct` 名义构造；旧 `%ok/%err`（`%some/%none` 已在 0.31.0 删除） | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
 | `turn-string` 为内部兼容函数，转调 `to-string`（`turn-str` 已在 0.31.0 删除），要求 `T: ToString`；`&turn-string` 仅是六类内建标量的底层实现 | **首选** `to-string: T where T: ToString -> String`；旧 `turn-string` 暂留兼容与宏阶段边界 | 六类标量和自定义名义 `ToString` 实现可通过兼容入口转换；List/Map/Set、Unit、FsPath 和未经解码的 Dynamic 在严格预处理时拒绝。nil 转空串，Tag/Symbol 取文本；已证明的 Number `ToString` 在 native/JS/core WASM/WASI 0.3 共用精确文本语义，包括运行时小数和非有限值。未证明的开放 trait/Dynamic 边界仍明确拒绝，不因 Number 支持而放宽；`to-string` 也不替代 Debug/Show。 |
 | `turn-symbol` / `turn-tag` 的历史运行时输入较宽 | **已提供** `to-symbol: String -> Symbol`、`to-tag: String -> Tag`；旧入口暂留 core 宏与兼容路径 | 严格调用只接受 String；native/JS 已验证，WASM 尚无动态 Tag/Symbol intern，调用 `to-tag`/`turn-tag` 会显式报不支持而非伪装成 String。显式 `core-identity-conversion-v1` 只改写内建调用且参数被证明为 String 的稳定源码；也仅对已证明的六类内建标量迁移 `turn-string` 到 `to-string`，Dynamic/集合/自定义类型不自动改。旧入口兼容 Tag/Symbol 输入不构成新接口的静态类型承诺，不可全局替换 |
 | `str`、`.debug/.show`、`format-cirru-edn`、`format-to-lisp/to-lispy-string` | **保留**显示/调试/序列化职责；`format-to-lisp` 与 `to-lispy-string` **不等价** | `format-to-lisp` 把代码/list 格式化成 Lisp 表达式，`to-lispy-string` 保留 Calcit 值构造表示：`([] 1 \|a)` 分别得到 `(1 \|a)` 与 `([] 1 \|a)`。二者都不是通用安全转换，不能自动互换；序列化默认 Cirru EDN |
@@ -220,7 +220,7 @@ do
 
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
-| 构造 `atom` / `defatom` | **已提供** `ref` / `defref` 作为 `Ref<T>` 的首选构造名，与 `type-of` 的 `:ref`、谓词 `ref?` 一致；旧名读取为同一实现，暂留兼容 | native、JS 与 WASM 共享同一实现与 lowering（WASM 仅支持数值 `defref` 全局，局部 `ref` 与 `atom` 一样明确报告 unsupported）；`core-ref-constructor-v1` 改写已证明的拼写，在下一个非 patch 版本退场旧名 |
+| 构造 `atom` / `defatom` | **已提供** `ref` / `defref` 作为 `Ref<T>` 的构造名，与 `type-of` 的 `:ref`、谓词 `ref?` 一致；`atom` 已在 0.31.0 删除，`defatom` 暂留兼容 | native、JS 与 WASM 共享同一实现与 lowering（WASM 仅支持数值 `defref` 全局，局部 `ref` 明确报告 unsupported）；`core-ref-constructor-v1` 只改写已证明的 `defatom`，在下一个非 patch 版本退场 |
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；`add-watch!` 自 0.29.0 起直接是内建实现，旧 `add-watch` 已删除，旧 `remove-watch` 暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath `.write-text!`；js-ffi `write-text!` | core **已提供** `.write-text!`，旧 `.write-text` 已于 0.29.0 删除；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；0.28.x 的 `core-effect-method-v1` 可在类型与来源已证明时改写旧调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 与 FfiResponse 旧名均已删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；native FFI 生命周期能力仅在 native 提供；JS 调用明确抛出包含操作名的 capability 错误，不把缺失能力当作 Unit 成功；**已退场**：0.31.0 起 FfiTask `.cancel/.cancel-with` 报 `E_RETIRED_METHOD` 并给出 `.cancel!/.cancel-with!`。迁移需在升级前用 0.30.x 的 CLI 运行 `core-effect-method-v1`。 |
@@ -329,7 +329,7 @@ calcit query type ":: 'List 'Number"
 calcit query type ":: 'Map 'Tag 'Number"
 calcit query type calcit.core/FsPath
 calcit query def 'calcit.core/Option' --format edn
-calcit query def 'calcit.core/%some' --format edn
+calcit query def 'calcit.core/%ok' --format edn
 calcit query context 'calcit.core/option:unwrap' --format edn
 calcit query examples calcit.core/fold
 calcit analyze check-examples --ns calcit.core --def fold
@@ -347,9 +347,9 @@ calcit analyze check-examples --ns calcit.core --def fold
 
 真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
 
-`%some/%none/%ok/%err` 从 0.25.0 起标记弃用，但不能仅凭最早可移除的版本号删除。先用 `calcit fix --rule core-nominal-constructor-v1 --format edn` 预览，再带预览返回的 `--expect-revision` 应用；真实消费者、发布版依赖、严格检查、相关 backend 与实现解耦的退场条件仍按 [旧方法 helper 的退场条件](#旧方法-helper-的退场条件) 和 #1458 逐项核对。规则只自动改写编译器已解析到 core、实参数量匹配且处在可证明保序的源码调用；把 helper 当函数值、局部遮蔽或跨未证明的 macro 边界时需人工确认，不会插入 Dynamic 或 `unsafe-coerce`。String 旧 `.contains?` 检查索引而 `.includes?` 检查子串；该旧方法已在 0.29.0 删除，自动迁往 `.contains-index?` 需用 0.28.x 的 CLI 运行 `core-predicate-method-v1`，不能在跨容器调用上按词形全局替换。
+`%ok/%err` 从 0.25.0 起标记弃用，但不能仅凭最早可移除的版本号删除（`%some/%none` 已在 0.31.0 删除，其编译器生成形式改为 `Option :some/:none`）。先用 `calcit fix --rule core-nominal-constructor-v1 --format edn` 预览，再带预览返回的 `--expect-revision` 应用；真实消费者、发布版依赖、严格检查、相关 backend 与实现解耦的退场条件仍按 [旧方法 helper 的退场条件](#旧方法-helper-的退场条件) 和 #1458 逐项核对。规则只自动改写编译器已解析到 core、实参数量匹配且处在可证明保序的源码调用；把 helper 当函数值、局部遮蔽或跨未证明的 macro 边界时需人工确认，不会插入 Dynamic 或 `unsafe-coerce`。String 旧 `.contains?` 检查索引而 `.includes?` 检查子串；该旧方法已在 0.29.0 删除，自动迁往 `.contains-index?` 需用 0.28.x 的 CLI 运行 `core-predicate-method-v1`，不能在跨容器调用上按词形全局替换。
 
-对 Option 的旧 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览 `.some?` / `.none?` / `.unwrap` / `.unwrap-or` 迁移。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。已证明来自 core 的空值 `%none` 或 `Option :none` 即使起初显示 `Option<Dynamic>`，也可由具体 fallback 推出 payload 类型，再检查方法分派；普通开放接收者、函数值或无来源映射的表达式仍不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试；不把 String 或其他内部函数类推为同一个迁移。
+对 Option 的旧 helper，可用 `calcit fix --rule core-option-method-v1 --format edn` 预览 `.some?` / `.none?` / `.unwrap` / `.unwrap-or` 迁移。只有接收者方法解析为 `proven` 且实现确实指向相同 core helper 时才提供自动改写；已核实单次保留调用的 core `let`、`cond`、`do`、`fn`、`assert=` 宏允许通过，其他宏仍需审阅。已证明来自 core 的空值 `Option :none` 即使起初显示 `Option<Dynamic>`，也可由具体 fallback 推出 payload 类型，再检查方法分派；普通开放接收者、函数值或无来源映射的表达式仍不能自动改写。应用后重复预览应为空，并运行严格类型检查与项目测试；不把 String 或其他内部函数类推为同一个迁移。
 
 Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `core-result-method-v1` 规则，不新增顶层 CLI 入口。只有编译器能证明同一方法契约才自动迁移；已证明来自 core 的 `%err` / `Result :err` 不携带成功值，因此允许具体 fallback 绑定成功类型，同时仍检查错误类型。成功值已有具体类型的 core `%ok` 可按同一方法契约迁移；普通开放 Result 和 `:ok` 的动态成功值不能凭 fallback 收窄，具名构造缺少精确源码证据时也保留审阅。旧 helper 作为 core 实现暂留；公开文档只推荐 `.ok?` / `.err?` / `.unwrap-or`。在真实消费者完成迁移、Agent 查询和升级文档统一首选写法、经过至少一个发布窗口且 JS/native/WASI 相关测试通过之前，不删除旧 helper。其他 `result:*` 逐项确认语义与迁移证据，不跟随批量废弃。
 
@@ -359,7 +359,7 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 
 剩余集中迁移与这些**应用可直接调用**的兼容入口以 **0.31.0** 为计划退场窗口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。计划版本本身不证明这些条件已满足；任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
 
-精确查询 `%some/%none/%ok/%err`、`atom/defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 与 `range-bothway` 已在 0.31.0 删除，改写方式见[升级指南](../run/upgrade.md#0310-删除已弃用的兼容函数)。`let{}` 的原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
+精确查询 `%ok/%err`、`defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 与 `range-bothway` 已在 0.31.0 删除，改写方式见[升级指南](../run/upgrade.md#0310-删除已弃用的兼容函数)。`let{}` 的原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
 
 ### 最终值存在性
 

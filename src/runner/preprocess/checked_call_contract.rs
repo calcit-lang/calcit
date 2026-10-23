@@ -255,12 +255,25 @@ pub(crate) fn resolve_checked_call_contract(
         return None;
       }
       let Calcit::List(items) = args.first()? else { return None };
-      let is_some_constructor = matches!(items.first(), Some(Calcit::Import(import)) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "%some")
-        || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "%some");
-      if !is_some_constructor {
+      // The lowered `Option :some payload` keeps the payload after the enum
+      // reference and tag; the not-yet-lowered call carries it right after the tag.
+      let is_option_import = |item: Option<&Calcit>| {
+        matches!(item, Some(Calcit::Import(import)) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option")
+      };
+      let is_some_tag = |item: Option<&Calcit>| matches!(item, Some(Calcit::Tag(variant)) if variant.ref_str() == "some");
+      let payload_index = if matches!(items.first(), Some(Calcit::Proc(calcit::CalcitProc::NativeNamedEnumNew)))
+        && is_option_import(items.get(1))
+        && is_some_tag(items.get(2))
+      {
+        3
+      } else if (is_option_import(items.first()) || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "Option"))
+        && is_some_tag(items.get(1))
+      {
+        2
+      } else {
         return None;
-      }
-      let payload = resolve_type_value(items.get(1)?, scope_types)?;
+      };
+      let payload = resolve_type_value(items.get(payload_index)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
   if matches!(fn_def, "assoc-in" | "update-in") {

@@ -511,7 +511,7 @@ const scenarios = [
       "calcit/test.cirru",
       "query",
       "search",
-      "%none",
+      "Option",
       "--exact",
       "--source",
       "project",
@@ -531,10 +531,10 @@ const scenarios = [
       }
       const matches = definition.matches;
       if (matches[0]?.cursor_index !== 0 || matches[0]?.path !== "code@2.1" || matches[0]?.node_kind !== "leaf") {
-        throw new Error("query.search did not identify the bare constructor leaf");
+        throw new Error("query.search did not identify the bare enum leaf");
       }
       if (matches[1]?.cursor_index !== 1 || matches[1]?.path !== "code@2.2.0" || matches[1]?.node_kind !== "call") {
-        throw new Error("query.search did not identify the invoked zero-argument constructor");
+        throw new Error("query.search did not identify the invoked enum constructor");
       }
       if (matches.some((match) => match.source !== "project" || match.origin.package !== "app")) {
         throw new Error("query.search matches lost their project origins");
@@ -543,7 +543,7 @@ const scenarios = [
   },
   {
     name: "core-only structural search",
-    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "core", "--format", "json"],
+    args: ["calcit/test.cirru", "query", "search", "Option", "--exact", "--source", "core", "--format", "json"],
     check(result) {
       const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const wrongOrigin = result.data.definitions.some(
@@ -561,7 +561,7 @@ const scenarios = [
   },
   {
     name: "dependency-only structural search",
-    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "deps", "--format", "json"],
+    args: ["calcit/test.cirru", "query", "search", "Option", "--exact", "--source", "deps", "--format", "json"],
     check(result) {
       const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const wrongOrigin = result.data.definitions.some(
@@ -579,7 +579,7 @@ const scenarios = [
   },
   {
     name: "all-source structural search",
-    args: ["calcit/test.cirru", "query", "search", "%none", "--exact", "--source", "all", "--format", "json"],
+    args: ["calcit/test.cirru", "query", "search", "Option", "--exact", "--source", "all", "--format", "json"],
     check(result) {
       const countedMatches = result.data.definitions.reduce((sum, definition) => sum + definition.match_count, 0);
       const sources = new Set(result.data.definitions.map((definition) => definition.source));
@@ -1400,7 +1400,7 @@ for (const target of [":: 'List 'Number", ":: 'Map 'Tag 'Number", ":: 'Set 'Numb
     assert.ok(!methods.some(method => method.name === ".add"));
   }
 }
-for (const [definition, role] of [["%some", "constructor"], ["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
+for (const [definition, role] of [["%ok", "constructor"], ["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
   const queried = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", `calcit.core/${definition}`, "--format", "json"], {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
@@ -1408,9 +1408,9 @@ for (const [definition, role] of [["%some", "constructor"], ["option:unwrap", "i
   });
   assert.equal(queried.status, 0, `${definition}: ${queried.stderr}`);
   assert.ok(JSON.parse(queried.stdout).data.tags.includes(role), `${definition} lost its ${role} role`);
-  if (definition === "%some") {
+  if (definition === "%ok") {
     assert.ok(JSON.parse(queried.stdout).data.tags.includes("deprecated"), "legacy constructor should expose deprecation to Agents");
-    assert.match(JSON.parse(queried.stdout).data.doc, /Option :some value/);
+    assert.match(JSON.parse(queried.stdout).data.doc, /Result :ok value/);
   }
 }
 

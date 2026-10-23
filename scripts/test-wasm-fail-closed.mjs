@@ -29,7 +29,6 @@ const exportNames = Object.keys(instance.exports);
 // the public export surface, where a host could mistake a trapping slot for a
 // callable business export.
 for (const internal of [
-  "vals",
   "test-closure-escape",
   "test-recursive-closure-specialization",
   "test-rest-closure-specialization",

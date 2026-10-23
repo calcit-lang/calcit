@@ -193,13 +193,13 @@
                   , Response
                 prewrapped $ decode-map-as
                   {} (:code 201)
-                    :message $ %some |already
+                    :message $ Option :some |already
                     :body $ {} $ :kind :json
                   , Response
               assert= 200 $ :code response
-              assert= (%some |ok) (:message response)
-              assert= (%none) (:message no-message)
-              assert= (%some |already) (:message prewrapped)
+              assert= (Option :some |ok) (:message response)
+              assert= (Option :none) (:message no-message)
+              assert= (Option :some |already) (:message prewrapped)
               assert= true $ try
                 do
                   decode-map-as

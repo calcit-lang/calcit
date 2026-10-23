@@ -634,16 +634,12 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
     (
       "app.main/legacy",
-      "quote $ defn legacy ()\n  compat/vals $ {} (:b 1)\n  %none\n  vals $ {} (:a 1)\n  turn-string 2\n  turn-string 1\n  let ((cell $ atom 0))\n    add-watch! cell :key $ fn (new old) &unit\n    remove-watch cell :key",
+      "quote $ defn legacy ()\n  compat/turn-string 3\n  %ok 1\n  turn-string 2\n  turn-string 1\n  let ((cell $ ref 0))\n    add-watch! cell :key $ fn (new old) &unit\n    remove-watch cell :key",
       false,
     ),
     ("app.main/local", "quote $ defn local (turn-string)\n  turn-string 1", false),
     ("app.main/quoted", "quote $ defn quoted ()\n  quote $ turn-string 1", false),
-    (
-      "app.main/alias-only",
-      "quote $ defn alias-only ()\n  compat/vals $ {} (:c 1)",
-      false,
-    ),
+    ("app.main/alias-only", "quote $ defn alias-only ()\n  compat/turn-string 4", false),
     (
       "app.main/noisy",
       "quote $ defmacro noisy ()\n  println |metadata-query-must-not-expand-unrelated-macro\n  quote 1",
@@ -695,11 +691,10 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
   let rows = report["data"]["definitions"].as_array().unwrap();
   assert_eq!(rows.len(), 2, "{report}");
   let legacy = rows.iter().find(|row| row["name"] == "legacy").unwrap();
-  assert_eq!(report["data"]["summary"]["calls"], 7, "{report}");
+  assert_eq!(report["data"]["summary"]["calls"], 6, "{report}");
   assert!(!String::from_utf8_lossy(&output.stdout).contains("metadata-query-must-not-expand-unrelated-macro"));
   for (old, preferred) in [
-    ("%none", "Option :none"),
-    ("vals", "distinct-values"),
+    ("%ok", "Result :ok value"),
     ("turn-string", "to-string"),
     ("remove-watch", "remove-watch!"),
   ] {
@@ -735,7 +730,7 @@ fn deprecation_paths_address_snapshot_source_with_comments() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy ()\n  ; leading note\n  turn-string 1\n  let ((x 1))\n    ; nested note\n    turn-string x\n    , x\n  vals $ {} (:a 1)\n  quote $ turn-string 1",
+        "quote $ defn legacy ()\n  ; leading note\n  turn-string 1\n  let ((x 1))\n    ; nested note\n    turn-string x\n    , x\n  %ok 1\n  quote $ turn-string 1",
       ],
     ),
     "create commented legacy calls",
@@ -778,7 +773,7 @@ fn deprecation_paths_address_snapshot_source_with_comments() {
     vec![
       ("code@4".to_owned(), "calcit.core/turn-string".to_owned()),
       ("code@5.3".to_owned(), "calcit.core/turn-string".to_owned()),
-      ("code@6".to_owned(), "calcit.core/vals".to_owned()),
+      ("code@6".to_owned(), "calcit.core/%ok".to_owned()),
     ],
     "{report}"
   );
@@ -1254,14 +1249,14 @@ fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
     assert_success(&run_calcit(&snapshot, &args), "create constructor boundary fixture");
   }
   for (name, code) in [
-    ("safe", "quote $ assert= (Option :some 1) (%some 1)"),
-    ("opaque", "quote $ assert= (Option :some 1) $ opaque $ %some 1"),
-    ("identity", "quote $ assert= %some %some"),
+    ("safe", "quote $ assert= (Result :ok 1) (%ok 1)"),
+    ("opaque", "quote $ assert= (Result :ok 1) $ opaque $ %ok 1"),
+    ("identity", "quote $ assert= %ok %ok"),
     (
       "shadow",
-      "quote $ let ((Option 1)) (assert= (calcit.core/Option :some Option) (%some Option))",
+      "quote $ let ((Result 1)) (assert= (calcit.core/Result :ok Result) (%ok Result))",
     ),
-    ("quoted-data", "quote $ assert= (quote $ %some 1) (quote $ %some 1)"),
+    ("quoted-data", "quote $ assert= (quote $ %ok 1) (quote $ %ok 1)"),
   ] {
     assert_success(
       &run_calcit(
@@ -1288,7 +1283,7 @@ fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
   );
   let shadow_before = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
   assert!(!shadow_before.status.success());
-  assert!(String::from_utf8_lossy(&shadow_before.stderr).contains("shadowed `calcit.core/Option`"));
+  assert!(String::from_utf8_lossy(&shadow_before.stderr).contains("shadowed `calcit.core/Result`"));
   let before = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
   assert_success(&before, "capture constructor source");
   let args = [
@@ -1346,7 +1341,7 @@ fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
   );
   let shadow_after = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
   assert!(!shadow_after.status.success());
-  assert!(String::from_utf8_lossy(&shadow_after.stderr).contains("shadowed `calcit.core/Option`"));
+  assert!(String::from_utf8_lossy(&shadow_after.stderr).contains("shadowed `calcit.core/Result`"));
 }
 
 #[test]
@@ -1669,133 +1664,6 @@ fn attached_do_rules_preserve_root_sequence_and_macro_data() {
 }
 
 #[test]
-fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shadowing() {
-  // Rust checks the CLI transaction protocol; Calcit attached tests define the behavior.
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        "app.main/main!",
-        "--overwrite",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn main! ()\n  , &unit",
-      ],
-    ),
-    "create upgrade entry",
-  );
-  for (name, code) in [
-    (
-      "legacy-calls",
-      "quote $ do\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (#{} 3) $ calcit.core/vals $ {} (:c 3)",
-    ),
-    ("function-identity", "quote $ assert= vals vals"),
-    ("quoted-name", "quote $ assert= (quote vals) (quote vals)"),
-    (
-      "local-shadow",
-      "quote $ let ((vals $ fn (m) |local))\n  assert= |local $ vals $ {} (:a 1)",
-    ),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "add-test",
-          "app.main/main!",
-          name,
-          "--tags",
-          if name == "local-shadow" { "shadow" } else { "unit,upgrade" },
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "attach upgrade contract",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-example",
-        "app.main/main!",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ vals $ {} (:a 1)",
-      ],
-    ),
-    "attach upgrade example",
-  );
-  assert_success(
-    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
-    "legacy attached semantics",
-  );
-  let shadow = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "local-shadow", "--require-match"]);
-  assert!(!shadow.status.success(), "shadowing remains an explicit compiler warning");
-  assert!(String::from_utf8_lossy(&shadow.stderr).contains("shadowed `calcit.core/vals`"));
-  let before = fs::read(&snapshot).unwrap();
-  let base = [
-    "fix",
-    "--ns",
-    "app.main",
-    "--def",
-    "main!",
-    "--rule",
-    "core-function-alias-v1",
-    "--format",
-    "json",
-  ];
-  let output = run_calcit(&snapshot, &base);
-  assert_success(&output, "default code-only preview");
-  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-  assert!(report["data"]["suggestions"].as_array().unwrap().is_empty());
-  let mut args = base.to_vec();
-  args.push("--include-attached");
-  let output = run_calcit(&snapshot, &args);
-  assert_success(&output, "attached preview");
-  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-  let suggestions = report["data"]["suggestions"].as_array().unwrap();
-  assert_eq!(suggestions.iter().filter(|s| s["applicability"] == "machine-applicable").count(), 2);
-  assert_eq!(suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(), 2);
-  assert!(!suggestions.iter().any(|s| s["path"] == "tests.local-shadow"));
-  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
-  let mut stale_args = args.clone();
-  stale_args.extend(["--apply", "--allow-no-vcs", "--expect-revision", "md5:stale"]);
-  let stale = run_calcit(&snapshot, &stale_args);
-  assert!(!stale.status.success());
-  assert!(String::from_utf8_lossy(&stale.stderr).contains("revision mismatch"));
-  assert_eq!(fs::read(&snapshot).unwrap(), before, "stale plans must not write");
-  args.extend(["--apply", "--allow-no-vcs"]);
-  assert_success(&run_calcit(&snapshot, &args), "apply attached migration");
-  assert_success(
-    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
-    "migrated attached semantics",
-  );
-  let output = run_calcit(&snapshot, &base);
-  assert_success(&output, "code remains unchanged");
-  let output = run_calcit(&snapshot, &args[..args.len() - 2]);
-  assert_success(&output, "attached migration is idempotent");
-  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-  assert!(
-    report["data"]["suggestions"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .all(|s| s["applicability"] == "requires-review")
-  );
-}
-
-#[test]
 fn nominal_write_proof_checks_method_value_without_rewriting_source() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -2023,7 +1891,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
       "watch-context",
       "'Fn",
       "'Number",
-      "let ((watched (atom 1)) (observed (atom 0))) (add-watch! watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch watched :proof) (deref observed)",
+      "let ((watched (ref 1)) (observed (ref 0))) (add-watch! watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch watched :proof) (deref observed)",
     ),
     (
       "owned-feature",
@@ -3713,7 +3581,7 @@ fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
   let target = "fix-command.main/literal-spread";
-  let source = "quote $ defn literal-spread ()\n  let\n      *counter $ atom 0\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + (* a 10) b\n    f & $ []\n      do (reset! *counter $ + @*counter 1) @*counter\n      do (reset! *counter $ + @*counter 1) @*counter";
+  let source = "quote $ defn literal-spread ()\n  let\n      *counter $ ref 0\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + (* a 10) b\n    f & $ []\n      do (reset! *counter $ + @*counter 1) @*counter\n      do (reset! *counter $ + @*counter 1) @*counter";
   assert_success(
     &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
     "add spread source",
@@ -8534,6 +8402,24 @@ fn retired_core_alias_rules_point_to_the_0_28_cli() {
 }
 
 #[test]
+fn rules_retired_in_0_31_report_the_older_cli() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for rule in ["case-default-to-match-v1", "core-function-alias-v1"] {
+    for extra in [&[][..], &["--include-attached"][..]] {
+      let mut args = vec!["--rule", rule, "--format", "json"];
+      args.extend_from_slice(extra);
+      let output = run_fix(&snapshot, &args);
+      assert!(!output.status.success(), "{rule} {extra:?} must be rejected");
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(stderr.contains("retired in 0.31.0"), "{rule} {extra:?} stderr: {stderr}");
+      assert!(stderr.contains("0.30.x Calcit CLI"), "{rule} {extra:?} stderr: {stderr}");
+    }
+  }
+}
+
+#[test]
 fn ref_migration_preserves_resolved_nominal_struct_schemas() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -8566,6 +8452,11 @@ fn ref_migration_preserves_resolved_nominal_struct_schemas() {
       "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'List $ :: 'app.main/Record 'Number)",
     ),
     (
+      "app.main/*cell",
+      "quote $ defatom *cell $ new-record 1 |id 2",
+      "quote $ :: 'Ref $ :: 'app.main/Record 'Number",
+    ),
+    (
       "app.main/from-maker",
       "quote $ defn from-maker (f) $ f",
       "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ []) (:return $ :: 'app.main/Record 'Number)) (:return $ :: 'app.main/Record 'Number)",
@@ -8580,7 +8471,7 @@ fn ref_migration_preserves_resolved_nominal_struct_schemas() {
       "declare qualified nominal schema",
     );
   }
-  let assertions = "quote $ do\n  assert= (Record :op 1 :id |id :time 2) $ deref $ atom $ new-record 1 |id 2\n  assert= ([] $ new-record 1 |id 2) $ records\n  assert= (new-record 1 |id 2) $ from-maker $ fn () $ new-record 1 |id 2\n  assert= (app.other/Record :op 3) $ app.other/new-record 3";
+  let assertions = "quote $ do\n  assert= (Record :op 1 :id |id :time 2) $ deref $ ref $ new-record 1 |id 2\n  assert= ([] $ new-record 1 |id 2) $ records\n  assert= (new-record 1 |id 2) $ from-maker $ fn () $ new-record 1 |id 2\n  assert= (app.other/Record :op 3) $ app.other/new-record 3";
   assert_success(
     &run_calcit(
       &snapshot,
@@ -8838,7 +8729,7 @@ fn core_nominal_constructor_rule_previews_applies_and_is_idempotent() {
         "def",
         "fix-command.main/core-constructors",
         "--code",
-        "quote $ defn core-constructors () (%some (%ok 1)) (%none) (%err |bad) &unit",
+        "quote $ defn core-constructors () (%ok (%ok 1)) (%err |bad) &unit",
       ],
     ),
     "install constructor calls",
@@ -8871,7 +8762,7 @@ fn core_nominal_constructor_rule_previews_applies_and_is_idempotent() {
   assert_success(&preview, "constructor preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 3, "report: {report}");
+  assert_eq!(suggestions.len(), 2, "report: {report}");
   assert!(
     suggestions
       .iter()
@@ -8919,9 +8810,9 @@ fn core_nominal_constructor_rule_previews_applies_and_is_idempotent() {
   );
   assert_success(&applied, "constructor apply");
   let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
-  assert!(updated.contains("Option :some $ Result :ok 1"), "snapshot: {updated}");
-  assert!(updated.contains("Option :none"), "snapshot: {updated}");
+  assert!(updated.contains("Result :ok $ Result :ok 1"), "snapshot: {updated}");
   assert!(updated.contains("Result :err |bad"), "snapshot: {updated}");
+  assert!(!updated.contains("%ok") && !updated.contains("%err"), "snapshot: {updated}");
   let repeated = run_fix(&snapshot, &args);
   assert_success(&repeated, "constructor idempotence preview");
   assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
@@ -8940,7 +8831,7 @@ fn core_nominal_constructor_rule_reviews_shadowed_types_and_function_values() {
         "def",
         "fix-command.main/shadowed-option",
         "--code",
-        "quote $ defn shadowed-option (Option) (%some Option)",
+        "quote $ defn shadowed-option (Result) (%ok Result)",
       ],
     ),
     "install shadowed nominal name",
@@ -8953,7 +8844,7 @@ fn core_nominal_constructor_rule_reviews_shadowed_types_and_function_values() {
         "schema",
         "fix-command.main/shadowed-option",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Number)",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Result 'Number 'String)",
       ],
     ),
     "declare shadowed constructor schema",
@@ -8984,7 +8875,7 @@ fn core_nominal_constructor_rule_reviews_shadowed_types_and_function_values() {
         "def",
         "fix-command.main/constructor-as-value",
         "--code",
-        "quote $ defn constructor-as-value () %some",
+        "quote $ defn constructor-as-value () %ok",
       ],
     ),
     "install function-value constructor reference",
@@ -9157,9 +9048,9 @@ fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
         "--input-format",
         "cirru",
         "--expect",
-        "quote $ (%none) .unwrap-or 7",
+        "quote $ (Option :none) .unwrap-or 7",
         "--code",
-        "quote $ option:unwrap-or (%none) 7",
+        "quote $ option:unwrap-or (Option :none) 7",
       ],
     ),
     "restore legacy empty Option helper",
@@ -9619,175 +9510,6 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
     let diagnostic = String::from_utf8_lossy(&preview.stderr);
     assert!(diagnostic.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "{diagnostic}");
   }
-}
-
-#[test]
-fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/legacy-function-aliases";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (#{} 3) $ vals $ {} (:c 3)\n  , true",
-      ],
-    ),
-    "install legacy function alias calls",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-      ],
-    ),
-    "declare legacy function alias source",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-results",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ assert= true $ legacy-function-aliases",
-      ],
-    ),
-    "attach legacy function alias behavior test",
-  );
-
-  let args = [
-    "--rule",
-    "core-function-alias-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "legacy-function-aliases",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &args);
-  assert_success(&preview, "function alias preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 2, "{report}");
-  assert!(
-    suggestions
-      .iter()
-      .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
-  );
-  assert!(
-    suggestions
-      .iter()
-      .any(|suggestion| suggestion["origin_chain"][0]["target"] == "calcit.core/vals"),
-    "missing vals: {report}"
-  );
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-function-alias-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "legacy-function-aliases",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "function alias apply");
-  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  assert!(
-    updated.contains("calcit.core/distinct-values"),
-    "calcit.core/distinct-values missing after migration"
-  );
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "function alias behavior after migration",
-  );
-
-  let repeated = run_fix(&snapshot, &args);
-  assert_success(&repeated, "function alias idempotence preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-
-  // A first-class reference keeps its function identity, so it is review-only.
-  let first_class = "fix-command.main/first-class-alias";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        first_class,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn first-class-alias ()\n  assert= 1 $ count $ [] vals\n  , true",
-      ],
-    ),
-    "install a first-class legacy function reference",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        first_class,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-      ],
-    ),
-    "declare the first-class reference source",
-  );
-  let review = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-function-alias-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "first-class-alias",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&review, "first-class alias preview");
-  let review_report = parse_stdout(&review);
-  let review_suggestions = review_report["data"]["suggestions"]
-    .as_array()
-    .expect("suggestions should be an array");
-  assert_eq!(review_suggestions.len(), 1, "{review_report}");
-  assert_eq!(review_suggestions[0]["applicability"], "requires-review", "{review_report}");
 }
 
 #[test]
@@ -11480,12 +11202,12 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   define("app.main/*state", "quote $ defatom *state 0");
   define(
     "app.main/bump",
-    "quote $ defn bump (n)\n  let ((local (atom n)))\n    swap! local &+ 1\n    reset! *state $ deref local",
+    "quote $ defn bump (n)\n  let ((local (ref n)))\n    swap! local &+ 1\n    reset! *state $ deref local",
   );
-  define("app.main/quoted", "quote $ defn quoted ()\n  quote $ atom 1");
+  define("app.main/quoted", "quote $ defn quoted ()\n  quote $ defatom *x 1");
   define(
     "app.main/template",
-    "quote $ defmacro template (name)\n  quasiquote $ defatom ~name $ atom 0",
+    "quote $ defmacro template (name)\n  quasiquote $ defatom ~name $ ref 0",
   );
   assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.shadow"]), "add shadow namespace");
   define("app.shadow/defref", "quote $ defn defref (a b) , b");
@@ -11518,7 +11240,7 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ let ((cell (atom 1)))\n  assert= 3 $ bump 2\n  assert= 3 @*state\n  reset! cell 2\n  assert= 2 @cell",
+        "quote $ let ((cell (ref 1)))\n  assert= 3 $ bump 2\n  assert= 3 @*state\n  reset! cell 2\n  assert= 2 @cell",
       ],
     ),
     "attach ref contract",
@@ -11542,12 +11264,6 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
       .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
   };
   assert_eq!(find("app.main/*state", "code@0")["applicability"], "machine-applicable");
-  assert_eq!(find("app.main/bump", "code@3.1.0.1.0")["applicability"], "machine-applicable");
-  assert_eq!(
-    find("app.main/bump", "tests.keeps-ref-state")["applicability"],
-    "machine-applicable"
-  );
-  assert_eq!(find("app.main/template", "code@3.1.2.0")["applicability"], "machine-applicable");
   let template = find("app.main/template", "code@3.1.0");
   assert_eq!(template["applicability"], "requires-review");
   assert!(template["replacement"].is_null());
@@ -11570,7 +11286,7 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   let migrated = fs::read_to_string(&snapshot).unwrap();
   assert!(migrated.contains("defref *state 0"), "{migrated}");
   assert!(migrated.contains("defatom *shadowed 0"), "{migrated}");
-  assert!(migrated.contains("quote $ atom 1"), "{migrated}");
+  assert!(migrated.contains("quote $ defatom *x 1"), "{migrated}");
   assert_success(
     &run_calcit(&snapshot, &["test", "app.main/bump", "--require-match"]),
     "preferred spelling semantics",
@@ -11591,181 +11307,6 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   assert_success(&published, "published 0.28 preset");
   let rules = parse_stdout(&published)["data"]["filters"]["expanded_rule_ids"].clone();
   assert!(!rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
-}
-
-#[test]
-fn case_default_fix_rewrites_literal_patterns_and_reviews_opaque_calls() {
-  // Rust checks the CLI transaction protocol; `calcit.core/case-default` owns the Calcit tests
-  // proving that literal patterns expand to the same `match`.
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
-  let define = |target: &str, code: &str, schema: &str| {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
-      ),
-      "define case-default fixture",
-    );
-    assert_success(
-      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
-      "declare case-default fixture schema",
-    );
-  };
-  let one_arg = "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)";
-  define(
-    "app.main/main!",
-    "quote $ defn main! ()\n  , &unit",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
-  );
-  define(
-    "app.main/forward",
-    "quote $ defmacro forward (& body)\n  assert |non-empty $ &> (count body) 0\n  quasiquote $ do ~@body",
-    "quote $ :: 'Macro $ {} (:rest 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
-  );
-  define(
-    "app.main/peek",
-    "quote $ defmacro peek (form)\n  quasiquote $ quote ~form",
-    "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
-  );
-  define(
-    "app.main/pick",
-    "quote $ defn pick (x)\n  case-default x |none (:a |A) (|s |S) (1 |one) (true |T)",
-    one_arg,
-  );
-  define(
-    "app.main/nested",
-    "quote $ defn nested (x y)\n  case-default x (case-default y |d (:b |B)) (:a |A)",
-    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Dynamic) (:return 'Dynamic)",
-  );
-  define(
-    "app.main/expr",
-    "quote $ defn expr (x limit)\n  case-default x |none (limit |L)",
-    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Dynamic) (:return 'Dynamic)",
-  );
-  define(
-    "app.main/threaded",
-    "quote $ defn threaded (x)\n  -> x $ case-default |d (:a |A)",
-    one_arg,
-  );
-  define(
-    "app.main/wrapped",
-    "quote $ defn wrapped (x)\n  forward $ case-default x |d (:a |A)",
-    one_arg,
-  );
-  define(
-    "app.main/peeked",
-    "quote $ defn peeked (x)\n  peek $ case-default x |d (:a |A)",
-    one_arg,
-  );
-  define(
-    "app.main/quoted",
-    "quote $ defn quoted ()\n  quote $ case-default x |d (:a |A)",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        "app.main/pick",
-        "picks-literals",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= |A $ pick :a\n  assert= |S $ pick |s\n  assert= |one $ pick 1\n  assert= |T $ pick true\n  assert= |none $ pick 2\n  assert= |B $ nested :z :b\n  assert= |A $ wrapped :a\n  assert= |B $ case-default :b |d (:b |B)",
-      ],
-    ),
-    "attach case-default contract",
-  );
-  assert_success(
-    &run_calcit(&snapshot, &["test", "app.main/pick", "--require-match"]),
-    "legacy case-default semantics",
-  );
-
-  let before = fs::read(&snapshot).unwrap();
-  let base = [
-    "fix",
-    "--rule",
-    "case-default-to-match-v1",
-    "--include-attached",
-    "--format",
-    "json",
-  ];
-  let preview = run_calcit(&snapshot, &base);
-  assert_success(&preview, "case-default preview");
-  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
-  let find = |definition: &str, path: &str| {
-    suggestions
-      .iter()
-      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
-      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
-  };
-  for (definition, path) in [
-    ("app.main/pick", "code@3"),
-    ("app.main/nested", "code@3"),
-    ("app.main/wrapped", "code@3.1"),
-    ("app.main/pick", "tests.picks-literals"),
-  ] {
-    let suggestion = find(definition, path);
-    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
-    assert_eq!(suggestion["rule_id"], "case-default-to-match-v1");
-  }
-  assert!(
-    !suggestions
-      .iter()
-      .any(|suggestion| suggestion["definition"] == "app.main/nested" && suggestion["path"] != "code@3"),
-    "a nested proven call folds into the outer replacement: {report}"
-  );
-  for (definition, path, reason) in [
-    ("app.main/expr", "code@3", "`limit` is not a literal"),
-    ("app.main/peeked", "code@3.1", "macro `peek`"),
-    ("app.main/peeked", "code@3.1", "macro `peek`"),
-  ] {
-    let suggestion = find(definition, path);
-    assert_eq!(suggestion["applicability"], "requires-review", "{definition}: {report}");
-    assert!(suggestion["replacement"].is_null());
-    assert!(suggestion["message"].as_str().unwrap().contains(reason), "{definition}: {report}");
-  }
-  assert!(
-    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
-    "quoted data stays unchanged: {report}"
-  );
-
-  let mut apply = base.to_vec();
-  apply.extend([
-    "--apply",
-    "--allow-no-vcs",
-    "--expect-revision",
-    report["revision"].as_str().unwrap(),
-  ]);
-  assert_success(&run_calcit(&snapshot, &apply), "apply case-default migration");
-  let migrated = fs::read_to_string(&snapshot).unwrap();
-  assert!(
-    migrated.contains("match x (:a |A) (|s |S) (1 |one) (true |T) (_ |none)"),
-    "{migrated}"
-  );
-  assert!(migrated.contains("_ $ match y (:b |B) (_ |d)"), "{migrated}");
-  assert!(migrated.contains("forward $ match x (:a |A) (_ |d)"), "{migrated}");
-  assert!(migrated.contains("assert= |B $ match :b (:b |B) (_ |d)"), "{migrated}");
-  assert!(migrated.contains("case-default x |none $ limit |L"), "{migrated}");
-  assert!(migrated.contains("quote $ case-default x |d $ :a |A"), "{migrated}");
-  assert_success(
-    &run_calcit(&snapshot, &["test", "app.main/pick", "--require-match"]),
-    "match semantics after migration",
-  );
-  let repeated = run_calcit(&snapshot, &base);
-  assert_success(&repeated, "repeated case-default preview");
-  let repeated = parse_stdout(&repeated);
-  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
-  assert_eq!(remaining.len(), 3, "only reviewed calls remain: {repeated}");
-  assert!(remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"));
 }
 
 #[test]
@@ -11791,30 +11332,22 @@ fn core_api_preset_labels_attached_regions_by_contributing_rule() {
     ),
     "define attached-label fixture",
   );
-  for (name, code) in [
-    (
-      "ref-only",
-      "quote $ let ((failed (atom false)))\n  reset! failed true\n  assert= true @failed",
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/main!",
+        "conversion-only",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= :a $ turn-tag |a",
+      ],
     ),
-    ("conversion-only", "quote $ assert= :a $ turn-tag |a"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "add-test",
-          "app.main/main!",
-          name,
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "attach labelled test",
-    );
-  }
+    "attach labelled test",
+  );
 
   let preview = run_calcit(
     &snapshot,
@@ -11823,14 +11356,12 @@ fn core_api_preset_labels_attached_regions_by_contributing_rule() {
   assert_success(&preview, "0.29 preset attached preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
-  for (path, rule_id, diagnostic_code) in [
-    ("tests.ref-only", "core-ref-constructor-v1", "FIX_CORE_REF_CONSTRUCTOR"),
-    (
+  {
+    let (path, rule_id, diagnostic_code) = (
       "tests.conversion-only",
       "core-identity-conversion-v1",
       "FIX_CORE_IDENTITY_CONVERSION",
-    ),
-  ] {
+    );
     let suggestion = suggestions
       .iter()
       .find(|suggestion| suggestion["definition"] == "app.main/main!" && suggestion["path"] == path)

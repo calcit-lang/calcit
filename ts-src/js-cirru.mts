@@ -12,7 +12,7 @@ import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
-import { atom } from "./js-ref.mjs";
+import { ref } from "./js-ref.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
@@ -558,7 +558,7 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
       if (x.length !== 2) {
         throw new Error(`atom expects 1 argument, got: ${x}`);
       }
-      return atom(extract_cirru_edn_inner(x[1], options, preserveSourceEntries));
+      return ref(extract_cirru_edn_inner(x[1], options, preserveSourceEntries));
     }
   }
   throw new Error(`Unexpected data from EDN: ${x}`);

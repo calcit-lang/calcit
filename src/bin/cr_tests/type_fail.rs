@@ -498,12 +498,16 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
     };
     let _strict = StrictTypesReset::enabled();
 
-    for snippet in [
-      "let\n    _ &unit\n  , %none",
+    // Core no longer defines `%none`; a project-defined zero-argument `%name`
+    // constructor keeps the source convention that this diagnostic protects.
+    let constructor = "defn %none ()\n  Option :none\n\n";
+    for body in [
+      "let\n      _ &unit\n    , %none",
       "if true %none (%none)",
-      "match (%some 1)\n  (:some _) %none\n  (:none) (%none)",
+      "match (Option :some 1)\n    (:some _) %none\n    (:none) (%none)",
     ] {
-      let entries = load_snippet_entries_with_main_schema(snippet, Some(main_schema(option_number.clone())));
+      let snippet = format!("{constructor}defn main! ()\n  {body}");
+      let entries = load_snippet_entries_with_main_schema(&snippet, Some(main_schema(option_number.clone())));
       let error = run_check_only(&entries).expect_err("bare %none must not satisfy an Option return or branch type");
       assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
       assert!(
@@ -512,7 +516,10 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
       );
     }
 
-    let entries = load_snippet_entries_with_main_schema("= %none %none", Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))));
+    let entries = load_snippet_entries_with_main_schema(
+      &format!("{constructor}defn main! ()\n  = %none %none"),
+      Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))),
+    );
     let error = run_check_only(&entries).expect_err("comparing the same bare constructor must not mask the missing invocation");
     assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
     assert!(
@@ -520,7 +527,10 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
       "comparison diagnostic must explain the trap: {error}"
     );
 
-    let entries = load_snippet_entries_with_main_schema("option:none? %none", Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))));
+    let entries = load_snippet_entries_with_main_schema(
+      &format!("{constructor}defn main! ()\n  option:none? %none"),
+      Some(main_schema(Arc::new(CalcitTypeAnnotation::Bool))),
+    );
     let error = run_check_only(&entries).expect_err("bare %none must not satisfy an Option-valued call argument");
     assert!(error.contains("E_BARE_ENUM_CONSTRUCTOR_VALUE"), "unexpected error: {error}");
   });
@@ -547,8 +557,12 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
     };
     let _strict = StrictTypesReset::enabled();
 
-    // A single top-level Cirru line is a call, so this snippet body is `(%none)`.
-    let invoked = load_snippet_entries_with_main_schema("%none", Some(main_schema(option_number.clone())));
+    // A single Cirru line is a call, so this snippet body is `(%none)`.
+    let constructor = "defn %none ()\n  Option :none\n\n";
+    let invoked = load_snippet_entries_with_main_schema(
+      &format!("{constructor}defn main! ()\n  %none"),
+      Some(main_schema(option_number.clone())),
+    );
     run_check_only(&invoked).expect("(%none) must remain a valid Option value");
 
     let constructor_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
@@ -561,8 +575,11 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
       rest_type: None,
       features: Arc::new(HashSet::new()),
     })));
-    let constructor = load_snippet_entries_with_main_schema("let\n    _ &unit\n  , %none", Some(main_schema(constructor_type)));
-    run_check_only(&constructor).expect("bare %none must remain valid when a constructor function is expected");
+    let function_value = load_snippet_entries_with_main_schema(
+      &format!("{constructor}defn main! ()\n  let\n      _ &unit\n    , %none"),
+      Some(main_schema(constructor_type)),
+    );
+    run_check_only(&function_value).expect("bare %none must remain valid when a constructor function is expected");
   });
 }
 
@@ -589,7 +606,7 @@ fn postfix_map_kv_gate_ignores_concrete_non_map_receivers() {
 #[test]
 fn reset_diagnostic_renders_the_call_head_once() {
   run_with_large_stack(|| {
-    let entries = load_snippet_entries("let ((state $ atom 1)) (reset! state |wrong)");
+    let entries = load_snippet_entries("let ((state $ ref 1)) (reset! state |wrong)");
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
       .expect("mismatched reset should produce a warning");
@@ -610,8 +627,8 @@ fn reset_diagnostic_renders_the_call_head_once() {
 fn reset_rejects_incompatible_inferred_reference_payloads() {
   run_with_large_stack(|| {
     for snippet in [
-      "let ((state $ atom 1)) (reset! state |wrong)",
-      "let ((state $ atom $ {} $ :states $ {} $ :cursor $ [])) (reset! state $ {} $ :states $ {} $ :login $ {} (:data 1))",
+      "let ((state $ ref 1)) (reset! state |wrong)",
+      "let ((state $ ref $ {} $ :states $ {} $ :cursor $ [])) (reset! state $ {} $ :states $ {} $ :login $ {} (:data 1))",
       "reset! 1 2",
       "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state |wrong\n  , &unit",
       "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'Number) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
@@ -622,10 +639,10 @@ fn reset_rejects_incompatible_inferred_reference_payloads() {
       run_check_only(&entries).expect_err("incompatible reset! must fail before typed reads can use stale evidence");
     }
     for snippet in [
-      "let ((state $ atom 1)) (reset! state 2) (+ @state 1)",
+      "let ((state $ ref 1)) (reset! state 2) (+ @state 1)",
       "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
       "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref $ :: 'List 'T) (:: 'List 'T)) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
-      "let ((state $ atom $ {} (:count 1))) (reset! state $ {} (:count 2)) (get-in @state $ [] :count)",
+      "let ((state $ ref $ {} (:count 1))) (reset! state $ {} (:count 2)) (get-in @state $ [] :count)",
       "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)\n  reset! state 2\n  , &unit",
       "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Dynamic) (:return 'Unit)\n  reset! state |open-boundary\n  , &unit",
     ] {
@@ -676,7 +693,7 @@ fn strict_reset_checks_nested_unknowns_and_literal_empty_values() {
       ("(:: 'Set 'Number)", "'Number", "(#{})", true),
       ("(:: 'Map 'Tag 'Number)", "'Number", "({})", true),
       ("(:: 'List $ :: 'List 'Number)", "'Number", "([] $ [])", true),
-      ("(:: 'Option 'Number)", "'Number", "(%none)", true),
+      ("(:: 'Option 'Number)", "'Number", "(Option :none)", true),
       ("(:: 'List 'Number)", "'Dynamic", "([] value)", false),
     ] {
       let snippet = format!(
@@ -1080,7 +1097,7 @@ fn strict_mode_accepts_macro_generated_closures_without_public_schemas() {
       rest_type: None,
       features: Arc::new(HashSet::new()),
     })));
-    let entries = load_snippet_entries_with_main_schema("defn main! ()\n  if-let (x $ %some 1) x 0", Some(main_schema));
+    let entries = load_snippet_entries_with_main_schema("defn main! ()\n  if-let (x $ Option :some 1) x 0", Some(main_schema));
     let _strict = StrictTypesReset::enabled();
 
     run_check_only(&entries).expect("strict mode should accept the internal closure generated by if-let");
@@ -1160,7 +1177,8 @@ fn if_join_preserves_option_payload_for_arithmetic_checks() {
 #[test]
 fn non_diverging_if_branch_still_cannot_enter_an_option_contract() {
   run_with_large_stack(|| {
-    let entries = load_snippet_entries("defn main! ()\n  let\n      value $ if (> 1 0) (%some 1) |wrong\n    option:unwrap value");
+    let entries =
+      load_snippet_entries("defn main! ()\n  let\n      value $ if (> 1 0) (Option :some 1) |wrong\n    option:unwrap value");
     let _strict = StrictTypesReset::enabled();
     let error = run_check_only(&entries).expect_err("a returning String branch must not be treated like raise");
     assert!(error.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "unexpected error: {error}");
@@ -1679,6 +1697,11 @@ fn retired_core_functions_report_preferred_spelling() {
         "fold-while",
         "0.31.0",
       ),
+      ("case-default 1 0 (1 :a)", "case-default", "match", "0.31.0"),
+      ("%some 1", "%some", "Option :some value", "0.31.0"),
+      ("%none", "%none", "Option :none", "0.31.0"),
+      ("atom 0", "atom", "ref", "0.31.0"),
+      ("vals ({} (:a 1))", "vals", "distinct-values", "0.31.0"),
       ("w-log 1", "w-log", "dbg", "0.31.0"),
       ("wo-log 1", "wo-log", "x", "0.31.0"),
       ("flipped &- 1 2", "flipped", "(f b a)", "0.31.0"),
@@ -1857,7 +1880,7 @@ fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload()
     );
 
     let option_entries = load_snippet_entries_with_main_schema(
-      "let\n    consume $ fn (value)\n      hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)\n      value .map $ fn (item)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + item 1\n  consume $ %some 1",
+      "let\n    consume $ fn (value)\n      hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)\n      value .map $ fn (item)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + item 1\n  consume $ Option :some 1",
       Some(main_schema),
     );
     let option_error = run_check_only(&option_entries).expect_err("Option<Dynamic>.map must reject a Number-only callback");
@@ -2284,7 +2307,7 @@ fn strict_mode_rejects_implicit_option_and_result_stringification() {
       features: Arc::new(HashSet::new()),
     })));
     for (source, operation, nominal) in [
-      ("defn main! ()\n  str $ %some :remove", "str", "Option"),
+      ("defn main! ()\n  str $ Option :some :remove", "str", "Option"),
       ("defn main! ()\n  turn-string $ %err |failed", "turn-string", "Result"),
     ] {
       let entries = load_snippet_entries_with_main_schema(source, Some(main_schema.clone()));
@@ -2314,7 +2337,7 @@ fn strict_mode_keeps_explicit_enum_representation_and_plain_stringification() {
       features: Arc::new(HashSet::new()),
     })));
     let entries = load_snippet_entries_with_main_schema(
-      "defn main! ()\n  str |prefix 1 $ to-lispy-string $ %some :remove",
+      "defn main! ()\n  str |prefix 1 $ to-lispy-string $ Option :some :remove",
       Some(main_schema),
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -2327,7 +2350,7 @@ fn strict_mode_keeps_explicit_enum_representation_and_plain_stringification() {
 fn dynamic_option_method_receiver_fails_during_preprocessing() {
   run_with_large_stack(|| {
     let entries =
-      load_snippet_entries("defn consume-dynamic (value)\n  value .unwrap-or 0\n\ndefn main! ()\n  consume-dynamic (%some 1)");
+      load_snippet_entries("defn consume-dynamic (value)\n  value .unwrap-or 0\n\ndefn main! ()\n  consume-dynamic (Option :some 1)");
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
@@ -2348,9 +2371,9 @@ fn dynamic_option_method_receiver_fails_during_preprocessing() {
 fn option_fold_callbacks_share_return_type_during_preprocessing() {
   run_with_large_stack(|| {
     let snippets = [
-      "option:fold (%some 1) (fn () |wrong) identity",
-      "option:fold (%some 1) (fn () |wrong) (fn (x) 1)",
-      "defmacro fold-or (base fallback)\n  quasiquote $ option:fold\n    , ~base\n    fn () ~fallback\n    , identity\n\ndefn main! () $ fold-or (%some 1) |wrong",
+      "option:fold (Option :some 1) (fn () |wrong) identity",
+      "option:fold (Option :some 1) (fn () |wrong) (fn (x) 1)",
+      "defmacro fold-or (base fallback)\n  quasiquote $ option:fold\n    , ~base\n    fn () ~fallback\n    , identity\n\ndefn main! () $ fold-or (Option :some 1) |wrong",
     ];
 
     for snippet in snippets {
@@ -2472,7 +2495,7 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
 #[test]
 fn removed_tag_match_reports_the_published_migration_path() {
   run_with_large_stack(|| {
-    let entries = load_snippet_entries("tag-match (%some 1)\n  (:some x) x\n  (:none) 0");
+    let entries = load_snippet_entries("tag-match (Option :some 1)\n  (:some x) x\n  (:none) 0");
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
     let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
