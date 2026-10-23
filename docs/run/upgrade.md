@@ -2238,7 +2238,7 @@ Snapshot 加载的 legacy runtime `Fn` / whole-`Dynamic` macro 会更早在 load
 类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
 不承诺该泛型关系；开放容器直接用通用入口：`Map<K,Dynamic>` 用 `merge`，`List<Dynamic>` 用 `concat`，
 泛型参数绑定为 `Dynamic` 即可，不要再在业务代码里直接使用 `&merge` / `&list:concat`。旧的
-`merge-dynamic` / `concat-dynamic` 已弃用，由 `core-function-alias-v1` 迁移。
+`merge-dynamic` / `concat-dynamic` 已弃用；`core-function-alias-v1` 已在 0.31.0 退役，需在升级前用 0.30.x 的 CLI 运行该规则迁移。
 非 strict 模式保持原有兼容行为，便于渐进迁移。
 
 当开放 `Dynamic`（或同形容器中的 `Dynamic` 成员）进入包含 Struct / Enum 的封闭参数契约时，
