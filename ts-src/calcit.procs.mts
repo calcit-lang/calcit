@@ -2469,6 +2469,22 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       return new CalcitEnumValue(newTag("some"), [decode_runtime_map_node(graph, node.inner, input, path, depth + 1)], node.nominal);
     }
     case "struct": {
+      if (input instanceof CalcitStructValue) {
+        if (!same_nominal_struct(input.structRef, node.nominal)) {
+          map_decode_error(path, `expected nominal struct :${node.nominal.name.value}, got :${input.structRef.name.value}`);
+        }
+        if (input.name.value !== node.nominal.name.value || input.fields.length !== node.fields.length || input.values.length !== node.fields.length) {
+          map_decode_error(path, `struct :${node.nominal.name.value} fields do not match its nominal declaration`);
+        }
+        const values = node.fields.map(([field, child], idx) => {
+          if (input.fields[idx]?.value !== field) {
+            map_decode_error(path, `struct :${node.nominal.name.value} field #${idx} does not match :${field}`);
+          }
+          return decode_runtime_map_node(graph, child, input.values[idx], `${path}.${field}`, depth + 1);
+        });
+        if (values.every((value, idx) => Object.is(value, input.values[idx]))) return input;
+        return new CalcitStructValue(node.nominal.name, node.nominal.fields, values, node.nominal);
+      }
       if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
         return map_decode_error(path, `expected map for struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
       }

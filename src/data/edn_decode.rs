@@ -218,6 +218,42 @@ impl MapDecoder<'_> {
         Ok(Calcit::Map(values))
       }
       DataShapeNode::Struct { nominal, fields, .. } => {
+        if let Calcit::Struct(actual) = input {
+          if !Arc::ptr_eq(&actual.struct_ref, nominal) && !actual.struct_ref.same_nominal_definition(nominal) {
+            return Err(EdnDecodeError::at(
+              path,
+              format!("expected nominal struct :{}, got :{}", nominal.name, actual.struct_ref.name),
+            ));
+          }
+          if actual.values.len() != fields.len() {
+            return Err(EdnDecodeError::at(
+              path,
+              format!(
+                "struct :{} expects {} value(s), got {}",
+                nominal.name,
+                fields.len(),
+                actual.values.len()
+              ),
+            ));
+          }
+          let mut values = Vec::with_capacity(fields.len());
+          for (idx, (field, child)) in fields.iter().enumerate() {
+            if actual.struct_ref.fields.get(idx) != Some(field) {
+              return Err(EdnDecodeError::at(
+                path,
+                format!("struct :{} field #{idx} does not match :{field}", nominal.name),
+              ));
+            }
+            values.push(self.decode_node(*child, &actual.values[idx], &format!("{path}.{}", field.ref_str()), depth + 1)?);
+          }
+          if values.as_slice() == actual.values.as_slice() {
+            return Ok(input.to_owned());
+          }
+          return Ok(Calcit::Struct(CalcitStructValue {
+            struct_ref: nominal.clone(),
+            values: Arc::new(values),
+          }));
+        }
         let Calcit::Map(items) = input else {
           return Err(map_kind_mismatch(path, &format!("map for struct :{}", nominal.name), input));
         };
@@ -633,6 +669,66 @@ mod tests {
       ]),
     };
     Arc::new(CalcitEnumDef::from_struct(prototype).expect("option enum"))
+  }
+
+  #[test]
+  fn runtime_map_decode_validates_and_preserves_matching_struct_values() {
+    let person = Arc::new(CalcitStructDef {
+      definition_ref: None,
+      name: EdnTag::new("Person"),
+      fields: Arc::new(vec![EdnTag::new("age"), EdnTag::new("name")]),
+      field_types: Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))),
+        Arc::new(CalcitTypeAnnotation::String),
+      ]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let shape = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::Struct {
+          nominal: person.clone(),
+          nominal_path: None,
+          type_args: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+          fields: vec![(EdnTag::new("age"), 1), (EdnTag::new("name"), 2)],
+        },
+        DataShapeNode::Number,
+        DataShapeNode::String,
+      ],
+    )
+    .expect("person shape");
+    let input = Calcit::Struct(CalcitStructValue {
+      struct_ref: person.clone(),
+      values: Arc::new(vec![Calcit::Number(30.0), Calcit::Str(Arc::from("Ada"))]),
+    });
+
+    let decoded = decode_map(&shape, &input).expect("matching nominal struct should decode");
+    let Calcit::Struct(decoded) = decoded else {
+      panic!("expected struct")
+    };
+    let Calcit::Struct(original) = input else { unreachable!() };
+    assert!(
+      Arc::ptr_eq(&original.values, &decoded.values),
+      "unchanged struct payload should be retained"
+    );
+    assert!(Arc::ptr_eq(&person, &decoded.struct_ref));
+
+    let wrong_payload = Calcit::Struct(CalcitStructValue {
+      struct_ref: person.clone(),
+      values: Arc::new(vec![Calcit::Str(Arc::from("thirty")), Calcit::Str(Arc::from("Ada"))]),
+    });
+    let error = decode_map(&shape, &wrong_payload).expect_err("wrong field payload must be rejected");
+    assert_eq!(error.path, "$.age");
+
+    let other_definition = Arc::new(person.as_ref().clone());
+    let incompatible = Calcit::Struct(CalcitStructValue {
+      struct_ref: other_definition,
+      values: Arc::new(vec![Calcit::Number(30.0), Calcit::Str(Arc::from("Ada"))]),
+    });
+    let error = decode_map(&shape, &incompatible).expect_err("same-named but unrelated struct must be rejected");
+    assert!(error.message.contains("expected nominal struct"));
   }
 
   #[test]

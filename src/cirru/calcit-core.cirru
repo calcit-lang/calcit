@@ -5969,7 +5969,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'decode-map-as $ %{} 'CodeEntry
-          :doc "||Decode an evaluated Calcit value into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct fields are checked recursively; unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps. Native and JavaScript support this syntax; WASM does not currently support typed decoder syntaxes."
+          :doc "||Decode an evaluated Calcit value into a typed Struct or other closed data shape. Syntax: (decode-map-as value TypeExpr). Struct maps are decoded recursively; an already-constructed Struct is accepted only when its nominal definition, fields, and payload types match, and the original value is retained if decoding does not transform any field. Unknown keys and missing required fields fail with a path. Missing Option fields become %none and present raw values become %some. Explicit Dynamic leaves are allowed only at this runtime boundary. Use this instead of ad-hoc read-field or Lilac validators for host/JSON maps. Native and JavaScript support this syntax; WASM does not currently support typed decoder syntaxes."
           :code $ quote $ def decode-map-as &runtime-implementation
           :examples $ []
             quote $ let
@@ -6032,6 +6032,15 @@
                       :body $ {} $ :kind :json
                     , RuntimeMapResponse
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-constructed-struct-in-enum-payload)
+              :code $ quote $ do
+                let
+                    original-meta $ RuntimeMapMeta :kind :nested
+                    original-result $ Result :ok original-meta
+                    decoded-result $ decode-map-as original-result $ :: 'Result RuntimeMapMeta 'String
+                  assert= true $ identical? original-meta
+                    result:unwrap-or decoded-result $ RuntimeMapMeta :kind :fallback
+              :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |decodes-inside-typed-first)
               :code $ quote $ assert= |abc
                 option:unwrap-or
