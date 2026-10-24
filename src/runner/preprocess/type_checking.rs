@@ -204,6 +204,24 @@ pub(super) fn specialize_core_callback_expected_types(
   }
 }
 
+/// Reuse builtin callback relations for direct calls and resolved methods.
+pub(super) fn specialize_proc_callback_expected_types(
+  proc: CalcitProc,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  match proc {
+    CalcitProc::Foldl
+    | CalcitProc::NativeMapFoldKv
+    | CalcitProc::NativeListFoldl
+    | CalcitProc::FoldrShortcut
+    | CalcitProc::NativeListFoldlShortcut => specialize_collection_fold_expected_types(args, scope_types, expected_types),
+    CalcitProc::Sort | CalcitProc::NativeListSort => specialize_collection_sort_expected_types(args, scope_types, expected_types),
+    _ => None,
+  }
+}
+
 pub(super) fn specialize_core_expected_types(
   fn_info: &CalcitFn,
   args: &CalcitList,

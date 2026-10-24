@@ -38,7 +38,6 @@ use checked_call_contract::{
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
   check_recur_arg_types, check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
-  specialize_collection_sort_expected_types,
 };
 pub(crate) use type_inference::expression_definitely_diverges;
 use type_inference::{
@@ -4989,10 +4988,11 @@ fn preprocess_list_call(
             {
               // Use the same list member contract as the later proc argument check.
               let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
-              specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types).and_then(|types| {
-                member_inputs = true;
-                types.get(1).cloned()
-              })
+              type_checking::specialize_proc_callback_expected_types(*proc, &candidate_args, scope_types, &signature.arg_types)
+                .and_then(|types| {
+                  member_inputs = true;
+                  types.get(1).cloned()
+                })
             } else if !has_spread
               && let Calcit::Proc(
                 proc @ (CalcitProc::Foldl
@@ -5016,12 +5016,11 @@ fn preprocess_list_call(
               }
               candidate_args.push(a.to_owned());
               let candidate_args = CalcitList::from(candidate_args.as_slice());
-              type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types).and_then(
-                |types| {
+              type_checking::specialize_proc_callback_expected_types(*proc, &candidate_args, scope_types, &signature.arg_types)
+                .and_then(|types| {
                   member_inputs = true;
                   types.last().cloned()
-                },
-              )
+                })
             } else if !has_spread {
               // A local/indirect callable has the same input contract as a named
               // function. Supply it before checking an inline callback body;
@@ -8095,10 +8094,27 @@ fn expected_method_argument_types(
       Calcit::Import(import) => resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id),
       value => Some(value.clone()),
     };
-    if let Some(Calcit::Fn { info, .. }) = method_value {
-      specialized_types = type_checking::specialize_core_callback_expected_types(&info, args, scope_types, &info.arg_types);
+    match method_value {
+      Some(Calcit::Fn { info, .. }) => {
+        specialized_types = type_checking::specialize_core_callback_expected_types(&info, args, scope_types, &info.arg_types);
+      }
+      Some(Calcit::Proc(proc)) => {
+        if let Some(signature) = proc.get_type_signature() {
+          specialized_types = type_checking::specialize_proc_callback_expected_types(proc, args, scope_types, &signature.arg_types);
+        }
+      }
+      _ => {}
     }
     match method_entry {
+      Calcit::Proc(proc) => {
+        let (namespace, definition) = proc.get_ns_def();
+        let schema = program::lookup_def_schema(namespace, definition);
+        if schema.as_function().is_some() {
+          schema
+        } else {
+          type_inference::infer_static_type_from_expr(method_entry)?
+        }
+      }
       Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def),
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
