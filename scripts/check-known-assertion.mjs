@@ -3094,13 +3094,15 @@ try {
         assert.deepEqual(await readFile(snapshot), original);
         run("edit", "rm-def", "calcit.assert-evidence/open-result");
       }
-      // A kind predicate on the value typed by the generic return variable refines
-      // that variable inside the guarded branch. Unguarded exits and predicates on other
-      // values still owe the original generic contract (#1529).
+      // A kind predicate on the value typed by the generic return variable narrows
+      // that input without instantiating the variable (#2187): the guarded input and
+      // its direct aliases keep `T`, while a new value of the guarded kind does not.
+      // Unguarded exits and predicates on other values still owe the original contract (#1529).
       const genericReturnSchema = "quote $ :: 'Fn $ {} (:args $ [] 'T 'Bool) (:generics $ [] 'T) (:return 'T)";
       for (const [name, code, accepted, jsFfi] of [
-        ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], true],
-        ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], true],
+        ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false],
+        ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], false],
+        ["kind-guarded-input", ["defn", "kind-guarded-input", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], "x", ["raise", "|not-list"]]]], true],
         ["kind-other-value", ["defn", "kind-other-value", ["x", "flag"], ["if", ["list?", "flag"], ["&list:rest", "x"], "|text"]], false],
         ["kind-rebound-local", ["defn", "kind-rebound-local", ["x", "flag"], ["if", ["list?", "x"], ["&let", ["unused", ["set!", "x", "|text"]], "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false, true],
         ["kind-unguarded-join", ["defn", "kind-unguarded-join", ["x", "flag"], ["if", "flag", ["[]", "1"], "|text"]], false],
@@ -4388,14 +4390,16 @@ try {
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
 
       // An open or concrete result cannot independently prove a bare generic
-      // return, whether it is the whole result or one unguarded branch; a branch
-      // guarded by a kind predicate on the generic argument still proves it.
+      // return, whether it is the whole result or one branch; a kind predicate on the
+      // generic argument proves only a branch returning that argument (#2187).
       for (const [name, body, accepted] of [
         ["open-list-for-bare-t", "([])", false],
         ["concrete-list-for-bare-t", "([] 1)", false],
         ["open-branch-for-bare-t", "(if (= 1 1) ([] 1) xs)", false],
         ["same-t-branches", "(if (= 1 1) xs xs)", true],
-        ["guarded-list-branch", "(if (list? xs) ([] 1) xs)", true],
+        ["guarded-list-branch", "(if (list? xs) ([] 1) xs)", false],
+        ["guarded-input-branch", "(if (list? xs) xs ([] 1))", false],
+        ["guarded-input-alias", "(if (list? xs) (let ((ys xs)) ys) xs)", true],
       ]) {
         await copyFile("tests/fixtures/count-contract.cirru", snapshot);
         run("edit", "def", "fix-command.main/bare-return", "--input-format", "cirru", "--code",
