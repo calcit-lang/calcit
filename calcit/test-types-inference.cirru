@@ -309,6 +309,58 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'find-last-matching-index $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn find-last-matching-index (xs item) (.last-index-of xs item)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-number-and-string-element-types)
+            :code $ quote $ do
+              assert= (Option :some 2)
+                find-last-matching-index ([] 1 2 1) 1
+              assert= (Option :some 2)
+                find-last-matching-index ([] |a |target |target) |target
+              assert= (Option :none)
+                find-last-matching-index ([] |a |b) |target
+            :tags $ #{} :list-reverse-index :unit
+        'find-last-positive-index $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn find-last-positive-index (xs)
+            .find-last-index xs $ fn (value) (> value 0)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Number
+            :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |typed-number-receiver)
+              :code $ quote $ do
+                assert= (Option :some 3)
+                  find-last-positive-index $ [] -2 0 1 3
+                assert= (Option :none)
+                  find-last-positive-index $ [] -2 0
+                assert= (Option :none)
+                  find-last-positive-index $ []
+              :tags $ #{} :list-reverse-index :unit
+            %{} 'TestEntry (:name |propagates-predicate-error)
+              :code $ quote $ assert= |predicate-failure
+                try
+                  let ()
+                    .find-last-index ([] 1 2 3)
+                      fn (_value) (raise |predicate-failure)
+                    , |unexpected-success
+                  fn (message) message
+              :tags $ #{} :list-reverse-index :unit
+            %{} 'TestEntry (:name |records-callback-order-and-stops)
+              :code $ quote $ let
+                  seen $ ref $ [] 0
+                assert= (Option :some 2)
+                  .find-last-index ([] 1 2 3 4)
+                    fn (value)
+                      reset! seen $ .append (deref seen) value
+                      &= value 3
+                assert= ([] 0 4 3) (deref seen)
+              :tags $ #{} :list-reverse-index :unit
         'first-rest-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn first-rest-value (label & values) (first values)
           :examples $ []
@@ -1293,7 +1345,9 @@
           :code $ quote $ defn test-fn-inference ()
             let
                 f $ fn (x)
-                  hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
                   + x 1
               assert-type (f 1) 'Number
               assert-type
