@@ -110,7 +110,7 @@ try {
         const entry = `app.main/run-${form}`;
         for (const backend of ["native", "js", "wasm"]) {
           const output = join(project, `rigid-${form}-${backend}`);
-          const args = backend === "native" ? ["--check-only"] : [backend, "--emit-path", output];
+          const args = backend === "native" ? ["--check-only"] : ["--emit-path", output, backend];
           const rejected = spawnSync(binary,
             [rigidSnapshot, "--init-fn", entry, "--reload-fn", entry, ...args], options);
           if (rejected.error) throw rejected.error;
