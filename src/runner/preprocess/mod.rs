@@ -4937,6 +4937,7 @@ fn preprocess_list_call(
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
             let mut member_inputs = false;
+            let mut method_generics = None;
             let expected_type = if !has_spread
               && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
               && ys.len() >= 3
@@ -4977,6 +4978,7 @@ fn preprocess_list_call(
               )
               .and_then(|context| {
                 member_inputs = context.receiver_specialized;
+                method_generics = Some(context.callee_owned_generics);
                 context.argument_types.get(ys.len() - 2).cloned()
               })
             } else if !has_spread
@@ -5063,9 +5065,9 @@ fn preprocess_list_call(
                 }),
             );
             let result = if has_callback_contract {
-              let callee_generics = callable_contract
-                .as_ref()
-                .map(|signature| signature.generics.as_slice())
+              let callee_generics = method_generics
+                .as_deref()
+                .or_else(|| callable_contract.as_ref().map(|signature| signature.generics.as_slice()))
                 .unwrap_or(&[]);
               preprocess_argument_with_context(
                 a,
@@ -5914,7 +5916,6 @@ fn preprocess_known_function_call(
     };
     if let Some(contract) = refreshed_checked_contract.as_ref() {
       let contract_outputs = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&contract.return_type));
-      let mut callback_output_counts = HashMap::<Arc<str>, usize>::new();
       for signature in contract
         .expected_types
         .iter()
@@ -5922,12 +5923,15 @@ fn preprocess_known_function_call(
         .filter_map(|expected| expected.as_function())
       {
         for binder in crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&signature.return_type)) {
-          *callback_output_counts.entry(binder).or_default() += 1;
-        }
-      }
-      for (binder, count) in callback_output_counts {
-        if count > 1 && contract_outputs.contains(&binder) && !callback_output_binders.contains(&binder) {
-          callback_output_binders.push(binder);
+          // A single callback also owns a provisional output slot. Captured
+          // lexical variables already have identities and must stay rigid;
+          // their source spelling cannot make them callee-owned outputs.
+          if crate::calcit::type_annotation::source_type_variable(&binder) == binder.as_ref()
+            && contract_outputs.contains(&binder)
+            && !callback_output_binders.contains(&binder)
+          {
+            callback_output_binders.push(binder);
+          }
         }
       }
     }

@@ -114,6 +114,78 @@ try {
         "--tag", "list-reverse-index", "--name", "typed-number-receiver",
         "--name", "keeps-number-and-string-element-types", "--backend", "wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      // #2121: infer provisional collection outputs from the checked callback
+      // body, without treating them as captured lexical return obligations.
+      const mapperSnapshot = join(project, "contextual-map-output.cirru");
+      await copyFile("calcit/add.cirru", mapperSnapshot);
+      const runMapper = (...args) => execFileSync(binary, [mapperSnapshot, ...args], options);
+      const mapperOperations = [];
+      for (const [source, definition, target] of [
+        ["calcit/test-types-inference.cirru", "test-types-inference.main/map-through-callback", "map-through-callback"],
+        ["calcit/test-types-inference.cirru", "test-types-inference.main/map-through-method", "map-through-method"],
+        ["src/cirru/calcit-core.cirru", "calcit.core/&list:apply", "apply-list"],
+      ]) {
+        const data = JSON.parse(execFileSync(binary, [source, "query", "def", definition, "--format", "json"], options)).data;
+        const code = structuredClone(data.code);
+        code[1] = target;
+        const schema = ["::", "'Fn", ["{}", ...data.schema.slice(1).filter(field => field[0] !== ":kind")]];
+        mapperOperations.push(
+          ["edit", "def", `app.main/${target}`, "--input-format", "json-ast", "--code", JSON.stringify(code)],
+          ["edit", "schema", `app.main/${target}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+        );
+      }
+      mapperOperations.push(
+        ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! ()\n  , &unit"],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        ["config", "set", "reload-fn", "app.main/main!"],
+      );
+      const mapperTransaction = JSON.stringify(mapperOperations);
+      const mapperPreview = JSON.parse(runMapper("edit", "transaction", "--code", mapperTransaction, "--dry-run", "--format", "json"));
+      runMapper("edit", "transaction", "--code", mapperTransaction, "--expect-revision", mapperPreview.scoped_revision, "--format", "edn");
+      const mapperOriginal = await readFile(mapperSnapshot);
+      runMapper("--check-only", "--all-defs");
+      const mapperProof = JSON.parse(runMapper("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--format", "json"));
+      assert.deepEqual(mapperProof.diagnostics, []);
+      const mapperStrict = JSON.parse(runMapper("fix", "--workflow", "strict", "--verify", "--format", "json"));
+      assert.deepEqual(mapperStrict.diagnostics, []);
+      assert.equal(mapperStrict.data.workflow.status, "passed");
+      assert.deepEqual(await readFile(mapperSnapshot), mapperOriginal);
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "contextual-map-output", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      for (const [name, parameters, generics, types, returned, body] of [
+        ["wrong-output-owner", "xs f", "'T 'U", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'U))", "T", ".map xs $ fn (value) $ f value"],
+        ["concrete-output", "xs", "'T", "(:: 'List 'T)", "T", "map xs $ fn (_value) |not-a-generic"],
+        ["open-output", "xs f", "'T 'MapOutput", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'Dynamic))", "MapOutput", "map xs $ fn (value) $ f value"],
+      ]) {
+        const operations = JSON.stringify([
+          ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${parameters})\n  ${body}`],
+          ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
+            `quote $ :: 'Fn $ {} (:generics $ [] ${generics}) (:args $ [] ${types}) (:return $ :: 'List '${returned})`],
+        ]);
+        const preview = JSON.parse(runMapper("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
+        runMapper("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const original = await readFile(mapperSnapshot);
+        for (const args of [
+          ["--check-only", "--all-defs"],
+          ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+        ]) {
+          const rejected = spawnSync(binary, [mapperSnapshot, ...args], options);
+          if (rejected.error) throw rejected.error;
+          assert.notEqual(rejected.status, 0, `${name}: open, concrete or unrelated outputs cannot specialize a lexical return`);
+          if (args.includes("--workflow")) {
+            const report = JSON.parse(rejected.stdout);
+            assert.equal(report.data.workflow.status, "failed");
+            assert.ok(report.diagnostics.some(diagnostic => diagnostic.code === "E_ERASED_GENERIC_RELATION"),
+              `${name}: strict must emit the generic-relation diagnostic, not only list an available rule`);
+          } else {
+            assert.match(rejected.stdout + rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+          }
+          assert.deepEqual(await readFile(mapperSnapshot), original);
+        }
+        runMapper("edit", "rm-def", `app.main/${name}`);
+      }
       // #2121: enum payload names use their declaration namespace, including
       // recursive branches. Caller-owned generic arguments retain their identity.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
