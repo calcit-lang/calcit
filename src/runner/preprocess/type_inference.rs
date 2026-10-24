@@ -3542,6 +3542,13 @@ pub fn infer_static_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnota
   infer_type_from_expr(expr, &ScopeTypes::new())
 }
 
+/// Read the static value type of one definition, the same way a resolved
+/// reference to it is typed during preprocessing. This is the definition's
+/// declared contract, not evidence about any particular use site.
+pub fn infer_static_definition_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  infer_definition_value_type(ns, def)
+}
+
 /// Prove a fixed call from already-processed expressions, without executing them.
 /// This uses the compiler's ordinary proof relation, not compatibility matching.
 pub fn fixed_call_arguments_are_proven(callable: &Calcit, arguments: &[Calcit]) -> bool {

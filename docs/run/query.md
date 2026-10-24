@@ -405,6 +405,13 @@ The command does not invoke the project init/reload function. A dynamic FFI boun
 `data.lowering.source_head` 等兼容形式。`specialized` 表示源码语义已经选择类型专门化的 primitive；
 `dynamic` 或 `unavailable` 仍需作为迁移和检查线索，不能因为推断成功就假定执行路径已优化。
 
+选中的源码符号引用另一个定义时（例如 `ui/global` 或通过 `:refer` 导入的 `column`，包括 `defcomp`
+等宏展开后的 body），`type-at` 使用编译器在该源码位置实际解析出的定义，报告该定义的声明类型。
+此时 `:evidence` 的 `:kind` 为 `definition-schema`，`:detail` 写明被引用的定义及展开它的宏；
+这是定义的声明合同，不是调用点的实例化证明。`:next` 同时给出对应的 `query def` 命令。
+被 `let`、参数等词法绑定遮蔽的同名符号仍按局部绑定报告；`quote` 中的符号不是引用，保持未解析。
+声明为 `Dynamic` 的定义仍报告 `Dynamic`，不推测其成员。查询不求值被引用的定义。
+
 `:next` 中的源码导航命令保留本次查询的 Snapshot，并对路径与 definition 做 shell quoting。
 结构化 `:data :path` 继续使用 `code` / `code@3.1`；对应 `tree show` 命令在根节点省略 `--path`，
 子节点使用原有 `@3.1` 数字坐标。可直接复制下一步命令，不必手动转换路径；该导航只读，不改写源码。
