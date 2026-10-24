@@ -1915,7 +1915,9 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Struct(struct_value) => Some(infer_struct_value_annotation(struct_value, scope_types)),
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def.to_owned())))),
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned())))),
-    Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.to_owned())))),
+    Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
+      trait_def.to_owned(),
+    ))))),
     // Impl values carry useful compile-time method metadata. `Custom` is the
     // existing annotation representation for first-class runtime metadata;
     // keeping the concrete value here is strictly more precise than `:impl`.
@@ -2483,10 +2485,9 @@ fn resolve_impl_origin(value: &Calcit, scope_types: &ScopeTypes) -> Option<(EdnT
       Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def)),
       _ => None,
     },
-    Calcit::Local(_) => match resolve_type_value(value, scope_types).as_deref() {
-      Some(CalcitTypeAnnotation::Trait(trait_def)) => Some(trait_def.clone()),
-      _ => None,
-    },
+    Calcit::Local(_) => resolve_type_value(value, scope_types)
+      .and_then(|annotation| annotation.as_trait_definition().cloned())
+      .map(Arc::new),
     _ => None,
   };
   if let Some(trait_def) = resolved_trait {
@@ -2835,10 +2836,7 @@ pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &Scop
       Some(_) => return None,
       None => lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def),
     },
-    local @ Calcit::Local(_) => match resolve_type_value(local, scope_types)?.as_ref() {
-      CalcitTypeAnnotation::Trait(definition) => definition.as_ref().clone(),
-      _ => return None,
-    },
+    local @ Calcit::Local(_) => resolve_type_value(local, scope_types)?.as_trait_definition()?.clone(),
     _ => return None,
   };
   let method_name = match xs.get(2)? {
@@ -2865,10 +2863,10 @@ pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &Scop
   if matching_count != 1 {
     return None;
   }
-  trait_def
+  let method_type = trait_def
     .method_index(method_name)
-    .and_then(|index| trait_def.method_types.get(index))?
-    .resolve_to_nonoptional_fn()
+    .and_then(|index| trait_def.method_types.get(index))?;
+  super::resolve_trait_method_type(&trait_def, method_type.clone()).resolve_to_nonoptional_fn()
 }
 
 /// Resolve one selected method contract for both surface and spread calls.
@@ -3027,7 +3025,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   if matches!(proc, CalcitProc::NativeTraitNew)
     && let Some(trait_def) = infer_trait_value(xs)
   {
-    return Some(Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def))));
+    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(trait_def)))));
   }
   if matches!(proc, CalcitProc::NativeImplNew)
     && let Some(impl_def) = infer_impl_value(xs, scope_types)
@@ -3450,6 +3448,17 @@ fn infer_definition_value_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnno
 fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   let schema = program::lookup_def_schema(ns, def);
 
+  // A declaration has a stable source origin. Re-running its constructor
+  // during inference would mint unrelated runtime IDs on every lookup.
+  let schema_allows_trait_metadata = matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+    || matches!(schema.as_ref(), CalcitTypeAnnotation::Custom(value)
+      if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "trait"));
+  if schema_allows_trait_metadata && let Some(definition) = lookup_source_backed_trait_def(ns, def) {
+    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
+      definition.with_definition_ref(ns, def),
+    )))));
+  }
+
   // Data definitions keep `:dynamic` as their value schema because their
   // concrete shape is declared in the source form. Resolve the nominal name
   // before looking at compiled metadata: preprocessing a `defstruct` can
@@ -3491,7 +3500,7 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
         | CalcitTypeAnnotation::StructDef(..)
         | CalcitTypeAnnotation::EnumDef(..)
         | CalcitTypeAnnotation::Trait(..)
-    ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Impl(_)));
+    ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_)));
     if is_concrete_metadata {
       return Some(inferred);
     }

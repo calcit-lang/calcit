@@ -429,6 +429,68 @@ try {
         assert.equal(method.return_type, "string");
       }
       assert.deepEqual(await readFile(traitSnapshot), traitSource);
+      const descriptorProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
+        "--ns", "test-traits.main", "--def", "retain-trait-metadata", "--format", "json"], options));
+      assert.deepEqual(descriptorProof.diagnostics, [], "metadata storage/transport does not require instance capabilities");
+      const descriptorType = JSON.parse(execFileSync(binary, [traitSnapshot, "query", "type-at",
+        "test-traits.main/retain-trait-metadata", "--path", "code@3.2", "--format", "json"], options));
+      assert.deepEqual(descriptorType.diagnostics, []);
+      assert.equal(descriptorType.data.inferred_type, "'Trait");
+      assert.deepEqual(descriptorType.data.static_methods ?? [], [], "descriptors do not advertise instance methods");
+      assert.deepEqual(await readFile(traitSnapshot), traitSource);
+      const descriptorSnapshot = join(project, "trait-descriptor.cirru");
+      const descriptorDiagnostic = /W_GENERIC_WHERE_BOUND_MISMATCH|W_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|unknown method `\.greeting`/;
+      for (const [label, expression, result] of [
+        ["direct", "describe Greeting", "'String"],
+        ["local-alias", "let ((descriptor Greeting)) (describe descriptor)", "'String"],
+        ["imported-alias", "describe metadata/GreetingAlias", "'String"],
+        ["identity", "describe $ identity Greeting", "'String"],
+        ["callback", "map ([] Greeting) $ fn (value)\n    describe value", "(:: 'List 'String)"],
+        ["method", ".greeting Greeting", "'String"],
+      ]) {
+        await copyFile("calcit/add.cirru", descriptorSnapshot);
+        const runDescriptor = (...args) => execFileSync(binary, [descriptorSnapshot, ...args], options);
+        const traitNamespace = label === "imported-alias" ? "app.contracts" : "app.main";
+        const operations = [
+          ...(label === "imported-alias" ? [["edit", "add-ns", traitNamespace]] : []),
+          ["edit", "def", `${traitNamespace}/Greeting`, "--input-format", "cirru", "--code",
+            `quote $ deftrait Greeting $ .greeting $ :: 'Fn $ {} (:args $ [] '${traitNamespace}/Greeting) (:return 'String)`],
+          ["edit", "schema", `${traitNamespace}/Greeting`, "--input-format", "cirru", "--code", "quote 'Trait"],
+          ["edit", "def", "app.main/describe", "--input-format", "cirru", "--code", "quote $ defn describe (value)\n  value .greeting"],
+          ["edit", "schema", "app.main/describe", "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T) (:where $ {} ('T 'Greeting))"],
+          ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", `quote $ defn main! ()\n  ${expression}`],
+          ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", `quote $ :: 'Fn $ {} (:args $ []) (:return ${result})`],
+          ["config", "set", "reload-fn", "app.main/main!"],
+        ];
+        if (label === "imported-alias") operations.push(
+          ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.contracts :refer $ Greeting"],
+          ["edit", "add-ns", "app.descriptors"],
+          ["edit", "def", "app.descriptors/GreetingAlias", "--input-format", "cirru", "--code", "quote $ def GreetingAlias app.contracts/Greeting"],
+          ["edit", "schema", "app.descriptors/GreetingAlias", "--input-format", "cirru", "--code", "quote 'Trait"],
+          ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.descriptors :as metadata"],
+        );
+        const code = JSON.stringify(operations);
+        const preview = JSON.parse(runDescriptor("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+        runDescriptor("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const source = await readFile(descriptorSnapshot);
+        const output = join(project, `descriptor-${label}-js`);
+        for (const args of [
+          ["--check-only", "--all-defs"],
+          ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "edn"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "edn"], [], ["--emit-path", output, "js"],
+        ]) {
+          const rejected = spawnSync(binary, [descriptorSnapshot, ...args], options);
+          if (rejected.error) throw rejected.error;
+          const details = `${rejected.stdout}\n${rejected.stderr}`;
+          assert.equal(rejected.status, 1, `${label}: reject metadata before runtime: ${args.join(" ")}\n${details}`);
+          assert.match(details, descriptorDiagnostic);
+          assert.match(details, /app\.main\/main!/);
+          assert.doesNotMatch(details, /cannot resolve impls|#lexical:|#call-type:/);
+          assert.deepEqual(await readFile(descriptorSnapshot), source);
+        }
+        await assertRejectedArtifacts(output, `trait descriptor ${label}`, descriptorDiagnostic, true);
+      }
       // Runtime replay alone cannot catch a false rejection in the independent
       // audit. In particular, a bounded mapper's quantified output must first be
       // instantiated from its receiver, not escape as its callback-local binder.

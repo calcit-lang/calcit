@@ -147,6 +147,16 @@ Trait 定义值使用本次求值创建的名义身份：已有值的别名仍�
 Impl 的 origin 也按这个身份比较，不按 trait 短名合并。native 与 JavaScript 的相等、哈希和排序保持一致，Trait 可作为 Map/Set 的 key，容器表示转换不会改变查找结果。
 哈希数值和独立定义之间的排序只用于当前运行实例，不作为持久化 ID 或跨实例通信协议。
 
+## 描述值与实例合同
+
+`deftrait Greeting ...` 创建一个描述值；它的值类型是 `'Trait`。描述值可以保存在容器中、传给接收 `'Trait` 的函数、比较身份，或者通过正常的 namespace import 和定义别名复用。别名仍指向同一个描述值，不会创建另一个 trait。
+
+`'Trait` 是元数据种类合同，而不是单一描述值身份的持久化类型。显式 trait 调用依据已证明的来源选择方法；接收或返回一般 `'Trait` 的函数并不因此承诺始终选择某个固定声明。
+
+参数合同中的 `'Greeting` 则表示接收者必须实现 Greeting，而不是接收 Greeting 描述值。若 `describe` 要求这个能力，调用 `describe instance` 时须传入附加了匹配 impl 的实例；`describe Greeting` 不能满足合同，即使先经过 `let`、`identity` 或回调传递也一样。
+
+显式调用 `&trait-call Greeting :greeting instance` 的第一个参数选择描述值，后面的接收者仍须证明能力。局部别名与导入别名可以选择同一个描述值；描述值自身不因此拥有 `.greeting` 等实例方法。查询元数据传递函数的返回类型时会显示 `'Trait`，而不是把描述值列成具有这些实例方法的值。
+
 ## Attach impls to struct/enum definitions
 
 `impl-traits` attaches impl records to a **struct/enum type**. In compatibility mode, user values retain the historical rule that later impls override earlier impls for the same method name ("last-wins"). Strict mode rejects that call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.

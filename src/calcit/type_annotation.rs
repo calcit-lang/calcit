@@ -5305,10 +5305,9 @@ impl CalcitTypeAnnotation {
       }
       (Self::StructDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct-def") => true,
       (Self::EnumDef(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum-def") => true,
-      (Self::Trait(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
-      (Self::TraitSet(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
       (Self::Custom(actual), Self::Custom(expected))
-        if Self::custom_keyword_matches(expected, "impl") && matches!(actual.as_ref(), Calcit::Impl(_)) =>
+        if (Self::custom_keyword_matches(expected, "impl") && matches!(actual.as_ref(), Calcit::Impl(_)))
+          || (Self::custom_keyword_matches(expected, "trait") && matches!(actual.as_ref(), Calcit::Trait(_))) =>
       {
         true
       }
@@ -5320,6 +5319,11 @@ impl CalcitTypeAnnotation {
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
       (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
       (Self::Variadic(a), Self::Variadic(b)) => a.compatible_with_bindings(b, bindings),
+      (Self::Custom(a), Self::Custom(b)) if let (Calcit::Trait(actual), Calcit::Trait(expected)) = (a.as_ref(), b.as_ref()) => {
+        // The shared relation preserves qualified source placeholders and
+        // keeps two evaluated nominal identities distinct.
+        Self::trait_references_match(actual, expected)
+      }
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       (Self::StructValue(a), Self::StructValue(b)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
       (Self::StructValue(a), Self::Struct(b, _)) => Self::struct_nominal_match(a, b).unwrap_or_else(|| a.name == b.name),
@@ -5693,8 +5697,15 @@ impl CalcitTypeAnnotation {
       // A trait name reference and its resolved trait denote the same nominal
       // type; a trait is not a schema alias, so the TypeRef fallback below
       // would otherwise report a mismatch (for example inside Fn arguments).
-      (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args))
+      (Self::TypeRef(name, args), Self::Trait(trait_def))
         if args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()) =>
+      {
+        Proven
+      }
+      (Self::Trait(trait_def), Self::TypeRef(name, args))
+        if args.is_empty()
+          && trait_def.validate_reachable_method_schemas().is_ok()
+          && Self::trait_upcasts_to_type_ref(trait_def, name) =>
       {
         Proven
       }
@@ -5801,7 +5812,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Calcit::Fn { info, .. } => Self::from_calcit_fn(info),
-      Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
+      Calcit::Import(import) => Self::from_import(import, Self::from_calcit).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
           Self::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone(), proc.arity())
@@ -5902,7 +5913,7 @@ impl CalcitTypeAnnotation {
     }))
   }
 
-  fn from_import(import: &CalcitImport) -> Option<Self> {
+  fn from_import<T>(import: &CalcitImport, classify: impl FnOnce(&Calcit) -> T) -> Option<T> {
     let mut short_circuit = false;
     let mut pushed = false;
 
@@ -5925,7 +5936,7 @@ impl CalcitTypeAnnotation {
 
     let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
       .or_else(|| lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref()))
-      .map(|value| CalcitTypeAnnotation::from_calcit(&value));
+      .map(|value| classify(&value));
 
     if pushed {
       IMPORT_RESOLUTION_STACK.with(|stack| {
@@ -6176,6 +6187,7 @@ impl CalcitTypeAnnotation {
           Self::canonical_type_symbol_name(tag.ref_str()).expect("known canonical type symbol"),
         ))
       }
+      Self::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_)) => Edn::Symbol(Arc::from("Trait")),
       Self::Custom(value) => calcit_type_to_edn(value.as_ref()),
       Self::Enum(e, args) => {
         if args.is_empty() {
@@ -6205,6 +6217,17 @@ impl CalcitTypeAnnotation {
       Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
       _ => Edn::Symbol(Arc::from("Dynamic")),
+    }
+  }
+
+  /// Concrete metadata is distinct from the capability of an implemented value.
+  pub(crate) fn as_trait_definition(&self) -> Option<&CalcitTrait> {
+    match self {
+      Self::Custom(value) => match value.as_ref() {
+        Calcit::Trait(definition) => Some(definition),
+        _ => None,
+      },
+      _ => None,
     }
   }
 
@@ -7678,6 +7701,17 @@ mod tests {
     composite.requires = Arc::new(vec![required.clone()]);
     let annotation = CalcitTypeAnnotation::Trait(Arc::new(composite));
     assert!(annotation.satisfies_trait_bound(required.as_ref()));
+    let parent_ref = CalcitTypeAnnotation::TypeRef(Arc::from("app.display/Display"), Arc::new(vec![]));
+    assert!(
+      annotation.is_proven_for(&parent_ref),
+      "an implemented child capability proves its named parent"
+    );
+    assert!(
+      !CalcitTypeAnnotation::Trait(required.clone())
+        .is_proven_for(&CalcitTypeAnnotation::TypeRef(Arc::from("app.widget/Widget"), Arc::new(vec![]))),
+      "a parent capability does not prove its child"
+    );
+    assert!(!annotation.is_proven_for(&CalcitTypeAnnotation::TypeRef(Arc::from("other.display/Display"), Arc::new(vec![]))));
 
     let invalid = CalcitTrait {
       runtime_id: None,
@@ -7687,10 +7721,14 @@ mod tests {
       defaults: Arc::new(vec![None]),
       method_types: Arc::new(vec![]),
       member_kinds: Arc::new(vec![crate::calcit::CalcitTraitMemberKind::Method]),
-      requires: Arc::new(vec![]),
+      requires: Arc::new(vec![required]),
     };
     let invalid_annotation = CalcitTypeAnnotation::Trait(Arc::new(invalid.clone()));
     assert!(!invalid_annotation.satisfies_trait_bound(&invalid));
+    assert!(
+      !invalid_annotation.is_proven_for(&parent_ref),
+      "an invalid child cannot lend its parent's evidence"
+    );
     let caller_name: Arc<str> = Arc::from("T");
     let capabilities = Arc::new(HashMap::from([(caller_name.clone(), Arc::new(invalid_annotation))]));
     let mut proof = CallTypeProof::default().with_caller_capabilities(Some(capabilities));
@@ -7707,6 +7745,12 @@ mod tests {
 
   #[test]
   fn nominal_trait_matching_does_not_reverse_unqualified_placeholders() {
+    let _guard = crate::program::lock_program_test_state();
+    register_program_lookups(
+      crate::program::lookup_runtime_ready,
+      crate::program::lookup_def_code,
+      crate::program::lookup_def_schema,
+    );
     let bare_placeholder = CalcitTrait::new_reference("DomElement");
     let runtime_trait = CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]);
 
@@ -7727,6 +7771,87 @@ mod tests {
       CalcitTypeAnnotation::trait_references_match(&qualified_placeholder, &qualified_runtime),
       "qualified definition identity keeps the intentional reverse-match path"
     );
+
+    let metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(qualified_runtime.clone())));
+    let source_metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(qualified_placeholder)));
+    let other_runtime =
+      CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]).with_definition_ref("respo.dom", "DomElement");
+    let other_metadata = CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(other_runtime)));
+    assert!(metadata.is_proven_for(&source_metadata));
+    assert!(source_metadata.is_proven_for(&metadata));
+    assert!(
+      !metadata.is_proven_for(&other_metadata),
+      "evaluated metadata IDs must remain distinct"
+    );
+    let capability = CalcitTypeAnnotation::Trait(Arc::new(qualified_runtime));
+    let metadata_kind = CalcitTypeAnnotation::from_tag_name("trait");
+    assert!(metadata.is_proven_for(&metadata_kind));
+    assert!(!capability.is_proven_for(&metadata_kind), "a capability is not a descriptor value");
+    assert!(
+      !metadata.is_proven_for(&capability),
+      "a descriptor does not implement its own trait"
+    );
+
+    let descriptor_value = Calcit::Trait(metadata.as_trait_definition().unwrap().clone());
+    assert!(value_matches_type_annotation(&descriptor_value, &metadata));
+    assert!(value_matches_type_annotation(&descriptor_value, &source_metadata));
+    for value in [
+      Calcit::Number(1.0),
+      Calcit::Nil,
+      Calcit::Unit,
+      Calcit::Bool(true),
+      Calcit::tag("DomElement"),
+    ] {
+      assert!(
+        !value_matches_type_annotation(&value, &metadata),
+        "a non-descriptor must not satisfy concrete descriptor metadata: {value}"
+      );
+      assert!(!value_matches_type_annotation(&value, &source_metadata));
+    }
+    assert!(!value_matches_type_annotation(
+      &Calcit::Trait(other_metadata.as_trait_definition().unwrap().clone()),
+      &metadata
+    ));
+    assert!(!value_matches_type_annotation(&Calcit::Trait(bare_placeholder), &metadata));
+    assert!(!value_matches_type_annotation(
+      &Calcit::Trait(CalcitTrait::new_reference("other.dom/DomElement")),
+      &source_metadata
+    ));
+    assert!(value_matches_type_annotation(
+      &Calcit::Trait(source_metadata.as_trait_definition().unwrap().clone()),
+      &metadata
+    ));
+    assert!(!value_matches_type_annotation(&descriptor_value, &capability));
+
+    let namespace = "tests.runtime-trait-descriptor";
+    let reference = |name: &str| {
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(namespace),
+        def: Arc::from(name),
+        info: Arc::new(crate::calcit::ImportInfo::SameFile { at_def: Arc::from("test") }),
+        def_id: None,
+      })
+    };
+    crate::program::write_runtime_ready(
+      namespace,
+      "Descriptor",
+      Calcit::Trait(metadata.as_trait_definition().unwrap().clone()),
+    )
+    .unwrap();
+    crate::program::write_runtime_ready(namespace, "Alias", reference("Descriptor")).unwrap();
+    for value in [reference("Descriptor"), reference("Alias")] {
+      let inferred = infer_runtime_value_type(&value);
+      assert_eq!(inferred.as_ref(), &metadata, "runtime imports retain descriptor identity");
+      assert!(!inferred.is_proven_for(&capability));
+      assert!(inferred.is_proven_for(&metadata_kind));
+      assert!(matches!(CalcitTypeAnnotation::from_calcit(&value), CalcitTypeAnnotation::Trait(_)));
+    }
+    crate::program::write_runtime_ready(namespace, "CycleA", reference("CycleB")).unwrap();
+    crate::program::write_runtime_ready(namespace, "CycleB", reference("CycleA")).unwrap();
+    assert!(matches!(
+      infer_runtime_value_type(&reference("CycleA")).as_ref(),
+      CalcitTypeAnnotation::Dynamic
+    ));
   }
 
   fn symbol(name: &str) -> Calcit {
@@ -11008,6 +11133,9 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         "enum-def" => matches!(value, Calcit::EnumDef(_)),
         _ => true, // unknown custom types: be permissive
       },
+      Calcit::Trait(expected) => {
+        matches!(value, Calcit::Trait(actual) if CalcitTypeAnnotation::trait_references_match(actual, expected))
+      }
       _ => true,
     },
     // Generic type variables cannot be checked at runtime; allow any value
@@ -11117,6 +11245,10 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
       None => Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     },
     Calcit::EnumDef(enum_def) => Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned()))),
+    Calcit::Trait(definition) => Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(definition.clone())))),
+    Calcit::Import(import) => {
+      CalcitTypeAnnotation::from_import(import, infer_runtime_value_type).unwrap_or_else(|| DYNAMIC_TYPE.clone())
+    }
     _ => Arc::new(CalcitTypeAnnotation::from_calcit(value)),
   }
 }
