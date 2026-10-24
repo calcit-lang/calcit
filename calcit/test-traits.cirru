@@ -143,10 +143,12 @@
           :schema $ :: 'EnumDef
         'Greeter $ %{} 'CodeEntry
           :doc "|Struct carrying both a required trait impl and its child"
-          :code $ quote $ def Greeter
-            impl-traits
-              defstruct Greeter $ :name 'String
-              , LabeledImpl GreetingImpl
+          :code $ quote $ def Greeter (impl-traits GreeterBase LabeledImpl GreetingImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'GreeterBase $ %{} 'CodeEntry (:doc "|Greeter 的基础数据定义；附加 trait 的别名保留相同来源。")
+          :code $ quote $ def GreeterBase
+            defstruct Greeter $ :name 'String
           :examples $ []
           :schema $ :: 'StructDef
         'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
@@ -170,9 +172,28 @@
         'GreetingImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl GreetingImpl Greeting
             .greeting $ fn (g)
-              str "|hello " $ :name $ assert-type g Greeter
+              if (struct? g)
+                if (&struct:matches? g GreeterBase)
+                  str "|hello " $ :name g
+                  raise "|GreetingImpl requires Greeter"
+                raise "|GreetingImpl requires Greeter"
           :examples $ []
           :schema $ :: 'Impl
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
+            :code $ quote $ let
+                Other $ impl-traits
+                  defstruct Greeter $ :name 'String
+                  , LabeledImpl GreetingImpl
+                OtherEnum $ impl-traits
+                  defenum OtherGreeter $ :foreign
+                  , LabeledImpl GreetingImpl
+              assert= "|GreetingImpl requires Greeter" $ try
+                .greeting $ Other :name |Ada
+                fn (message) message
+              assert= "|GreetingImpl requires Greeter" $ try
+                .greeting $ OtherEnum :foreign
+                fn (message) message
+            :tags $ #{} :struct-origin :unit
         'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
           :code $ quote $ deftrait Labeled
             .label $ :: 'Fn $ {} (:return 'String)
@@ -182,9 +203,26 @@
         'LabeledImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl LabeledImpl Labeled
             .label $ fn (g)
-              :name $ assert-type g Greeter
+              if (struct? g)
+                if (&struct:matches? g GreeterBase) (:name g) (raise "|LabeledImpl requires Greeter")
+                raise "|LabeledImpl requires Greeter"
           :examples $ []
           :schema $ :: 'Impl
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
+            :code $ quote $ let
+                Other $ impl-traits
+                  defstruct Greeter $ :name 'String
+                  , LabeledImpl GreetingImpl
+                OtherEnum $ impl-traits
+                  defenum OtherGreeter $ :foreign
+                  , LabeledImpl GreetingImpl
+              assert= "|LabeledImpl requires Greeter" $ try
+                .label $ Other :name |Ada
+                fn (message) message
+              assert= "|LabeledImpl requires Greeter" $ try
+                .label $ OtherEnum :foreign
+                fn (message) message
+            :tags $ #{} :struct-origin :unit
         'MetadataGreetingImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl MetadataGreetingImpl metadata/Greeting
             .greeting $ fn (_value) |hello-from-metadata
@@ -1401,8 +1439,101 @@
         :code $ quote $ ns test-traits.struct-identity
     'test-traits.struct-left $ %{} 'FileEntry
       :defs $ {}
+        'GenericBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct GenericBox ([] 'T) (:value 'T)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Point $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:x 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ []
+            %{} 'TestEntry (:name |matches-known-origin-and-value-pattern)
+              :code $ quote $ let
+                  point $ test-traits.struct-left/Point :x 2
+                assert= true $ &struct:matches? point test-traits.struct-left/Point
+                assert= true $ &struct:matches? point $ test-traits.struct-left/Point :x 9
+                assert= 3 $ test-traits.struct-left/read-origin-point point
+              :tags $ #{} :struct-origin :struct-origin-portable :unit
+            %{} 'TestEntry (:name |rejects-foreign-owner-with-identical-fields)
+              :code $ quote $ assert= false
+                &struct:matches? (test-traits.struct-right/Point :x 2) test-traits.struct-left/Point
+              :tags $ #{} :struct-origin :struct-origin-portable :unit
+            %{} 'TestEntry
+              :name |rejects-foreign-payload-before-numeric-consumption
+              :code $ quote $ assert= "|expected test-traits.struct-left/Point"
+                try
+                  test-traits.struct-left/read-origin-point $ test-traits.struct-text/Point :x |wrong
+                  fn (message) message
+              :tags $ #{} :struct-origin :unit
+            %{} 'TestEntry (:name |preserves-alias-decoration-and-field-update)
+              :code $ quote $ let
+                  Marker $ deftrait OriginMarker
+                  Implementation $ defimpl OriginMarkerImpl Marker
+                  Decorated $ impl-traits test-traits.struct-left/PointAlias Implementation
+                  point $ Decorated :x 2
+                assert= true $ &struct:matches? point test-traits.struct-left/Point
+                assert= 3 $ test-traits.struct-left/read-origin-point point
+                assert= 5 $ test-traits.struct-left/read-origin-point $ .assoc point :x 4
+              :tags $ #{} :struct-origin :unit
+            %{} 'TestEntry (:name |does-not-recover-owner-from-edn-roundtrip)
+              :code $ quote $ let
+                  restored $ parse-cirru-edn $ format-cirru-edn (test-traits.struct-left/Point :x 2)
+                if (struct? restored)
+                  assert= false $ &struct:matches? restored test-traits.struct-left/Point
+                  raise "|expected restored Struct"
+              :tags $ #{} :struct-origin :unit
+            %{} 'TestEntry (:name |preserves-ownerless-local-pattern-semantics)
+              :code $ quote $ let
+                  Pattern $ defstruct Point $ :x 'String
+                  OtherPattern $ defstruct OtherPoint $ :x 'Number
+                  point $ test-traits.struct-left/Point :x 2
+                assert= true $ &struct:matches? point Pattern
+                assert= false $ &struct:matches? point OtherPattern
+              :tags $ #{} :struct-origin :unit
+            %{} 'TestEntry (:name |preserves-generic-declaration-matching)
+              :code $ quote $ do
+                assert= true $ &struct:matches? (test-traits.struct-left/GenericBox :value 1) test-traits.struct-left/GenericBox
+                assert= true $ &struct:matches? (test-traits.struct-left/GenericBox :value |one) test-traits.struct-left/GenericBox
+              :tags $ #{} :struct-origin :struct-origin-portable :unit
+            %{} 'TestEntry
+              :name |distinguishes-definition-and-value-target-parameters
+              :code $ quote $ let
+                  definition-match $ fn (value target)
+                    hint-fn $ {}
+                      :args $ [] 'Struct 'StructDef
+                      :return 'Bool
+                    &struct:matches? value target
+                  value-match $ fn (value target)
+                    hint-fn $ {}
+                      :args $ [] 'Struct 'Struct
+                      :return 'Bool
+                    &struct:matches? value target
+                  point $ test-traits.struct-left/Point :x 2
+                  alias test-traits.struct-left/PointAlias
+                assert= true $ definition-match point alias
+                assert= false $ definition-match point test-traits.struct-right/Point
+                assert= true $ value-match point $ test-traits.struct-left/Point :x 9
+                assert= false $ value-match point $ test-traits.struct-right/Point :x 9
+              :tags $ #{} :struct-origin :struct-origin-portable :unit
+            %{} 'TestEntry (:name |struct-match-keeps-qualified-origin)
+              :code $ quote $ let
+                  read $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Struct
+                      :return 'Number
+                    struct-match value
+                      test-traits.struct-left/Point current $ &+ (:x current) 1
+                      _ other 0
+                  point $ test-traits.struct-left/Point :x 2
+                assert= 3 $ read point
+                assert= 0 $ read $ test-traits.struct-right/Point :x 2
+                assert= 0 $ read $ test-traits.struct-text/Point :x |wrong
+                assert= true $ identical? point $ struct-match point (test-traits.struct-left/Point current current)
+                  _ other $ raise "|expected same-origin branch"
+              :tags $ #{} :struct-origin :struct-origin-portable :unit
+        'PointAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def PointAlias Point
           :examples $ []
           :schema $ :: 'StructDef
         'StructDef $ %{} 'CodeEntry (:doc |)
@@ -1448,6 +1579,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []
+        'read-origin-point $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-origin-point (value)
+            if (&struct:matches? value Point)
+              &+ (:x value) 1
+              raise "|expected test-traits.struct-left/Point"
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Struct
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-left
     'test-traits.struct-right $ %{} 'FileEntry
@@ -1491,3 +1630,11 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-right
+    'test-traits.struct-text $ %{} 'FileEntry
+      :defs $ {} $ 'Point
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Point (:x 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.struct-text

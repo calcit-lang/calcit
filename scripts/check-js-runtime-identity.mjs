@@ -304,6 +304,30 @@ try {
   const definition = structDefinition(new runtimeA.CalcitSymbol("Number"));
   const equalDefinition = structDefinition(runtimeA.newTag("number"), undefined, () => false);
   assert.equal(runtimeA._$n__$e_(definition, equalDefinition), true, "Validator addresses must not affect definition equality");
+  // Host/reload metadata can change under the same owner. Do not let a guard
+  // prove the new field contract from an old value's matching name/layout.
+  const originValue = new runtimeA.CalcitStructValue(definition.name, definition.fields, [1], definition);
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(originValue, equalDefinition), true);
+  for (const [name, fields] of [
+    [runtimeA.newTag("OtherDefinition"), definition.fields],
+    [definition.name, [runtimeA.newTag("different-field")]],
+  ]) {
+    const inconsistent = new runtimeA.CalcitStructValue(name, fields, [1], definition);
+    assert.equal(runtimeA._$n_struct_$o_matches_$q_(inconsistent, definition), false,
+      "host-supplied nominal metadata cannot override the instance's actual name/layout");
+  }
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(originValue, structDefinition(new runtimeA.CalcitSymbol("String"))), false,
+    "a changed field type under the same source owner does not match");
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(originValue, structDefinition(new runtimeA.CalcitSymbol("Number"), "app.other/Definition")), false);
+  const ownerlessDefinition = structDefinition(new runtimeA.CalcitSymbol("Number"), null);
+  const ownerlessValue = new runtimeA.CalcitStructValue(definition.name, definition.fields, [1], ownerlessDefinition);
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(ownerlessValue, definition), false,
+    "unknown ownership cannot establish a known nominal contract");
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(originValue, ownerlessDefinition), true,
+    "ownerless local patterns retain structural matching without nominal evidence");
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(originValue,
+    definition.withImpls([new runtimeA.CalcitImpl(runtimeA.newTag("Marker"), [], [])])), true,
+    "attached methods do not change the nominal data contract");
   const differentDefinitions = [
     structDefinition(new runtimeA.CalcitSymbol("String")),
     structDefinition(new runtimeA.CalcitSymbol("Number"), "app.other/Definition"),

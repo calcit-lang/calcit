@@ -334,7 +334,23 @@ Struct 值的相等比较同时检查定义身份、名称、字段名和字段�
 
 ### Struct Origin Check
 
-Use the typed Struct predicate when you need to confirm a struct value's origin:
+以已知来源的 Struct 定义或实例作为目标时，`&struct:matches?` 检查原始的
+`namespace/definition` 和数据合同，而不只比较短名称与字段名。不同模块里的同名同字段
+Struct 不会相互匹配；别名、字段更新和附加 trait 实现仍保留原来源。
+
+对非泛型顶层定义的判断成功后，类型推导可以安全读取其声明字段：
+
+```cirru
+let
+    read-path $ fn (value)
+      hint-fn $ {} (:args $ [] 'Struct) (:return 'String)
+      if (&struct:matches? value FsPath)
+        :value value
+        raise |expected-FsPath
+  assert= |data/config.cirru $ read-path $ FsPath :value |data/config.cirru
+```
+
+无来源的局部 pattern 保留名称与字段布局的结构匹配，可用于不需要名义类型证明的分支：
 
 ```cirru
 let
@@ -345,6 +361,12 @@ let
     println "|Handle Cat branch"
     println "|Not a Cat"
 ```
+
+#### 限制
+
+- 局部结构匹配不证明字段类型，泛型定义的匹配也不绑定具体类型参数。
+- 反序列化得到的无来源 Struct 不会自动恢复某个同名顶层定义，需经受检 decoder 恢复类型。
+- 同一来源经热重载改变字段布局或字段合同后，旧值不再满足新目标的来源判断。
 
 ## Polymorphism with Traits
 
