@@ -14667,9 +14667,11 @@
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-enum-impl
             &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
-              if (&>= k 0)
-                &< k $ &enum:count x
-                , false
+              if (number? k)
+                if (&>= k 0)
+                  &< k $ &enum:count x
+                  , false
+                raise "|Enum .contains? expected a Number index"
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-field-struct-impl $ %{} 'CodeEntry (:doc |)

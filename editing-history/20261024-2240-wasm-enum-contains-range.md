@@ -18,6 +18,10 @@ WASM 不能把已擦除的 nil、Bool 当作索引 0/1。分派使用原参数�
 开放 key 复用已有标量证据诊断及调用点特化，先把泛型 K 绑定到实际类型，再生成该分支。
 无法证明的开放调用明确拒绝 codegen，不猜 f64 的 0/1，也不改变表层语言合同。
 
+宿主负向测试还确认 JS 比较会隐式转换非法 key，因此共享 core Enum 实现先检查
+`number?`，再执行原范围比较；非法 key 明确报错 `Enum .contains? expected a Number index`。
+它沿用 native 拒绝非 Number 的语义，并使 JS 在同一边界失败，不再依赖宿主数值转换。
+
 附带测试保留泛型 Number 的零、负零、分数、越界和 NaN。现有宿主检查脚本使用真实泛型
 定义及 native/JS/WASM 调用，验证 nil、两种 Bool、String、Tag 被拒绝，而 Number 0 和
 1.5 仍成功；WASM 异常由宿主捕获，避免为了测试异常而新增 WASM `try` 或重复运行器。

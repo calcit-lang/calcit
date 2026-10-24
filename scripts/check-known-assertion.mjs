@@ -3247,7 +3247,7 @@ try {
           assert.equal(enumKeyJs[`enum_key_${name.replaceAll("-", "_")}`](), true, target);
           assert.equal(enumKeyWasm.exports[`enum-key-${name}`](), 1, target);
         } else {
-          assert.match(native.stderr, /expects numbers/);
+          assert.match(native.stderr, /Enum \.contains\? expected a Number index/);
           assert.throws(() => enumKeyJs[`enum_key_${name}`](), Error, target);
           assert.throws(() => enumKeyWasm.exports[`enum-key-${name}`](), WebAssembly.RuntimeError, target);
         }
