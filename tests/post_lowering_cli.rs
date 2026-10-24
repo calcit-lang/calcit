@@ -722,3 +722,38 @@ fn open_path_write_proof_does_not_invent_receiver_shapes() {
     );
   }
 }
+
+#[test]
+fn reader_shorthand_inside_a_sibling_does_not_shift_type_at_expected_context() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal source should copy");
+  define(
+    &snapshot,
+    "data",
+    "quote $ def data $ {} (1 :a)",
+    "quote $ :: 'Map 'Number 'Tag",
+    false,
+  );
+  // The receiver is an import without a location, so the call's source path
+  // must not be derived from the `'Set` leaf inside the initial value.
+  define(
+    &snapshot,
+    "collect",
+    "quote $ defn collect () $ foldl (map-entries data) (assert-type (#{}) (:: 'Set 'Tag)) $ fn (acc pair) (hint-fn $ {} (:args $ [] (:: 'Set 'Tag) (:: 'MapEntry 'Number 'Tag)) (:return $ :: 'Set 'Tag)) (include acc $ :value pair)",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Set 'Tag)",
+    false,
+  );
+  let queried = run_calcit(
+    &snapshot,
+    &["query", "type-at", "app.main/collect", "--path", "3.1", "--format", "json"],
+  );
+  assert_success(&queried, "fold input query");
+  let report: serde_json::Value = serde_json::from_slice(&queried.stdout).expect("one JSON query document");
+  assert_eq!(report["data"]["expression"], "map-entries data");
+  assert_ne!(
+    report["data"]["expected_from"], "assert-type annotation",
+    "the initial value's annotation is not the fold input's contract: {report}"
+  );
+  assert_eq!(report["diagnostics"], serde_json::json!([]), "{report}");
+}
