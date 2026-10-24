@@ -873,6 +873,72 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'map-through-callback $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn map-through-callback (xs f)
+            map xs $ fn (value) (f value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'U)
+                :args $ [] 'T
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'U
+          :tests $ []
+            %{} 'TestEntry (:name |changes-element-type-without-losing-input)
+              :code $ quote $ let
+                  values $ [] 1 2 3
+                assert= ([] |1 |2 |3)
+                  map-through-callback values $ fn (value) (.to-string value)
+                assert= ([] 1 2 3) values
+              :tags $ #{} :contextual-map-output :unit
+            %{} 'TestEntry (:name |retains-number-output-and-empty-list)
+              :code $ quote $ do
+                assert= ([] 11 12)
+                  map-through-callback ([] 1 2)
+                    fn (value) (+ value 10)
+                assert= ([])
+                  map-through-callback ([])
+                    fn (_value) |unused
+              :tags $ #{} :contextual-map-output :unit
+            %{} 'TestEntry (:name |transports-explicit-open-results)
+              :code $ quote $ let
+                  open-number $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Dynamic
+                    , value
+                  result $ map-through-callback ([] 1 2) open-number
+                  method-result $ map-through-method ([] 1 2) open-number
+                assert= 2 $ .len result
+                assert= 2 $ .len method-result
+              :tags $ #{} :contextual-map-output :unit
+        'map-through-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn map-through-method (xs f)
+            .map xs $ fn (value) (f value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'MapOutput)
+                :args $ [] 'T
+            :generics $ [] 'T 'MapOutput
+            :return $ :: 'List 'MapOutput
+          :tests $ []
+            %{} 'TestEntry (:name |changes-element-type-without-losing-input)
+              :code $ quote $ let
+                  values $ [] 1 2 3
+                assert= ([] |1 |2 |3)
+                  map-through-method values $ fn (value) (.to-string value)
+                assert= ([] 1 2 3) values
+              :tags $ #{} :contextual-map-output :unit
+            %{} 'TestEntry (:name |retains-number-output-and-empty-list)
+              :code $ quote $ do
+                assert= ([] 11 12)
+                  map-through-method ([] 1 2)
+                    fn (value) (+ value 10)
+                assert= ([])
+                  map-through-method ([])
+                    fn (_value) |unused
+              :tags $ #{} :contextual-map-output :unit
         'option-recur-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-recur-sum (n acc)
             if (&<= n 0) (acc.unwrap-or 0)
