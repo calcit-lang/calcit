@@ -105,11 +105,13 @@ try {
         assert.deepEqual(await readFile(reverseSnapshot), reverseFixture);
       }
       assert.deepEqual(await readFile(reverseSource), reverseOriginal);
-      // Audit real core callers outside the compatibility boundary: #2314
-      // retains map K/V inputs; #2315 retains the composed Fn's A/C relation.
-      for (const [definition, copyName] of [
-        ["calcit.core/map-kv", "map-kv-copy"],
-        ["calcit.core/&fn:map", "fn-map-copy"],
+      // Audit real core callers outside the compatibility boundary: map K/V
+      // inputs and each returned function's A/C relation must survive (#2319).
+      for (const [definition, copyName, returnsFunction] of [
+        ["calcit.core/map-kv", "map-kv-copy", false],
+        ["calcit.core/&fn:map", "fn-map-copy", true],
+        ["calcit.core/&fn:bind", "fn-bind-copy", true],
+        ["calcit.core/&fn:apply", "fn-apply-copy", true],
       ]) {
         const data = JSON.parse(execFileSync(binary, [reverseSource, "query", "def",
           definition, "--format", "json"], options)).data;
@@ -148,11 +150,11 @@ try {
           assert.deepEqual(JSON.parse(result.stdout).diagnostics, []);
           assert.deepEqual(await readFile(callerSnapshot), fixture);
         }
-        if (copyName === "fn-map-copy") {
+        if (returnsFunction) {
           // A checked body hint must not equate unrelated binders, invent a
           // generic result, or recover a callable signature from opaque Fn.
           for (const variant of ["wrong-input", "wrong-output", "opaque-function"]) {
-            const rejectedSnapshot = join(project, `fn-map-${variant}.cirru`);
+            const rejectedSnapshot = join(project, `${copyName}-${variant}.cirru`);
             await copyFile(callerSnapshot, rejectedSnapshot);
             const runRejected = (...args) => execFileSync(binary, [rejectedSnapshot, ...args], options);
             runRejected("query", "config", "--format", "edn");
@@ -193,7 +195,8 @@ try {
                 // can emit JSON. Check the actual failure, not its rule catalog.
                 assert.equal(variant, "wrong-output");
                 assert.ok(args.includes("--rule"));
-                assert.match(result.stderr, /Failed to preprocess fix target app.main\/fn-map-copy:.*\[E_ERASED_GENERIC_RELATION\]/);
+                assert.ok(result.stderr.includes(`Failed to preprocess fix target app.main/${copyName}: `));
+                assert.match(result.stderr, /\[E_ERASED_GENERIC_RELATION\]/);
               }
               assert.deepEqual(await readFile(rejectedSnapshot), original);
             }

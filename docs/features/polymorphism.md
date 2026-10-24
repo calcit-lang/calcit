@@ -243,7 +243,15 @@ do
   assert= 0 $ &compare |same |same
 ```
 
-## 函数的 `.map` 组合
+## 函数组合与共享输入
+
+函数接收者的这三个方法都返回一元函数，并保留输入 A 与结果 C 的完整签名。它们沿用不同的参数顺序：
+
+| 调用 | 参数关系 | 返回函数执行的表达式 |
+| --- | --- | --- |
+| `f .map g` | f:B→C，g:A→B | `f(g(x))` |
+| `m .bind f` | m:A→B，f:(B,A)→C | `f(m(x), x)` |
+| `f .apply g` | f:A→B，g:(A,B)→C | `g(x, f(x))` |
 
 函数接收者的 `f .map g` 返回一个新的一元函数，执行 `f(g(x))`：先调用参数函数 `g`，再把结果交给接收者 `f`。如果 `f` 接收 B、返回 C，`g` 接收 A、返回 B，组合函数便接收 A、返回 C，保留完整的函数签名。
 
@@ -260,12 +268,32 @@ let
   assert= 8 $ composed 3
 ```
 
-创建组合时只求值 `f`、`g` 的表达式，不执行两个函数体；每次调用组合函数时各执行一次。`g` 抛错时不执行 `f`，`f` 的错误也直接向外传播。函数体内的 `hint-fn` 声明需要实际代码证明的合同，不负责把未知函数转换成所声明的签名。
+对于 `.map`，创建组合时只求值 `f`、`g` 的表达式，不执行两个函数体；每次调用组合函数时各执行一次。`g` 抛错时不执行 `f`，`f` 的错误也直接向外传播。函数体内的 `hint-fn` 声明需要实际代码证明的合同，不负责把未知函数转换成所声明的签名。
+
+`.bind` 与 `.apply` 把同一输入交给两个阶段；先执行接收者，再执行参数函数。下例使用不对称的减法展示两者的参数顺序，结果分别为 3 和 -3：
+
+```cirru
+let
+    producer $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &* x 2
+    consumer $ fn (left right)
+      hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)
+      &- left right
+    bound $ producer .bind consumer
+    applied $ producer .apply consumer
+  assert-type bound $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+  assert-type applied $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+  assert= 3 $ bound 3
+  assert= -3 $ applied 3
+```
+
+这两个方法同样惰性创建函数；接收者执行失败时不调用参数函数，任一阶段的错误直接向外传播。名义类型的返回值继续保留具体合同，可直接访问其声明字段。
 
 ### 限制
 
-- 函数组合保持一元调用；它不是 List、Option 或 Result 的元素映射，也不改变现有组合方向。
-- WASM/WASI 的闭包与宿主能力支持以相应后端的实际检查结果为准。
+- 这里描述的是 Fn 接收者的现有方法，不改变 List、Option 或 Result 的语义，也不改变原有函数组合方向。
+- 当前 WASM/WASI 不支持这些方法返回的闭包；上述示例用于 native/JS。
 
 ## Option and Result helpers
 
