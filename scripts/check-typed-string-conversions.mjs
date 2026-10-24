@@ -32,10 +32,9 @@ for (const expression of ["to-tag 1", "to-tag ([] 1)", "to-symbol :ready", "to-s
 
 const stringConversion = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/to-string", "--format", "json"], { encoding: "utf8" }));
 assert.ok(JSON.stringify(stringConversion.data.schema).includes("ToString"), "to-string must require its trait bound");
-const legacyTurnString = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/turn-string", "--format", "json"], { encoding: "utf8" }));
-assert.ok(JSON.stringify(legacyTurnString.data.schema).includes("ToString"), "turn-string must expose the trait-bound wrapper contract");
-assert.ok(legacyTurnString.data.tags.includes("internal"), "turn-string must remain a compatibility entry");
-for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)", "turn-string ([] 1)", "turn-string (&{} :a 1)", "turn-string &unit", "turn-string (json-parse |42)"]) {
+const removedTurnString = spawnSync(binary, [snapshot, "query", "def", "calcit.core/turn-string", "--format", "json"], { encoding: "utf8" });
+assert.notEqual(removedTurnString.status, 0, "turn-string was removed from calcit.core in 0.31.0");
+for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)"]) {
   const result = spawnSync(binary, [snapshot, "eval", expression], { encoding: "utf8" });
   assert.notEqual(result.status, 0, `${expression} must fail strict trait-bound checking`);
   assert.match(result.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
@@ -125,10 +124,10 @@ try {
     ["nan", NaN, "NaN"],
   ];
   for (const [source, value, expected] of numberCases) {
-    const native = execFileSync(binary, [snapshot, "eval", `turn-string ${source}`], { encoding: "utf8" });
+    const native = execFileSync(binary, [snapshot, "eval", `to-string ${source}`], { encoding: "utf8" });
     const nativeValue = native.match(/^took [^\r\n]*: \|([^\r\n]*)$/m)?.[1];
     assert.equal(nativeValue, expected, `native Number formatting should produce ${expected}`);
-    assert.equal(runtime.turn_string(value), expected, `generated JS should match native turn-string for ${source}`);
+    assert.equal(runtime.turn_string(value), expected, `generated JS should match native to-string for ${source}`);
   }
   const tag = core.to_tag("ready");
   const symbol = core.to_symbol("ready");
@@ -147,7 +146,6 @@ try {
     [0.0000001, "0.0000001"],
   ]) {
     assert.equal(core.to_string(value), expected, `generated JS to-string should convert ${String(value)}`);
-    assert.equal(core.turn_string(value), expected, `generated JS turn-string compatibility wrapper should convert ${String(value)}`);
   }
   const traitsOutput = join(output, "traits-js");
   execFileSync(binary, ["--emit-path", traitsOutput, "calcit/test-traits.cirru", "js"], { stdio: "pipe" });
@@ -169,15 +167,15 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-value (x) (to-string x)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (turn-string x) |42) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (to-string x) |42) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (turn-string x) |0) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (to-string x) |0) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-safe-limit (x) (if (&= (turn-string x) |9007199254740992) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-safe-limit (x) (if (&= (to-string x) |9007199254740992) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (turn-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (to-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-value (x) (turn-string x)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-value (x) (to-string x)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
   const wasmJsOutput = join(output, "wasm-js");
   execFileSync(binary, ["--emit-path", wasmJsOutput, wasmSnapshot, "js"], { stdio: "pipe" });

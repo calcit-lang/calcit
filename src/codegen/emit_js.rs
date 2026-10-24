@@ -732,6 +732,34 @@ fn to_js_code(
   }
 }
 
+/// A one-argument JS function that wraps its input in the lowered core `Result` variant.
+fn core_result_variant_fn(
+  ns: &str,
+  local_defs: &HashSet<Arc<str>>,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  variant: &str,
+) -> Result<String, String> {
+  let constructor = to_js_code_inline(
+    &Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+    ns,
+    local_defs,
+    file_imports,
+    tags,
+    None,
+  )?;
+  let result_enum = Calcit::Import(CalcitImport {
+    ns: calcit::CORE_NS.into(),
+    def: "Result".into(),
+    info: Arc::new(ImportInfo::Core { at_ns: Arc::from(ns) }),
+    def_id: None,
+  });
+  let result_enum = to_js_code_inline(&result_enum, ns, local_defs, file_imports, tags, None)?;
+  let tag = to_js_code_inline(&Calcit::tag(variant), ns, local_defs, file_imports, tags, None)?;
+  let value = js_gensym("value");
+  Ok(format!("(({value}) => {constructor}({result_enum}, {tag}, {value}))"))
+}
+
 fn to_js_code_inline(
   xs: &Calcit,
   ns: &str,
@@ -928,8 +956,8 @@ fn gen_call_code(
             let call_code = format!("{}parse_cirru_edn_as({text_code}, {graph_code})", get_proc_prefix(ns));
             let result_code = snippets::tmpl_result_try(
               &call_code,
-              &format!("{var_prefix}{}", escape_var("%ok")),
-              &format!("{var_prefix}{}", escape_var("%err")),
+              &core_result_variant_fn(ns, local_defs, file_imports, tags, "ok")?,
+              &core_result_variant_fn(ns, local_defs, file_imports, tags, "err")?,
             );
             Ok(wrap_call_with_prelude(
               String::new(),
@@ -972,8 +1000,8 @@ fn gen_call_code(
             let call_code = format!("{}decode_map_as({value_code}, {graph_code})", get_proc_prefix(ns));
             let result_code = snippets::tmpl_result_try(
               &call_code,
-              &format!("{var_prefix}{}", escape_var("%ok")),
-              &format!("{var_prefix}{}", escape_var("%err")),
+              &core_result_variant_fn(ns, local_defs, file_imports, tags, "ok")?,
+              &core_result_variant_fn(ns, local_defs, file_imports, tags, "err")?,
             );
             Ok(wrap_call_with_prelude(
               String::new(),

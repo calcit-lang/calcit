@@ -3569,11 +3569,11 @@ mod tests {
 
   #[test]
   fn rename_updates_definition_declaration_name() {
-    let code = list(vec![leaf("defatom"), leaf("*old"), list(vec![leaf("{}")])]);
+    let code = list(vec![leaf("defref"), leaf("*old"), list(vec![leaf("{}")])]);
     let (renamed, changed) = rename_definition_declaration(&code, "*old", "*next").expect("rename should work");
 
     assert!(changed);
-    assert_eq!(renamed, list(vec![leaf("defatom"), leaf("*next"), list(vec![leaf("{}")])]));
+    assert_eq!(renamed, list(vec![leaf("defref"), leaf("*next"), list(vec![leaf("{}")])]));
   }
 
   #[test]

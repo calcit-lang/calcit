@@ -11,7 +11,7 @@
     'test-types-inference.main $ %{} 'FileEntry
       :defs $ {}
         '*dynamic-ref $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *dynamic-ref (make-dynamic-value)
+          :code $ quote $ defref *dynamic-ref (make-dynamic-value)
           :examples $ []
           :schema $ :: 'Ref 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-atom-deref)
@@ -416,7 +416,7 @@
         'infer-match-raise $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-match-raise (enabled)
             let
-                parsed $ if enabled (%ok 1) (%err |missing)
+                parsed $ if enabled (Result :ok 1) (Result :err |missing)
                 value $ match parsed
                   (:ok n) (Option :some n)
                   (:err error) (raise error)
@@ -545,7 +545,7 @@
             :tags $ #{} :unit
         'infer-result-err-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-err-fallback ()
-            result:unwrap-or (%err 3) 7
+            result:unwrap-or (Result :err 3) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -554,7 +554,7 @@
             :tags $ #{} :unit
         'infer-result-err-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-err-predicate ()
-            result:err? $ %ok 1
+            result:err? $ Result :ok 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -563,7 +563,7 @@
             :tags $ #{} :unit
         'infer-result-ok-concrete $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-concrete ()
-            result:unwrap-or (%ok 9) 7
+            result:unwrap-or (Result :ok 9) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -572,7 +572,7 @@
             :tags $ #{} :unit
         'infer-result-ok-open $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-open (value)
-            result:unwrap-or (%ok value) 7
+            result:unwrap-or (Result :ok value) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
@@ -583,7 +583,7 @@
             :tags $ #{} :unit
         'infer-result-ok-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-predicate ()
-            result:ok? $ %ok 1
+            result:ok? $ Result :ok 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1528,8 +1528,8 @@
             let
                 parsed-ok $ parse-float |1.5
                 parsed-bad $ parse-float |oops
-              assert= (%ok 1.5) parsed-ok
-              assert= (%err |oops) parsed-bad
+              assert= (Result :ok 1.5) parsed-ok
+              assert= (Result :err |oops) parsed-bad
               assert-type parsed-ok $ :: 'Result 'Number 'String
               assert-type parsed-bad $ :: 'Result 'Number 'String
               &inspect-type parsed-ok

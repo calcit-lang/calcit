@@ -654,7 +654,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'reset-proof-count $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom reset-proof-count 0
+          :code $ quote $ defref reset-proof-count 0
           :examples $ []
           :schema $ :: 'Ref 'Number
         'set-optional-fields $ %{} 'CodeEntry

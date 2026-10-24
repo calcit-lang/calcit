@@ -583,7 +583,7 @@ impl EffectsGraphAnalyzer {
         {
           let mut scope = HashMap::new();
           match kind {
-            // `let[] (a b) value` / `let{} (a b) value`: names only, the value comes next.
+            // `let[] (a b) value`: names only, the value comes next.
             BindingForm::Destructure => {
               collect_bound_names(item, false, &mut scope);
             }
@@ -679,7 +679,7 @@ impl EffectsGraphAnalyzer {
     {
       let target = extract_state_target(list, name);
       record_state_operator(name, &target, list, current_ns, &mut out.state);
-      if matches!(name.as_str(), "defref" | "defatom" | "ref" | "reset!" | "swap!" | "deref" | "set!") {
+      if matches!(name.as_str(), "defref" | "ref" | "reset!" | "swap!" | "deref" | "set!") {
         return;
       }
     }
@@ -875,7 +875,7 @@ enum BindingForm {
   /// `&let (name value) ...`, `if-let (name value) ...`, `when-let (name value) ...`,
   /// `&doseq (name xs) ...`, `doseq (name xs) ...`
   Single,
-  /// `let[] (a b) value ...`, `let{} (a b) value ...`
+  /// `let[] (a b) value ...`
   Destructure,
   /// `let ((name value) ...) ...`, `loop ((name value) ...) ...`
   Many,
@@ -889,7 +889,7 @@ fn binding_form_kind(head: &Calcit) -> Option<BindingForm> {
   };
   match name.as_str() {
     "&let" | "if-let" | "when-let" | "&doseq" | "doseq" => Some(BindingForm::Single),
-    "let[]" | "let{}" => Some(BindingForm::Destructure),
+    "let[]" => Some(BindingForm::Destructure),
     "let" | "loop" => Some(BindingForm::Many),
     _ => None,
   }
@@ -1085,7 +1085,7 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defref" | "defatom" | "reset!" | "swap!" | "ref" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
+    "defref" | "reset!" | "swap!" | "ref" | "deref" | "add-watch!" | "remove-watch!" | "set!"
   )
 }
 
@@ -1097,9 +1097,9 @@ fn record_state_operator(
   state: &mut Vec<StateItem>,
 ) {
   let kind = match op_name {
-    "defref" | "defatom" | "ref" => "atom-def",
+    "defref" | "ref" => "atom-def",
     "reset!" | "swap!" => "atom-write",
-    "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
+    "add-watch!" | "remove-watch!" => "watch",
     "deref" => "atom-read",
     "set!" => "local-write",
     _ => "state",
@@ -1128,10 +1128,10 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     return op_name.to_string();
   };
   match op_name {
-    "swap!" | "reset!" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
+    "swap!" | "reset!" | "deref" | "add-watch!" | "remove-watch!" | "set!" => {
       list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
     }
-    "defref" | "defatom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
+    "defref" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
     // A local `(ref init)` has no name of its own; index 1 is the initializer.
     "ref" => "?".to_string(),
     _ => op_name.to_string(),
@@ -1139,11 +1139,11 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
 }
 
 /// Position of the initial value in a Ref constructor call:
-/// `(defref name init)` / `(defatom name init)` take it at index 2,
+/// `(defref name init)` takes it at index 2,
 /// local `(ref init)` at index 1.
 fn ref_constructor_init_index(op_name: &str) -> Option<usize> {
   match op_name {
-    "defref" | "defatom" => Some(2),
+    "defref" => Some(2),
     "ref" => Some(1),
     _ => None,
   }
@@ -1605,7 +1605,7 @@ fn schema_hint_for_atom_def(ns: &str, def: &str, context_ns: &str) -> Option<Str
   let mut raw_candidates: Vec<String> = vec![];
 
   if let Some(code) = lookup_def_code(ns, def)
-    && let Some(raw) = extract_defatom_init_from_code(&code, context_ns)
+    && let Some(raw) = extract_defref_init_from_code(&code, context_ns)
   {
     raw_candidates.push(raw);
   }
@@ -1644,7 +1644,7 @@ fn enrich_atom_def_state(ns: &str, def: &str, state: &mut Vec<StateItem>) {
   );
 }
 
-fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<String> {
+fn extract_defref_init_from_code(code: &Calcit, context_ns: &str) -> Option<String> {
   match code {
     Calcit::List(list) => {
       let head = list.first()?;
@@ -1656,7 +1656,7 @@ fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<Str
           .map(|raw| finalize_schema_hint(&raw, context_ns));
       }
       for item in list.iter() {
-        if let Some(hint) = extract_defatom_init_from_code(item, context_ns) {
+        if let Some(hint) = extract_defref_init_from_code(item, context_ns) {
           return Some(hint);
         }
       }
@@ -1664,7 +1664,7 @@ fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<Str
     }
     Calcit::Fn { info, .. } => {
       for expr in info.body.iter() {
-        if let Some(hint) = extract_defatom_init_from_code(expr, context_ns) {
+        if let Some(hint) = extract_defref_init_from_code(expr, context_ns) {
           return Some(hint);
         }
       }
@@ -1672,13 +1672,13 @@ fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<Str
     }
     Calcit::Macro { info, .. } => {
       for expr in info.body.iter() {
-        if let Some(hint) = extract_defatom_init_from_code(expr, context_ns) {
+        if let Some(hint) = extract_defref_init_from_code(expr, context_ns) {
           return Some(hint);
         }
       }
       None
     }
-    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => extract_defatom_init_from_code(code, context_ns),
+    Calcit::Thunk(crate::calcit::CalcitThunk::Code { code, .. }) => extract_defref_init_from_code(code, context_ns),
     _ => None,
   }
 }
@@ -1864,7 +1864,7 @@ pub fn analyze_effects_graph(
 fn is_meaningful_call_target(ns: &str, def: &str, include_core: bool) -> bool {
   if matches!(
     def,
-    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defref" | "defatom" | "reset!" | "swap!" | "deref" | "ref"
+    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defref" | "reset!" | "swap!" | "deref" | "ref"
   ) {
     return false;
   }
@@ -2741,7 +2741,7 @@ mod tests {
     assert_eq!(core_kinds(&index, "read-file"), strings(&["io/file"]));
     // `&read-file` has no Snapshot entry; its tags come from the hidden proc table.
     assert_eq!(core_kinds(&index, "&read-file"), strings(&["io/file"]));
-    for name in ["remove-watch", "add-watch!", "remove-watch!"] {
+    for name in ["add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
       assert_eq!(core_kinds(&index, name), strings(&["state/watch"]), "{name}");
     }
@@ -2867,7 +2867,7 @@ mod tests {
     assert_eq!(effects["load-config"], vec![]);
     assert_eq!(effects["setup!"], vec![]);
     // Unmarked writes are found through core tags.
-    assert_eq!(effects["watch-helper"], pair("state/watch", "remove-watch"));
+    assert_eq!(effects["watch-helper"], pair("state/watch", "remove-watch!"));
     assert_eq!(effects["cancel-helper"], pair("effect", ".cancel!"));
     assert_eq!(effects["write-helper"], pair("io/file", ".write-text!"));
     // Calling a parameter calls a function value supplied by the caller.
@@ -2931,11 +2931,7 @@ mod tests {
 
   #[test]
   fn ref_constructors_read_initializer_at_their_own_position() {
-    for (head, args, name) in [
-      ("ref", vec!["1"], "?"),
-      ("defref", vec!["*counter", "1"], "*counter"),
-      ("defatom", vec!["*counter", "1"], "*counter"),
-    ] {
+    for (head, args, name) in [("ref", vec!["1"], "?"), ("defref", vec!["*counter", "1"], "*counter")] {
       let code = parse_ref_call(head, &args);
       let Calcit::List(list) = &code else {
         panic!("expected list for {head}");
@@ -2948,7 +2944,7 @@ mod tests {
       assert_eq!(state[0].kind, "atom-def");
       assert_eq!(state[0].type_hint.as_deref(), Some(":number  init=1"), "state hint for {head}");
       assert_eq!(
-        extract_defatom_init_from_code(&code, "app.main").as_deref(),
+        extract_defref_init_from_code(&code, "app.main").as_deref(),
         Some(":number  init=1"),
         "schema hint for {head}"
       );

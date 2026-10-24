@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         '*fix-person-calls $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *fix-person-calls 0
+          :code $ quote $ defref *fix-person-calls 0
           :examples $ []
           :schema $ :: 'Dynamic
         'FixPerson $ %{} 'CodeEntry (:doc |)

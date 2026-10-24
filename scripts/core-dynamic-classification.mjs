@@ -266,7 +266,7 @@ const compilerSpecializedPositions = new Map([
 const reviewedCompatibilityPositions = new Map([
   [
     "&turn-string|schema.args.0",
-    "内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外兼容函数 turn-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。",
+    "内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外的 to-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。",
   ],
   [
     "map-kv|schema.return",

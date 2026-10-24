@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         '*path-effects $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *path-effects 0
+          :code $ quote $ defref *path-effects 0
           :examples $ []
           :schema $ :: 'Ref 'Number
         'BenchUser $ %{} 'CodeEntry (:doc |)

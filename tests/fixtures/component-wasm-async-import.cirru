@@ -88,7 +88,7 @@
               :code $ quote $ match (number->uint64 9)
                 (:ok observed)
                   match
-                    %err $ HttpError :response-too-large observed
+                    Result :err $ HttpError :response-too-large observed
                     (:err error)
                       match error
                         (:response-too-large actual) (assert= observed actual)
@@ -98,7 +98,7 @@
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |keeps-http-capability-error-shape)
               :code $ quote $ match
-                %err $ HttpError :capability-denied "|origin is not granted"
+                Result :err $ HttpError :capability-denied "|origin is not granted"
                 (:err error)
                   match error
                     (:capability-denied message) (assert= "|origin is not granted" message)
@@ -107,7 +107,7 @@
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |keeps-http-invalid-request-shape)
               :code $ quote $ match
-                %err $ HttpError :invalid-request "|invalid request URL"
+                Result :err $ HttpError :invalid-request "|invalid request URL"
                 (:err error)
                   match error
                     (:invalid-request message) (assert= "|invalid request URL" message)
@@ -121,7 +121,7 @@
             :args $ [] 'String
             :return $ :: 'Result 'String 'String
           :tests $ [] $ %{} 'TestEntry (:name |keeps-async-result-contract)
-            :code $ quote $ assert= (%ok |ready) (%ok |ready)
+            :code $ quote $ assert= (Result :ok |ready) (Result :ok |ready)
             :tags $ #{} :wasm
         'host-combine $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-combine (left right item-count enabled?) |host |combine

@@ -322,7 +322,7 @@ fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing()
       "--input-format",
       "cirru",
       "--code",
-      "quote $ defatom *cache ({} (:secret 99))"
+      "quote $ defref *cache ({} (:secret 99))"
     ],
     [
       "edit",
@@ -439,7 +439,7 @@ fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing()
     ]),
     "defs signatures",
   );
-  assert_eq!(signatures["data"]["definitions"][0]["signature"], "(untyped) defatom *cache");
+  assert_eq!(signatures["data"]["definitions"][0]["signature"], "(untyped) defref *cache");
   assert_eq!(signatures["data"]["definitions"][1]["signature"], "(untyped) defn has-value? $ x");
   assert!(
     signatures["data"]["definitions"][2]["signature"]

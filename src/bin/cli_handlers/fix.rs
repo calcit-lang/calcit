@@ -32,16 +32,12 @@ const NAMED_ENUM_CONSTRUCTOR_RULE: &str = "named-enum-constructor-v1";
 const NAMED_ENUM_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_ENUM_CONSTRUCTOR";
 const NAMED_STRUCT_CONSTRUCTOR_RULE: &str = "named-struct-constructor-v1";
 const NAMED_STRUCT_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_NAMED_STRUCT_CONSTRUCTOR";
-const CORE_NOMINAL_CONSTRUCTOR_RULE: &str = "core-nominal-constructor-v1";
-const CORE_NOMINAL_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_CORE_NOMINAL_CONSTRUCTOR";
 const CORE_OPTION_METHOD_RULE: &str = "core-option-method-v1";
 const CORE_OPTION_METHOD_DIAGNOSTIC: &str = "FIX_CORE_OPTION_METHOD";
 const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
 const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
 const CORE_IDENTITY_CONVERSION_DIAGNOSTIC: &str = "FIX_CORE_IDENTITY_CONVERSION";
-const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
-const CORE_REF_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_CORE_REF_CONSTRUCTOR";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const RENAME_LOCAL_RULE: &str = "rename-local-v1";
@@ -90,9 +86,9 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
 const CORE_API_028_V1_RULES: [&str; 1] = [CORE_IDENTITY_CONVERSION_RULE];
-// The 0.29 preset keeps every 0.28 rule this CLI still ships and adds the Ref
-// constructor rename, so `core-api-0.28-v1` keeps its published meaning.
-const CORE_API_029_V1_RULES: [&str; 2] = [CORE_IDENTITY_CONVERSION_RULE, CORE_REF_CONSTRUCTOR_RULE];
+// The 0.29 preset keeps every 0.28 rule this CLI still ships; its Ref constructor
+// rename was retired with `defatom` in 0.31.0.
+const CORE_API_029_V1_RULES: [&str; 1] = [CORE_IDENTITY_CONVERSION_RULE];
 // Alias rules whose old names were removed in 0.29.0; only 0.28.x CLIs ship them.
 const RETIRED_CORE_API_028_RULES: [&str; 10] = [
   "core-list-intersperse-v1",
@@ -107,7 +103,12 @@ const RETIRED_CORE_API_028_RULES: [&str; 10] = [
   "core-non-nil-predicate-v1",
 ];
 // Rules whose old names were removed in 0.31.0; only 0.30.x CLIs ship them.
-const RETIRED_CORE_API_030_RULES: [&str; 2] = ["case-default-to-match-v1", "core-function-alias-v1"];
+const RETIRED_CORE_API_030_RULES: [&str; 4] = [
+  "case-default-to-match-v1",
+  "core-function-alias-v1",
+  "core-nominal-constructor-v1",
+  "core-ref-constructor-v1",
+];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
 
@@ -491,10 +492,8 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_predicate_rename = selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
-  let migration_rule =
-    semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
+  let migration_rule = semantic_refactor || schema_synthesis || optional_parameters || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
   let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || optional_parameters {
     select_project_definitions(compiled_snapshot, project_namespaces)?
@@ -672,13 +671,6 @@ pub(crate) fn handle_fix_command(
   } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
-  if selected_rules.contains(&CORE_NOMINAL_CONSTRUCTOR_RULE) {
-    suggestions.extend(plan_core_nominal_constructor_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
   if selected_rules.contains(&CORE_OPTION_METHOD_RULE) {
     suggestions.extend(plan_core_nominal_method_fixes(
       &source_snapshot,
@@ -697,13 +689,6 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
     suggestions.extend(plan_core_identity_conversion_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
-  if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
-    suggestions.extend(plan_core_ref_constructor_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -1216,11 +1201,9 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | SINGLE_EXPRESSION_DO_RULE
         | NAMED_ENUM_CONSTRUCTOR_RULE
         | NAMED_STRUCT_CONSTRUCTOR_RULE
-        | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_IDENTITY_CONVERSION_RULE
-        | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
         | RENAME_LOCAL_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
@@ -1239,7 +1222,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1283,11 +1266,9 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CALLABLE_CONTRACT_PROOF_RULE
         | NOMINAL_WRITE_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
-        | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_IDENTITY_CONVERSION_RULE
-        | CORE_REF_CONSTRUCTOR_RULE
         | CORE_ABSENCE_RULE
     ) {
       return vec![match rule {
@@ -1301,11 +1282,9 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CONCRETE_RETURN_PROOF_RULE => CONCRETE_RETURN_PROOF_RULE,
         CALLABLE_CONTRACT_PROOF_RULE => CALLABLE_CONTRACT_PROOF_RULE,
         NOMINAL_WRITE_PROOF_RULE => NOMINAL_WRITE_PROOF_RULE,
-        CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
-        CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
@@ -1394,13 +1373,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       lifecycle: "current-semantics",
       source_version_required: false,
     },
-    CORE_NOMINAL_CONSTRUCTOR_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_NOMINAL_CONSTRUCTOR_DIAGNOSTIC,
-      evidence_source: "compiler-resolved-reference",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
     CORE_OPTION_METHOD_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_OPTION_METHOD_DIAGNOSTIC,
@@ -1419,13 +1391,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
       evidence_source: "reader-resolved-builtin-proc-and-proven-conversion-argument",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_REF_CONSTRUCTOR_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
-      evidence_source: "unshadowed-core-syntax",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3181,30 +3146,6 @@ fn plan_removed_data_api_source(
   Ok(suggestions.into_values().collect())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CoreNominalConstructor {
-  nominal: &'static str,
-  variant: &'static str,
-  arity: usize,
-}
-
-fn core_nominal_constructor(name: &str) -> Option<CoreNominalConstructor> {
-  let definition = name.rsplit_once('/').map_or(name, |(_, definition)| definition);
-  match definition {
-    "%ok" => Some(CoreNominalConstructor {
-      nominal: "Result",
-      variant: ":ok",
-      arity: 1,
-    }),
-    "%err" => Some(CoreNominalConstructor {
-      nominal: "Result",
-      variant: ":err",
-      arity: 1,
-    }),
-    _ => None,
-  }
-}
-
 fn core_nominal_type_is_unshadowed(snapshot: &Snapshot, namespace: &str, nominal: &str, bindings: &HashSet<String>) -> bool {
   let has_local_definition = snapshot.files.get(namespace).is_some_and(|file| file.defs.contains_key(nominal));
   let has_import = program::PROGRAM_CODE_DATA
@@ -3219,215 +3160,6 @@ fn preserves_constructor_argument_through_macro(origin: &str) -> bool {
   // Core bodies and validated Struct fields preserve one evaluation of each
   // payload; none consumes nested call heads as data.
   matches!(origin, "calcit.core/let" | "calcit.core/cond" | "calcit.core/%{}")
-}
-
-fn rewrite_core_nominal_constructor_tree(
-  node: &Cirru,
-  path: &mut Vec<usize>,
-  selected: &BTreeMap<Vec<usize>, (CoreNominalConstructor, String)>,
-) -> Cirru {
-  let Cirru::List(items) = node else {
-    return node.clone();
-  };
-  let rewritten = items
-    .iter()
-    .enumerate()
-    .map(|(index, item)| {
-      path.push(index);
-      let rewritten = rewrite_core_nominal_constructor_tree(item, path, selected);
-      path.pop();
-      rewritten
-    })
-    .collect::<Vec<_>>();
-  if let Some((constructor, nominal)) = selected.get(path) {
-    let mut direct = Vec::with_capacity(rewritten.len() + 1);
-    direct.push(Cirru::leaf(nominal.as_str()));
-    direct.push(Cirru::leaf(constructor.variant));
-    direct.extend(rewritten.into_iter().skip(1));
-    Cirru::List(direct)
-  } else {
-    Cirru::List(rewritten)
-  }
-}
-
-/// Detect source-level legacy constructors before attempting compiler-resolved rewrites.
-fn contains_core_nominal_constructor_candidate(node: &Cirru) -> bool {
-  match node {
-    Cirru::Leaf(name) => core_nominal_constructor(name.as_ref()).is_some(),
-    Cirru::List(items) => items.iter().any(contains_core_nominal_constructor_candidate),
-  }
-}
-
-/// Plan direct nominal construction only from compiler-resolved core helper calls.
-fn plan_core_nominal_constructor_fixes(
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  selected_definitions: &[(String, String)],
-) -> Result<Vec<FixSuggestion>, String> {
-  let mut suggestions = Vec::new();
-  for (namespace, definition) in selected_definitions {
-    let entry = snapshot
-      .files
-      .get(namespace)
-      .and_then(|file| file.defs.get(definition))
-      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    suggestions.extend(plan_core_nominal_constructor_source(
-      snapshot,
-      snapshot_file,
-      namespace,
-      definition,
-      &entry.code,
-    )?);
-  }
-  Ok(suggestions)
-}
-
-/// Share resolved constructor calls, arity and shadowing proof with attached executable source.
-fn plan_core_nominal_constructor_source(
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  namespace: &str,
-  definition: &str,
-  source: &Cirru,
-) -> Result<Vec<FixSuggestion>, String> {
-  let mut suggestions = Vec::new();
-  if list_head(source) == Some("defmacro") || !contains_core_nominal_constructor_candidate(source) {
-    return Ok(suggestions);
-  }
-  let mut bindings = HashSet::new();
-  collect_potential_local_bindings(source, &mut bindings);
-  let mut safe_calls = BTreeMap::<Vec<usize>, (CoreNominalConstructor, String)>::new();
-  let mut review_calls = BTreeMap::<Vec<usize>, String>::new();
-  let warnings = RefCell::new(Vec::new());
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
-  let usages = runner::preprocess::trace_source_usages(&parsed, namespace, definition, &warnings, &CallStackList::default())
-    .map_err(|failure| failure.msg)?;
-  for usage in usages {
-    if usage.target_ns.as_ref() != "calcit.core" {
-      continue;
-    }
-    let Some(constructor) = core_nominal_constructor(usage.target_def.as_ref()) else {
-      continue;
-    };
-    let Some(location) = usage.location else {
-      continue;
-    };
-    if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
-      continue;
-    }
-    let leaf_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-    if leaf_path.last() != Some(&0) {
-      let node = navigate_to_path(source, &leaf_path)?;
-      if matches!(&node, Cirru::Leaf(name) if core_nominal_constructor(name.as_ref()) == Some(constructor)) {
-        review_calls.insert(
-          leaf_path,
-          "The helper is referenced as a value rather than called with proven arity; review this use manually.".to_owned(),
-        );
-      }
-      continue;
-    }
-    let Some((&0, call_path)) = leaf_path.split_last() else {
-      continue;
-    };
-    let source_leaf = navigate_to_path(source, &leaf_path)?;
-    let Cirru::Leaf(source_name) = source_leaf else {
-      continue;
-    };
-    if core_nominal_constructor(source_name.as_ref()) != Some(constructor) {
-      continue;
-    }
-    let call = navigate_to_path(source, call_path)?;
-    let Cirru::List(items) = call else {
-      continue;
-    };
-    if !usage
-      .macro_origin
-      .iter()
-      .all(|origin| preserves_nominal_method_call_through_macro(origin))
-    {
-      review_calls.insert(
-        call_path.to_vec(),
-        format!(
-          "The reference crosses macro expansion {}; review the source call manually.",
-          usage.macro_origin.join(" -> ")
-        ),
-      );
-    } else if items.len() != constructor.arity + 1 {
-      review_calls.insert(
-        call_path.to_vec(),
-        format!(
-          "The helper call does not have exactly {} payload argument(s); review the source call manually.",
-          constructor.arity
-        ),
-      );
-    } else if !core_nominal_type_is_unshadowed(snapshot, namespace, constructor.nominal, &bindings) {
-      review_calls.insert(
-        call_path.to_vec(),
-        format!(
-          "The nominal name `{}` is shadowed in this definition; review a qualified constructor call manually.",
-          constructor.nominal
-        ),
-      );
-    } else {
-      safe_calls.insert(call_path.to_vec(), (constructor, constructor.nominal.to_owned()));
-    }
-  }
-  for (path, message) in review_calls {
-    safe_calls.remove(&path);
-    let node = navigate_to_path(source, &path)?;
-    suggestions.push(FixSuggestion {
-      rule_id: CORE_NOMINAL_CONSTRUCTOR_RULE,
-      diagnostic_code: CORE_NOMINAL_CONSTRUCTOR_DIAGNOSTIC,
-      semantic_layer: "surface",
-      source_file: snapshot_file.to_owned(),
-      definition: format!("{namespace}/{definition}"),
-      path: format!("code{}", format_path(&path)),
-      fingerprint: node_fingerprint(&node),
-      origin_chain: vec![],
-      original: quoted_json(&node),
-      replacement: None,
-      applicability: "requires-review",
-      message,
-      target_path: path,
-      operation: None,
-    });
-  }
-  let mut outermost = Vec::<Vec<usize>>::new();
-  for path in safe_calls.keys() {
-    if !safe_calls.keys().any(|other| other.len() < path.len() && path.starts_with(other)) {
-      outermost.push(path.clone());
-    }
-  }
-  for path in outermost {
-    let original = navigate_to_path(source, &path)?;
-    let replacement = rewrite_core_nominal_constructor_tree(&original, &mut path.clone(), &safe_calls);
-    let original_code = original
-      .format_one_liner()
-      .map_err(|error| format!("Failed to format constructor source at {namespace}/{definition}: {error}"))?;
-    let replacement_code = replacement
-      .format_one_liner()
-      .map_err(|error| format!("Failed to format constructor replacement at {namespace}/{definition}: {error}"))?;
-    suggestions.push(FixSuggestion {
-        rule_id: CORE_NOMINAL_CONSTRUCTOR_RULE,
-        diagnostic_code: CORE_NOMINAL_CONSTRUCTOR_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&path)),
-        fingerprint: node_fingerprint(&original),
-        origin_chain: vec![serde_json::json!({"kind":"compiler-resolved-core-constructor","calls":safe_calls.keys().filter(|candidate| candidate.starts_with(&path)).count()})],
-        original: quoted_json(&original),
-        replacement: Some(quoted_json(&replacement)),
-        applicability: "machine-applicable",
-        message: "Call the nominal Option/Result constructor directly; each payload remains in its original position and is evaluated once.".to_owned(),
-        target_path: path,
-        operation: Some(FixOperation::ReplaceNode {
-          original: original_code,
-          replacement: replacement_code,
-        }),
-      });
-  }
-  Ok(suggestions)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3604,7 +3336,7 @@ fn plan_core_nominal_method_source(
       usage.target_ns.as_ref() == "calcit.core"
         && match kind {
           CoreNominalMethodKind::Option => usage.target_def.as_ref() == "Option",
-          CoreNominalMethodKind::Result => matches!(usage.target_def.as_ref(), "%err" | "Result"),
+          CoreNominalMethodKind::Result => usage.target_def.as_ref() == "Result",
         }
     })
     .filter_map(|usage| usage.location.as_ref())
@@ -3733,8 +3465,7 @@ fn plan_core_nominal_method_source(
               matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant)]
                 if matches!(name.as_ref(), "Option" | "calcit.core/Option") && variant.as_ref() == ":none"),
             CoreNominalMethodKind::Result =>
-              matches!(parts.as_slice(), [Cirru::Leaf(name), _] if matches!(name.as_ref(), "%err" | "calcit.core/%err"))
-                || matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
+              matches!(parts.as_slice(), [Cirru::Leaf(name), Cirru::Leaf(variant), _]
                   if matches!(name.as_ref(), "Result" | "calcit.core/Result") && variant.as_ref() == ":err"),
           })
           && {
@@ -3875,11 +3606,9 @@ fn supports_attached_migrations(rule: &str) -> bool {
   matches!(
     rule,
     REMOVED_DATA_API_RULE
-      | CORE_NOMINAL_CONSTRUCTOR_RULE
       | CORE_OPTION_METHOD_RULE
       | CORE_RESULT_METHOD_RULE
       | CORE_IDENTITY_CONVERSION_RULE
-      | CORE_REF_CONSTRUCTOR_RULE
       | CORE_ABSENCE_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
@@ -3980,12 +3709,6 @@ fn plan_attached_fixes(
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
           }
-          if selected_rules.contains(&CORE_NOMINAL_CONSTRUCTOR_RULE) {
-            match plan_core_nominal_constructor_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
           for kind in [CoreNominalMethodKind::Option, CoreNominalMethodKind::Result] {
             if !selected_rules.contains(&kind.rule_id()) {
               continue;
@@ -4000,15 +3723,6 @@ fn plan_attached_fixes(
               Ok(planned) => candidates.extend(planned),
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
-          }
-          if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
-            candidates.extend(plan_core_ref_constructor_source(
-              snapshot,
-              snapshot_file,
-              namespace,
-              &synthetic_def,
-              &wrapper,
-            ));
           }
           if selected_rules.contains(&CORE_ABSENCE_RULE) {
             match absence::plan_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
@@ -4107,132 +3821,6 @@ fn plan_attached_fixes(
   Ok(suggestions)
 }
 
-/// Plan `defatom` -> `defref` in definition code.
-fn plan_core_ref_constructor_fixes(
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  selected_definitions: &[(String, String)],
-) -> Result<Vec<FixSuggestion>, String> {
-  let mut suggestions = Vec::new();
-  for (namespace, definition) in selected_definitions {
-    let entry = snapshot
-      .files
-      .get(namespace)
-      .and_then(|file| file.defs.get(definition))
-      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    suggestions.extend(plan_core_ref_constructor_source(
-      snapshot,
-      snapshot_file,
-      namespace,
-      definition,
-      &entry.code,
-    ));
-  }
-  Ok(suggestions)
-}
-
-/// `defatom` is core syntax resolved by name, so it is renamed only as a call
-/// head that no namespace definition, import, local binding, macro template or
-/// unknown macro context can observe; other occurrences require review. The
-/// local `atom` constructor was removed in 0.31.0 and is no longer rewritten:
-/// the reader no longer resolves it, so a remaining `atom` leaf has no proof of
-/// meaning the removed built-in.
-fn plan_core_ref_constructor_source(
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  namespace: &str,
-  definition: &str,
-  source: &Cirru,
-) -> Vec<FixSuggestion> {
-  let mut occurrences = Vec::new();
-  collect_ref_constructor_leaves(source, &mut Vec::new(), false, &mut occurrences);
-  if occurrences.is_empty() {
-    return Vec::new();
-  }
-  let mut local_bindings = HashSet::new();
-  collect_potential_local_bindings(source, &mut local_bindings);
-  let shadowed = |name: &str| local_bindings.contains(name) || namespace_binds_name(snapshot, namespace, name);
-  occurrences
-    .into_iter()
-    .map(|(target_path, in_template)| {
-      let old_name = "defatom";
-      let new_name = "defref";
-      let review = if target_path.last() != Some(&0) {
-        Some("`defatom` is not a call head here; review whether this leaf is meant as core syntax.".to_owned())
-      } else if let Some(name) = ["defatom", "defref"].into_iter().find(|name| shadowed(name)) {
-        Some(format!(
-          "`{name}` is bound by a local, a namespace definition or an import in `{namespace}`; review which definition the call resolves to."
-        ))
-      } else if in_template {
-        Some("`defatom` is inside a quasiquote template and resolves at each expansion site; review the macro users.".to_owned())
-      } else if !ref_definition_context_is_stable(source, &target_path) {
-        Some("`defatom` is an argument of an unknown macro that may observe its spelling; review before renaming.".to_owned())
-      } else {
-        None
-      };
-      let original_node = Cirru::leaf(old_name);
-      let replacement_node = Cirru::leaf(new_name);
-      let machine_applicable = review.is_none();
-      FixSuggestion {
-        rule_id: CORE_REF_CONSTRUCTOR_RULE,
-        diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&target_path)),
-        fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![serde_json::json!({
-          "kind": "unshadowed-core-syntax",
-          "target": format!("calcit.core/{old_name}"),
-          "replacement": format!("calcit.core/{new_name}"),
-        })],
-        original: quoted_json(&original_node),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message: review.unwrap_or_else(|| {
-          format!(
-            "Use the preferred Ref definition `{new_name}`; `{old_name}` is the same built-in implementation, so evaluation and Ref identity are unchanged."
-          )
-        }),
-        target_path,
-        operation: machine_applicable.then(|| FixOperation::ReplaceLeaf {
-          original: old_name.to_owned(),
-          replacement: new_name.to_owned(),
-        }),
-      }
-    })
-    .collect()
-}
-
-/// Collect `defatom` leaves outside quoted data and comments, marking leaves
-/// that sit in a quasiquote template outside any unquote.
-fn collect_ref_constructor_leaves(node: &Cirru, path: &mut Vec<usize>, in_template: bool, output: &mut Vec<(Vec<usize>, bool)>) {
-  match node {
-    Cirru::Leaf(leaf) => {
-      if leaf.as_ref() == "defatom" {
-        output.push((path.clone(), in_template));
-      }
-    }
-    Cirru::List(items) => {
-      let in_template = match items.first().and_then(leaf_value) {
-        Some("quote" | "cirru-quote" | ";") => return,
-        Some("quasiquote") => true,
-        Some("~" | "~@") => false,
-        _ => in_template,
-      };
-      for (index, child) in items.iter().enumerate() {
-        path.push(index);
-        collect_ref_constructor_leaves(child, path, in_template, output);
-        path.pop();
-      }
-    }
-  }
-}
-
 /// Whether `name` is defined in, or imported into, the namespace. An unreadable
 /// ns form counts as bound so that the caller asks for review.
 fn namespace_binds_name(snapshot: &Snapshot, namespace: &str, name: &str) -> bool {
@@ -4243,26 +3831,6 @@ fn namespace_binds_name(snapshot: &Snapshot, namespace: &str, name: &str) -> boo
     || program::extract_import_map(&file.ns.code, namespace).map_or(true, |imports| imports.contains_key(name))
 }
 
-/// Every enclosing form of the call must be a known binding/control form or a
-/// built-in proc call, so no user macro receives the syntax spelling.
-fn ref_definition_context_is_stable(code: &Cirru, head_path: &[usize]) -> bool {
-  let call_path = &head_path[..head_path.len().saturating_sub(1)];
-  (0..call_path.len()).all(|depth| {
-    let Ok(Cirru::List(items)) = navigate_to_path(code, &call_path[..depth]) else {
-      return false;
-    };
-    match items.first() {
-      Some(Cirru::Leaf(head)) => {
-        matches!(
-          head.as_ref(),
-          "defn" | "defwasm-export" | "fn" | "let" | "&let" | "do" | "if" | "when" | "when-not" | "cond"
-        ) || head.as_ref().parse::<CalcitProc>().is_ok()
-      }
-      _ => false,
-    }
-  })
-}
-
 /// Collect complete built-in conversion calls without entering quoted source.
 fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>) {
   let Cirru::List(items) = node else {
@@ -4271,9 +3839,7 @@ fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls:
   if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
     return;
   }
-  if items.len() == 2
-    && matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "turn-symbol" | "turn-tag" | "turn-string"))
-  {
+  if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "turn-symbol" | "turn-tag")) {
     let mut head_path = path.clone();
     head_path.push(0);
     let mut argument_path = path.clone();
@@ -4356,7 +3922,6 @@ fn plan_core_identity_conversion_source(
     let expected_proc = match old_name.as_ref() {
       "turn-symbol" => CalcitProc::TurnSymbol,
       "turn-tag" => CalcitProc::TurnTag,
-      "turn-string" => CalcitProc::TurnString,
       _ => continue,
     };
     let parsed_head = code_to_calcit(
@@ -4369,18 +3934,7 @@ fn plan_core_identity_conversion_source(
         .collect::<Result<Vec<_>, _>>()?,
     )
     .map_err(|error| error.to_string())?;
-    let resolved_core_wrapper = old_name.as_ref() == "turn-string"
-      && matches!(parsed_head, Calcit::Symbol { .. })
-      && usages.iter().any(|usage| {
-        usage.target_ns.as_ref() == calcit::calcit::CORE_NS
-          && usage.target_def.as_ref() == "turn-string"
-          && usage.location.as_ref().is_some_and(|location| {
-            location.ns.as_ref() == namespace
-              && location.def.as_ref() == definition
-              && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
-          })
-      });
-    if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) && !resolved_core_wrapper {
+    if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) {
       continue;
     }
     let argument = navigate_to_path(source, &argument_path)?;
@@ -4431,24 +3985,9 @@ fn plan_core_identity_conversion_source(
     let resolved = inferred
       .as_ref()
       .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-    let proven_builtin_scalar = resolved.as_ref().is_some_and(|annotation| {
-      matches!(
-        annotation.as_ref(),
-        CalcitTypeAnnotation::Nil
-          | CalcitTypeAnnotation::Bool
-          | CalcitTypeAnnotation::Number
-          | CalcitTypeAnnotation::String
-          | CalcitTypeAnnotation::Tag
-          | CalcitTypeAnnotation::Symbol
-      )
-    });
-    let proven_argument = if expected_proc == CalcitProc::TurnString {
-      proven_builtin_scalar
-    } else {
-      resolved
-        .as_ref()
-        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String))
-    };
+    let proven_argument = resolved
+      .as_ref()
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
     if resolved.as_ref().is_some_and(|annotation| {
       !proven_argument
         && !matches!(
@@ -4482,7 +4021,6 @@ fn plan_core_identity_conversion_source(
     let new_name = match expected_proc {
       CalcitProc::TurnTag => "to-tag",
       CalcitProc::TurnSymbol => "to-symbol",
-      CalcitProc::TurnString => "to-string",
       _ => unreachable!("only supported conversions are collected"),
     };
     let replacement = format!("calcit.core/{new_name}");

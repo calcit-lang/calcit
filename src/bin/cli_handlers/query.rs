@@ -1159,7 +1159,7 @@ mod type_query_tests {
     };
     assert_eq!(signature("defn helper (x y) (+ x y)"), "(untyped) defn helper $ x y");
     assert_eq!(signature("defcomp comp-item (item) (div)"), "(untyped) defcomp comp-item $ item");
-    assert_eq!(signature("defatom *store ({} (:count 0))"), "(untyped) defatom *store");
+    assert_eq!(signature("defref *store ({} (:count 0))"), "(untyped) defref *store");
     assert_eq!(signature("def config ([] 1 2)"), "(untyped) def config");
   }
 
@@ -4619,7 +4619,7 @@ fn definition_signature(entry: &snapshot::CodeEntry) -> String {
     return "(untyped)".to_owned();
   };
   // Keep the parameter list of function-like declarations; values such as a
-  // `defatom` initializer stay out of the overview.
+  // `defref` initializer stay out of the overview.
   let takes_params = items
     .first()
     .is_some_and(|head| ["defn", "defmacro", "defcomp", "defeffect"].iter().any(|name| head.eq_leaf(name)));
