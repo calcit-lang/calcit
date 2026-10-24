@@ -1552,6 +1552,8 @@ mod type_query_tests {
 
   #[test]
   fn enum_method_query_preserves_nominal_contract_and_distinct_callable_evidence() {
+    use calcit::calcit::{CalcitImpl, CalcitStructDef, CalcitTrait};
+
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
     prepare_program_for_type_query_on_cli_stack(snapshot);
@@ -1571,6 +1573,29 @@ mod type_query_tests {
     assert!(contains.arg_types.is_none() && contains.return_type.is_none());
     let (_, first) = methods.iter().find(|(method, _)| method.name == ".first").unwrap();
     assert_eq!(first.status, "open", "an open Enum payload must stay open");
+
+    // A real core bridge must not authorize a user nominal contract, even when
+    // its implementation is the same proc. Keep that contract's obligations.
+    let user_trait = Arc::new(
+      CalcitTrait::new(
+        EdnTag::new("UserAssoc"),
+        vec![EdnTag::new("assoc")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("app.user", "UserAssoc"),
+    );
+    let mut user = CalcitStructDef::from_fields(EdnTag::new("User"), vec![]);
+    user.impls = vec![Arc::new(CalcitImpl {
+      name: EdnTag::new("UserAssocImpl"),
+      origin: Some(user_trait),
+      fields: Arc::new(vec![EdnTag::new("assoc")]),
+      values: Arc::new(vec![Calcit::Proc(CalcitProc::NativeStructAssoc)]),
+    })];
+    let contract = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::StructValue(Arc::new(user)), ".assoc");
+    assert_eq!(
+      contract.status, "ambiguous",
+      "a user nominal impl must not merge with a core bridge"
+    );
   }
 
   #[test]
