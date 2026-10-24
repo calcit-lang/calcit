@@ -3690,6 +3690,7 @@ fn plan_core_nominal_method_source(
             .and_then(|compiled| {
               super::query::find_preprocessed_node_at_path(
                 &compiled.preprocessed_code,
+                source,
                 namespace,
                 definition,
                 &receiver_path,
@@ -3704,6 +3705,7 @@ fn plan_core_nominal_method_source(
           }
           super::query::find_preprocessed_node_at_path(
             &preprocessed,
+            source,
             namespace,
             definition,
             &receiver_path,
@@ -4399,6 +4401,7 @@ fn plan_core_identity_conversion_source(
       .and_then(|compiled| {
         super::query::find_preprocessed_node_at_path(
           &compiled.preprocessed_code,
+          source,
           namespace,
           definition,
           &argument_path,
@@ -4412,6 +4415,7 @@ fn plan_core_identity_conversion_source(
         }
         super::query::find_preprocessed_node_at_path(
           &preprocessed,
+          source,
           namespace,
           definition,
           &argument_path,

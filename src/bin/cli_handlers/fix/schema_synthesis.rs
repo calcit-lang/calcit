@@ -384,6 +384,7 @@ fn merge_callsite_argument_evidence(
               )?;
               let processed_argument = super::super::query::find_preprocessed_node_at_path(
                 &compiled.preprocessed_code,
+                &source_entry.code,
                 owner_ns,
                 owner_def,
                 &argument_path,

@@ -292,6 +292,7 @@ fn inferred(
       let node = navigate_to_path(source, path).ok()?;
       super::super::query::find_preprocessed_node_at_path(
         &compiled.preprocessed_code,
+        source,
         namespace,
         definition,
         path,
