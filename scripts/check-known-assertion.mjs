@@ -105,6 +105,46 @@ try {
         assert.deepEqual(await readFile(reverseSnapshot), reverseFixture);
       }
       assert.deepEqual(await readFile(reverseSource), reverseOriginal);
+      // #2314: audit the real legacy caller outside core's compatibility
+      // boundary. The callback input still has to retain the map's K/V types.
+      const mapKvDefinition = JSON.parse(execFileSync(binary, [reverseSource, "query", "def",
+        "calcit.core/map-kv", "--format", "json"], options)).data;
+      const mapKvSnapshot = join(project, "map-kv-contract.cirru");
+      await copyFile("calcit/add.cirru", mapKvSnapshot);
+      const runMapKv = (...args) => execFileSync(binary, [mapKvSnapshot, ...args], options);
+      runMapKv("query", "config", "--format", "edn");
+      runMapKv("query", "def", "app.main/main!", "--format", "edn");
+      const mapKvCode = structuredClone(mapKvDefinition.code);
+      mapKvCode[1] = "map-kv-copy";
+      const mapKvSchema = ["::", "'Fn", ["{}", ...mapKvDefinition.schema.slice(1)
+        .filter(field => field[0] !== ":kind")]];
+      const mapKvOperations = [
+        ["edit", "def", "app.main/map-kv-copy", "--input-format", "json-ast", "--code", JSON.stringify(mapKvCode)],
+        ["edit", "schema", "app.main/map-kv-copy", "--input-format", "json-ast", "--code", JSON.stringify(mapKvSchema)],
+        ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "main!", [], "&unit"])],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        ["config", "set", "reload-fn", "app.main/main!"],
+      ];
+      const mapKvTransaction = JSON.stringify(mapKvOperations);
+      const mapKvPreview = JSON.parse(runMapKv("edit", "transaction", "--code", mapKvTransaction,
+        "--dry-run", "--format", "json"));
+      runMapKv("edit", "transaction", "--code", mapKvTransaction,
+        "--expect-revision", mapKvPreview.scoped_revision, "--format", "edn");
+      const mapKvFixture = await readFile(mapKvSnapshot);
+      for (const args of [
+        ["--check-only", "--all-defs", "--format", "json"],
+        ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "map-kv-copy", "--format", "json"],
+        ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      ]) {
+        const result = spawnSync(binary, [mapKvSnapshot, ...args], options);
+        if (result.error) throw result.error;
+        assert.equal(result.status, 0, `map-kv callback inputs: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+        assert.deepEqual(JSON.parse(result.stdout).diagnostics, []);
+        assert.deepEqual(await readFile(mapKvSnapshot), mapKvFixture);
+      }
+      assert.deepEqual(await readFile(reverseSource), reverseOriginal);
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "list-reverse-index", "--backend", "native,js"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
