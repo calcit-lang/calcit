@@ -423,6 +423,21 @@
                 assert= true $ has-index? absent 0.5
                 assert= false $ has-index? absent 1
               :tags $ #{} :enum-contains :unit
+            %{} 'TestEntry (:name |contains-specializes-generic-number-keys)
+              :code $ quote $ let
+                  has-index? $ fn (value key)
+                    hint-fn $ {}
+                      :generics $ [] 'K
+                      :args $ [] 'Enum 'K
+                      :return 'Bool
+                    .contains? value key
+                  present $ Option :some 1
+                assert= true $ has-index? present 0
+                assert= true $ has-index? present -0
+                assert= true $ has-index? present 1.5
+                assert= false $ has-index? present 2
+                assert= false $ has-index? present $ / 0 0
+              :tags $ #{} :enum-contains :unit
         '&core-enum-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-enum-methods
             &impl::new :&core-enum-methods (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)

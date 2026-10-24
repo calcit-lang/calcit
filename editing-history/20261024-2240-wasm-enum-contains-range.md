@@ -10,6 +10,18 @@ Enum 的 nominal Contains 实现按 Number 范围检查索引：非负且小于�
 替代方法。索引保留 f64 比较，不转整数：分数、负零、无穷与 NaN 都沿用 native 合同。
 原分派先求值 receiver 和参数，再检查种类，补分支不重复求值或改变已有分支顺序。
 
+## 擦除前保留 key 类型证据
+
+Contains 的 key 合同是泛型，普通检查仍允许 Enum 接收非 Number，再由运行时报错。
+WASM 不能把已擦除的 nil、Bool 当作索引 0/1。分派使用原参数的静态类型：Number 继续
+比较范围，明确的非 Number 在 Enum 分支 trap；Map 等原有分支不受这个 Enum guard 影响。
+开放 key 复用已有标量证据诊断及调用点特化，先把泛型 K 绑定到实际类型，再生成该分支。
+无法证明的开放调用明确拒绝 codegen，不猜 f64 的 0/1，也不改变表层语言合同。
+
+附带测试保留泛型 Number 的零、负零、分数、越界和 NaN。现有宿主检查脚本使用真实泛型
+定义及 native/JS/WASM 调用，验证 nil、两种 Bool、String、Tag 被拒绝，而 Number 0 和
+1.5 仍成功；WASM 异常由宿主捕获，避免为了测试异常而新增 WASM `try` 或重复运行器。
+
 ## 验证与边界
 
 - 在原 core Enum impl 定义的 `:tests` 增加 Number 范围用例，保留已有测试与断言。覆盖 tag、
@@ -23,3 +35,6 @@ Enum 的 nominal Contains 实现按 Number 范围检查索引：非负且小于�
 另有公开 `contains?` 的泛型 fallback 在 `bool? result` 后报错，字面 Bool/Number 正控却正常。
 这需要独立检查结果类型证据；本分支不凭方法名承诺所有开放调用必然返回 Bool，也不把这项
 公开函数边界写成已经修复。关联 issue/PR 记录实际验证和剩余任务，不以本文代替验收。
+
+名义 trait 调用内联后直接进入数值比较的路径不经过上述运行时方法分派；它的非 Number
+拒绝属于另一处类型证据边界，必须独立回归，不能凭这里的 Number 正向测试宣称已覆盖。
