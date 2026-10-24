@@ -9145,6 +9145,11 @@ fn try_specialize_polymorphic_call(
       | ("enum-def?", T::EnumDef(_))
   );
   if predicate_true {
+    // A local already contains an evaluated value. Reading it is inert and
+    // must not force a statically specialized closure to escape in WASM.
+    if matches!(receiver, Calcit::Local(_)) {
+      return Some(Calcit::Bool(true));
+    }
     return Some(generated_call(vec![
       Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
       Calcit::from(CalcitList::default()),

@@ -1444,11 +1444,26 @@
                       :return 'Bool
                     println |predicate-bool
                     , false
+                  produce-bound-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    println |predicate-bound
+                    , false
+                  local-callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ value 1
                 assert= true $ bool? $ bool?
                   number? $ produce-number
                 assert= true $ list? $ produce-list
                 assert= true $ bool? $ produce-bool
                 assert= false $ number? |not-a-number
+                let
+                    value $ produce-bound-bool
+                  assert= true $ bool? value
+                assert= true $ fn? local-callback
               :tags $ #{} :predicate-evaluation :unit
             %{} 'TestEntry (:name |type-predicates-propagate-argument-errors)
               :code $ quote $ let

@@ -75,7 +75,7 @@ try {
       for (const backend of ["native", "js", "wasm"]) {
         assert.equal(predicateTrace[predicateId][backend].status, "pass");
         assert.deepEqual(predicateTrace[predicateId][backend].trace,
-          ["predicate-number", "predicate-list", "predicate-bool"],
+          ["predicate-number", "predicate-list", "predicate-bool", "predicate-bound"],
           `${backend}: nested type predicates must evaluate each producer once and in order`);
       }
       // The existing WASI job replays the same stdout trace against native.

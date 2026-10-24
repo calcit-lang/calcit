@@ -4,6 +4,8 @@
 
 复用已有内部 `&let () argument true` 顺序表示：已经预处理的参数保留一次，返回已知真值，不再次预处理，不写回用户 Snapshot。未知或不匹配类型仍走原谓词。没有新增公共入口、类型规则、诊断、Dynamic/unsafe 或纯度统计。
 
+完整 CI 进一步发现，已经求值的局部引用不应再强制物化为运行时值：WASM 的静态特化闭包因此误报逃逸。局部值已在绑定或调用参数处求值，读取本身没有用户副作用，继续保留其常量优化；真正的调用和其他可能求值的表达式仍走内部顺序表示。原 `async-scope-keeps-local-callbacks-sync` 测试保留并复验，不通过排除该用例掩盖回归。
+
 语义回归附在非 core 的 `test-types-inference.main/test-fn-inference`：一次性有序日志与正常返回共用一项，异常传播、开放值及 Proc alias 控制共用另一项。日志用例沿现有统一运行器在 native/JS/WASM/WASI 执行；原宿主脚本断言完整预期 trace，防止各后端一起漏求值时比较仍假通过。异常捕获和一等 Proc alias 目前不属于 WASM 子集，保留 native/JS 验收，不增加排除；WASM/WASI 的真实失败通过已有 nil-predicate 宿主 fixture 验证。
 
 初次测试准备曾错误地把内建 `bool?` 放在局部绑定位置，所有后端均正确拒绝；之后的 Proc alias 控制在 WASM 也明确 unsupported。二者不属于本次优化回归，修正 fixture 并保留支持范围，不把这些失败改写为通过。原测试与 CI job 保留，不增加平行运行器。提交前及合并前须按 AGENTS.md 完成完整检查、最新提交实际审查与精确 main 验证。
