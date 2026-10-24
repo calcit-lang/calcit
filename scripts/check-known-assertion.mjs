@@ -617,6 +617,12 @@ try {
           source: `defn producer (x)\n  if (${label.includes("map") ? "map?" : "list?"} x)\n    ${payload}\n    , x`,
         })),
         {
+          // A guard on a captured outer value cannot prove an inner binder spelled the same.
+          label: "kind-guard-captured-outer-binder", diagnostic: /E_ERASED_GENERIC_RELATION/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  let\n      callback $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:generics $ [] 'T)\n        if (list? value) value $ raise |no\n    callback\n    , &unit",
+        },
+        {
           // The old runtime rejection of a receiver without slice capabilities.
           label: "rest-requires-sliceable-countable", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
           source: "defn producer (value)\n  rest 1\n  , &unit",
