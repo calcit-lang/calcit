@@ -63,6 +63,20 @@ try {
   // project, so the whole script takes about as long as its slowest group instead of the sum.
   const parts = [
     async () => {
+      // #2341: resolved builtin methods reuse the direct callback relation.
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-list-inference", "--tag", "fold-method-context",
+        "--backend", "native,js,wasm,wasi"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      for (const [source, diagnostic] of [
+        [".foldl ([] ([] 1 2) ([] 3 4)) 0\n  fn (acc pair)\n    &+ acc pair", /W_PROC_ARG_TYPE_MISMATCH/],
+        [".foldl ([] 1 2) 0\n  fn (acc item)\n    str acc item", /W_FN_RETURN_TYPE_MISMATCH/],
+      ]) {
+        const rejected = spawnSync(binary, ["eval", source], options);
+        if (rejected.error) throw rejected.error;
+        assert.notEqual(rejected.status, 0, "method callback context must not accept the wrong input or result type");
+        assert.match(rejected.stderr, diagnostic);
+      }
       // #2310: prove the actual core caller against the homogeneous shortcut
       // fold contract. Runtime tests alone miss errors suppressed in core lint.
       const reverseSource = "src/cirru/calcit-core.cirru";
