@@ -713,29 +713,307 @@
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote $ defn &fn:apply (f g)
             fn (x)
+              hint-fn $ {}
+                :args $ [] 'A
+                :return 'C
               g x $ f x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
+          :schema $ :: 'Fn $ {}
             :args $ []
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
               :: 'Fn $ {} (:return 'C)
                 :args $ [] 'A 'B
             :generics $ [] 'A 'B 'C
+            :return $ :: 'Fn $ {} (:return 'C)
+              :args $ [] 'A
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-unary-argument-order)
+              :code $ quote $ let
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &* x 2
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    &- left right
+                  direct $ &fn:apply producer consumer
+                  method $ .apply producer consumer
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert= -3 $ direct 3
+                assert= -3 $ method 3
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |retains-string-input-and-nominal-result)
+              :code $ quote $ let
+                  producer $ fn (text)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Number
+                    .len text
+                  consumer $ fn (text size)
+                    hint-fn $ {}
+                      :args $ [] 'String 'Number
+                      :return 'FsPath
+                    FsPath :value $ str text |: size
+                  direct $ &fn:apply producer consumer
+                  method $ .apply producer consumer
+                  input |ab
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'FsPath
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'FsPath
+                assert= (FsPath :value |ab:2) (direct input)
+                assert= (FsPath :value |ab:2) (method input)
+                assert= (FsPath :value |:0) (method |)
+                assert= |ab input
+                assert= |ab:2 $ :value $ direct input
+                assert= |ab:2 $ :value $ method input
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |keeps-named-primitive-functions)
+              :code $ quote $ let
+                  direct $ &fn:apply inc &-
+                  method $ .apply inc &-
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert= -1 $ direct 3
+                assert= -1 $ method 3
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |preserves-lazy-construction-and-effects)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  source-calls $ ref 0
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    &* x 2
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    &- left right
+                  method $ .apply
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 3
+                      , producer
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 4
+                      , consumer
+                assert= 2 $ deref source-calls
+                assert= ([] 0 3 4) (deref trace)
+                assert= -3 $ method 3
+                assert= ([] 0 3 4 1 2) (deref trace)
+                assert= -4 $ method 4
+                assert= ([] 0 3 4 1 2 1 2) (deref trace)
+                assert= 2 $ deref source-calls
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |propagates-both-callback-failures)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    raise |producer-failed
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    &- left right
+                  method $ .apply producer consumer
+                assert= |producer-failed $ try (method 3)
+                  fn (message) message
+                assert= ([] 0 1) (deref trace)
+                reset! trace $ [] 0
+                let
+                    safe-producer $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 1
+                      &* x 2
+                    bad-consumer $ fn (left right)
+                      hint-fn $ {}
+                        :args $ [] 'Number 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 2
+                      raise |consumer-failed
+                    failed $ .apply safe-producer bad-consumer
+                  assert= |consumer-failed $ try (failed 3)
+                    fn (message) message
+                  assert= ([] 0 1 2) (deref trace)
+              :tags $ #{} :core :fn-bind-apply-contract :unit
         '&fn:bind $ %{} 'CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote $ defn &fn:bind (m f)
             fn (x)
+              hint-fn $ {}
+                :args $ [] 'A
+                :return 'C
               f (m x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
+          :schema $ :: 'Fn $ {}
             :args $ []
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
               :: 'Fn $ {} (:return 'C)
                 :args $ [] 'B 'A
             :generics $ [] 'A 'B 'C
+            :return $ :: 'Fn $ {} (:return 'C)
+              :args $ [] 'A
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-unary-argument-order)
+              :code $ quote $ let
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &* x 2
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    &- left right
+                  direct $ &fn:bind producer consumer
+                  method $ .bind producer consumer
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert= 3 $ direct 3
+                assert= 3 $ method 3
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |retains-string-input-and-nominal-result)
+              :code $ quote $ let
+                  producer $ fn (text)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Number
+                    .len text
+                  consumer $ fn (size text)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'String
+                      :return 'FsPath
+                    FsPath :value $ str size |: text
+                  direct $ &fn:bind producer consumer
+                  method $ .bind producer consumer
+                  input |ab
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'FsPath
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'FsPath
+                assert= (FsPath :value |2:ab) (direct input)
+                assert= (FsPath :value |2:ab) (method input)
+                assert= (FsPath :value |0:) (method |)
+                assert= |ab input
+                assert= |2:ab $ :value $ direct input
+                assert= |2:ab $ :value $ method input
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |keeps-named-primitive-functions)
+              :code $ quote $ let
+                  direct $ &fn:bind inc &-
+                  method $ .bind inc &-
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Number
+                assert= 1 $ direct 3
+                assert= 1 $ method 3
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |preserves-lazy-construction-and-effects)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  source-calls $ ref 0
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    &* x 2
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    &- left right
+                  method $ .bind
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 3
+                      , producer
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 4
+                      , consumer
+                assert= 2 $ deref source-calls
+                assert= ([] 0 3 4) (deref trace)
+                assert= 3 $ method 3
+                assert= ([] 0 3 4 1 2) (deref trace)
+                assert= 4 $ method 4
+                assert= ([] 0 3 4 1 2 1 2) (deref trace)
+                assert= 2 $ deref source-calls
+              :tags $ #{} :core :fn-bind-apply-contract :unit
+            %{} 'TestEntry (:name |propagates-both-callback-failures)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  producer $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    raise |producer-failed
+                  consumer $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    &- left right
+                  method $ .bind producer consumer
+                assert= |producer-failed $ try (method 3)
+                  fn (message) message
+                assert= ([] 0 1) (deref trace)
+                reset! trace $ [] 0
+                let
+                    safe-producer $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 1
+                      &* x 2
+                    bad-consumer $ fn (left right)
+                      hint-fn $ {}
+                        :args $ [] 'Number 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 2
+                      raise |consumer-failed
+                    failed $ .bind safe-producer bad-consumer
+                  assert= |consumer-failed $ try (failed 3)
+                    fn (message) message
+                  assert= ([] 0 1 2) (deref trace)
+              :tags $ #{} :core :fn-bind-apply-contract :unit
         '&fn:map $ %{} 'CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote $ defn &fn:map (f g)
             fn (x)
