@@ -64,9 +64,10 @@ try {
   const parts = [
     async () => {
       // #2341: resolved builtin methods reuse the direct callback relation.
+      // The existing Component CI job replays this same definition on WASI.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--target", "test-types-inference.main/test-list-inference", "--tag", "fold-method-context",
-        "--backend", "native,js,wasm,wasi"],
+        "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [source, diagnostic] of [
         [".foldl ([] ([] 1 2) ([] 3 4)) 0\n  fn (acc pair)\n    &+ acc pair", /W_PROC_ARG_TYPE_MISMATCH/],
