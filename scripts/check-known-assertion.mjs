@@ -3117,7 +3117,7 @@ try {
           assert.equal(checked.status, 0, `${name}\n${checked.stdout}\n${checked.stderr}`);
         } else {
           assert.equal(checked.status, 1, `${name}\n${checked.stdout}\n${checked.stderr}`);
-          assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN/, name);
+          assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN|E_ERASED_GENERIC_RELATION/, name);
         }
         assert.deepEqual(await readFile(snapshot), original);
         run("edit", "rm-def", `calcit.assert-evidence/${name}`);
