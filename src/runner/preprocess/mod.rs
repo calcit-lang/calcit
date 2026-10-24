@@ -10728,8 +10728,17 @@ fn resolve_impl_method<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<Calc
     .collect();
   // Core method tables have a fixed dispatch order for concrete built-in types.
   if let Some(candidate) = candidates.first()
-    && is_builtin_method_candidate(type_ref, candidate)
+    && (is_builtin_method_candidate(type_ref, candidate)
+      || (candidates.len() > 1
+        && candidate.impl_value.origin().is_some()
+        && is_core_method_impl(type_ref, candidate)
+        && candidates
+          .iter()
+          .skip(1)
+          .all(|bridge| bridge.entry == candidate.entry && bridge.impl_value.is_inherent() && is_core_method_impl(type_ref, bridge))))
   {
+    // Keep the selected core nominal contract when its legacy bridges point at
+    // the exact same callable. Another nominal origin or a user bag stays ambiguous.
     return ImplMethodResolution::Selected(ImplMethodCandidate {
       impl_value: candidate.impl_value,
       entry: candidate.entry,
@@ -10746,14 +10755,7 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
   if type_ref.resolve_to_struct().is_some() {
     // Trust the actual core table, not a user-created bag with the same name.
     // Nominal user implementations still participate in normal resolution.
-    return candidate.impl_value.is_inherent()
-      && resolve_core_impls("&core-struct-impls").is_some_and(|impls| {
-        impls.iter().any(|builtin| {
-          builtin.name() == candidate.impl_value.name()
-            && Arc::ptr_eq(&builtin.fields, &candidate.impl_value.fields)
-            && Arc::ptr_eq(&builtin.values, &candidate.impl_value.values)
-        })
-      });
+    return candidate.impl_value.is_inherent() && is_core_method_impl(type_ref, candidate);
   }
   let expected_name = match type_ref {
     CalcitTypeAnnotation::List(_) => "&core-list-methods",
@@ -10766,6 +10768,31 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     _ => return false,
   };
   candidate.impl_value.is_inherent() && candidate.impl_value.name().ref_str() == expected_name
+}
+
+/// Match actual core record storage and origin, not a forged bag's name or contents.
+fn is_core_method_impl(type_ref: &CalcitTypeAnnotation, candidate: &ImplMethodCandidate<'_>) -> bool {
+  let table = if type_ref.resolve_to_struct().is_some() {
+    "&core-struct-impls"
+  } else if matches!(type_ref, CalcitTypeAnnotation::AnonymousEnum) || type_ref.resolve_to_enum().is_some() {
+    "&core-enum-impls"
+  } else if let Some(table) = core_impl_list_symbol_from_type_annotation(type_ref) {
+    table
+  } else {
+    return false;
+  };
+  resolve_core_impls(table).is_some_and(|impls| {
+    impls.iter().any(|builtin| {
+      builtin.name() == candidate.impl_value.name()
+        && Arc::ptr_eq(&builtin.fields, &candidate.impl_value.fields)
+        && Arc::ptr_eq(&builtin.values, &candidate.impl_value.values)
+        && match (builtin.origin(), candidate.impl_value.origin()) {
+          (None, None) => true,
+          (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+          _ => false,
+        }
+    })
+  })
 }
 
 fn impl_candidate_origin(candidate: &ImplMethodCandidate<'_>) -> String {
@@ -19381,6 +19408,34 @@ mod tests {
       resolve_impl_method(&list_type, &conflicting, "show"),
       ImplMethodResolution::Ambiguous(_)
     ));
+  }
+
+  #[test]
+  fn nominal_enum_dispatch_keeps_distinct_origins_and_fake_core_bridges() {
+    let _guard = lock_preprocess_test_state();
+    let receiver = CalcitTypeAnnotation::AnonymousEnum;
+    let first = source_trait("app.a", "Count", "count");
+    let other = source_trait("app.b", "Count", "count");
+    let make_impl = |name: &str, origin| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin,
+        fields: Arc::new(vec![EdnTag::new("count")]),
+        values: Arc::new(vec![Calcit::Proc(CalcitProc::NativeEnumCount)]),
+      })
+    };
+    for origin in [other, first.clone()] {
+      let impls = vec![make_impl("FirstCount", Some(first.clone())), make_impl("OtherCount", Some(origin))];
+      assert!(
+        matches!(resolve_impl_method(&receiver, &impls, "count"), ImplMethodResolution::Ambiguous(_)),
+        "identical callables must not erase distinct or duplicate nominal contracts"
+      );
+    }
+    let impls = vec![make_impl("&core-enum-methods", None), make_impl("FirstCount", Some(first))];
+    assert!(
+      matches!(resolve_impl_method(&receiver, &impls, "count"), ImplMethodResolution::Ambiguous(_)),
+      "a user bag with the core name and same proc is not an actual core bridge"
+    );
   }
 
   #[test]

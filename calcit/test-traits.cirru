@@ -121,6 +121,10 @@
           :code $ quote $ defimpl CoreToStringImpl calcit.core/ToString (.to-string core-show:show)
           :examples $ []
           :schema $ :: 'Impl
+        'CountItems $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum CountItems (:three 'Number 'Number) (:four 'Number 'Number 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
           :code $ quote $ defenum Demo (:demo 'Dynamic)
           :examples $ []
@@ -448,6 +452,24 @@
               describe-greeting $ Greeter :name |Ada
               , "|hello Ada / Ada"
             :tags $ #{} :trait-bound :unit
+        'enum-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-count (value) (.count value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Enum
+          :tests $ []
+            %{} 'TestEntry (:name |three-items-including-tag)
+              :code $ quote $ assert= ([] 3 3)
+                []
+                  enum-count $ CountItems :three 1 2
+                  .count $ CountItems :three 1 2
+              :tags $ #{} :enum-core-dispatch :unit
+            %{} 'TestEntry (:name |four-items-including-tag)
+              :code $ quote $ assert= ([] 4 4)
+                []
+                  enum-count $ CountItems :four 1 2 3
+                  .count $ CountItems :four 1 2 3
+              :tags $ #{} :enum-core-dispatch :unit
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []

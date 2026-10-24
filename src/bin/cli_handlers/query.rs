@@ -1551,6 +1551,29 @@ mod type_query_tests {
   }
 
   #[test]
+  fn enum_method_query_preserves_nominal_contract_and_distinct_callable_evidence() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    let methods =
+      runner::preprocess::static_method_contracts(&CalcitTypeAnnotation::AnonymousEnum).expect("enum method contracts should resolve");
+    let (descriptor, contract) = methods.iter().find(|(method, _)| method.name == ".count").unwrap();
+    assert_eq!(descriptor.origin, "calcit.core/Countable");
+    assert_eq!(contract.status, "proven", "{contract:?}");
+    assert!(contract.arg_types.as_ref().unwrap().is_empty());
+    assert_eq!(contract.return_type.as_ref().unwrap().describe(), "number");
+    assert_eq!(contract.definition.as_deref(), Some("calcit.core/&enum:count"));
+
+    // These two core closures are separate callable values, not aliases of a proc.
+    let (_, contains) = methods.iter().find(|(method, _)| method.name == ".contains?").unwrap();
+    assert_eq!(contains.status, "ambiguous");
+    assert!(contains.arg_types.is_none() && contains.return_type.is_none());
+    let (_, first) = methods.iter().find(|(method, _)| method.name == ".first").unwrap();
+    assert_eq!(first.status, "open", "an open Enum payload must stay open");
+  }
+
+  #[test]
   fn predicate_method_query_distinguishes_index_key_and_value_origins() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
