@@ -858,9 +858,9 @@ fn diff_optional_edn(label: &str, old: Option<&Edn>, new: Option<&Edn>) -> DiffN
   match (old, new) {
     (Some(old), Some(new)) if old == new => DiffNode::new(label, DiffStatus::Unchanged).with_detail(render_text(&old.to_string())),
     (Some(old), Some(new)) => DiffNode::new(label, DiffStatus::Modified).with_detail(format!(
-      "{} -> {}",
-      render_text(&old.to_string()),
-      render_text(&new.to_string())
+      "{:?} -> {:?}",
+      old.to_string().replace('\n', "⏎"),
+      new.to_string().replace('\n', "⏎")
     )),
     (None, Some(new)) => DiffNode::new(label, DiffStatus::Added).with_detail(render_text(&new.to_string())),
     (Some(old), None) => DiffNode::new(label, DiffStatus::Removed).with_detail(render_text(&old.to_string())),
@@ -1864,6 +1864,18 @@ mod tests {
       assert_eq!(change.schema_direction.as_deref(), Some("changed"));
       assert!(change.widened_slots.is_empty() && change.narrowed_slots.is_empty());
       assert_ne!(change.before_revision, change.after_revision);
+      let definition_diff = diff_code_entry(
+        "main!",
+        old.files["ffi-evidence.main"].defs.get("main!"),
+        new.files["ffi-evidence.main"].defs.get("main!"),
+      );
+      let schema_diff = child(&definition_diff, "schema");
+      if schema_diff.status == DiffStatus::Modified {
+        let detail = schema_diff.detail.as_deref().expect("changed schema must have review detail");
+        let (before, after) = detail.split_once(" -> ").expect("changed schema must display both values");
+        assert_ne!(before, after, "human review must expose the actual schema difference: {detail}");
+        assert!(!detail.contains('\n'), "schema review detail must remain one line");
+      }
     }
   }
 

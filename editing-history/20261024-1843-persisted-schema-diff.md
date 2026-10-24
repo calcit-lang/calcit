@@ -10,6 +10,8 @@ Dynamic 的文本也相同。这些真实合同变化会被误报为 canonical-f
 改为复用 Snapshot 已有的 schema EDN 转换和缺失标注判定。schema 与 FFI 通过同一个内部
 结构比较 helper 形成 DiffNode，文本仅用于展示；等价 Map/Set 的迭代顺序不产生变化。
 新增/删除定义的 schema 展示也采用持久化形式，不再只显示 custom。
+变化项的旧值与新值保留完整单行 EDN，避免深层差异再次被展示截断隐藏；未变化项仍使用
+原有简短预览，不扩展结构化输出字段。
 
 方向分析继续使用原来的类型关系。互不包含的类别、feature 或标注意图变化可以要求审阅，
 但不据名字或“发生变化”就推断 widening；原 fail-on-widening 门槛保持。
