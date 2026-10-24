@@ -739,16 +739,68 @@
         '&fn:map $ %{} 'CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote $ defn &fn:map (f g)
             fn (x)
+              hint-fn $ {}
+                :args $ [] 'A
+                :return 'C
               f $ g x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
+          :schema $ :: 'Fn $ {}
             :args $ []
               :: 'Fn $ {} (:return 'C)
                 :args $ [] 'B
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
             :generics $ [] 'A 'B 'C
+            :return $ :: 'Fn $ {} (:return 'C)
+              :args $ [] 'A
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |composes-g-before-f)
+              :code $ quote $ &let
+                h $ &fn:map
+                  fn (x) (* x 2)
+                  fn (x) (+ x 1)
+                assert= 8 $ h 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-map-composes-g-before-f)
+              :code $ quote $ &let
+                h $ .map
+                  fn (x) (* x 2)
+                  fn (x) (+ x 1)
+                assert= 8 $ h 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |composes-across-types)
+              :code $ quote $ &let
+                h $ &fn:map
+                  fn (n) (str |n= n)
+                  fn (s) (&str:count s)
+                assert= |n=3 $ h |abc
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |calls-each-function-once-in-order)
+              :code $ quote $ let
+                  input $ [] 1
+                  *log $ ref $ assert-type ([]) (:: 'List 'Dynamic)
+                  h $ &fn:map
+                    fn (xs)
+                      swap! *log $ fn (items) (append items ([] :f xs))
+                      &list:count xs
+                    fn (xs)
+                      swap! *log $ fn (items) (append items ([] :g xs))
+                      append xs 2
+                assert= 2 $ h input
+                assert= ([] 1) input
+                assert= ([] ([] :g ([] 1)) ([] :f ([] 1 2))) @*log
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |propagates-inner-failure-without-calling-f)
+              :code $ quote $ let
+                  *called $ ref false
+                  h $ &fn:map
+                    fn (x) (reset! *called true) x
+                    fn (x) (raise |g-failed)
+                assert= |g-failed $ try (h 1)
+                  fn (message) message
+                assert= false @*called
+              :tags $ #{} :core :unit
         '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote $ defn &fn:mappend (f g)
             fn (x)
