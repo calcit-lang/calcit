@@ -126,6 +126,7 @@ jobs:
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru \
               --target test-types-inference.main/slice-with-contract \
+              --target test-types-inference.main/test-list-inference \
               --target test-types-inference.main/option-recur-sum \
               --target test-types-inference.main/option-recursive-count --backend native,wasi
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
