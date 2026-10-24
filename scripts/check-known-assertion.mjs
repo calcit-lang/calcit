@@ -80,35 +80,36 @@ try {
       }
       // #2121/#1553: returning another callback input does not prove an
       // established accumulator binder, even when both inputs are generic.
-      const rigidSnapshot = join(project, "rigid-fold-callback.cirru");
-      await copyFile("calcit/add.cirru", rigidSnapshot);
-      const runRigid = (...args) => execFileSync(binary, [rigidSnapshot, ...args], options);
-      runRigid("query", "config", "--format", "edn");
-      runRigid("query", "def", "app.main/main!", "--format", "edn");
       const foldForms = [
         ["prefix", "foldl xs seed"],
         ["method", ".foldl xs seed"],
         ["postfix", "xs .foldl seed"],
         ["threaded", "-> xs $ .foldl seed"],
       ];
-      const rigidOperations = foldForms.flatMap(([form, call]) => [
-        ["edit", "def", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
-          `quote $ defn bad-${form} (xs seed)\n  ${call} $ fn (acc item)\n    , item`],
-        ["edit", "schema", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:generics $ [] 'Elem 'Acc) (:args $ [] (:: 'List 'Elem) 'Acc) (:return 'Acc)"],
-        ["edit", "def", `app.main/run-${form}`, "--input-format", "cirru", "--code",
-          `quote $ defn run-${form} ()\n  bad-${form} ([] 1 2) |seed`],
-        ["edit", "schema", `app.main/run-${form}`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-      ]);
-      const rigidTransaction = JSON.stringify(rigidOperations);
-      const rigidPreview = JSON.parse(runRigid("edit", "transaction", "--code", rigidTransaction, "--dry-run", "--format", "json"));
-      runRigid("edit", "transaction", "--code", rigidTransaction,
-        "--expect-revision", rigidPreview.scoped_revision, "--format", "edn");
-      const rigidOriginal = await readFile(rigidSnapshot);
-      for (const [form] of foldForms) {
+      for (const [form, call] of foldForms) {
+        // WASM validates the whole project, so another invalid definition
+        // must not satisfy this form's source-owner assertion accidentally.
+        const rigidSnapshot = join(project, `rigid-fold-${form}.cirru`);
+        await copyFile("calcit/add.cirru", rigidSnapshot);
+        const runRigid = (...args) => execFileSync(binary, [rigidSnapshot, ...args], options);
+        runRigid("query", "config", "--format", "edn");
+        runRigid("query", "def", "app.main/main!", "--format", "edn");
+        const rigidTransaction = JSON.stringify([
+          ["edit", "def", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn bad-${form} (xs seed)\n  ${call} $ fn (acc item)\n    , item`],
+          ["edit", "schema", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:generics $ [] 'Elem 'Acc) (:args $ [] (:: 'List 'Elem) 'Acc) (:return 'Acc)"],
+          ["edit", "def", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn run-${form} ()\n  bad-${form} ([] 1 2) |seed`],
+          ["edit", "schema", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
+        ]);
+        const rigidPreview = JSON.parse(runRigid("edit", "transaction", "--code", rigidTransaction, "--dry-run", "--format", "json"));
+        runRigid("edit", "transaction", "--code", rigidTransaction,
+          "--expect-revision", rigidPreview.scoped_revision, "--format", "edn");
+        const rigidOriginal = await readFile(rigidSnapshot);
         const entry = `app.main/run-${form}`;
-        for (const backend of ["native", "js", "wasm"]) {
+        for (const backend of ["native", "js", "wasm", "wasi"]) {
           const output = join(project, `rigid-${form}-${backend}`);
           const args = backend === "native" ? ["--check-only"] : ["--emit-path", output, backend];
           const rejected = spawnSync(binary,
@@ -120,8 +121,8 @@ try {
           assert.doesNotMatch(rejected.stderr, /#lexical:|#call-type:/);
           await assertRejectedArtifacts(output, `${form}/${backend}`, /E_ERASED_GENERIC_RELATION/);
         }
+        assert.deepEqual(await readFile(rigidSnapshot), rigidOriginal);
       }
-      assert.deepEqual(await readFile(rigidSnapshot), rigidOriginal);
       // #2310: prove the actual core caller against the homogeneous shortcut
       // fold contract. Runtime tests alone miss errors suppressed in core lint.
       const reverseSource = "src/cirru/calcit-core.cirru";
