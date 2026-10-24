@@ -38,6 +38,31 @@ Struct 不再相互匹配；旧实现可能让普通/严格检查通过，却在
 无来源的局部 pattern 仍保留名称/字段布局匹配，但不会建立名义类型证据；泛型 pattern 不证明
 具体 payload。需要读取类型字段时，使用已知非泛型定义的来源 guard 或明确的参数化合同。
 
+## 0.31.0 kind 守卫不再证明泛型返回（#2187）
+
+声明 `Fn<T>(T) -> T` 的函数在 `(list? x)`、`(map? x)` 等 kind 守卫之后，只能返回 `x`
+本身或直接绑定到它的局部别名。新构造的同类值（例如 `[] |wrong`）不再被当作满足 `T`：
+旧检查会放行，调用方按 `List<Number>` 使用结果时，native 才报错，生成的 JS 则静默返回
+String。现在普通检查、严格检查、native 与 JS 编译都在该定义处报 `E_FN_RETURN_UNPROVEN`
+或 `E_ERASED_GENERIC_RELATION`。
+
+依赖这一旧许可的定义需要说明真实关系：返回同一个接收者时保留 `T`；返回不同成员类型时写出
+参数化合同（如 `List<T> -> List<String>`）；需要保持接收者类型的操作使用已有 trait 约束
+（如 `Sliceable`、`Countable`、`Emptyable`）。不要用 `assert-type`、`unsafe-coerce`
+或更宽的 Dynamic 换回旧结果。
+
+core 合同随之调整：
+
+- `rest` 声明 `:where $ {} $ 'T ([] 'Sliceable 'Countable)`，空接收者原样返回。List、
+  String 和实现这两个 trait 的类型继续保留原类型；Number 等没有这些能力的实参从运行时报错
+  改为检查期报 `W_GENERIC_WHERE_BOUND_MISMATCH`。
+- `assoc`、`dissoc`、`dissoc-in` 的函数合同改为开放的 Dynamic 分派，与 `assoc-in`、`update`
+  一致。接收者类型已知时，调用照旧降到 `&list:assoc`、`&map:assoc`、Struct 字段写入等精确
+  合同，结果类型与成员检查不变；接收者是泛型 `T` 或未知类型时，结果为 Dynamic，改用接收者
+  的 `.assoc` / `.dissoc` 方法或参数化合同后再按具体类型使用。
+
+升级时运行 `calcit --check-only --all-defs`，按诊断位置逐个修改定义合同或改用方法调用。
+
 ## 0.31.0 trait 描述值不再冒充实现实例
 
 `deftrait` 返回的描述值与参数合同中的 trait 能力现在分开推断。接收 `'Greeting` 或要求 `T: Greeting` 的函数需要真正实现 Greeting 的值，不能传入 `Greeting` 描述值；这种调用会在检查或编译入口被拒绝，不再等到 native / JS 执行时才失败。经过局部别名、泛型转发或回调也不会获得不存在的实现。

@@ -5184,9 +5184,8 @@
               assoc ([] 1 2 3) 0 10
             quote $ assert= (&{} :a 1 :b 3)
               assoc (&{} :a 1 :b 2) :b 3
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T 'K 'V
-            :generics $ [] 'T 'K 'V
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic 'Dynamic 'Dynamic
           :tests $ []
             %{} 'TestEntry (:name |replaces-map-value)
               :code $ quote $ assert= (&{} :a 3 :b 2)
@@ -7299,9 +7298,8 @@
                   &map:dissoc x (&list:nth args 0) & $ &list:rest args
                 raise "|dissoc expected a List or Map"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'K) (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T 'K
+          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return 'Dynamic)
+            :args $ [] 'Dynamic
           :tests $ []
             %{} 'TestEntry (:name |removes-multiple-map-keys)
               :code $ quote $ assert= (&{} :d 5)
@@ -7418,9 +7416,9 @@
                   dissoc data p0
                   assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'D)
-            :args $ [] 'D $ :: 'List 'K
-            :generics $ [] 'D 'K
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'List 'K
+            :generics $ [] 'K
           :tests $ [] $ %{} 'TestEntry (:name |dissocs-nested-maps-and-list-indexes)
             :code $ quote $ do
               assert=
@@ -12592,10 +12590,11 @@
                 assert= true $ = @cell dec
               :tags $ #{} :core :reset-proof :types :unit
         'rest $ %{} 'CodeEntry
-          :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
+          :doc "|Return the same receiver type without its first item, using the Sliceable and Countable capabilities; an empty receiver is returned unchanged. A receiver without these capabilities is rejected during checking."
           :code $ quote $ defn rest (x)
-            if (list? x) (&list:rest x)
-              if (string? x) (&str:rest x) (raise "|rest expected a List or String")
+            if
+              &= 0 $ count x
+              , x $ .slice x 1
           :examples $ []
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
@@ -12605,6 +12604,7 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T
             :generics $ [] 'T
+            :where $ {} $ 'T ([] 'Sliceable 'Countable)
           :tests $ []
             %{} 'TestEntry (:name |drops-first-list-item)
               :code $ quote $ do
@@ -12616,10 +12616,14 @@
             %{} 'TestEntry (:name |drops-first-string-character)
               :code $ quote $ assert= |bc (rest |abc)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |rejects-non-sequence)
-              :code $ quote $ assert= |rejected
-                try (rest 1)
-                  fn (message) |rejected
+            %{} 'TestEntry (:name |preserves-receiver-contract)
+              :code $ quote $ let
+                  items $ rest $ [] 1 2 3
+                  text $ rest |abc
+                assert-type items $ :: 'List 'Number
+                assert-type text 'String
+                assert= ([] 2 3) items
+                assert= |bc text
               :tags $ #{} :core :unit
         'result:and-then $ %{} 'CodeEntry
           :doc "|Chains a Result-producing function over :ok and preserves :err."

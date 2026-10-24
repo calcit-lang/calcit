@@ -590,6 +590,22 @@ try {
           schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
           source: "defn producer (value)\n  &trait-call Sliceable :slice value 0 (Option :some 1)\n  , &unit",
         },
+        // #2187: a kind guard on `x: T` narrows the input without instantiating
+        // T, so a new payload of the guarded kind cannot prove the generic result.
+        ...[
+          ["kind-guard-list-payload", "[] |wrong"],
+          ["kind-guard-let-payload", "let ((y $ [] |wrong)) y"],
+          ["kind-guard-map-payload", "{} $ :a 1"],
+        ].map(([label, payload]) => ({
+          label, diagnostic: /E_ERASED_GENERIC_RELATION|E_FN_RETURN_UNPROVEN/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          source: `defn producer (x)\n  if (${label.includes("map") ? "map?" : "list?"} x)\n    ${payload}\n    , x`,
+        })),
+        {
+          // The old runtime rejection of a receiver without slice capabilities.
+          label: "rest-requires-sliceable-countable", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
+          source: "defn producer (value)\n  rest 1\n  , &unit",
+        },
         {
           label: "bound-capture-cannot-invent-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
           schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
