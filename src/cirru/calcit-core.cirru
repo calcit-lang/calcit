@@ -739,16 +739,208 @@
         '&fn:map $ %{} 'CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote $ defn &fn:map (f g)
             fn (x)
+              hint-fn $ {}
+                :args $ [] 'A
+                :return 'C
               f $ g x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
+          :schema $ :: 'Fn $ {}
             :args $ []
               :: 'Fn $ {} (:return 'C)
                 :args $ [] 'B
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
             :generics $ [] 'A 'B 'C
+            :return $ :: 'Fn $ {} (:return 'C)
+              :args $ [] 'A
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-direct-and-method-composition-order)
+              :code $ quote $ let
+                  f $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &* x 2
+                  g $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ x 1
+                assert= 8 $
+                  &fn:map f g
+                  , 3
+                assert= 8 $
+                  .map f g
+                  , 3
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |retains-string-input-and-result-signatures)
+              :code $ quote $ let
+                  f $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'String
+                    str |len= value
+                  g $ fn (text)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Number
+                    .len text
+                  direct $ &fn:map f g
+                  method $ .map f g
+                  input |ab
+                assert-type direct $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'String
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'String
+                  :return 'String
+                assert= |len=2 $ direct input
+                assert= |len=2 $ method input
+                assert= |len=0 $ method |
+                assert= |ab input
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |retains-nominal-result-signature)
+              :code $ quote $ let
+                  f $ fn (text)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'FsPath
+                    FsPath :value text
+                  g $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'String
+                    str value
+                  method $ .map f g
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'FsPath
+                assert= |4 $ :value $ method 4
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |preserves-construction-and-callback-effects)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  source-calls $ ref 0
+                  f $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    &* x 2
+                  g $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    &+ x 1
+                  method $ .map
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 3
+                      , f
+                    do (swap! source-calls inc)
+                      reset! trace $ append (deref trace) 4
+                      , g
+                assert= 2 $ deref source-calls
+                assert= ([] 0 3 4) (deref trace)
+                assert= 8 $ method 3
+                assert= ([] 0 3 4 2 1) (deref trace)
+                assert= 10 $ method 4
+                assert= ([] 0 3 4 2 1 2 1) (deref trace)
+                assert= 2 $ deref source-calls
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |propagates-mapper-and-receiver-errors)
+              :code $ quote $ let
+                  trace $ ref $ [] 0
+                  f $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 1
+                    &* x 2
+                  bad-g $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    reset! trace $ append (deref trace) 2
+                    raise |mapper-failed
+                  mapper-failure $ .map f bad-g
+                assert= |mapper-failed $ try (mapper-failure 3)
+                  fn (message) message
+                assert= ([] 0 2) (deref trace)
+                reset! trace $ [] 0
+                let
+                    bad-f $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 1
+                      raise |receiver-failed
+                    g $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      reset! trace $ append (deref trace) 2
+                      &+ x 1
+                    receiver-failure $ .map bad-f g
+                  assert= |receiver-failed $ try (receiver-failure 3)
+                    fn (message) message
+                  assert= ([] 0 2 1) (deref trace)
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |keeps-named-and-generic-function-contracts)
+              :code $ quote $ do
+                let
+                    direct $ &fn:map str inc
+                    method $ .map str inc
+                  assert-type direct $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'String
+                  assert-type method $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'String
+                  assert= |4 $ direct 3
+                  assert= |4 $ method 3
+                let
+                    direct $ &fn:map str identity
+                    method $ .map str identity
+                  assert-type direct $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'String
+                  assert-type method $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'String
+                  assert= |3 $ direct 3
+                  assert= |3 $ method 3
+                let
+                    direct $ &fn:map identity identity
+                    method $ .map identity identity
+                  assert-type direct $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  assert-type method $ :: 'Fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  assert= 3 $ direct 3
+                  assert= 3 $ method 3
+              :tags $ #{} :core :fn-map-contract :unit
+            %{} 'TestEntry (:name |transports-explicit-open-results)
+              :code $ quote $ let
+                  f $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Dynamic
+                    , x
+                  g $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ x 1
+                  method $ .map f g
+                assert-type method $ :: 'Fn $ {}
+                  :args $ [] 'Number
+                  :return 'Dynamic
+                assert= 4 $ method 3
+              :tags $ #{} :core :fn-map-contract :unit
         '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote $ defn &fn:mappend (f g)
             fn (x)
