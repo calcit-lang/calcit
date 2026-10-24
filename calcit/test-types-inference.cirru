@@ -1637,27 +1637,67 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Nil)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |method-infers-list-accumulator-context)
-            :code $ quote $ do
-              assert= ([] 1 2 3 4)
-                foldl
-                  [] ([] 1 2) ([] 3 4)
-                  []
-                  fn (acc pair) (.concat acc pair)
-              assert= ([] 1 2 3 4)
-                .foldl
-                  [] ([] 1 2) ([] 3 4)
-                  []
-                  fn (acc pair) (.concat acc pair)
-              assert= ([] 1 2 3 4)
-                ->
-                  [] ([] 1 2) ([] 3 4)
-                  .foldl ([])
+          :tests $ []
+            %{} 'TestEntry (:name |method-infers-list-accumulator-context)
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  foldl
+                    [] ([] 1 2) ([] 3 4)
+                    []
                     fn (acc pair) (.concat acc pair)
-              assert= ([])
-                .foldl ([]) ([])
-                  fn (acc pair) (.concat acc pair)
-            :tags $ #{} :fold-method-context :unit
+                assert= ([] 1 2 3 4)
+                  .foldl
+                    [] ([] 1 2) ([] 3 4)
+                    []
+                    fn (acc pair) (.concat acc pair)
+                assert= ([] 1 2 3 4)
+                  ->
+                    [] ([] 1 2) ([] 3 4)
+                    .foldl ([])
+                      fn (acc pair) (.concat acc pair)
+                assert= ([])
+                  .foldl ([]) ([])
+                    fn (acc pair) (.concat acc pair)
+              :tags $ #{} :fold-method-context :unit
+            %{} 'TestEntry (:name |fold-preserves-independent-generic-seed)
+              :code $ quote $ let
+                  keep-prefix $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    foldl xs seed $ fn (acc item) acc
+                  keep-method $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    .foldl xs seed $ fn (acc item) acc
+                  keep-postfix $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    xs .foldl seed $ fn (acc item) acc
+                  keep-threaded $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    -> xs $ .foldl seed $ fn (acc item) acc
+                assert= |seed $ keep-prefix ([] 1 2) |seed
+                assert= 3 $ keep-prefix ([] |a |b) 3
+                assert= |empty $ keep-prefix ([]) |empty
+                assert= |seed $ keep-method ([] 1 2) |seed
+                assert= 3 $ keep-method ([] |a |b) 3
+                assert= |empty $ keep-method ([]) |empty
+                assert= |seed $ keep-postfix ([] 1 2) |seed
+                assert= 3 $ keep-postfix ([] |a |b) 3
+                assert= |empty $ keep-postfix ([]) |empty
+                assert= |seed $ keep-threaded ([] 1 2) |seed
+                assert= 3 $ keep-threaded ([] |a |b) 3
+                assert= |empty $ keep-threaded ([]) |empty
+              :tags $ #{} :fold-method-context :unit
         'test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map-inference ()
             let

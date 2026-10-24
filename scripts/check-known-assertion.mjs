@@ -78,6 +78,51 @@ try {
         assert.notEqual(rejected.status, 0, "method callback context must not accept the wrong input or result type");
         assert.match(rejected.stderr, diagnostic);
       }
+      // #2121/#1553: returning another callback input does not prove an
+      // established accumulator binder, even when both inputs are generic.
+      const foldForms = [
+        ["prefix", "foldl xs seed"],
+        ["method", ".foldl xs seed"],
+        ["postfix", "xs .foldl seed"],
+        ["threaded", "-> xs $ .foldl seed"],
+      ];
+      for (const [form, call] of foldForms) {
+        // WASM validates the whole project, so another invalid definition
+        // must not satisfy this form's source-owner assertion accidentally.
+        const rigidSnapshot = join(project, `rigid-fold-${form}.cirru`);
+        await copyFile("calcit/add.cirru", rigidSnapshot);
+        const runRigid = (...args) => execFileSync(binary, [rigidSnapshot, ...args], options);
+        runRigid("query", "config", "--format", "edn");
+        runRigid("query", "def", "app.main/main!", "--format", "edn");
+        const rigidTransaction = JSON.stringify([
+          ["edit", "def", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn bad-${form} (xs seed)\n  ${call} $ fn (acc item)\n    , item`],
+          ["edit", "schema", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:generics $ [] 'Elem 'Acc) (:args $ [] (:: 'List 'Elem) 'Acc) (:return 'Acc)"],
+          ["edit", "def", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn run-${form} ()\n  bad-${form} ([] 1 2) |seed`],
+          ["edit", "schema", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
+        ]);
+        const rigidPreview = JSON.parse(runRigid("edit", "transaction", "--code", rigidTransaction, "--dry-run", "--format", "json"));
+        runRigid("edit", "transaction", "--code", rigidTransaction,
+          "--expect-revision", rigidPreview.scoped_revision, "--format", "edn");
+        const rigidOriginal = await readFile(rigidSnapshot);
+        const entry = `app.main/run-${form}`;
+        for (const backend of ["native", "js", "wasm", "wasi"]) {
+          const output = join(project, `rigid-${form}-${backend}`);
+          const args = backend === "native" ? ["--check-only"] : ["--emit-path", output, backend];
+          const rejected = spawnSync(binary,
+            [rigidSnapshot, "--init-fn", entry, "--reload-fn", entry, ...args], options);
+          if (rejected.error) throw rejected.error;
+          assert.equal(rejected.status, 1, `${form}/${backend}: independent callback binders must be rejected`);
+          assert.match(rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+          assert.match(rejected.stderr, new RegExp(`app.main/bad-${form}`));
+          assert.doesNotMatch(rejected.stderr, /#lexical:|#call-type:/);
+          await assertRejectedArtifacts(output, `${form}/${backend}`, /E_ERASED_GENERIC_RELATION/);
+        }
+        assert.deepEqual(await readFile(rigidSnapshot), rigidOriginal);
+      }
       // #2310: prove the actual core caller against the homogeneous shortcut
       // fold contract. Runtime tests alone miss errors suppressed in core lint.
       const reverseSource = "src/cirru/calcit-core.cirru";

@@ -13705,12 +13705,13 @@ pub fn preprocess_defn(
                     .is_proven()
                 })
               });
-              // A callback may derive its result type from one of its own
-              // inputs (for example a Self-preserving method). That is valid
-              // evidence for the enclosing result even when the result binder
-              // is otherwise output-only. A captured, unrelated binder is not
-              // an input and still needs an identity-aware proof below.
-              if returned_input_binder {
+              // A returned input can infer a callee-owned output slot, but
+              // cannot replace an already established caller result binder.
+              // Both captured and parameter binders retain their identities.
+              if returned_input_binder
+                && matches!(expected.as_ref(), CalcitTypeAnnotation::TypeVar(name)
+                  if expected_callee_owned_generics.contains(name))
+              {
                 return false;
               }
               return !body_types
