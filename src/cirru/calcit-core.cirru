@@ -1357,13 +1357,13 @@
               :tags $ #{} :core :unit
         '&list:find-last-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last-index (xs f)
-            foldr-shortcut xs
-              dec $ count xs
-              Option :none
-              fn (idx x)
-                if (f x)
-                  :: true $ Option :some idx
-                  :: false $ &- idx 1
+            let
+                index $ foldr-shortcut xs
+                  dec $ count xs
+                  , -1 $ fn (idx x)
+                    if (f x) (:: true idx)
+                      :: false $ &- idx 1
+              if (< index 0) (Option :none) (Option :some index)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1372,26 +1372,48 @@
             :generics $ [] 'T
             :return $ :: 'Option 'Number
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |finds-last-index-boundaries)
-            :code $ quote $ do
-              assert= (Option :some 4)
-                &list:find-last-index ([] 1 3 5 7 9)
-                  fn (x) (> x 5)
-              assert= (Option :none)
-                &list:find-last-index ([] 1 3)
-                  fn (x) (> x 8)
-              assert= (Option :some 2)
-                &list:find-last-index ([] 1 3 5 7)
-                  fn (x) (&= x 5)
-              assert= (Option :some 0)
-                &list:find-last-index ([] 1 3 5)
-                  fn (x) (&= x 1)
-              assert= (Option :none)
+          :tests $ []
+            %{} 'TestEntry (:name |finds-last-index-boundaries)
+              :code $ quote $ do
+                assert= (Option :some 4)
+                  &list:find-last-index ([] 1 3 5 7 9)
+                    fn (x) (> x 5)
+                assert= (Option :none)
+                  &list:find-last-index ([] 1 3)
+                    fn (x) (> x 8)
+                assert= (Option :some 2)
+                  &list:find-last-index ([] 1 3 5 7)
+                    fn (x) (&= x 5)
+                assert= (Option :some 0)
+                  &list:find-last-index ([] 1 3 5)
+                    fn (x) (&= x 1)
+                assert= (Option :none)
+                  &list:find-last-index ([])
+                    fn (x) (&= x 1)
+                assert= (Option :some 2)
+                  &list:last-index-of ([] :a :b :target :other) :target
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |right-to-left-short-circuit)
+              :code $ quote $ assert= (Option :some 2)
+                &list:find-last-index ([] 1 2 3 4)
+                  fn (value)
+                    if (< value 3) (raise |predicate-ran-before-or-after-match) (&= value 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-does-not-call-predicate)
+              :code $ quote $ assert= (Option :none)
                 &list:find-last-index ([])
-                  fn (x) (&= x 1)
-              assert= (Option :some 2)
-                &list:last-index-of ([] :a :b :target :other) :target
-            :tags $ #{} :core :unit
+                  fn (_value) (raise |predicate-ran-on-empty)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-input-after-match-and-miss)
+              :code $ quote $ let
+                  xs $ [] 1 2 3 4
+                assert= (Option :some 2)
+                  &list:find-last-index xs $ fn (value) (&= value 3)
+                assert= ([] 1 2 3 4) xs
+                assert= (Option :none)
+                  &list:find-last-index xs $ fn (value) (> value 10)
+                assert= ([] 1 2 3 4) xs
+              :tags $ #{} :core :unit
         '&list:first $ %{} 'CodeEntry
           :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: Option<T>\nReturns `Option :some first-element`, or `Option :none` for an empty list"
           :code $ quote &runtime-implementation
@@ -5865,12 +5887,13 @@
                 assert= &unit $ println |unit-stdout
                 assert= &unit $ echo |unit-echo
               :tags $ #{} :core :log :unit
-            %{} 'TestEntry (:name |registered-log-preserves-zero-bool-and-tag-formatting)
+            %{} 'TestEntry
+              :name |registered-log-preserves-zero-bool-and-tag-formatting
               :code $ quote $ do
                 assert= &unit $ println 0 false :unit-log-tag
               :tags $ #{} :core :log :unit
             %{} 'TestEntry (:name |registered-log-preserves-nil-arguments)
-              :code $ quote $ assert= &unit $ println nil |unit-log-nil-middle nil
+              :code $ quote $ assert= &unit (println nil |unit-log-nil-middle nil)
               :tags $ #{} :core :log :unit
             %{} 'TestEntry (:name |registered-log-callback-returns-unit)
               :code $ quote $ assert= ([] &unit &unit)
@@ -8538,7 +8561,8 @@
                     :return 'T
                   , value
               assert= |text $ same |text
-              assert= (Option :some nil) $ same $ Option :some nil
+              assert= (Option :some nil)
+                same $ Option :some nil
           :schema $ :: 'Dynamic
           :tags $ #{} :async :builtin :internal :syntax
           :tests $ []
@@ -8658,7 +8682,9 @@
             %{} 'TestEntry (:name |local-hint-is-nil)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
                     + x 1
                   metadata $ hint-fn f $ {}
                     :args $ [] 'Number
@@ -8694,7 +8720,9 @@
             %{} 'TestEntry (:name |targeted-body-hint-is-nil)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
                     + x 1
                   annotate $ fn () 3 $ hint-fn f
                     {}

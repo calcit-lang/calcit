@@ -63,6 +63,57 @@ try {
   // project, so the whole script takes about as long as its slowest group instead of the sum.
   const parts = [
     async () => {
+      // #2310: prove the actual core caller against the homogeneous shortcut
+      // fold contract. Runtime tests alone miss errors suppressed in core lint.
+      const reverseSource = "src/cirru/calcit-core.cirru";
+      const reverseOriginal = await readFile(reverseSource);
+      const reverseDefinition = JSON.parse(execFileSync(binary, [reverseSource, "query", "def",
+        "calcit.core/&list:find-last-index", "--format", "json"], options)).data;
+      const reverseSnapshot = join(project, "reverse-index-contract.cirru");
+      await copyFile("calcit/add.cirru", reverseSnapshot);
+      const runReverse = (...args) => execFileSync(binary, [reverseSnapshot, ...args], options);
+      runReverse("query", "config", "--format", "edn");
+      runReverse("query", "def", "app.main/main!", "--format", "edn");
+      const reverseCode = structuredClone(reverseDefinition.code);
+      reverseCode[1] = "reverse-index";
+      const reverseSchema = ["::", "'Fn", ["{}", ...reverseDefinition.schema.slice(1)
+        .filter(field => field[0] !== ":kind")]];
+      const reverseOperations = [
+        ["edit", "def", "app.main/reverse-index", "--input-format", "json-ast", "--code", JSON.stringify(reverseCode)],
+        ["edit", "schema", "app.main/reverse-index", "--input-format", "json-ast", "--code", JSON.stringify(reverseSchema)],
+        ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+          "quote $ defn main! ()\n  assert= (Option :some 2) $ reverse-index ([] 1 2 3) $ fn (value) $ > value 1\n  , &unit"],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        ["config", "set", "reload-fn", "app.main/main!"],
+      ];
+      const reverseTransaction = JSON.stringify(reverseOperations);
+      const reversePreview = JSON.parse(runReverse("edit", "transaction", "--code", reverseTransaction,
+        "--dry-run", "--format", "json"));
+      runReverse("edit", "transaction", "--code", reverseTransaction,
+        "--expect-revision", reversePreview.scoped_revision, "--format", "edn");
+      const reverseFixture = await readFile(reverseSnapshot);
+      for (const args of [
+        ["--check-only", "--all-defs"],
+        ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "reverse-index", "--format", "json"],
+        ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      ]) {
+        const result = spawnSync(binary, [reverseSnapshot, ...args], options);
+        if (result.error) throw result.error;
+        assert.equal(result.status, 0, `homogeneous reverse-index state: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+        if (args.includes("fix")) assert.deepEqual(JSON.parse(result.stdout).diagnostics, []);
+        assert.deepEqual(await readFile(reverseSnapshot), reverseFixture);
+      }
+      assert.deepEqual(await readFile(reverseSource), reverseOriginal);
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "list-reverse-index", "--backend", "native,js"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      // Ref traces and try handlers stay on native/JS; replay the same public
+      // methods with concrete Number/String receivers on WASM as well.
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "list-reverse-index", "--name", "typed-number-receiver",
+        "--name", "keeps-number-and-string-element-types", "--backend", "wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       // #2121: enum payload names use their declaration namespace, including
       // recursive branches. Caller-owned generic arguments retain their identity.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
