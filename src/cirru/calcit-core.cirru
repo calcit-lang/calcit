@@ -1222,23 +1222,89 @@
         '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote $ defn &fn:mappend (f g)
             fn (x)
+              hint-fn $ {}
+                :args $ [] 'A
               &let
                 v1 $ f x
                 &let
                   v2 $ g x
-                  if (list? v1) (&list:concat v1 v2)
-                    if (map? v1) (merge v1 v2)
-                      if (set? v1) (union v1 v2)
+                  if
+                    and (list? v1) (list? v2)
+                    &list:concat v1 v2
+                    if
+                      and (map? v1) (map? v2)
+                      merge v1 v2
+                      if
+                        and (set? v1) (set? v2)
+                        union v1 v2
                         if (string? v1) (&str:concat v1 v2) (.mappend v1 v2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
+          :schema $ :: 'Fn $ {}
             :args $ []
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
             :generics $ [] 'A 'B
+            :return 'Fn
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |combines-lists-maps-sets-and-strings)
+              :code $ quote $ do
+                assert= ([] 1 2 1 3)
+                  (&fn:mappend (fn (x) ([] 1 x)) (fn (x) ([] 1 (+ x 1)))) 2
+                assert= ({} (:a 2) (:b 1))
+                  (&fn:mappend (fn (x) ({} (:a 1) (:b 1))) (fn (x) ({} (:a x)))) 2
+                assert= (#{} 1 2 3)
+                  (&fn:mappend (fn (x) (#{} 1 x)) (fn (x) (#{} x 3))) 2
+                assert= |n=2
+                  (&fn:mappend (fn (x) |n=) (fn (x) (str x))) 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-mappend-matches-direct-call)
+              :code $ quote $ &let
+                h $ .mappend
+                  fn (x) ([] x)
+                  fn (x) ([] (* x 10))
+                assert= ([] 3 30) (h 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |falls-back-to-the-result-mappend-method)
+              :code $ quote $ &let
+                h $ &fn:mappend
+                  fn (x) $ fn (y) ([] x y)
+                  fn (x) $ fn (y) ([] y)
+                assert= ([] 1 2 2) ((h 1) 2)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |calls-f-then-g-once-without-changing-input)
+              :code $ quote $ let
+                  input $ [] 1
+                  *log $ ref $ assert-type ([]) (:: 'List 'Dynamic)
+                  h $ &fn:mappend
+                    fn (xs)
+                      swap! *log $ fn (items) (append items ([] :f xs))
+                      append xs 2
+                    fn (xs)
+                      swap! *log $ fn (items) (append items ([] :g xs))
+                      [] 3
+                assert= ([] 1 2 3) (h input)
+                assert= ([] 1) input
+                assert= ([] ([] :f ([] 1)) ([] :g ([] 1))) @*log
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-mismatched-results-and-propagates-failures)
+              :code $ quote $ let
+                  fails? $ fn (thunk)
+                    try (do (thunk) false)
+                      fn (message) true
+                do
+                  assert= true $ fails? $ fn ()
+                    (&fn:mappend (fn (x) ([] x)) (fn (x) x)) 1
+                  assert= true $ fails? $ fn ()
+                    (&fn:mappend (fn (x) ({} (:a x))) (fn (x) x)) 1
+                  assert= true $ fails? $ fn ()
+                    (&fn:mappend (fn (x) (#{} x)) (fn (x) x)) 1
+                  assert= |g-failed $ try
+                    (&fn:mappend (fn (x) ([] x)) (fn (x) (raise |g-failed))) 1
+                    fn (message) message
+              :tags $ #{} :core :unit
         '&format-ternary-tree $ %{} 'CodeEntry
           :doc "|Deprecated FingerVec diagnostic; the ternary-tree name is historical. Returns the debug layout String of a native List's current FingerVec representation (for example `{} _ {0 1}`), not a ternary tree; the text follows the runtime implementation and is not a data contract, so do not parse it into tree nodes. Build an explicit data model for teaching trees, and use format-cirru-edn for portable value display. Scheduled for removal in 0.32.0 with no replacement (docs/run/upgrade.md).\nSyntax: (&format-ternary-tree list)\nParams: list (a native List)\nReturns: String; rejects vectors and other values.\nJavaScript emission and WASM reject this native-only helper. Compile-time macros execute natively and may still call it before returning portable expressions."
           :code $ quote &runtime-implementation
