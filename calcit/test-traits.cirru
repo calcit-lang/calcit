@@ -235,7 +235,16 @@
         'Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
-          :schema $ :: 'Struct
+          :schema $ :: 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-nominal-method-input-after-attachment)
+            :code $ quote $ let
+                FooPerson $ impl-traits Person0 MyFooImpl
+                ShowPerson $ impl-traits Person0 CoreShowImpl
+                OverridePerson $ impl-traits Person0 MyFooImpl2
+              assert= "|foo Alice" $ .foo $ FooPerson :name |Alice
+              assert= |Person:Alice $ .show $ ShowPerson :name |Alice
+              assert= "|foo2 Alice" $ .foo $ OverridePerson :name |Alice
+            :tags $ #{} :nominal-impl :trait :unit
         'RestBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def RestBox (impl-traits RestBoxBase RestBoxImpl)
           :examples $ []
