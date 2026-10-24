@@ -8106,7 +8106,9 @@ fn expected_method_argument_types(
       _ => {}
     }
     match method_entry {
-      Calcit::Proc(proc) => {
+      // Only callback relations belong here; ordinary builtin argument proof
+      // must retain its existing diagnostic and navigation path.
+      Calcit::Proc(proc) if specialized_types.is_some() => {
         let (namespace, definition) = proc.get_ns_def();
         let schema = program::lookup_def_schema(namespace, definition);
         if schema.as_function().is_some() {
