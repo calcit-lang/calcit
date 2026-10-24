@@ -5,6 +5,7 @@
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/&core-enum-impls#contains-has-one-dispatch-origin "|parity: generated WASM traps on an Enum receiver .contains? (#2337)"
       |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: generated WASM traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
       |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
       |calcit.core/struct-match#rejects-invalid-input-with-original-failure-text "|unsupported: unsupported syntax in WASM: try"
