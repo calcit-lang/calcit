@@ -829,12 +829,13 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
     (Some(old), Some(new)) => {
       let children = vec![
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
-        diff_string("schema", Some(&old.schema.to_string()), Some(&new.schema.to_string())),
+        diff_optional_edn(
+          "schema",
+          persisted_schema(&old.schema).as_ref(),
+          persisted_schema(&new.schema).as_ref(),
+        ),
         diff_tag_set("tags", &old.tags, &new.tags),
-        {
-          let (old_ffi, new_ffi) = optional_edn_texts(old.ffi.as_ref(), new.ffi.as_ref());
-          diff_optional_string("ffi", old_ffi.as_deref(), new_ffi.as_deref())
-        },
+        diff_optional_edn("ffi", old.ffi.as_ref(), new.ffi.as_ref()),
         diff_cirru_list("examples", &old.examples, &new.examples),
         diff_tests("tests", &old.tests, &new.tests),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
@@ -847,25 +848,23 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
   }
 }
 
-/// Render two EDN values for comparison. Equal values must render to identical text:
-/// map and set display order is not canonical, so comparing display text reports
-/// reordered but structurally equal values as changes.
-fn edn_texts(old: &Edn, new: &Edn) -> (String, String) {
-  let old_text = old.to_string();
-  if old == new {
-    (old_text.clone(), old_text)
-  } else {
-    (old_text, new.to_string())
-  }
+/// Match Snapshot schema serialization, including omission versus explicit Dynamic.
+fn persisted_schema(schema: &Arc<CalcitTypeAnnotation>) -> Option<Edn> {
+  (!crate::snapshot::schema_annotation_is_missing(schema)).then(|| crate::snapshot::schema_annotation_to_edn(schema.as_ref()))
 }
 
-fn optional_edn_texts(old: Option<&Edn>, new: Option<&Edn>) -> (Option<String>, Option<String>) {
+/// Compare persisted metadata structurally; display text is only for review.
+fn diff_optional_edn(label: &str, old: Option<&Edn>, new: Option<&Edn>) -> DiffNode {
   match (old, new) {
-    (Some(old), Some(new)) => {
-      let (old_text, new_text) = edn_texts(old, new);
-      (Some(old_text), Some(new_text))
-    }
-    (old, new) => (old.map(|value| value.to_string()), new.map(|value| value.to_string())),
+    (Some(old), Some(new)) if old == new => DiffNode::new(label, DiffStatus::Unchanged).with_detail(render_text(&old.to_string())),
+    (Some(old), Some(new)) => DiffNode::new(label, DiffStatus::Modified).with_detail(format!(
+      "{:?} -> {:?}",
+      old.to_string().replace('\n', "⏎"),
+      new.to_string().replace('\n', "⏎")
+    )),
+    (None, Some(new)) => DiffNode::new(label, DiffStatus::Added).with_detail(render_text(&new.to_string())),
+    (Some(old), None) => DiffNode::new(label, DiffStatus::Removed).with_detail(render_text(&old.to_string())),
+    (None, None) => DiffNode::new(label, DiffStatus::Unchanged),
   }
 }
 
@@ -1087,7 +1086,11 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
 
   DiffNode::new(label, status).with_children(vec![
     DiffNode::new("doc", status).with_detail(render_text(&value.doc)),
-    DiffNode::new("schema", status).with_detail(render_text(&value.schema.to_string())),
+    DiffNode::new("schema", status).with_detail(
+      persisted_schema(&value.schema)
+        .as_ref()
+        .map_or_else(|| "(none)".to_owned(), |schema| render_text(&schema.to_string())),
+    ),
     build_string_list_tree("tags", &tags, status),
     DiffNode::new("ffi", status).with_detail(value.ffi.as_ref().map_or_else(|| "(none)".to_owned(), ToString::to_string)),
     DiffNode::new("examples", status).with_children(examples),
@@ -1794,6 +1797,116 @@ mod tests {
       leaf(text)
     };
     crate::snapshot::parse_schema_annotation_for_write(&form).expect("schema should be valid")
+  }
+
+  #[test]
+  fn persisted_schema_changes_are_not_hidden_by_diagnostic_display() {
+    use crate::calcit::CalcitTypeAnnotation;
+    use std::sync::Arc;
+
+    let fixture = parse_snapshot(
+      include_str!("../tests/fixtures/ffi-boundary-evidence.cirru"),
+      "fixture",
+      "calcit.cirru",
+    )
+    .expect("fixture should parse");
+    let mut number = Arc::new(CalcitTypeAnnotation::Number);
+    let mut string = Arc::new(CalcitTypeAnnotation::String);
+    for _ in 0..48 {
+      number = Arc::new(CalcitTypeAnnotation::List(number));
+      string = Arc::new(CalcitTypeAnnotation::List(string));
+    }
+    for (old_schema, new_schema) in [
+      (schema("'Struct"), schema("'StructDef")),
+      (schema("'Trait"), schema("'StructDef")),
+      (schema("'StructDef"), schema("'EnumDef")),
+      (
+        schema(":: 'Fn $ {} (:args $ []) (:return 'Unit)"),
+        schema(":: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"),
+      ),
+      (DYNAMIC_TYPE.clone(), schema("'Dynamic")),
+      (number, string),
+    ] {
+      assert_eq!(
+        old_schema.to_string(),
+        new_schema.to_string(),
+        "fixture must exercise a lossy display collision"
+      );
+      let mut old = fixture.clone();
+      let mut new = fixture.clone();
+      old
+        .files
+        .get_mut("ffi-evidence.main")
+        .unwrap()
+        .defs
+        .get_mut("main!")
+        .unwrap()
+        .schema = old_schema;
+      new
+        .files
+        .get_mut("ffi-evidence.main")
+        .unwrap()
+        .defs
+        .get_mut("main!")
+        .unwrap()
+        .schema = new_schema;
+      let root = diff_snapshot(&old, &new);
+      let stats = collect_stats(&root);
+      let evidence = collect_semantic_evidence(&old, &new, "old", "new", &root, &stats).expect("evidence should collect");
+      assert_eq!(evidence.classification, "semantic-change");
+      assert!(evidence.semantic_review_required);
+      assert_eq!(evidence.categories, vec!["schema-signature"]);
+      assert!(evidence.schema_widening.is_empty());
+      assert_eq!(evidence.changes.len(), 1);
+      let change = &evidence.changes[0];
+      assert_eq!(change.definition.as_deref(), Some("ffi-evidence.main/main!"));
+      assert_eq!(change.path, "files/ffi-evidence.main/defs/main!/schema");
+      assert_eq!(change.schema_direction.as_deref(), Some("changed"));
+      assert!(change.widened_slots.is_empty() && change.narrowed_slots.is_empty());
+      assert_ne!(change.before_revision, change.after_revision);
+      let definition_diff = diff_code_entry(
+        "main!",
+        old.files["ffi-evidence.main"].defs.get("main!"),
+        new.files["ffi-evidence.main"].defs.get("main!"),
+      );
+      let schema_diff = child(&definition_diff, "schema");
+      if schema_diff.status == DiffStatus::Modified {
+        let detail = schema_diff.detail.as_deref().expect("changed schema must have review detail");
+        let (before, after) = detail.split_once(" -> ").expect("changed schema must display both values");
+        assert_ne!(before, after, "human review must expose the actual schema difference: {detail}");
+        assert!(!detail.contains('\n'), "schema review detail must remain one line");
+      }
+    }
+  }
+
+  #[test]
+  fn persisted_schema_rendering_preserves_kinds_and_ignores_set_order() {
+    let entry = |schema| CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: leaf("nil"),
+      schema,
+      ffi: None,
+    };
+    let original = entry(schema("'Struct"));
+    let updated = entry(schema("'StructDef"));
+    let diff = diff_code_entry("demo", Some(&original), Some(&updated));
+    let rendered = child(&diff, "schema").detail.as_deref().expect("changed schemas must be readable");
+    assert!(rendered.contains("StructDef") && rendered.contains("Struct"), "{rendered}");
+    let added = diff_code_entry("demo", None, Some(&updated));
+    assert!(child(&added, "schema").detail.as_deref().unwrap().contains("StructDef"));
+
+    let forward = entry(schema(
+      ":: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :feature-a :feature-b)",
+    ));
+    let reverse = entry(schema(
+      ":: 'Fn $ {} (:features $ #{} :feature-b :feature-a) (:return 'Unit) (:args $ [])",
+    ));
+    let unchanged = diff_code_entry("demo", Some(&forward), Some(&reverse));
+    assert_eq!(child(&unchanged, "schema").status, DiffStatus::Unchanged);
+    assert_eq!(unchanged.status, DiffStatus::Unchanged);
   }
 
   #[test]

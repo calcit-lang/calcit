@@ -599,6 +599,8 @@ calcit calcit.cirru analyze program-diff HEAD --format edn --fail-on-widening
 
 结构化结果包含 Snapshot path、before/after content revision、稳定分类、受影响 definition 与是否需要 semantic review。`canonical-format-only` 表示原始文件字节不同、但解析后的 Snapshot 没有配置、schema、definition 或可执行表达式变化；它只能减少文本 diff 的人工确认，不能替代 strict check、测试或运行时验证。`--def` 保留原有的交互式 tree diff，目前只支持 human 输出；自动化证据应省略 `--def`，在同一份 Snapshot 报告中筛选 `:changes`。
 
+schema 按持久化合同比较，包括 `Struct` / `StructDef` 等值类别、函数 feature 与缺失标注和显式 `Dynamic` 的区别；诊断中的缩写或截断不决定是否变化。实际变更使用现有 `schema-signature` 分类并要求 semantic review，等价的 Map/Set 重排保持不变。互不包含的类别变化记为 `changed`；`--fail-on-widening` 只拒绝已证明的放宽，其他合同变化通过 `:semantic-review-required` 评估。
+
 ## WASM preview 命令
 
 WASM 支持范围不能与 Calcit 表层语义混淆：macro 在编译前展开，类型已证明的普通方法可经过静态 lowering 与泛型单态化编译，不需要为了目标后端把调用改成 native call。开放 Dynamic、运行时派发、未闭合的 ABI 或尚未实现的宿主能力则需要逐项检查；`query type --format edn` 的方法证据也不代替实际目标编译与运行。各构造的支持状态、所需类型证据与 `E_WASM_*` 诊断见 [WASM 支持矩阵](../installation/wasm-support.md)。内部字符串内存保存 UTF-8 字节长度，不改变 `.len` 使用 Unicode 标量数量的公开契约。

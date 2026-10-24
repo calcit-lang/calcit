@@ -557,3 +557,164 @@ fn query_defs_errors_keep_structured_stdout_and_reject_unknown_formats() {
   assert!(stderr(&output).contains("Unsupported query output format 'yaml'"));
   assert!(!stderr(&output).contains("does not exist"), "reject format before Snapshot I/O");
 }
+
+/// Git/source-metadata evidence and transport are CLI contracts, not language semantics.
+#[test]
+fn program_diff_formats_preserve_value_schema_evidence_and_widening_gate() {
+  use cirru_edn::Edn;
+
+  let directory = tempfile::tempdir().expect("isolated program-diff project");
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy(FIXTURE, &snapshot).unwrap();
+  let call = |args: &[&str]| run_in(Some(directory.path()), &snapshot, args);
+  let mutate = |operations: serde_json::Value| {
+    let transaction = operations.to_string();
+    let preview = assert_json_document(
+      &call(&["edit", "transaction", "--code", &transaction, "--dry-run", "--format", "json"]),
+      "preview metadata transaction",
+    );
+    assert_json_document(
+      &call(&[
+        "edit",
+        "transaction",
+        "--code",
+        &transaction,
+        "--expect-revision",
+        preview["scoped_revision"].as_str().unwrap(),
+        "--format",
+        "json",
+      ]),
+      "apply metadata transaction",
+    );
+  };
+  let git = |args: &[&str]| {
+    let output = Command::new("git")
+      .current_dir(directory.path())
+      .args([
+        "-c",
+        "user.name=Calcit Fixture",
+        "-c",
+        "user.email=calcit-fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+      ])
+      .arg("-c")
+      .arg(format!("core.hooksPath={}", directory.path().join("no-hooks").display()))
+      .args(args)
+      .output()
+      .expect("fixture git should run");
+    assert!(output.status.success(), "git {args:?}: {}", stderr(&output));
+  };
+  let target = "test-effects-graph.program-diff/Probe";
+  let amount = "test-effects-graph.program-diff/amount";
+  assert_json_document(&call(&["query", "config", "--format", "json"]), "fixture config");
+  mutate(serde_json::json!([
+    ["edit", "add-ns", "test-effects-graph.program-diff"],
+    [
+      "edit",
+      "def",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defstruct Probe (:value 'Number)"
+    ],
+    ["edit", "schema", target, "--input-format", "cirru", "--code", "quote 'Struct"],
+    ["edit", "def", amount, "--input-format", "cirru", "--code", "quote $ def amount 1"],
+    ["edit", "schema", amount, "--input-format", "cirru", "--code", "quote 'Number"]
+  ]));
+  git(&["init", "--quiet"]);
+  git(&["add", "calcit.cirru"]);
+  git(&["commit", "--quiet", "-m", "Original schema"]);
+  mutate(serde_json::json!([[
+    "edit",
+    "schema",
+    target,
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote 'StructDef"
+  ]]));
+  let before_reports = fs::read(&snapshot).unwrap();
+  let readback = assert_json_document(&call(&["query", "def", target, "--format", "json"]), "schema readback");
+  assert_eq!(readback["data"]["schema"], "'StructDef");
+  let json = assert_json_document(
+    &call(&["analyze", "program-diff", "HEAD", "--format", "json", "--fail-on-widening"]),
+    "incomparable kinds require review but are not widening",
+  );
+  let evidence = &json["data"]["evidence"];
+  assert_eq!(evidence["classification"], "semantic-change");
+  assert_eq!(evidence["semantic_review_required"], true);
+  assert_eq!(evidence["categories"], serde_json::json!(["schema-signature"]));
+  assert_eq!(evidence["schema_widening"], serde_json::json!([]));
+  assert_eq!(evidence["changes"].as_array().unwrap().len(), 1);
+  let change = &evidence["changes"][0];
+  assert_eq!(change["definition"], target);
+  assert_eq!(change["schema_direction"], "changed");
+  assert_eq!(change["path"], "files/test-effects-graph.program-diff/defs/Probe/schema");
+
+  let edn = call(&["analyze", "program-diff", "HEAD", "--format", "edn"]);
+  assert_edn_document(&edn, "program-diff EDN");
+  let root = cirru_edn::parse(&stdout(&edn)).unwrap().view_map().unwrap();
+  let data = root.tag_get("data").unwrap().view_map().unwrap();
+  let native_evidence = data.tag_get("evidence").unwrap().view_map().unwrap();
+  assert_eq!(native_evidence.tag_get("semantic-review-required"), Some(&Edn::Bool(true)));
+  for (edn_key, json_key) in [
+    ("classification", "classification"),
+    ("before-revision", "before_revision"),
+    ("after-revision", "after_revision"),
+  ] {
+    assert_eq!(
+      native_evidence.tag_get(edn_key),
+      Some(&Edn::str(evidence[json_key].as_str().unwrap()))
+    );
+  }
+  let changes = native_evidence.tag_get("changes").unwrap().view_list().unwrap();
+  assert_eq!(changes.len(), 1);
+  let native_change = changes.get(0).unwrap().view_map().unwrap();
+  for key in ["category", "definition", "path"] {
+    assert_eq!(native_change.tag_get(key), Some(&Edn::str(change[key].as_str().unwrap())));
+  }
+  assert_eq!(native_change.tag_get("schema-direction"), Some(&Edn::str("changed")));
+  let human = call(&["analyze", "program-diff", "HEAD"]);
+  assert!(human.status.success(), "{}", stderr(&human));
+  for text in [
+    "# Program Diff",
+    "classification: semantic-change",
+    "semantic review required: true",
+    "schema-signature",
+    "StructDef",
+  ] {
+    assert!(stdout(&human).contains(text), "missing {text}: {}", stdout(&human));
+  }
+  assert_eq!(fs::read(&snapshot).unwrap(), before_reports);
+  git(&["add", "calcit.cirru"]);
+  git(&["commit", "--quiet", "-m", "Correct prototype schema"]);
+  let historical = assert_json_document(
+    &call(&["analyze", "program-diff", "HEAD", "--base", "HEAD^", "--format", "json"]),
+    "two-ref program-diff",
+  );
+  assert_eq!(historical["data"]["evidence"], *evidence);
+  assert_eq!(fs::read(&snapshot).unwrap(), before_reports);
+
+  mutate(serde_json::json!([[
+    "edit",
+    "schema",
+    amount,
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote 'Dynamic"
+  ]]));
+  let before_gate = fs::read(&snapshot).unwrap();
+  let widened = call(&["analyze", "program-diff", "HEAD", "--format", "json", "--fail-on-widening"]);
+  assert!(!widened.status.success(), "actual widening must still fail");
+  assert!(stderr(&widened).contains("Schema widening"));
+  let widened = assert_json_stdout(&widened, "widening report");
+  assert_eq!(widened["data"]["evidence"]["schema_widening"], serde_json::json!([amount]));
+  assert_eq!(
+    widened["data"]["evidence"]["changes"][0]["widened_slots"],
+    serde_json::json!(["schema"])
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), before_gate);
+}
