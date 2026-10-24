@@ -151,6 +151,42 @@ const compilerSpecializedPositions = new Map([
     "字面量路径保留已证明的 Map 前缀；Dynamic 子节点仍开放，空/未知路径与不相容的 key/具体 leaf 不承诺原 receiver 类型。",
   ],
   [
+    "assoc|schema.args.0",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "assoc|schema.args.1",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "assoc|schema.args.2",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "assoc|schema.return",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "dissoc|schema.args.0",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "dissoc|schema.rest",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "dissoc|schema.return",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "dissoc-in|schema.args.0",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
+    "dissoc-in|schema.return",
+    "#2187: the legacy facade dispatches across List, Map, Struct and Enum, so no generic `T -> T` relation is honest; known receivers lower to the typed `&list:assoc`, `&map:assoc`, `&map:dissoc` or Struct-field write contracts, and generic receivers migrate to the `.assoc` / `.dissoc` methods.",
+  ],
+  [
     "apply|schema.return",
     "Arbitrary callable arity is not representable in the schema; compatible homogeneous List calls recover the callable return type at preprocessing time, while unproved calls remain Dynamic.",
   ],
