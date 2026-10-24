@@ -221,10 +221,12 @@ fn merge_if_branch_types(
   true_type: Arc<CalcitTypeAnnotation>,
   false_type: Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Never) {
+  // A recursive-input slot still being solved is absent evidence like Never;
+  // the solver binds it from the peers it is joined with.
+  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Never) || super::recursive_inputs::is_pending_slot(&true_type) {
     return Some(false_type);
   }
-  if matches!(false_type.as_ref(), CalcitTypeAnnotation::Never) {
+  if matches!(false_type.as_ref(), CalcitTypeAnnotation::Never) || super::recursive_inputs::is_pending_slot(&false_type) {
     return Some(true_type);
   }
   // Root Dynamic admits every value shape. A container with several open

@@ -312,10 +312,17 @@ try {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "contextual-map-output", "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "loop-empty-accumulator", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [name, parameters, generics, types, returned, body] of [
         ["wrong-output-owner", "xs f", "'T 'U", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'U))", "T", ".map xs $ fn (value) $ f value"],
         ["concrete-output", "xs", "'T", "(:: 'List 'T)", "T", "map xs $ fn (_value) |not-a-generic"],
         ["open-output", "xs f", "'T 'MapOutput", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'Dynamic))", "MapOutput", "map xs $ fn (value) $ f value"],
+        // An empty loop accumulator is solved from its recur transfers, not
+        // borrowed from the return: a concrete or mixed member cannot be T.
+        ["loop-concrete-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append acc |x)"],
+        ["loop-mixed-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append (&list:append acc x) 1)"],
       ]) {
         const operations = JSON.stringify([
           ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${parameters})\n  ${body}`],
