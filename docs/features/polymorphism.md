@@ -243,6 +243,30 @@ do
   assert= 0 $ &compare |same |same
 ```
 
+## 函数的 `.map` 组合
+
+函数接收者的 `f .map g` 返回一个新的一元函数，执行 `f(g(x))`：先调用参数函数 `g`，再把结果交给接收者 `f`。如果 `f` 接收 B、返回 C，`g` 接收 A、返回 B，组合函数便接收 A、返回 C，保留完整的函数签名。
+
+```cirru
+let
+    double $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &* x 2
+    increment $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &+ x 1
+    composed $ double .map increment
+  assert-type composed $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+  assert= 8 $ composed 3
+```
+
+创建组合时只求值 `f`、`g` 的表达式，不执行两个函数体；每次调用组合函数时各执行一次。`g` 抛错时不执行 `f`，`f` 的错误也直接向外传播。函数体内的 `hint-fn` 声明需要实际代码证明的合同，不负责把未知函数转换成所声明的签名。
+
+### 限制
+
+- 函数组合保持一元调用；它不是 List、Option 或 Result 的元素映射，也不改变现有组合方向。
+- WASM/WASI 的闭包与宿主能力支持以相应后端的实际检查结果为准。
+
 ## Option and Result helpers
 
 `Option<T>` 和 `Result<T,E>` 是泛型 core Enum。具名定义同时承担类型与构造入口：`Option :some value` / `Option :none`、`Result :ok value` / `Result :err error`。`%some/%none/%ok/%err` 是待迁移的旧 helper；普通链式处理应继续用可推断的接收者方法：

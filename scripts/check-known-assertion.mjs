@@ -105,46 +105,102 @@ try {
         assert.deepEqual(await readFile(reverseSnapshot), reverseFixture);
       }
       assert.deepEqual(await readFile(reverseSource), reverseOriginal);
-      // #2314: audit the real legacy caller outside core's compatibility
-      // boundary. The callback input still has to retain the map's K/V types.
-      const mapKvDefinition = JSON.parse(execFileSync(binary, [reverseSource, "query", "def",
-        "calcit.core/map-kv", "--format", "json"], options)).data;
-      const mapKvSnapshot = join(project, "map-kv-contract.cirru");
-      await copyFile("calcit/add.cirru", mapKvSnapshot);
-      const runMapKv = (...args) => execFileSync(binary, [mapKvSnapshot, ...args], options);
-      runMapKv("query", "config", "--format", "edn");
-      runMapKv("query", "def", "app.main/main!", "--format", "edn");
-      const mapKvCode = structuredClone(mapKvDefinition.code);
-      mapKvCode[1] = "map-kv-copy";
-      const mapKvSchema = ["::", "'Fn", ["{}", ...mapKvDefinition.schema.slice(1)
-        .filter(field => field[0] !== ":kind")]];
-      const mapKvOperations = [
-        ["edit", "def", "app.main/map-kv-copy", "--input-format", "json-ast", "--code", JSON.stringify(mapKvCode)],
-        ["edit", "schema", "app.main/map-kv-copy", "--input-format", "json-ast", "--code", JSON.stringify(mapKvSchema)],
-        ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defn", "main!", [], "&unit"])],
-        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
-        ["config", "set", "reload-fn", "app.main/main!"],
-      ];
-      const mapKvTransaction = JSON.stringify(mapKvOperations);
-      const mapKvPreview = JSON.parse(runMapKv("edit", "transaction", "--code", mapKvTransaction,
-        "--dry-run", "--format", "json"));
-      runMapKv("edit", "transaction", "--code", mapKvTransaction,
-        "--expect-revision", mapKvPreview.scoped_revision, "--format", "edn");
-      const mapKvFixture = await readFile(mapKvSnapshot);
-      for (const args of [
-        ["--check-only", "--all-defs", "--format", "json"],
-        ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "map-kv-copy", "--format", "json"],
-        ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      // Audit real core callers outside the compatibility boundary: #2314
+      // retains map K/V inputs; #2315 retains the composed Fn's A/C relation.
+      for (const [definition, copyName] of [
+        ["calcit.core/map-kv", "map-kv-copy"],
+        ["calcit.core/&fn:map", "fn-map-copy"],
       ]) {
-        const result = spawnSync(binary, [mapKvSnapshot, ...args], options);
-        if (result.error) throw result.error;
-        assert.equal(result.status, 0, `map-kv callback inputs: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
-        assert.deepEqual(JSON.parse(result.stdout).diagnostics, []);
-        assert.deepEqual(await readFile(mapKvSnapshot), mapKvFixture);
+        const data = JSON.parse(execFileSync(binary, [reverseSource, "query", "def",
+          definition, "--format", "json"], options)).data;
+        const callerSnapshot = join(project, `${copyName}-contract.cirru`);
+        await copyFile("calcit/add.cirru", callerSnapshot);
+        const runCaller = (...args) => execFileSync(binary, [callerSnapshot, ...args], options);
+        runCaller("query", "config", "--format", "edn");
+        runCaller("query", "def", "app.main/main!", "--format", "edn");
+        const code = structuredClone(data.code);
+        code[1] = copyName;
+        const schema = ["::", "'Fn", ["{}", ...data.schema.slice(1).filter(field => field[0] !== ":kind")]];
+        const operations = [
+          ["edit", "def", `app.main/${copyName}`, "--input-format", "json-ast", "--code", JSON.stringify(code)],
+          ["edit", "schema", `app.main/${copyName}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+          ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+            JSON.stringify(["defn", "main!", [], "&unit"])],
+          ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          ["config", "set", "reload-fn", "app.main/main!"],
+        ];
+        const transaction = JSON.stringify(operations);
+        const preview = JSON.parse(runCaller("edit", "transaction", "--code", transaction,
+          "--dry-run", "--format", "json"));
+        runCaller("edit", "transaction", "--code", transaction,
+          "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const fixture = await readFile(callerSnapshot);
+        const checks = [
+          ["--check-only", "--all-defs", "--format", "json"],
+          ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", copyName, "--format", "json"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+        ];
+        for (const args of checks) {
+          const result = spawnSync(binary, [callerSnapshot, ...args], options);
+          if (result.error) throw result.error;
+          assert.equal(result.status, 0, `${definition} callback relation: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+          assert.deepEqual(JSON.parse(result.stdout).diagnostics, []);
+          assert.deepEqual(await readFile(callerSnapshot), fixture);
+        }
+        if (copyName === "fn-map-copy") {
+          // A checked body hint must not equate unrelated binders, invent a
+          // generic result, or recover a callable signature from opaque Fn.
+          for (const variant of ["wrong-input", "wrong-output", "opaque-function"]) {
+            const rejectedSnapshot = join(project, `fn-map-${variant}.cirru`);
+            await copyFile(callerSnapshot, rejectedSnapshot);
+            const runRejected = (...args) => execFileSync(binary, [rejectedSnapshot, ...args], options);
+            runRejected("query", "config", "--format", "edn");
+            runRejected("query", "def", `app.main/${copyName}`, "--format", "edn");
+            const badCode = structuredClone(code);
+            const badSchema = structuredClone(schema);
+            assert.deepEqual(badCode[3][2], ["hint-fn", ["{}", [":args", ["[]", "'A"]], [":return", "'C"]]]);
+            if (variant === "wrong-input") badCode[3][2][1][1][1] = ["[]", "'B"];
+            else if (variant === "wrong-output") badCode[3][3] = "|not-a-generic";
+            else {
+              badCode[2] = ["h"];
+              badCode[3] = "h";
+              badSchema[2].find(field => field[0] === ":args")[1] = ["[]", "'Fn"];
+              badSchema[2].find(field => field[0] === ":generics")[1] = ["[]", "'A", "'C"];
+            }
+            const mutation = JSON.stringify([
+              ["edit", "def", `app.main/${copyName}`, "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(badCode)],
+              ["edit", "schema", `app.main/${copyName}`, "--input-format", "json-ast", "--code", JSON.stringify(badSchema)],
+            ]);
+            const dryRun = JSON.parse(runRejected("edit", "transaction", "--code", mutation, "--dry-run", "--format", "json"));
+            runRejected("edit", "transaction", "--code", mutation, "--expect-revision", dryRun.scoped_revision, "--format", "edn");
+            const original = await readFile(rejectedSnapshot);
+            for (const args of checks) {
+              const result = spawnSync(binary, [rejectedSnapshot, ...args], options);
+              if (result.error) throw result.error;
+              assert.equal(result.status, 1, `${variant}: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+              if (result.stdout.trim()) {
+                const report = JSON.parse(result.stdout);
+                if (args.includes("--workflow")) assert.equal(report.data.workflow.status, "failed");
+                const diagnostics = [...report.diagnostics,
+                  ...(report.data.definitions?.flatMap(definition => definition.diagnostics) ?? [])];
+                const expected = variant === "opaque-function" ? "E_FN_RETURN_UNPROVEN"
+                  : variant === "wrong-input" && args.includes("--rule") ? "E_CALL_ARGUMENT_UNPROVEN"
+                    : "E_ERASED_GENERIC_RELATION";
+                assert.ok(diagnostics.some(diagnostic => diagnostic.code === expected), `${variant}: require the actual relation failure`);
+              } else {
+                // Some invalid body hints fail before the independent proof
+                // can emit JSON. Check the actual failure, not its rule catalog.
+                assert.equal(variant, "wrong-output");
+                assert.ok(args.includes("--rule"));
+                assert.match(result.stderr, /Failed to preprocess fix target app.main\/fn-map-copy:.*\[E_ERASED_GENERIC_RELATION\]/);
+              }
+              assert.deepEqual(await readFile(rejectedSnapshot), original);
+            }
+          }
+        }
+        assert.deepEqual(await readFile(reverseSource), reverseOriginal);
       }
-      assert.deepEqual(await readFile(reverseSource), reverseOriginal);
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "list-reverse-index", "--backend", "native,js"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
