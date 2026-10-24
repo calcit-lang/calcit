@@ -379,15 +379,34 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |count-has-one-dispatch-origin)
+              :code $ quote $ let
+                  count-of $ fn (v)
+                    hint-fn $ {} (:return 'Number)
+                      :args $ [] 'Enum
+                    .count v
+                assert= 3 $ count-of $ %:: _ :point 1 2
+                assert= 2 $ count-of $ Option :some 1
+                assert= 1 $ count-of $ Option :none
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |contains-has-one-dispatch-origin)
+              :code $ quote $ let
+                  has-index? $ fn (v i)
+                    hint-fn $ {} (:return 'Bool)
+                      :args $ [] 'Enum 'Number
+                    .contains? v i
+                  point $ %:: _ :point 1 2
+                assert= true $ has-index? point 2
+                assert= false $ has-index? point 3
+                assert= false $ has-index? point -1
+                assert= true $ has-index? (Option :some 1) 1
+              :tags $ #{} :unit
         '&core-enum-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-enum-methods
-            &impl::new :&core-enum-methods (:: :count &enum:count) (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
+            &impl::new :&core-enum-methods (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
               :: :empty? $ defn &enum:empty?-impl (x)
                 &= 0 $ &enum:count x
-              :: :contains? $ defn &enum:contains?-impl (x k)
-                if (&>= k 0)
-                  &< k $ &enum:count x
-                  , false
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
