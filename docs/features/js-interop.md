@@ -168,9 +168,8 @@ that adapter; callers should see only its ordinary schema.
 
 ### 3.1 ES modules with typed adapters
 
-Import npm packages with the ordinary namespace rules, then keep the unchecked
-host boundary in one small adapter namespace. A default export uses `:default`;
-named exports use `:refer`:
+npm 包沿用普通 namespace 导入规则；原始宿主调用集中在小型适配器中，应用通过普通 Calcit
+schema 使用它。`:refer` 引用实际的命名导出，`:default` 引用实际的默认导出：
 
 ```cirru.no-check
 ns app.npm.ids $ :require
@@ -185,12 +184,23 @@ defn make-id (size)
     generate size
 ```
 
-For a module object, declare only the methods or fields your adapter needs as
-an external trait, then coerce the raw import once. `unsafe-coerce` emits the
-original JS value; its declared type is static evidence for subsequent Calcit
-method calls and JavaScript lowering. Keep that assertion at the adapter
-boundary. Application namespaces should call ordinary schema-typed wrappers,
-not pass npm `JsObject` values around.
+区分导入规则中的别名和运行时值：
+
+- `|pkg :refer $ member`：`member` 是包实际导出的值，可以是函数，也可以是对象。
+- `|pkg :default module-value`：`module-value` 是包的默认导出；只有包确实提供相应默认导出时才能使用，不等同于 ESM namespace 对象。
+- `|pkg :as pkg-alias`：通过 `pkg-alias/member` 引用命名导出；裸 `pkg-alias` 只是 namespace 别名，不能直接作为值传给 `js-cast` 或其他函数。
+
+若默认或命名导出确实提供所需模块对象，在声明 `:js-ffi` 的适配器内，用 `js-cast value 'ApiHost`
+检查最小 external-object trait。成功转换保留同一个 JS 对象；随后通过声明的方法调用。
+直接访问未声明的 `JsObject` 成员仍会被严格检查拒绝，导入对象并不自动补齐成员合同。
+
+`js-cast` 只检查字段存在及方法为函数，不证明 JS 返回值、可空返回或 Promise payload；
+这些合同仍须准确声明并测试。确有必要的 `unsafe-coerce` 也只断言已有值的类型，不执行上述
+成员检查，更不能把未绑定的 namespace 别名变成对象。应用侧继续使用适配器的普通类型化接口。
+
+当前普通 `:as` 规则没有把 ESM namespace 对象本身作为 Calcit 值的写法。若包没有导出所需对象，
+沿用限定名调用实际导出，在适配器中保留真实合同；不要假造 default 导出、返回类型或修改生成的 JS
+来绕过该限制。新增 namespace-value 能力需要另行设计，不是 `js-cast` 的隐含行为。
 
 Audit these exceptional assertions without executing the program:
 
