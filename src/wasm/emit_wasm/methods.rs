@@ -828,6 +828,7 @@ fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u3
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
+  let enum_tag = get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -850,7 +851,25 @@ fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u3
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_set_includes_from_local(ctx, receiver_local, key_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(enum_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  // The Enum contract checks the numeric range, including the tag slot.
+  // Keep f64 comparisons: fractional indices are not truncated to integers.
+  ctx.emit(Instruction::LocalGet(key_local));
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(key_local));
+  emit_heap_count_from_local(ctx, receiver_local);
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Add);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
