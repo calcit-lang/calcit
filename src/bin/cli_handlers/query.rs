@@ -2639,6 +2639,41 @@ fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeA
   }
 }
 
+/// Find the definition the compiler resolved for one source symbol. Lexically
+/// bound names never produce a resolved usage, and a source leaf that a macro
+/// resolved to different definitions stays unresolved.
+fn type_at_definition_reference(namespace: &str, definition: &str, path: &[usize]) -> Option<runner::preprocess::ResolvedSourceUsage> {
+  let usages =
+    runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(vec![]), &CallStackList::default()).ok()?;
+  let mut matching = usages.into_iter().filter(|usage| {
+    usage.location.as_ref().is_some_and(|location| {
+      location.ns.as_ref() == namespace
+        && location.def.as_ref() == definition
+        && location.coord.iter().map(|index| usize::from(*index)).eq(path.iter().copied())
+    })
+  });
+  let selected = matching.next()?;
+  matching
+    .all(|usage| usage.target_ns == selected.target_ns && usage.target_def == selected.target_def)
+    .then_some(selected)
+}
+
+fn type_at_definition_reference_evidence(reference: &runner::preprocess::ResolvedSourceUsage, path: &str) -> TypeAtEvidence {
+  let macro_origin = if reference.macro_origin.is_empty() {
+    String::new()
+  } else {
+    format!(" inside the expansion of {}", reference.macro_origin.join(" -> "))
+  };
+  TypeAtEvidence {
+    kind: "definition-schema".to_owned(),
+    detail: format!(
+      "declared contract of `{}/{}`, which the compiler resolved at this source path{macro_origin}; it describes the definition, not a call-site instantiation proof",
+      reference.target_ns, reference.target_def
+    ),
+    path: Some(path.to_owned()),
+  }
+}
+
 fn type_at_call_head(node: &Calcit) -> Option<&Calcit> {
   match node {
     Calcit::List(items) => match (items.first(), items.get(1)) {
@@ -3069,6 +3104,18 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
   let inferred = traced_target
     .and_then(|item| item.inferred_type.clone())
     .or_else(|| infer_type_at_target(&source_target, processed_target));
+  // Compiled imports carry no source coordinates, so a referenced definition
+  // is recovered from the compiler's own resolution at this source leaf.
+  let definition_reference = if inferred.is_none() && matches!(source_target, Calcit::Symbol { .. }) {
+    type_at_definition_reference(namespace, &definition, &target_path)
+  } else {
+    None
+  };
+  let inferred = inferred.or_else(|| {
+    definition_reference
+      .as_ref()
+      .and_then(|reference| runner::preprocess::infer_static_definition_type(&reference.target_ns, &reference.target_def))
+  });
   let expected = expected_type_at_path(entry, processed_root, namespace, &definition, &target_path);
   let inferred_rendered = inferred
     .as_ref()
@@ -3148,7 +3195,10 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
     diagnostics.push(diagnostic);
   }
 
-  let mut evidence = vec![type_at_evidence(inference_target, &semantic_path, processed_target.is_some())];
+  let mut evidence = vec![match definition_reference.as_ref() {
+    Some(reference) => type_at_definition_reference_evidence(reference, &semantic_path),
+    None => type_at_evidence(inference_target, &semantic_path, processed_target.is_some()),
+  }];
   if let Some(source) = &expected_from {
     evidence.push(TypeAtEvidence {
       kind: "expected-context".to_owned(),
@@ -3186,6 +3236,12 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
     format!(" --path {}", shell_quote(&format_path(&target_path)))
   };
   let mut next = vec![format!("{command_prefix} tree show {quoted_target}{tree_path}")];
+  if let Some(reference) = definition_reference.as_ref() {
+    next.push(format!(
+      "{command_prefix} query def {}",
+      shell_quote(&format!("{}/{}", reference.target_ns, reference.target_def))
+    ));
+  }
   if confidence != "exact" {
     next.push(format!("{command_prefix} query schema {quoted_target}"));
     next.push(format!(
