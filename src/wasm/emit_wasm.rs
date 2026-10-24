@@ -5998,10 +5998,14 @@ fn fn_param_names(args: &CalcitFnArgs) -> Vec<String> {
 }
 
 fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Option<&CalcitTypeAnnotation>) -> bool {
-  if matches!(
+  let Some(receiver) = receiver else {
+    return false;
+  };
+  if !matches!(
     receiver,
-    Some(CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_))
-  ) {
+    CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::Enum(_, _)
+  ) && receiver.resolve_to_enum().is_none()
+  {
     return false;
   }
   key.is_none_or(|annotation| {
