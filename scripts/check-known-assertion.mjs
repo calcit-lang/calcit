@@ -63,6 +63,27 @@ try {
   // project, so the whole script takes about as long as its slowest group instead of the sum.
   const parts = [
     async () => {
+      // #2351: proven kind does not imply a pure or infallible argument.
+      const predicateResults = join(project, "predicate-evaluation.json");
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-fn-inference", "--tag", "predicate-evaluation",
+        "--backend", "native,js,wasm", "--results-json", predicateResults],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      const predicateTrace = JSON.parse(await readFile(predicateResults, "utf8"));
+      const predicateId = "test-types-inference.main/test-fn-inference#type-predicates-evaluate-once-in-order";
+      assert.deepEqual(Object.keys(predicateTrace), [predicateId], "the exact attached predicate test must execute");
+      for (const backend of ["native", "js", "wasm"]) {
+        assert.equal(predicateTrace[predicateId][backend].status, "pass");
+        assert.deepEqual(predicateTrace[predicateId][backend].trace,
+          ["predicate-number", "predicate-list", "predicate-bool"],
+          `${backend}: nested type predicates must evaluate each producer once and in order`);
+      }
+      // The existing WASI job replays the same stdout trace against native.
+      // Exception handlers and first-class Proc aliases currently use native/JS.
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-fn-inference", "--tag", "predicate-errors",
+        "--backend", "native,js"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       // #2341: resolved builtin methods reuse the direct callback relation.
       // The existing Component CI job replays this same definition on WASI.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",

@@ -53,13 +53,25 @@ try {
     JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), ...extraAssertions, "&unit"]));
   run(snapshot, "edit", "schema", "calcit.nil-predicate/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  // #2351: a known Bool result cannot erase the producer's failure. Keep
+  // the shared Calcit assertion on its definition; this probes host traps.
+  run(snapshot, "edit", "def", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export fail-predicate ()\n  let\n      produce $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'Bool)\n        raise |predicate-must-run\n    bool? $ produce");
+  run(snapshot, "edit", "schema", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)");
   const entry = [snapshot, "--init-fn", "calcit.nil-predicate/run-tests", "--reload-fn", "calcit.nil-predicate/run-tests"];
   run(...entry);
+  const failingEntry = [snapshot, "--init-fn", "calcit.nil-predicate/fail-predicate", "--reload-fn", "calcit.nil-predicate/fail-predicate"];
+  const nativeFailure = spawnSync(binary, failingEntry, { encoding: "utf8", timeout: 60000 });
+  assert.ifError(nativeFailure.error);
+  assert.equal(nativeFailure.status, 1);
+  assert.match(nativeFailure.stderr, /predicate-must-run/);
 
   const jsOutput = join(fixture, "js-out");
   run(...entry, "--emit-path", jsOutput, "js");
   const compiled = await import(pathToFileURL(join(jsOutput, "calcit.nil-predicate.mjs")).href);
   compiled.run_tests();
+  assert.throws(() => compiled.fail_predicate(), /predicate-must-run/);
 
   run("wasm", ...entry, "--emit-path", fixture);
   const module = new WebAssembly.Module(await readFile(join(fixture, "program.wasm")));
@@ -70,6 +82,7 @@ try {
   }
   const wasm = new WebAssembly.Instance(module, imports);
   wasm.exports["run-tests"]();
+  assert.throws(() => wasm.exports["fail-predicate"](), WebAssembly.RuntimeError);
   console.log("Nil predicate definition tests passed on native / generated JS / core WASM");
 
   const openSnapshot = join(fixture, "open.cirru");
@@ -132,6 +145,9 @@ try {
     run(snapshot, "tree", "show", "calcit.nil-predicate/run-tests");
     run(snapshot, "tree", "search-replace", "calcit.nil-predicate/run-tests", "--pattern", "defwasm-export",
       "--input-format", "cirru", "--code", "quote defn");
+    run(snapshot, "tree", "show", "calcit.nil-predicate/fail-predicate");
+    run(snapshot, "tree", "search-replace", "calcit.nil-predicate/fail-predicate", "--pattern", "defwasm-export",
+      "--input-format", "cirru", "--code", "quote defn");
     const component = join(fixture, "component");
     run("wasi", ...entry, "--emit-path", component);
     execFileSync(process.env.WASMTIME_CLI, [
@@ -139,6 +155,22 @@ try {
       "-W", "component-model-more-async-builtins=y", join(component, "program.wasm"),
     ], { encoding: "utf8", timeout: 60000 });
     console.log("Nil predicate definition tests passed on WASI 0.3 Component / Wasmtime");
+    run(snapshot, "edit", "def", "calcit.nil-predicate/fail-command", "--input-format", "cirru", "--code",
+      "quote $ defn fail-command ()\n  fail-predicate\n  , &unit");
+    run(snapshot, "edit", "schema", "calcit.nil-predicate/fail-command", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    const failingCommand = [snapshot, "--init-fn", "calcit.nil-predicate/fail-command", "--reload-fn", "calcit.nil-predicate/fail-command"];
+    const failureOutput = join(fixture, "failing-component");
+    run("wasi", ...failingCommand, "--emit-path", failureOutput);
+    const wasiFailure = spawnSync(process.env.WASMTIME_CLI, [
+      "run", "-S", "p3", "-W", "component-model-async-stackful=y",
+      "-W", "component-model-more-async-builtins=y", join(failureOutput, "program.wasm"),
+    ], { encoding: "utf8", timeout: 60000 });
+    assert.ifError(wasiFailure.error);
+    assert.equal(typeof wasiFailure.status, "number", "Wasmtime must exit rather than time out or receive a signal");
+    assert.notEqual(wasiFailure.status, 0, "the predicate must not turn its producer's trap into success");
+    assert.match(wasiFailure.stderr, /wasm trap:.*unreachable|wasm `unreachable` instruction executed/s);
+    console.log("Type-predicate argument failures preserved on native / JS / WASM / WASI");
   }
 } finally {
   await rm(fixture, { recursive: true, force: true });

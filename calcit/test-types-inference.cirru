@@ -1423,6 +1423,58 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Nil)
             :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |type-predicates-evaluate-once-in-order)
+              :code $ quote $ let
+                  produce-number $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Number
+                    println |predicate-number
+                    , 7
+                  produce-list $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'Number
+                    println |predicate-list
+                    [] 1 2
+                  produce-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    println |predicate-bool
+                    , false
+                assert= true $ bool? $ bool?
+                  number? $ produce-number
+                assert= true $ list? $ produce-list
+                assert= true $ bool? $ produce-bool
+                assert= false $ number? |not-a-number
+              :tags $ #{} :predicate-evaluation :unit
+            %{} 'TestEntry (:name |type-predicates-propagate-argument-errors)
+              :code $ quote $ let
+                  fail-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    raise |predicate-must-run
+                assert= false $ try
+                  bool? $ fail-bool
+                  fn (message) (assert= |predicate-must-run message) false
+                assert= false $ try
+                  bool? $ bool? $ fail-bool
+                  fn (message) (assert= |predicate-must-run message) false
+                let
+                    open-bool $ fn ()
+                      hint-fn $ {}
+                        :args $ []
+                        :return 'Dynamic
+                      , false
+                  assert= true $ bool? $ open-bool
+                  assert= false $ number? $ open-bool
+                let
+                    predicate bool?
+                  assert= true $ predicate false
+              :tags $ #{} :predicate-errors :unit
         'test-generics-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-generics-identity ()
             let
