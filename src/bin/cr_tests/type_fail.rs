@@ -817,6 +817,58 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
   });
 }
 
+/// #2172: the two-argument `(hint-fn f schema)` compatibility form is only
+/// noted (`W_LEGACY_HINT_FN_TARGET`) before its removal in 0.32.0. A known
+/// signature and an unsigned `fn` target are each noted at the target; the
+/// strict check still passes and a body Map hint stays quiet.
+#[test]
+fn two_argument_hint_fn_is_only_noted() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let
+    signed $ fn (x)
+      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Number)
+      , 1
+    unsigned $ fn (x) x
+    body $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      , x
+  hint-fn signed $ {} (:args $ [] 'Number) (:return 'Number)
+  hint-fn unsigned $ {} (:args $ [] 'Number) (:return 'Number)
+  &+ (signed 1) $ &+ (unsigned 2) (body 3)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("the two-argument compatibility form must not fail the strict check");
+
+    let warnings = warnings.into_inner();
+    assert!(
+      warnings.iter().all(|warning| warning.code() != Some("W_LEGACY_HINT_FN_TARGET")),
+      "the advisory must never become a warning: {warnings:?}"
+    );
+    let advisories = runner::preprocess::take_advisories();
+    let noted = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_LEGACY_HINT_FN_TARGET"))
+      .collect::<Vec<_>>();
+    assert_eq!(noted.len(), 2, "{advisories:?}");
+    for (advisory, target) in noted.iter().zip(["signed", "unsigned"]) {
+      assert_eq!(advisory.location().ns.as_ref(), "app.main", "{advisory:?}");
+      assert_eq!(advisory.location().def.as_ref(), "main!", "{advisory:?}");
+      assert!(
+        advisory.message().contains(&format!("hint-fn {target} schema"))
+          && advisory.message().contains("removed in 0.32.0")
+          && advisory.message().contains("into the body of the function"),
+        "{}",
+        advisory.message()
+      );
+    }
+  });
+}
+
 #[test]
 fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
   run_with_large_stack(|| {
