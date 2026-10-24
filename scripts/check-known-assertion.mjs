@@ -634,14 +634,17 @@ try {
       }
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "lexical-binder", "--backend", "native,js"], { ...options, stdio: "inherit" });
-      // A caller-owned bound proves its qualified trait and required parents,
-      // without replacing the receiver's lexical generic identity.
+      // Caller-owned bounds retain qualified capabilities. Attached prototypes
+      // retain nominal method inputs without weakening the identity relation.
       const traitSnapshot = "calcit/test-traits.cirru";
       const traitSource = await readFile(traitSnapshot);
-      const traitProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
-        "--ns", "test-traits.main", "--def", "describe-greeting", "--format", "json"], options));
-      assert.deepEqual(traitProof.diagnostics, [], "retain qualified trait capabilities in independent proof");
-      assert.equal(traitProof.data.changed, false);
+      for (const name of ["describe-greeting", "test-deftrait", "test-debug-trait", "test-impl-precedence-order"]) {
+        const traitProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
+          "--ns", "test-traits.main", "--def", name, "--format", "json"], options));
+        assert.deepEqual(traitProof.diagnostics, [], `${name}: retain declared capabilities and nominal method inputs`);
+        assert.equal(traitProof.data.filters.definition, name);
+        assert.equal(traitProof.data.changed, false);
+      }
       const traitReceiver = JSON.parse(execFileSync(binary, [traitSnapshot, "query", "type-at",
         "test-traits.main/describe-greeting", "--path", "code@3.1.0", "--format", "json"], options)).data;
       assert.equal(traitReceiver.inferred_type, "'T", "capabilities do not replace caller identity");
