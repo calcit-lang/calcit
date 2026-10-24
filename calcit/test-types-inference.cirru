@@ -1657,6 +1657,27 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Nil)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |method-infers-list-accumulator-context)
+            :code $ quote $ do
+              assert= ([] 1 2 3 4)
+                foldl
+                  [] ([] 1 2) ([] 3 4)
+                  []
+                  fn (acc pair) (.concat acc pair)
+              assert= ([] 1 2 3 4)
+                .foldl
+                  [] ([] 1 2) ([] 3 4)
+                  []
+                  fn (acc pair) (.concat acc pair)
+              assert= ([] 1 2 3 4)
+                ->
+                  [] ([] 1 2) ([] 3 4)
+                  .foldl ([])
+                    fn (acc pair) (.concat acc pair)
+              assert= ([])
+                .foldl ([]) ([])
+                  fn (acc pair) (.concat acc pair)
+            :tags $ #{} :fold-method-context :unit
         'test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map-inference ()
             let
