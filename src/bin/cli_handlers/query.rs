@@ -2017,8 +2017,16 @@ mod type_query_tests {
     runner::preprocess::compile_source_def_for_snapshot("test-struct.main", "sum-point", &warnings, &CallStackList::default())
       .expect("sum-point should preprocess");
     let compiled = program::lookup_compiled_def("test-struct.main", "sum-point").expect("compiled sum-point");
-    let target = find_preprocessed_node_at_path(&compiled.preprocessed_code, "test-struct.main", "sum-point", &[3, 1], true)
-      .expect("field access expression should retain a source path");
+    let sum_point_source = &snapshot.files["test-struct.main"].defs["sum-point"].code;
+    let target = find_preprocessed_node_at_path(
+      &compiled.preprocessed_code,
+      sum_point_source,
+      "test-struct.main",
+      "sum-point",
+      &[3, 1],
+      true,
+    )
+    .expect("field access expression should retain a source path");
     let Calcit::List(field_access) = target else {
       panic!("field access should remain a call");
     };
@@ -2406,24 +2414,38 @@ fn calcit_direct_source_path(node: &Calcit, namespace: &str, definition: &str) -
 
 /// Recover the source path represented by a preprocessed expression. Imports, procs and literals
 /// do not carry locations, so list paths are derived from the nearest direct child that does.
-fn calcit_expression_source_path(node: &Calcit, namespace: &str, definition: &str) -> Option<Vec<usize>> {
+/// Reader shorthand such as `'T` or `@x` expands one leaf into a two-item list whose located
+/// child keeps the leaf's own coordinate, so that list takes the coordinate unchanged.
+fn calcit_expression_source_path(node: &Calcit, source: &Cirru, namespace: &str, definition: &str) -> Option<Vec<usize>> {
   if let Some(path) = calcit_direct_source_path(node, namespace, definition) {
     return Some(path);
   }
   let Calcit::List(items) = node else {
     return None;
   };
-  for child in items.iter() {
-    if let Some(mut child_path) = calcit_expression_source_path(child, namespace, definition) {
-      child_path.pop();
+  for (index, child) in items.iter().enumerate() {
+    if let Some(mut child_path) = calcit_expression_source_path(child, source, namespace, definition) {
+      let reader_expansion = items.len() == 2
+        && index == 1
+        && calcit_direct_source_path(child, namespace, definition).is_some()
+        && source_leaf_expands_to_list(source, &child_path, namespace, definition);
+      if !reader_expansion {
+        child_path.pop();
+      }
       return Some(child_path);
     }
   }
   None
 }
 
+fn source_leaf_expands_to_list(source: &Cirru, path: &[usize], namespace: &str, definition: &str) -> bool {
+  matches!(navigate_to_path(source, path), Ok(leaf @ Cirru::Leaf(_))
+    if matches!(code_to_calcit(&leaf, namespace, definition, vec![]), Ok(Calcit::List(_))))
+}
+
 pub(super) fn find_preprocessed_node_at_path<'a>(
   node: &'a Calcit,
+  source: &Cirru,
   namespace: &str,
   definition: &str,
   target_path: &[usize],
@@ -2431,7 +2453,7 @@ pub(super) fn find_preprocessed_node_at_path<'a>(
 ) -> Option<&'a Calcit> {
   let shape_matches = matches!(node, Calcit::List(_)) == target_is_list;
   if shape_matches
-    && calcit_expression_source_path(node, namespace, definition)
+    && calcit_expression_source_path(node, source, namespace, definition)
       .as_deref()
       .is_some_and(|path| path == target_path)
   {
@@ -2440,7 +2462,7 @@ pub(super) fn find_preprocessed_node_at_path<'a>(
 
   if let Calcit::List(items) = node {
     for child in items.iter() {
-      if let Some(found) = find_preprocessed_node_at_path(child, namespace, definition, target_path, target_is_list) {
+      if let Some(found) = find_preprocessed_node_at_path(child, source, namespace, definition, target_path, target_is_list) {
         return Some(found);
       }
     }
@@ -2540,7 +2562,7 @@ fn expected_type_at_path(
   }
 
   let processed_parent = processed_root.and_then(|root| {
-    find_preprocessed_node_at_path(root, namespace, definition, parent_path, true).and_then(|node| match node {
+    find_preprocessed_node_at_path(root, &entry.code, namespace, definition, parent_path, true).and_then(|node| match node {
       Calcit::List(items) => Some(items),
       _ => None,
     })
@@ -2581,6 +2603,7 @@ pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>) 
 /// Reuse type-at's lexical evidence for a read-only source inventory. A lowered
 /// child is not evidence for a source call; calls need a unique compiler trace.
 pub(crate) fn source_expression_type_at(
+  root: &Cirru,
   source: &Cirru,
   namespace: &str,
   definition: &str,
@@ -2606,7 +2629,7 @@ pub(crate) fn source_expression_type_at(
   let compiled = program::lookup_compiled_def(namespace, definition);
   let processed = compiled
     .as_ref()
-    .and_then(|compiled| find_preprocessed_node_at_path(&compiled.preprocessed_code, namespace, definition, path, false));
+    .and_then(|compiled| find_preprocessed_node_at_path(&compiled.preprocessed_code, root, namespace, definition, path, false));
   infer_type_at_target(&source, processed)
 }
 
@@ -3066,8 +3089,16 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
   )?;
   let reader_expanded = matches!(target_node, Cirru::Leaf(_)) && matches!(source_target, Calcit::List(_));
   let source_method_call = matches!(&source_target, Calcit::List(items) if matches!(items.first(), Some(Calcit::Method(..))));
-  let located_target = processed_root
-    .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
+  let located_target = processed_root.and_then(|root| {
+    find_preprocessed_node_at_path(
+      root,
+      &entry.code,
+      namespace,
+      &definition,
+      &target_path,
+      matches!(target_node, Cirru::List(_)),
+    )
+  });
   // Lowering can leave a child carrying the original call's coordinates.
   // A different call head is not proof that this child is the source call.
   let changed_call_head = matches!(

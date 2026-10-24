@@ -125,7 +125,14 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
     };
     for candidate in candidates {
       let inferred = compiled.as_ref().ok().and_then(|_| {
-        cli_handlers::source_expression_type_at(candidate.input, namespace, definition, &candidate.input_path, &evidence)
+        cli_handlers::source_expression_type_at(
+          &entry.code,
+          candidate.input,
+          namespace,
+          definition,
+          &candidate.input_path,
+          &evidence,
+        )
       });
       // Syntactically identical methods/variants on another known type are not
       // Option evidence. Missing evidence remains visible instead of vanishing.
