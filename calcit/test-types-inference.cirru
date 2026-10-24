@@ -36,6 +36,10 @@
                   :args $ [] 'T
           :examples $ []
           :schema $ :: 'StructDef
+        'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Job (:title 'String) (:status Status)
           :examples $ []
@@ -309,6 +313,22 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'empty-field-box $ %{} 'CodeEntry (:doc "|An empty List field keeps the declared element binder of a generic struct return.")
+          :code $ quote $ defn empty-field-box (seed)
+            EmptyFieldBox :items ([]) :seed seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'S
+            :generics $ [] 'T 'S
+            :return $ :: 'test-types-inference.main/EmptyFieldBox 'T 'S
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
+            :code $ quote $ let
+                box $ assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'String)
+              do
+                assert= ([]) $ :items box
+                assert= |seed $ :seed box
+                assert= ([] 1) $ append (:items box) 1
+            :tags $ #{} :empty-field-struct :unit
         'find-last-matching-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn find-last-matching-index (xs item) (.last-index-of xs item)
           :examples $ []
