@@ -329,6 +329,9 @@ export let _$n_struct_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
   }
 
   if (x instanceof CalcitStructValue) {
+    if (targetStruct.definitionRef != null) {
+      return x.structRef.sameDataSchema(targetStruct);
+    }
     if (x.name !== targetStruct.name) {
       return false;
     }

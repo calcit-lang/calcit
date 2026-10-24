@@ -703,22 +703,66 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// Emit `&struct:matches? a b` — check if two struct values have the same struct type.
-///
-/// Struct value layout: [count: f64] [struct_tag: f64] [field0: f64] ...
-/// Compares the struct_tag (offset 8) of both struct values.
+/// Match an instance against a definition ID or another instance's definition ID.
 pub(super) fn emit_struct_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&struct:matches? expects 2 args")?;
-  // Load struct_tag of first struct_value (at offset 8, after count)
+  let target_is_definition = if resolve_struct_ref(&args[1]).is_ok() {
+    true
+  } else if let Some(annotation) = infer_wasm_static_type(ctx, &args[1]) {
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::StructDef(_) => true,
+      CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => false,
+      CalcitTypeAnnotation::Custom(value) if **value == Calcit::tag("struct-def") => true,
+      CalcitTypeAnnotation::Custom(value) if **value == Calcit::tag("struct") => false,
+      _ if annotation.resolve_to_struct().is_some() => false,
+      _ => return Err("E_WASM_STRUCT_IDENTITY: &struct:matches? needs a proven Struct or StructDef target representation".into()),
+    }
+  } else {
+    return Err("E_WASM_STRUCT_IDENTITY: &struct:matches? needs a proven Struct or StructDef target representation".into());
+  };
+
+  // Evaluate both operands once in source order. Definitions already are IDs;
+  // only instances have the [count, definition ID, fields...] memory layout.
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  // Load struct_tag of second struct_value (at offset 8, after count)
+  let instance_id = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(instance_id));
   emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  // Compare and return 1.0 or 0.0
+  if !target_is_definition {
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  }
+  let target_id = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(target_id));
+  ctx.emit(Instruction::LocalGet(instance_id));
+  ctx.emit(Instruction::LocalGet(target_id));
   ctx.emit(Instruction::F64Eq);
+
+  // Ownerless targets retain structural matching; named targets require their
+  // exact module-local identity. Dynamically creating definitions is unsupported.
+  let structural_pairs = ctx
+    .struct_layouts
+    .ids
+    .iter()
+    .filter(|(target, _)| target.definition.is_none())
+    .flat_map(|(target, target_id)| {
+      ctx.struct_layouts.ids.iter().filter_map(move |(instance, instance_id)| {
+        (instance_id != target_id && instance.name == target.name && instance.fields == target.fields)
+          .then_some((*instance_id, *target_id))
+      })
+    })
+    .collect::<Vec<_>>();
+  for (instance, target) in structural_pairs {
+    ctx.emit(Instruction::LocalGet(instance_id));
+    ctx.emit(f64_const(instance as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(target_id));
+    ctx.emit(f64_const(target as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::I32Or);
+  }
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   ctx.block_depth += 1;
   ctx.emit(f64_const(1.0));

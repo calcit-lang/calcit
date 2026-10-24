@@ -36,6 +36,7 @@ aliases:
 | 固定参数函数、普通内联闭包与立即调用的尾部 Option 缺省 | supported-with-type-evidence | 省略实参补入真实名义 `Option :none`，不使用 nil；已知不可变泛型函数的局部别名在调用点取得参数证据后特化 | `calcit.core/slice#inline-option-omission-keeps-nominal-none`、`test-types-inference.main/slice-with-contract#custom-function-reference`、`test-types-inference.main/option-recur-sum#immediate-option-completion` |
 | 已知目标的函数值与局部别名 | supported-with-type-evidence | 目标明确时复用具名调用的 lowering，支持别名链、词法遮蔽、闭包捕获、`map/foldl`、具名 rest / 字面量 spread；内联调用的回调实参若为明确的具名定义，也保留目标。函数值可保存并保持身份，实参按原顺序各求值一次；WASI 的未知间接目标与不支持的可达宿主能力仍拒绝 | `app.wasm-alias/bump`、`app.wasm-alias/sum-tail`、`app.wasm-alias/sum-pair` 与 `app.wasm-alias/do` 的五项附带测试；`calcit.core/hint-fn#local-hint-keeps-proven-function-alias`；WASI capability / unknown-callee CLI 回归 |
 | `struct-with` 的静态字段更新 | supported-with-type-evidence | 复用名义 Struct 的字段索引和布局校验；接收者、各更新值按源码顺序各求值一次，再进行不可变更新 | `test-types-inference.main/slice-with-contract` 的自定义实现测试，以及既有名义写入回归 |
+| `&struct:matches?` 的具名定义与实例目标 | supported-with-type-evidence | 区分定义 ID 与实例指针；已知来源按模块内名义身份匹配，泛型定义匹配不证明具体 payload 类型。参数需证明为 Struct 或 StructDef；运行时创建局部定义仍不支持 | `test-traits.struct-left/Point` 的 `:struct-origin-portable` 五项共享测试，含别名、参数、不同来源和 `struct-match` |
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
 | 局部 `fn` 与立即调用的 `fn`的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。函数体中的 `recur` 按同样规则重新绑定参数（`recur (&- n 1) n n` 把后两个实参打包进 `&` 参数） | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#optional-then-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#iife-rest-param-recur`、`calcit.core/hint-fn#rest-callee-in-hof` |
 | 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。实际经表调用时，N 个实参使用第 N 个函数表（N 不设上限，规范类型 `(f64 x N) -> f64` 按模块实际用到的最大 N 生成）；表中 `&` 函数的入口先打包 rest List，再调用原函数。`calcit wasi`：静态目标的具名别名可复用直接调用，未知的可达间接调用仍以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`、`calcit.core/hint-fn#plain-call-many-args-fn-value`（具名别名已回放 WASI，未知表调用仍受限） |
@@ -114,7 +115,7 @@ write-file
 | `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或出现递归特化；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用或递归高阶调用；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
-| `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记 | 通过具名 `defstruct` 构造 |
+| `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
 | `E_WASM_EDN_TYPE` | `format-cirru-edn` 的输入类型不闭合 | 写出闭合类型 |
 | `E_WASM_EDN_SHAPE` | 解析缺少预处理生成的数据形状 | 使用 `try-parse-cirru-edn-as` 并给出目标类型 |

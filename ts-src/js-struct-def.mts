@@ -1,8 +1,8 @@
-import { CalcitSymbol, CalcitTag, canonicalizeTagPairs, toString } from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag, canonicalizeTagPairs, toString, _$n__$e_ } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
-import { CalcitStructValue } from "./js-struct-value.mjs";
+import { CalcitStructValue, fieldsEqual } from "./js-struct-value.mjs";
 import { register_core_enum } from "./js-core-enum-value.mjs";
 import { typeFormIdentity } from "./js-type-form.mjs";
 
@@ -43,6 +43,15 @@ export class CalcitStructDef {
       return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators, this.generics, this.whereBounds);
     }
     throw new Error("Expected an impl as implementation");
+  }
+
+  /** Data-schema identity excludes attached method implementations. */
+  sameDataSchema(other: CalcitStructDef): boolean {
+    return this.name === other.name && this.definitionRef === other.definitionRef && fieldsEqual(this.fields, other.fields)
+      && this.fieldTypeIdentities.length === other.fieldTypeIdentities.length
+      && this.fieldTypeIdentities.every((type, index) => _$n__$e_(type, other.fieldTypeIdentities[index]))
+      && this.generics.length === other.generics.length && this.generics.every((generic, index) => _$n__$e_(generic, other.generics[index]))
+      && _$n__$e_(this.whereBounds, other.whereBounds);
   }
 
   toString(disableJsDataWarning: boolean = false): string {

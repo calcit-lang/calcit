@@ -1128,9 +1128,13 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Struct(CalcitStructValue {
       struct_ref: left_struct, ..
-    }) => Ok(Calcit::Bool(
-      left_struct.name == right_struct.name && left_struct.fields == right_struct.fields,
-    )),
+    }) => Ok(Calcit::Bool(if right_struct.definition_ref.is_some() {
+      // A known declaration is also used as nominal evidence by preprocessing.
+      left_struct.same_nominal_definition(right_struct)
+    } else {
+      // Ownerless local patterns retain their structural matching semantics.
+      left_struct.name == right_struct.name && left_struct.fields == right_struct.fields
+    })),
     a => {
       let msg = format!(
         "&struct:matches? first argument requires a struct value, but received: {}",
@@ -1483,6 +1487,49 @@ mod tests {
       )),
       values: Arc::new(vec![Calcit::Number(1.0), Calcit::Number(2.0)]),
     })
+  }
+
+  #[test]
+  fn struct_origin_match_rejects_stale_data_schemas() {
+    // Host values and hot reload can retain an owner while changing its schema;
+    // ordinary Calcit constructors cannot manufacture that historical state.
+    let mut definition =
+      CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x")]).with_definition_ref("tests.struct-origin", "Point");
+    definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let value = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(definition.clone()),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    });
+    assert_eq!(
+      matches(&[value.clone(), Calcit::StructDef(definition.clone())]).unwrap(),
+      Calcit::Bool(true)
+    );
+    let mut changed_type = definition.clone();
+    changed_type.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    let mut changed_layout = definition.clone();
+    changed_layout.fields = Arc::new(vec![EdnTag::new("y")]);
+    let mut changed_owner = definition.clone();
+    changed_owner.definition_ref = Some(Arc::from("tests.other/Point"));
+    for stale in [changed_type, changed_layout, changed_owner] {
+      assert_eq!(matches(&[value.clone(), Calcit::StructDef(stale)]).unwrap(), Calcit::Bool(false));
+    }
+    let Calcit::Impl(marker) = new_impl(&[Calcit::Trait(dyn_fn_trait("OriginMarker", &[]))]).unwrap() else {
+      panic!("marker must be an impl");
+    };
+    let mut decorated = definition.clone();
+    decorated.impls.push(Arc::new(marker));
+    assert_eq!(matches(&[value.clone(), Calcit::StructDef(decorated)]).unwrap(), Calcit::Bool(true));
+    let mut ownerless = definition.clone();
+    ownerless.definition_ref = None;
+    let unbound_value = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(ownerless.clone()),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    });
+    assert_eq!(
+      matches(&[unbound_value, Calcit::StructDef(definition)]).unwrap(),
+      Calcit::Bool(false)
+    );
+    assert_eq!(matches(&[value, Calcit::StructDef(ownerless)]).unwrap(), Calcit::Bool(true));
   }
 
   #[test]

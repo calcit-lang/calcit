@@ -937,11 +937,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitStructDef) {
     if (y instanceof CalcitStructDef) {
-      return x.name === y.name && x.definitionRef === y.definitionRef && fieldsEqual(x.fields, y.fields)
-        && x.fieldTypeIdentities.length === y.fieldTypeIdentities.length
-        && x.fieldTypeIdentities.every((type, index) => _$n__$e_(type, y.fieldTypeIdentities[index]))
-        && x.generics.length === y.generics.length && x.generics.every((generic, index) => _$n__$e_(generic, y.generics[index]))
-        && _$n__$e_(x.whereBounds, y.whereBounds)
+      return x.sameDataSchema(y)
         && x.impls.length === y.impls.length && x.impls.every((impl, index) => _$n__$e_(impl, y.impls[index]));
     }
     return false;

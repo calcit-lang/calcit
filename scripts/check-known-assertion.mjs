@@ -638,10 +638,14 @@ try {
       // retain nominal method inputs without weakening the identity relation.
       const traitSnapshot = "calcit/test-traits.cirru";
       const traitSource = await readFile(traitSnapshot);
-      for (const name of ["describe-greeting", "test-deftrait", "test-debug-trait", "test-impl-precedence-order"]) {
+      for (const target of ["test-traits.main/describe-greeting", "test-traits.main/test-deftrait",
+        "test-traits.main/test-debug-trait", "test-traits.main/test-impl-precedence-order",
+        "test-traits.main/GreetingImpl", "test-traits.main/LabeledImpl", "test-traits.struct-left/read-origin-point"]) {
+        const [namespace, name] = target.split("/");
         const traitProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
-          "--ns", "test-traits.main", "--def", name, "--format", "json"], options));
+          "--ns", namespace, "--def", name, "--format", "json"], options));
         assert.deepEqual(traitProof.diagnostics, [], `${name}: retain declared capabilities and nominal method inputs`);
+        assert.equal(traitProof.data.filters.namespace, namespace);
         assert.equal(traitProof.data.filters.definition, name);
         assert.equal(traitProof.data.changed, false);
       }
@@ -652,6 +656,41 @@ try {
         const method = traitReceiver.static_methods.find(method => method.name === name);
         assert.equal(method?.status, "proven", `${name}: retain the declared qualified capability`);
         assert.equal(method.return_type, "string");
+      }
+      assert.deepEqual(await readFile(traitSnapshot), traitSource);
+      // Local patterns and generic family checks do not prove concrete fields.
+      const originSnapshot = join(project, "struct-origin-controls.cirru");
+      await copyFile(traitSnapshot, originSnapshot);
+      const runOrigin = (...args) => execFileSync(binary, [originSnapshot, ...args], options);
+      const originCases = [
+        ["local-pattern", ["let", [["Pattern", ["defstruct", "Point", [":x", "'Number"]]]],
+          ["if", ["&struct:matches?", "value", "Pattern"], ["&+", [":x", "value"], "1"], "0"]]],
+        ["generic-pattern", ["if", ["&struct:matches?", "value", "test-traits.struct-left/GenericBox"],
+          ["&+", [":value", "value"], "1"], "0"]],
+      ];
+      const originOperations = originCases.flatMap(([name, body]) => [
+        ["edit", "def", `test-traits.main/unproven-${name}`, "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", `unproven-${name}`, ["value"], body])],
+        ["edit", "schema", `test-traits.main/unproven-${name}`, "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Struct) (:return 'Number)"],
+      ]);
+      const originMutation = JSON.stringify(originOperations);
+      const originPreview = JSON.parse(runOrigin("edit", "transaction", "--code", originMutation, "--dry-run", "--format", "json"));
+      runOrigin("edit", "transaction", "--code", originMutation, "--expect-revision", originPreview.scoped_revision, "--format", "edn");
+      const originSource = await readFile(originSnapshot);
+      for (const [name] of originCases) {
+        const rejected = spawnSync(binary, [originSnapshot, "fix", "--rule", "callable-contract-proof-v1",
+          "--ns", "test-traits.main", "--def", `unproven-${name}`, "--format", "json"], options);
+        if (rejected.error) throw rejected.error;
+        const details = `${rejected.stdout}\n${rejected.stderr}`;
+        assert.equal(rejected.status, 1, `${name}: a shape/family guard cannot invent Number fields\n${details}`);
+        if (rejected.stdout.trim()) {
+          assert.ok(JSON.parse(rejected.stdout).diagnostics.some(diagnostic => diagnostic.code === "E_CALL_ARGUMENT_UNPROVEN"
+            && diagnostic.definition === `test-traits.main/unproven-${name}`));
+        } else {
+          assert.match(rejected.stderr, /E_CALL_ARGUMENT_UNPROVEN.*call to `\(&proc &\+\)`.*expected `:number`, got `dynamic`/);
+        }
+        assert.deepEqual(await readFile(originSnapshot), originSource);
       }
       assert.deepEqual(await readFile(traitSnapshot), traitSource);
       const descriptorProof = JSON.parse(execFileSync(binary, [traitSnapshot, "fix", "--rule", "concrete-return-proof-v1",
