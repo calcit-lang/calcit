@@ -5997,6 +5997,27 @@ fn fn_param_names(args: &CalcitFnArgs) -> Vec<String> {
   }
 }
 
+fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Option<&CalcitTypeAnnotation>) -> bool {
+  let Some(receiver) = receiver else {
+    return false;
+  };
+  if !matches!(
+    receiver,
+    CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::Enum(_, _)
+  ) && receiver.resolve_to_enum().is_none()
+  {
+    return false;
+  }
+  key.is_none_or(|annotation| {
+    !annotation.is_proven_for(&CalcitTypeAnnotation::Number)
+      && (nil_type_evidence_is_open(annotation)
+        || matches!(
+          annotation,
+          CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::TypeRef(_, _)
+        ))
+  })
+}
+
 fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion) => true,
@@ -6011,6 +6032,10 @@ fn direct_scalar_type_test(expr: &Calcit) -> bool {
           .is_none_or(|annotation| scalar_truthiness_constant(&annotation).is_err()),
         Some(Calcit::Import(import)) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "nil?",
         Some(Calcit::Symbol { sym, info, .. }) => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == "nil?",
+        Some(Calcit::Method(name, MethodKind::Invoke(_))) if name.as_ref() == "contains?" => enum_contains_has_open_key(
+          items.get(1).and_then(infer_static_type_from_expr).as_deref(),
+          items.get(2).and_then(infer_static_type_from_expr).as_deref(),
+        ),
         _ => false,
       };
       direct || items.iter().any(direct_scalar_type_test)

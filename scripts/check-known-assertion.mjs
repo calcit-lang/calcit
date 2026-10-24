@@ -3202,6 +3202,62 @@ try {
       const wasm = new WebAssembly.Instance(module, imports);
       assert.equal(wasm.exports["run-tests"](), 1);
 
+      // The scalar ABI aliases nil/false/zero. Check rejection at the host
+      // boundary because WASM cannot run the Calcit `try` assertion itself.
+      // Generic Number calls must specialize, rather than trap with bad keys.
+      const enumKeyTarget = "calcit.assert-evidence/enum-key";
+      const enumKeyCode = ["defn", "enum-key", ["value", "key"], [".contains?", "value", "key"]];
+      const enumKeySchema = ["::", "'Fn", ["{}", [":generics", ["[]", "'K"]],
+        [":args", ["[]", "'Enum", "'K"]], [":return", "'Bool"]]];
+      const enumKeyCases = [
+        ["zero", "0", true], ["negative-zero", "-0", true], ["fraction", "1.5", true],
+        ["nil", "nil", false], ["false", "false", false], ["true", "true", false],
+        ["string", "|0", false], ["tag", ":zero", false],
+      ];
+      const enumKeyOperations = [
+        ["edit", "def", enumKeyTarget, "--input-format", "json-ast", "--code", JSON.stringify(enumKeyCode)],
+        ["edit", "schema", enumKeyTarget, "--input-format", "json-ast", "--code", JSON.stringify(enumKeySchema)],
+      ];
+      for (const [name, key] of enumKeyCases) {
+        enumKeyOperations.push(
+          ["edit", "def", `calcit.assert-evidence/enum-key-${name}`, "--input-format", "json-ast", "--code",
+            JSON.stringify(["defwasm-export", `enum-key-${name}`, [], ["enum-key", ["Option", ":some", "1"], key]])],
+          ["edit", "schema", `calcit.assert-evidence/enum-key-${name}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)"],
+        );
+      }
+      const enumKeyTransaction = JSON.stringify(enumKeyOperations);
+      const enumKeyPreview = JSON.parse(run("edit", "transaction", "--code", enumKeyTransaction, "--dry-run", "--format", "json"));
+      run("edit", "transaction", "--code", enumKeyTransaction, "--expect-revision", enumKeyPreview.scoped_revision, "--format", "edn");
+      assert.deepEqual(JSON.parse(run("query", "def", enumKeyTarget, "--format", "json")).data.code, enumKeyCode);
+      const enumKeySource = await readFile(snapshot);
+      const enumKeyJsOutput = join(project, "enum-key-js");
+      run("--emit-path", enumKeyJsOutput, "js");
+      const enumKeyJs = await import(pathToFileURL(join(enumKeyJsOutput, "calcit.assert-evidence.mjs")).href);
+      const enumKeyWasmOutput = join(project, "enum-key-wasm");
+      run("wasm", "--emit-path", enumKeyWasmOutput);
+      const enumKeyModule = new WebAssembly.Module(await readFile(join(enumKeyWasmOutput, "program.wasm")));
+      const enumKeyWasm = new WebAssembly.Instance(enumKeyModule, imports);
+      for (const [name, , valid] of enumKeyCases) {
+        const target = `calcit.assert-evidence/enum-key-${name}`;
+        const native = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target], options);
+        assert.equal(native.error, undefined);
+        assert.equal(native.status, valid ? 0 : 1, `${target}: ${native.stdout}\n${native.stderr}`);
+        if (valid) {
+          assert.equal(enumKeyJs[`enum_key_${name.replaceAll("-", "_")}`](), true, target);
+          assert.equal(enumKeyWasm.exports[`enum-key-${name}`](), 1, target);
+        } else {
+          assert.match(native.stderr, /Enum \.contains\? expected a Number index/);
+          assert.throws(() => enumKeyJs[`enum_key_${name}`](), Error, target);
+          assert.throws(() => enumKeyWasm.exports[`enum-key-${name}`](), WebAssembly.RuntimeError, target);
+        }
+      }
+      assert.deepEqual(await readFile(snapshot), enumKeySource);
+      const enumKeyCleanup = JSON.stringify([enumKeyTarget, ...enumKeyCases.map(([name]) => `calcit.assert-evidence/enum-key-${name}`)]
+        .map(target => ["edit", "rm-def", target]));
+      const enumKeyCleanupPreview = JSON.parse(run("edit", "transaction", "--code", enumKeyCleanup, "--dry-run", "--format", "json"));
+      run("edit", "transaction", "--code", enumKeyCleanup, "--expect-revision", enumKeyCleanupPreview.scoped_revision, "--format", "edn");
+
       // Unsupported runtime data must fail codegen, not become a zero result.
       // Native execution still verifies that each source expression is valid.
       for (const [name, expression, diagnostic] of [

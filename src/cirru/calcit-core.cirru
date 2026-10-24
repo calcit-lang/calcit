@@ -402,6 +402,42 @@
                 assert= false $ has-index? point -1
                 assert= true $ has-index? (Option :some 1) 1
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |contains-preserves-number-range)
+              :code $ quote $ let
+                  has-index? $ fn (value index)
+                    hint-fn $ {} (:return 'Bool)
+                      :args $ [] 'Enum 'Number
+                    .contains? value index
+                  present $ Option :some 1
+                  absent $ Option :none
+                assert= true $ has-index? present 0
+                assert= true $ has-index? present -0
+                assert= true $ has-index? present 1
+                assert= true $ has-index? present 1.5
+                assert= false $ has-index? present 2
+                assert= false $ has-index? present -0.5
+                assert= false $ has-index? present $ / 1 0
+                assert= false $ has-index? present $ / -1 0
+                assert= false $ has-index? present $ / 0 0
+                assert= true $ has-index? absent 0
+                assert= true $ has-index? absent 0.5
+                assert= false $ has-index? absent 1
+              :tags $ #{} :enum-contains :unit
+            %{} 'TestEntry (:name |contains-specializes-generic-number-keys)
+              :code $ quote $ let
+                  has-index? $ fn (value key)
+                    hint-fn $ {}
+                      :generics $ [] 'K
+                      :args $ [] 'Enum 'K
+                      :return 'Bool
+                    .contains? value key
+                  present $ Option :some 1
+                assert= true $ has-index? present 0
+                assert= true $ has-index? present -0
+                assert= true $ has-index? present 1.5
+                assert= false $ has-index? present 2
+                assert= false $ has-index? present $ / 0 0
+              :tags $ #{} :enum-contains :unit
         '&core-enum-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-enum-methods
             &impl::new :&core-enum-methods (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
@@ -1241,8 +1277,7 @@
         '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote $ defn &fn:mappend (f g)
             fn (x)
-              hint-fn $ {}
-                :args $ [] 'A
+              hint-fn $ {} $ :args ([] 'A)
               &let
                 v1 $ f x
                 &let
@@ -1258,40 +1293,50 @@
                         union v1 v2
                         if (string? v1) (&str:concat v1 v2) (.mappend v1 v2)
           :examples $ []
-          :schema $ :: 'Fn $ {}
+          :schema $ :: 'Fn $ {} (:return 'Fn)
             :args $ []
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
               :: 'Fn $ {} (:return 'B)
                 :args $ [] 'A
             :generics $ [] 'A 'B
-            :return 'Fn
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |combines-lists-maps-sets-and-strings)
               :code $ quote $ do
                 assert= ([] 1 2 1 3)
-                  (&fn:mappend (fn (x) ([] 1 x)) (fn (x) ([] 1 (+ x 1)))) 2
-                assert= ({} (:a 2) (:b 1))
-                  (&fn:mappend (fn (x) ({} (:a 1) (:b 1))) (fn (x) ({} (:a x)))) 2
+                  (&fn:mappend (fn (x) ([] 1 x)) (fn (x) ([] 1 (+ x 1))))
+                    , 2
+                assert=
+                  {} (:a 2) (:b 1)
+                  (&fn:mappend (fn (x) ({} (:a 1) (:b 1))) (fn (x) ({} (:a x))))
+                    , 2
                 assert= (#{} 1 2 3)
-                  (&fn:mappend (fn (x) (#{} 1 x)) (fn (x) (#{} x 3))) 2
-                assert= |n=2
-                  (&fn:mappend (fn (x) |n=) (fn (x) (str x))) 2
+                  (&fn:mappend (fn (x) (#{} 1 x)) (fn (x) (#{} x 3)))
+                    , 2
+                assert= |n=2 $
+                  &fn:mappend
+                    fn (x) |n=
+                    fn (x) (str x)
+                  , 2
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |method-mappend-matches-direct-call)
               :code $ quote $ &let
                 h $ .mappend
                   fn (x) ([] x)
-                  fn (x) ([] (* x 10))
+                  fn (x)
+                    [] $ * x 10
                 assert= ([] 3 30) (h 3)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |falls-back-to-the-result-mappend-method)
               :code $ quote $ &let
                 h $ &fn:mappend
-                  fn (x) $ fn (y) ([] x y)
-                  fn (x) $ fn (y) ([] y)
-                assert= ([] 1 2 2) ((h 1) 2)
+                  fn (x)
+                    fn (y) ([] x y)
+                  fn (x)
+                    fn (y) ([] y)
+                assert= ([] 1 2 2)
+                  (h 1) 2
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |calls-f-then-g-once-without-changing-input)
               :code $ quote $ let
@@ -1299,29 +1344,43 @@
                   *log $ ref $ assert-type ([]) (:: 'List 'Dynamic)
                   h $ &fn:mappend
                     fn (xs)
-                      swap! *log $ fn (items) (append items ([] :f xs))
+                      swap! *log $ fn (items)
+                        append items $ [] :f xs
                       append xs 2
                     fn (xs)
-                      swap! *log $ fn (items) (append items ([] :g xs))
+                      swap! *log $ fn (items)
+                        append items $ [] :g xs
                       [] 3
                 assert= ([] 1 2 3) (h input)
                 assert= ([] 1) input
-                assert= ([] ([] :f ([] 1)) ([] :g ([] 1))) @*log
+                assert=
+                  []
+                    [] :f $ [] 1
+                    [] :g $ [] 1
+                  , @*log
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |rejects-mismatched-results-and-propagates-failures)
+            %{} 'TestEntry
+              :name |rejects-mismatched-results-and-propagates-failures
               :code $ quote $ let
                   fails? $ fn (thunk)
-                    try (do (thunk) false)
+                    try
+                      do (thunk) false
                       fn (message) true
                 do
                   assert= true $ fails? $ fn ()
-                    (&fn:mappend (fn (x) ([] x)) (fn (x) x)) 1
+                    (&fn:mappend (fn (x) ([] x)) (fn (x) x))
+                      , 1
                   assert= true $ fails? $ fn ()
-                    (&fn:mappend (fn (x) ({} (:a x))) (fn (x) x)) 1
+                    (&fn:mappend (fn (x) ({} (:a x))) (fn (x) x))
+                      , 1
                   assert= true $ fails? $ fn ()
-                    (&fn:mappend (fn (x) (#{} x)) (fn (x) x)) 1
+                    (&fn:mappend (fn (x) (#{} x)) (fn (x) x))
+                      , 1
                   assert= |g-failed $ try
-                    (&fn:mappend (fn (x) ([] x)) (fn (x) (raise |g-failed))) 1
+                      &fn:mappend
+                        fn (x) ([] x)
+                        fn (x) (raise |g-failed)
+                      , 1
                     fn (message) message
               :tags $ #{} :core :unit
         '&format-ternary-tree $ %{} 'CodeEntry
@@ -14608,9 +14667,11 @@
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-enum-impl
             &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
-              if (&>= k 0)
-                &< k $ &enum:count x
-                , false
+              if (number? k)
+                if (&>= k 0)
+                  &< k $ &enum:count x
+                  , false
+                raise "|Enum .contains? expected a Number index"
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-field-struct-impl $ %{} 'CodeEntry (:doc |)

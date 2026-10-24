@@ -66,7 +66,13 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       if extra_locals.len() != 1 {
         return Err("method .contains? expects 1 argument".into());
       }
-      emit_method_contains(ctx, receiver, extra_locals[0])
+      let receiver_type = infer_wasm_static_type(ctx, &args[0]);
+      let key_type = infer_wasm_static_type(ctx, &args[1]);
+      if enum_contains_has_open_key(receiver_type.as_deref(), key_type.as_deref()) {
+        return Err("E_WASM_NIL_TYPE_EVIDENCE: Enum .contains? requires concrete key type evidence before scalar erasure".into());
+      }
+      let number_key = key_type.is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number));
+      emit_method_contains(ctx, receiver, extra_locals[0], number_key)
     }
     "includes?" => {
       if extra_locals.len() != 1 {
@@ -824,10 +830,11 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   Ok(())
 }
 
-fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
+fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, number_key: bool) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
+  let enum_tag = get_type_tag(ctx, "enum");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
   ctx.emit(Instruction::LocalSet(type_local));
@@ -850,7 +857,31 @@ fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u3
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_set_includes_from_local(ctx, receiver_local, key_local);
   ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(enum_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  if number_key {
+    // The Enum contract checks the numeric range, including the tag slot.
+    // Keep f64 comparisons: fractional indices are not truncated to integers.
+    ctx.emit(Instruction::LocalGet(key_local));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ge);
+    ctx.emit(Instruction::LocalGet(key_local));
+    emit_heap_count_from_local(ctx, receiver_local);
+    ctx.emit(f64_const(1.0));
+    ctx.emit(Instruction::F64Add);
+    ctx.emit(Instruction::F64Lt);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::F64ConvertI32U);
+  } else {
+    // Native numeric comparison rejects non-Number keys. Their erased scalar
+    // payloads must not be reinterpreted as indices (nil/false alias zero).
+    ctx.emit(Instruction::Unreachable);
+  }
+  ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
