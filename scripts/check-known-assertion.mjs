@@ -174,7 +174,14 @@ try {
           const rejected = spawnSync(binary, [mapperSnapshot, ...args], options);
           if (rejected.error) throw rejected.error;
           assert.notEqual(rejected.status, 0, `${name}: open, concrete or unrelated outputs cannot specialize a lexical return`);
-          assert.match(rejected.stdout + rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+          if (args.includes("--workflow")) {
+            const report = JSON.parse(rejected.stdout);
+            assert.equal(report.data.workflow.status, "failed");
+            assert.ok(report.diagnostics.some(diagnostic => diagnostic.code === "E_ERASED_GENERIC_RELATION"),
+              `${name}: strict must emit the generic-relation diagnostic, not only list an available rule`);
+          } else {
+            assert.match(rejected.stdout + rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+          }
           assert.deepEqual(await readFile(mapperSnapshot), original);
         }
         runMapper("edit", "rm-def", `app.main/${name}`);
