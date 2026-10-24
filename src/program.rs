@@ -243,7 +243,14 @@ impl Drop for ProgramTestStateGuard {
     *PROGRAM_RUNTIME_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.runtime_data);
     *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.compiled_data);
     *PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.code_data);
-    *PROGRAM_DEF_ID_INDEX.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.def_id_index);
+    {
+      // Preprocessed code embeds def ids. A value built while this guard was
+      // held can outlive it, so a rolled-back id must never name another def.
+      let mut index = PROGRAM_DEF_ID_INDEX.write().unwrap_or_else(|error| error.into_inner());
+      let next_id = index.next_id.max(self.def_id_index.next_id);
+      *index = std::mem::take(&mut self.def_id_index);
+      index.next_id = next_id;
+    }
     *ACTIVE_FEATURE_POLICY.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.feature_policy);
     *ACTIVE_TARGET.write().unwrap_or_else(|error| error.into_inner()) = self.target;
   }

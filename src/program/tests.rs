@@ -468,7 +468,30 @@ fn reset_program_test_state() {
   PROGRAM_RUNTIME_DATA_STATE.write().expect("reset runtime data").clear();
   PROGRAM_COMPILED_DATA_STATE.write().expect("reset compiled data").clear();
   PROGRAM_CODE_DATA.write().expect("reset program code").clear();
-  *PROGRAM_DEF_ID_INDEX.write().expect("reset def id index") = ProgramDefIdIndex::default();
+  // Keep allocating fresh ids so values from before the reset cannot alias new definitions.
+  let mut index = PROGRAM_DEF_ID_INDEX.write().expect("reset def id index");
+  *index = ProgramDefIdIndex {
+    next_id: index.next_id,
+    ..ProgramDefIdIndex::default()
+  };
+}
+
+#[test]
+fn program_test_state_guard_never_reuses_rolled_back_def_ids() {
+  // #2298: an Import keeps the def id it was preprocessed with. After a guard
+  // rolls the registry back, that id must not resolve to a later definition.
+  let ns = "tests.guard-rolled-back-def-id";
+  let stale = {
+    let _guard = lock_program_test_state();
+    ensure_def_id(ns, "rolled-back")
+  };
+  let _guard = lock_program_test_state();
+  assert_eq!(lookup_def_id(ns, "rolled-back"), None);
+  reset_program_test_state();
+  let fresh = ensure_def_id(ns, "fresh");
+  assert_ne!(stale, fresh, "a rolled-back def id was reassigned");
+  write_runtime_ready(ns, "fresh", Calcit::Number(1.0)).expect("seed fresh runtime value");
+  assert_eq!(lookup_runtime_ready_by_id(stale), None);
 }
 
 #[test]
