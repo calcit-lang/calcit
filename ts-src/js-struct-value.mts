@@ -329,13 +329,12 @@ export let _$n_struct_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
   }
 
   if (x instanceof CalcitStructValue) {
-    if (targetStruct.definitionRef != null) {
-      return x.structRef.sameDataSchema(targetStruct);
-    }
-    if (x.name !== targetStruct.name) {
+    // Host-created values can carry a definition inconsistent with their
+    // actual header/layout; preserve those checks before trusting the owner.
+    if (x.name !== targetStruct.name || !fieldsEqual(x.fields, targetStruct.fields)) {
       return false;
     }
-    return fieldsEqual(x.fields, targetStruct.fields);
+    return targetStruct.definitionRef == null || x.structRef.sameDataSchema(targetStruct);
   } else {
     throw new Error("Expected first argument to be a struct value");
   }

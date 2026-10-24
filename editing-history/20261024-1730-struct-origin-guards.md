@@ -13,6 +13,8 @@ String `wrong1`；native 则直到数值使用处才失败。
 - 目标具有来源时，native 复用已有 `same_nominal_definition` 数据合同关系。
 - JS 把原 StructDef 相等判断中的数据合同部分提取为 `sameDataSchema`，供相等比较和
   来源判断共享。完整定义值相等仍另行比较 impl；附加 impl 不改变来源判断。
+- JS 宿主对象的实际名称/字段布局检查也必须保留：不能仅因传入的 structRef 合同匹配，
+  就接受其 header/layout 与该定义不一致的实例。普通 Calcit 构造器不会制造这种状态。
 - 目标没有来源时保留原名称/布局匹配，但这种结构匹配不证明名义类型或字段 payload。
 - 不改编译器证明关系，不增加 predicate、checker、Dynamic、unsafe 或固定改写规则。
 
