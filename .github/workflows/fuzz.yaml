@@ -23,7 +23,7 @@ jobs:
     name: Differential primitive fuzz
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 

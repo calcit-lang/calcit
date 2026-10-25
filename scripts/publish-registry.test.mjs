@@ -43,7 +43,7 @@ test("publication checkout explicitly selects the event ref and preserves annota
   const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
   const jobs = workflowJobs(workflow.slice(workflow.indexOf("\njobs:\n")));
   for (const [name, job] of Object.entries(jobs)) {
-    const checkout = /- uses: actions\/checkout@v7\n\s+with:([\s\S]*?)(?=\n\n|\n      -)/.exec(job)?.[1];
+    const checkout = /- uses: actions\/checkout@v7\.0\.1\n\s+with:([\s\S]*?)(?=\n\n|\n      -)/.exec(job)?.[1];
     assert.ok(checkout, `Expected the ${name} checkout configuration`);
     assert.match(checkout, /^\s+ref: \$\{\{ github\.ref \}\}\s*$/m);
     assert.match(checkout, /^\s+persist-credentials: false\s*$/m);
