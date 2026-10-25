@@ -51,9 +51,8 @@ pub enum CalcitSyntax {
   /// it has special behaviors of try catch
   #[strum(serialize = "try")]
   Try,
-  /// referenced state defined and attached to its namespace; `defatom` is the
-  /// compatibility spelling resolved into the same syntax until its retirement
-  #[strum(to_string = "defref", serialize = "defatom")]
+  /// referenced state defined and attached to its namespace
+  #[strum(serialize = "defref")]
   Defref,
   /// `reset!` value to atom
   #[strum(serialize = "reset!")]

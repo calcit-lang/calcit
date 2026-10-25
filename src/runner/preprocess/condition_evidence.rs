@@ -279,14 +279,10 @@ fn visit<const EFFECTS_ONLY: bool>(
         .is_some_and(|initial| visit::<EFFECTS_ONLY>(initial, scope, aliases, remaining, depth + 1).preserves_locals),
     ),
     Some(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, _)) => Outcomes::unknown(
+      // The decoder builds both Result outcomes directly; only its input can run code.
       items
         .get(1)
-        .is_some_and(|input| visit::<EFFECTS_ONLY>(input, scope, aliases, remaining, depth + 1).preserves_locals)
-        // The native decoder wraps both outcomes through these actual core
-        // constructors. Do not infer effects from their Result signatures.
-        && ["%ok", "%err"]
-          .iter()
-          .all(|name| known_import_call_preserves_locals(calcit::CORE_NS, name, remaining, depth + 1)),
+        .is_some_and(|input| visit::<EFFECTS_ONLY>(input, scope, aliases, remaining, depth + 1).preserves_locals),
     ),
     Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
       let Some(subject) = items.get(1) else {

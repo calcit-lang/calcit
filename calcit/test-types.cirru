@@ -279,13 +279,13 @@
         'test-numeric-refinements $ %{} 'CodeEntry
           :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
           :code $ quote $ defn test-numeric-refinements ()
-            assert= (%ok 127) (number->int8 127)
+            assert= (Result :ok 127) (number->int8 127)
             assert= true $ result:err? $ number->int8 128
-            assert= (%ok 4294967295) (number->uint32 4294967295)
+            assert= (Result :ok 4294967295) (number->uint32 4294967295)
             assert= true $ result:err? $ number->uint64 -1
-            assert= (%ok 0.5) (number->float32 0.5)
+            assert= (Result :ok 0.5) (number->float32 0.5)
             assert= true $ result:err? $ number->float32 0.1
-            assert= (%ok 0.1) (number->float64 0.1)
+            assert= (Result :ok 0.1) (number->float64 0.1)
             assert= ([] 127)
               parse-cirru-edn-as "|[] 127" $ :: 'List 'Int8
             assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (:: 'List 'Int8)

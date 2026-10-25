@@ -667,7 +667,7 @@ if (!optionMethod.stdout.split("\n").some((line) => line.trim().endsWith(": 1"))
   throw new Error(`strict core Option receiver method returned an unexpected value:\n${optionMethod.stdout}`);
 }
 
-const resultMethod = run(["eval", ".map-err (%err 1) $ fn (e) (+ e 1)"]);
+const resultMethod = run(["eval", ".map-err (Result :err 1) $ fn (e) (+ e 1)"]);
 expectStatus(resultMethod, 0, "strict core Result receiver method");
 if (!resultMethod.stdout.split("\n").some((line) => line.trim().endsWith(": (%:: 'Result :err 2)"))) {
   throw new Error(`strict core Result receiver method returned an unexpected value:\n${resultMethod.stdout}`);

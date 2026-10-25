@@ -20,7 +20,7 @@
             :args $ [] $ :: 'Result 'String 'String
             :return $ :: 'Result 'String 'String
           :tests $ [] $ %{} 'TestEntry (:name |keeps-typed-result-contract)
-            :code $ quote $ assert= (%ok |ready) (%ok |ready)
+            :code $ quote $ assert= (Result :ok |ready) (Result :ok |ready)
             :tags $ #{} :wasm
         'load-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export load-text (text) text

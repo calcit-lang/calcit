@@ -1910,7 +1910,7 @@ try {
       const effectsOperations = [
         ["edit", "add-ns", "calcit.core-truthiness-effects"],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-count", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defatom", "truthiness-count", "0"])],
+          JSON.stringify(["defref", "truthiness-count", "0"])],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "truthiness-number-once", ["value"],
             ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],

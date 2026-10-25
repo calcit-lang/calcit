@@ -119,7 +119,7 @@
             &doseq (h xs) (h 1)
           :examples $ []
         'state-helper $ %{} 'CodeEntry (:doc "|defines and mutates an atom")
-          :code $ quote $ defn state-helper () (defatom *counter 0) (reset! *counter 1) (swap! *counter inc)
+          :code $ quote $ defn state-helper () (defref *counter 0) (reset! *counter 1) (swap! *counter inc)
           :examples $ []
           :schema $ :: 'Dynamic
         'sync-hint-helper $ %{} 'CodeEntry (:doc |)
@@ -131,7 +131,7 @@
           :code $ quote $ defn tag-caller () (deprecated-only) (mixed-tagged) (lib-effect)
           :examples $ []
         'watch-helper $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn watch-helper () (remove-watch *store :log)
+          :code $ quote $ defn watch-helper () (remove-watch! *store :log)
           :examples $ []
         'write-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-helper (path) (.write-text! path |done)

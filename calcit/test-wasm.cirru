@@ -29,7 +29,7 @@
     'test-wasm.main $ %{} 'FileEntry
       :defs $ {}
         '*wasm-atom-counter $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *wasm-atom-counter 20
+          :code $ quote $ defref *wasm-atom-counter 20
           :examples $ []
           :schema $ :: 'Ref 'Number
         '*wasm-ref-counter $ %{} 'CodeEntry (:doc |)
@@ -1296,7 +1296,7 @@
             :args $ []
         'test-result-ok-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-result-ok-method ()
-            (%ok 1) .ok?
+            (Result :ok 1) .ok?
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1305,7 +1305,7 @@
             :tags $ #{} :wasm
         'test-result-unwrap-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-result-unwrap-or ()
-            (%err 3) .unwrap-or 7
+            (Result :err 3) .unwrap-or 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1458,7 +1458,7 @@
                       + x offset
                   , 0
                 result-value $ .unwrap-or
-                  .map (%ok 5)
+                  .map (Result :ok 5)
                     fn (x)
                       hint-fn $ {}
                         :args $ [] 'Number
@@ -1490,7 +1490,7 @@
                   .map (Option :some 3) wasm-add-four
                   , 0
                 result-value $ .unwrap-or
-                  .map (%ok 5) wasm-add-four
+                  .map (Result :ok 5) wasm-add-four
                   , 0
               + option-value result-value
           :examples $ []
@@ -1971,8 +1971,8 @@
             &let (yes true)
               &let (no false)
                 and
-                  = (turn-string yes) |true
-                  = (turn-string no) |false
+                  = (to-string yes) |true
+                  = (to-string no) |false
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1982,8 +1982,8 @@
         'test-turn-string-nil-string $ %{} 'CodeEntry (:doc "|验证 nil 和 String 转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-nil-string ()
             and
-              = (turn-string nil) |
-              = (turn-string |hello) |hello
+              = (to-string nil) |
+              = (to-string |hello) |hello
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1993,8 +1993,8 @@
         'test-turn-string-number $ %{} 'CodeEntry (:doc "|验证整数和小数转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-number ()
             and
-              = (turn-string 42) |42
-              = (turn-string 1.5) |1.5
+              = (to-string 42) |42
+              = (to-string 1.5) |1.5
               = (to-string 1.5) |1.5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -2005,7 +2005,7 @@
         'test-turn-string-tag $ %{} 'CodeEntry (:doc "|验证 Tag 转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-tag ()
             &let (name :wasm-name)
-              = (turn-string name) |wasm-name
+              = (to-string name) |wasm-name
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []

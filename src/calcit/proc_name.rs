@@ -455,7 +455,7 @@ pub enum CalcitProc {
   AtomDeref,
   #[strum(serialize = "add-watch!")]
   AddWatch,
-  #[strum(serialize = "remove-watch")]
+  #[strum(serialize = "remove-watch!")]
   RemoveWatch,
   // records
   #[strum(serialize = "?{}")]
@@ -1766,7 +1766,7 @@ mod tests {
               && matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Unit))
     ));
 
-    let remove_watch = CalcitProc::RemoveWatch.get_type_signature().expect("remove-watch signature");
+    let remove_watch = CalcitProc::RemoveWatch.get_type_signature().expect("remove-watch! signature");
     assert!(matches!(
       remove_watch.arg_types.as_slice(),
       [reference, key]

@@ -96,7 +96,7 @@ try {
   // reader contract directly rather than weakening that parser boundary.
   calcit(snapshot, "query", "def", "app.main/manifest-stdin-main!", "--raw");
   calcit(snapshot, "edit", "def", "app.main/manifest-stdin-main!", "--overwrite", "--input-format", "cirru", "--code",
-    "quote $ defn manifest-stdin-main! ()\n  match (read-stdin-text) ((:err message) (fail! 66 message)) ((:ok text) (echo text))\n  assert= (%ok |) (read-stdin-text)\n  , &unit");
+    "quote $ defn manifest-stdin-main! ()\n  match (read-stdin-text) ((:err message) (fail! 66 message)) ((:ok text) (echo text))\n  assert= (Result :ok |) (read-stdin-text)\n  , &unit");
   const rawJs = join(temp, "raw-js");
   const rawComponent = join(temp, "raw-component");
   calcit(...entry, "--emit-path", rawJs, "js");

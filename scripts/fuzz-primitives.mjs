@@ -5,7 +5,7 @@
 // (NaN, ±inf, -0, i32 and safe-integer boundaries, non-ASCII text, empty values,
 // out-of-range indices), replays them with scripts/run-core-tests.mjs and compares
 // each backend with native: the printed result when native returns, or a failure
-// (error or trap) when native raises. Outputs go through `turn-string`, the number
+// (error or trap) when native raises. Outputs go through `to-string`, the number
 // text every backend shares (docs/data/number.md).
 //
 // Usage:
@@ -75,7 +75,7 @@ const primitives = [
   ["bit-shl", [numbers, indices], "number"],
   ["bit-shr", [numbers, indices], "number"],
   ["bit-not", [numbers], "number"],
-  ["turn-string", [numbers], "string"],
+  ["to-string", [numbers], "string"],
   ["&str:count", [strings], "number"],
   ["&str:utf8-byte-count", [strings], "number"],
   ["&str:slice", [strings, indices, indices], "string"],
@@ -95,14 +95,14 @@ const primitives = [
   ["&list:includes?", [lists, numbers], "bool"],
 ];
 
-// The printed text of a result; `turn-string` is the number text every backend shares.
+// The printed text of a result; `to-string` is the number text every backend shares.
 const render = (kind, call) => {
   switch (kind) {
-    case "number": return ["turn-string", call];
+    case "number": return ["to-string", call];
     case "bool": return ["if", call, "|true", "|false"];
     // A marker keeps an empty result visible in every backend's trace.
     case "string": return ["&str:concat", "|=", call];
-    case "count": return ["turn-string", ["&list:count", call]];
+    case "count": return ["to-string", ["&list:count", call]];
     default: throw new Error(`unknown result kind ${kind}`);
   }
 };

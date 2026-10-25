@@ -2308,7 +2308,7 @@ fn strict_mode_rejects_implicit_option_and_result_stringification() {
     })));
     for (source, operation, nominal) in [
       ("defn main! ()\n  str $ Option :some :remove", "str", "Option"),
-      ("defn main! ()\n  turn-string $ %err |failed", "turn-string", "Result"),
+      ("defn main! ()\n  &turn-string $ Result :err |failed", "&turn-string", "Result"),
     ] {
       let entries = load_snippet_entries_with_main_schema(source, Some(main_schema.clone()));
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -3230,12 +3230,12 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && partial_variadic_binding_warnings[0].message().contains("got `map<tag, string>`"),
       "the original mismatching variadic generic container should remain actionable: {partial_variadic_binding_warnings:?}"
     );
-    // `add-watch!` is the watcher proc itself; `remove-watch!` still wraps the `remove-watch` proc.
+    // `add-watch!` and `remove-watch!` are the watcher procs themselves.
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
         warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
-          && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch`"))
+          && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch!`"))
       })
       .collect::<Vec<_>>();
     assert_eq!(
@@ -3260,25 +3260,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       watch_warnings.iter().any(|warning| {
-        warning.message().contains("Proc `remove-watch` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
+        warning.message().contains("Proc `remove-watch!` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
       }),
-      "remove-watch should require a Tag key: {watch_warnings:?}"
+      "remove-watch! should require a Tag key: {watch_warnings:?}"
     );
-    let public_watch_warnings = warnings
-      .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/remove-watch!"))
-      .collect::<Vec<_>>();
-    assert_eq!(
-      public_watch_warnings.len(),
-      1,
-      "the public remove-watch! wrapper should preserve the key type boundary: {warnings:?}"
-    );
-    assert!(public_watch_warnings.iter().any(|warning| {
-      warning
-        .message()
-        .contains("Function `calcit.core/remove-watch!` arg 2 expects type `:tag`")
-        && warning.message().contains("got `:string`")
-    }));
     let variadic_method_warnings = warnings
       .iter()
       .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))

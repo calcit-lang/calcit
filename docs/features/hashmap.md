@@ -159,7 +159,7 @@ results in a list. Its contract preserves all three related types:
 let
     options $ {} (:color |red) (:size |large)
     lines $ map-list-kv options $ fn (key value)
-      str (turn-string key) |= value
+      str (to-string key) |= value
   join-string (sort lines) |\n
 ```
 

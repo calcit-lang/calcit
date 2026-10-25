@@ -995,7 +995,7 @@ fn emit_wasm_impl(
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &value_imports, &tag_index, target);
 
-  // Scan for defatom definitions — each gets a mutable WASM global (f64).
+  // Scan for defref definitions — each gets a mutable WASM global (f64).
   let mut atom_initial_values: Vec<f64> = Vec::new();
   let mut atom_globals: HashMap<String, u32> = HashMap::new();
   for ns in &ns_order {
@@ -6488,7 +6488,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       ctx.emit(f64_const(0.0));
     }
     Calcit::Import(import) => {
-      // Check if this is a reference to a known WASM global (defatom)
+      // Check if this is a reference to a known WASM global (defref)
       let qualified = format!("{}/{}", import.ns, import.def);
       if let Some(&global_idx) = ctx.atom_globals.get(&qualified) {
         ctx.emit(Instruction::GlobalGet(global_idx));
@@ -10115,7 +10115,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
         let s = crate::wasm::host::calcit::format_to_lisp(&inner[1]);
         strings.push(s);
       }
-      // Pre-intern lispy strings for literal enum constructors (used by `str`/`turn-string`).
+      // Pre-intern lispy strings for literal enum constructors (used by `str`/`to-string`).
       if let Some(enum_str) = try_format_enum_literal(expr) {
         strings.push(enum_str);
       }
