@@ -395,15 +395,17 @@ pub fn lookup_runtime_ready(ns: &str, def: &str) -> Option<Calcit> {
 
 /// Find the source definition that owns a runtime metadata value.
 ///
-/// An impl tag names its canonical `defimpl` owner even while that definition
-/// is not `Ready`. Other metadata values fall back to deterministic equality
-/// over evaluated source-backed definitions.
+/// A legacy unqualified impl tag names its source owner even before `Ready`.
+/// Trait-backed impls carry the trait's tag, not their own definition identity;
+/// those and other metadata use deterministic source-backed runtime equality.
 pub(crate) fn find_source_def_for_runtime_value(ns: &str, target: &Calcit) -> Option<Arc<str>> {
   let source_defs = {
     let source = PROGRAM_CODE_DATA.read().expect("read program code");
     source.get(ns)?.defs.keys().cloned().collect::<HashSet<_>>()
   };
-  if let Calcit::Impl(impl_value) = target {
+  if let Calcit::Impl(impl_value) = target
+    && impl_value.origin().is_none()
+  {
     let tagged_owner: Arc<str> = Arc::from(impl_value.name().ref_str());
     if source_defs.contains(tagged_owner.as_ref()) {
       return Some(tagged_owner);

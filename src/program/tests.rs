@@ -191,6 +191,26 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
     "an impl tag identifies its source owner even before that owner is Ready"
   );
   assert_eq!(find_source_def_for_runtime_value("tests.missing", &target), None);
+
+  let origin = Arc::new(crate::calcit::CalcitTrait::new(EdnTag::new("z-owner"), vec![], vec![]));
+  let trait_impl = Calcit::Impl(CalcitImpl {
+    name: origin.name.clone(),
+    origin: Some(origin.clone()),
+    fields: Arc::new(vec![]),
+    values: Arc::new(vec![]),
+  });
+  write_runtime_ready("tests.runtime-provenance", "z-owner", Calcit::Trait(origin.as_ref().clone())).expect("seed trait owner");
+  assert_eq!(
+    find_source_def_for_runtime_value("tests.runtime-provenance", &trait_impl),
+    None,
+    "a trait tag is not the identity of an impl that has no ready source owner"
+  );
+  write_runtime_ready("tests.runtime-provenance", "a-owner", trait_impl.clone()).expect("seed actual impl owner");
+  assert_eq!(
+    find_source_def_for_runtime_value("tests.runtime-provenance", &trait_impl).as_deref(),
+    Some("a-owner"),
+    "trait-backed implementations must use their own source identity"
+  );
 }
 
 #[test]

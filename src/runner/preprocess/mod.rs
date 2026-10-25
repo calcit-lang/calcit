@@ -9583,10 +9583,15 @@ fn synthetic_fn_args(info: &CalcitFn, schema: &CalcitTypeAnnotation, synthetic_n
   Calcit::from(CalcitList::from(nodes.as_slice()))
 }
 
-/// Collect source owners that must invalidate a generated nominal callable.
-fn nominal_callable_owner_deps(target_ns: &str, impl_value: &CalcitImpl, receiver_type: &CalcitTypeAnnotation) -> Vec<program::DefId> {
+/// Resolve the stable impl source identity and every callable invalidation owner.
+fn nominal_callable_owner_deps(
+  target_ns: &str,
+  impl_value: &CalcitImpl,
+  receiver_type: &CalcitTypeAnnotation,
+) -> (Option<Arc<str>>, Vec<program::DefId>) {
+  let impl_owner = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone()));
   let mut deps = vec![];
-  if let Some(owner_def) = program::find_source_def_for_runtime_value(target_ns, &Calcit::Impl(impl_value.clone())) {
+  if let Some(owner_def) = &impl_owner {
     deps.push(program::ensure_def_id(target_ns, owner_def.as_ref()));
   }
   if let Some(origin_ref) = impl_value.origin().and_then(|origin| origin.definition_ref.as_deref())
@@ -9615,7 +9620,7 @@ fn nominal_callable_owner_deps(target_ns: &str, impl_value: &CalcitImpl, receive
   }
   deps.sort();
   deps.dedup();
-  deps
+  (impl_owner, deps)
 }
 
 /// Materialize a capture-free anonymous impl method as a deterministic compiled definition.
@@ -9632,14 +9637,26 @@ fn synthesize_nominal_impl_callable(
     return Ok(None);
   };
   let method_segment = method_name.to_ascii_lowercase();
-  let synthetic_name = format!("&{scope_name}:{method_segment}");
 
   // A cacheable compiler-owned symbol must have at least one source owner.
   // Otherwise retain runtime method dispatch so no stale generated definition
   // can survive a source edit without an invalidation edge.
-  let owner_deps = nominal_callable_owner_deps(target_ns, impl_value, receiver_type);
+  let (impl_owner, owner_deps) = nominal_callable_owner_deps(target_ns, impl_value, receiver_type);
   if owner_deps.is_empty() {
     return Ok(None);
+  }
+
+  let mut synthetic_name = format!("&{scope_name}:{method_segment}");
+  if let Some(owner) = impl_owner {
+    // Independent impl aliases of one nominal type must not share a callable.
+    // Encode losslessly: source owners may differ only in case or punctuation.
+    // The target namespace already scopes this source definition identity.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    synthetic_name.push_str(":impl-");
+    for byte in owner.bytes() {
+      synthetic_name.push(HEX[(byte >> 4) as usize] as char);
+      synthetic_name.push(HEX[(byte & 0xf) as usize] as char);
+    }
   }
 
   if program::has_def_code(target_ns, &synthetic_name) {
@@ -22773,21 +22790,19 @@ mod tests {
       fields: Arc::new(vec![EdnTag::new("display-name")]),
       values: Arc::new(vec![anonymous_method.clone()]),
     });
+    let source_entry = program::ProgramDefEntry {
+      tags: Default::default(),
+      code: Calcit::Nil,
+      schema: calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+      ffi: None,
+    };
     program::install_internal_source_namespace(
       impl_ns.clone(),
       program::ProgramFileData {
         import_map: HashMap::new(),
-        defs: HashMap::from([(
-          Arc::from("CatDisplayImpl"),
-          program::ProgramDefEntry {
-            tags: Default::default(),
-            code: Calcit::Nil,
-            schema: calcit::DYNAMIC_TYPE.clone(),
-            doc: Arc::from(""),
-            examples: vec![],
-            ffi: None,
-          },
-        )]),
+        defs: HashMap::from([(Arc::from("CatDisplayImpl"), source_entry.clone())]),
       },
     )
     .expect("install impl source fixture");
@@ -22828,11 +22843,12 @@ mod tests {
     assert!(matches!(
       call.first(),
       Some(Calcit::Import(CalcitImport { ns, def, .. }))
-        if ns.as_ref() == impl_ns.as_ref() && def.as_ref() == "&cat-profile:display-name"
+        if ns.as_ref() == impl_ns.as_ref() && def.as_ref() == "&cat-profile:display-name:impl-436174446973706c6179496d706c"
     ));
 
-    let compiled = program::lookup_compiled_def(&impl_ns, "&cat-profile:display-name")
-      .expect("stable callable should be registered as a compiled definition");
+    let generated_name = "&cat-profile:display-name:impl-436174446973706c6179496d706c";
+    let compiled =
+      program::lookup_compiled_def(&impl_ns, generated_name).expect("stable callable should be registered as a compiled definition");
     assert_eq!(compiled.kind, program::CompiledDefKind::Fn);
     assert!(
       compiled.deps.contains(&program::ensure_def_id(&impl_ns, "CatDisplayImpl")),
@@ -22841,10 +22857,10 @@ mod tests {
     assert!(matches!(
       &compiled.preprocessed_code,
       Calcit::List(items)
-        if matches!(items.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "&cat-profile:display-name")
+        if matches!(items.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == generated_name)
     ));
 
-    let callable = runner::evaluate_symbol_from_program("&cat-profile:display-name", &impl_ns, None, &CallStackList::default())
+    let callable = runner::evaluate_symbol_from_program(generated_name, &impl_ns, None, &CallStackList::default())
       .expect("evaluate generated callable");
     let Calcit::Fn { info, .. } = callable else {
       panic!("generated callable should evaluate to a function")
@@ -22869,6 +22885,29 @@ mod tests {
     )
     .expect_err("different generated bodies must not silently overwrite the same callable symbol");
     assert_eq!(collision.code(), Some("E_IMPL_CALLABLE_GENERATED_COLLISION"));
+    program::remove_internal_source_namespace(&impl_ns);
+
+    program::install_internal_source_namespace(
+      impl_ns.clone(),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([
+          (Arc::from("CatDisplayImpl"), source_entry.clone()),
+          (Arc::from(generated_name), source_entry),
+        ]),
+      },
+    )
+    .expect("install source collision fixture");
+    let collision = synthesize_nominal_impl_callable(
+      &original_info,
+      display_impl.as_ref(),
+      receiver_type.as_ref(),
+      "display-name",
+      "tests.nominal-call",
+      &CallStackList::default(),
+    )
+    .expect_err("a generated callable must not overwrite a source definition");
+    assert_eq!(collision.code(), Some("E_IMPL_CALLABLE_SYMBOL_COLLISION"));
     program::remove_internal_source_namespace(&impl_ns);
   }
 
@@ -22926,11 +22965,12 @@ mod tests {
     };
     program::write_runtime_ready(&owner_ns, "CardRenderImpl", Calcit::Impl(impl_value.clone())).expect("install impl runtime fixture");
 
-    let deps = nominal_callable_owner_deps(
+    let (impl_owner, deps) = nominal_callable_owner_deps(
       owner_ns.as_ref(),
       &impl_value,
       &CalcitTypeAnnotation::TypeRef(Arc::from("tests.trait-cache-owner/Card"), Arc::new(vec![])),
     );
+    assert_eq!(impl_owner.as_deref(), Some("CardRenderImpl"));
     assert!(deps.contains(&program::ensure_def_id(&owner_ns, "CardRenderImpl")));
     assert!(
       deps.contains(&program::ensure_def_id(&owner_ns, "Render")),
@@ -22970,13 +23010,13 @@ mod tests {
     let receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.inline-impl-owner/CatProfile"), Arc::new(vec![]));
     assert_eq!(
       nominal_callable_owner_deps(&owner_ns, &inline_impl, &receiver),
-      vec![program::ensure_def_id(&owner_ns, "CatProfile")],
+      (None, vec![program::ensure_def_id(&owner_ns, "CatProfile")]),
       "inline impl-traits must be invalidated through the nominal type source"
     );
 
     let missing_receiver = CalcitTypeAnnotation::TypeRef(Arc::from("tests.missing/CatProfile"), Arc::new(vec![]));
     assert!(
-      nominal_callable_owner_deps(&owner_ns, &inline_impl, &missing_receiver).is_empty(),
+      nominal_callable_owner_deps(&owner_ns, &inline_impl, &missing_receiver).1.is_empty(),
       "callable synthesis must fall back when no source owner can invalidate it"
     );
     program::remove_internal_source_namespace(&owner_ns);

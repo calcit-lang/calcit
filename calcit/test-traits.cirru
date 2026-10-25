@@ -113,6 +113,90 @@
         :code $ quote $ ns test-traits.identity
     'test-traits.main $ %{} 'FileEntry
       :defs $ {}
+        'AliasFirst $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def AliasFirst (impl-traits AliasSharedBase AliasFirstImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |distinct-impl-alias-callables)
+            :code $ quote $ let
+                first-alias $ AliasFirst :item 0
+                second-alias $ AliasSecond :item 0
+              assert= 11 $ .read-value first-alias
+              assert= 22 $ .read-value second-alias
+              assert= 11 $ .read-value first-alias
+              assert= 22 $ .read-value second-alias
+            :tags $ #{} :impl-origin-portable :trait :unit
+        'AliasFirstImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl AliasFirstImpl AliasFirstOps
+            .read-value $ fn (self)
+              hint-fn $ {}
+                :args $ [] 'test-traits.main/AliasSharedBase
+                :return 'Number
+              , 11
+          :examples $ []
+          :schema $ :: 'Impl
+        'AliasFirstOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AliasFirstOps
+            .read-value $ :: 'Fn $ {}
+              :args $ [] 'test-traits.main/AliasSharedBase
+              :return 'Number
+          :examples $ []
+          :schema $ :: 'Trait
+        'AliasGeneric $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def AliasGeneric (impl-traits AliasSharedBase AliasGenericImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |distinct-impl-generic-callback-returns)
+            :code $ quote $ let
+                ordinary $ AliasFirst :item 0
+                generic $ AliasGeneric :item 0
+              assert= 11 $ .read-value ordinary
+              assert= 42 $ .read-value generic alias-return-number
+              assert= &unit $ .read-value generic alias-return-unit!
+              assert= 11 $ .read-value ordinary
+              assert= 42 $ .read-value generic alias-return-number
+            :tags $ #{} :impl-origin-portable :trait :unit
+        'AliasGenericImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl AliasGenericImpl AliasGenericOps
+            .read-value $ fn (self dispatch!)
+              hint-fn $ {}
+                :args $ [] 'test-traits.main/AliasSharedBase $ :: 'Fn
+                  {}
+                    :args $ [] 'Number
+                    :return 'R
+                :return 'R
+                :generics $ [] 'R
+              dispatch! 0
+          :examples $ []
+          :schema $ :: 'Impl
+        'AliasGenericOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AliasGenericOps
+            .read-value $ :: 'Fn $ {}
+              :args $ [] 'test-traits.main/AliasSharedBase $ :: 'Fn
+                {}
+                  :args $ [] 'Number
+                  :return 'R
+              :return 'R
+              :generics $ [] 'R
+          :examples $ []
+          :schema $ :: 'Trait
+        'AliasSecond $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def AliasSecond (impl-traits AliasSharedBase AliasSecondImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'AliasSecondImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl AliasSecondImpl AliasFirstOps
+            .read-value $ fn (self)
+              hint-fn $ {}
+                :args $ [] 'test-traits.main/AliasSharedBase
+                :return 'Number
+              , 22
+          :examples $ []
+          :schema $ :: 'Impl
+        'AliasSharedBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum AliasSharedBase (:item 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'CoreShowImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl CoreShowImpl calcit.core/Show (.show core-show:show)
           :examples $ []
@@ -407,6 +491,24 @@
                   summed $ add-with-trait a b
                 assert= 5 $ :value summed
               :tags $ #{} :trait :unit
+        'alias-return-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias-return-number (value)
+            hint-fn $ {}
+              :args $ [] 'Number
+              :return 'Number
+            + value 42
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'alias-return-unit! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias-return-unit! (value)
+            hint-fn $ {}
+              :args $ [] 'Number
+              :return 'Unit
+            assert= 0 value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Number
         'compare-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn compare-with-trait (a b) (a .compare b)
           :examples $ []
