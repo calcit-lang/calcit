@@ -26,7 +26,7 @@ env:
 jobs:
   verify_source:
     name: Verify release tag and versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -40,7 +40,7 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           test "$SOURCE_REF" = "refs/tags/$RELEASE_TAG"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Preserve the annotated tag object instead of fetching its commit into the tag ref.
           ref: ${{ github.ref }}
@@ -62,12 +62,12 @@ jobs:
   branch_ci:
     name: Wait for branch Test and CodeQL
     needs: verify_source
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -91,7 +91,7 @@ jobs:
     needs: verify_source
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -130,7 +130,7 @@ jobs:
           node js-out/main.mjs
           bash scripts/test-wasm.sh
 
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v7
         with:
           name: release-standard
           path: target/release/assets/calcit
@@ -142,7 +142,7 @@ jobs:
     needs: verify_source
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -172,7 +172,7 @@ jobs:
           fi
           grep -F 'WASM and WASI code generation are disabled' target/release/no-wasm-command.out
 
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v7
         with:
           name: release-no-wasm
           path: target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
@@ -182,9 +182,9 @@ jobs:
   package_dry_run:
     name: Dry-run crate and npm packages
     needs: verify_source
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -228,7 +228,7 @@ jobs:
       contents: write
       id-token: write  # Required for OIDC
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -248,11 +248,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       # Upload exactly the binaries that passed their smoke jobs.
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: release-standard
           path: target/release/assets
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: release-no-wasm
           path: target/release/assets
@@ -266,7 +266,7 @@ jobs:
             > target/release/assets/calcit-release-manifest.json
 
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           prerelease: ${{ needs.verify_source.outputs.prerelease == 'true' }}

@@ -18,9 +18,9 @@ concurrency:
 jobs:
   cli_build:
     name: Build shared CI CLI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -30,7 +30,7 @@ jobs:
       - name: Build optimized CLI
         # Both consumers retain debug assertions and overflow checks.
         run: cargo build --locked --profile ci --bin calcit
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v7
         with:
           name: calcit-cli-${{ github.sha }}
           path: target/ci/calcit
@@ -39,9 +39,9 @@ jobs:
 
   wasi_preprocess:
     name: WASI preprocess regression
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -71,9 +71,9 @@ jobs:
 
   wasi03_command_smoke:
     name: WASI 0.3 command Component smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -146,9 +146,9 @@ jobs:
 
   wasi_business_smoke:
     name: Published WASI HTTP business loop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -158,7 +158,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Cache published Calcit tools
         id: published_tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/calcit
@@ -177,7 +177,7 @@ jobs:
     name: macOS main-thread CLI
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -193,7 +193,7 @@ jobs:
     name: Ubuntu 22.04 no-WASM binary
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -228,9 +228,9 @@ jobs:
   # Keep Rust unit/integration tests separate from CLI, docs, and lint checks.
   rust_tests:
     name: Rust tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -269,11 +269,11 @@ jobs:
   core_checks:
     name: Core and CLI checks
     needs: cli_build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CALCIT_BIN: target/ci/calcit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -288,7 +288,7 @@ jobs:
           corepack prepare yarn@4.12.0 --activate
           yarn --version
 
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: calcit-cli-${{ github.sha }}
           path: target/ci
@@ -335,7 +335,7 @@ jobs:
     # scripts/ci-check-all.mjs spreads the check-all steps and known-assertion
     # parts over the shards, all against the shared optimized CLI.
     needs: cli_build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -345,7 +345,7 @@ jobs:
       CALCIT_LINT_CORE: "1"
       RUST_MIN_STACK: "16777216"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -354,7 +354,7 @@ jobs:
         with:
           node-version: 24
 
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: calcit-cli-${{ github.sha }}
           path: target/ci
@@ -377,11 +377,11 @@ jobs:
   docs_checks:
     name: Docs checks
     needs: cli_build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CALCIT_BIN: target/ci/calcit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -392,7 +392,7 @@ jobs:
       - name: Verify documentation deployment lifecycle
         run: node --test scripts/docs-deploy.test.mjs
 
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8
         with:
           name: calcit-cli-${{ github.sha }}
           path: target/ci
@@ -438,9 +438,9 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -469,7 +469,7 @@ jobs:
       - lint_core_check_all
       - docs_checks
       - clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Verify all shards succeeded
         run: |
