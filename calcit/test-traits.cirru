@@ -996,7 +996,7 @@
               assert= |zapB $ &trait-call MyZapB :zap t
             println "|  explicit trait-call: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
           :tests $ []
             %{} 'TestEntry (:name |count-with-proven-list)
