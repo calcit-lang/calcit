@@ -611,13 +611,25 @@
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-concrete-result)
+            :code $ quote $ let
+                actual $ mybar:bar1 nil
+              assert= |bar1 actual
+              assert= :string $ type-of actual
+            :tags $ #{} :result-contract-2386 :trait
         'mybar:bar2 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
           :code $ quote $ defn mybar:bar2 (_x) |bar2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-concrete-result)
+            :code $ quote $ let
+                actual $ mybar:bar2 nil
+              assert= |bar2 actual
+              assert= :string $ type-of actual
+            :tags $ #{} :result-contract-2386 :trait
         'myfoo:foo $ %{} 'CodeEntry (:doc "|method implementation for MyFoo/:foo")
           :code $ quote $ defn myfoo:foo (p)
             str "|foo " $ :name p
@@ -633,13 +645,25 @@
         'myzap:a $ %{} 'CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote $ defn myzap:a (_x) |zapA
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-concrete-result)
+            :code $ quote $ let
+                actual $ myzap:a nil
+              assert= |zapA actual
+              assert= :string $ type-of actual
+            :tags $ #{} :result-contract-2386 :trait
         'myzap:b $ %{} 'CodeEntry (:doc "|method implementation for MyZapB/:zap")
           :code $ quote $ defn myzap:b (_x) |zapB
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-concrete-result)
+            :code $ quote $ let
+                actual $ myzap:b nil
+              assert= |zapB actual
+              assert= :string $ type-of actual
+            :tags $ #{} :result-contract-2386 :trait
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
@@ -1112,7 +1136,7 @@
               assert= |zapB $ &trait-call MyZapB :zap t
             println "|  explicit trait-call: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tests $ []
             %{} 'TestEntry (:name |count-with-proven-list)
@@ -1129,6 +1153,12 @@
                     &trait-call calcit.core/Countable :count x
                 assert= 2 $ count-items $ [] 1 2
               :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |preserves-concrete-result)
+              :code $ quote $ let
+                  actual $ test-explicit-trait-call
+                assert= &unit actual
+                assert= :unit $ type-of actual
+              :tags $ #{} :result-contract-2386 :trait
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let

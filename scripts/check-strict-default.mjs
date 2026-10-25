@@ -639,10 +639,19 @@ try {
   assert.equal(identityTests.length, 1);
   expectStatus(run([snapshot, "--compat-types", "test", "test-traits.main/test-explicit-trait-call",
     "--tag", "trait-identity-runtime", "--require-match"]), 0, "fresh trait identity rejects a stale implementation");
-  const edit = run([snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
-    "--input-format", "json-ast", "--code", JSON.stringify([
-      "defn", "test-explicit-trait-call", [], ...runtimeTests.concat(identityTests).map(test => test.code), "1",
-    ])]);
+  // This private replay deliberately returns Number, unlike the Unit source routine.
+  const replayEdits = JSON.stringify([
+    ["edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
+      "--input-format", "json-ast", "--code", JSON.stringify([
+        "defn", "test-explicit-trait-call", [], ...runtimeTests.concat(identityTests).map(test => test.code), "1",
+      ])],
+    ["edit", "schema", "test-traits.main/test-explicit-trait-call", "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]])],
+  ]);
+  const replayPreview = run([snapshot, "edit", "transaction", "--code", replayEdits, "--dry-run", "--format", "json"]);
+  expectStatus(replayPreview, 0, "preview compatibility trait replay");
+  const edit = run([snapshot, "edit", "transaction", "--code", replayEdits,
+    "--expect-revision", JSON.parse(replayPreview.stdout).scoped_revision, "--format", "edn"]);
   expectStatus(edit, 0, "assemble compatibility trait replay");
   const output = join(traitFixture, "js-out");
   const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
