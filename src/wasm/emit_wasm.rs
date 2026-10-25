@@ -40,7 +40,7 @@ use crate::wasm::host::calcit::{
 };
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{
-  expression_definitely_diverges, infer_static_type_from_expr, resolve_static_trait_callable,
+  expression_definitely_diverges, infer_static_type_from_expr, resolve_runtime_method_callable, resolve_static_trait_callable,
 };
 
 #[path = "emit_wasm/component.rs"]
@@ -912,6 +912,7 @@ fn emit_wasm_impl(
   }
   let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, direct_scalar_type_test);
   let trait_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_trait_call);
+  let method_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_method_call);
   let mut fn_index: HashMap<String, u32> = HashMap::new();
   let mut fn_arity: HashMap<String, u32> = HashMap::new();
   // Track functions with rest args: value is the fixed-arity count (params before `&`).
@@ -972,6 +973,7 @@ fn emit_wasm_impl(
       fixed_arity: matches!(args, CalcitFnArgs::Args(_)),
       nil_sensitive: nil_sensitive_defs.contains(&format!("{ns}/{name}")),
       trait_sensitive: trait_sensitive_defs.contains(&format!("{ns}/{name}")),
+      method_sensitive: method_sensitive_defs.contains(&format!("{ns}/{name}")),
     });
     static_fn_defs.insert(format!("{ns}/{name}"), definition.clone());
     if export_name_counts.get(name).copied() == Some(1) {
@@ -4977,6 +4979,7 @@ struct StaticFnDef {
   fixed_arity: bool,
   nil_sensitive: bool,
   trait_sensitive: bool,
+  method_sensitive: bool,
 }
 
 type FunctionValueDependencies = Rc<RefCell<HashMap<u32, HashSet<u32>>>>;
@@ -5590,15 +5593,52 @@ fn emit_inline_closure_with_bindings(
 }
 
 fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  infer_wasm_type_in_scope(ctx, expr, &ctx.local_types)
+}
+
+fn infer_wasm_type_in_scope(
+  ctx: &WasmGenCtx,
+  expr: &Calcit,
+  local_types: &HashMap<String, Arc<CalcitTypeAnnotation>>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
   if expression_definitely_diverges(expr) {
     return Some(crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone());
   }
   match expr {
-    Calcit::Local(local) => ctx
-      .local_types
+    Calcit::Local(local) => local_types
       .get(local.sym.as_ref())
       .cloned()
       .or_else(|| Some(local.type_info.clone())),
+    Calcit::Symbol { sym, .. } if local_types.contains_key(sym.as_ref()) => local_types.get(sym.as_ref()).cloned(),
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) => {
+      let consequent = infer_wasm_type_in_scope(ctx, items.get(2)?, local_types)?;
+      let alternative = infer_wasm_type_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types)?;
+      // A data-shape join may discard attached implementations. Preserve a
+      // call-site identity only when both live branches carry identical evidence.
+      if consequent == alternative || matches!(alternative.as_ref(), CalcitTypeAnnotation::Never) {
+        Some(consequent)
+      } else if matches!(consequent.as_ref(), CalcitTypeAnnotation::Never) {
+        Some(alternative)
+      } else {
+        infer_static_type_from_expr(expr)
+      }
+    }
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))) => {
+      let Calcit::List(pair) = items.get(1)? else { return None };
+      let tail = items.iter().skip(2).last()?;
+      if pair.is_empty() {
+        return infer_wasm_type_in_scope(ctx, tail, local_types);
+      }
+      let name = match pair.first()? {
+        Calcit::Local(local) => local.sym.as_ref(),
+        Calcit::Symbol { sym, .. } => sym.as_ref(),
+        _ => return None,
+      };
+      let annotation = infer_wasm_type_in_scope(ctx, pair.get(1)?, local_types).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+      let mut body_types = local_types.clone();
+      body_types.insert(name.to_owned(), annotation);
+      infer_wasm_type_in_scope(ctx, tail, &body_types)
+    }
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))) => items
       .get(1)
       .and_then(|definition| resolve_struct_ref(definition).ok())
@@ -5606,6 +5646,13 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
     Calcit::List(items) => items
       .first()
       .and_then(|head| match head {
+        Calcit::Method(name, MethodKind::Invoke(_)) => {
+          let receiver = infer_wasm_type_in_scope(ctx, items.get(1)?, local_types)?;
+          let callable = resolve_runtime_method_callable(&receiver, name, &ctx.source_ns).ok()??;
+          let mut direct = vec![callable];
+          direct.extend(items.iter().skip(1).cloned());
+          infer_wasm_type_in_scope(ctx, &Calcit::from(direct), local_types)
+        }
         Calcit::Proc(proc) => {
           let (ns, def) = proc.get_ns_def();
           let signature = program::lookup_def_schema(ns, def).resolve_to_fn().or_else(|| {
@@ -5627,7 +5674,7 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
           let mut bindings = TypeBindings::new();
           for (index, argument) in items.iter().skip(1).enumerate() {
             let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-            let actual = infer_wasm_static_type(ctx, argument)?;
+            let actual = infer_wasm_type_in_scope(ctx, argument, local_types)?;
             if actual.prove_available_bindings(expected, &mut bindings).is_mismatch() {
               return None;
             }
@@ -5856,6 +5903,23 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   } else {
     None
   };
+  let method_argument_types = if definition.method_sensitive
+    && definition.fixed_arity
+    && !definition.body.iter().any(check_uses_recur)
+    && !ctx.specialization_stack.iter().any(|active| active == qualified)
+    && nil_argument_types.is_none()
+    && trait_argument_types.is_none()
+  {
+    resolve_static_specialization_types(ctx, &definition, args).filter(|actuals| {
+      actuals.iter().zip(&definition.arg_types).any(|(actual, expected)| {
+        (actual.resolve_to_enum().is_some() || actual.resolve_to_struct().is_some())
+          && expected.resolve_to_enum().is_none()
+          && expected.resolve_to_struct().is_none()
+      })
+    })
+  } else {
+    None
+  };
 
   let closure_args = args
     .iter()
@@ -5881,7 +5945,11 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closure_args.iter().all(Option::is_none) && nil_argument_types.is_none() && trait_argument_types.is_none() {
+  if closure_args.iter().all(Option::is_none)
+    && nil_argument_types.is_none()
+    && trait_argument_types.is_none()
+    && method_argument_types.is_none()
+  {
     let Some(completed) = completed_args.as_deref() else {
       return Ok(false);
     };
@@ -5908,13 +5976,16 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     ));
   }
 
-  let argument_types = nil_argument_types.or(trait_argument_types).unwrap_or_else(|| {
-    args
-      .iter()
-      .map(|arg| infer_wasm_static_type(ctx, arg))
-      .collect::<Option<Vec<_>>>()
-      .unwrap_or_default()
-  });
+  let argument_types = nil_argument_types
+    .or(trait_argument_types)
+    .or(method_argument_types)
+    .unwrap_or_else(|| {
+      args
+        .iter()
+        .map(|arg| infer_wasm_static_type(ctx, arg))
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+    });
   let mut bindings = Vec::with_capacity(args.len());
   for (arg, closure_arg) in args.iter().zip(closure_args) {
     if let Some((effects, tail)) = closure_arg {
@@ -6329,6 +6400,15 @@ fn expr_uses_trait_call(expr: &Calcit) -> bool {
   }
 }
 
+fn expr_uses_method_call(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(items) => {
+      matches!(items.first(), Some(Calcit::Method(_, MethodKind::Invoke(_)))) || items.iter().any(expr_uses_method_call)
+    }
+    _ => false,
+  }
+}
+
 /// Emit instructions for a sequence of expressions (last is the return value).
 fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
   // Strict preprocessing may append a function contract after the executable
@@ -6695,7 +6775,33 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     },
     Calcit::Proc(proc) => emit_proc_call(ctx, proc, &args_list),
     Calcit::Method(name, kind) => match kind {
-      MethodKind::Invoke(_) => emit_method_invoke(ctx, name.as_ref(), &args_list),
+      MethodKind::Invoke(_) => {
+        if let Some(receiver) = args_list.first().and_then(|arg| infer_wasm_static_type(ctx, arg))
+          && let Some(callable) = resolve_runtime_method_callable(&receiver, name, &ctx.source_ns)
+            .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?
+        {
+          if let Calcit::Fn { info, .. } = &callable
+            && info.scope.is_empty()
+            && resolve_known_function_value(ctx, &callable).is_none()
+            && let Some(closure) = capture_inline_closure(ctx, &callable)
+          {
+            let closure = InlineClosure {
+              captured_locals: HashMap::new(),
+              captured_local_types: HashMap::new(),
+              captured_closures: HashMap::new(),
+              ..(*closure).clone()
+            };
+            return emit_inline_closure_call(ctx, &closure, &args_list);
+          }
+          let mut direct = vec![callable];
+          direct.extend(args_list);
+          let Calcit::List(items) = Calcit::from(direct) else {
+            unreachable!()
+          };
+          return emit_call_expr(ctx, &items);
+        }
+        emit_method_invoke(ctx, name.as_ref(), &args_list)
+      }
       _ => Err(format!("unsupported method in WASM: .{name}")),
     },
     Calcit::Import(import) => {
@@ -10521,6 +10627,7 @@ mod tests {
         fixed_arity: true,
         nil_sensitive: true,
         trait_sensitive: false,
+        method_sensitive: false,
       }),
     );
     let call = Calcit::from(vec![Calcit::Symbol {

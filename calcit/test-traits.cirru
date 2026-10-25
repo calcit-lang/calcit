@@ -358,6 +358,39 @@
           :code $ quote $ defimpl MyZapBImpl MyZapB (.zap myzap:b)
           :examples $ []
           :schema $ :: 'Impl
+        'OpenContainsBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum OpenContainsBase (:item 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'OpenContainsFalseImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl OpenContainsFalseImpl OpenContainsOps
+            .contains? $ fn (self index)
+              hint-fn $ {}
+                :args $ [] 'Enum 'Number
+                :return 'Bool
+              println |open-contains-false-body
+              , false
+          :examples $ []
+          :schema $ :: 'Impl
+        'OpenContainsFalseLast $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def OpenContainsFalseLast (impl-traits OpenContainsBase OpenContainsTrueImpl OpenContainsFalseImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'OpenContainsOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait OpenContainsOps
+            .contains? $ :: 'Fn $ {}
+              :args $ [] 'Enum 'Number
+              :return 'Bool
+          :examples $ []
+          :schema $ :: 'Trait
+        'OpenContainsTrueImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl OpenContainsTrueImpl OpenContainsOps (.contains? open-contains-true)
+          :examples $ []
+          :schema $ :: 'Impl
+        'OpenContainsTrueLast $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def OpenContainsTrueLast (impl-traits OpenContainsBase OpenContainsFalseImpl OpenContainsTrueImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
@@ -664,6 +697,67 @@
               assert= |zapB actual
               assert= :string $ type-of actual
             :tags $ #{} :result-contract-2386 :trait
+        'open-contains-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'open-enum-forward $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-enum-forward (value index) (open-enum-public value index)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |forwarded-nominal-impl-is-called)
+            :code $ quote $ assert= false
+              open-enum-forward (OpenContainsFalseLast :item 1) 0
+            :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+        'open-enum-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-enum-method (value index)
+            let
+                result $ .contains? value index
+              if (bool? result) result $ raise |Open-contains-method-must-return-Bool
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |last-false-impl-is-called)
+              :code $ quote $ assert= false
+                open-enum-method (OpenContainsFalseLast :item 1) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |last-true-impl-is-called)
+              :code $ quote $ assert= true
+                open-enum-method (OpenContainsTrueLast :item 1) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |receiver-key-and-method-run-in-order)
+              :code $ quote $ assert= false
+                open-enum-method
+                  do (println |open-method-receiver) (OpenContainsFalseLast :item 1)
+                  do (println |open-method-key) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+        'open-enum-public $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-enum-public (value index) (contains? value index)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |last-false-impl-is-called)
+              :code $ quote $ assert= false
+                open-enum-public (OpenContainsFalseLast :item 1) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |last-true-impl-is-called)
+              :code $ quote $ assert= true
+                open-enum-public (OpenContainsTrueLast :item 1) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |receiver-key-and-method-run-in-order)
+              :code $ quote $ assert= false
+                open-enum-public
+                  do (println |open-public-receiver) (OpenContainsFalseLast :item 1)
+                  do (println |open-public-key) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |default-option-impl-is-called)
+              :code $ quote $ assert= true
+                open-enum-public (Option :some 1) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
