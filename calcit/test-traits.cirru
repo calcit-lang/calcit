@@ -592,6 +592,22 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |builtin-initialization-returns-unit)
+            :code $ quote $ let
+                initial-result $ &init-builtin-impls!
+                repeated-result $ &init-builtin-impls!
+                enum-empty? $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] 'Enum
+                    :return 'Bool
+                  empty? value
+              assert= &unit initial-result
+              assert= &unit repeated-result
+              assert= :unit $ type-of initial-result
+              assert= :unit $ type-of repeated-result
+              assert= false $ enum-empty? $ Option :none
+              assert= 3 $ count $ [] 1 2 3
+            :tags $ #{} :builtin-init-unit :unit
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
           :examples $ []
