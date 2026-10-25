@@ -21,6 +21,8 @@ Snapshot 修改通过官方事务的 dry-run、scoped revision 守卫和完整 q
 限定 Struct callback 的 callable proof 从失败变为成功。新增测试覆盖空 Struct、
 带字段 Struct 的 `.empty?`、`empty?`、公开 count 与显式 Countable 调用，以及经过
 开放 Struct 参数时接收者副作用的实际执行次数。
+现有统一回放器对该测试独立要求恰好两条 marker 输出，native 也必须满足，
+不把 native/其他后端的一致性当作“只求值一次”的唯一证据。
 
 空／非空的名义值测试在 native、JS、WASM 和真实 WASI 全部通过；副作用测试在
 native/JS 通过，但开放 Struct 参数调用 `empty?` 在 WASM/WASI 仍于首次输出后 trap。
