@@ -6,9 +6,7 @@ on:
 name: Publish to crate
 
 permissions:
-  contents: write
-  actions: read
-  id-token: write  # Required for OIDC
+  contents: read
 
 concurrency:
   group: calcit-registry-publication
@@ -16,12 +14,22 @@ concurrency:
 
 env:
   RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
+# The release commit must already be green in the branch Test workflow (full cargo test,
+# check-all, docs, WASI, clippy) and CodeQL; `branch_ci` waits for both on the exact SHA instead
+# of repeating them. The other gates run in parallel and cover only what branch CI cannot:
+# the tag/version/Release identity, the optimized binaries that are shipped, and the
+# registry packages as they will be uploaded.
 jobs:
-  publish:
-    name: Publish to cargo
-    runs-on: ubuntu-22.04
-
+  verify_source:
+    name: Verify release tag and versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       # The workflow, OIDC identity and checkout must all use the same tag.
       - name: Validate workflow source
@@ -40,80 +48,118 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org/
-
-      - name: Enable Corepack
-        run: |
-          corepack enable
-          corepack prepare yarn@4.12.0 --activate
-          yarn --version
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Verify exact release source and branch CI
+      - name: Verify exact release source
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/publish-registry.mjs prepare "$RELEASE_TAG"
 
-      - name: Set sparse registry protocol
-        run: echo "CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse" >> $GITHUB_ENV
+  branch_ci:
+    name: Wait for branch Test and CodeQL
+    needs: verify_source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
 
-      - name: Prepare local JavaScript runtime for integration tests
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Require green branch CI on the release commit
+        timeout-minutes: 50
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.verify_source.outputs.sha }}
+        run: node scripts/publish-registry.mjs ci "$RELEASE_TAG"
+
+  standard_binary:
+    name: Build and smoke standard release binary
+    needs: verify_source
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-standard
+
+      - name: Build standard release binary
+        run: |
+          test "$(uname -m)" = "x86_64"
+          grep -F 'VERSION_ID="22.04"' /etc/os-release
+          cargo build --locked --release --bin calcit
+          mkdir -p target/release/assets
+          cp target/release/calcit target/release/assets/calcit
+          test "$(target/release/assets/calcit -v)" = "$RELEASE_TAG"
+
+      # Branch CI runs the `ci` profile; these run the optimized binary that is actually shipped.
+      - name: Smoke shipped binary on native, JS and WASM backends
+        env:
+          CALCIT_BIN: target/release/assets/calcit
         run: |
           yarn install --immutable
           yarn compile
           yarn procs-link
+          "$CALCIT_BIN" calcit/test.cirru
+          "$CALCIT_BIN" calcit/test.cirru js
+          cp -v scripts/main.mjs js-out/
+          node js-out/main.mjs
+          bash scripts/test-wasm.sh
 
-      - run: cargo test
-        env:
-          RUST_MIN_STACK: "16777216"
-      - name: "run definition-attached core tests"
-        run: cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
-      - name: "strictly check bundled core source definitions"
-        run: cargo run --bin calcit -- calcit/test-wasi-command.cirru --check-only --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
-      - name: "verify bundled core Dynamic boundary documentation"
-        run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
-      - name: "verify strict diagnostics default and compatibility escape hatch"
-        run: node scripts/check-strict-default.mjs
-      - run: cargo run --bin calcit -- calcit/test.cirru
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-standard
+          path: target/release/assets/calcit
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: "verify WASM exports and FFI"
-        run: >
-          cargo build --bin calcit
-          && CALCIT_BIN="./target/debug/calcit" bash scripts/test-wasm.sh
+  no_wasm_binary:
+    name: Build and smoke Ubuntu 22.04 no-WASM binary
+    needs: verify_source
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
 
-      - name: "try js"
-        run: >
-          cargo run --bin calcit -- calcit/test.cirru js
-          && cp -v scripts/main.mjs js-out/
-          && node js-out/main.mjs
-          && node scripts/check-struct-field-js.mjs
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: "verify shared Calcit backend contracts"
-        run: |
-          node --test scripts/core-test-protocol.test.mjs
-          node scripts/run-core-tests.mjs
-          node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
-          node scripts/check-string-unicode.mjs
-          node scripts/check-monotonic-clock-js.mjs
-          node scripts/check-helper-inference.mjs
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-no-wasm
 
-      - name: "check docs markdown"
-        run: bash scripts/check-docs-md.sh
-
-      - name: Build standard and Ubuntu 22.04 no-WASM release assets
+      - name: Build and smoke Ubuntu 22.04 no-WASM release binary
         run: |
           test "$(uname -m)" = "x86_64"
           grep -F 'VERSION_ID="22.04"' /etc/os-release
           mkdir -p target/release/assets
-          cargo build --locked --release --bin calcit
-          cp target/release/calcit target/release/assets/calcit
-          test "$(target/release/assets/calcit -v)" = "$RELEASE_TAG"
           cargo build --locked --release --no-default-features --bin calcit
           cp target/release/calcit target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
           file target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
@@ -132,18 +178,108 @@ jobs:
           fi
           grep -F 'WASM and WASI code generation are disabled' target/release/no-wasm-command.out
 
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-no-wasm
+          path: target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          if-no-files-found: error
+          retention-days: 7
+
+  package_dry_run:
+    name: Dry-run crate and npm packages
+    needs: verify_source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-package
+
+      # The real upload uses --no-verify, so this is where the packaged crate must build.
+      - name: Verify packaged crate builds
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo publish --dry-run --locked
+
+      - name: Verify npm package contents
+        run: |
+          yarn install --immutable
+          yarn compile
+          npm pack --dry-run --json > target/npm-pack.json
+          node -e '
+            const [pack] = JSON.parse(require("fs").readFileSync("target/npm-pack.json", "utf8"));
+            const files = new Set(pack.files.map(file => file.path));
+            for (const required of ["package.json", "README.md", "lib/calcit.procs.mjs"]) {
+              if (!files.has(required)) throw new Error(`npm package is missing ${required}`);
+            }
+            if (pack.version !== process.env.RELEASE_TAG) throw new Error(`npm package version ${pack.version}`);
+          '
+
+  publish:
+    name: Publish to cargo
+    needs: [verify_source, branch_ci, standard_binary, no_wasm_binary, package_dry_run]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write  # Required for OIDC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn --version
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Upload exactly the binaries that passed their smoke jobs.
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: release-standard
+          path: target/release/assets
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: release-no-wasm
+          path: target/release/assets
+
       - name: Generate release asset manifest
-        run: >
-          node scripts/release-manifest.mjs "$RELEASE_TAG"
-          target/release/assets/calcit
-          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
-          > target/release/assets/calcit-release-manifest.json
+        run: |
+          chmod +x target/release/assets/calcit target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
+          node scripts/release-manifest.mjs "$RELEASE_TAG" \
+            target/release/assets/calcit \
+            target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm \
+            > target/release/assets/calcit-release-manifest.json
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          prerelease: ${{ steps.release.outputs.prerelease == 'true' }}
+          prerelease: ${{ needs.verify_source.outputs.prerelease == 'true' }}
           files: |
             target/release/assets/calcit
             target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
@@ -152,7 +288,7 @@ jobs:
       - name: Publish or verify exact crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_SHA: ${{ needs.verify_source.outputs.sha }}
         run: node scripts/publish-registry.mjs crate "$RELEASE_TAG"
 
       - name: "generate procs.mjs"
@@ -160,5 +296,5 @@ jobs:
 
       - name: Publish or verify exact npm runtime
         env:
-          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_SHA: ${{ needs.verify_source.outputs.sha }}
         run: node scripts/publish-registry.mjs npm "$RELEASE_TAG"
