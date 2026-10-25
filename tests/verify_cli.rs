@@ -126,8 +126,32 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::write(&snapshot, snapshot_source(VALID_ENTRIES)).expect("fixture should write");
-  for args in [
-    vec![
+  let apply = |operations: serde_json::Value| {
+    let payload = operations.to_string();
+    let preview = run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &payload, "--dry-run", "--format", "json"],
+    );
+    assert!(preview.status.success(), "{}", String::from_utf8_lossy(&preview.stderr));
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("one transaction preview");
+    let result = run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &payload,
+        "--expect-revision",
+        preview["scoped_revision"].as_str().expect("scoped revision"),
+        "--format",
+        "edn",
+      ],
+    );
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+  };
+  apply(serde_json::json!([
+    ["config", "set", "target", "native"],
+    [
       "edit",
       "def",
       "verify-fixture.main/noisy",
@@ -136,7 +160,7 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       "--code",
       "quote $ defmacro noisy ()\n  println |profile-macro-log\n  quote &unit",
     ],
-    vec![
+    [
       "edit",
       "schema",
       "verify-fixture.main/noisy",
@@ -145,7 +169,7 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       "--code",
       "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)",
     ],
-    vec![
+    [
       "edit",
       "def",
       "verify-fixture.main/main!",
@@ -153,17 +177,34 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ defn main! ()\n  noisy\n  , &unit",
+      "quote $ defn main! ()\n  noisy\n  println |public-check-runtime-entry\n  , &unit",
     ],
+  ]));
+  for (target, expected) in [
+    (
+      "noisy",
+      serde_json::json!(["defmacro", "noisy", [], ["println", "|profile-macro-log"], ["quote", "&unit"]]),
+    ),
+    (
+      "main!",
+      serde_json::json!(["defn", "main!", [], ["noisy"], ["println", "|public-check-runtime-entry"], "&unit"]),
+    ),
   ] {
-    let output = run_calcit(&snapshot, &args);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let output = run_calcit(
+      &snapshot,
+      &["query", "def", &format!("verify-fixture.main/{target}"), "--format", "json"],
+    );
+    assert!(output.status.success());
+    let definition: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(definition["data"]["code"], expected, "complete source readback");
   }
   let before = fs::read(&snapshot).unwrap();
   for format in ["json", "edn"] {
     for args in [
       vec!["analyze", "verify", "--profile", "release", "--format", format],
       vec!["fix", "--workflow", "strict", "--verify", "--format", format],
+      vec!["--check-only", "--ns", "verify-fixture.main", "--summary-only", "--format", format],
+      vec!["--strict-types", "--check-only", "--ns", "verify-fixture.main", "--format", format],
     ] {
       let output = run_calcit(&snapshot, &args);
       assert!(
@@ -174,9 +215,15 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       );
       assert!(!String::from_utf8_lossy(&output.stdout).contains("profile-macro-log"));
       assert!(String::from_utf8_lossy(&output.stderr).contains("profile-macro-log"));
+      assert!(!String::from_utf8_lossy(&output.stdout).contains("public-check-runtime-entry"));
+      assert!(!String::from_utf8_lossy(&output.stderr).contains("public-check-runtime-entry"));
       if format == "json" {
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one JSON envelope");
-        if args[0] == "fix" {
+        if args.contains(&"--ns") {
+          assert_eq!(report["command"], "analyze.check-public");
+          assert_eq!(report["data"]["summary"]["passed"], true);
+          assert!(report["data"]["summary"]["definitions_checked"].as_u64().unwrap() > 0);
+        } else if args[0] == "fix" {
           assert_eq!(report["data"]["workflow"]["status"], "passed");
           assert_eq!(report["data"]["validation"]["status"], "not-needed");
           let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
@@ -195,6 +242,47 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       }
       assert_eq!(fs::read(&snapshot).unwrap(), before, "verification preserves source");
     }
+  }
+  let runtime = run_calcit(&snapshot, &[]);
+  assert!(runtime.status.success());
+  assert!(String::from_utf8_lossy(&runtime.stdout).contains("public-check-runtime-entry"));
+  assert!(!String::from_utf8_lossy(&runtime.stderr).contains("public-check-runtime-entry"));
+
+  let invalid = serde_json::json!(["defn", "main!", [], ["noisy"], ["&+", "|invalid-check-number", "1"], "&unit"]);
+  apply(serde_json::json!([[
+    "edit",
+    "def",
+    "verify-fixture.main/main!",
+    "--overwrite",
+    "--input-format",
+    "json-ast",
+    "--code",
+    invalid.to_string()
+  ]]));
+  let readback = run_calcit(&snapshot, &["query", "def", "verify-fixture.main/main!", "--format", "json"]);
+  let definition: serde_json::Value = serde_json::from_slice(&readback.stdout).unwrap();
+  assert_eq!(definition["data"]["code"], invalid);
+  let invalid_source = fs::read(&snapshot).unwrap();
+  for format in ["json", "edn"] {
+    let output = run_calcit(&snapshot, &["--check-only", "--ns", "verify-fixture.main", "--format", format]);
+    assert_eq!(output.status.code(), Some(1), "a real type failure must remain unsuccessful");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("profile-macro-log"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("profile-macro-log"));
+    if format == "json" {
+      let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one failed JSON envelope");
+      assert_eq!(report["data"]["summary"]["passed"], false);
+      assert!(
+        report["diagnostics"]
+          .as_array()
+          .unwrap()
+          .iter()
+          .any(|diagnostic| diagnostic["code"] == "W_PROC_ARG_TYPE_MISMATCH"),
+        "{report}"
+      );
+    } else {
+      cirru_edn::parse(&String::from_utf8_lossy(&output.stdout)).expect("one failed native EDN envelope");
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), invalid_source);
   }
 }
 

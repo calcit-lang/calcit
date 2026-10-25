@@ -468,6 +468,8 @@ fn run_public_check(
   strict_types: bool,
 ) -> Result<(), String> {
   let emit_preflight_output = options.format == "human" || options.format == "text";
+  // Both entry preflight and selected definitions may expand logging macros.
+  let _output_guard = ProgramOutputGuard::new(!emit_preflight_output, false);
   let strict_preflight = || run_check_only_with_output(entries, emit_preflight_output);
   public_api_check::run(
     options,
