@@ -776,6 +776,41 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |empty-receiver-effects-once)
+              :code $ quote $ let
+                  seen $ ref 0
+                assert= false $ empty? $ do
+                  reset! seen $ &+ (deref seen) 1
+                  Option :none
+                assert= false $ empty? $ do
+                  reset! seen $ &+ (deref seen) 1
+                  Result :ok 0
+                assert= 2 $ deref seen
+                assert= true $ throws? $ empty?
+                  do
+                    reset! seen $ &+ (deref seen) 1
+                    raise |empty-input-error
+                assert= 3 $ deref seen
+              :tags $ #{} :empty-dispatch-boundary :trait :unit
+            %{} 'TestEntry (:name |empty-rejects-non-bool-and-nil)
+              :code $ quote $ let
+                  EmptyProbeOps $ deftrait EmptyProbeOps $ .empty?
+                    :: 'Fn $ {}
+                      :args $ [] 'Enum
+                      :return 'Number
+                  EmptyProbeImpl $ defimpl EmptyProbeImpl EmptyProbeOps $ .empty?
+                    fn (self)
+                      hint-fn $ {}
+                        :args $ [] 'Enum
+                        :return 'Number
+                      , 1
+                  EmptyProbe $ impl-traits
+                    defenum EmptyProbe $ :item 'Number
+                    , EmptyProbeImpl
+                assert= true $ throws? $ empty? (EmptyProbe :item 1)
+                assert= true $ throws? $ empty? nil
+              :tags $ #{} :empty-dispatch-boundary :trait :unit
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2

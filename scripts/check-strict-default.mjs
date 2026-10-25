@@ -352,6 +352,12 @@ expectStatus(
   "all-defs check of calcit.core",
 );
 
+// Runtime tests alone do not prove an internal impl callback's input contract.
+const enumEmptyProof = run(["src/cirru/calcit-core.cirru", "fix", "--rule", "callable-contract-proof-v1",
+  "--ns", "calcit.core", "--def", "&core-enum-methods", "--format", "json"]);
+expectStatus(enumEmptyProof, 0, "core Enum empty? independently proves its Enum input");
+assert.deepEqual(JSON.parse(enumEmptyProof.stdout).diagnostics, [], "core impl input proof retains no hidden findings");
+
 // A malformed Snapshot root cannot be expressed by an ordinary attached test:
 // the declaration itself, before any test body runs, must fail preprocessing.
 const wrappedDefinition = "calcit/type-fail/wrapped-definition-root.cirru";
