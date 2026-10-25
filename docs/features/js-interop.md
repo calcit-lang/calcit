@@ -190,6 +190,31 @@ defn make-id (size)
 - `|pkg :default module-value`：`module-value` 是包的默认导出；只有包确实提供相应默认导出时才能使用，不等同于 ESM namespace 对象。
 - `|pkg :as pkg-alias`：通过 `pkg-alias/member` 引用命名导出；裸 `pkg-alias` 只是 namespace 别名，不能直接作为值传给 `js-cast` 或其他函数。
 
+当接收方只要求开放 `Fn`（可调用的值，不带具体签名）时，将函数导出先绑定到局部值，
+再用 `fn?` 检查这个局部值。以下适配器假设已通过普通 Calcit import 引入
+`register-language!`，其第二个参数要求开放 `Fn`。先在 `:require` 中写 `|pkg :default language-export`，
+将包实际的默认函数导出绑定为 `language-export`（`pkg` 替换为所用包名），再使用以下适配器。
+适配器的 schema 声明 `:js-ffi`：
+
+```cirru.no-check
+defn register-language-adapter! ()
+  hint-fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)
+  let
+      language language-export
+    if (fn? language)
+      register-language! |clojure language
+      raise |Expected-language-function
+```
+
+此写法只读取一次导出并保留函数身份；局部值守卫建立开放 `Fn` 的证据。
+直接写 `fn? language-export` 检查导入名，不会为后续的导入引用建立同样的局部窄化证据。
+`JsNullish` 的存在检查只证明非 `null`/`undefined`，与函数 kind 检查分别负责不同边界。
+
+开放 `Fn` 不证明参数、返回值或 async 合同。接收方要求完整函数签名时，应在小型 typed FFI
+边界准确声明并测试该合同；不能把局部 `fn?` 当作完整签名证明。
+函数也不是闭合数据，不能用 `decode-map-as value 'Fn` 代替 callable kind 检查。
+上述开放 `Fn` 场景不需要 `unsafe-coerce`。
+
 若默认或命名导出确实提供所需模块对象，在声明 `:js-ffi` 的适配器内，用 `js-cast value 'ApiHost`
 检查最小 external-object trait。成功转换保留同一个 JS 对象；随后通过声明的方法调用。
 直接访问未声明的 `JsObject` 成员仍会被严格检查拒绝，导入对象并不自动补齐成员合同。
