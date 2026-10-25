@@ -2037,10 +2037,14 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // Inside a lexical `:js-ffi` adapter a coercion to a host handle type is
         // the documented boundary for shapes `js-cast` cannot check; the strict
         // workflow reports it as a retained FFI boundary. Calcit data such as a
-        // String stays checkable and still needs its own decoder.
+        // String stays checkable and still needs its own decoder. Inside a
+        // lexical `:erased-cache` adapter the coercion is the declared restore
+        // point of a cache that erased the value's type, so its target is the
+        // contract; the quality gate still counts every such coercion.
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)
           if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
-            && !(super::js_ffi::current_function_has_js_ffi_feature() && unsafe_coerce_targets_host_handle(xs.get(2))) =>
+            && !(super::js_ffi::current_function_has_js_ffi_feature() && unsafe_coerce_targets_host_handle(xs.get(2)))
+            && !super::js_ffi::current_function_has_erased_cache_feature() =>
         {
           xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
         }

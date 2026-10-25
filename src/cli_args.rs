@@ -1695,7 +1695,7 @@ pub struct EditSchemaCommand {
   /// remove the schema declaration; does not declare Dynamic or bypass strict checking
   #[argh(switch, long = "clear")]
   pub clear: bool,
-  /// add js-ffi to an existing structured Fn schema without replacing its signature
+  /// add a lexical feature (js-ffi or erased-cache) to an existing structured Fn schema without replacing its signature
   #[argh(option, long = "add-feature")]
   pub add_feature: Option<String>,
 }

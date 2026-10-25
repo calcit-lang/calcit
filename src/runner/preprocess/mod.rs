@@ -14512,10 +14512,11 @@ pub fn preprocess_unsafe_coerce(
     // capability or exempting generated definitions wholesale.
     && head_ns != calcit::CORE_NS
     && !current_function_has_js_ffi_feature()
+    && !current_function_has_erased_cache_feature()
   {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      "`unsafe-coerce` is outside a lexical `:js-ffi` boundary; `calcit edit ffi` only changes CodeEntry export metadata and does not grant this permission. Move the host assertion into a small adapter with a structured `Fn` schema, then use `calcit edit schema '<namespace>/<definition>' --add-feature js-ffi`; validate or convert the host value there and return typed Calcit data",
+      "`unsafe-coerce` is outside a lexical `:js-ffi` or `:erased-cache` boundary; `calcit edit ffi` only changes CodeEntry export metadata and does not grant this permission. Move the host assertion into a small adapter with a structured `Fn` schema, then use `calcit edit schema '<namespace>/<definition>' --add-feature js-ffi`; validate or convert the host value there and return typed Calcit data. For a value restored from a type-erased Calcit cache (such as a memo table), use `--add-feature erased-cache` on the small restoring adapter instead",
       "E_UNSCOPED_UNSAFE_COERCE",
       ctx.call_stack,
       args.first().and_then(Calcit::get_location),
@@ -18758,7 +18759,11 @@ mod tests {
 
   impl CurrentFnFeaturesGuard {
     fn js_ffi() -> Self {
-      let previous = CURRENT_FN_FEATURES.with(|cell| cell.borrow_mut().replace(Arc::new(HashSet::from([EdnTag::new("js-ffi")]))));
+      Self::with("js-ffi")
+    }
+
+    fn with(feature: &str) -> Self {
+      let previous = CURRENT_FN_FEATURES.with(|cell| cell.borrow_mut().replace(Arc::new(HashSet::from([EdnTag::new(feature)]))));
       Self { previous }
     }
   }
@@ -19763,7 +19768,7 @@ mod tests {
     )
     .expect_err("adapter-like namespace naming must not grant an unsafe-coerce exemption");
     assert_eq!(error.code.as_deref(), Some("E_UNSCOPED_UNSAFE_COERCE"));
-    assert!(error.msg.contains("`:js-ffi` boundary"));
+    assert!(error.msg.contains("`:js-ffi` or `:erased-cache` boundary"));
     assert!(error.msg.contains("structured `Fn` schema"));
     assert!(error.msg.contains("`calcit edit ffi` only changes CodeEntry export metadata"));
     assert!(error.msg.contains("--add-feature js-ffi"));
@@ -19778,6 +19783,47 @@ mod tests {
       &CallStackList::default(),
     )
     .expect("the same assertion is allowed inside the lexically marked adapter");
+    assert!(matches!(
+      resolved,
+      Calcit::List(nodes) if matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)))
+    ));
+  }
+
+  #[test]
+  fn strict_types_allow_unsafe_coerce_inside_a_lexical_erased_cache_feature() {
+    let _lock = lock_preprocess_test_state();
+    let _strict = StrictTypesGuard::new(true);
+    let expr = Cirru::List(vec![Cirru::leaf("unsafe-coerce"), Cirru::leaf("cached"), Cirru::leaf("'String")]);
+    let code = code_to_calcit(&expr, "app.memo", "restore", vec![]).expect("parse erased cache restore");
+    let scope_defs = HashSet::from([Arc::from("cached")]);
+    let warnings = RefCell::new(vec![]);
+
+    let error = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut ScopeTypes::new(),
+      "app.memo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("an unmarked cache restore stays rejected");
+    assert_eq!(error.code.as_deref(), Some("E_UNSCOPED_UNSAFE_COERCE"));
+    assert!(error.msg.contains("--add-feature erased-cache"));
+
+    let _features = CurrentFnFeaturesGuard::with("erased-cache");
+    assert!(
+      !current_function_has_js_ffi_feature(),
+      "erased-cache must not grant JS FFI capabilities"
+    );
+    let resolved = preprocess_expr(
+      &code,
+      &scope_defs,
+      &mut ScopeTypes::new(),
+      "app.memo",
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("the restore is allowed inside the lexically marked adapter");
     assert!(matches!(
       resolved,
       Calcit::List(nodes) if matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)))

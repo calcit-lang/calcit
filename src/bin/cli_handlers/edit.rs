@@ -1870,15 +1870,15 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     if opts.clear || opts.file.is_some() || opts.code.is_some() {
       return Err("`edit schema --add-feature` cannot be combined with --clear, --file, or --code".to_owned());
     }
-    if feature != "js-ffi" {
+    if feature != "js-ffi" && feature != "erased-cache" {
       return Err(format!(
-        "Unsupported schema feature `{feature}`; currently --add-feature supports only `js-ffi`"
+        "Unsupported schema feature `{feature}`; currently --add-feature supports only `js-ffi` and `erased-cache`"
       ));
     }
     let existing = &file_data.defs[&resolved_definition].schema;
     let CalcitTypeAnnotation::Fn(signature) = existing.as_ref() else {
       return Err(format!(
-        "`{namespace}/{resolved_definition}` needs a structured Fn schema before `--add-feature js-ffi`; declare its arguments and return type with `calcit edit schema`, then add the feature. `calcit edit ffi` changes export metadata, not lexical JS FFI permission."
+        "`{namespace}/{resolved_definition}` needs a structured Fn schema before `--add-feature {feature}`; declare its arguments and return type with `calcit edit schema`, then add the feature. `calcit edit ffi` changes export metadata, not lexical feature permission."
       ));
     };
     if signature.features.iter().any(|item| item.ref_str() == feature) {
@@ -3938,6 +3938,27 @@ mod tests {
     assert_eq!(updated.tests, original.tests);
     assert_eq!(updated.tags, original.tags);
     assert_eq!(updated.ffi, original.ffi);
+
+    let erased_cache = EditSchemaCommand {
+      add_feature: Some("erased-cache".to_owned()),
+      ..feature.clone()
+    };
+    handle_schema(&erased_cache, &path).expect("erased-cache feature should be added locally");
+    let after_cache = load_snapshot(&path).expect("updated schema should load");
+    let CalcitTypeAnnotation::Fn(cache_signature) = after_cache.files["app.main"].defs["test-fn"].schema.as_ref() else {
+      panic!("schema should stay an Fn annotation");
+    };
+    assert!(cache_signature.features.iter().any(|item| item.ref_str() == "erased-cache"));
+    assert!(cache_signature.features.iter().any(|item| item.ref_str() == "js-ffi"));
+    let unsupported = EditSchemaCommand {
+      add_feature: Some("host-io".to_owned()),
+      ..erased_cache
+    };
+    assert!(
+      handle_schema(&unsupported, &path)
+        .unwrap_err()
+        .contains("Unsupported schema feature")
+    );
 
     let clear = EditSchemaCommand {
       target,

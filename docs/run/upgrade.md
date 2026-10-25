@@ -24,6 +24,23 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 类型擦除缓存的恢复边界 `:erased-cache`（#2358）
+
+memo 表一类缓存把值存成 Dynamic，取回时要恢复成调用方的类型。strict 下普通函数里的
+`assert-type` 不能证明 Dynamic 到泛型的转换（`E_ASSERT_TYPE_UNPROVEN`），而 `unsafe-coerce`
+以前只允许出现在 `:js-ffi` 范围内。现在可以把恢复点收拢到一个小 adapter，给它的结构化 `Fn`
+schema 声明 `:features $ #{} :erased-cache`：
+
+```bash
+calcit edit schema 'app.memo/memo-by1' --add-feature erased-cache
+```
+
+在这个词法范围内，`unsafe-coerce value 'R` 被允许，并且 strict 证明把目标类型当作这个恢复点的合同；
+调用方不需要声明该 feature。它不授予任何 JS FFI 能力（`js-cast`、host 访问、Dynamic 调用 lint 均不受影响），
+`:js-ffi` 里的非 host 目标也仍然不算证据。strict workflow 继续把这些转换列为 `explicit-unsafe`
+待审项。只在值确实来自同一份类型擦除存储、且写入方已受类型约束时使用；
+外部输入仍应走受检 decoder。
+
 ## 0.31.0 Struct 来源守卫使用名义身份
 
 `&struct:matches?` 及其上的 `struct-match` 在目标具有已知定义来源时，现在检查原始
@@ -2215,7 +2232,7 @@ compiler/macro lowering、core internals、可复用 `defimpl`，以及 evidence
 缺字段、重复字段或未知字段仍会被拒绝。
 
 默认严格诊断下，`unsafe-coerce` 还必须位于当前 definition 的结构化 `Fn` schema 所声明的
-`:features $ #{} :js-ffi` 词法范围内，否则报告 `E_UNSCOPED_UNSAFE_COERCE`。`js-ffi.raw.*`
+`:features $ #{} :js-ffi` 或 `:erased-cache`（类型擦除缓存的恢复点，见上文）词法范围内，否则报告 `E_UNSCOPED_UNSAFE_COERCE`。`js-ffi.raw.*`
 一类 namespace 约定只用于 inventory，不授予权限。迁移时把 assertion 收拢到小 adapter，完成 host
 value 的 validate/convert 后只返回 typed Calcit data；即使已正确标记，release quality gate 仍需审核
 对应的 per-definition `unsafeCoerce` baseline。

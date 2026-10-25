@@ -610,10 +610,23 @@ pub(super) fn external_trait_field_is_writable(trait_def: &CalcitTrait, field_na
 }
 
 pub(super) fn current_function_has_js_ffi_feature() -> bool {
+  current_function_has_feature("js-ffi")
+}
+
+/// `:erased-cache` marks a small adapter that restores a typed value from a
+/// cache whose storage erases it (for example a memo table of Dynamic values).
+/// It only scopes `unsafe-coerce`; it grants no host or JS FFI capability.
+pub(super) fn current_function_has_erased_cache_feature() -> bool {
+  current_function_has_feature(ERASED_CACHE_FEATURE)
+}
+
+const ERASED_CACHE_FEATURE: &str = "erased-cache";
+
+fn current_function_has_feature(name: &str) -> bool {
   CURRENT_FN_FEATURES.with(|cell| {
     cell
       .borrow()
       .as_ref()
-      .is_some_and(|features| features.iter().any(|feature| feature.ref_str() == "js-ffi"))
+      .is_some_and(|features| features.iter().any(|feature| feature.ref_str() == name))
   })
 }

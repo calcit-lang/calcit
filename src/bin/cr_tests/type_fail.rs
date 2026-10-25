@@ -1819,7 +1819,10 @@ fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
     let unscoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-unscoped-strict.cirru");
     let err = run_check_only(&unscoped).expect_err("unscoped unsafe-coerce must fail strict check-only");
     assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected strict FFI error: {err}");
-    assert!(err.contains("`:js-ffi` boundary"), "missing lexical-boundary guidance: {err}");
+    assert!(
+      err.contains("`:js-ffi` or `:erased-cache` boundary"),
+      "missing lexical-boundary guidance: {err}"
+    );
 
     let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
     run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
@@ -1829,6 +1832,47 @@ fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
     assert!(
       err.contains("E_UNSCOPED_UNSAFE_COERCE"),
       "unexpected global capability error: {err}"
+    );
+  });
+}
+
+#[test]
+fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let path = "calcit/type-fail/unsafe-coerce-erased-cache-strict.cirru";
+    let ns = "type-fail-unsafe-coerce-erased-cache-strict.main";
+    let content = fs::read_to_string(path).expect("read erased-cache fixture");
+    let with_feature = |feature: &str| {
+      let edited = content.replace(":features $ #{} :erased-cache", feature);
+      assert_ne!(edited, content, "fixture should declare the erased-cache feature");
+      let data = cirru_edn::parse(&edited).expect("parse edited fixture");
+      prepare_snapshot_entries(snapshot::load_snapshot_data(&data, path).expect("load edited fixture"))
+    };
+    // The strict workflow audit re-preprocesses each definition without
+    // trusting coercion contracts; the adapter must still prove its return.
+    let audit_restore = || {
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::with_assertion_proof(|| {
+        runner::preprocess::trace_definition_source_expressions(ns, "restore-cached", &warnings, &CallStackList::default()).map(|_| ())
+      })
+    };
+
+    run_check_only(&load_fixture_entries(path)).expect("an :erased-cache adapter may contain unsafe-coerce");
+    audit_restore().expect("an :erased-cache adapter proves its generic return through the restore");
+
+    let err = run_check_only(&with_feature(":features $ #{}")).expect_err("an unmarked cache restore must fail strict check-only");
+    assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected unscoped error: {err}");
+    assert!(err.contains("--add-feature erased-cache"), "missing erased-cache guidance: {err}");
+
+    // `:js-ffi` scopes the coercion, but only host handle targets count as
+    // evidence there, so a Calcit generic return keeps its proof obligation.
+    run_check_only(&with_feature(":features $ #{} :js-ffi")).expect("js-ffi still scopes the coercion");
+    let err = audit_restore().expect_err("js-ffi must not prove a Calcit cache restore");
+    assert_eq!(
+      err.code.as_deref(),
+      Some("E_ERASED_GENERIC_RELATION"),
+      "unexpected js-ffi restore error: {err:?}"
     );
   });
 }
