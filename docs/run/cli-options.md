@@ -200,7 +200,7 @@ not authorize runtime method lookup. Legacy Optional means an Optional chain
 whose payload is an open Dynamic value; `Optional<DynFn>` is classified as a
 dynamic callable instead.
 
-默认严格诊断进一步要求 `unsafe-coerce` 位于当前函数声明了 `:features $ #{} :js-ffi` 的结构化 `Fn` schema 内，
+默认严格诊断进一步要求 `unsafe-coerce` 位于当前函数声明了 `:features $ #{} :js-ffi`（或类型擦除缓存恢复点用的 `:erased-cache`）的结构化 `Fn` schema 内，
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。
 只有显式运行已弃用的 `analyze quality` 时，经过作用域检查的转换才会计入逐 definition 的 `unsafeCoerce` 质量 baseline；
 严格诊断本身不运行数量预算。

@@ -104,6 +104,7 @@ the feature. An anonymous function uses the feature declared in its own
 
 默认严格诊断对 `unsafe-coerce` 增加了跨后端约束：当前函数的结构化 schema 必须声明 `:js-ffi`，
 否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`。类似 adapter 的命名空间名称只能作为盘点线索，不能代替能力声明。
+恢复类型擦除缓存（如 memo 表）中的 Calcit 值不属于 FFI，改用 `:erased-cache`，它只放行 `unsafe-coerce`，不授予宿主能力。
 经过作用域检查的转换仍应接受审阅，但严格编译不会按其出现次数运行独立质量预算。
 
 `calcit edit ffi` 修改的是 CodeEntry 的导出/宿主元数据，**不会**给函数体授予词法 `:js-ffi` 权限。
@@ -785,7 +786,7 @@ Common diagnostics:
 | Code | Meaning | Typical fix |
 | --- | --- | --- |
 | `E_JS_FFI_FEATURE_REQUIRED` | A host operation is outside a marked adapter body. | Add `:js-ffi` to that implementation schema or move the operation into a wrapper. |
-| `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical FFI scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. |
+| `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical `:js-ffi` or `:erased-cache` scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. A restore from a type-erased Calcit cache declares `:erased-cache` instead. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
 | `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
 | `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies `nil?`/`non-nil?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
