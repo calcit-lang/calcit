@@ -348,14 +348,16 @@ expectStatus(
 );
 
 // Runtime tests alone do not prove an internal impl callback's input contract.
-const enumEmptyProof = run(["src/cirru/calcit-core.cirru", "fix", "--rule", "callable-contract-proof-v1",
-  "--ns", "calcit.core", "--def", "&core-enum-methods", "--format", "json"]);
-expectStatus(enumEmptyProof, 0, "core Enum empty? independently proves its Enum input");
-assert.deepEqual(JSON.parse(enumEmptyProof.stdout).diagnostics, [], "core impl input proof retains no hidden findings");
-const enumContainsProof = run(["src/cirru/calcit-core.cirru", "fix", "--rule", "callable-contract-proof-v1",
-  "--ns", "calcit.internal", "--def", "&core-contains-enum-impl", "--format", "json"]);
-expectStatus(enumContainsProof, 0, "core Enum contains? proves its receiver while retaining the open index guard");
-assert.deepEqual(JSON.parse(enumContainsProof.stdout).diagnostics, [], "Enum index contract retains no hidden findings");
+for (const [namespace, definition] of [
+  ["calcit.core", "&core-enum-methods"],
+  ["calcit.internal", "&core-contains-enum-impl"],
+  ["calcit.core", "&core-struct-methods"],
+]) {
+  const proof = run(["src/cirru/calcit-core.cirru", "fix", "--rule", "callable-contract-proof-v1",
+    "--ns", namespace, "--def", definition, "--format", "json"]);
+  expectStatus(proof, 0, `${namespace}/${definition} independently proves its callback inputs`);
+  assert.deepEqual(JSON.parse(proof.stdout).diagnostics, [], "core impl input proof retains no hidden findings");
+}
 
 // A malformed Snapshot root cannot be expressed by an ordinary attached test:
 // the declaration itself, before any test body runs, must fail preprocessing.

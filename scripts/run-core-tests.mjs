@@ -300,7 +300,17 @@ const buildBisect = async (tests, build, rejected) => {
 // --- backends --------------------------------------------------------------
 
 const results = new Map(); // id -> { backend -> { status, detail, trace } }
+// A native reference trace alone cannot prove the expected evaluation count.
+const expectedTraces = new Map([
+  ["test-traits.main/test-collection-traits#struct-empty-evaluates-receiver-once",
+    ["struct-empty-receiver", "struct-empty-receiver"]],
+]);
 const record = (test, backend, status, detail = "", trace = []) => {
+  const expectedTrace = expectedTraces.get(test.id);
+  if (status === "pass" && expectedTrace && JSON.stringify(trace) !== JSON.stringify(expectedTrace)) {
+    status = "fail";
+    detail = `stdout trace mismatch: expected ${JSON.stringify(expectedTrace)}, got ${JSON.stringify(trace)}`;
+  }
   if (!results.has(test.id)) results.set(test.id, {});
   results.get(test.id)[backend] = { status, detail, trace };
 };

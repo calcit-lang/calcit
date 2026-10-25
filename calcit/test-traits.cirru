@@ -225,6 +225,10 @@
           :code $ quote $ def DemoZapB (impl-traits Demo0 MyZapBImpl MyZapAImpl)
           :examples $ []
           :schema $ :: 'EnumDef
+        'EmptyStructProbe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EmptyStructProbe
+          :examples $ []
+          :schema $ :: 'StructDef
         'Greeter $ %{} 'CodeEntry
           :doc "|Struct carrying both a required trait impl and its child"
           :code $ quote $ def Greeter (impl-traits GreeterBase LabeledImpl GreetingImpl)
@@ -855,6 +859,29 @@
                     raise |contains-key-error
                 assert= 12 $ deref seen
               :tags $ #{} :contains-dispatch-boundary :trait :unit
+            %{} 'TestEntry (:name |struct-empty-and-count-share-semantics)
+              :code $ quote $ let
+                  empty-value $ EmptyStructProbe
+                  filled-value $ Person0 :name |Ada
+                assert= 0 $ count empty-value
+                assert= 0 $ &trait-call Countable :count empty-value
+                assert= true $ .empty? empty-value
+                assert= true $ empty? empty-value
+                assert= 1 $ count filled-value
+                assert= 1 $ &trait-call Countable :count filled-value
+                assert= false $ .empty? filled-value
+                assert= false $ empty? filled-value
+              :tags $ #{} :struct-empty-input-evidence :unit
+            %{} 'TestEntry (:name |struct-empty-evaluates-receiver-once)
+              :code $ quote $ let
+                  check-empty $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Struct
+                      :return 'Bool
+                    empty? $ do (println |struct-empty-receiver) value
+                assert= true $ check-empty $ EmptyStructProbe
+                assert= false $ check-empty $ Person0 :name |Ada
+              :tags $ #{} :struct-empty-input-evidence :unit
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2

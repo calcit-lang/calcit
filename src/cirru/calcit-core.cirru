@@ -573,6 +573,9 @@
           :code $ quote $ def &core-struct-methods
             &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
               :: :empty? $ defn &struct:empty?-impl (x)
+                hint-fn $ {}
+                  :args $ [] 'Struct
+                  :return 'Bool
                 &= 0 $ &struct:count x
           :examples $ []
           :schema $ :: 'Dynamic
