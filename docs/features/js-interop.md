@@ -192,7 +192,8 @@ defn make-id (size)
 
 当接收方只要求开放 `Fn`（可调用的值，不带具体签名）时，将函数导出先绑定到局部值，
 再用 `fn?` 检查这个局部值。以下适配器假设已通过普通 Calcit import 引入
-`register-language!`，其第二个参数要求开放 `Fn`；`language-export` 是 JS 包实际的默认函数导出。
+`register-language!`，其第二个参数要求开放 `Fn`。先在 `:require` 中写 `|pkg :default language-export`，
+将包实际的默认函数导出绑定为 `language-export`（`pkg` 替换为所用包名），再使用以下适配器。
 适配器的 schema 声明 `:js-ffi`：
 
 ```cirru.no-check
