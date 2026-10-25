@@ -229,6 +229,14 @@
           :code $ quote $ defstruct EmptyStructProbe
           :examples $ []
           :schema $ :: 'StructDef
+        'ExplicitTraitFalse $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def ExplicitTraitFalse (impl-traits OpenContainsBase OpenContainsFalseImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'ExplicitTraitTrue $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def ExplicitTraitTrue (impl-traits OpenContainsBase OpenContainsTrueImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'Greeter $ %{} 'CodeEntry
           :doc "|Struct carrying both a required trait impl and its child"
           :code $ quote $ def Greeter (impl-traits GreeterBase LabeledImpl GreetingImpl)
@@ -587,6 +595,23 @@
               describe-greeting $ Greeter :name |Ada
               , "|hello Ada / Ada"
             :tags $ #{} :trait-bound :unit
+        'explicit-bounded-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn explicit-bounded-contains? (value key) (&trait-call OpenContainsOps :contains? value key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'T 'Number
+            :generics $ [] 'T
+            :where $ {} $ 'T 'OpenContainsOps
+        'explicit-core-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn explicit-core-contains? (value key) (&trait-call Contains :contains? value key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn explicit-nominal-contains? (value key) (&trait-call OpenContainsOps :contains? value key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'test-traits.main/OpenContainsBase 'Number
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []
@@ -641,6 +666,11 @@
               assert= false $ enum-empty? $ Option :none
               assert= 3 $ count $ [] 1 2 3
             :tags $ #{} :builtin-init-unit :unit
+        'make-explicit-trait-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-explicit-trait-value () (ExplicitTraitFalse :item 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-traits.main/OpenContainsBase)
+            :args $ []
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
           :examples $ []
@@ -1296,6 +1326,56 @@
                 assert= |zapA $ &trait-call MyZapA :zap value
                 assert= |zapB $ &trait-call MyZapB :zap value
               :tags $ #{} :impl-origin-portable :nominal-proc-evidence :trait
+            %{} 'TestEntry (:name |core-number-range)
+              :code $ quote $ do
+                assert= true $ &trait-call Contains :contains? (Option :some 1) 0
+                assert= true $ &trait-call Contains :contains? (Option :some 1) -0
+                assert= true $ &trait-call Contains :contains? (Option :some 1) 1.5
+                assert= false $ &trait-call Contains :contains? (Option :some 1) 2
+                assert= false $ &trait-call Contains :contains? (Option :some 1) -1
+                assert= false $ &trait-call Contains :contains? (Option :some 1) (/ 1 0)
+                assert= false $ &trait-call Contains :contains? (Option :some 1) (/ -1 0)
+                assert= false $ &trait-call Contains :contains? (Option :some 1) (sqrt -1)
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |core-family-helper)
+              :code $ quote $ do
+                assert= true $ explicit-core-contains? (Option :some 1) 0
+                assert= true $ explicit-core-contains? (Option :some 1) 1.5
+                assert= false $ explicit-core-contains? (Option :some 1) 2
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |explicit-origin-not-method-name)
+              :code $ quote $ let
+                  value $ ExplicitTraitFalse :item 1
+                assert= true $ &trait-call Contains :contains? value 0
+                assert= false $ &trait-call OpenContainsOps :contains? value 0
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |same-nominal-data-different-impl)
+              :code $ quote $ do
+                assert= false $ explicit-nominal-contains? (ExplicitTraitFalse :item 1) 0
+                assert= true $ explicit-nominal-contains? (ExplicitTraitTrue :item 1) 0
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |bounded-receiver-keeps-impl)
+              :code $ quote $ do
+                assert= false $ explicit-bounded-contains? (ExplicitTraitFalse :item 1) 0
+                assert= true $ explicit-bounded-contains? (ExplicitTraitTrue :item 1) 0
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |factory-return-keeps-impl)
+              :code $ quote $ assert= false
+                &trait-call OpenContainsOps :contains? (make-explicit-trait-value) 0
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |identity-return-keeps-impl)
+              :code $ quote $ assert= false
+                &trait-call OpenContainsOps :contains?
+                  open-pass-contains-value $ ExplicitTraitFalse :item 1
+                  , 0
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
+            %{} 'TestEntry (:name |finite-nested-trait-call)
+              :code $ quote $ assert= true
+                &trait-call Contains :contains? (Option :some 1)
+                  if
+                    &trait-call Contains :contains? (Option :some 1) 0
+                    , 0 2
+              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let

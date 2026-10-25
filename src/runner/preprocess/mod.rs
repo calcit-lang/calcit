@@ -9556,6 +9556,13 @@ pub(crate) fn resolve_static_trait_callable(
   let entry = selected
     .get(method_name)
     .ok_or_else(|| format!("implementation of {} has no .{method_name} target", trait_def.origin_label()))?;
+  if let Calcit::Fn { info, .. } = entry
+    && info.scope.is_empty()
+  {
+    // Backends can use this checked body directly; synthesizing another
+    // definition here is too late for an already-frozen function table.
+    return Ok(entry.clone());
+  }
   pick_callable_from_method_entry(entry, selected, receiver_type, method_name, file_ns, &CallStackList::default())
     .map_err(|error| error.to_string())?
     .ok_or_else(|| {
