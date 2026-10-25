@@ -32,7 +32,7 @@ For a normal Calcit project, declare the compiler version once in `deps.cirru`:
 Then install it after checkout. Do not repeat the Calcit version in the workflow:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7.0.1
 
 - uses: actions/setup-node@v6
   with:

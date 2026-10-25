@@ -21,9 +21,9 @@ jobs:
     # Large differential run of core primitives on native, JS and WASM (#1561).
     # Pull requests run a small fixed-seed sample inside the Test workflow.
     name: Differential primitive fuzz
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
