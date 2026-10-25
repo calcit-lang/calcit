@@ -20,7 +20,8 @@
             assert (= 1 1) |string
             assert |string $ = 1 1
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-case $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-case () (log-title "|Testing case")
             let
@@ -85,7 +86,8 @@
                     eprintln "|  value is:" v__1
                     raise "|Not satisfied in assertion!"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-expr-in-case $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-expr-in-case ()
             assert= |5 $ case (+ 1 4)
@@ -99,8 +101,7 @@
             :args $ []
         'test-extract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Extract map via tags")
-            inside-eval:
-              &reset-gensym-index!
+            inside-eval: (&reset-gensym-index!)
               assert=
                 macroexpand-all $ quote $ let[] (a b) ([] 1 2) (+ a b)
                 macroexpand-all $ quote $ &let
@@ -124,14 +125,16 @@
                   true |other
                 macroexpand-all $ quote $ if (= a 1) |one |other
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-gensym $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-if-let $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|if let")
             assert= 6 $ if-let
@@ -153,7 +156,8 @@
                 a $ Option :some 10
                 , 1 2
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-lambda $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing lambda macro")
             inside-eval:
@@ -185,13 +189,15 @@
                 macroexpand-all $ quote $ \ + x % %2
                 macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x % %2)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-misc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title |misc)
             assert= (noted nothing 1) 1
             inside-eval: $ println $ &extract-code-into-edn 'code
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-or-linear-expansion ()
             assert= |done $ or false false false false false false false false false false false false false false false false false false false false |done
@@ -277,7 +283,8 @@
               with-cpu-time $ &+ 1 2
               , 3
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-macro.main
           :require $ [] util.core :refer $ [] log-title inside-eval:

@@ -33,7 +33,8 @@
                 plain $ :: :plain 1
               assert= (Option :none) (enum-definition plain)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'try-size $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-size (x)
             match x

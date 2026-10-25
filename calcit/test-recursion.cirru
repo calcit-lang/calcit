@@ -84,7 +84,8 @@
                   recur $ dec x
             assert= 6 @*count-effects
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-recursion.main
           :require $ util.core :refer $ log-title

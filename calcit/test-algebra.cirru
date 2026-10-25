@@ -81,12 +81,12 @@
             test-apply
             test-mappend
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-apply $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-apply ()
@@ -101,7 +101,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-bind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-bind ()
@@ -114,7 +114,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 25 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map ()
@@ -126,7 +126,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-mappend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-mappend ()
@@ -140,7 +140,7 @@
                 do (assert-type b3 AlgebraBox)
                   assert= 7 $ :value b3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-algebra

@@ -586,7 +586,7 @@
             assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
@@ -659,7 +659,7 @@
               assert= 5 $ :value $ add-with-trait a b
             println "|  Add trait: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-assert-trait $ %{} 'CodeEntry (:doc "|Test assert-traits")
           :code $ quote $ defn test-assert-trait () (println "|Testing assert-traits...")
@@ -705,7 +705,7 @@
               assert= nothing $ assert-traits nothing calcit.core/Debug calcit.core/Eq
             println "|  assert-traits: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-bit-shifts $ %{} 'CodeEntry
           :doc "|Shift counts use their low five bits on every backend"
@@ -721,7 +721,7 @@
             assert= -1 $ bit-shr -8 -1
             assert= 0 $ bit-shr 5 100
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-collection-traits $ %{} 'CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
           :code $ quote $ defn test-collection-traits () (println "|Testing Collection traits (Len, Empty)...") (; Len trait)
@@ -774,7 +774,7 @@
               assert-traits struct_value Countable Contains
             println "|  Collection traits: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tests $ []
             %{} 'TestEntry (:name |empty-receiver-effects-once)
@@ -858,7 +858,7 @@
               assert-traits |a Compare
             println "|  Compare trait: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-cross-trait-method-conflict $ %{} 'CodeEntry (:doc "|Test method conflict across traits")
           :code $ quote $ defn test-cross-trait-method-conflict () (println "|Testing cross-trait method conflict...")
@@ -881,7 +881,7 @@
               assert= |zapA $ &trait-call MyZapA :zap tb
             println "|  cross-trait conflict: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-debug-trait $ %{} 'CodeEntry (:doc "||Test Debug trait for built-in types")
           :code $ quote $ defn test-debug-trait () (println "|Testing Debug trait...") (; All built-in types should be debuggable)
@@ -904,7 +904,7 @@
               assert= |Person:Alice $ p .show
             println "|  Debug trait: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-deftrait $ %{} 'CodeEntry (:doc "|Test deftrait macro")
           :code $ quote $ defn test-deftrait () (println "|Testing deftrait macro...")
@@ -915,7 +915,7 @@
               assert= "|foo Alice" $ p .foo
               println "|  deftrait: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tests $ []
             %{} 'TestEntry (:name |computed-method-metadata-evaluates-once)
@@ -945,7 +945,7 @@
               assert= |bar2 $ t .bar
             println "|  tuple precedence: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-eq-trait $ %{} 'CodeEntry (:doc "|Test Eq trait")
           :code $ quote $ defn test-eq-trait () (println "|Testing Eq trait...") (; Value equality)
@@ -962,7 +962,7 @@
             assert= false $ = ([] 1 2) ([] 1 2 3)
             println "|  Eq trait: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-explicit-trait-call $ %{} 'CodeEntry (:doc "|Test explicit trait-call for disambiguation")
           :code $ quote $ defn test-explicit-trait-call () (println "|Testing explicit trait-call...")
@@ -996,7 +996,7 @@
               assert= |zapB $ &trait-call MyZapB :zap t
             println "|  explicit trait-call: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tests $ []
             %{} 'TestEntry (:name |count-with-proven-list)
@@ -1022,7 +1022,7 @@
               assert= "|foo2 Alice" $ p .foo
             println "|  precedence: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-method-introspection $ %{} 'CodeEntry (:doc "|Test runtime method introspection helpers")
           :code $ quote $ defn test-method-introspection () (println "|Testing method introspection...")
@@ -1050,7 +1050,7 @@
               assert= true $ includes? ms5 .foo
             println "|  method introspection: ✓"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-option-result-map $ %{} 'CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
