@@ -852,7 +852,7 @@ const scenarios = [
       "--ns",
       "app.main",
       "--coverage-level",
-      "none",
+      "partial",
       "--format",
       "json",
     ],
@@ -860,7 +860,7 @@ const scenarios = [
       if (result.command !== "analyze.check-types" || result.data.summary.definitions === 0) {
         throw new Error("type coverage result is incomplete");
       }
-      if (!result.data.definitions.every((definition) => definition.coverage === "none")) {
+      if (!result.data.definitions.every((definition) => definition.coverage === "partial")) {
         throw new Error("weak-types --only coverage --coverage-level filter was not preserved");
       }
       if (typeof result.data.summary.polymorphism?.generic_definitions !== "number") {

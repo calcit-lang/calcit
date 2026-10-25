@@ -441,7 +441,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'nullable-callback-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-callback-choice (present?) (if present? NullableEvent nil)
@@ -719,20 +719,22 @@
                   :d 5
               assert= "|%{} 'Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim $ format-cirru-edn data
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-loose-struct-rewrite $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing loose-to-struct rewrite")
             assert= 30 $ sum-point $ ?{} :x 10 :y 20
             assert= true $ check-point-type $ ?{} :x 10 :y 20
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-map-to-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing map-to-struct rewrite")
             assert= 30 $ sum-point $ {} (:x 10) (:y 20)
             assert= true $ check-point-type $ {} (:x 10) (:y 20)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct match")
             let
@@ -752,7 +754,7 @@
                 B bb $ :b bb
                 _ o (println |others) :other
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct methods")
@@ -779,7 +781,7 @@
                 assert= 10 $ &struct:nth persian 0 :age
                 assert= :Persian $ &struct:get-name persian
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-polymorphism $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Test struct polymorphism") (println Lagopus)
@@ -799,7 +801,7 @@
                 l2t .show
                 assert= (&struct:impls l1) (&struct:impls a1r)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")
           :code $ quote $ fn () (log-title "|Testing postfix syntax")
@@ -815,7 +817,7 @@
                 assert-type l2 Lagopus
                 assert= |LagopusB $ :name l2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'test-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct")
@@ -934,7 +936,7 @@
               assert= :shanghai $ :position p2
               assert= |Chen $ :name p2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
         'try-bool $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-bool (fail?)

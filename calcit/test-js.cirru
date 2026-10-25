@@ -232,7 +232,8 @@
               :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
               load-data-code "|:: :code $ quote $ + 1 2"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-for-await $ %{} 'CodeEntry (:doc "|for await")
           :code $ quote $ fn ()
             hint-fn $ {} (:async true)
@@ -342,7 +343,8 @@
               assert= a $ [] 0 1 2 3 4
               assert= b -1
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-method-tag-access $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-method-tag-access ()
             let
@@ -420,7 +422,8 @@
             assert= |a?b $ to-string :a?b
             assert= |ab! $ to-string :ab!
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-js.main
           :require (|os :as os) (|assert :as assert)
