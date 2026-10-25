@@ -525,8 +525,8 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 // Unary HOF helpers: map, filter, each, any?, every?, find, find-index
 // ===========================================================================
 
-/// Emit a call to the HOF callee with a single argument (elem local).
-fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Result<(), String> {
+/// Emit a call with the element evidence from the actual source collection.
+fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32, source_collection: Option<&Calcit>) -> Result<(), String> {
   use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
   match kind {
@@ -536,20 +536,30 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
     }
     FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[arg]),
     FoldlCallKind::Proc(proc) => {
+      let annotation = source_collection
+        .and_then(|source| infer_wasm_static_type(ctx, source))
+        .and_then(|annotation| match annotation.as_ref() {
+          CalcitTypeAnnotation::List(element) | CalcitTypeAnnotation::Set(element) => Some(element.clone()),
+          _ => None,
+        });
       let sym: Arc<str> = Arc::from("__hof_arg__");
       let dummy_info = Arc::new(CalcitSymbolInfo {
         at_ns: Arc::from("wasm"),
         at_def: Arc::from("__hof"),
       });
       let prev = ctx.locals.insert(sym.as_ref().to_owned(), arg);
+      let prev_type = ctx.local_types.remove(sym.as_ref());
       let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
         idx: 0,
         sym: sym.clone(),
         info: dummy_info,
         location: None,
-        type_info: DYNAMIC_TYPE.clone(),
+        type_info: annotation.unwrap_or_else(|| DYNAMIC_TYPE.clone()),
       });
       let result = emit_proc_call(ctx, proc, &[expr]);
+      if let Some(annotation) = prev_type {
+        ctx.local_types.insert(sym.to_string(), annotation);
+      }
       match prev {
         Some(v) => {
           ctx.locals.insert(sym.as_ref().to_owned(), v);
@@ -788,7 +798,7 @@ pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   emit_list_iter_end(ctx, i);
   ctx.ptr_to_f64(dst_ptr);
@@ -825,7 +835,7 @@ pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   let count = emit_load_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("each: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(Instruction::Drop);
   emit_list_iter_end(ctx, i);
   ctx.emit(f64_const(0.0));
@@ -842,7 +852,7 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
@@ -866,7 +876,7 @@ pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
@@ -889,7 +899,7 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::LocalSet(result));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Eq);
   ctx.begin_block_if();
@@ -915,7 +925,7 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();
@@ -956,7 +966,7 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Eq); // keep when f returns falsy (== 0.0)
   ctx.begin_block_if();
@@ -994,7 +1004,7 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   super::methods::emit_method_get(ctx, receiver, key_local)?;
   ctx.emit(Instruction::LocalSet(cur_val));
   let new_val = ctx.alloc_local();
-  emit_unary_step(ctx, &kind, cur_val)?;
+  emit_unary_step(ctx, &kind, cur_val, None)?;
   ctx.emit(Instruction::LocalSet(new_val));
   super::methods::emit_method_assoc(ctx, receiver, key_local, new_val)?;
   ctx.emit(Instruction::Else);
@@ -1016,7 +1026,7 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  emit_unary_step(ctx, &kind, elem)?;
+  emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
   ctx.begin_block_if();

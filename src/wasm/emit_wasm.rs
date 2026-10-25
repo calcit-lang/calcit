@@ -6029,7 +6029,7 @@ fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Opti
 
 fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
-    Calcit::Proc(CalcitProc::NilQuestion | CalcitProc::NumberQuestion) => true,
+    Calcit::Proc(CalcitProc::NilQuestion) => true,
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NumberQuestion))) => {
       let proven_number = items
         .get(1)

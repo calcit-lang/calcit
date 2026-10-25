@@ -620,6 +620,7 @@ check("test-type-of-enum", 1, e["test-type-of-enum"]);
 
 // --- derived predicates (list?, number?, map?) ---
 check("test-number-predicate-recursion()", 1, e["test-number-predicate-recursion"]);
+check("test-number-predicate-hof-pointer(live heap pointer as Number)", 2, e["test-number-predicate-hof-pointer"], enumNumericPointer);
 check("test-list?-true", 1, e["test-list?-true"]);
 check("test-list?-false", 0, e["test-list?-false"]);
 check("test-number?-true", 1, e["test-number?-true"]);

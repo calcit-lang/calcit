@@ -134,6 +134,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'hof-number-argument-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn hof-number-argument-shadow (__hof_arg__)
+            = 0 $ count $ filter ([] |a |b) number?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |callback-input-keeps-own-type)
+            :code $ quote $ assert= true (hof-number-argument-shadow 0)
+            :tags $ #{} :hof-number-scope :numeric-recursion-evidence :unit :wasm
         'host-string-upcase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-string-upcase (text) |host |string-upcase
           :examples $ []
@@ -176,6 +185,19 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
+        'recursive-hof-number-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-hof-number-kind (remaining values extra)
+            if (<= remaining 0)
+              = 2 $ count $ filter values number?
+              recur (dec remaining) values extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number (:: 'List 'Number) 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |numeric-filter-keeps-recursion)
+            :code $ quote $ assert= true
+              recursive-hof-number-kind 2 ([] 1 2) :unused
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
         'recursive-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-number-kind (remaining value extra)
             if (<= remaining 0) (number? value)
@@ -1283,9 +1305,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-number-predicate-hof-pointer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-number-predicate-hof-pointer (value)
+            count $ filter ([] value 2) number?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
         'test-number-predicate-recursion $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-number-predicate-recursion ()
             assert= true $ recursive-number-kind-control 2 1 :unused
+            assert= true $ recursive-hof-number-kind 2 ([] 1 2) :unused
+            assert= true $ hof-number-argument-shadow 0
             recursive-number-kind 2 (assert-type 1 'Int8) :unused
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
