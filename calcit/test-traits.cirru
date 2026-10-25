@@ -758,6 +758,39 @@
               :code $ quote $ assert= true
                 open-enum-public (Option :some 1) 0
               :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |factory-return-contract-keeps-impl)
+              :code $ quote $ assert= false
+                open-enum-public (open-make-contains-value) 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |identity-return-contract-keeps-impl)
+              :code $ quote $ assert= false
+                open-enum-public
+                  open-pass-contains-value $ OpenContainsFalseLast :item 1
+                  , 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |nested-identity-return-contract-keeps-impl)
+              :code $ quote $ assert= false
+                open-enum-public
+                  open-pass-contains-value $ open-pass-contains-value $ OpenContainsFalseLast :item 1
+                  , 0
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+            %{} 'TestEntry (:name |nested-method-argument-is-not-recursive)
+              :code $ quote $ assert= false
+                open-enum-public (OpenContainsFalseLast :item 1)
+                  if
+                    open-enum-public (OpenContainsFalseLast :item 1) 0
+                    , 0 1
+              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
+        'open-make-contains-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-make-contains-value () (println |open-make-contains-value) (OpenContainsFalseLast :item 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-traits.main/OpenContainsBase)
+            :args $ []
+        'open-pass-contains-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-pass-contains-value (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-traits.main/OpenContainsBase)
+            :args $ [] 'test-traits.main/OpenContainsBase
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
