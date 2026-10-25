@@ -811,6 +811,50 @@
                 assert= true $ throws? $ empty? (EmptyProbe :item 1)
                 assert= true $ throws? $ empty? nil
               :tags $ #{} :empty-dispatch-boundary :trait :unit
+            %{} 'TestEntry (:name |contains-rejects-non-bool-and-open-key)
+              :code $ quote $ let
+                  ContainsProbeOps $ deftrait ContainsProbeOps $ .contains?
+                    :: 'Fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Number
+                  ContainsProbeImpl $ defimpl ContainsProbeImpl ContainsProbeOps $ .contains?
+                    fn (self key)
+                      hint-fn $ {}
+                        :args $ [] 'Enum 'Number
+                        :return 'Number
+                      , 1
+                  ContainsProbe $ impl-traits
+                    defenum ContainsProbe $ :item 'Number
+                    , ContainsProbeImpl
+                  has-open-index $ fn (value key)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Dynamic
+                      :return 'Bool
+                    contains? value key
+                assert= true $ throws? $ contains? (ContainsProbe :item 1) 0
+                assert= true $ throws? $ has-open-index (Option :some 1) |bad-key
+                assert= true $ throws? $ contains? nil 0
+              :tags $ #{} :contains-dispatch-boundary :trait :unit
+            %{} 'TestEntry (:name |contains-keeps-argument-errors)
+              :code $ quote $ let
+                  seen $ ref 0
+                assert= true $ throws? $ contains?
+                  do
+                    reset! seen $ &+ (deref seen) 1
+                    raise |contains-receiver-error
+                  do
+                    reset! seen $ &+ (deref seen) 10
+                    , 0
+                assert= 1 $ deref seen
+                assert= true $ throws? $ contains?
+                  do
+                    reset! seen $ &+ (deref seen) 1
+                    Option :some 1
+                  do
+                    reset! seen $ &+ (deref seen) 10
+                    raise |contains-key-error
+                assert= 12 $ deref seen
+              :tags $ #{} :contains-dispatch-boundary :trait :unit
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2
