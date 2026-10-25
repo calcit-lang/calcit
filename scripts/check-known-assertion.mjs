@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { copyFile, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -18,10 +18,11 @@ const spawnAsync = (command, args) => new Promise((done) => {
   });
 });
 
-// Runs every part in its own process and temporary project, and reports each failed part with its output.
-async function runParts(count) {
+// Runs each selected part in its own process and temporary project, at most `jobs` at a time,
+// and reports each failed part with its output.
+async function runParts(selected, count, jobs) {
   const script = fileURLToPath(import.meta.url);
-  const results = await Promise.all(Array.from({ length: count }, (_, index) => new Promise((done) => {
+  const runPart = (index) => new Promise((done) => {
     const started = Date.now();
     const child = spawn(process.execPath, [script], {
       env: { ...process.env, CALCIT_KNOWN_ASSERTION_PART: String(index) },
@@ -31,7 +32,13 @@ async function runParts(count) {
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (output += chunk));
     child.on("close", (status, signal) => done({ index, status, signal, output, seconds: ((Date.now() - started) / 1000).toFixed(1) }));
-  })));
+  });
+  const queue = [...selected];
+  const results = [];
+  await Promise.all(Array.from({ length: Math.min(jobs, queue.length) }, async () => {
+    while (queue.length > 0) results.push(await runPart(queue.shift()));
+  }));
+  results.sort((a, b) => a.index - b.index);
   const failures = [];
   for (const { index, status, signal, output, seconds } of results) {
     process.stdout.write(output);
@@ -417,6 +424,8 @@ try {
         runMapper("edit", "rm-def", `app.main/${name}`);
       }
       runMapper("edit", "rm-def", "app.main/FieldBox");
+    },
+    async () => {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "empty-field-struct", "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
@@ -583,6 +592,8 @@ try {
         }
         await assertRejectedArtifacts(output, label, diagnosticPattern, true);
       }
+    },
+    async () => {
       // #2190: an inner quantifier is not an outer capture with the same spelling.
       // Successful identities/captures live in definition :tests; use this existing
       // rejection harness to verify all compiler entrances and unchanged source.
@@ -971,7 +982,8 @@ try {
       assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /body hint cannot prove the declared callable contract/);
       assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /app\.main\/public-return @3(?:\D|$)/);
       assert.deepEqual(await readFile(binderSnapshot), publicReturnSource);
-
+    },
+    async () => {
       // #2077: the shared replay must keep named-entry target boundaries and report
       // a rejected non-first namespace as a compiler error, not a missing export.
       const entrySnapshot = resolve("calcit/test-replay-entry.cirru");
@@ -1310,6 +1322,8 @@ try {
         "scripts/run-core-tests.mjs", "--target", "calcit.core/update-in",
         "--tag", "update-in-proof", "--backend", "native,js",
       ], { ...options, stdio: "inherit" });
+    },
+    async () => {
       for (const [name, input, path, callback] of [
         ["narrow-open-input", "'Dynamic", "path",
           "fn (current) (hint-fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)) (inc (current.unwrap))"],
@@ -2037,7 +2051,10 @@ try {
         (effectsImports[module] ??= {})[name] = () => { throw new Error(`unexpected conditional effect host call: ${module}/${name}`); };
       }
       new WebAssembly.Instance(effectsModule, effectsImports).exports["run-tests"]();
-
+    },
+    async () => {
+      const truthinessCore = "src/cirru/calcit-core.cirru";
+      const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
       // Runtime ABI inputs must not pass only because a literal call was inlined.
       // The attached core tests above remain the shared language contract.
       const scalarSnapshot = join(project, "truthiness-scalars.cirru");
@@ -2135,7 +2152,10 @@ try {
         scalarEdit([["edit", "rm-def", `${scalarNs}/reject-${label}`]]);
       }
       assert.deepEqual(await readFile(scalarSnapshot), scalarPositive);
-
+    },
+    async () => {
+      const truthinessCore = "src/cirru/calcit-core.cirru";
+      const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
       // Replay the stored language contracts; nullability introduction must not
       // authorize elimination, mutable widening, or unproved callback signatures.
       await copyFile("calcit/test-struct.cirru", snapshot);
@@ -4710,7 +4730,10 @@ try {
 
   const selected = process.env.CALCIT_KNOWN_ASSERTION_PART;
   if (selected === undefined) {
-    await runParts(parts.length);
+    // CI spreads parts over runners with CALCIT_KNOWN_ASSERTION_SHARD=i/n (parts with index % n == i).
+    const [shard, shards] = (process.env.CALCIT_KNOWN_ASSERTION_SHARD ?? "0/1").split("/").map(Number);
+    const indexes = parts.map((_, index) => index).filter((index) => index % shards === shard);
+    await runParts(indexes, parts.length, Number(process.env.CALCIT_KNOWN_ASSERTION_JOBS ?? availableParallelism()));
     console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries, lowered trait return proofs, Countable count contracts and predicate origins passed");
   } else {
     await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");

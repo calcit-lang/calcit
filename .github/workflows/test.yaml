@@ -301,14 +301,13 @@ jobs:
 
       - name: "verify post-lowering invariants (CALCIT_LINT_CORE=1)"
         # The validator re-checks the final tree of every definition and reports
-        # lowering regressions as internal compiler errors.
+        # lowering regressions as internal compiler errors. Core unit tests,
+        # calcit/test.cirru and the inference unit tests run in check-all
+        # (try-core-tests, try-rs) with the same validator.
         env:
           CALCIT_LINT_CORE: "1"
         run: |
-          "$CALCIT_BIN" src/cirru/calcit-core.cirru test --tag unit --require-match
           "$CALCIT_BIN" calcit/test-wasi-command.cirru --check-only --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
-          "$CALCIT_BIN" calcit/test.cirru
-          "$CALCIT_BIN" calcit/test-types-inference.cirru test --tag unit --require-match
 
       # Steps already covered by `yarn check-all` in lint_core_check_all (with the
       # post-lowering validator on) are not repeated here; this job keeps only the
@@ -330,11 +329,17 @@ jobs:
         run: node scripts/fuzz-primitives.mjs --seed 1 --cases 6
 
   lint_core_check_all:
-    name: Full check-all with post-lowering validation
+    name: Full check-all with post-lowering validation (${{ matrix.shard }}/5)
     # Runs the complete local gate with the post-lowering validator on, so every
     # check-all fixture also proves that lowering kept its type evidence (#1553).
+    # scripts/ci-check-all.mjs spreads the check-all steps and known-assertion
+    # parts over the shards, all against the shared optimized CLI.
     needs: cli_build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
     env:
       CALCIT_BIN: target/ci/calcit
       CALCIT_LINT_CORE: "1"
@@ -345,12 +350,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.98.1
-
-      - uses: Swatinem/rust-cache@v2
-
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: 24
@@ -360,16 +359,20 @@ jobs:
           name: calcit-cli-${{ github.sha }}
           path: target/ci
       - name: Prepare shared CLI and JS runtime
+        # Scripts that hard-code the debug CLI path use the shared CLI too.
         run: |
           chmod +x "$CALCIT_BIN"
+          mkdir -p target/debug
+          ln -s ../ci/calcit target/debug/calcit
           corepack enable
           corepack prepare yarn@4.12.0 --activate
           yarn install --immutable
+          yarn compile
           mkdir -p node_modules/@calcit
           ln -s ../../ node_modules/@calcit/procs
 
-      - name: "yarn check-all (CALCIT_LINT_CORE=1)"
-        run: yarn check-all
+      - name: "yarn check-all shard (CALCIT_LINT_CORE=1)"
+        run: node scripts/ci-check-all.mjs --shard ${{ matrix.shard }}/5
 
   docs_checks:
     name: Docs checks
