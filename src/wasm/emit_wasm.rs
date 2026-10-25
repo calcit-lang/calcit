@@ -5618,7 +5618,11 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
               })
           })?;
           if !signature.return_type.contains_type_var() {
-            return Some(signature.return_type.clone());
+            // Retain inferred constructor identity and payload evidence only
+            // when it proves the existing fixed result contract.
+            return infer_static_type_from_expr(expr)
+              .filter(|inferred| inferred.is_proven_for(signature.return_type.as_ref()))
+              .or_else(|| Some(signature.return_type.clone()));
           }
           let mut bindings = TypeBindings::new();
           for (index, argument) in items.iter().skip(1).enumerate() {

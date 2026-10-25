@@ -1159,6 +1159,16 @@
                 assert= &unit actual
                 assert= :unit $ type-of actual
               :tags $ #{} :result-contract-2386 :trait
+            %{} 'TestEntry (:name |nominal-enum-constructor-retains-impl)
+              :code $ quote $ assert= |bar2
+                &trait-call MyBar :bar $ DemoBar :demo $ do (println |nominal-enum-direct-payload) 1
+              :tags $ #{} :impl-origin-portable :nominal-proc-evidence :trait
+            %{} 'TestEntry (:name |nominal-enum-binding-retains-trait-origins)
+              :code $ quote $ let
+                  value $ DemoZapA :demo $ do (println |nominal-enum-bound-payload) 1
+                assert= |zapA $ &trait-call MyZapA :zap value
+                assert= |zapB $ &trait-call MyZapB :zap value
+              :tags $ #{} :impl-origin-portable :nominal-proc-evidence :trait
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let
