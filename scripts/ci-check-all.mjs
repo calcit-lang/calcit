@@ -25,8 +25,6 @@ const WEIGHTS = {
   "yarn try-rs": 25,
   "yarn try-js": 20,
   "yarn try-wasm": 60,
-  "yarn check-literal-paths": 20,
-  "yarn check-typed-method-rem": 20,
 };
 const DEFAULT_WEIGHT = 30;
 const KNOWN_ASSERTION = "node scripts/check-known-assertion.mjs";
