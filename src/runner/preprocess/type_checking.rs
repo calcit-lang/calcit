@@ -1623,6 +1623,12 @@ pub(super) fn expression_is_proven_for(
           _ => {}
         }
       }
+      // A generic struct literal is proved field by field against the declared
+      // applied arguments, so an empty container field keeps the return binder
+      // instead of turning it into Dynamic through constructor inference.
+      if let Some(proven) = self.check_struct_literal(expr, expected, scope, aliases, depth) {
+        return proven;
+      }
       // Check exits before restricting generic evidence: wrappers such as if
       // and let may return empty constructors without binding member variables.
       let empty_family = matches!(
@@ -1673,6 +1679,55 @@ pub(super) fn expression_is_proven_for(
       };
       actual.is_proven_for(expected)
     }
+  }
+
+  impl ExpressionCheck {
+    /// `None` leaves non-literals and non-generic expectations to the general proof.
+    fn check_struct_literal<'a>(
+      &mut self,
+      expr: &Calcit,
+      expected: &'a CalcitTypeAnnotation,
+      scope: &ScopeTypes,
+      aliases: &HashMap<Arc<str>, &'a CalcitTypeAnnotation>,
+      depth: usize,
+    ) -> Option<bool> {
+      let Calcit::List(items) = expr else { return None };
+      if !matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))) {
+        return None;
+      }
+      let args = match expected {
+        CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::TypeRef(_, args) if !args.is_empty() => args,
+        _ => return None,
+      };
+      let prototype = super::type_inference::resolve_struct_value(items.get(1)?, scope)?;
+      if prototype.struct_ref.generics.len() != args.len() {
+        return None;
+      }
+      // Nominal identity and argument binders come from the existing relation;
+      // only the field evidence below replaces the constructor's inference.
+      let candidate = CalcitTypeAnnotation::Struct(prototype.struct_ref.clone(), args.clone());
+      if !rigid_proof(&candidate, expected, scope) {
+        return Some(false);
+      }
+      let values = super::type_inference::collect_struct_literal_values(items, &prototype)?;
+      Some(values.iter().enumerate().all(|(index, value)| {
+        let Some(field) = super::type_inference::resolve_struct_field_type_by_index(&candidate, index) else {
+          return false;
+        };
+        self.check(value, &field, scope, aliases, false, depth + 1)
+          || resolve_type_value(value, scope).is_some_and(|actual| rigid_proof(&actual, &field, scope))
+      }))
+    }
+  }
+
+  /// Prove without letting the expected side's binders absorb a producer type.
+  fn rigid_proof(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
+    let actual = Arc::new(actual.to_owned());
+    let expected = Arc::new(expected.to_owned());
+    scope
+      .call_type_proof(&[], std::slice::from_ref(&expected), std::slice::from_ref(&actual))
+      .prove(&actual, &expected)
+      .is_proven()
   }
 
   ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)

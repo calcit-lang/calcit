@@ -26,24 +26,6 @@
           :schema $ :: 'Fn $ {} (:return 'Enum)
             :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
-        '%err $ %{} 'CodeEntry
-          :doc "|Deprecated Result<T,E> :err constructor helper. Prefer Result :err error; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote $ defn %err (message) (%:: Result :err message)
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'E
-            :generics $ [] 'T 'E
-            :return $ :: 'Result 'T 'E
-          :tags $ #{} :constructor :deprecated
-        '%ok $ %{} 'CodeEntry
-          :doc "|Deprecated Result<T,E> :ok constructor helper. Prefer Result :ok value; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote $ defn %ok (value) (%:: Result :ok value)
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T
-            :generics $ [] 'T 'E
-            :return $ :: 'Result 'T 'E
-          :tags $ #{} :constructor :deprecated
         '%{} $ %{} 'CodeEntry
           :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."
           :code $ quote $ defmacro %{} (R & xs)
@@ -105,8 +87,8 @@
               :code $ quote $ do
                 assert= 9007199254740992 $ &+ 9007199254740991 1
                 assert= true $ = 9007199254740992 $ &+ 9007199254740992 1
-                assert= |inf $ turn-string $ &* 1e308 10
-                assert= |-inf $ turn-string $ &* 1e308 -10
+                assert= |inf $ to-string $ &* 1e308 10
+                assert= |-inf $ to-string $ &* 1e308 -10
               :tags $ #{} :core :unit
         '&- $ %{} 'CodeEntry
           :doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats"
@@ -124,10 +106,10 @@
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |divides-by-zero-to-nonfinite)
             :code $ quote $ do
-              assert= |inf $ turn-string $ &/ 1 0
-              assert= |-inf $ turn-string $ &/ -1 0
-              assert= |NaN $ turn-string $ &/ 0 0
-              assert= |-0 $ turn-string $ &/ -1 (&/ 1 0)
+              assert= |inf $ to-string $ &/ 1 0
+              assert= |-inf $ to-string $ &/ -1 0
+              assert= |NaN $ to-string $ &/ 0 0
+              assert= |-0 $ to-string $ &/ -1 (&/ 1 0)
             :tags $ #{} :core :unit
         '&< $ %{} 'CodeEntry
           :doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order"
@@ -616,7 +598,7 @@
               quasiquote $ foldl ~xs0 &unit $ defn doseq-fn% (_acc ~name) ~@body &unit
           :examples $ [] $ quote
             do
-              defatom *seen $ []
+              defref *seen $ []
               &doseq
                 n $ [] 1 2
                 reset! *seen $ append (deref *seen) n
@@ -4575,7 +4557,7 @@
           :schema $ :: 'StructDef
           :tags $ #{} :data :internal
         'Result $ %{} 'CodeEntry
-          :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。%ok/%err 是待迁移的旧 helper。"
+          :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Result
             impl-traits
               defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
@@ -4586,8 +4568,6 @@
           :tests $ []
             %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
               :code $ quote $ do
-                assert= (%ok 3) (Result :ok 3)
-                assert= (%err |bad) (Result :err |bad)
                 assert= 3 $ .unwrap-or (Result :ok 3) 0
                 assert= 0 $ .unwrap-or (Result :err |bad) 0
                 assert= true $ try
@@ -6683,16 +6663,6 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-        'defatom $ %{} 'CodeEntry
-          :doc "|Deprecated: Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote &runtime-implementation
-          :examples $ [] $ quote
-            ; defatom *my-atom $ {} $ :a 1
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Symbol 'T
-            :generics $ [] 'T
-            :return $ :: 'Ref 'T
-          :tags $ #{} :builtin :deprecated :internal :state :syntax
         'defenum $ %{} 'CodeEntry
           :doc "|Define an EnumDef with a closed set of variants."
           :code $ quote $ defmacro defenum (name & variants)
@@ -6859,7 +6829,7 @@
             :args $ [] 'Dynamic 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal :syntax
         'defref $ %{} 'CodeEntry
-          :doc "|定义命名空间级 Ref<T>：(defref name initial-value)。首次求值时计算初始值，热重载时保留已有状态；读写与 ref 创建的局部 Ref 相同。defatom 是同一实现的兼容旧名。"
+          :doc "|定义命名空间级 Ref<T>：(defref name initial-value)。首次求值时计算初始值，热重载时保留已有状态；读写与 ref 创建的局部 Ref 相同。"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote (; defref *counter 0)
           :schema $ :: 'Fn $ {}
@@ -7065,9 +7035,9 @@
           :doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation."
           :code $ quote $ defn deref (*a) (&atom:deref *a)
           :examples $ []
-            quote $ do (defatom *state 1)
+            quote $ do (defref *state 1)
               assert= 1 $ deref *state
-            quote $ do (defatom *counter 0) (reset! *counter 5)
+            quote $ do (defref *counter 0) (reset! *counter 5)
               assert= 5 $ deref *counter
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] $ :: 'Ref 'T
@@ -10612,35 +10582,6 @@
                   transform 10
                 assert= 13 $ transform 10
               :tags $ #{} :unit
-        'let-destruct $ %{} 'CodeEntry
-          :doc "|Deprecated: dispatches a symbol, `([] ...)` or `({} ...)` pattern to `&let`, `let[]` or `let{}`. Write `let` or `let[]` directly; scheduled for removal in a later non-patch release."
-          :code $ quote $ defmacro let-destruct (pattern v & body)
-            if (symbol? pattern)
-              quasiquote $ &let (~pattern ~v) ~@body
-              if (list? pattern)
-                if
-                  and
-                    not $ &list:empty? pattern
-                    &= [] $ &list:nth pattern 0
-                  quasiquote $ let[]
-                    ~ $ &list:rest pattern
-                    , ~v ~@body
-                  if
-                    and
-                      not $ &list:empty? pattern
-                      &= '{} $ &list:nth pattern 0
-                    quasiquote $ let{}
-                      ~ $ &list:rest pattern
-                      , ~v ~@body
-                    raise $ str-spaced "|Unknown pattern to destruct:" pattern
-                raise $ str-spaced "|Unknown structure to destruct:" pattern
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'Syntax $ :: 'Expr 'Dynamic
-            :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :deprecated :macro
         'let[] $ %{} 'CodeEntry
           :doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings."
           :code $ quote $ defmacro let[] (vars data & body)
@@ -10694,32 +10635,6 @@
                 do (assert= 9 head)
                   assert= ([] 8 7) tail
             :tags $ #{} :core :unit
-        'let{} $ %{} 'CodeEntry
-          :doc "|Deprecated Map-by-Tag bindings; the source Map is evaluated once. Prefer explicit let bindings and get, reviewing the original missing/nil behavior before handling Option; do not automatically insert unwrap or business defaults. Known Struct fields use (:field value); .-field is JS property access, not Struct-field migration. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote $ defmacro let{} (items base & body)
-            if
-              not $ and (list? items) (every? items symbol?)
-              raise $ str-spaced "|expects symbol names in binding names, got:" items
-            &let
-              var-result $ gensym |result
-              quasiquote $ &let (~var-result ~base)
-                assert (str "|expected map for destructing: " ~var-result) (map? ~var-result)
-                let
-                  ~ $ map items $ defn gen-items% (x)
-                    &let
-                      value-var $ gensym |value
-                      [] x $ quasiquote $ match
-                        &map:get ~var-result $ ~ $ turn-tag x
-                        (:some ~value-var) ~value-var
-                        (:none) nil
-                  ~@ body
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
-            :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :deprecated :macro
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
@@ -11565,8 +11480,8 @@
           :doc "|把 Number 显式检查并转换为 Float32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->float32 (value)
             if (&number:fits? value :float32)
-              %ok $ assert-type value 'Float32
-              %err $ str "|number->float32 cannot represent " value
+              Result :ok $ assert-type value 'Float32
+              Result :err $ str "|number->float32 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11574,7 +11489,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 0.5) (number->float32 0.5)
+              assert= (Result :ok 0.5) (number->float32 0.5)
               assert-type (number->float32 0.5) (:: 'Result 'Float32 'String)
               assert= true $ result:err? $ number->float32 0.1
             :tags $ #{} :core :unit
@@ -11582,8 +11497,8 @@
           :doc "|把 Number 显式检查并转换为 Float64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->float64 (value)
             if (&number:fits? value :float64)
-              %ok $ assert-type value 'Float64
-              %err $ str "|number->float64 cannot represent " value
+              Result :ok $ assert-type value 'Float64
+              Result :err $ str "|number->float64 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11591,15 +11506,15 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 0.1) (number->float64 0.1)
+              assert= (Result :ok 0.1) (number->float64 0.1)
               assert-type (number->float64 0.1) (:: 'Result 'Float64 'String)
             :tags $ #{} :core :unit
         'number->int16 $ %{} 'CodeEntry
           :doc "|把 Number 显式检查并转换为 Int16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->int16 (value)
             if (&number:fits? value :int16)
-              %ok $ assert-type value 'Int16
-              %err $ str "|number->int16 cannot represent " value
+              Result :ok $ assert-type value 'Int16
+              Result :err $ str "|number->int16 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11607,7 +11522,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 32767) (number->int16 32767)
+              assert= (Result :ok 32767) (number->int16 32767)
               assert-type (number->int16 32767) (:: 'Result 'Int16 'String)
               assert= true $ result:err? $ number->int16 32768
             :tags $ #{} :core :unit
@@ -11615,8 +11530,8 @@
           :doc "|把 Number 显式检查并转换为 Int32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->int32 (value)
             if (&number:fits? value :int32)
-              %ok $ assert-type value 'Int32
-              %err $ str "|number->int32 cannot represent " value
+              Result :ok $ assert-type value 'Int32
+              Result :err $ str "|number->int32 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11624,7 +11539,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 2147483647) (number->int32 2147483647)
+              assert= (Result :ok 2147483647) (number->int32 2147483647)
               assert-type (number->int32 2147483647) (:: 'Result 'Int32 'String)
               assert= true $ result:err? $ number->int32 2147483648
             :tags $ #{} :core :unit
@@ -11632,8 +11547,8 @@
           :doc "|把 Number 显式检查并转换为 Int64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->int64 (value)
             if (&number:fits? value :int64)
-              %ok $ assert-type value 'Int64
-              %err $ str "|number->int64 cannot represent " value
+              Result :ok $ assert-type value 'Int64
+              Result :err $ str "|number->int64 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11641,7 +11556,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 9007199254740991) (number->int64 9007199254740991)
+              assert= (Result :ok 9007199254740991) (number->int64 9007199254740991)
               assert-type (number->int64 9007199254740991) (:: 'Result 'Int64 'String)
               assert= true $ result:err? $ number->int64 9007199254740992
             :tags $ #{} :core :unit
@@ -11649,8 +11564,8 @@
           :doc "|把 Number 显式检查并转换为 Int8 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->int8 (value)
             if (&number:fits? value :int8)
-              %ok $ assert-type value 'Int8
-              %err $ str "|number->int8 cannot represent " value
+              Result :ok $ assert-type value 'Int8
+              Result :err $ str "|number->int8 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11658,7 +11573,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 127) (number->int8 127)
+              assert= (Result :ok 127) (number->int8 127)
               assert-type (number->int8 127) (:: 'Result 'Int8 'String)
               assert= true $ result:err? $ number->int8 128
               assert= true $ result:err? $ number->int8 (/ 1 0)
@@ -11671,8 +11586,8 @@
           :doc "|把 Number 显式检查并转换为 UInt16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->uint16 (value)
             if (&number:fits? value :uint16)
-              %ok $ assert-type value 'UInt16
-              %err $ str "|number->uint16 cannot represent " value
+              Result :ok $ assert-type value 'UInt16
+              Result :err $ str "|number->uint16 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11680,7 +11595,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 65535) (number->uint16 65535)
+              assert= (Result :ok 65535) (number->uint16 65535)
               assert-type (number->uint16 65535) (:: 'Result 'UInt16 'String)
               assert= true $ result:err? $ number->uint16 -1
             :tags $ #{} :core :unit
@@ -11688,8 +11603,8 @@
           :doc "|把 Number 显式检查并转换为 UInt32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->uint32 (value)
             if (&number:fits? value :uint32)
-              %ok $ assert-type value 'UInt32
-              %err $ str "|number->uint32 cannot represent " value
+              Result :ok $ assert-type value 'UInt32
+              Result :err $ str "|number->uint32 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11697,7 +11612,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 4294967295) (number->uint32 4294967295)
+              assert= (Result :ok 4294967295) (number->uint32 4294967295)
               assert-type (number->uint32 4294967295) (:: 'Result 'UInt32 'String)
               assert= true $ result:err? $ number->uint32 -1
             :tags $ #{} :core :unit
@@ -11705,8 +11620,8 @@
           :doc "|把 Number 显式检查并转换为 UInt64 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->uint64 (value)
             if (&number:fits? value :uint64)
-              %ok $ assert-type value 'UInt64
-              %err $ str "|number->uint64 cannot represent " value
+              Result :ok $ assert-type value 'UInt64
+              Result :err $ str "|number->uint64 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11714,7 +11629,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 9007199254740991) (number->uint64 9007199254740991)
+              assert= (Result :ok 9007199254740991) (number->uint64 9007199254740991)
               assert-type (number->uint64 9007199254740991) (:: 'Result 'UInt64 'String)
               assert= true $ result:err? $ number->uint64 -1
             :tags $ #{} :core :unit
@@ -11722,8 +11637,8 @@
           :doc "|把 Number 显式检查并转换为 UInt8 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->uint8 (value)
             if (&number:fits? value :uint8)
-              %ok $ assert-type value 'UInt8
-              %err $ str "|number->uint8 cannot represent " value
+              Result :ok $ assert-type value 'UInt8
+              Result :err $ str "|number->uint8 cannot represent " value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -11731,7 +11646,7 @@
           :tags $ #{} :conversion :numeric
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
-              assert= (%ok 255) (number->uint8 255)
+              assert= (Result :ok 255) (number->uint8 255)
               assert-type (number->uint8 255) (:: 'Result 'UInt8 'String)
               assert= true $ result:err? $ number->uint8 -1
             :tags $ #{} :core :unit
@@ -12152,8 +12067,8 @@
           :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
           :code $ quote $ defn parse-float (source)
             match (&parse-float source)
-              (:some parsed) (%ok parsed)
-              (:none) (%err source)
+              (:some parsed) (Result :ok parsed)
+              (:none) (Result :err source)
           :examples $ []
             quote $ assert= (Result :ok 1.5) (parse-float |1.5)
             quote $ assert= (Result :err |oops) (parse-float |oops)
@@ -12163,14 +12078,14 @@
           :tests $ []
             %{} 'TestEntry (:name |wraps-number-or-source-error)
               :code $ quote $ do
-                assert= (%ok 1.5) (parse-float |1.5)
-                assert= (%err |oops) (parse-float |oops)
+                assert= (Result :ok 1.5) (parse-float |1.5)
+                assert= (Result :err |oops) (parse-float |oops)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |reports-invalid-number-source)
               :code $ quote $ do
-                assert= (%ok 0) (parse-float |0)
-                assert= (%err |1oops) (parse-float |1oops)
-                assert= (%err |1e) (parse-float |1e)
+                assert= (Result :ok 0) (parse-float |0)
+                assert= (Result :err |1oops) (parse-float |1oops)
+                assert= (Result :err |1e) (parse-float |1e)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |parses-nonfinite-spellings)
               :code $ quote $ do
@@ -12186,7 +12101,7 @@
                 assert= |-inf $ match (parse-float |-INFINITY)
                   (:ok value) (to-string value)
                   (:err _) |error
-                assert= (%err |infinite) (parse-float |infinite)
+                assert= (Result :err |infinite) (parse-float |infinite)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |result-method-contract)
               :code $ quote $ do
@@ -12212,8 +12127,8 @@
                 assert= 1 $ pow -1 $ &/ 1 0
                 assert= 1 $ pow -1 $ &/ -1 0
                 assert= 1 $ pow 1 $ &/ 0 0
-                assert= |NaN $ turn-string $ pow -1 (&/ 0 0)
-                assert= |inf $ turn-string $ pow 2 (&/ 1 0)
+                assert= |NaN $ to-string $ pow -1 (&/ 0 0)
+                assert= |inf $ to-string $ pow 2 (&/ 1 0)
                 assert= 0 $ pow 0.5 $ &/ 1 0
                 assert= 0.25 $ pow -0.5 2
               :tags $ #{} :core :unit
@@ -12493,28 +12408,20 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
-        'remove-watch $ %{} 'CodeEntry
-          :doc "|Compatibility watcher removal on Ref<T> with a Tag key, returning Unit and raising for a missing key. Prefer remove-watch!; use a reviewed guarded source transaction, not an unproven name replacement. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+        'remove-watch! $ %{} 'CodeEntry
+          :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] (:: 'Ref 'T) 'Tag
             :generics $ [] 'T
-          :tags $ #{} :builtin :deprecated :internal :state :watch
-        'remove-watch! $ %{} 'CodeEntry
-          :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态；旧 remove-watch 保留兼容。"
-          :code $ quote $ defn remove-watch! (target key) (remove-watch target key)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'Ref 'T) 'Tag
-            :generics $ [] 'T
-          :tags $ #{} :state :watch
+          :tags $ #{} :builtin :internal :state :watch
           :tests $ [] $ %{} 'TestEntry (:name |rejects-missing-key-without-repeating-effect)
             :code $ quote $ let
                 source $ ref 0
               assert= &unit $ add-watch! source :change $ fn (current previous) &unit
               assert= &unit $ remove-watch! source :change
-              assert= "|remove-watch failed: listener with key `change` not found" $ try (remove-watch! source :change)
+              assert= "|remove-watch! failed: listener with key `change` not found" $ try (remove-watch! source :change)
                 fn (error) error
             :tags $ #{} :core :state :unit
         'repeat $ %{} 'CodeEntry (:doc |)
@@ -12818,7 +12725,7 @@
                 assert= -3 $ round -2.5
                 assert= 1 $ round 0.5
                 assert= -1 $ round -0.5
-                assert= |-0 $ turn-string $ round -0.4
+                assert= |-0 $ to-string $ round -0.4
               :tags $ #{} :core :unit
         'secure-random-bytes $ %{} 'CodeEntry
           :doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。"
@@ -12826,7 +12733,7 @@
             if
               and (integer? size) (>= size 0) (<= size 65536)
               &secure-random-bytes Result size "|secure-random-bytes failed"
-              %err "|secure-random-bytes expected an integer byte count in 0..65536"
+              Result :err "|secure-random-bytes expected an integer byte count in 0..65536"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number
@@ -13091,7 +12998,7 @@
                 assert= |ac $ str |a nil |c
                 assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |formats-numbers-like-turn-string)
+            %{} 'TestEntry (:name |formats-numbers-like-to-string)
               :code $ quote $ do
                 assert= |inf $ str $ &/ 1 0
                 assert= |-0 $ str $ &* -1 0
@@ -13353,9 +13260,9 @@
           :code $ quote $ defmacro swap! (a f & args)
             quasiquote $ reset! ~a $ ~f (&atom:deref ~a) ~@args
           :examples $ []
-            quote $ do (defatom *counter 0) (swap! *counter inc)
+            quote $ do (defref *counter 0) (swap! *counter inc)
               assert= 1 $ deref *counter
-            quote $ do (defatom *state 1) (swap! *state + 2)
+            quote $ do (defref *state 1) (swap! *state + 2)
               assert= 3 $ deref *state
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}
@@ -13519,6 +13426,21 @@
                 assert= |42 $ to-string 42
                 assert= |hello $ to-string |hello
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-number-boundaries)
+              :code $ quote $ do
+                assert= |0.0000001 $ to-string 0.0000001
+                assert= |-0.0000001 $ to-string -0.0000001
+                assert= |1000000000000000000000 $ to-string 1000000000000000000000
+                assert= |-0 $ to-string -0
+                assert= |inf $ to-string 1e309
+                assert= |-inf $ to-string -1e309
+                assert= |NaN $ to-string nan
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |shortest-decimal-ties)
+              :code $ quote $ do
+                assert= |864310392341871.2 $ to-string 864310392341871.2
+                assert= |-993946982230940.2 $ to-string -993946982230940.2
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |converts-finite-scalars)
               :code $ quote $ do
                 assert= | $ to-string nil
@@ -13614,7 +13536,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |converts-string-to-symbol)
             :code $ quote $ do
               assert-type (to-symbol |ready) 'Symbol
-              assert= |ready $ turn-string $ to-symbol |ready
+              assert= |ready $ to-string $ to-symbol |ready
             :tags $ #{} :core :unit
         'to-tag $ %{} 'CodeEntry
           :doc "|将 String 转为 Tag；不接受集合或隐式 Symbol/Tag 归一化。旧 turn-tag 留给 core 宏和兼容路径。"
@@ -13743,8 +13665,8 @@
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source)
             try
-              %ok $ parse-cirru source
-              fn (message) (%err message)
+              Result :ok $ parse-cirru source
+              fn (message) (Result :err message)
           :examples $ []
             quote $ |a .parse-cirru
             quote $
@@ -13764,8 +13686,8 @@
           :doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code."
           :code $ quote $ defn try-parse-cirru-edn (source)
             try
-              %ok $ parse-cirru-edn source
-              fn (message) (%err message)
+              Result :ok $ parse-cirru-edn source
+              fn (message) (Result :err message)
           :examples $ []
             quote $ |[] .parse-cirru-edn
             quote $
@@ -13874,8 +13796,8 @@
           :doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code."
           :code $ quote $ defn try-parse-cirru-list (source)
             try
-              %ok $ parse-cirru-list source
-              fn (message) (%err message)
+              Result :ok $ parse-cirru-list source
+              fn (message) (Result :err message)
           :examples $ []
             quote $ |a .parse-cirru-list
             quote $
@@ -13917,8 +13839,8 @@
           :doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code."
           :code $ quote $ defn try-parse-json (source)
             try
-              %ok $ json-parse source
-              fn (message) (%err message)
+              Result :ok $ json-parse source
+              fn (message) (Result :err message)
           :examples $ []
             quote $ |1 .parse-json
             quote $ |{ .parse-json
@@ -13934,10 +13856,10 @@
           :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass `Option :some true` for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported."
           :code $ quote $ defn try-read-dir (path recursive?)
             try
-              %ok $ match recursive?
+              Result :ok $ match recursive?
                 (:some recursive?) (read-dir path recursive?)
                 (:none) (read-dir path)
-              fn (message) (%err message)
+              fn (message) (Result :err message)
           :examples $ []
             quote $ try-read-dir |src
             quote $ try-read-dir |src $ Option :some true
@@ -13959,39 +13881,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic
-        'turn-string $ %{} 'CodeEntry
-          :doc "|旧版兼容入口；只接受实现 ToString 的值，新代码使用 to-string。集合、Unit 与未收窄的 Dynamic 不能直接调用。"
-          :code $ quote $ defn turn-string (value) (to-string value)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'ToString
-          :tags $ #{} :deprecated :internal
-          :tests $ []
-            %{} 'TestEntry (:name |accepts-proven-scalar-values)
-              :code $ quote $ do
-                assert-type (turn-string 42) 'String
-                assert= |42 $ turn-string 42
-                assert= |hello $ turn-string |hello
-                assert= |ready $ turn-string :ready
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |formats-number-boundaries)
-              :code $ quote $ do
-                assert= |0.0000001 $ turn-string 0.0000001
-                assert= |-0.0000001 $ turn-string -0.0000001
-                assert= |1000000000000000000000 $ turn-string 1000000000000000000000
-                assert= |-0 $ turn-string -0
-                assert= |inf $ turn-string 1e309
-                assert= |-inf $ turn-string -1e309
-                assert= |NaN $ turn-string nan
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |shortest-decimal-ties)
-              :code $ quote $ do
-                assert= |864310392341871.2 $ turn-string 864310392341871.2
-                assert= |-993946982230940.2 $ turn-string -993946982230940.2
-                assert= |864310392341871.2 $ to-string 864310392341871.2
-              :tags $ #{} :core :unit
         'turn-symbol $ %{} 'CodeEntry
           :doc "|内部 String → Symbol 转换。严格类型调用只接受 String，成功返回 Symbol；不支持的输入会报错。native 运行时仍接受 Tag/Symbol 作为历史兼容，但这不是静态类型契约；新代码不应依赖该隐式转换。"
           :code $ quote &runtime-implementation
@@ -14002,7 +13891,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |returns-typed-symbol-from-string)
             :code $ quote $ do
               assert-type (turn-symbol |hello) 'Symbol
-              assert= |hello $ turn-string $ turn-symbol |hello
+              assert= |hello $ to-string $ turn-symbol |hello
             :tags $ #{} :core :unit
         'turn-tag $ %{} 'CodeEntry
           :doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type"
@@ -14387,7 +14276,7 @@
             if
               and (integer? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
               &wait-ms Result milliseconds "|wait-ms failed"
-              %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
+              Result :err "|wait-ms expected an integer millisecond duration in 0..4294967295"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number

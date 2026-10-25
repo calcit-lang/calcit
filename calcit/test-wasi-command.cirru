@@ -228,7 +228,7 @@
             let
                 outcome $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
                 envelope $ EdnEnvelope :request-id |r1 :note (Option :some "|hello world") :outcome outcome
-                typed-result $ assert-type (%ok outcome) (:: 'Result 'app.main/EdnOutcome 'String)
+                typed-result $ assert-type (Result :ok outcome) (:: 'Result 'app.main/EdnOutcome 'String)
               match
                 edn-parse-outcome $ format-cirru-edn outcome
                 (:err _) (quit! 1)
@@ -269,10 +269,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-int-lists)
             :code $ quote $ do
               assert=
-                %ok $ [] 1 -2 3
+                Result :ok $ [] 1 -2 3
                 edn-parse-int-list "|[] 1 -2 3"
               assert=
-                %ok $ []
+                Result :ok $ []
                 edn-parse-int-list |[]
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 2147483648"
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
@@ -287,7 +287,7 @@
             %{} 'TestEntry (:name |round-trips-scalar-struct)
               :code $ quote $ do
                 assert=
-                  %ok $ EdnJob :name |Ada :count (assert-type 3 'Int32) :ready true
+                  Result :ok $ EdnJob :name |Ada :count (assert-type 3 'Int32) :ready true
                   edn-parse-job "|%{} 'EdnJob (:ready true) (:count 3) (:name |Ada)"
                 let
                     parsed $ edn-parse-job "|%{} 'EdnJob (:name |Ada) (:count 3) (:ready true)"
@@ -471,7 +471,7 @@
               , 'String
           :tests $ [] $ %{} 'TestEntry (:name |ignores-parentheses-inside-quoted-strings)
             :code $ quote $ assert=
-              %ok $ [] $ [] "|(" "|)"
+              Result :ok $ [] $ [] "|(" "|)"
               edn-parse-nested-string-lists "|[] ([] \"|(\" \"|)\")"
             :tags $ #{} :core :edn :unit :wasi :wasm
         'edn-parse-outcome $ %{} 'CodeEntry (:doc |)
@@ -483,10 +483,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
             :code $ quote $ do
               assert=
-                %ok $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
+                Result :ok $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
                 edn-parse-outcome "|%:: 'EdnOutcome 'ready ([] 1 -2)"
               assert=
-                %ok $ EdnOutcome :idle
+                Result :ok $ EdnOutcome :idle
                 edn-parse-outcome "|%:: :EdnOutcome :idle"
               assert= true $ result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'unknown"
               assert= true $ result:err? $ edn-parse-outcome "|%:: 'EdnOutcome 'ready |wrong"
@@ -541,7 +541,7 @@
           :tests $ []
             %{} 'TestEntry (:name |parses-bounded-scalars)
               :code $ quote $ assert=
-                [] (%ok 42) (%ok |hello) (%ok :ready) (%ok true) (%ok nil) true true true true true
+                [] (Result :ok 42) (Result :ok |hello) (Result :ok :ready) (Result :ok true) (Result :ok nil) true true true true true
                 let
                     results $ edn-parse-scalars
                   [] (&list:nth results 0) (&list:nth results 1) (&list:nth results 2) (&list:nth results 3) (&list:nth results 4)
@@ -554,11 +554,11 @@
               :code $ quote $ let
                   results $ edn-parse-scalars
                   escaped $ str |a (char-from-code 9) (char-from-code 34) (char-from-code 92) |z
-                assert= (%ok "|hello world") (&list:nth results 10)
+                assert= (Result :ok "|hello world") (&list:nth results 10)
                 assert=
-                  %ok $ str |line (char-from-code 10) |next
+                  Result :ok $ str |line (char-from-code 10) |next
                   &list:nth results 11
-                assert= (%ok escaped) (&list:nth results 12)
+                assert= (Result :ok escaped) (&list:nth results 12)
             %{} 'TestEntry (:name |rejects-invalid-quoted-escape)
               :code $ quote $ assert= true
                 result:err? $ &list:nth (edn-parse-scalars) 13
@@ -571,7 +571,7 @@
             :return $ :: 'Result (:: 'Map 'String 'Int32) 'String
           :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-map-key)
             :code $ quote $ assert=
-              %ok $ {,} "|two words" 2 |tail -3
+              Result :ok $ {,} "|two words" 2 |tail -3
               edn-parse-string-int-map "|{} (\"|two words\" 2) (|tail -3)"
             :tags $ #{} :core :unit
         'edn-parse-string-list $ %{} 'CodeEntry (:doc |)
@@ -583,7 +583,7 @@
             :return $ :: 'Result (:: 'List 'String) 'String
           :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-string-items)
             :code $ quote $ assert=
-              %ok $ [] |hello "|two words" |tail
+              Result :ok $ [] |hello "|two words" |tail
               edn-parse-string-list "|[] |hello \"|two words\" |tail"
             :tags $ #{} :core :unit
         'edn-parse-tag-string-map $ %{} 'CodeEntry (:doc |)
@@ -596,10 +596,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-tag-string-map)
             :code $ quote $ do
               assert=
-                %ok $ {,} :a |one :b "|two words"
+                Result :ok $ {,} :a |one :b "|two words"
                 edn-parse-tag-string-map "|{} (:a |one) (:b \"|two words\")"
               assert=
-                %ok $ {}
+                Result :ok $ {}
                 edn-parse-tag-string-map |{}
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a |one) (:bad 2)"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
@@ -630,8 +630,8 @@
                   , 1
                 refinement :int32
               if (&number:fits? next-count refinement)
-                %ok $ &map:assoc data |processed $ assert-type next-count 'Int32
-                %err |Int32-overflow
+                Result :ok $ &map:assoc data |processed $ assert-type next-count 'Int32
+                Result :err |Int32-overflow
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String 'Int32
@@ -640,13 +640,13 @@
           :tests $ []
             %{} 'TestEntry (:name |increments-count)
               :code $ quote $ assert=
-                %ok $ {}
+                Result :ok $ {}
                   |count $ assert-type 2 'Int32
                   |processed $ assert-type 3 'Int32
                 edn-transform-count-map $ {} $ |count (assert-type 2 'Int32)
               :tags $ #{} :wasi
             %{} 'TestEntry (:name |rejects-overflow)
-              :code $ quote $ assert= (%err |Int32-overflow)
+              :code $ quote $ assert= (Result :err |Int32-overflow)
                 edn-transform-count-map $ {} $ |count (assert-type 2147483647 'Int32)
               :tags $ #{} :wasi
             %{} 'TestEntry (:name |accepts-bound-refinement-tag)

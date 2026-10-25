@@ -648,7 +648,7 @@ pub fn handle_syntax(
     MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, call_stack),
     CallSpread => syntax::call_spread(nodes, scope, file_ns, call_stack),
     Try => syntax::call_try(nodes, scope, file_ns, call_stack),
-    // "define reference"; `defatom` reads into the same syntax for compatibility
+    // "define reference"
     Defref => refs::defref(nodes, scope, file_ns, call_stack),
     Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
     // different behaviors, in Rust interpreter it's nil, in js codegen it's nothing

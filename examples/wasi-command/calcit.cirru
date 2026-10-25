@@ -158,8 +158,8 @@
                 revision $ :revision manifest
               if
                 or (= name |) (< revision 0)
-                %err |invalid-manifest
-                %ok $ Manifest :name (str prefix name) :enabled (:enabled manifest) :revision revision
+                Result :err |invalid-manifest
+                Result :ok $ Manifest :name (str prefix name) :enabled (:enabled manifest) :revision revision
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'app.main/Manifest

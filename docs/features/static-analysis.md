@@ -553,7 +553,7 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 `get-in` 返回 `Result<T, PathError>`，适合开放 Map/List 路径；未知 payload 仍为 Dynamic。调用方应区分缺失的 `PathError :missing` 与形状错误的 `PathError :shape`，不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的已证明静态路径仍提供 `Option<Leaf>`；开放路径提供 `Option<Dynamic>`，具体使用前先 decode/narrow，并显式处理缺失。回调输出不能用来证明开放输入。
 
-默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str` / `turn-string`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
+默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
 
 ### Complex Types
 

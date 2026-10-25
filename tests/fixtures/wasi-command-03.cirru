@@ -41,7 +41,7 @@
                 content $ result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
               assert= 4194304 $ count content
               each indexes $ fn (index)
-                assert= true $ result:ok? $ %ok index
+                assert= true $ result:ok? $ Result :ok index
               println |Growth-ok
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)

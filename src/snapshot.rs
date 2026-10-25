@@ -23,7 +23,6 @@ pub const DEFINITION_HEADS: &[&str] = &[
   "deftrait",
   "defimpl",
   "defref",
-  "defatom",
   "defexternal",
   "defwasm-export",
   "defwasm-import",
@@ -3482,7 +3481,6 @@ const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "defcomp",
   "defeffect",
   "defref",
-  "defatom",
   "defstruct",
   "defenum",
   "defmacro",
@@ -5584,7 +5582,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 52,
+      macro_count, 50,
       "update the audited bundled macro inventory when core macros change"
     );
   }
@@ -5755,7 +5753,7 @@ mod tests {
       }
     }
 
-    for def_name in ["let-destruct", "let[]", "let{}", "loop", "struct-with", "swap!", "&doseq"] {
+    for def_name in ["let[]", "loop", "struct-with", "swap!", "&doseq"] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
         panic!("{def_name} should load as MacroSignature");
       };
@@ -5763,16 +5761,11 @@ mod tests {
       assert!(signature.capabilities.is_empty(), "{def_name} should be compile-time pure");
       assert!(signature.optional_inputs.is_empty(), "{def_name} should not have optional inputs");
       match def_name {
-        "let-destruct" => assert!(matches!(
-          signature.required_inputs.as_slice(),
-          [crate::calcit::MacroSyntaxType::Syntax, crate::calcit::MacroSyntaxType::Expr(value)]
-            if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
-        )),
         "loop" | "&doseq" => assert!(matches!(
           signature.required_inputs.as_slice(),
           [crate::calcit::MacroSyntaxType::SyntaxList]
         )),
-        "let[]" | "let{}" => assert!(matches!(
+        "let[]" => assert!(matches!(
           signature.required_inputs.as_slice(),
           [crate::calcit::MacroSyntaxType::SyntaxList, crate::calcit::MacroSyntaxType::Expr(value)]
             if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)

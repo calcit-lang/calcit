@@ -297,7 +297,7 @@ let
 
 ## Option and Result helpers
 
-`Option<T>` 和 `Result<T,E>` 是泛型 core Enum。具名定义同时承担类型与构造入口：`Option :some value` / `Option :none`、`Result :ok value` / `Result :err error`。`%some/%none/%ok/%err` 是待迁移的旧 helper；普通链式处理应继续用可推断的接收者方法：
+`Option<T>` 和 `Result<T,E>` 是泛型 core Enum。具名定义同时承担类型与构造入口：`Option :some value` / `Option :none`、`Result :ok value` / `Result :err error`。旧 `%some/%none/%ok/%err` 已在 0.31.0 删除；普通链式处理应继续用可推断的接收者方法：
 
 - Option: `.some?`, `.none?`, `.map`, `.unwrap`, `.unwrap-or`, `.and-then`, `.fold`
 - Result: `.ok?`, `.err?`, `.map`, `.map-err`, `.unwrap-or`, `.and-then`
