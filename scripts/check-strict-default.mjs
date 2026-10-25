@@ -19,12 +19,7 @@ for (const dir of ["scripts", ".github/workflows"]) {
 for (const path of entrypoints) {
   if (path === "scripts/check-strict-default.mjs") continue;
   const source = readFileSync(path, "utf8");
-  if (path === "scripts/test-wasi-preprocess.sh") {
-    const compatibilityCase = 'cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"';
-    if (source.split("--compat-types").length !== 2 || !source.includes(compatibilityCase)) {
-      throw new Error(`${path} may use compatibility mode only for its captured legacy fixture`);
-    }
-  } else if (source.includes("--compat-types")) {
+  if (source.includes("--compat-types")) {
     throw new Error(`${path} must not enable compatibility mode in the default workflow`);
   }
 }

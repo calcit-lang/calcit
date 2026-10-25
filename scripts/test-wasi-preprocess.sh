@@ -86,8 +86,7 @@ trap 'rm -rf "$WASI_FS_HOST_DIR"' EXIT
 
 command -v wasmtime >/dev/null
 
-# The captured 0.13.77-era snapshot intentionally retains whole-Dynamic schemas.
-cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"
+cargo run --bin calcit -- --check-only "$FIXTURE"
 cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --target "$TARGET"
 
 wasmtime run \
