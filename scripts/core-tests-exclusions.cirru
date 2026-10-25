@@ -2,9 +2,11 @@
   :native $ {}
   :js $ {}
     :tests $ {} (|calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test")
+      |calcit.core/&format-ternary-tree#returns-finger-vec-debug-string "|unsupported: &format-ternary-tree is a native-only debug builtin; predicate replay verifies JS codegen rejects the actual call"
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/&format-ternary-tree#returns-finger-vec-debug-string "|unsupported: unsupported proc in WASM: &format-ternary-tree (predicate replay verifies rejection rather than erased execution)"
       |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: generated WASM traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
       |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
       |calcit.core/struct-match#rejects-invalid-input-with-original-failure-text "|unsupported: unsupported syntax in WASM: try"
@@ -169,6 +171,7 @@
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
       |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0"
+      |calcit.core/hint-fn#typed-callable-to-open-storage "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: returning the open Fn transports closure `callback` outside its statically specialized call"
       |calcit.core/hint-fn#raise-only-return-contract "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/if#condition-and-selected-branch-errors-propagate "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/if#condition-evaluates-once-and-only-one-branch-runs "|unsupported: unsupported proc in WASM: ref"
@@ -272,6 +275,7 @@
   :wasi $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/&format-ternary-tree#returns-finger-vec-debug-string "|unsupported: unsupported proc in WASM: &format-ternary-tree (the shared command backend retains the native-only boundary)"
       |calcit.core/nil->option#collapses-legacy-optional-values-under-declared-option "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current scalar ABI"
       |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: shared WASM codegen traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
       |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
@@ -435,6 +439,7 @@
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
       |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0 (E_WASM_NIL_TYPE_EVIDENCE)"
+      |calcit.core/hint-fn#typed-callable-to-open-storage "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: returning the open Fn transports closure `callback` outside its statically specialized call"
       |calcit.core/hint-fn#raise-only-return-contract "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/if#condition-and-selected-branch-errors-propagate "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/if#condition-evaluates-once-and-only-one-branch-runs "|unsupported: unsupported proc in WASM: ref"

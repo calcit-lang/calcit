@@ -20,6 +20,32 @@ const tests = canonicalTests;
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
+  // #2351: replay the two previously erased unsupported calls too. Exclusion
+  // is not evidence of rejection, so inspect actual outcomes on every backend.
+  const boundaryCases = [
+    ["calcit.core/&format-ternary-tree#returns-finger-vec-debug-string", ["native"],
+      /native-only builtin/, /unsupported proc in WASM: &format-ternary-tree/],
+    ["calcit.core/hint-fn#typed-callable-to-open-storage", ["native", "js"],
+      null, /E_WASM_CLOSURE_SPECIALIZATION/],
+  ];
+  const boundaryBackends = process.env.WASMTIME_CLI ? ["native", "js", "wasm", "wasi"] : ["native", "js", "wasm"];
+  const boundaryReport = join(fixture, "predicate-boundaries.json");
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", corePath,
+    ...boundaryCases.flatMap(([id]) => ["--target", id]),
+    "--backend", boundaryBackends.join(","), "--report-unexpected-pass", "--results-json", boundaryReport],
+  { encoding: "utf8", timeout: 180000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, CALCIT_BIN: binary } });
+  const boundaries = JSON.parse(await readFile(boundaryReport, "utf8"));
+  assert.deepEqual(Object.keys(boundaries).sort(), boundaryCases.map(([id]) => id).sort());
+  for (const [id, supported, jsDiagnostic, wasmDiagnostic] of boundaryCases) {
+    for (const backend of boundaryBackends) {
+      const outcome = boundaries[id][backend];
+      assert.equal(outcome.status, supported.includes(backend) ? "pass" : "compile-error", `${backend}: ${id}`);
+      if (!supported.includes(backend)) {
+        assert.match(outcome.detail, backend === "js" ? jsDiagnostic : wasmDiagnostic, `${backend}: ${id}`);
+      }
+    }
+  }
+  console.log(`Predicate calls retain real supported execution and explicit unsupported rejection on ${boundaryBackends.join(" / ")}`);
   const snapshot = join(fixture, "calcit.cirru");
   await copyFile(corePath, snapshot);
   await symlink(resolve("node_modules"), join(fixture, "node_modules"), "dir");
