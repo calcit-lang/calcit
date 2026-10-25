@@ -624,6 +624,30 @@ fn reset_diagnostic_renders_the_call_head_once() {
 }
 
 #[test]
+fn strict_public_dissoc_keeps_a_known_map_contract() {
+  run_with_large_stack(|| {
+    // Clearing an entry from a typed Map cache keeps the Map contract, while
+    // a key of the wrong type is still rejected by the Map key check.
+    for (key_type, value, passes) in [
+      ("'String", "dissoc (deref state) key", true),
+      ("'String", "dissoc (deref state) key key", true),
+      ("'Number", "dissoc (deref state) key", false),
+    ] {
+      let snippet = format!(
+        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state key)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref $ :: 'Map 'String 'Number) {key_type}) (:return 'Unit)\n      reset! state $ {value}\n      , &unit\n  , &unit"
+      );
+      let mut entries = load_snippet_entries(&snippet);
+      entries.reload_fn = entries.init_fn.clone();
+      entries.reload_ns = entries.init_ns.clone();
+      entries.reload_def = entries.init_def.clone();
+      let _strict = StrictTypesReset::enabled();
+      let result = run_check_only(&entries);
+      assert_eq!(result.is_ok(), passes, "key={key_type}, value={value}: {result:?}");
+    }
+  });
+}
+
+#[test]
 fn reset_rejects_incompatible_inferred_reference_payloads() {
   run_with_large_stack(|| {
     for snippet in [

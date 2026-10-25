@@ -9249,6 +9249,9 @@ fn try_specialize_polymorphic_call(
     // A nominal Struct reference is the same value family; lower it so the
     // field write is checked here instead of reaching the generic assoc.
     ("assoc", T::Struct(_, _) | T::TypeRef(_, _)) if receiver_type.resolve_to_struct().is_some() => NativeStructAssoc,
+    // dissoc: a Map receiver with at least one key keeps its Map<K,V> contract;
+    // the zero-key error and List index checks stay in the generic def.
+    ("dissoc", T::Map(_, _)) if processed_args.len() >= 2 => NativeMapDissoc,
     // includes?
     ("includes?", T::List(_)) => NativeListIncludes,
     ("includes?", T::Map(_, _)) => NativeMapIncludes,
