@@ -98,8 +98,17 @@ async function checkTraitBoundaries() {
     // These original source negatives now belong to compile rejection, not
     // attached runtime tests. Keep every target gate; host tests cover effects.
     const sourceNegatives = traitRejectionCases();
-    const setRuntimeBody = code => run(snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
-      "--input-format", "cirru", "--code", `quote $ defn test-explicit-trait-call ()\n${code.split("\n").map(line => `  ${line}`).join("\n")}\n  , 1`);
+    const setRuntimeBody = code => {
+      // The private rejection entry returns Number 1, not the source routine's Unit.
+      const edits = JSON.stringify([
+        ["edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite", "--input-format", "cirru", "--code",
+          `quote $ defn test-explicit-trait-call ()\n${code.split("\n").map(line => `  ${line}`).join("\n")}\n  , 1`],
+        ["edit", "schema", "test-traits.main/test-explicit-trait-call", "--input-format", "json-ast", "--code",
+          JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]])],
+      ]);
+      const preview = JSON.parse(run(snapshot, "edit", "transaction", "--code", edits, "--dry-run", "--format", "json"));
+      return run(snapshot, "edit", "transaction", "--code", edits, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    };
     const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
       "--reload-fn", "test-traits.main/test-explicit-trait-call"];
     for (const [name, code, diagnostic = /E_DUPLICATE_TRAIT_IMPL/] of sourceNegatives) {
