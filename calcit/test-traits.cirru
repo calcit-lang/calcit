@@ -229,12 +229,42 @@
           :code $ quote $ defstruct EmptyStructProbe
           :examples $ []
           :schema $ :: 'StructDef
+        'ExplicitContainsFalseImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ExplicitContainsFalseImpl ExplicitContainsOps
+            .contains? $ fn (self index)
+              hint-fn $ {}
+                :args $ [] 'Self 'Number
+                :return 'Bool
+                :generics $ [] 'Self
+              println |explicit-contains-false-body
+              , false
+          :examples $ []
+          :schema $ :: 'Impl
+        'ExplicitContainsOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ExplicitContainsOps
+            .contains? $ :: 'Fn $ {}
+              :args $ [] 'Self 'Number
+              :return 'Bool
+              :generics $ [] 'Self
+          :examples $ []
+          :schema $ :: 'Trait
+        'ExplicitContainsTrueImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ExplicitContainsTrueImpl ExplicitContainsOps
+            .contains? $ fn (self index)
+              hint-fn $ {}
+                :args $ [] 'Self 'Number
+                :return 'Bool
+                :generics $ [] 'Self
+              println |explicit-contains-true-body
+              , true
+          :examples $ []
+          :schema $ :: 'Impl
         'ExplicitTraitFalse $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def ExplicitTraitFalse (impl-traits OpenContainsBase OpenContainsFalseImpl)
+          :code $ quote $ def ExplicitTraitFalse (impl-traits OpenContainsBase ExplicitContainsFalseImpl)
           :examples $ []
           :schema $ :: 'EnumDef
         'ExplicitTraitTrue $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def ExplicitTraitTrue (impl-traits OpenContainsBase OpenContainsTrueImpl)
+          :code $ quote $ def ExplicitTraitTrue (impl-traits OpenContainsBase ExplicitContainsTrueImpl)
           :examples $ []
           :schema $ :: 'EnumDef
         'Greeter $ %{} 'CodeEntry
@@ -596,22 +626,22 @@
               , "|hello Ada / Ada"
             :tags $ #{} :trait-bound :unit
         'explicit-bounded-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn explicit-bounded-contains? (value key) (&trait-call OpenContainsOps :contains? value key)
+          :code $ quote $ defn explicit-bounded-contains? (value key) (&trait-call ExplicitContainsOps :contains? value key)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T 'Number
             :generics $ [] 'T
-            :where $ {} $ 'T 'OpenContainsOps
+            :where $ {} $ 'T 'ExplicitContainsOps
         'explicit-core-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-core-contains? (value key) (&trait-call Contains :contains? value key)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Enum 'Number
         'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn explicit-nominal-contains? (value key) (&trait-call OpenContainsOps :contains? value key)
+          :code $ quote $ defn explicit-nominal-contains? (value key) (&trait-call ExplicitContainsOps :contains? value key)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-traits.main/OpenContainsBase 'Number
+            :args $ [] 'test-traits.main/ExplicitTraitFalse 'Number
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []
@@ -669,7 +699,7 @@
         'make-explicit-trait-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-explicit-trait-value () (ExplicitTraitFalse :item 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'test-traits.main/OpenContainsBase)
+          :schema $ :: 'Fn $ {} (:return 'test-traits.main/ExplicitTraitFalse)
             :args $ []
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
@@ -1347,7 +1377,7 @@
               :code $ quote $ let
                   value $ ExplicitTraitFalse :item 1
                 assert= true $ &trait-call Contains :contains? value 0
-                assert= false $ &trait-call OpenContainsOps :contains? value 0
+                assert= false $ &trait-call ExplicitContainsOps :contains? value 0
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |same-nominal-data-different-impl)
               :code $ quote $ do
@@ -1361,11 +1391,11 @@
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |factory-return-keeps-impl)
               :code $ quote $ assert= false
-                &trait-call OpenContainsOps :contains? (make-explicit-trait-value) 0
+                &trait-call ExplicitContainsOps :contains? (make-explicit-trait-value) 0
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |identity-return-keeps-impl)
               :code $ quote $ assert= false
-                &trait-call OpenContainsOps :contains?
+                &trait-call ExplicitContainsOps :contains?
                   open-pass-contains-value $ ExplicitTraitFalse :item 1
                   , 0
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable

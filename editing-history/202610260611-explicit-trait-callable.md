@@ -11,6 +11,7 @@
 ## 回归与验证
 
 - 在原 `test-explicit-trait-call` 的 `:tests` 增加 Number 范围、显式来源、同数据类型的不同 impl、泛型约束、工厂和 identity 返回、有限嵌套调用，复用统一四后端运行器及现有 portable tag。
+- 测试能力使用显式声明接收者泛型 `Self` 的本地 trait，impl 同样声明该泛型；名义 helper 和 factory 的合同引用具备该能力的实际 prototype。不能把只有数据形状的旧 Base 或固定 Enum 接收者的 trait，当作任意 T 的能力证明；新增定义同时通过已有独立 callable proof。
 - 在原 WASM fixture 和宿主脚本增加显式调用的非法 key、真实 heap-pointer 数值别名及失败前单次顺序求值。宿主只验证 WASM 无法自行捕获的 trap 和输出轨迹，不复制测试运行器。
 - Snapshot 通过官方 query、受 revision 保护的事务和完整 readback 修改；program-diff 确认只新增测试定义及附带测试，没有删除原用例或放宽 schema。
 - 复用原完整 Cargo、Clippy、check-all 与 core 四后端回归；额外将实际非法 key/异常用例回放到 native、JS 和真实 WASI，核对错误和输出轨迹。
