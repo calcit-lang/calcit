@@ -503,6 +503,27 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
 目标已有签名时，两参数形式只能收窄到该签名能证明的合同：可以把开放的 Dynamic 参数写成具体类型，但不能把 Dynamic 返回改写成 Number，也不能把已声明的 Number 参数放宽为 Dynamic。此类注解以“hint-fn schema conflicts with the existing local function signature”在预处理时报错；迁移方法是在函数体内收窄并声明真实返回类型，而不是在外部改写合同。
 
+两参数形式 `hint-fn f schema` 计划在 0.32.0 删除。0.31.0 起，项目源码中的每处用法都会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；它只是提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
+
+```cirru
+let
+    double $ fn (n) (&* n 2)
+  hint-fn double $ {} (:args $ [] 'Number) (:return 'Number)
+  assert= 6 $ double 3
+```
+
+迁移后：
+
+```cirru
+let
+    double $ fn (n)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &* n 2
+  assert= 6 $ double 3
+```
+
+`f` 来自参数或外部模块、没有可编辑的函数体时，在它的类型化来源（参数 schema、CodeEntry 或 FFI 合同）声明签名。
+
 ## 0.31.0 用 Emptyable 保留空值的接收者类型
 
 `empty` 与 `.empty` 保留 Number 的 0、String 的空字符串，以及 List、Map、Set 的空集合语义；容器的成员类型继续保留。

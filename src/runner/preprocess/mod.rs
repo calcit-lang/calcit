@@ -14246,6 +14246,7 @@ pub fn preprocess_hint_fn(
         target_raw.get_location(),
       ));
     }
+    note_legacy_hint_fn_target(&local.sym, ctx.file_ns, source_location_in_namespace(target_raw, ctx.file_ns));
     ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
     local.type_info = type_entry;
     ys[1] = Calcit::Local(local);
@@ -16109,6 +16110,33 @@ fn note_legacy_optional_type(position: &str, annotation: &CalcitTypeAnnotation, 
     message,
     location,
     Some("W_LEGACY_OPTIONAL_TYPE".to_owned()),
+    None,
+  ));
+}
+
+/// Advisory for the two-argument `(hint-fn f schema)` compatibility form in
+/// project source (#2172). It never fails a check: remaining uses migrate to a
+/// Map hint in the body of the function that defines `f` before the form is
+/// removed in 0.32.0. Core keeps its compatibility tests until that removal.
+fn note_legacy_hint_fn_target(target: &str, file_ns: &str, location: Option<NodeLocation>) {
+  let Some(location) = location else {
+    return;
+  };
+  if file_ns == calcit::CORE_NS
+    || !should_emit_project_source_lint(file_ns)
+    || location.ns.as_ref() != file_ns
+    || location.def.as_ref() == GENERATED_DEF
+  {
+    return;
+  }
+  let message = format!(
+    "[Warn] two-argument `hint-fn {target} schema` in {}/{} is a compatibility form that will be removed in 0.32.0; move the schema Map into the body of the function that defines `{target}` as `(hint-fn $ {{}} (:args ...) (:return ...))`",
+    location.ns, location.def
+  );
+  push_advisory(LocatedWarning::new_with_detail(
+    message,
+    location,
+    Some("W_LEGACY_HINT_FN_TARGET".to_owned()),
     None,
   ));
 }
