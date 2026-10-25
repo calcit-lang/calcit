@@ -563,6 +563,18 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-number-index-direct $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-number-index-direct (index)
+            .contains? (Option :some 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+        'test-enum-number-index-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-number-index-helper (index)
+            enum-index-helper (Option :some 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
         'test-enum-receiver-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-receiver-error ()
             enum-index-helper

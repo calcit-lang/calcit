@@ -8138,6 +8138,17 @@ fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -
   if args.len() != 1 {
     return Err(format!("{}? expects 1 arg, got {}", type_name, args.len()));
   }
+  // A proven Number may have the same bits as a live heap pointer. Preserve
+  // its call-site evidence instead of reclassifying it from linear memory.
+  if type_name == "number"
+    && infer_wasm_static_type(ctx, &args[0])
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
+  {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(1.0));
+    return Ok(());
+  }
   let expected_tag = get_type_tag(ctx, type_name);
   // Emit type-of, which leaves a tag f64 on the stack
   emit_type_of(ctx, args)?;

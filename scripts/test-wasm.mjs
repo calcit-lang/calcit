@@ -378,6 +378,16 @@ check("test-call-spread-rest()", 15, e["test-call-spread-rest"]);
 check("test-enum-sum()", 30, e["test-enum-sum"]);
 check("test-enum-count()", 3, e["test-enum-count"]);
 
+// A valid Number may equal a live heap pointer. Its proven scalar type must
+// win over pointer heuristics in both direct and generic trait lowering.
+const enumNumericPointer = allocString(0);
+new DataView(inst.exports.memory.buffer).setFloat64(enumNumericPointer, 0, true);
+assert.equal(readWasmStr(enumNumericPointer), "", "the numeric alias must identify a real live heap object");
+for (const route of ["direct", "helper"]) {
+  const name = `test-enum-number-index-${route}`;
+  check(`${name}(live heap pointer as Number)`, 0, e[name], enumNumericPointer);
+}
+
 // Known nominal calls inline their trait implementation; generic calls use
 // scalar specialization. Neither route may compare an erased nil/Bool/Tag as Number.
 for (const route of ["direct", "helper"]) {
