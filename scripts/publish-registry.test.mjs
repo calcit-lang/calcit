@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { existingCrate, existingNpm, publicationBranch, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan, waitForPublished } from "./publish-registry.mjs";
+import { existingCrate, existingNpm, publicationBranch, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan, waitForBranchCI, waitForPublished } from "./publish-registry.mjs";
 
 const tag = "0.29.0-alpha.21";
 const sha = "a".repeat(40);
@@ -15,24 +15,41 @@ const runs = ["Test", "Push on main"].map((name, index) => ({
   head_branch: "main", status: "completed", conclusion: "success",
 }));
 
-test("publication prepares its local JS runtime before Rust integration tests", () => {
+const workflowJobs = workflow => Object.fromEntries(workflow.split(/\n(?=  [a-z_]+:\n)/).slice(1)
+  .map(block => [/^  ([a-z_]+):/.exec(block)[1], block]));
+
+test("publication runs only after every parallel release gate and never repeats branch CI", () => {
   const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
-  const preparation = /- name: Prepare local JavaScript runtime for integration tests\n\s+run: \|([\s\S]*?)(?=\n      -)/.exec(workflow);
-  assert.ok(preparation, "Publication must initialize the tested source's JS runtime");
-  assert.match(preparation[1], /^\s+yarn install --immutable\s*$/m);
-  assert.match(preparation[1], /^\s+yarn compile\s*$/m);
-  assert.match(preparation[1], /^\s+yarn procs-link\s*$/m);
-  const rustTests = workflow.indexOf("- run: cargo test");
-  assert.ok(rustTests > preparation.index, "Generated-JS Rust tests require dependencies, build and local link first");
+  const jobs = workflowJobs(workflow.slice(workflow.indexOf("\njobs:\n")));
+  assert.deepEqual(Object.keys(jobs),
+    ["verify_source", "branch_ci", "standard_binary", "no_wasm_binary", "package_dry_run", "publish"]);
+  assert.match(jobs.publish,
+    /^    needs: \[verify_source, branch_ci, standard_binary, no_wasm_binary, package_dry_run\]$/m);
+  for (const gate of ["branch_ci", "standard_binary", "no_wasm_binary", "package_dry_run"]) {
+    assert.match(jobs[gate], /^    needs: verify_source$/m, `${gate} must start from the verified tag`);
+  }
+  assert.match(jobs.branch_ci, /publish-registry\.mjs ci "\$RELEASE_TAG"/);
+  assert.match(jobs.package_dry_run, /cargo publish --dry-run --locked/);
+  // Branch Test already ran these on the exact commit; the gates must not run them again.
+  assert.doesNotMatch(workflow.replace(/^\s*#.*$/gm, ""), /cargo test|check-all|check-docs-md|run-core-tests/);
+  // Only the final job may write releases or mint registry identities.
+  assert.match(workflow, /^permissions:\n  contents: read\n\n/m);
+  for (const [name, job] of Object.entries(jobs)) {
+    assert.equal(/contents: write|id-token: write/.test(job), name === "publish", `${name} permissions`);
+  }
 });
 
 test("publication checkout explicitly selects the event ref and preserves annotated tags", (t) => {
   const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
-  const checkout = /- uses: actions\/checkout@v4\n\s+with:([\s\S]*?)(?=\n      -)/.exec(workflow)?.[1];
-  assert.ok(checkout, "Expected the publication checkout configuration");
-  assert.match(checkout, /^\s+ref: \$\{\{ github\.ref \}\}\s*$/m);
-  assert.match(checkout, /^\s+fetch-depth: 0\s*$/m);
-  assert.match(checkout, /^\s+persist-credentials: false\s*$/m);
+  const jobs = workflowJobs(workflow.slice(workflow.indexOf("\njobs:\n")));
+  for (const [name, job] of Object.entries(jobs)) {
+    const checkout = /- uses: actions\/checkout@v4\n\s+with:([\s\S]*?)(?=\n\n|\n      -)/.exec(job)?.[1];
+    assert.ok(checkout, `Expected the ${name} checkout configuration`);
+    assert.match(checkout, /^\s+ref: \$\{\{ github\.ref \}\}\s*$/m);
+    assert.match(checkout, /^\s+persist-credentials: false\s*$/m);
+    // Jobs that run publish-registry.mjs need the annotated tag and branch history.
+    if (job.includes("publish-registry.mjs")) assert.match(checkout, /^\s+fetch-depth: 0\s*$/m, name);
+  }
 
   // Reproduce the fetch commands recorded in failed Publish run 37898278970.
   // checkout's implicit event SHA replaces the tag object; explicit ref avoids that fetch.
@@ -240,4 +257,49 @@ test("network and source identity errors stop waiting immediately", async (t) =>
   await assert.rejects(waitForPublished("npm", tag, sha, existingNpm, clock), /different or unknown commit/);
   globalThis.fetch.mock.mockImplementation(async () => new Response(JSON.stringify({ vers: tag, yanked: true })));
   await assert.rejects(waitForPublished("crate", tag, sha, existingCrate, clock), /yanked/);
+});
+
+test("branch CI that is still running when the tag is pushed is awaited, not rejected", async () => {
+  // Publish runs 40188001842 and 40188548225 started before Test on the tagged commit finished.
+  let time = 0;
+  const states = [[], [{ ...runs[0], status: "in_progress", conclusion: null }, runs[1]], runs];
+  const result = await waitForBranchCI(sha, "main", async () => states.shift(), {
+    now: () => time, sleep: async delay => { assert.equal(delay, 30000); time += delay; }, log: () => {},
+  });
+  assert.equal(result, runs);
+  assert.equal(time, 60000);
+});
+
+test("branch CI waiting fails at once on red runs and is bounded otherwise", async () => {
+  const clock = { now: () => 0, sleep: async () => assert.fail("Failed CI must not be awaited"), log: () => {} };
+  for (const conclusion of ["failure", "cancelled"]) {
+    await assert.rejects(waitForBranchCI(sha, "main", async () => [{ ...runs[0], conclusion }, runs[1]], clock),
+      /Test must pass before publication/);
+  }
+  await assert.rejects(waitForBranchCI(sha, "main", async () => [...runs, { ...runs[0], id: 10, conclusion: "failure" }], clock));
+  for (const [pending, limit, message] of [
+    [[runs[0]], 5 * 60 * 1000, /Missing exact-main Push on main workflow/],
+    [[runs[0], { ...runs[1], status: "queued", conclusion: null }], 45 * 60 * 1000, /Timed out waiting for Push on main \(queued\)/],
+  ]) {
+    let time = 0;
+    await assert.rejects(waitForBranchCI(sha, "main", async () => pending, {
+      now: () => time, sleep: async delay => { time += delay; }, log: () => {},
+    }), message);
+    assert.equal(time, limit);
+  }
+  // Runs on another branch or commit never count, even while waiting.
+  let time = 0;
+  await assert.rejects(waitForBranchCI(sha, "main", async () => runs.map(run => ({ ...run, head_branch: "feature" })), {
+    now: () => time, sleep: async delay => { time += delay; }, log: () => {},
+  }), /Missing exact-main/);
+});
+
+test("transient run lookup errors are retried within the deadline", async () => {
+  let time = 0;
+  let calls = 0;
+  await waitForBranchCI(sha, "main", async () => {
+    if (calls++ === 0) throw new Error("HTTP 502");
+    return runs;
+  }, { now: () => time, sleep: async delay => { time += delay; }, log: () => {} });
+  assert.equal(calls, 2);
 });

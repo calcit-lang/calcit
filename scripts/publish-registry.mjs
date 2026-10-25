@@ -5,13 +5,17 @@ import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function validateRelease(tag, sha, release, versions, runs) {
+export function validateReleaseSource(tag, sha, release, versions) {
   assert.match(tag, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   assert.match(sha, /^[0-9a-f]{40}$/);
   assert.equal(release.tagName, tag);
   assert.equal(release.isDraft, false, "Publish only an existing, non-draft Release");
   assert.equal(release.isPrerelease, tag.includes("-"), "Release channel must match the version");
   assert.deepEqual(versions, [tag, tag], "Cargo and npm must both match the immutable tag");
+}
+
+export function validateRelease(tag, sha, release, versions, runs) {
+  validateReleaseSource(tag, sha, release, versions);
   validateBranchCI(sha, runs, publicationBranch(tag));
 }
 
@@ -20,17 +24,71 @@ export function publicationBranch(tag) {
   return /^0\.30\.1(?:-[0-9A-Za-z.-]+)?$/.test(tag) ? "release/0.30.1" : "main";
 }
 
+const branchWorkflows = branch => [
+  ["Test", "push", ".github/workflows/test.yaml"],
+  [`Push on ${branch}`, "dynamic", "dynamic/github-code-scanning/codeql"],
+];
+
+function latestBranchRun(sha, runs, branch, [name, event, path]) {
+  return runs.filter(run => run.name === name && run.head_sha === sha
+    && run.event === event && run.path === path && run.head_branch === branch)
+    .sort((a, b) => b.id - a.id)[0];
+}
+
 function validateBranchCI(sha, runs, branch) {
-  for (const [name, event, path] of [
-    ["Test", "push", ".github/workflows/test.yaml"],
-    [`Push on ${branch}`, "dynamic", "dynamic/github-code-scanning/codeql"],
-  ]) {
-    const latest = runs.filter(run => run.name === name && run.head_sha === sha
-      && run.event === event && run.path === path && run.head_branch === branch)
-      .sort((a, b) => b.id - a.id)[0];
+  for (const workflow of branchWorkflows(branch)) {
+    const [name] = workflow;
+    const latest = latestBranchRun(sha, runs, branch, workflow);
     assert.ok(latest, `Missing exact-${branch} ${name} workflow for ${sha}`);
     assert.equal(latest.status, "completed", `${name} must finish before publication`);
     assert.equal(latest.conclusion, "success", `${name} must pass before publication`);
+  }
+}
+
+// A release is often tagged right after its merge, while branch CI on that commit is still running.
+// Wait for pending runs instead of failing; a missing run gets a short grace period, a finished
+// non-success run fails at once, and the final decision is the strict validateBranchCI above.
+export async function waitForBranchCI(sha, branch, fetchRuns, {
+  now = () => performance.now(),
+  sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
+  timeoutMs = 45 * 60 * 1000,
+  missingTimeoutMs = 5 * 60 * 1000,
+  intervalMs = 30000,
+  log = console.log,
+} = {}) {
+  const start = now();
+  for (;;) {
+    let runs;
+    try {
+      runs = await fetchRuns();
+    } catch (error) {
+      // A GitHub API hiccup during a long wait is retried; the deadline still bounds it.
+      assert.ok(now() - start < timeoutMs, error.message);
+      log(`Retrying workflow run lookup: ${error.message}`);
+      await sleep(intervalMs);
+      continue;
+    }
+    const elapsed = now() - start;
+    const waiting = [];
+    for (const workflow of branchWorkflows(branch)) {
+      const [name] = workflow;
+      const latest = latestBranchRun(sha, runs, branch, workflow);
+      if (!latest) {
+        assert.ok(elapsed < missingTimeoutMs, `Missing exact-${branch} ${name} workflow for ${sha}`);
+        waiting.push(`${name} (not started)`);
+      } else if (latest.status !== "completed") {
+        waiting.push(`${name} (${latest.status})`);
+      } else {
+        assert.equal(latest.conclusion, "success", `${name} must pass before publication`);
+      }
+    }
+    if (waiting.length === 0) {
+      validateBranchCI(sha, runs, branch);
+      return runs;
+    }
+    assert.ok(elapsed < timeoutMs, `Timed out waiting for ${waiting.join(", ")} on ${sha}`);
+    log(`Waiting for ${waiting.join(", ")} on ${sha}`);
+    await sleep(Math.min(intervalMs, timeoutMs - elapsed));
   }
 }
 
@@ -117,7 +175,7 @@ export async function waitForPublished(registry, version, sha, exists, {
 
 async function main() {
   const [mode, tag] = process.argv.slice(2);
-  assert.ok(["prepare", "crate", "npm"].includes(mode), "Expected prepare, crate or npm and a release tag");
+  assert.ok(["prepare", "ci", "crate", "npm"].includes(mode), "Expected prepare, ci, crate or npm and a release tag");
   assert.match(tag ?? "", /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   const sha = run("git", ["rev-parse", "HEAD"]).trim();
   assert.equal(run("git", ["cat-file", "-t", `refs/tags/${tag}`]).trim(), "tag", "Release tag must be annotated");
@@ -130,16 +188,25 @@ async function main() {
   assert.equal(pkg.version, tag);
   assert.equal(cargo?.version, tag);
 
+  const repo = process.env.GITHUB_REPOSITORY;
   if (mode === "prepare") {
-    const repo = process.env.GITHUB_REPOSITORY;
     assert.equal(repo, "calcit-lang/calcit");
     run("git", ["merge-base", "--is-ancestor", sha, `refs/remotes/origin/${publicationBranch(tag)}`]);
     const release = json("gh", ["release", "view", tag, "--repo", repo, "--json", "tagName,isDraft,isPrerelease"]);
-    const pages = json("gh", ["api", "--paginate", "--slurp", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`]);
-    validateRelease(tag, sha, release, [cargo.version, pkg.version], pages.flatMap(page => page.workflow_runs));
+    validateReleaseSource(tag, sha, release, [cargo.version, pkg.version]);
     assert.equal(run("git", ["status", "--porcelain"]).trim(), "", "Release checkout must start clean");
     await appendFile(process.env.GITHUB_OUTPUT, `sha=${sha}\nprerelease=${release.isPrerelease}\n`);
-    console.log(`Verified immutable release ${tag} at ${sha}`);
+    console.log(`Verified immutable release source ${tag} at ${sha}`);
+    return;
+  }
+
+  if (mode === "ci") {
+    assert.equal(repo, "calcit-lang/calcit");
+    assert.equal(process.env.RELEASE_SHA, sha, "Branch CI must be checked for the preflight-verified SHA");
+    const branch = publicationBranch(tag);
+    await waitForBranchCI(sha, branch, async () => json("gh", ["api", "--paginate", "--slurp",
+      `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`]).flatMap(page => page.workflow_runs));
+    console.log(`Verified ${branch} Test and CodeQL for ${sha}`);
     return;
   }
 
