@@ -328,7 +328,7 @@ check("test-let-chain(3)", 20, e["test-let-chain"], 3);
 check("collatz-steps(27)", 111, e["collatz-steps"], 27);
 check("gcd(48,18)", 6, e.gcd, 48, 18);
 
-// --- Ref tests: `defref` and the compatibility spelling `defatom` share one global lowering ---
+// --- Ref tests: namespace `defref` values lower to WASM globals ---
 check("bump-ref-counter(5)", 15, e["bump-ref-counter"], 5);
 check("bump-ref-counter(5) keeps state", 20, e["bump-ref-counter"], 5);
 check("bump-atom-counter(1)", 21, e["bump-atom-counter"], 1);

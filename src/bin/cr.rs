@@ -3023,7 +3023,7 @@ mod tests {
   #[test]
   fn type_coverage_recognizes_ref_value_schemas() {
     let dynamic_ref = code_entry(
-      list(vec![leaf("defatom"), leaf("*cache"), list(vec![leaf("{}")])]),
+      list(vec![leaf("defref"), leaf("*cache"), list(vec![leaf("{}")])]),
       CalcitTypeAnnotation::Ref(calcit::calcit::DYNAMIC_TYPE.clone()),
     );
     let typed_ref = code_entry(

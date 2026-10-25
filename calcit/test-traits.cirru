@@ -1027,7 +1027,7 @@
             let
                 Person $ impl-traits Person0 CoreToStringImpl
                 p $ %{} Person $ :name |Alice
-              assert= |Person:Alice $ turn-string p
+              assert= |Person:Alice $ to-string p
               to-string p
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)

@@ -333,10 +333,17 @@ try {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "contextual-map-output", "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "loop-empty-accumulator", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [name, parameters, generics, types, returned, body] of [
         ["wrong-output-owner", "xs f", "'T 'U", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'U))", "T", ".map xs $ fn (value) $ f value"],
         ["concrete-output", "xs", "'T", "(:: 'List 'T)", "T", "map xs $ fn (_value) |not-a-generic"],
         ["open-output", "xs f", "'T 'MapOutput", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'Dynamic))", "MapOutput", "map xs $ fn (value) $ f value"],
+        // An empty loop accumulator is solved from its recur transfers, not
+        // borrowed from the return: a concrete or mixed member cannot be T.
+        ["loop-concrete-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append acc |x)"],
+        ["loop-mixed-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append (&list:append acc x) 1)"],
       ]) {
         const operations = JSON.stringify([
           ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${parameters})\n  ${body}`],
@@ -366,6 +373,53 @@ try {
         }
         runMapper("edit", "rm-def", `app.main/${name}`);
       }
+      // An empty field of a generic struct literal is proved against the
+      // declared applied argument instead of binding it to Dynamic; a field of
+      // the wrong family or a concrete seed still cannot specialize the return.
+      const boxOperations = JSON.stringify([
+        ["edit", "def", "app.main/FieldBox", "--input-format", "cirru", "--code",
+          "quote $ defstruct FieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)"],
+        ["edit", "schema", "app.main/FieldBox", "--input-format", "cirru", "--code", "quote $ :: 'StructDef"],
+      ]);
+      const boxPreview = JSON.parse(runMapper("edit", "transaction", "--code", boxOperations, "--dry-run", "--format", "json"));
+      runMapper("edit", "transaction", "--code", boxOperations, "--expect-revision", boxPreview.scoped_revision, "--format", "edn");
+      for (const [name, items, seed, accepted] of [
+        ["empty-field-box", "[]", "seed", true],
+        ["number-field-box", "[] 1", "seed", false],
+        ["map-field-box", "{}", "seed", false],
+        ["string-seed-box", "[]", "|seed", false],
+      ]) {
+        const operations = JSON.stringify([
+          ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code",
+            `quote $ defn ${name} (seed)\n  FieldBox :items (${items}) :seed ${seed}`],
+          ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:generics $ [] 'T 'S) (:args $ [] 'S) (:return $ :: 'app.main/FieldBox 'T 'S)"],
+        ]);
+        const preview = JSON.parse(runMapper("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
+        runMapper("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const original = await readFile(mapperSnapshot);
+        for (const args of [
+          ["--check-only", "--all-defs"],
+          ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+        ]) {
+          const result = spawnSync(binary, [mapperSnapshot, ...args], options);
+          if (result.error) throw result.error;
+          if (accepted) {
+            assert.equal(result.status, 0, `${name}: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+          } else {
+            assert.notEqual(result.status, 0, `${name}: a mismatched field cannot prove the generic struct return`);
+            // The single-rule preview may refuse earlier, on the field contradiction itself.
+            assert.match(result.stdout + result.stderr, /E_ERASED_GENERIC_RELATION|cannot borrow a contradictory producer contract/);
+          }
+          assert.deepEqual(await readFile(mapperSnapshot), original);
+        }
+        runMapper("edit", "rm-def", `app.main/${name}`);
+      }
+      runMapper("edit", "rm-def", "app.main/FieldBox");
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "empty-field-struct", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       // #2121: enum payload names use their declaration namespace, including
       // recursive branches. Caller-owned generic arguments retain their identity.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
@@ -1931,7 +1985,7 @@ try {
       const effectsOperations = [
         ["edit", "add-ns", "calcit.core-truthiness-effects"],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-count", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defatom", "truthiness-count", "0"])],
+          JSON.stringify(["defref", "truthiness-count", "0"])],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "truthiness-number-once", ["value"],
             ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],

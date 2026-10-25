@@ -1252,6 +1252,16 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "w-log" | "w-js-log" => Some(("0.31.0", "use `dbg`, or an explicit `js/console.log` for the host object view")),
     "wo-log" | "wo-js-log" => Some(("0.31.0", "write `x` for `(wo-log x)`; it returned its argument unchanged")),
     "flipped" => Some(("0.31.0", "write `(f b a)` for `(flipped f a b)`")),
+    "let{}" => Some((
+      "0.31.0",
+      "bind the Map once with `let`, then read each Tag key with `get` and handle the Option result",
+    )),
+    "let-destruct" => Some(("0.31.0", "use `let` for a symbol pattern and `let[]` for a `([] ...)` pattern")),
+    "remove-watch" => Some(("0.31.0", "use `remove-watch!`")),
+    "turn-string" => Some(("0.31.0", "use `to-string`")),
+    "%ok" => Some(("0.31.0", "use `Result :ok value`")),
+    "%err" => Some(("0.31.0", "use `Result :err error`")),
+    "defatom" => Some(("0.31.0", "use `defref`")),
     _ => None,
   }
 }
@@ -8536,20 +8546,16 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
     Some("find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin" | "enum-definition") => {
       Some("Option".to_owned())
     }
-    Some("%ok" | "%err" | "parse-float" | "get-in") => Some("Result".to_owned()),
+    Some("parse-float" | "get-in") => Some("Result".to_owned()),
     _ => None,
   }
 }
 
 fn core_stringification_operation(head: &Calcit) -> Option<&str> {
   match head {
-    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "str" | "turn-string") => {
-      Some(def.as_ref())
-    }
-    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "str" | "turn-string") => {
-      Some(info.name.as_ref())
-    }
-    Calcit::Proc(CalcitProc::TurnString) => Some("turn-string"),
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "str" => Some(def.as_ref()),
+    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "str" => Some(info.name.as_ref()),
+    Calcit::Proc(CalcitProc::TurnString) => Some("&turn-string"),
     _ => None,
   }
 }
@@ -18616,7 +18622,7 @@ mod tests {
       "demo",
       &stack,
     )
-    .expect_err("strict turn-string should reject a Result");
+    .expect_err("strict &turn-string should reject a Result");
     assert_eq!(result_error.code.as_deref(), Some("E_NOMINAL_ENUM_STRINGIFICATION"));
     assert!(result_error.msg.contains("pattern-match the Result"));
 

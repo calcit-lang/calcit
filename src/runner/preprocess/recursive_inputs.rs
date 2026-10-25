@@ -9,6 +9,18 @@ fn pending_variable(identity: usize) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(format!("{PENDING_PREFIX}{identity}"))))
 }
 
+/// A loop slot still being solved carries no member evidence of its own.
+pub(super) fn is_pending_slot(annotation: &CalcitTypeAnnotation) -> bool {
+  matches!(annotation, CalcitTypeAnnotation::TypeVar(name) if name.strip_prefix(PENDING_PREFIX).is_some_and(|rest| rest.starts_with("slot/")))
+}
+
+fn has_slot_variable(annotation: &CalcitTypeAnnotation) -> bool {
+  let prefix = format!("{PENDING_PREFIX}slot/");
+  crate::calcit::type_annotation::free_type_variable_names(&[Arc::new(annotation.clone())])
+    .iter()
+    .any(|name| name.starts_with(&prefix))
+}
+
 fn has_pending_variable(annotation: &CalcitTypeAnnotation) -> bool {
   crate::calcit::type_annotation::free_type_variable_names(&[Arc::new(annotation.clone())])
     .iter()
@@ -183,7 +195,11 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
             };
             // Repeated callee slots connect independently supplied arguments;
             // only compiler-owned pending inputs may be solved by that relation.
-            if let Some(instantiated) = proof.result(expected) {
+            // An open proc parameter says nothing about a loop slot's members;
+            // collection growth inference supplies them through the transfer.
+            if let Some(instantiated) = proof.result(expected)
+              && !(constraints.tail_transfers && has_slot_variable(&annotation) && contains_dynamic_type(expected))
+            {
               constraints.join_branches(vec![Some(annotation.clone()), Some(instantiated)], &ctx)?;
             }
             proof.prove(&annotation, expected);
@@ -384,6 +400,8 @@ fn prepare_body(args: &CalcitList, ctx: PreprocessContext, constraints: &mut Con
 #[derive(Default)]
 pub(super) struct Constraints {
   bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  /// Set while solving a body with tail transfers, whose slots are solved from them.
+  tail_transfers: bool,
 }
 
 impl Constraints {
@@ -506,7 +524,10 @@ pub(super) fn solve(
       empty_slot_template(annotation, &prefix, &mut roots)
     })
     .collect::<Vec<_>>();
-  let mut constraints = Constraints::default();
+  let mut constraints = Constraints {
+    tail_transfers: true,
+    ..Default::default()
+  };
   let mut current = templates.clone();
   loop {
     let mut types = ctx.scope_types.clone();
@@ -519,7 +540,13 @@ pub(super) fn solve(
       &mut constraints,
     )?;
     source_replay::Scope::rewind_function();
-    for transfer in type_inference::lexical_recur_inputs(&prepared, &types, initial.len()) {
+    let transfers = type_inference::lexical_recur_inputs(&prepared, &types, initial.len());
+    if constraints.tail_transfers && transfers.is_empty() {
+      // Without a tail transfer, call constraints are the only slot evidence.
+      constraints = Constraints::default();
+      continue;
+    }
+    for transfer in transfers {
       for (index, actual) in transfer.iter().enumerate() {
         if !type_inference::has_inferred_empty_slot(&initial[index]) {
           continue;

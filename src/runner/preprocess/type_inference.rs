@@ -221,10 +221,12 @@ fn merge_if_branch_types(
   true_type: Arc<CalcitTypeAnnotation>,
   false_type: Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Never) {
+  // A recursive-input slot still being solved is absent evidence like Never;
+  // the solver binds it from the peers it is joined with.
+  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Never) || super::recursive_inputs::is_pending_slot(&true_type) {
     return Some(false_type);
   }
-  if matches!(false_type.as_ref(), CalcitTypeAnnotation::Never) {
+  if matches!(false_type.as_ref(), CalcitTypeAnnotation::Never) || super::recursive_inputs::is_pending_slot(&false_type) {
     return Some(true_type);
   }
   // Root Dynamic admits every value shape. A container with several open
@@ -304,17 +306,17 @@ fn nominal_constructor_variant(expr: &Calcit) -> Option<&'static str> {
   if is_core_option_none_construction(items) {
     return Some("none");
   }
-  match items.first()? {
-    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS => match def.as_ref() {
-      "%ok" => Some("ok"),
-      "%err" => Some("err"),
-      _ => None,
-    },
-    Calcit::Registered(name) => match name.as_ref() {
-      "%ok" | "calcit.core/%ok" => Some("ok"),
-      "%err" | "calcit.core/%err" => Some("err"),
-      _ => None,
-    },
+  // The lowered `Result :ok value` / `Result :err error` construction.
+  match (items.len(), items.first(), items.get(1), items.get(2)) {
+    (4, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import)), Some(Calcit::Tag(variant)))
+      if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Result" =>
+    {
+      match variant.ref_str() {
+        "ok" => Some("ok"),
+        "err" => Some("err"),
+        _ => None,
+      }
+    }
     _ => None,
   }
 }
@@ -360,9 +362,6 @@ fn core_result_err_payload_types<'a>(
 ) -> Option<(&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)> {
   let Calcit::List(items) = expr else { return None };
   let is_core_err = match (items.len(), items.first(), items.get(1), items.get(2)) {
-    (2, Some(Calcit::Import(CalcitImport { ns, def, .. })), _, _) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%err",
-    (2, Some(Calcit::Fn { info, .. }), _, _) => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "%err",
-    (2, Some(Calcit::Registered(name)), _, _) => name.as_ref() == "calcit.core/%err",
     (4, Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)), Some(Calcit::Import(import)), Some(Calcit::Tag(variant))) => {
       import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Result" && variant.ref_str() == "err"
     }
@@ -1164,8 +1163,6 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
 
-  let is_core_enum_constructor = ns == calcit::CORE_NS && matches!(def, "%ok" | "%err");
-
   // A definition schema is the public contract and is stronger evidence than
   // a Dynamic return inferred from its implementation body. Read it before
   // compiled metadata so generic collection/ref shapes survive call sites.
@@ -1294,18 +1291,14 @@ pub(crate) fn infer_return_type_from_compiled_callable(
             resolved
           });
         }
-        if !is_core_enum_constructor || !signature.return_type.contains_type_var() {
-          return Some(if definition_marks_async(ns, def) {
-            pending_async_value(signature.return_type.clone())
-          } else {
-            signature.return_type.clone()
-          });
-        }
+        return Some(if definition_marks_async(ns, def) {
+          pending_async_value(signature.return_type.clone())
+        } else {
+          signature.return_type.clone()
+        });
       }
       Calcit::Proc(proc) => {
-        if let Some(type_sig) = proc.get_type_signature()
-          && (!is_core_enum_constructor || !type_sig.return_type.contains_type_var())
-        {
+        if let Some(type_sig) = proc.get_type_signature() {
           return Some(resolve_namespace_type_refs_for_body(type_sig.return_type.clone(), ns));
         }
       }
@@ -1313,45 +1306,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     }
   }
 
-  if !is_core_enum_constructor {
-    return None;
-  }
-
-  let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() else {
-    return None;
-  };
-  if info.generics.is_empty() || !info.return_type.contains_type_var() {
-    return Some(invocation_return_type(
-      info,
-      info.return_type.clone(),
-      definition_marks_async(ns, def),
-    ));
-  }
-
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  for (arg, expected_type) in call_expr.iter().skip(1).zip(info.arg_types.iter()) {
-    if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-      && let Some(actual_type) = resolve_type_value(arg, scope_types)
-      && !actual_type
-        .as_ref()
-        .prove_with_bindings(expected_type.as_ref(), &mut bindings)
-        .is_proven()
-    {
-      return None;
-    }
-  }
-  // A constructor such as `%err` has no payload from which to infer one or
-  // more generic arguments. Preserve its nominal enum identity with Dynamic
-  // type arguments, but do not synthesize partial types for ordinary functions.
-  for generic in info.generics.iter() {
-    bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
-  }
-  let resolved = info.return_type.substitute_type_vars(&bindings);
-  if resolved.contains_type_var() {
-    return None;
-  }
-  (resolved.resolve_to_struct().is_some() || resolved.resolve_to_enum().is_some())
-    .then(|| invocation_return_type(info, resolved, definition_marks_async(ns, def)))
+  None
 }
 
 thread_local! {
@@ -2049,7 +2004,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           Some(infer_preprocessed_function_type(xs))
         }
 
-        // A `defatom` expression evaluates to the reference that it defines.
+        // A `defref` expression evaluates to the reference that it defines.
         // Preserve the initializer type so imported atoms and receiver-first
         // `.deref` calls do not lose `Ref<T>` at the definition boundary.
         Calcit::Syntax(CalcitSyntax::Defref, _) => xs
@@ -4034,7 +3989,7 @@ pub(super) fn infer_struct_value_annotation(struct_value: &CalcitStructValue, sc
   }
 }
 
-fn collect_struct_literal_values(xs: &CalcitList, struct_value: &CalcitStructValue) -> Option<Vec<Calcit>> {
+pub(super) fn collect_struct_literal_values(xs: &CalcitList, struct_value: &CalcitStructValue) -> Option<Vec<Calcit>> {
   if xs.len() < 2 {
     return None;
   }
@@ -4240,6 +4195,22 @@ mod tests {
       Calcit::Proc(CalcitProc::NativeNamedEnumNew),
       option_import(ns),
       Calcit::tag("none"),
+    ])
+  }
+
+  fn lowered_result_construction(ns: &str, variant: &str, payload: Calcit) -> Calcit {
+    Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(ns),
+        def: Arc::from("Result"),
+        info: Arc::new(ImportInfo::Core {
+          at_ns: Arc::from("tests.result"),
+        }),
+        def_id: None,
+      }),
+      Calcit::tag(variant),
+      payload,
     ])
   }
 
@@ -4642,9 +4613,9 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E"))),
       ]),
     );
-    let err = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%err")), Calcit::Number(3.0)]);
-    let ok = Calcit::from(vec![Calcit::Registered(Arc::from("calcit.core/%ok")), Calcit::Number(3.0)]);
-    let shadowed = Calcit::from(vec![Calcit::Registered(Arc::from("app/%err")), Calcit::Number(3.0)]);
+    let err = lowered_result_construction(calcit::CORE_NS, "err", Calcit::Number(3.0));
+    let ok = lowered_result_construction(calcit::CORE_NS, "ok", Calcit::Number(3.0));
+    let shadowed = lowered_result_construction("app", "err", Calcit::Number(3.0));
     let mut bindings = HashMap::new();
     assert_eq!(
       bind_core_result_err_without_ok_payload(&err, &actual, &expected, &mut bindings),
@@ -4758,8 +4729,8 @@ mod tests {
         Arc::new(vec![ok, err]),
       ))
     };
-    let ok_expr = Calcit::from(vec![Calcit::Registered(Arc::from("%ok")), Calcit::Number(1.0)]);
-    let err_expr = Calcit::from(vec![Calcit::Registered(Arc::from("%err")), Calcit::Str(Arc::from("failed"))]);
+    let ok_expr = lowered_result_construction(calcit::CORE_NS, "ok", Calcit::Number(1.0));
+    let err_expr = lowered_result_construction(calcit::CORE_NS, "err", Calcit::Str(Arc::from("failed")));
     let ok_type = result(Arc::new(CalcitTypeAnnotation::Number), calcit::DYNAMIC_TYPE.clone());
     let err_type = result(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::String));
     let expected = result(Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String));
@@ -5314,7 +5285,7 @@ mod tests {
   }
 
   #[test]
-  fn defatom_expression_preserves_initializer_type() {
+  fn defref_expression_preserves_initializer_type() {
     let expression = Calcit::from(vec![
       Calcit::Syntax(CalcitSyntax::Defref, Arc::from(calcit::CORE_NS)),
       symbol("*counter"),

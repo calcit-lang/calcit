@@ -1415,7 +1415,7 @@ for (const target of [":: 'List 'Number", ":: 'Map 'Tag 'Number", ":: 'Set 'Numb
     assert.ok(!methods.some(method => method.name === ".add"));
   }
 }
-for (const [definition, role] of [["%ok", "constructor"], ["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
+for (const [definition, role] of [["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
   const queried = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", `calcit.core/${definition}`, "--format", "json"], {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
@@ -1423,10 +1423,6 @@ for (const [definition, role] of [["%ok", "constructor"], ["option:unwrap", "int
   });
   assert.equal(queried.status, 0, `${definition}: ${queried.stderr}`);
   assert.ok(JSON.parse(queried.stdout).data.tags.includes(role), `${definition} lost its ${role} role`);
-  if (definition === "%ok") {
-    assert.ok(JSON.parse(queried.stdout).data.tags.includes("deprecated"), "legacy constructor should expose deprecation to Agents");
-    assert.match(JSON.parse(queried.stdout).data.doc, /Result :ok value/);
-  }
 }
 
 const directOptionQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", "calcit.core/Option", "--format", "json"], {

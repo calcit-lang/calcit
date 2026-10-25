@@ -16,7 +16,7 @@
       :defs $ {}
         '*unsafe $ %{} 'CodeEntry
           :doc "|Unmarked top-level initialization must not inherit the caller's JS FFI capability."
-          :code $ quote $ defatom *unsafe (unsafe-coerce 1 'String)
+          :code $ quote $ defref *unsafe (unsafe-coerce 1 'String)
           :examples $ []
           :schema $ :: 'Ref 'String
         'coerce-host $ %{} 'CodeEntry

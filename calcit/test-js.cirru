@@ -415,10 +415,10 @@
             :features $ #{} :js-ffi
         'test-tag-keys $ %{} 'CodeEntry (:doc "|tag keys for js")
           :code $ quote $ fn ()
-            assert= |a_b $ turn-string :a_b
-            assert= |a-b $ turn-string :a-b
-            assert= |a?b $ turn-string :a?b
-            assert= |ab! $ turn-string :ab!
+            assert= |a_b $ to-string :a_b
+            assert= |a-b $ to-string :a-b
+            assert= |a?b $ to-string :a?b
+            assert= |ab! $ to-string :ab!
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)

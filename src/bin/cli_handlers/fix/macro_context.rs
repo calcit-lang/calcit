@@ -15,29 +15,8 @@ pub(super) type MacroHeadCache = BTreeMap<String, Result<Option<(Cirru, FileInSn
 /// or reorder them. Threading macros such as `->` insert arguments into the
 /// call and must not be listed here.
 const ARGUMENT_PRESERVING_CORE_MACROS: &[&str] = &[
-  "fn",
-  "def",
-  "do",
-  "and",
-  "or",
-  "assert",
-  "assert=",
-  "case",
-  "cond",
-  "either",
-  "if-let",
-  "if-not",
-  "let",
-  "let[]",
-  "let-destruct",
-  "loop",
-  "when",
-  "when-let",
-  "when-not",
-  "{}",
-  "is",
-  "is=",
-  "is-not=",
+  "fn", "def", "do", "and", "or", "assert", "assert=", "case", "cond", "either", "if-let", "if-not", "let", "let[]", "loop", "when",
+  "when-let", "when-not", "{}", "is", "is=", "is-not=",
 ];
 
 /// The call being moved, and the extra macros that pass its form through

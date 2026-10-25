@@ -626,23 +626,23 @@ try {
   assert.equal(runtimeA.reset_$x_(effectRef, 2), 2, "reset! must return the written value");
   assert.deepEqual(watchCalls, [[2, 1]], "reset! must still notify watchers");
   assert.throws(
-    () => runtimeA.remove_watch(effectRef, new runtimeA.CalcitTag("missing-watch-key")),
-    /^Error: remove-watch failed: listener with key `missing-watch-key` not found$/,
+    () => runtimeA.remove_watch_$x_(effectRef, new runtimeA.CalcitTag("missing-watch-key")),
+    /^Error: remove-watch! failed: listener with key `missing-watch-key` not found$/,
     "a missing key must fail without removing the original listener"
   );
   assert.equal(effectRef.listeners.get(watchKey), watchCallback);
-  assert.equal(runtimeA.remove_watch(effectRef, equivalentWatchKey), undefined, "same-value removal must return &unit");
+  assert.equal(runtimeA.remove_watch_$x_(effectRef, equivalentWatchKey), undefined, "same-value removal must return &unit");
   assert.equal(effectRef.listeners.size, 0, "same-value removal must remove the original listener");
   assert.throws(
-    () => runtimeA.remove_watch(effectRef, watchKey),
-    /^Error: remove-watch failed: listener with key `runtime-unit-check` not found$/
+    () => runtimeA.remove_watch_$x_(effectRef, watchKey),
+    /^Error: remove-watch! failed: listener with key `runtime-unit-check` not found$/
   );
   runtimeA.reset_$x_(effectRef, 3);
   assert.deepEqual(watchCalls, [[2, 1]], "a removed watcher must not run again");
   assert.equal(runtimeA.add_watch_$x_(effectRef, equivalentWatchKey, watchCallback), undefined);
   runtimeA.reset_$x_(effectRef, 4);
   assert.deepEqual(watchCalls, [[2, 1], [4, 3]], "explicit removal must allow same-value re-registration");
-  assert.equal(runtimeA.remove_watch(effectRef, watchKey), undefined, "interned tags must remove host-created keys");
+  assert.equal(runtimeA.remove_watch_$x_(effectRef, watchKey), undefined, "interned tags must remove host-created keys");
   const validatedEnum = new runtimeA.CalcitEnumDef(
     new runtimeA.CalcitStructValue(todoName, [todoField], [new runtimeA.CalcitSliceList([todoType])])
   );

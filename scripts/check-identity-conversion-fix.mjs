@@ -10,7 +10,7 @@ const rule = "core-identity-conversion-v1";
 const fixture = await mkdtemp(join(tmpdir(), "calcit-identity-conversion-fix-"));
 
 try {
-  const rejectedList = spawnSync(binary, ["calcit/test.cirru", "eval", "turn-string $ [] 1"], { encoding: "utf8", timeout: 60000 });
+  const rejectedList = spawnSync(binary, ["calcit/test.cirru", "eval", "to-string $ [] 1"], { encoding: "utf8", timeout: 60000 });
   assert.notEqual(rejectedList.status, 0, "List input must fail strict preprocessing before conversion");
   assert.match(rejectedList.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
 
@@ -21,15 +21,9 @@ try {
   for (const [name, code, schema] of [
     ["safe-tag", "quote $ defn safe-tag () $ turn-tag |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["safe-symbol", "quote $ defn safe-symbol () $ turn-symbol |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Symbol)"],
-    ["safe-string", "quote $ defn safe-string () $ turn-string |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["safe-number-string", "quote $ defn safe-number-string () $ turn-string 42", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["safe-tag-string", "quote $ defn safe-tag-string () $ turn-string :ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["safe-symbol-string", "quote $ defn safe-symbol-string () $ turn-string $ to-symbol |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["safe-bool-string", "quote $ defn safe-bool-string () $ turn-string false", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["safe-nil-string", "quote $ defn safe-nil-string () $ turn-string nil", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
     ["dynamic-tag", "quote $ defn dynamic-tag (value) $ turn-tag value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Tag)"],
     ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Symbol)"],
-    ["dynamic-string", "quote $ defn dynamic-string (value) $ turn-string value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String)"],
+    ["dynamic-string", "quote $ defn dynamic-string (value) $ to-string value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String)"],
     ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["name-value", "quote $ defn name-value () |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
@@ -42,22 +36,13 @@ try {
   }
   run(snapshot, "edit", "def", "test-wasm.conversion/macro-name", "--input-format", "cirru", "--code", "quote $ defmacro macro-name () |ready");
   run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-tag", "preserves-tag", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= :ready $ safe-tag");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-symbol", "preserves-symbol", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ turn-string $ safe-symbol");
+  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-symbol", "preserves-symbol", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ to-string $ safe-symbol");
   run(snapshot, "edit", "add-test", "test-wasm.conversion/from-fn", "preserves-function-argument", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= :ready $ from-fn");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-string", "preserves-string", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ safe-string");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-number-string", "preserves-number-text", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |42 $ safe-number-string");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-tag-string", "preserves-tag-text", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ safe-tag-string");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-symbol-string", "preserves-symbol-text", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ safe-symbol-string");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-bool-string", "preserves-bool-text", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |false $ safe-bool-string");
-  run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-nil-string", "preserves-nil-text", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= | $ safe-nil-string");
   run(snapshot, "test", "test-wasm.conversion/safe-tag", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/safe-symbol", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/from-fn", "--require-match");
-  for (const name of ["safe-string", "safe-number-string", "safe-tag-string", "safe-symbol-string", "safe-bool-string", "safe-nil-string"]) {
-    run(snapshot, "test", `test-wasm.conversion/${name}`, "--require-match");
-  }
   // An explicit open input cannot acquire ToString merely from its use in
-  // the body. Invalid source must fail staged validation atomically, rather
+  // the body, even outside the rule's own conversions. Invalid source must fail staged validation atomically, rather
   // than being silently inferred as a capability-bearing parameter.
   const invalidSource = await readFile(snapshot, "utf8");
   const invalidPreview = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"],
@@ -72,9 +57,7 @@ try {
   const preview = JSON.parse(run(snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"));
   const applicable = preview.data.suggestions.filter((item) => item.applicability === "machine-applicable");
   assert.deepEqual(applicable.map((item) => item.definition).sort(), [
-    "test-wasm.conversion/from-fn", "test-wasm.conversion/safe-bool-string", "test-wasm.conversion/safe-nil-string",
-    "test-wasm.conversion/safe-number-string", "test-wasm.conversion/safe-string", "test-wasm.conversion/safe-symbol",
-    "test-wasm.conversion/safe-symbol-string", "test-wasm.conversion/safe-tag", "test-wasm.conversion/safe-tag-string",
+    "test-wasm.conversion/from-fn", "test-wasm.conversion/safe-symbol", "test-wasm.conversion/safe-tag",
   ]);
   assert.equal(preview.data.suggestions.some((item) => item.definition === "test-wasm.conversion/tag-input"), false,
     "Tag input must not be treated as the new String-only contract");
@@ -95,16 +78,11 @@ try {
   assert.equal(applied.data.changed, true);
   const safeTag = JSON.parse(run(snapshot, "query", "def", "test-wasm.conversion/safe-tag", "--format", "json"));
   const safeSymbol = JSON.parse(run(snapshot, "query", "def", "test-wasm.conversion/safe-symbol", "--format", "json"));
-  const safeString = JSON.parse(run(snapshot, "query", "def", "test-wasm.conversion/safe-string", "--format", "json"));
   assert.match(JSON.stringify(safeTag.data.code), /calcit\.core\/to-tag/);
   assert.match(JSON.stringify(safeSymbol.data.code), /calcit\.core\/to-symbol/);
-  assert.match(JSON.stringify(safeString.data.code), /calcit\.core\/to-string/);
   run(snapshot, "test", "test-wasm.conversion/safe-tag", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/safe-symbol", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/from-fn", "--require-match");
-  for (const name of ["safe-string", "safe-number-string", "safe-tag-string", "safe-symbol-string", "safe-bool-string", "safe-nil-string"]) {
-    run(snapshot, "test", `test-wasm.conversion/${name}`, "--require-match");
-  }
   for (const [name, result] of [["safe-tag", /:ready/], ["safe-symbol", /'ready/]]) {
     const executed = spawnSync(binary, [snapshot, "--init-fn", `test-wasm.conversion/${name}`, "--reload-fn", `test-wasm.conversion/${name}`], { encoding: "utf8", timeout: 60000 });
     assert.equal(executed.error, undefined, `native execution failed: ${executed.error?.message ?? "unknown error"}`);

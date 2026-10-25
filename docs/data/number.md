@@ -35,10 +35,10 @@ assert= true $ = 9007199254740992 $ &+ 9007199254740992 1
 `&+`、`&-`、`&*`、`&/`、`pow`、`sqrt`、`sin`、`cos` 按 IEEE 754 计算，不因非有限结果报错：除以 0 得到 `inf` 或 `-inf`，`0 / 0` 与 `sqrt -1` 得到 `NaN`，溢出得到 `inf` 或 `-inf`，`-0` 参与运算时保留符号。
 
 ```cirru
-assert= |inf $ turn-string $ &/ 1 0
-assert= |-inf $ turn-string $ &* 1e308 -10
-assert= |NaN $ turn-string $ &/ 0 0
-assert= |-0 $ turn-string $ &/ -1 $ &/ 1 0
+assert= |inf $ to-string $ &/ 1 0
+assert= |-inf $ to-string $ &* 1e308 -10
+assert= |NaN $ to-string $ &/ 0 0
+assert= |-0 $ to-string $ &/ -1 $ &/ 1 0
 ```
 
 对应 `calcit.core/&+#keeps-f64-precision-and-overflows-to-inf` 与 `calcit.core/&/#divides-by-zero-to-nonfinite`。
@@ -151,7 +151,7 @@ assert= "|&number:rem requires safe integers, but received: inf 2" $ try
 
 ## 转文本
 
-`turn-string`、`str`、`to-string` 与 `println` 使用同一套数字文本：
+`str`、`to-string` 与 `println` 使用同一套数字文本：
 
 - `inf`、`-inf`、`NaN`、`-0`；
 - 十进制展开，不使用指数形式：`1e21` 写作 `1000000000000000000000`，`1e-7` 写作 `0.0000001`；
@@ -160,13 +160,13 @@ assert= "|&number:rem requires safe integers, but received: inf 2" $ try
 `&number:format value digits` 保留固定位数的小数，按输入 f64 的精确值舍入，恰好一半时远离 0：`&number:format 2.5 0` 为 `3`，`&number:format 1.005 2` 为 `1.00`（`1.005` 的二进制值略小于 1.005）。
 
 ```cirru
-assert= |1000000000000000000000 $ turn-string 1e21
-assert= |0.0000001 $ turn-string 0.0000001
-assert= |-0 $ turn-string -0
+assert= |1000000000000000000000 $ to-string 1e21
+assert= |0.0000001 $ to-string 0.0000001
+assert= |-0 $ to-string -0
 assert= |1.235 $ &number:format 1.23456789 3
 ```
 
-对应 `calcit.core/turn-string#formats-number-boundaries`、`calcit.core/turn-string#shortest-decimal-ties`、`calcit.core/str#formats-numbers-like-turn-string` 与 `calcit.core/&number:format#rounds-ties-away-from-zero`。
+对应 `calcit.core/to-string#formats-number-boundaries`、`calcit.core/to-string#shortest-decimal-ties`、`calcit.core/str#formats-numbers-like-to-string` 与 `calcit.core/&number:format#rounds-ties-away-from-zero`。
 
 ## 解析
 
@@ -176,8 +176,8 @@ assert= |1.235 $ &number:format 1.23456789 3
 - 不接受首尾空白、十六进制、下划线分隔和不完整的指数，返回 `:err` 并带原文。
 
 ```cirru
-assert= (%ok 1.5) (parse-float |1.5)
-assert= (%err |1e) (parse-float |1e)
+assert= (Result :ok 1.5) (parse-float |1.5)
+assert= (Result :err |1e) (parse-float |1e)
 ```
 
 对应 `calcit.core/parse-float` 的 `wraps-number-or-source-error`、`reports-invalid-number-source` 与 `parses-nonfinite-spellings`。
