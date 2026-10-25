@@ -14713,6 +14713,10 @@
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-enum-impl
             &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
+              hint-fn $ {}
+                :args $ [] 'Enum 'K
+                :return 'Bool
+                :generics $ [] 'K
               if (number? k)
                 if (&>= k 0)
                   &< k $ &enum:count x
