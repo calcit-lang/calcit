@@ -49,8 +49,17 @@ struct CheckContext<'a> {
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
 }
 
-fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
-  if actual_type.contains(":js-object") {
+fn append_js_ffi_type_hint(mut message: String, expected_type: &CalcitTypeAnnotation, actual_type: &CalcitTypeAnnotation) -> String {
+  if matches!(actual_type, CalcitTypeAnnotation::JsObject)
+    && matches!(expected_type, CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_))
+  {
+    message.push_str(
+      "; for a JavaScript function value, first bind it to a local with `let`, then guard that local with `fn?`; guarding an import name directly does not narrow it. This proves only callable kind (open Fn), not parameter, return or async contracts",
+    );
+    if matches!(expected_type, CalcitTypeAnnotation::Fn(_)) {
+      message.push_str("; this concrete signature still requires an accurately declared and tested typed FFI boundary");
+    }
+  } else if diagnostic_type_string(actual_type).contains(":js-object") {
     message.push_str(
       "; JS FFI values stay opaque after JsNullish checks, so validate/convert the value or use `unsafe-coerce` only at a trusted boundary",
     );
@@ -568,7 +577,8 @@ impl<'a> CheckContext<'a> {
           expected_type,
           actual_type,
         ),
-        &actual_str,
+        expected_type,
+        actual_type,
       ),
       self.warning_code,
       self.file_ns,
@@ -2002,7 +2012,8 @@ pub(crate) fn check_function_return_type(
     gen_check_warning_code_at_with_types(
       append_js_ffi_type_hint(
         format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
-        &actual_str,
+        declared_return_type,
+        &actual_type,
       ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
@@ -2063,9 +2074,43 @@ mod tests {
 
   #[test]
   fn js_ffi_mismatches_include_boundary_guidance() {
-    let message = append_js_ffi_type_hint("type mismatch".to_owned(), "js-nullish<:js-object>");
+    let message = append_js_ffi_type_hint(
+      "type mismatch".to_owned(),
+      &CalcitTypeAnnotation::Number,
+      &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::JsObject), NullableOrigin::JsHost),
+    );
     assert!(message.contains("stay opaque after JsNullish checks"));
     assert!(message.contains("unsafe-coerce"));
+
+    let open = append_js_ffi_type_hint(
+      "type mismatch".to_owned(),
+      &CalcitTypeAnnotation::DynFn,
+      &CalcitTypeAnnotation::JsObject,
+    );
+    assert!(open.contains("local with `let`"));
+    assert!(open.contains("guarding an import name directly does not narrow it"));
+    assert!(open.contains("not parameter, return or async contracts"));
+    assert!(!open.contains("unsafe-coerce"));
+
+    let signature =
+      CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::Unit));
+    let concrete = append_js_ffi_type_hint("type mismatch".to_owned(), &signature, &CalcitTypeAnnotation::JsObject);
+    assert!(concrete.contains("concrete signature still requires"));
+    assert!(!concrete.contains("unsafe-coerce"));
+    let container = append_js_ffi_type_hint(
+      "type mismatch".to_owned(),
+      &CalcitTypeAnnotation::DynFn,
+      &CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::JsObject)),
+    );
+    assert!(!container.contains("guard that local"));
+    assert_eq!(
+      append_js_ffi_type_hint(
+        "type mismatch".to_owned(),
+        &CalcitTypeAnnotation::DynFn,
+        &CalcitTypeAnnotation::Number
+      ),
+      "type mismatch"
+    );
   }
 
   #[test]

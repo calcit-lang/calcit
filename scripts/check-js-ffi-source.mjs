@@ -22,6 +22,72 @@ try {
   const binary = resolve(repository, "target/debug/calcit");
   const run = (snapshot, ...args) => execFileSync(binary, [snapshot, ...args], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
   run(moduleSnapshot, "docs", "agents", "--contract");
+  // Exercise real default imports: eval-only imports do not reproduce this boundary.
+  const functionSnapshot = join(fixture, "function-import.cirru");
+  await cp(resolve(repository, "calcit/add.cirru"), functionSnapshot);
+  const mutateFunction = operations => {
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(run(functionSnapshot, "edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    run(functionSnapshot, "edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "json");
+  };
+  mutateFunction([
+    ["edit", "add-import", "app.main", "--input-format", "json-ast", "--code", JSON.stringify(["|node:assert", ":default", "host-assert"])],
+    ["edit", "def", "app.main/accept", "--input-format", "cirru", "--code", "quote $ defn accept (callback) (assert= true $ fn? callback) &unit"],
+    ["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Unit)"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+    ["config", "set", "init-fn", "app.main/main!"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+  ]);
+  for (const [name, expression, accepted, actual] of [
+    ["non-function", "accept 1", false, ":number"],
+    ["unguarded-import", "accept host-assert", false, ":js-object"],
+    ["guarded-import", "if (fn? host-assert) (accept host-assert) (raise |Expected-function)", false, ":js-object"],
+    ["guarded-local", "let ((value host-assert)) (if (fn? value) (accept value) (raise |Expected-function))", true, null],
+  ]) {
+    mutateFunction([["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", `quote $ defn main! () (${expression})`]]);
+    for (const args of [["--check-only", "--all-defs"], ["js", "--check-only"]]) {
+      const checked = spawnSync(binary, [functionSnapshot, ...args], { cwd: fixture, encoding: "utf8" });
+      assert.ifError(checked.error);
+      assert.equal(checked.status, accepted ? 0 : 1, `${name}: ${checked.stdout}\n${checked.stderr}`);
+      if (!accepted) {
+        const diagnostic = `${checked.stdout}\n${checked.stderr}`;
+        assert.match(diagnostic, /W_FN_ARG_TYPE_MISMATCH/);
+        assert.ok(diagnostic.includes(actual));
+        if (actual === ":js-object") {
+          assert.match(diagnostic, /first bind it to a local with `let`, then guard that local with `fn\?`/);
+          assert.match(diagnostic, /not parameter, return or async contracts/);
+          assert.doesNotMatch(diagnostic, /unsafe-coerce|boundary decoder/);
+        } else {
+          assert.doesNotMatch(diagnostic, /guard that local|unsafe-coerce/);
+        }
+      }
+    }
+  }
+  const functionOutput = join(fixture, "function-generated");
+  const functionProof = JSON.parse(run(functionSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.equal(functionProof.data.workflow.status, "passed");
+  assert.deepEqual(functionProof.diagnostics, []);
+  run(functionSnapshot, "--emit-path", functionOutput, "js");
+  const functionModule = await import(pathToFileURL(join(functionOutput, "app.main.mjs")).href);
+  functionModule["main_$x_"]();
+  // The guard must not manufacture a concrete input/output signature.
+  mutateFunction([["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Unit)) (:return 'Unit)"]]);
+  const signatureCheck = spawnSync(binary, [functionSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"],
+    { cwd: fixture, encoding: "utf8" });
+  assert.ifError(signatureCheck.error);
+  assert.equal(signatureCheck.status, 1, `fn? proves kind only: ${signatureCheck.stdout}\n${signatureCheck.stderr}`);
+  const signatureProof = JSON.parse(signatureCheck.stdout);
+  assert.equal(signatureProof.data.workflow.status, "failed");
+  assert.ok(signatureProof.diagnostics.some(item => item.code === "E_CALL_ARGUMENT_UNPROVEN"
+    && item.definition === "app.main/main!" && item.hint.includes("not just fn? at runtime")));
+  mutateFunction([["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () (accept host-assert)"]]);
+  const concreteCheck = spawnSync(binary, [functionSnapshot, "js", "--check-only"], { cwd: fixture, encoding: "utf8" });
+  assert.ifError(concreteCheck.error);
+  assert.equal(concreteCheck.status, 1);
+  assert.match(`${concreteCheck.stdout}\n${concreteCheck.stderr}`, /concrete signature still requires an accurately declared and tested typed FFI boundary/);
+  console.log("JS function import diagnostics preserve strict rejection and the existing local fn? route");
   // The active inline/file sources, not deliberately invalid shadow bodies, own execution.
   const shadowOperations = [
     ["edit", "def", "app.main/plus-one", "--overwrite", "--input-format", "cirru", "--code",
