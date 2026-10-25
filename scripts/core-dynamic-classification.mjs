@@ -151,6 +151,42 @@ const compilerSpecializedPositions = new Map([
     "字面量路径保留已证明的 Map 前缀；Dynamic 子节点仍开放，空/未知路径与不相容的 key/具体 leaf 不承诺原 receiver 类型。",
   ],
   [
+    "assoc|schema.args.0",
+    "#2187：旧门面跨 List、Map、Struct、Enum 分派，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:assoc`、`&map:assoc`、`&enum:assoc` 或 Struct 字段写入的精确合同，泛型接收者改用 `.assoc` 方法。",
+  ],
+  [
+    "assoc|schema.args.1",
+    "#2187：旧门面跨 List、Map、Struct、Enum 分派，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:assoc`、`&map:assoc`、`&enum:assoc` 或 Struct 字段写入的精确合同，泛型接收者改用 `.assoc` 方法。",
+  ],
+  [
+    "assoc|schema.args.2",
+    "#2187：旧门面跨 List、Map、Struct、Enum 分派，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:assoc`、`&map:assoc`、`&enum:assoc` 或 Struct 字段写入的精确合同，泛型接收者改用 `.assoc` 方法。",
+  ],
+  [
+    "assoc|schema.return",
+    "#2187：旧门面跨 List、Map、Struct、Enum 分派，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:assoc`、`&map:assoc`、`&enum:assoc` 或 Struct 字段写入的精确合同，泛型接收者改用 `.assoc` 方法。",
+  ],
+  [
+    "dissoc|schema.args.0",
+    "#2187：旧门面只接受 List 或 Map，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:dissoc`、`&map:dissoc` 的精确合同，泛型接收者改用 `.dissoc` 方法。",
+  ],
+  [
+    "dissoc|schema.rest",
+    "#2187：旧门面只接受 List 或 Map，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:dissoc`、`&map:dissoc` 的精确合同，泛型接收者改用 `.dissoc` 方法。",
+  ],
+  [
+    "dissoc|schema.return",
+    "#2187：旧门面只接受 List 或 Map，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:dissoc`、`&map:dissoc` 的精确合同，泛型接收者改用 `.dissoc` 方法。",
+  ],
+  [
+    "dissoc-in|schema.args.0",
+    "#2187：沿嵌套路径逐层读取并用 `assoc` / `dissoc` 重建，路径中途的容器类型无法由公开合同关联到输入；需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。",
+  ],
+  [
+    "dissoc-in|schema.return",
+    "#2187：沿嵌套路径逐层读取并用 `assoc` / `dissoc` 重建，路径中途的容器类型无法由公开合同关联到输入；需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。",
+  ],
+  [
     "apply|schema.return",
     "Arbitrary callable arity is not representable in the schema; compatible homogeneous List calls recover the callable return type at preprocessing time, while unproved calls remain Dynamic.",
   ],

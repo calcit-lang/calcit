@@ -423,6 +423,26 @@
                   first-rest-value |prefix & $ supply
                 assert= 1 $ deref calls
               :tags $ #{} :unit
+        'guarded-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn guarded-identity (x)
+            if (list? x)
+              let
+                  y x
+                , y
+              , x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-guarded-input-contract)
+            :code $ quote $ let
+                items $ guarded-identity $ [] 1 2
+                text $ guarded-identity |a
+              assert-type items $ :: 'List 'Number
+              assert-type text 'String
+              assert= ([] 1 2) items
+              assert= |a text
+            :tags $ #{} :generic :lexical-binder :unit
         'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
           :examples $ []

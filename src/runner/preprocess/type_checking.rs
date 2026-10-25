@@ -15,7 +15,7 @@
 use crate::calcit::NullableOrigin;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
@@ -1747,16 +1747,17 @@ pub(super) fn may_rebind_local(expr: &Calcit) -> bool {
 }
 
 /// A kind predicate on a value typed by the function's own generic return
-/// variable refines that variable inside the guarded branch: after `(list? x)`
-/// with `x: 'T`, the `'T` of that branch is a list. A branch is therefore
-/// proven by a value of the refined kind, while every unguarded exit still has
-/// to prove the original generic contract. The refinement keeps the same
-/// kind-level precision as ordinary predicate narrowing of `x` itself.
+/// variable narrows that input inside the guarded branch, but it does not
+/// instantiate the variable: after `(list? x)` with `x: 'T`, a fresh `[] |a`
+/// is a list without being the list `'T` was bound to. Every exit therefore
+/// still proves `'T` itself. Inside a guard, the guarded input and the local
+/// aliases bound directly to it keep their identity, since preprocessing has
+/// already recorded their narrowed kind on the nodes.
 fn refined_generic_return_is_proven(
   expr: &Calcit,
   declared: &CalcitTypeAnnotation,
   scope: &ScopeTypes,
-  async_invocation: bool,
+  identities: &HashSet<Arc<str>>,
   depth: usize,
 ) -> bool {
   let CalcitTypeAnnotation::TypeVar(variable) = declared else {
@@ -1766,6 +1767,11 @@ fn refined_generic_return_is_proven(
     return false;
   }
   if super::type_inference::expression_definitely_diverges(expr) {
+    return true;
+  }
+  if let Calcit::Local(local) = expr
+    && identities.contains(&local.sym)
+  {
     return true;
   }
   if let Calcit::List(items) = expr {
@@ -1788,30 +1794,37 @@ fn refined_generic_return_is_proven(
           return false;
         }
         let true_proven = match refinement {
-          Some((_, narrowed)) => expression_is_proven_for(true_branch, &narrowed, &true_scope, async_invocation),
-          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, depth + 1),
+          Some((symbol, _)) => {
+            let mut guarded = identities.clone();
+            guarded.insert(symbol);
+            refined_generic_return_is_proven(true_branch, declared, &true_scope, &guarded, depth + 1)
+          }
+          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, identities, depth + 1),
         };
         return true_proven
-          && refined_generic_return_is_proven(
-            items.get(3).unwrap_or(&Calcit::Nil),
-            declared,
-            &false_scope,
-            async_invocation,
-            depth + 1,
-          );
+          && refined_generic_return_is_proven(items.get(3).unwrap_or(&Calcit::Nil), declared, &false_scope, identities, depth + 1);
       }
       Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
         if let Some(Calcit::List(pair)) = items.get(1)
           && let Some(Calcit::Local(local)) = pair.first()
         {
           // A binding only adds lexical evidence; the tail still owes the proof.
+          // It keeps identity only when bound directly to an identity local,
+          // and otherwise shadows any outer identity of the same name.
+          let mut body_identities = identities.clone();
+          body_identities.remove(&local.sym);
+          if let Some(Calcit::Local(source)) = pair.get(1)
+            && identities.contains(&source.sym)
+          {
+            body_identities.insert(local.sym.clone());
+          }
           let mut body_scope = scope.clone();
           body_scope.insert(local.sym.clone(), local.type_info.clone());
           return refined_generic_return_is_proven(
             items.get(items.len() - 1).unwrap(),
             declared,
             &body_scope,
-            async_invocation,
+            &body_identities,
             depth + 1,
           );
         }
@@ -1906,7 +1919,7 @@ pub(crate) fn check_function_return_type(
     )
   };
   // Kind predicates refine a generic return before the lossy branch join.
-  if refined_generic_return_is_proven(last_expr, declared_return_type, scope_types, async_invocation, 0) {
+  if refined_generic_return_is_proven(last_expr, declared_return_type, scope_types, &HashSet::new(), 0) {
     return Ok(());
   }
   let Some(actual_type) = actual_type else {
