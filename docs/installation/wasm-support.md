@@ -109,7 +109,7 @@ write-file
 | `E_WASM_TARGET` | 未知的 `--target`，只接受 `core` 或 `wasi` | 修正命令参数 |
 | `E_WASM_BOUNDARY` | 未知的 `--boundary`，只接受 `native` 或 `component` | 修正命令参数 |
 | `E_WASM_CAPABILITY` | 目标不提供所需宿主能力，或 `wasi` 目标出现未登记的自定义 import | 改用目标提供的能力，或换用 native / JS |
-| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型上无法区分 nil、false 与 0 | 写出具体类型或使用 Option |
+| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型上无法区分 nil、false 与 0；数值排序操作数缺少 Number 证据 | 缺失值边界使用具体类型或 Option；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |

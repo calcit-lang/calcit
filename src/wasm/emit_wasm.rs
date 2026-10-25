@@ -5940,7 +5940,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   ctx.locals = caller_locals;
   ctx.local_types = caller_local_types;
   ctx.lambda_locals = caller_closures;
-  result?;
+  result.map_err(|error| format!("{error} (specializing `{qualified}`)"))?;
   Ok(true)
 }
 
