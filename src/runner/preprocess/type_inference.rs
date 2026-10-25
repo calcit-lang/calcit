@@ -3987,7 +3987,7 @@ pub(super) fn infer_struct_value_annotation(struct_value: &CalcitStructValue, sc
   }
 }
 
-fn collect_struct_literal_values(xs: &CalcitList, struct_value: &CalcitStructValue) -> Option<Vec<Calcit>> {
+pub(super) fn collect_struct_literal_values(xs: &CalcitList, struct_value: &CalcitStructValue) -> Option<Vec<Calcit>> {
   if xs.len() < 2 {
     return None;
   }
