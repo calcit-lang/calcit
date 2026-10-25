@@ -21,6 +21,8 @@ env:
 # of repeating them. The other gates run in parallel and cover only what branch CI cannot:
 # the tag/version/Release identity, the optimized binaries that are shipped, and the
 # registry packages as they will be uploaded.
+# No rust-cache: caches saved on a tag ref are visible only to that tag, so they are never
+# restored by a later release and saving them would only lengthen each job.
 jobs:
   verify_source:
     name: Verify release tag and versions
@@ -105,10 +107,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-standard
-
       - name: Build standard release binary
         run: |
           test "$(uname -m)" = "x86_64"
@@ -150,10 +148,6 @@ jobs:
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-no-wasm
 
       - name: Build and smoke Ubuntu 22.04 no-WASM release binary
         run: |
@@ -205,10 +199,6 @@ jobs:
           corepack prepare yarn@4.12.0 --activate
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-package
 
       # The real upload uses --no-verify, so this is where the packaged crate must build.
       - name: Verify packaged crate builds
