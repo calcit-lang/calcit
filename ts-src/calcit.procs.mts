@@ -1054,14 +1054,14 @@ export let add_watch_$x_ = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
   a.listeners.set(k, f);
 };
 
-export let remove_watch = (a: CalcitRef, k: CalcitTag): void => {
+export let remove_watch_$x_ = (a: CalcitRef, k: CalcitTag): void => {
   for (const listenerKey of a.listeners.keys()) {
     if (listenerKey instanceof CalcitTag && listenerKey.value === k.value) {
       a.listeners.delete(listenerKey);
       return;
     }
   }
-  throw new Error(`remove-watch failed: listener with key \`${k.value}\` not found`);
+  throw new Error(`remove-watch! failed: listener with key \`${k.value}\` not found`);
 };
 
 // Same eager range limit as native `MAX_RANGE_LEN` and WASM, 2^24 elements (#1852).

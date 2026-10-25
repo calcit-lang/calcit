@@ -263,8 +263,8 @@
             :return $ :: 'Result 'component-wasm.main/Event 'String
           :tests $ [] $ %{} 'TestEntry (:name |nested-enum-inside-result)
             :code $ quote $ assert=
-              %ok $ Event :named |Ada
-              echo-result-event $ %ok $ Event :named |Ada
+              Result :ok $ Event :named |Ada
+              echo-result-event $ Result :ok $ Event :named |Ada
             :tags $ #{} :wasm
         'echo-result-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-number (value) value
@@ -274,12 +274,12 @@
             :return $ :: 'Result 'Number 'String
           :tests $ []
             %{} 'TestEntry (:name |round-trips-ok)
-              :code $ quote $ assert= (%ok 7)
-                echo-result-number $ %ok 7
+              :code $ quote $ assert= (Result :ok 7)
+                echo-result-number $ Result :ok 7
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |round-trips-err)
-              :code $ quote $ assert= (%err |bad)
-                echo-result-number $ %err |bad
+              :code $ quote $ assert= (Result :err |bad)
+                echo-result-number $ Result :err |bad
               :tags $ #{} :wasm
         'echo-result-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-numbers (value) value
@@ -290,12 +290,12 @@
           :tests $ []
             %{} 'TestEntry (:name |round-trips-list)
               :code $ quote $ assert=
-                %ok $ [] 1 2 3
-                echo-result-numbers $ %ok $ [] 1 2 3
+                Result :ok $ [] 1 2 3
+                echo-result-numbers $ Result :ok $ [] 1 2 3
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |round-trips-list-error)
-              :code $ quote $ assert= (%err |bad)
-                echo-result-numbers $ %err |bad
+              :code $ quote $ assert= (Result :err |bad)
+                echo-result-numbers $ Result :err |bad
               :tags $ #{} :wasm
         'echo-result-unit $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-result-unit (value) value
@@ -305,12 +305,12 @@
             :return $ :: 'Result 'Unit 'String
           :tests $ []
             %{} 'TestEntry (:name |round-trips-unit)
-              :code $ quote $ assert= (%ok &unit)
-                echo-result-unit $ %ok &unit
+              :code $ quote $ assert= (Result :ok &unit)
+                echo-result-unit $ Result :ok &unit
               :tags $ #{} :wasm
             %{} 'TestEntry (:name |round-trips-unit-error)
-              :code $ quote $ assert= (%err |bad)
-                echo-result-unit $ %err |bad
+              :code $ quote $ assert= (Result :err |bad)
+                echo-result-unit $ Result :err |bad
               :tags $ #{} :wasm
         'echo-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export echo-text (text) text
@@ -433,7 +433,7 @@
             :args $ []
         'sample-profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sample-profile ()
-            Profile :name |Ada :active true :scores ([] 1 2 3) :stats (ProfileStats :score 7) :maybe-name (Option :some |Ada) :outcome $ %ok $ [] 4 5
+            Profile :name |Ada :active true :scores ([] 1 2 3) :stats (ProfileStats :score 7) :maybe-name (Option :some |Ada) :outcome $ Result :ok $ [] 4 5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'component-wasm.main/Profile)
             :args $ []

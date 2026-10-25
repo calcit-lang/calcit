@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         '*count-effects $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *count-effects 0
+          :code $ quote $ defref *count-effects 0
           :examples $ []
           :schema $ :: 'Dynamic
         'consume-tail $ %{} 'CodeEntry (:doc |)

@@ -442,7 +442,7 @@ let
   assert-type (add-one 1) 'Number
 ```
 
-两参数形式 `hint-fn f schema` 暂时保留兼容。目标已有完整签名时，该签名必须能够证明所请求的合同；例如 `Dynamic` 返回不能改写为 `Number`。无签名 `fn` 目标仍走旧的元数据补充路径，因此不能把这条兼容路径当作完整类型证明。新代码与迁移代码应把 Map 注解放进函数体，让参数和返回值在实现所在位置接受检查。
+两参数形式 `hint-fn f schema` 暂时保留兼容，计划在 0.32.0 删除；项目源码中的每处用法会在 `--check-only` 输出的 `Notes:` 中以 `W_LEGACY_HINT_FN_TARGET` 列出，带定义与源码坐标，不影响检查结果。目标已有完整签名时，该签名必须能够证明所请求的合同；例如 `Dynamic` 返回不能改写为 `Number`。无签名 `fn` 目标仍走旧的元数据补充路径，因此不能把这条兼容路径当作完整类型证明。新代码与迁移代码应把 Map 注解放进函数体，让参数和返回值在实现所在位置接受检查。
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 
@@ -553,7 +553,7 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 `get-in` 返回 `Result<T, PathError>`，适合开放 Map/List 路径；未知 payload 仍为 Dynamic。调用方应区分缺失的 `PathError :missing` 与形状错误的 `PathError :shape`，不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的已证明静态路径仍提供 `Option<Leaf>`；开放路径提供 `Option<Dynamic>`，具体使用前先 decode/narrow，并显式处理缺失。回调输出不能用来证明开放输入。
 
-默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str` / `turn-string`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
+默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
 
 ### Complex Types
 

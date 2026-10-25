@@ -2,7 +2,7 @@
 //! - defined with `defref`, a namespaced ref that retains its value after hot swapping
 //! - created with `ref`, a piece of local mutable state
 //!
-//! `defatom` is the compatibility spelling of `defref`; `atom` was removed in 0.31.0.
+//! The compatibility spellings `atom` and `defatom` were removed in 0.31.0.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
@@ -297,7 +297,7 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       match pair.1.get(k) {
         None => CalcitErr::err_str(
           CalcitErrKind::Unexpected,
-          format!("remove-watch failed: listener with key `{k}` not found"),
+          format!("remove-watch! failed: listener with key `{k}` not found"),
         ),
         Some(_) => {
           pair.1.remove(k);
@@ -307,7 +307,7 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (Some(a), Some(b)) => {
       let msg = format!(
-        "remove-watch requires a ref and a tag, but received: {} and {}",
+        "remove-watch! requires a ref and a tag, but received: {} and {}",
         type_of(std::slice::from_ref(a))?.lisp_str(),
         type_of(std::slice::from_ref(b))?.lisp_str()
       );
@@ -316,7 +316,7 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (a, b) => {
       let msg = format!(
-        "remove-watch requires 2 arguments (ref and tag-key), but received: {} arguments",
+        "remove-watch! requires 2 arguments (ref and tag-key), but received: {} arguments",
         if a.is_none() {
           0
         } else if b.is_none() {

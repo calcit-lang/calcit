@@ -28,7 +28,7 @@
           :examples $ []
           :schema $ :: 'Ref 'Number
         '*ref-demo $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *ref-demo 0
+          :code $ quote $ defref *ref-demo 0
           :examples $ []
           :schema $ :: 'Ref 'Number
         'AtomBox $ %{} 'CodeEntry (:doc |)
@@ -429,8 +429,8 @@
           :code $ quote $ fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
             assert= &unit $ add-watch! *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
             assert= 2 $ reset! *ref-demo 2
-            assert= &unit $ remove-watch *ref-demo :change
-            assert= "|remove-watch failed: listener with key `missing` not found" $ try (remove-watch *ref-demo :missing)
+            assert= &unit $ remove-watch! *ref-demo :change
+            assert= "|remove-watch! failed: listener with key `missing` not found" $ try (remove-watch! *ref-demo :missing)
               fn (error) error
             assert= 2 @*ref-demo
             assert= :ref $ type-of *ref-demo

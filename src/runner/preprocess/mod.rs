@@ -1252,6 +1252,16 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "w-log" | "w-js-log" => Some(("0.31.0", "use `dbg`, or an explicit `js/console.log` for the host object view")),
     "wo-log" | "wo-js-log" => Some(("0.31.0", "write `x` for `(wo-log x)`; it returned its argument unchanged")),
     "flipped" => Some(("0.31.0", "write `(f b a)` for `(flipped f a b)`")),
+    "let{}" => Some((
+      "0.31.0",
+      "bind the Map once with `let`, then read each Tag key with `get` and handle the Option result",
+    )),
+    "let-destruct" => Some(("0.31.0", "use `let` for a symbol pattern and `let[]` for a `([] ...)` pattern")),
+    "remove-watch" => Some(("0.31.0", "use `remove-watch!`")),
+    "turn-string" => Some(("0.31.0", "use `to-string`")),
+    "%ok" => Some(("0.31.0", "use `Result :ok value`")),
+    "%err" => Some(("0.31.0", "use `Result :err error`")),
+    "defatom" => Some(("0.31.0", "use `defref`")),
     _ => None,
   }
 }
@@ -8536,20 +8546,16 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
     Some("find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin" | "enum-definition") => {
       Some("Option".to_owned())
     }
-    Some("%ok" | "%err" | "parse-float" | "get-in") => Some("Result".to_owned()),
+    Some("parse-float" | "get-in") => Some("Result".to_owned()),
     _ => None,
   }
 }
 
 fn core_stringification_operation(head: &Calcit) -> Option<&str> {
   match head {
-    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && matches!(def.as_ref(), "str" | "turn-string") => {
-      Some(def.as_ref())
-    }
-    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "str" | "turn-string") => {
-      Some(info.name.as_ref())
-    }
-    Calcit::Proc(CalcitProc::TurnString) => Some("turn-string"),
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "str" => Some(def.as_ref()),
+    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "str" => Some(info.name.as_ref()),
+    Calcit::Proc(CalcitProc::TurnString) => Some("&turn-string"),
     _ => None,
   }
 }
@@ -9120,8 +9126,10 @@ fn try_specialize_polymorphic_call(
   let receiver_type = resolve_type_value(receiver, scope_types)?;
 
   // --- Type predicate folding: when the receiver's static type is known, we
-  // can fold `(list? x)` / `(map? x)` / ... to a literal Bool. This removes
-  // a user-def call + a `type-of` proc call from every such check.
+  // can replace `(list? x)` / `(map? x)` / ... with a known Bool result. The
+  // argument must still run: static kind evidence does not prove purity or
+  // successful termination. Reuse executable sequencing without preprocessing
+  // the already-processed argument a second time.
   //
   // We only fold the positive case (type is definitely the queried kind) to
   // keep the matrix small; negative folding would need to enumerate every
@@ -9143,7 +9151,17 @@ fn try_specialize_polymorphic_call(
       | ("enum-def?", T::EnumDef(_))
   );
   if predicate_true {
-    return Some(Calcit::Bool(true));
+    // A local already contains an evaluated value. Reading it is inert and
+    // must not force a statically specialized closure to escape in WASM.
+    if matches!(receiver, Calcit::Local(_)) {
+      return Some(Calcit::Bool(true));
+    }
+    return Some(generated_call(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(file_ns)),
+      Calcit::from(CalcitList::default()),
+      receiver.clone(),
+      Calcit::Bool(true),
+    ]));
   }
 
   // --- Calcit-level (user def) specializations: higher-order collection ops ---
@@ -13705,12 +13723,13 @@ pub fn preprocess_defn(
                     .is_proven()
                 })
               });
-              // A callback may derive its result type from one of its own
-              // inputs (for example a Self-preserving method). That is valid
-              // evidence for the enclosing result even when the result binder
-              // is otherwise output-only. A captured, unrelated binder is not
-              // an input and still needs an identity-aware proof below.
-              if returned_input_binder {
+              // A returned input can infer a callee-owned output slot, but
+              // cannot replace an already established caller result binder.
+              // Both captured and parameter binders retain their identities.
+              if returned_input_binder
+                && matches!(expected.as_ref(), CalcitTypeAnnotation::TypeVar(name)
+                  if expected_callee_owned_generics.contains(name))
+              {
                 return false;
               }
               return !body_types
@@ -14239,6 +14258,7 @@ pub fn preprocess_hint_fn(
         target_raw.get_location(),
       ));
     }
+    note_legacy_hint_fn_target(&local.sym, ctx.file_ns, source_location_in_namespace(target_raw, ctx.file_ns));
     ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
     local.type_info = type_entry;
     ys[1] = Calcit::Local(local);
@@ -16102,6 +16122,33 @@ fn note_legacy_optional_type(position: &str, annotation: &CalcitTypeAnnotation, 
     message,
     location,
     Some("W_LEGACY_OPTIONAL_TYPE".to_owned()),
+    None,
+  ));
+}
+
+/// Advisory for the two-argument `(hint-fn f schema)` compatibility form in
+/// project source (#2172). It never fails a check: remaining uses migrate to a
+/// Map hint in the body of the function that defines `f` before the form is
+/// removed in 0.32.0. Core keeps its compatibility tests until that removal.
+fn note_legacy_hint_fn_target(target: &str, file_ns: &str, location: Option<NodeLocation>) {
+  let Some(location) = location else {
+    return;
+  };
+  if file_ns == calcit::CORE_NS
+    || !should_emit_project_source_lint(file_ns)
+    || location.ns.as_ref() != file_ns
+    || location.def.as_ref() == GENERATED_DEF
+  {
+    return;
+  }
+  let message = format!(
+    "[Warn] two-argument `hint-fn {target} schema` in {}/{} is a compatibility form that will be removed in 0.32.0; move the schema Map into the body of the function that defines `{target}` as `(hint-fn $ {{}} (:args ...) (:return ...))`",
+    location.ns, location.def
+  );
+  push_advisory(LocatedWarning::new_with_detail(
+    message,
+    location,
+    Some("W_LEGACY_HINT_FN_TARGET".to_owned()),
     None,
   ));
 }
@@ -18603,7 +18650,7 @@ mod tests {
       "demo",
       &stack,
     )
-    .expect_err("strict turn-string should reject a Result");
+    .expect_err("strict &turn-string should reject a Result");
     assert_eq!(result_error.code.as_deref(), Some("E_NOMINAL_ENUM_STRINGIFICATION"));
     assert!(result_error.msg.contains("pattern-match the Result"));
 

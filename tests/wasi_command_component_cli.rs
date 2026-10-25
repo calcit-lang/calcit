@@ -318,7 +318,7 @@ fn manifest_result_payload_mismatch_fails_strict_preprocessing() {
       "--path",
       "@3.2.3",
       "--code",
-      "quote $ %ok |wrong-payload",
+      "quote $ Result :ok |wrong-payload",
     ])
     .output()
     .expect("edit temporary Snapshot through Calcit CLI");

@@ -817,6 +817,58 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
   });
 }
 
+/// #2172: the two-argument `(hint-fn f schema)` compatibility form is only
+/// noted (`W_LEGACY_HINT_FN_TARGET`) before its removal in 0.32.0. A known
+/// signature and an unsigned `fn` target are each noted at the target; the
+/// strict check still passes and a body Map hint stays quiet.
+#[test]
+fn two_argument_hint_fn_is_only_noted() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let
+    signed $ fn (x)
+      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Number)
+      , 1
+    unsigned $ fn (x) x
+    body $ fn (x)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      , x
+  hint-fn signed $ {} (:args $ [] 'Number) (:return 'Number)
+  hint-fn unsigned $ {} (:args $ [] 'Number) (:return 'Number)
+  &+ (signed 1) $ &+ (unsigned 2) (body 3)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("the two-argument compatibility form must not fail the strict check");
+
+    let warnings = warnings.into_inner();
+    assert!(
+      warnings.iter().all(|warning| warning.code() != Some("W_LEGACY_HINT_FN_TARGET")),
+      "the advisory must never become a warning: {warnings:?}"
+    );
+    let advisories = runner::preprocess::take_advisories();
+    let noted = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_LEGACY_HINT_FN_TARGET"))
+      .collect::<Vec<_>>();
+    assert_eq!(noted.len(), 2, "{advisories:?}");
+    for (advisory, target) in noted.iter().zip(["signed", "unsigned"]) {
+      assert_eq!(advisory.location().ns.as_ref(), "app.main", "{advisory:?}");
+      assert_eq!(advisory.location().def.as_ref(), "main!", "{advisory:?}");
+      assert!(
+        advisory.message().contains(&format!("hint-fn {target} schema"))
+          && advisory.message().contains("removed in 0.32.0")
+          && advisory.message().contains("into the body of the function"),
+        "{}",
+        advisory.message()
+      );
+    }
+  });
+}
+
 #[test]
 fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
   run_with_large_stack(|| {
@@ -2308,7 +2360,7 @@ fn strict_mode_rejects_implicit_option_and_result_stringification() {
     })));
     for (source, operation, nominal) in [
       ("defn main! ()\n  str $ Option :some :remove", "str", "Option"),
-      ("defn main! ()\n  turn-string $ %err |failed", "turn-string", "Result"),
+      ("defn main! ()\n  &turn-string $ Result :err |failed", "&turn-string", "Result"),
     ] {
       let entries = load_snippet_entries_with_main_schema(source, Some(main_schema.clone()));
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -3230,12 +3282,12 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && partial_variadic_binding_warnings[0].message().contains("got `map<tag, string>`"),
       "the original mismatching variadic generic container should remain actionable: {partial_variadic_binding_warnings:?}"
     );
-    // `add-watch!` is the watcher proc itself; `remove-watch!` still wraps the `remove-watch` proc.
+    // `add-watch!` and `remove-watch!` are the watcher procs themselves.
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
         warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
-          && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch`"))
+          && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch!`"))
       })
       .collect::<Vec<_>>();
     assert_eq!(
@@ -3260,25 +3312,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       watch_warnings.iter().any(|warning| {
-        warning.message().contains("Proc `remove-watch` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
+        warning.message().contains("Proc `remove-watch!` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
       }),
-      "remove-watch should require a Tag key: {watch_warnings:?}"
+      "remove-watch! should require a Tag key: {watch_warnings:?}"
     );
-    let public_watch_warnings = warnings
-      .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/remove-watch!"))
-      .collect::<Vec<_>>();
-    assert_eq!(
-      public_watch_warnings.len(),
-      1,
-      "the public remove-watch! wrapper should preserve the key type boundary: {warnings:?}"
-    );
-    assert!(public_watch_warnings.iter().any(|warning| {
-      warning
-        .message()
-        .contains("Function `calcit.core/remove-watch!` arg 2 expects type `:tag`")
-        && warning.message().contains("got `:string`")
-    }));
     let variadic_method_warnings = warnings
       .iter()
       .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))
@@ -4053,6 +4090,46 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
         "`{source}` should stay clean: {:?}",
         warnings.borrow()
       );
+    }
+  });
+}
+
+#[test]
+fn generic_return_kind_guard_cannot_forge_payload_type() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let forge = |branch: &str| {
+      format!(
+        "let\n    forge $ fn (x)\n      hint-fn $ {{}}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'T\n      if (list? x) {branch} $ raise |expected-list\n  , &unit"
+      )
+    };
+    // A kind guard on `x: T` says nothing about the members `T` was bound to.
+    for branch in ["([] |wrong)", "(let ((y ([] |wrong))) y)"] {
+      let entries = load_snippet_entries(&forge(branch));
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("a forged List payload must not prove the generic return");
+      assert!(
+        matches!(error.code.as_deref(), Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION")),
+        "{branch}: {error}"
+      );
+      let location = error
+        .location
+        .as_ref()
+        .expect("the producer diagnostic must keep its source location");
+      assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+      assert_eq!(location.def.as_ref(), "main!", "{error}");
+    }
+    // Returning the guarded input itself, or a local alias of it, keeps `T`.
+    for branch in ["x", "(let ((y x)) y)"] {
+      let entries = load_snippet_entries(&forge(branch));
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|error| panic!("{branch}: the guarded input still proves T: {error}"));
     }
   });
 }

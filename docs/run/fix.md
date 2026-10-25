@@ -117,7 +117,7 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 升级函数形式兼容名时，可显式把附带测试与示例纳入同一次预览：
 
 ```bash
-calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn
+calcit calcit.cirru fix --rule core-identity-conversion-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
 ```
@@ -128,14 +128,12 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前支持显式的 `core-identity-conversion-v1` 与 `core-ref-constructor-v1` 等改名规则。
+当前支持显式的 `core-identity-conversion-v1` 等改名规则。
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
 `redundant-do-v1` 与 `single-expression-do-v1` 也支持附带区域，复用原 body 规则。
 最外层多表达式 `do` 保留，只有真实 variadic body 内的 wrapper 能拆开；单表达式 wrapper 可直接解包。
 quoted data 不改写，未知宏中无法证明执行上下文的区域保留 review。
-`core-nominal-constructor-v1` 支持把附带调用的 `%ok` / `%err` 改为 Result 直接构造（`%some` / `%none` 已在 0.31.0 删除，迁移见升级指南）。
-嵌套 payload 保留原位置并只求值一次；一等函数值、名义类型遮蔽或未知宏来源要求 review。
 项目的 `named-enum-constructor-v1`、`named-struct-constructor-v1` 也支持附带区域，
 复用定义来源、字段完整性和嵌套 payload 证明，保留字段在源码中的求值顺序。
 `core-option-method-v1`、`core-result-method-v1` 支持附带 helper 调用：
@@ -178,13 +176,6 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   （如 `schema/Effect`）在展开处仍按宏所在 namespace 解析，属于 `machine-applicable`；无前缀原型在展开处
   可能被局部绑定捕获，给出 `requires-review`。原型本身是 `~proto` 或字段由 `~@` 拼接时不给建议；
   `defmacro` 中模板外的展开期代码与 `quote` 数据保持不变。
-- `core-nominal-constructor-v1` 是 0.25.0 的 Option/Result 构造器迁移试点：把编译器已解析到
-  `calcit.core/%ok/%err`、且实参数量匹配的调用改为 `Result :ok/:err`（0.31.0 删除 `%some/%none` 后，
-  它们的迁移需在升级前用 0.30.x 的 CLI 运行本规则）。嵌套构造在一次 guarded subtree replacement 内完成，每个 payload 仍按原位置
-  求值一次；局部遮蔽、函数值引用和未经证明的 macro 展开不自动改写。当前须显式指定 `--rule`，
-  不静默修改已有升级 preset；旧 helper 从 0.25.0 标记弃用，在真实消费者迁移且至少经过一个版本窗口后
-  才考虑移除，最早为 0.26.0。试点只扫描所选 definition 的源码 `:code`；definition-attached
-  `:tests`、`:examples`、macro 定义与无法映射回源码的展开引用暂不自动改写，须人工检查。
 - `core-option-method-v1` 在原有取值迁移之外，也把 `option:some?` / `option:none?` 改为
   `value .some?` / `value .none?`。只有编译器已解析到对应 core helper、接收者静态类型
   能证明分派到同一个 Option 方法的源码调用才自动改写。取值调用仍改为 `value .unwrap`
@@ -202,10 +193,10 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-result-method-v1` 把 `result:ok?` / `result:err?` 改为 `value .ok?` / `value .err?`，
   也处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`；仍须证明 core 来源和
   同一个接收者方法契约，不因谓词返回 Bool 就跳过接收者类型检查。
-  已证明来自 core 的 `%err error` 或 `Result :err error` 没有成功值，因而可由具体 fallback
+  已证明来自 core 的 `Result :err error` 没有成功值，因而可由具体 fallback
   确定成功类型，同时保留错误类型；方法契约仍须为 `proven`，源码引用、求值次数和顺序也须可证明。
-  成功值有具体类型、方法契约已证明的 core `%ok` 也可迁移；备用值不能代替成功值的类型证据。
-  普通 `Result<Dynamic,E>`、成功值来自 Dynamic 的 `%ok` / `Result :ok`、同名类型遮蔽、
+  成功值有具体类型、方法契约已证明的 core `Result :ok value` 也可迁移；备用值不能代替成功值的类型证据。
+  普通 `Result<Dynamic,E>`、成功值来自 Dynamic 的 `Result :ok`、同名类型遮蔽、
   函数值和未知 macro 只给 `requires-review`；具名构造若缺少精确源码类型证据同样保留审阅。
   与 Option 规则一样，本规则须显式选择，不修改已发布 preset；通过 `--include-attached` 纳入 `:tests` / `:examples`。
   先运行 `calcit calcit.cirru fix --rule core-result-method-v1 --format edn` 预览，再带原样
@@ -214,7 +205,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   兼容入口最早于 0.27.0 且满足[退场条件](../features/api-roles.md#旧方法-helper-的退场条件)后才考虑移除，
   不能把一次空预览误认为已完成消费者迁移。
 - `core-integer-predicate-v1` 随函数 `round?` 在 0.31.0 退役，只在 0.30.x 及更早的 CLI 中提供：它把 reader 解析为内建 Proc 的单参数 `round?` 调用头改为 `calcit.core/integer?`。当前 CLI 用 `--rule` 选择它时报未知规则；残留的 `round?` 调用在检查时报告未知名字，告警末尾给出 `integer?`。Number `.round?` 已在 0.29.0 删除（`E_RETIRED_METHOD`）。见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
-- `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`；也把解析到 core 兼容函数、且参数已证明为内建 Nil、Bool、Number、String、Tag 或 Symbol 的 `turn-string` 改为 `calcit.core/to-string`。这些标量路径调用相同的底层转换，实参仍只求值一次；自定义 `ToString` 实现、Dynamic、已知不支持的集合、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；包含在 `core-api-0.28-v1`；旧 surface preset 不变。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
+- `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`。两条路径调用相同的底层转换，实参仍只求值一次；Dynamic、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；包含在 `core-api-0.28-v1`；旧 surface preset 不变。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
 - 0.29.0 起，`core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、
   `core-list-get-v1`、`core-collection-combine-v1`、`core-predicate-method-v1` 随 List `.reduce` / `.bind` / `.join-str` / `.nth`、
   Map/Set `.mappend`、Set `.add`、Map/Set `.contains?` 与 Map `.includes?` 一起退役；Map `.add` 没有迁移规则，需人工改写为 `.assoc key value`。这些规则只在 0.28.x 的 CLI 中提供，需在升级 CLI
@@ -224,8 +215,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit.core/some?` 的源码引用改为 `calcit.core/non-nil?`。当前 CLI 用 `--rule` 选择它时会报错并给出该提示；残留的
   `some?` 调用在检查时报告未知名字，告警末尾给出 `non-nil?`。同版本删除的函数 `join-str`、`add-watch`、`cpu-time`
   分别改写为 `join-string`、`add-watch!`、`monotonic-time-ms`，残留调用得到同样的提示。
-- `core-function-alias-v1` 与 `case-default-to-match-v1` 已随 `vals`、`case-default` 在 0.31.0 退场（`optionally`、`join`、`section-by`、`merge-dynamic`、`concat-dynamic` 同批退场）；仍有这些调用的项目须在升级 CLI 前用 0.30.x 的 CLI 运行同名规则，见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
-- `core-ref-constructor-v1` 把 Ref 构造的兼容旧名 `defatom` 改为 `defref`（`atom` 已在 0.31.0 删除，旧调用需在升级前用 0.30.x 的 CLI 运行本规则，或按诊断手工改为 `ref`）。`defatom` 是按名字解析的 core 语法，只在调用头位置、且所在 namespace 没有同名定义或 import、没有同名局部绑定、不在 quasiquote 模板中、外层也没有未知 macro 时自动改写，其余情况给出 `requires-review`。quoted data 与注释跳过。先用 `calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用，重复预览只应剩下需要 review 的项。本规则包含在 `core-api-0.29-v1`，`core-api-0.28-v1` 与 surface preset 保持原定义。
+- `core-function-alias-v1` 与 `case-default-to-match-v1` 已随 `vals`、`case-default` 在 0.31.0 退场（`optionally`、`join`、`section-by`、`merge-dynamic`、`concat-dynamic` 同批退场）；`core-nominal-constructor-v1` 与 `core-ref-constructor-v1` 随 `%ok` / `%err` 与 `defatom` 同版本退场，`core-identity-conversion-v1` 也不再处理已删除的 `turn-string`。仍有这些调用的项目须在升级 CLI 前用 0.30.x 的 CLI 运行同名规则，见[升级指南](upgrade.md#0310-删除最后一批已弃用的核心名字)。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
@@ -234,7 +224,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `rename-local-v1` 是参数化语义重构规则。它要求 `--ns`、`--def`、`--at <binding path>` 与 `--to`，`--at` 指向
   `defn`/`fn` 参数、`let`/`&let` 绑定名或 `loop` 绑定名。规则按 core 绑定形式计算作用域：`let` 按顺序绑定，`loop` 的初始值属于外层，
   内层同名绑定遮蔽的区域不会改写；规则预处理改名后的定义，每个改写的使用处都必须解析为新名字的局部引用，因此旧名字已被读成内置 Proc（如 `ref`）的绑定也能迁移。新名字已在作用域中出现，使用处出现在
-  quote/quasiquote、项目或依赖 macro 的参数，或会引入绑定的 core macro（如 `->%`、`if-let`、`let{}`）参数中时，整体拒绝并给出位置；
+  quote/quasiquote、项目或依赖 macro 的参数，或会引入绑定的 core macro（如 `->%`、`if-let`、`let[]`）参数中时，整体拒绝并给出位置；
   `when`、`->`、`cond` 等不引入绑定的 core macro 参数照常改写。只改写当前定义的 code，不改 tests/examples。
   绑定本身写在 macro 调用里（如 Respo `defcomp` 的 body 中的 `let`）可以改名；`defcomp` 这类自定义定义 macro 的参数表不被识别为绑定。
 - `value-to-zero-arg-fn-v1` 是参数化语义重构规则。它要求 `--ns` 与 `--def`，把精确的 `(def name value)` 改成
@@ -343,7 +333,7 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 ### 0.28 核心 API 命名迁移
 
-`core-api-0.29-v1` 包含当前 `core-api-0.28-v1` 的全部 1 条规则，并追加 `core-ref-constructor-v1`，共 2 条。它不再迁移 0.31.0 已删除的兼容方法与 `round?`；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`、`core-integer-predicate-v1`，各自预览后携带 revision 应用，见升级指南的[兼容方法](upgrade.md#0310-删除已弃用的兼容方法)与[兼容函数](upgrade.md#0310-删除已弃用的兼容函数)小节。
+`core-api-0.29-v1` 与当前 `core-api-0.28-v1` 相同，只含 1 条规则；原来追加的 `core-ref-constructor-v1` 已随 `defatom` 在 0.31.0 退场。它不再迁移 0.31.0 已删除的兼容方法、`round?` 与 `defatom`；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`、`core-integer-predicate-v1`、`core-ref-constructor-v1`，各自预览后携带 revision 应用，见升级指南的[兼容方法](upgrade.md#0310-删除已弃用的兼容方法)与[兼容函数](upgrade.md#0310-删除已弃用的兼容函数)小节。
 
 `core-api-0.28-v1` 当前只含 1 条已证明等价的叶子改写规则。它适合在结构升级后迁移仍受支持的核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`。已经退场的旧入口与历史迁移 CLI 见[升级指南](upgrade.md#兼容入口的退场节奏)。
 
@@ -362,16 +352,7 @@ calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
 
 应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。使用已发布 `0.28.0-alpha.2` 的 Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
 
-先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 的冻结范围保持原有定义；strict workflow 的证明检查另见下节。
-
-单独迁移 Option/Result 构造 helper 时，先在真实项目中预览 `requires-review` 与 `machine-applicable`
-的区别，再应用并重新预览确认幂等。应用前必须确认项目 `deps.cirru` 所锁定的 Calcit 版本与运行的 CLI 一致：
-
-```bash
-calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn
-calcit calcit.cirru fix --rule core-nominal-constructor-v1 --apply --expect-revision 'md5:<预览返回的 revision>'
-calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn
-```
+先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `option:*/result:*` helper，分别使用 `core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 的冻结范围保持原有定义；strict workflow 的证明检查另见下节。
 
 ## 项目级严格迁移工作流
 
@@ -511,7 +492,7 @@ calcit calcit.cirru fix --rule synthesize-schema-v1 \
 ```
 
 规则复用编译器已经产生的 compiled form、局部类型元数据与 bottom-up inference，不维护另一套递归类型模型。
-例如 `defatom *count 0` 可以产生 `Ref<Number>`，无参数且返回数值表达式的函数可以产生 `Fn() -> Number`；已有
+例如 `defref *count 0` 可以产生 `Ref<Number>`，无参数且返回数值表达式的函数可以产生 `Fn() -> Number`；已有
 `Fn(...)->Dynamic`、`Ref<Dynamic>` 或嵌套容器只替换能够由同形状推导结果证明的洞，声明中已有的 generics、`:where`、
 features、参数与函数类别保持不变。
 

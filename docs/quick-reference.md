@@ -331,11 +331,11 @@ let
 ### Ref/Atom Operations
 
 - `ref` - create a local Ref
-- `defref` - define a namespaced Ref that keeps its state across hot reload (`defatom` is the compatibility name)
+- `defref` - define a namespaced Ref that keeps its state across hot reload (`defatom` was removed in 0.31.0)
 - `&atom:deref` or `deref` - read value
 - `reset!` - set value
 - `swap!` - update with function
-- `add-watch!`, `remove-watch!`：注册和移除 Ref watcher，会修改 watcher 状态；旧 `remove-watch` 暂留兼容，旧 `add-watch` 已在 0.29.0 删除
+- `add-watch!`, `remove-watch!`：注册和移除 Ref watcher，会修改 watcher 状态；旧 `remove-watch` 已在 0.31.0 删除，旧 `add-watch` 已在 0.29.0 删除
 - `ref?` - predicate
 
 ### Type Predicates

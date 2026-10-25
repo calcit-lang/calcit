@@ -35,7 +35,7 @@ Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处�
 
 CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输出。需要稳定字段与自动分支时，Calcit 自有工作流优先选择 `--format edn`，因为 Cirru EDN 会保留 tag、symbol 等原生数据语义；只有对接 JSON-only 工具或既有 JSON consumer 时才显式选择 `--format json`。尚未提供 EDN 的旧命令可暂时使用 JSON，后续按共享 envelope 逐步迁移，不应为此增加新顶层入口。
 
-遇到 `%ok`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
+遇到 `Result :ok`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
 
 查询方法先核对 `status` 与参数、返回类型；`open` 不等于已证明可安全调用，展示顺序也不表示名称优先级。`query type` 的 `definition` 是继续查 `query examples '<definition>'` 的定位线索，不是另一种推荐调用写法。例如 String `.includes?` 的示例位于 `calcit.core/&str:includes?`，Map `.contains-key?` 位于 `calcit.core/&map:contains?`，List `.fold` 位于 `calcit.core/fold`；这些示例展示应用方法调用。`query examples` 当前输出 Markdown-compatible 文本，尚不接受 `--format edn`，不要给它套用其他查询命令的格式参数。Option 判断可先用 `query type ":: 'Option 'Number" --format edn` 确认 `.none?`，再查询 `calcit.core/option:none?` 的直接名义构造示例。
 
@@ -416,7 +416,7 @@ calcit test '<namespace>/<definition>'
 
 读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。查询不再给方法分配首选/兼容角色；名字的语义与迁移路线通过现有 API 命名文档和升级指南查询，不能仅凭 `proven` 或列表顺序猜测首选。
 
-创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` 已在 0.31.0 删除；旧 `defatom` 仍是兼容名，已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移为 `defref`。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
+创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` 与 `defatom` 已在 0.31.0 删除，旧项目先用 0.30.x 的 CLI 迁移，见[升级指南](run/upgrade.md#0310-删除最后一批已弃用的核心名字)。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
 
 Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-watch! ref :key`；`!` 表示修改 watcher 注册状态，并不表示所有可能失败的操作都要加后缀。callback 接收新值和旧值，返回 `Unit`；重复注册或移除缺失 key 仍会报错。旧 `add-watch` 已在 0.29.0 删除；旧 `remove-watch` 暂留兼容，不建议 Agent 生成新的应用调用；未知同名用户函数不能仅凭拼写自动迁移。
 
@@ -637,9 +637,9 @@ List 单元素追加使用 `.append`，List 拼接用 `.concat`；旧 `.add` 已
 
 Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? value :field`，参数必须是 Tag，返回 Bool，字段不存在返回 false。此接口在 native、生成 JS 与现有 WASM 子集有相同命题；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，属于兼容行为，不代表新接口可接受这些输入。Struct 的旧 `.contains?` 在 0.29.0 仍可用，没有自动迁移规则；遇到旧 `.contains?`、自定义 `Contains` trait 或反射式字段名时先核对来源与目标支持范围。
 
-String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。可显式用 `calcit fix --rule core-identity-conversion-v1 --format edn` 预览：仅在完整内建调用的参数被证明为 String、源码上下文稳定时自动迁移；Dynamic、非 String、quote、macro 与一等函数引用不自动改写，附带区域可传 `--include-attached` 纳入同样的源码证明。`turn-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
+String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。可显式用 `calcit fix --rule core-identity-conversion-v1 --format edn` 预览：仅在完整内建调用的参数被证明为 String、源码上下文稳定时自动迁移；Dynamic、非 String、quote、macro 与一等函数引用不自动改写，附带区域可传 `--include-attached` 纳入同样的源码证明。`to-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
 
-对旧 `turn-string`，同一 fix 仅在内建 Nil、Bool、Number、String、Tag、Symbol 参数已证明时改为 `to-string`；这些内建 trait 方法调用相同的内部 `&turn-string`。旧入口本身现在也要求 `T: ToString`，因此 List/Map/Unit/开放 Dynamic 会在严格预处理时报错，而用户自定义实现仍可调用。自定义 `ToString`、开放 Dynamic、集合及无法稳定定位的源码不自动改写。`str`、`.show/.debug` 仍是不同显示职责，不应加入此迁移。
+旧 `turn-string` 已在 0.31.0 删除，改用 `to-string`；内建 Nil、Bool、Number、String、Tag、Symbol 的 `ToString` 实现调用相同的内部 `&turn-string`。`str`、`.show/.debug` 仍是不同显示职责，不应混入此迁移。
 
 测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 已在 0.29.0 删除。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒，JS 使用 `Date.now()`；早于 epoch 时失败，不用单调读数或默认值代替。两个时钟均支持 native/JS/WASI Preview 1；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 

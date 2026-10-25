@@ -63,10 +63,32 @@ try {
   // project, so the whole script takes about as long as its slowest group instead of the sum.
   const parts = [
     async () => {
+      // #2351: proven kind does not imply a pure or infallible argument.
+      const predicateResults = join(project, "predicate-evaluation.json");
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-fn-inference", "--tag", "predicate-evaluation",
+        "--backend", "native,js,wasm", "--results-json", predicateResults],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      const predicateTrace = JSON.parse(await readFile(predicateResults, "utf8"));
+      const predicateId = "test-types-inference.main/test-fn-inference#type-predicates-evaluate-once-in-order";
+      assert.deepEqual(Object.keys(predicateTrace), [predicateId], "the exact attached predicate test must execute");
+      for (const backend of ["native", "js", "wasm"]) {
+        assert.equal(predicateTrace[predicateId][backend].status, "pass");
+        assert.deepEqual(predicateTrace[predicateId][backend].trace,
+          ["predicate-number", "predicate-list", "predicate-bool", "predicate-bound"],
+          `${backend}: nested type predicates must evaluate each producer once and in order`);
+      }
+      // The existing WASI job replays the same stdout trace against native.
+      // Exception handlers and first-class Proc aliases currently use native/JS.
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-fn-inference", "--tag", "predicate-errors",
+        "--backend", "native,js"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       // #2341: resolved builtin methods reuse the direct callback relation.
+      // The existing Component CI job replays this same definition on WASI.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--target", "test-types-inference.main/test-list-inference", "--tag", "fold-method-context",
-        "--backend", "native,js,wasm,wasi"],
+        "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [source, diagnostic] of [
         [".foldl ([] ([] 1 2) ([] 3 4)) 0\n  fn (acc pair)\n    &+ acc pair", /W_PROC_ARG_TYPE_MISMATCH/],
@@ -76,6 +98,51 @@ try {
         if (rejected.error) throw rejected.error;
         assert.notEqual(rejected.status, 0, "method callback context must not accept the wrong input or result type");
         assert.match(rejected.stderr, diagnostic);
+      }
+      // #2121/#1553: returning another callback input does not prove an
+      // established accumulator binder, even when both inputs are generic.
+      const foldForms = [
+        ["prefix", "foldl xs seed"],
+        ["method", ".foldl xs seed"],
+        ["postfix", "xs .foldl seed"],
+        ["threaded", "-> xs $ .foldl seed"],
+      ];
+      for (const [form, call] of foldForms) {
+        // WASM validates the whole project, so another invalid definition
+        // must not satisfy this form's source-owner assertion accidentally.
+        const rigidSnapshot = join(project, `rigid-fold-${form}.cirru`);
+        await copyFile("calcit/add.cirru", rigidSnapshot);
+        const runRigid = (...args) => execFileSync(binary, [rigidSnapshot, ...args], options);
+        runRigid("query", "config", "--format", "edn");
+        runRigid("query", "def", "app.main/main!", "--format", "edn");
+        const rigidTransaction = JSON.stringify([
+          ["edit", "def", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn bad-${form} (xs seed)\n  ${call} $ fn (acc item)\n    , item`],
+          ["edit", "schema", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:generics $ [] 'Elem 'Acc) (:args $ [] (:: 'List 'Elem) 'Acc) (:return 'Acc)"],
+          ["edit", "def", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            `quote $ defn run-${form} ()\n  bad-${form} ([] 1 2) |seed`],
+          ["edit", "schema", `app.main/run-${form}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
+        ]);
+        const rigidPreview = JSON.parse(runRigid("edit", "transaction", "--code", rigidTransaction, "--dry-run", "--format", "json"));
+        runRigid("edit", "transaction", "--code", rigidTransaction,
+          "--expect-revision", rigidPreview.scoped_revision, "--format", "edn");
+        const rigidOriginal = await readFile(rigidSnapshot);
+        const entry = `app.main/run-${form}`;
+        for (const backend of ["native", "js", "wasm", "wasi"]) {
+          const output = join(project, `rigid-${form}-${backend}`);
+          const args = backend === "native" ? ["--check-only"] : ["--emit-path", output, backend];
+          const rejected = spawnSync(binary,
+            [rigidSnapshot, "--init-fn", entry, "--reload-fn", entry, ...args], options);
+          if (rejected.error) throw rejected.error;
+          assert.equal(rejected.status, 1, `${form}/${backend}: independent callback binders must be rejected`);
+          assert.match(rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+          assert.match(rejected.stderr, new RegExp(`app.main/bad-${form}`));
+          assert.doesNotMatch(rejected.stderr, /#lexical:|#call-type:/);
+          await assertRejectedArtifacts(output, `${form}/${backend}`, /E_ERASED_GENERIC_RELATION/);
+        }
+        assert.deepEqual(await readFile(rigidSnapshot), rigidOriginal);
       }
       // #2310: prove the actual core caller against the homogeneous shortcut
       // fold contract. Runtime tests alone miss errors suppressed in core lint.
@@ -266,10 +333,17 @@ try {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "contextual-map-output", "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "loop-empty-accumulator", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [name, parameters, generics, types, returned, body] of [
         ["wrong-output-owner", "xs f", "'T 'U", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'U))", "T", ".map xs $ fn (value) $ f value"],
         ["concrete-output", "xs", "'T", "(:: 'List 'T)", "T", "map xs $ fn (_value) |not-a-generic"],
         ["open-output", "xs f", "'T 'MapOutput", "(:: 'List 'T) (:: 'Fn $ {} (:args $ [] 'T) (:return 'Dynamic))", "MapOutput", "map xs $ fn (value) $ f value"],
+        // An empty loop accumulator is solved from its recur transfers, not
+        // borrowed from the return: a concrete or mixed member cannot be T.
+        ["loop-concrete-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append acc |x)"],
+        ["loop-mixed-member", "x", "'T", "'T", "T", "loop ((i 0) (acc ([]))) $ if (>= i 3) acc $ recur (inc i) (&list:append (&list:append acc x) 1)"],
       ]) {
         const operations = JSON.stringify([
           ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${parameters})\n  ${body}`],
@@ -299,6 +373,53 @@ try {
         }
         runMapper("edit", "rm-def", `app.main/${name}`);
       }
+      // An empty field of a generic struct literal is proved against the
+      // declared applied argument instead of binding it to Dynamic; a field of
+      // the wrong family or a concrete seed still cannot specialize the return.
+      const boxOperations = JSON.stringify([
+        ["edit", "def", "app.main/FieldBox", "--input-format", "cirru", "--code",
+          "quote $ defstruct FieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)"],
+        ["edit", "schema", "app.main/FieldBox", "--input-format", "cirru", "--code", "quote $ :: 'StructDef"],
+      ]);
+      const boxPreview = JSON.parse(runMapper("edit", "transaction", "--code", boxOperations, "--dry-run", "--format", "json"));
+      runMapper("edit", "transaction", "--code", boxOperations, "--expect-revision", boxPreview.scoped_revision, "--format", "edn");
+      for (const [name, items, seed, accepted] of [
+        ["empty-field-box", "[]", "seed", true],
+        ["number-field-box", "[] 1", "seed", false],
+        ["map-field-box", "{}", "seed", false],
+        ["string-seed-box", "[]", "|seed", false],
+      ]) {
+        const operations = JSON.stringify([
+          ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code",
+            `quote $ defn ${name} (seed)\n  FieldBox :items (${items}) :seed ${seed}`],
+          ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
+            "quote $ :: 'Fn $ {} (:generics $ [] 'T 'S) (:args $ [] 'S) (:return $ :: 'app.main/FieldBox 'T 'S)"],
+        ]);
+        const preview = JSON.parse(runMapper("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
+        runMapper("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "edn");
+        const original = await readFile(mapperSnapshot);
+        for (const args of [
+          ["--check-only", "--all-defs"],
+          ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"],
+          ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+        ]) {
+          const result = spawnSync(binary, [mapperSnapshot, ...args], options);
+          if (result.error) throw result.error;
+          if (accepted) {
+            assert.equal(result.status, 0, `${name}: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+          } else {
+            assert.notEqual(result.status, 0, `${name}: a mismatched field cannot prove the generic struct return`);
+            // The single-rule preview may refuse earlier, on the field contradiction itself.
+            assert.match(result.stdout + result.stderr, /E_ERASED_GENERIC_RELATION|cannot borrow a contradictory producer contract/);
+          }
+          assert.deepEqual(await readFile(mapperSnapshot), original);
+        }
+        runMapper("edit", "rm-def", `app.main/${name}`);
+      }
+      runMapper("edit", "rm-def", "app.main/FieldBox");
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--tag", "empty-field-struct", "--backend", "native,js,wasm"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       // #2121: enum payload names use their declaration namespace, including
       // recursive branches. Caller-owned generic arguments retain their identity.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
@@ -603,6 +724,28 @@ try {
           label: "bound-explicit-call-needs-evidence", diagnostic: /E_UNPROVEN_TRAIT_CALL/,
           schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
           source: "defn producer (value)\n  &trait-call Sliceable :slice value 0 (Option :some 1)\n  , &unit",
+        },
+        // #2187: a kind guard on `x: T` narrows the input without instantiating
+        // T, so a new payload of the guarded kind cannot prove the generic result.
+        ...[
+          ["kind-guard-list-payload", "[] |wrong"],
+          ["kind-guard-let-payload", "let ((y $ [] |wrong)) y"],
+          ["kind-guard-map-payload", "{} $ :a 1"],
+        ].map(([label, payload]) => ({
+          label, diagnostic: /E_ERASED_GENERIC_RELATION|E_FN_RETURN_UNPROVEN/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          source: `defn producer (x)\n  if (${label.includes("map") ? "map?" : "list?"} x)\n    ${payload}\n    , x`,
+        })),
+        {
+          // A guard on a captured outer value cannot prove an inner binder spelled the same.
+          label: "kind-guard-captured-outer-binder", diagnostic: /E_ERASED_GENERIC_RELATION/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  let\n      callback $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:generics $ [] 'T)\n        if (list? value) value $ raise |no\n    callback\n    , &unit",
+        },
+        {
+          // The old runtime rejection of a receiver without slice capabilities.
+          label: "rest-requires-sliceable-countable", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
+          source: "defn producer (value)\n  rest 1\n  , &unit",
         },
         {
           label: "bound-capture-cannot-invent-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
@@ -1864,7 +2007,7 @@ try {
       const effectsOperations = [
         ["edit", "add-ns", "calcit.core-truthiness-effects"],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-count", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defatom", "truthiness-count", "0"])],
+          JSON.stringify(["defref", "truthiness-count", "0"])],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "truthiness-number-once", ["value"],
             ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],
@@ -3077,13 +3220,15 @@ try {
         assert.deepEqual(await readFile(snapshot), original);
         run("edit", "rm-def", "calcit.assert-evidence/open-result");
       }
-      // A kind predicate on the value typed by the generic return variable refines
-      // that variable inside the guarded branch. Unguarded exits and predicates on other
-      // values still owe the original generic contract (#1529).
+      // A kind predicate on the value typed by the generic return variable narrows
+      // that input without instantiating the variable (#2187): the guarded input and
+      // its direct aliases keep `T`, while a new value of the guarded kind does not.
+      // Unguarded exits and predicates on other values still owe the original contract (#1529).
       const genericReturnSchema = "quote $ :: 'Fn $ {} (:args $ [] 'T 'Bool) (:generics $ [] 'T) (:return 'T)";
       for (const [name, code, accepted, jsFfi] of [
-        ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], true],
-        ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], true],
+        ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false],
+        ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], false],
+        ["kind-guarded-input", ["defn", "kind-guarded-input", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], "x", ["raise", "|not-list"]]]], true],
         ["kind-other-value", ["defn", "kind-other-value", ["x", "flag"], ["if", ["list?", "flag"], ["&list:rest", "x"], "|text"]], false],
         ["kind-rebound-local", ["defn", "kind-rebound-local", ["x", "flag"], ["if", ["list?", "x"], ["&let", ["unused", ["set!", "x", "|text"]], "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false, true],
         ["kind-unguarded-join", ["defn", "kind-unguarded-join", ["x", "flag"], ["if", "flag", ["[]", "1"], "|text"]], false],
@@ -3098,7 +3243,7 @@ try {
           assert.equal(checked.status, 0, `${name}\n${checked.stdout}\n${checked.stderr}`);
         } else {
           assert.equal(checked.status, 1, `${name}\n${checked.stdout}\n${checked.stderr}`);
-          assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN/, name);
+          assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN|E_ERASED_GENERIC_RELATION/, name);
         }
         assert.deepEqual(await readFile(snapshot), original);
         run("edit", "rm-def", `calcit.assert-evidence/${name}`);
@@ -4371,14 +4516,16 @@ try {
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
 
       // An open or concrete result cannot independently prove a bare generic
-      // return, whether it is the whole result or one unguarded branch; a branch
-      // guarded by a kind predicate on the generic argument still proves it.
+      // return, whether it is the whole result or one branch; a kind predicate on the
+      // generic argument proves only a branch returning that argument (#2187).
       for (const [name, body, accepted] of [
         ["open-list-for-bare-t", "([])", false],
         ["concrete-list-for-bare-t", "([] 1)", false],
         ["open-branch-for-bare-t", "(if (= 1 1) ([] 1) xs)", false],
         ["same-t-branches", "(if (= 1 1) xs xs)", true],
-        ["guarded-list-branch", "(if (list? xs) ([] 1) xs)", true],
+        ["guarded-list-branch", "(if (list? xs) ([] 1) xs)", false],
+        ["guarded-input-branch", "(if (list? xs) xs ([] 1))", false],
+        ["guarded-input-alias", "(if (list? xs) (let ((ys xs)) ys) xs)", true],
       ]) {
         await copyFile("tests/fixtures/count-contract.cirru", snapshot);
         run("edit", "def", "fix-command.main/bare-return", "--input-format", "cirru", "--code",

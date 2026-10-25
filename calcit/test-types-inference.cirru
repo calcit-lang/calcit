@@ -11,7 +11,7 @@
     'test-types-inference.main $ %{} 'FileEntry
       :defs $ {}
         '*dynamic-ref $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom *dynamic-ref (make-dynamic-value)
+          :code $ quote $ defref *dynamic-ref (make-dynamic-value)
           :examples $ []
           :schema $ :: 'Ref 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-atom-deref)
@@ -34,6 +34,10 @@
               :args $ [] $ :: 'Fn
                 {} (:return 'Number)
                   :args $ [] 'T
+          :examples $ []
+          :schema $ :: 'StructDef
+        'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)
           :examples $ []
           :schema $ :: 'StructDef
         'Job $ %{} 'CodeEntry (:doc |)
@@ -309,6 +313,22 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'empty-field-box $ %{} 'CodeEntry (:doc "|An empty List field keeps the declared element binder of a generic struct return.")
+          :code $ quote $ defn empty-field-box (seed)
+            EmptyFieldBox :items ([]) :seed seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'S
+            :generics $ [] 'T 'S
+            :return $ :: 'test-types-inference.main/EmptyFieldBox 'T 'S
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
+            :code $ quote $ let
+                box $ assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'String)
+              do
+                assert= ([]) $ :items box
+                assert= |seed $ :seed box
+                assert= ([] 1) $ append (:items box) 1
+            :tags $ #{} :empty-field-struct :unit
         'find-last-matching-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn find-last-matching-index (xs item) (.last-index-of xs item)
           :examples $ []
@@ -403,6 +423,26 @@
                   first-rest-value |prefix & $ supply
                 assert= 1 $ deref calls
               :tags $ #{} :unit
+        'guarded-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn guarded-identity (x)
+            if (list? x)
+              let
+                  y x
+                , y
+              , x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-guarded-input-contract)
+            :code $ quote $ let
+                items $ guarded-identity $ [] 1 2
+                text $ guarded-identity |a
+              assert-type items $ :: 'List 'Number
+              assert-type text 'String
+              assert= ([] 1 2) items
+              assert= |a text
+            :tags $ #{} :generic :lexical-binder :unit
         'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
           :examples $ []
@@ -416,7 +456,7 @@
         'infer-match-raise $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-match-raise (enabled)
             let
-                parsed $ if enabled (%ok 1) (%err |missing)
+                parsed $ if enabled (Result :ok 1) (Result :err |missing)
                 value $ match parsed
                   (:ok n) (Option :some n)
                   (:err error) (raise error)
@@ -545,7 +585,7 @@
             :tags $ #{} :unit
         'infer-result-err-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-err-fallback ()
-            result:unwrap-or (%err 3) 7
+            result:unwrap-or (Result :err 3) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -554,7 +594,7 @@
             :tags $ #{} :unit
         'infer-result-err-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-err-predicate ()
-            result:err? $ %ok 1
+            result:err? $ Result :ok 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -563,7 +603,7 @@
             :tags $ #{} :unit
         'infer-result-ok-concrete $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-concrete ()
-            result:unwrap-or (%ok 9) 7
+            result:unwrap-or (Result :ok 9) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -572,7 +612,7 @@
             :tags $ #{} :unit
         'infer-result-ok-open $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-open (value)
-            result:unwrap-or (%ok value) 7
+            result:unwrap-or (Result :ok value) 7
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
@@ -583,7 +623,7 @@
             :tags $ #{} :unit
         'infer-result-ok-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-result-ok-predicate ()
-            result:ok? $ %ok 1
+            result:ok? $ Result :ok 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -612,6 +652,29 @@
             %{} 'TestEntry (:name |preserves-empty-rest)
               :code $ quote $ assert= ([]) (inherited-rest-binders 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'kept-members $ %{} 'CodeEntry (:doc "|An empty loop accumulator takes its element type from the members recur appends.")
+          :code $ quote $ defn kept-members (xs excluded)
+            loop
+                i 0
+                acc $ []
+              if
+                >= i $ &list:count xs
+                , acc $ let
+                    x $ &list:nth xs i
+                  recur (inc i)
+                    if (&= x excluded) acc $ &list:append acc x
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-loop-accumulator)
+            :code $ quote $ let
+                kept $ assert-type (kept-members ([] 1 2 3) 2) (:: 'List 'Number)
+              do
+                assert= ([] 1 3) kept
+                assert= ([]) $ kept-members ([] |a) |a
+            :tags $ #{} :loop-empty-accumulator :unit
         'lexical-capture-callback $ %{} 'CodeEntry
           :doc "|Generates a callback capturing the caller's T without redeclaring it."
           :code $ quote $ defmacro lexical-capture-callback (captured)
@@ -1423,6 +1486,73 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Nil)
             :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |type-predicates-evaluate-once-in-order)
+              :code $ quote $ let
+                  produce-number $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Number
+                    println |predicate-number
+                    , 7
+                  produce-list $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'Number
+                    println |predicate-list
+                    [] 1 2
+                  produce-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    println |predicate-bool
+                    , false
+                  produce-bound-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    println |predicate-bound
+                    , false
+                  local-callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ value 1
+                assert= true $ bool? $ bool?
+                  number? $ produce-number
+                assert= true $ list? $ produce-list
+                assert= true $ bool? $ produce-bool
+                assert= false $ number? |not-a-number
+                let
+                    value $ produce-bound-bool
+                  assert= true $ bool? value
+                assert= true $ fn? local-callback
+              :tags $ #{} :predicate-evaluation :unit
+            %{} 'TestEntry (:name |type-predicates-propagate-argument-errors)
+              :code $ quote $ let
+                  fail-bool $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Bool
+                    raise |predicate-must-run
+                assert= false $ try
+                  bool? $ fail-bool
+                  fn (message) (assert= |predicate-must-run message) false
+                assert= false $ try
+                  bool? $ bool? $ fail-bool
+                  fn (message) (assert= |predicate-must-run message) false
+                let
+                    open-bool $ fn ()
+                      hint-fn $ {}
+                        :args $ []
+                        :return 'Dynamic
+                      , false
+                  assert= true $ bool? $ open-bool
+                  assert= false $ number? $ open-bool
+                let
+                    predicate bool?
+                  assert= true $ predicate false
+              :tags $ #{} :predicate-errors :unit
         'test-generics-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-generics-identity ()
             let
@@ -1528,8 +1658,8 @@
             let
                 parsed-ok $ parse-float |1.5
                 parsed-bad $ parse-float |oops
-              assert= (%ok 1.5) parsed-ok
-              assert= (%err |oops) parsed-bad
+              assert= (Result :ok 1.5) parsed-ok
+              assert= (Result :err |oops) parsed-bad
               assert-type parsed-ok $ :: 'Result 'Number 'String
               assert-type parsed-bad $ :: 'Result 'Number 'String
               &inspect-type parsed-ok
@@ -1637,27 +1767,67 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Nil)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |method-infers-list-accumulator-context)
-            :code $ quote $ do
-              assert= ([] 1 2 3 4)
-                foldl
-                  [] ([] 1 2) ([] 3 4)
-                  []
-                  fn (acc pair) (.concat acc pair)
-              assert= ([] 1 2 3 4)
-                .foldl
-                  [] ([] 1 2) ([] 3 4)
-                  []
-                  fn (acc pair) (.concat acc pair)
-              assert= ([] 1 2 3 4)
-                ->
-                  [] ([] 1 2) ([] 3 4)
-                  .foldl ([])
+          :tests $ []
+            %{} 'TestEntry (:name |method-infers-list-accumulator-context)
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  foldl
+                    [] ([] 1 2) ([] 3 4)
+                    []
                     fn (acc pair) (.concat acc pair)
-              assert= ([])
-                .foldl ([]) ([])
-                  fn (acc pair) (.concat acc pair)
-            :tags $ #{} :fold-method-context :unit
+                assert= ([] 1 2 3 4)
+                  .foldl
+                    [] ([] 1 2) ([] 3 4)
+                    []
+                    fn (acc pair) (.concat acc pair)
+                assert= ([] 1 2 3 4)
+                  ->
+                    [] ([] 1 2) ([] 3 4)
+                    .foldl ([])
+                      fn (acc pair) (.concat acc pair)
+                assert= ([])
+                  .foldl ([]) ([])
+                    fn (acc pair) (.concat acc pair)
+              :tags $ #{} :fold-method-context :unit
+            %{} 'TestEntry (:name |fold-preserves-independent-generic-seed)
+              :code $ quote $ let
+                  keep-prefix $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    foldl xs seed $ fn (acc item) acc
+                  keep-method $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    .foldl xs seed $ fn (acc item) acc
+                  keep-postfix $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    xs .foldl seed $ fn (acc item) acc
+                  keep-threaded $ fn (xs seed)
+                    hint-fn $ {}
+                      :generics $ [] 'Elem 'Acc
+                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :return 'Acc
+                    -> xs $ .foldl seed $ fn (acc item) acc
+                assert= |seed $ keep-prefix ([] 1 2) |seed
+                assert= 3 $ keep-prefix ([] |a |b) 3
+                assert= |empty $ keep-prefix ([]) |empty
+                assert= |seed $ keep-method ([] 1 2) |seed
+                assert= 3 $ keep-method ([] |a |b) 3
+                assert= |empty $ keep-method ([]) |empty
+                assert= |seed $ keep-postfix ([] 1 2) |seed
+                assert= 3 $ keep-postfix ([] |a |b) 3
+                assert= |empty $ keep-postfix ([]) |empty
+                assert= |seed $ keep-threaded ([] 1 2) |seed
+                assert= 3 $ keep-threaded ([] |a |b) 3
+                assert= |empty $ keep-threaded ([]) |empty
+              :tags $ #{} :fold-method-context :unit
         'test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map-inference ()
             let
