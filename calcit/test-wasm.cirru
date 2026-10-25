@@ -108,6 +108,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'enum-index-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-index-helper (value key) (.contains? value key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'K
+            :generics $ [] 'K
         'factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
           :code $ quote $ defwasm-export factorial (n)
             if (&< n 2) 1 $ &* n $ factorial (&- n 1)
@@ -128,6 +134,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'hof-number-argument-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn hof-number-argument-shadow (__hof_arg__)
+            = 0 $ count $ filter ([] |a |b) number?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |callback-input-keeps-own-type)
+            :code $ quote $ assert= true (hof-number-argument-shadow 0)
+            :tags $ #{} :hof-number-scope :numeric-recursion-evidence :unit :wasm
         'host-string-upcase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-string-upcase (text) |host |string-upcase
           :examples $ []
@@ -170,6 +185,42 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
+        'recursive-hof-number-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-hof-number-kind (remaining values extra)
+            if (<= remaining 0)
+              = 2 $ count $ filter values number?
+              recur (dec remaining) values extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number (:: 'List 'Number) 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |numeric-filter-keeps-recursion)
+            :code $ quote $ assert= true
+              recursive-hof-number-kind 2 ([] 1 2) :unused
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
+        'recursive-number-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-number-kind (remaining value extra)
+            if (<= remaining 0) (number? value)
+              recur (dec remaining) value extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Int8 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
+            :code $ quote $ assert= true
+              recursive-number-kind 2 (assert-type 1 'Int8) :unused
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
+        'recursive-number-kind-control $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-number-kind-control (remaining value extra)
+            if (<= remaining 0) (number? value)
+              recur (dec remaining) value extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
+            :code $ quote $ assert= true (recursive-number-kind-control 2 1 :unused)
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export reload! () &unit
           :examples $ []
@@ -452,6 +503,82 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-invalid-direct-false $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-false ()
+            .contains? (Option :some 1) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-nil ()
+            .contains? (Option :some 1) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-string ()
+            .contains? (Option :some 1) |0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-tag ()
+            .contains? (Option :some 1) :zero
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-true ()
+            .contains? (Option :some 1) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-false $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-false ()
+            enum-index-helper (Option :some 1) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-nil ()
+            enum-index-helper (Option :some 1) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-string ()
+            enum-index-helper (Option :some 1) |0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-tag ()
+            enum-index-helper (Option :some 1) :zero
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-true ()
+            enum-index-helper (Option :some 1) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-ordered $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-ordered ()
+            .contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-key-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-key-error ()
+            .contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) (raise |enum-key-error)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'test-enum-map-set-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-map-set-equality ()
             if
@@ -480,6 +607,26 @@
                 , 0 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-enum-number-index-direct $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-number-index-direct (index)
+            .contains? (Option :some 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+        'test-enum-number-index-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-number-index-helper (index)
+            enum-index-helper (Option :some 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+        'test-enum-receiver-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-receiver-error ()
+            enum-index-helper
+              do (println |enum-receiver) (raise |enum-receiver-error)
+              do (println |enum-key) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()
@@ -1157,6 +1304,21 @@
           :code $ quote $ defwasm-export test-number-compare-method () (.compare 1 2)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-number-predicate-hof-pointer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-number-predicate-hof-pointer (value)
+            count $ filter ([] value 2) number?
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'test-number-predicate-recursion $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-number-predicate-recursion ()
+            assert= true $ recursive-number-kind-control 2 1 :unused
+            assert= true $ recursive-hof-number-kind 2 ([] 1 2) :unused
+            assert= true $ hof-number-argument-shadow 0
+            recursive-number-kind 2 (assert-type 1 'Int8) :unused
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-number?-true $ %{} 'CodeEntry (:doc "|number? on number returns true (1)")
           :code $ quote $ defwasm-export test-number?-true ()

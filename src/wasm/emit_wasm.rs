@@ -5608,9 +5608,28 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
       .and_then(|head| match head {
         Calcit::Proc(proc) => {
           let (ns, def) = proc.get_ns_def();
-          program::lookup_def_schema(ns, def)
-            .resolve_to_fn()
-            .and_then(|signature| (!signature.return_type.contains_type_var()).then(|| signature.return_type.clone()))
+          let signature = program::lookup_def_schema(ns, def).resolve_to_fn().or_else(|| {
+            proc
+              .get_type_signature()
+              .filter(|signature| signature.return_type.contains_type_var())
+              .and_then(|signature| {
+                CalcitTypeAnnotation::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone(), proc.arity())
+                  .resolve_to_fn()
+              })
+          })?;
+          if !signature.return_type.contains_type_var() {
+            return Some(signature.return_type.clone());
+          }
+          let mut bindings = TypeBindings::new();
+          for (index, argument) in items.iter().skip(1).enumerate() {
+            let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+            let actual = infer_wasm_static_type(ctx, argument)?;
+            if actual.prove_available_bindings(expected, &mut bindings).is_mismatch() {
+              return None;
+            }
+          }
+          let result = signature.return_type.substitute_type_vars(&bindings);
+          (!result.contains_type_var()).then_some(result)
         }
         _ => None,
       })
@@ -5757,34 +5776,24 @@ fn resolve_static_specialization_types(
     return None;
   }
   let mut bindings = TypeBindings::new();
-  let actual_types = args
+  // Retain actual evidence, including an intentionally open transported value.
+  // The operation that consumes it (nil?, numeric ordering or trait dispatch)
+  // must prove its own requirements; an unrelated parameter need not be closed.
+  args
     .iter()
     .zip(definition.arg_types.iter())
     .map(|(arg, expected)| {
       let actual = infer_wasm_static_type(ctx, arg)?;
-      if nil_type_evidence_is_open(actual.as_ref())
-        || actual
-          .as_ref()
-          .prove_available_bindings(expected.as_ref(), &mut bindings)
-          .is_mismatch()
+      if actual
+        .as_ref()
+        .prove_available_bindings(expected.as_ref(), &mut bindings)
+        .is_mismatch()
       {
         return None;
       }
       Some(actual)
     })
-    .collect::<Option<Vec<_>>>()?;
-  let all_declared_types_resolved = definition.arg_types.iter().zip(actual_types.iter()).all(|(expected, actual)| {
-    // A proven nil has no Optional payload to resolve; retain its actual
-    // Nil evidence rather than inventing a binding for the phantom type.
-    if matches!(actual.as_ref(), CalcitTypeAnnotation::Nil)
-      && matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit))
-    {
-      return true;
-    }
-    let resolved = expected.substitute_type_vars(&bindings);
-    !nil_type_evidence_is_open(resolved.as_ref()) && !resolved.contains_type_var()
-  });
-  all_declared_types_resolved.then_some(actual_types)
+    .collect::<Option<Vec<_>>>()
 }
 
 fn nominal_option_none_expression() -> Result<Calcit, String> {
@@ -5931,7 +5940,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   ctx.locals = caller_locals;
   ctx.local_types = caller_local_types;
   ctx.lambda_locals = caller_closures;
-  result?;
+  result.map_err(|error| format!("{error} (specializing `{qualified}`)"))?;
   Ok(true)
 }
 
@@ -6021,9 +6030,21 @@ fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Opti
 fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion) => true,
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NumberQuestion))) => {
+      let proven_number = items
+        .get(1)
+        .and_then(infer_static_type_from_expr)
+        .is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number));
+      // Do not revisit the proc head as a bare predicate value. Its proven
+      // operand needs no specialization of unrelated generic parameters.
+      !proven_number || items.iter().skip(1).any(direct_scalar_type_test)
+    }
     Calcit::List(items) => {
       let direct = match items.first() {
         Some(Calcit::Proc(CalcitProc::NilQuestion)) => true,
+        Some(Calcit::Proc(CalcitProc::NativeLessThan | CalcitProc::NativeGreaterThan)) => items.iter().skip(1).any(|operand| {
+          infer_static_type_from_expr(operand).is_none_or(|annotation| !annotation.is_proven_for(&CalcitTypeAnnotation::Number))
+        }),
         // Reuse scalar specialization for open conditions instead of treating
         // the erased f64 payload as a Boolean or adding a dynamic runtime tag.
         Some(Calcit::Syntax(CalcitSyntax::If, _)) => items
@@ -6219,8 +6240,16 @@ fn compile_fn(
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
     ctx.locals.insert(pname.clone(), i as u32);
-    if let Some(annotation) = signature.and_then(|value| value.arg_types.get(i)) {
-      ctx.local_types.insert(pname.clone(), annotation.clone());
+    if let Some(signature) = signature {
+      let annotation = signature.arg_types.get(i).cloned().or_else(|| {
+        signature
+          .rest_type
+          .as_ref()
+          .map(|element| Arc::new(CalcitTypeAnnotation::List(element.clone())))
+      });
+      if let Some(annotation) = annotation {
+        ctx.local_types.insert(pname.clone(), annotation);
+      }
     }
     ctx.arg_indices.push(i as u32);
   }
@@ -7342,8 +7371,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Comparisons — produce f64 (1.0 or 0.0)
-    CalcitProc::NativeLessThan => emit_cmp(ctx, Instruction::F64Lt, args),
-    CalcitProc::NativeGreaterThan => emit_cmp(ctx, Instruction::F64Gt, args),
+    CalcitProc::NativeLessThan => emit_numeric_cmp(ctx, Instruction::F64Lt, args),
+    CalcitProc::NativeGreaterThan => emit_numeric_cmp(ctx, Instruction::F64Gt, args),
     CalcitProc::NativeEquals => emit_equals(ctx, args),
     CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
     CalcitProc::NativeCompare => {
@@ -8118,6 +8147,17 @@ fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -
   if args.len() != 1 {
     return Err(format!("{}? expects 1 arg, got {}", type_name, args.len()));
   }
+  // A proven Number may have the same bits as a live heap pointer. Preserve
+  // its call-site evidence instead of reclassifying it from linear memory.
+  if type_name == "number"
+    && infer_wasm_static_type(ctx, &args[0])
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
+  {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(1.0));
+    return Ok(());
+  }
   let expected_tag = get_type_tag(ctx, type_name);
   // Emit type-of, which leaves a tag f64 on the stack
   emit_type_of(ctx, args)?;
@@ -8852,6 +8892,38 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   ctx.emit(instr);
   ctx.emit(Instruction::Select);
   Ok(())
+}
+
+/// Numeric ordering cannot recover a Number proof from an erased scalar:
+/// nil, Bool and Tag can have exactly the same f64 representation.
+fn emit_numeric_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "numeric comparison")?;
+  let mut mismatch = false;
+  for operand in args {
+    let annotation = infer_wasm_static_type(ctx, operand)
+      .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: numeric comparison requires concrete operand types before scalar erasure".to_owned())?;
+    let proof = annotation.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new());
+    if proof.is_mismatch() {
+      mismatch = true;
+    } else if !proof.is_proven() {
+      return Err(format!(
+        "E_WASM_NIL_TYPE_EVIDENCE: numeric comparison cannot distinguish Number from an open `{}` operand",
+        annotation.to_brief_string()
+      ));
+    }
+  }
+  if mismatch {
+    // Native evaluates every argument, in order, before the proc rejects its
+    // types. Retain those effects and errors rather than folding to a trap early.
+    for operand in args {
+      emit_expr(ctx, operand)?;
+      ctx.emit(Instruction::Drop);
+    }
+    ctx.emit(Instruction::Unreachable);
+    Ok(())
+  } else {
+    emit_cmp(ctx, instr, args)
+  }
 }
 
 /// Emits an i32 local that is 1 when the f64 value is a live heap value: an

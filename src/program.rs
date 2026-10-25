@@ -1374,6 +1374,18 @@ pub fn clone_compiled_program_snapshot() -> Result<CompiledProgram, String> {
     }
   }
 
+  // Filling an unused source definition can synthesize a nominal method
+  // callable and compile further dependencies. Keep those actual compiled
+  // definitions as well as snapshot-only fallbacks, before codegen freezes its view.
+  for (ns, file) in PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").iter() {
+    let compiled_file = compiled
+      .entry(ns.clone())
+      .or_insert_with(|| CompiledFileData { defs: HashMap::new() });
+    compiled_file
+      .defs
+      .extend(file.defs.iter().map(|(name, definition)| (name.clone(), definition.clone())));
+  }
+
   Ok(compiled)
 }
 

@@ -378,6 +378,34 @@ check("test-call-spread-rest()", 15, e["test-call-spread-rest"]);
 check("test-enum-sum()", 30, e["test-enum-sum"]);
 check("test-enum-count()", 3, e["test-enum-count"]);
 
+// A valid Number may equal a live heap pointer. Its proven scalar type must
+// win over pointer heuristics in both direct and generic trait lowering.
+const enumNumericPointer = allocString(0);
+new DataView(inst.exports.memory.buffer).setFloat64(enumNumericPointer, 0, true);
+assert.equal(readWasmStr(enumNumericPointer), "", "the numeric alias must identify a real live heap object");
+for (const route of ["direct", "helper"]) {
+  const name = `test-enum-number-index-${route}`;
+  check(`${name}(live heap pointer as Number)`, 0, e[name], enumNumericPointer);
+}
+
+// Known nominal calls inline their trait implementation; generic calls use
+// scalar specialization. Neither route may compare an erased nil/Bool/Tag as Number.
+for (const route of ["direct", "helper"]) {
+  for (const key of ["nil", "false", "true", "string", "tag"]) {
+    const name = `test-enum-invalid-${route}-${key}`;
+    checkTrap(`${name}()`, () => e[name]());
+  }
+}
+for (const [name, expected] of [
+  ["test-enum-invalid-ordered", ["enum-receiver", "enum-key"]],
+  ["test-enum-receiver-error", ["enum-receiver"]],
+  ["test-enum-key-error", ["enum-receiver", "enum-key"]],
+]) {
+  const start = wasmLog.length;
+  checkTrap(`${name}()`, () => e[name]());
+  assert.deepEqual(wasmLog.slice(start), expected, `${name}: preserve ordered single evaluation before failure`);
+}
+
 // --- Bitwise tests ---
 check("test-bit-and(0xFF,0x0F)", 0x0f, e["test-bit-and"], 0xff, 0x0f);
 check("test-bit-or(0xF0,0x0F)", 0xff, e["test-bit-or"], 0xf0, 0x0f);
@@ -591,6 +619,8 @@ check("test-type-of-number", 1, e["test-type-of-number"]);
 check("test-type-of-enum", 1, e["test-type-of-enum"]);
 
 // --- derived predicates (list?, number?, map?) ---
+check("test-number-predicate-recursion()", 1, e["test-number-predicate-recursion"]);
+check("test-number-predicate-hof-pointer(live heap pointer as Number)", 2, e["test-number-predicate-hof-pointer"], enumNumericPointer);
 check("test-list?-true", 1, e["test-list?-true"]);
 check("test-list?-false", 0, e["test-list?-false"]);
 check("test-number?-true", 1, e["test-number?-true"]);
