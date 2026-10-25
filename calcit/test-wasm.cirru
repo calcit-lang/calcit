@@ -108,6 +108,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'enum-index-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-index-helper (value key) (.contains? value key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'K
+            :generics $ [] 'K
         'factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
           :code $ quote $ defwasm-export factorial (n)
             if (&< n 2) 1 $ &* n $ factorial (&- n 1)
@@ -452,6 +458,82 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-invalid-direct-false $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-false ()
+            .contains? (Option :some 1) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-nil ()
+            .contains? (Option :some 1) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-string ()
+            .contains? (Option :some 1) |0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-tag ()
+            .contains? (Option :some 1) :zero
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-direct-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-direct-true ()
+            .contains? (Option :some 1) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-false $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-false ()
+            enum-index-helper (Option :some 1) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-nil ()
+            enum-index-helper (Option :some 1) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-string ()
+            enum-index-helper (Option :some 1) |0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-tag ()
+            enum-index-helper (Option :some 1) :zero
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-helper-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-helper-true ()
+            enum-index-helper (Option :some 1) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-ordered $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-ordered ()
+            .contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-key-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-key-error ()
+            .contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) (raise |enum-key-error)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'test-enum-map-set-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-map-set-equality ()
             if
@@ -480,6 +562,14 @@
                 , 0 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-enum-receiver-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-receiver-error ()
+            enum-index-helper
+              do (println |enum-receiver) (raise |enum-receiver-error)
+              do (println |enum-key) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()

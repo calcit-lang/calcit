@@ -6159,6 +6159,43 @@
                     {} $ not-a-number 1
                     , not-a-number 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |enum-numeric-indices-survive-trait-lowering)
+              :code $ quote $ let
+                  value $ Option :some 1
+                assert=
+                  [] true true true true false false false false false
+                  [] (.contains? value 0) (.contains? value -0) (.contains? value 1) (.contains? value 1.5) (.contains? value 2) (.contains? value -1)
+                    .contains? value $ / 1 0
+                    .contains? value $ / -1 0
+                    .contains? value $ sqrt -1
+                assert= true $ .contains? (Option :none) 0
+                assert= false $ .contains? (Option :none) 1
+              :tags $ #{} :core :enum-numeric-evidence :unit
+            %{} 'TestEntry (:name |enum-generic-number-indices-remain-executable)
+              :code $ quote $ let
+                  value $ Option :some 1
+                  has-index $ fn (value key)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'K
+                      :return 'Bool
+                      :generics $ [] 'K
+                    .contains? value key
+                assert=
+                  [] true true true true false false false false false
+                  [] (has-index value 0) (has-index value -0) (has-index value 1) (has-index value 1.5) (has-index value 2) (has-index value -1)
+                    has-index value $ / 1 0
+                    has-index value $ / -1 0
+                    has-index value $ sqrt -1
+              :tags $ #{} :core :enum-numeric-evidence :unit
+            %{} 'TestEntry (:name |enum-index-proof-keeps-map-keys-and-identity)
+              :code $ quote $ do
+                assert= true $ contains? (&{} nil 1) nil
+                assert= true $ contains? (&{} false 1) false
+                assert= true $ contains? (&{} true 1) true
+                assert= true $ identical? nil nil
+                assert= true $ identical? false false
+                assert= true $ identical? :same :same
+              :tags $ #{} :core :enum-numeric-evidence :unit
         'cos $ %{} 'CodeEntry
           :doc "|公开的余弦函数。cos n 接收以弧度表示的 Number，返回 Number；保留原有非有限数语义。"
           :code $ quote &runtime-implementation

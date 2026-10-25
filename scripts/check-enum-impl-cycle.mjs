@@ -1,8 +1,10 @@
 import { execFileSync } from "node:child_process";
+import assert from "node:assert/strict";
 import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { init_tags } from "@calcit/procs";
 
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
 const fixture = await mkdtemp(join(tmpdir(), "calcit-enum-impl-cycle-"));
@@ -20,6 +22,12 @@ try {
   run(snapshot, "--emit-path", output, "js");
   const compiled = await import(pathToFileURL(join(output, "fix-command.reader.mjs")).href);
   compiled.main_$x_();
+  // The entry does not reach this definition. Snapshot filling must still
+  // include the nominal method callable it synthesizes, not a dangling import.
+  assert.equal(compiled.unused_enum_index(1.5), true);
+  for (const key of [null, false, true, "0", init_tags(["zero"]).zero]) {
+    assert.throws(() => compiled.unused_enum_index(key), /Enum \.contains\? expected a Number index/);
+  }
   console.log("Trait-bearing Enum cycle passed nominal graph checks and shared native/JS method semantics");
 } finally {
   await rm(fixture, { recursive: true, force: true });

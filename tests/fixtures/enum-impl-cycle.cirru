@@ -47,5 +47,21 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'fix-command.reader/Plugin
+        'unused-enum-index $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn unused-enum-index (key)
+            .contains? (Option :some 1) key
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'K
+            :generics $ [] 'K
+          :tests $ []
+            %{} 'TestEntry (:name |numeric-index)
+              :code $ quote $ assert= true (unused-enum-index 1.5)
+              :tags $ #{} :enum-numeric-evidence :unit
+            %{} 'TestEntry (:name |rejects-nil-index)
+              :code $ quote $ assert= "|Enum .contains? expected a Number index"
+                try (unused-enum-index nil)
+                  fn (message) message
+              :tags $ #{} :enum-numeric-evidence :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.reader

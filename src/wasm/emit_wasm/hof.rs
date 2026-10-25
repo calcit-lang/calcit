@@ -211,7 +211,13 @@ pub(super) enum FoldlCallKind {
 
 /// Emit a call to a native proc using two pre-allocated locals as arguments.
 /// Registers the locals under synthetic names so `emit_proc_call` can resolve them.
-pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc: u32, elem: u32) -> Result<(), String> {
+pub(super) fn emit_foldl_proc_call(
+  ctx: &mut WasmGenCtx,
+  proc: &CalcitProc,
+  acc: u32,
+  elem: u32,
+  types: [Option<Arc<CalcitTypeAnnotation>>; 2],
+) -> Result<(), String> {
   use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
 
@@ -223,21 +229,30 @@ pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc:
   });
   let prev_a = ctx.locals.insert(sym_a.as_ref().to_owned(), acc);
   let prev_b = ctx.locals.insert(sym_b.as_ref().to_owned(), elem);
+  let prev_type_a = ctx.local_types.remove(sym_a.as_ref());
+  let prev_type_b = ctx.local_types.remove(sym_b.as_ref());
+  let [type_a, type_b] = types;
   let expr_a = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym_a.clone(),
     info: dummy_info.clone(),
     location: None,
-    type_info: DYNAMIC_TYPE.clone(),
+    type_info: type_a.unwrap_or_else(|| DYNAMIC_TYPE.clone()),
   });
   let expr_b = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym_b.clone(),
     info: dummy_info,
     location: None,
-    type_info: DYNAMIC_TYPE.clone(),
+    type_info: type_b.unwrap_or_else(|| DYNAMIC_TYPE.clone()),
   });
   let result = emit_proc_call(ctx, proc, &[expr_a, expr_b]);
+  if let Some(annotation) = prev_type_a {
+    ctx.local_types.insert(sym_a.to_string(), annotation);
+  }
+  if let Some(annotation) = prev_type_b {
+    ctx.local_types.insert(sym_b.to_string(), annotation);
+  }
   match prev_a {
     Some(v) => {
       ctx.locals.insert(sym_a.as_ref().to_owned(), v);
@@ -271,7 +286,7 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
       Ok(())
     }
     FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[acc, elem]),
-    FoldlCallKind::Proc(proc) => emit_foldl_proc_call(ctx, proc, acc, elem),
+    FoldlCallKind::Proc(proc) => emit_foldl_proc_call(ctx, proc, acc, elem, [None, None]),
     // Dynamic dispatch via call_indirect: (acc_f64, elem_f64) → f64. Canonical type 2.
     FoldlCallKind::Dynamic(fn_local_idx) => {
       ctx.emit(Instruction::LocalGet(acc));
@@ -431,6 +446,22 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 /// `f` can be a static fn, inline lambda, or native proc.
 pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "foldl-compare")?;
+  let element_type = infer_wasm_static_type(ctx, &args[0]).and_then(|annotation| match annotation.as_ref() {
+    CalcitTypeAnnotation::List(element) => Some(element.clone()),
+    _ => None,
+  });
+  let initial_type = infer_wasm_static_type(ctx, &args[1]);
+  // After the first iteration, the accumulator is the previous list element.
+  // Keep only a common type proved by both sources, not the callee's expected type.
+  let accumulator_type = initial_type.as_ref().zip(element_type.as_ref()).and_then(|(initial, element)| {
+    if initial.is_proven_for(element) {
+      Some(element.clone())
+    } else if element.is_proven_for(initial) {
+      Some(initial.clone())
+    } else {
+      None
+    }
+  });
 
   // Evaluate xs → list pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -463,7 +494,10 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::LocalSet(elem));
 
   // condition = f(acc, elem) → 1.0 (true) or 0.0 (false)
-  emit_foldl_step(ctx, &fn_call_kind, acc, elem)?;
+  match &fn_call_kind {
+    FoldlCallKind::Proc(proc) => emit_foldl_proc_call(ctx, proc, acc, elem, [accumulator_type, element_type])?,
+    _ => emit_foldl_step(ctx, &fn_call_kind, acc, elem)?,
+  }
   // if condition == 0.0: result = false, break
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Eq); // i32: 1 if condition was 0.0 (false)
