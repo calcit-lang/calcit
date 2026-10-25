@@ -619,6 +619,7 @@ check("test-type-of-number", 1, e["test-type-of-number"]);
 check("test-type-of-enum", 1, e["test-type-of-enum"]);
 
 // --- derived predicates (list?, number?, map?) ---
+check("test-number-predicate-recursion()", 1, e["test-number-predicate-recursion"]);
 check("test-list?-true", 1, e["test-list?-true"]);
 check("test-list?-false", 0, e["test-list?-false"]);
 check("test-number?-true", 1, e["test-number?-true"]);

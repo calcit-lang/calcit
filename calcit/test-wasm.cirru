@@ -176,6 +176,29 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
+        'recursive-number-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-number-kind (remaining value extra)
+            if (<= remaining 0) (number? value)
+              recur (dec remaining) value extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Int8 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
+            :code $ quote $ assert= true
+              recursive-number-kind 2 (assert-type 1 'Int8) :unused
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
+        'recursive-number-kind-control $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-number-kind-control (remaining value extra)
+            if (<= remaining 0) (number? value)
+              recur (dec remaining) value extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Number 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
+            :code $ quote $ assert= true (recursive-number-kind-control 2 1 :unused)
+            :tags $ #{} :numeric-recursion-evidence :unit :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export reload! () &unit
           :examples $ []
@@ -1259,6 +1282,13 @@
           :code $ quote $ defwasm-export test-number-compare-method () (.compare 1 2)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-number-predicate-recursion $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-number-predicate-recursion ()
+            assert= true $ recursive-number-kind-control 2 1 :unused
+            recursive-number-kind 2 (assert-type 1 'Int8) :unused
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-number?-true $ %{} 'CodeEntry (:doc "|number? on number returns true (1)")
           :code $ quote $ defwasm-export test-number?-true ()

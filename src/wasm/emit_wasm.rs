@@ -6030,9 +6030,18 @@ fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Opti
 fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion | CalcitProc::NumberQuestion) => true,
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NumberQuestion))) => {
+      let proven_number = items
+        .get(1)
+        .and_then(infer_static_type_from_expr)
+        .is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number));
+      // Do not revisit the proc head as a bare predicate value. Its proven
+      // operand needs no specialization of unrelated generic parameters.
+      !proven_number || items.iter().skip(1).any(direct_scalar_type_test)
+    }
     Calcit::List(items) => {
       let direct = match items.first() {
-        Some(Calcit::Proc(CalcitProc::NilQuestion | CalcitProc::NumberQuestion)) => true,
+        Some(Calcit::Proc(CalcitProc::NilQuestion)) => true,
         Some(Calcit::Proc(CalcitProc::NativeLessThan | CalcitProc::NativeGreaterThan)) => items.iter().skip(1).any(|operand| {
           infer_static_type_from_expr(operand).is_none_or(|annotation| !annotation.is_proven_for(&CalcitTypeAnnotation::Number))
         }),
