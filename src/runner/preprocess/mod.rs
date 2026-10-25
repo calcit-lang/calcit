@@ -12092,6 +12092,12 @@ fn process_match(
   mut phase: MacroSourcePhase,
 ) -> Result<Calcit, CalcitErr> {
   let checking = matches!(phase, MacroSourcePhase::Check);
+  // A generated lowering (for example typed `get` binding its receiver) can
+  // re-preprocess an already indexed match `(match value EnumDef table)`.
+  // Its branches were checked and compiled into the table; keep the form.
+  if args.len() == 3 && matches!(args.get(1), Some(Calcit::EnumDef(_))) {
+    return Ok(Calcit::from(args.push_left(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))));
+  }
   if args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Syntax,

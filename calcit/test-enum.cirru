@@ -322,6 +322,16 @@
                   (:ok) :ok-branch
                   _ :default-branch
               assert= :ok-branch v
+            ; A lowering that rebinds its argument re-reads an indexed match
+            let
+                picked $ get
+                  match (%:: Result0 :err |some-error)
+                    (:ok)
+                      {} $ :a 1
+                    (:err msg)
+                      {} $ :a 2
+                  , :a
+              assert= (Option :some 2) picked
             println "|✓ match syntax passed"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
