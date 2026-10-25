@@ -632,6 +632,29 @@
             %{} 'TestEntry (:name |preserves-empty-rest)
               :code $ quote $ assert= ([]) (inherited-rest-binders 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'kept-members $ %{} 'CodeEntry (:doc "|An empty loop accumulator takes its element type from the members recur appends.")
+          :code $ quote $ defn kept-members (xs excluded)
+            loop
+                i 0
+                acc $ []
+              if
+                >= i $ &list:count xs
+                , acc $ let
+                    x $ &list:nth xs i
+                  recur (inc i)
+                    if (&= x excluded) acc $ &list:append acc x
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-loop-accumulator)
+            :code $ quote $ let
+                kept $ assert-type (kept-members ([] 1 2 3) 2) (:: 'List 'Number)
+              do
+                assert= ([] 1 3) kept
+                assert= ([]) $ kept-members ([] |a) |a
+            :tags $ #{} :loop-empty-accumulator :unit
         'lexical-capture-callback $ %{} 'CodeEntry
           :doc "|Generates a callback capturing the caller's T without redeclaring it."
           :code $ quote $ defmacro lexical-capture-callback (captured)
