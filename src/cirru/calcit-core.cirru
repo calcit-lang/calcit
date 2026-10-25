@@ -424,10 +424,32 @@
           :code $ quote $ def &core-enum-methods
             &impl::new :&core-enum-methods (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
               :: :empty? $ defn &enum:empty?-impl (x)
+                hint-fn $ {}
+                  :args $ [] 'Enum
+                  :return 'Bool
                 &= 0 $ &enum:count x
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |enum-empty-option-tag-count)
+              :code $ quote $ let
+                  no-payload $ Option :none
+                  some-payload $ Option :some 1
+                assert= false $ empty? no-payload
+                assert= false $ empty? some-payload
+                assert= 1 $ count no-payload
+                assert= 2 $ count some-payload
+              :tags $ #{} :core :enum-empty-proof :unit
+            %{} 'TestEntry (:name |enum-empty-result-tag-count)
+              :code $ quote $ let
+                  ok-payload $ Result :ok 0
+                  err-payload $ Result :err |error
+                assert= false $ empty? ok-payload
+                assert= false $ empty? err-payload
+                assert= 2 $ count ok-payload
+                assert= 2 $ count err-payload
+              :tags $ #{} :core :enum-empty-proof :unit
         '&core-fn-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote $ def &core-fn-impls
             [] &core-fn-methods $ &impl::new Debug internal/&core-debug-impl

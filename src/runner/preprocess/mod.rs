@@ -6235,6 +6235,40 @@ fn preprocess_known_function_call(
         }
         return Ok(specialized);
       }
+      // `empty?` forwards to the receiver's method and checks its Bool result.
+      // Preserve that selected implementation instead of erasing its contract
+      // through the generic dispatcher. An unproven result keeps the runtime check.
+      if !call_has_type_warnings
+        && ns.as_ref() == calcit::CORE_NS
+        && def.as_ref() == "empty?"
+        && current_args.len() == 1
+        && let Some(receiver_type) = current_args.first().and_then(|receiver| resolve_type_value(receiver, scope_types))
+        && let Some(impls) = get_impls_from_type(receiver_type.as_ref())
+        && let ImplMethodResolution::Selected(selected) = resolve_impl_method(receiver_type.as_ref(), &impls, "empty?")
+        && type_inference::infer_type_from_expr(selected.entry, scope_types)
+          .and_then(|annotation| annotation.resolve_to_nonoptional_fn())
+          .is_some_and(|signature| matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Bool))
+        && type_inference::fixed_call_arguments_are_proven(selected.entry, &current_args.to_vec())
+        && let Some(callable) = pick_callable_from_method_entry(
+          selected.entry,
+          selected.impl_value,
+          receiver_type.as_ref(),
+          "empty?",
+          file_ns,
+          call_stack,
+        )?
+      {
+        let expanded = build_inlined_call(callable, &current_args, scope_types);
+        return preprocess_recorded_lowering(
+          post_lowering::RewriteOrigin::MethodInline,
+          || Calcit::from(CalcitList::from(ys)),
+          &expanded,
+          scope_defs,
+          scope_types,
+          file_ns,
+          call_stack,
+        );
+      }
     }
     Ok(Calcit::from(CalcitList::from(ys)))
   }
