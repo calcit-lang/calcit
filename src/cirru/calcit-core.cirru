@@ -11720,6 +11720,100 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |proven-bools-are-not-numbers)
+              :code $ quote $ let
+                  inspect $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return 'Bool
+                    and
+                      not $ number? value
+                      bool? value
+                      = :bool $ type-of value
+                assert= true $ inspect false
+                assert= true $ inspect true
+                assert= ([])
+                  filter ([] false true) number?
+              :tags $ #{} :scalar-kind-evidence :unit
+            %{} 'TestEntry (:name |proven-zero-scalars-keep-distinct-kinds)
+              :code $ quote $ let
+                  inspect $ fn (none unit)
+                    hint-fn $ {}
+                      :args $ [] 'Nil 'Unit
+                      :return 'Bool
+                    and
+                      not $ number? none
+                      not $ number? unit
+                      not $ bool? none
+                      not $ bool? unit
+                      = :nil $ type-of none
+                      = :unit $ type-of unit
+                assert= true $ inspect nil &unit
+              :tags $ #{} :scalar-kind-evidence :unit
+            %{} 'TestEntry (:name |proven-numbers-keep-kind-and-refinements)
+              :code $ quote $ let
+                  inspect $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Bool
+                    and (number? value)
+                      not $ bool? value
+                      = :number $ type-of value
+                  inspect-int8 $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Int8
+                      :return 'Bool
+                    and (number? value)
+                      not $ bool? value
+                      = :number $ type-of value
+                assert= true $ inspect 0
+                assert= true $ inspect 1
+                assert= true $ inspect -0
+                assert= true $ inspect $ sqrt -1
+                assert= true $ inspect-int8 $ assert-type 127 'Int8
+              :tags $ #{} :scalar-kind-evidence :unit
+            %{} 'TestEntry (:name |scalar-kind-predicates-evaluate-once)
+              :code $ quote $ let
+                  produce-bool $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return 'Bool
+                    println |scalar-kind-bool
+                    , value
+                  produce-nil $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Nil
+                    println |scalar-kind-nil
+                    , nil
+                  produce-unit $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Unit
+                    println |scalar-kind-unit
+                    , &unit
+                  produce-number $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    println |scalar-kind-number
+                    , value
+                assert= false $ number? $ produce-bool false
+                assert= :bool $ type-of $ produce-bool true
+                assert= :nil $ type-of $ produce-nil
+                assert= false $ number? $ produce-unit
+                assert= :number $ type-of $ produce-number 0
+              :tags $ #{} :scalar-kind-evidence :unit
+            %{} 'TestEntry (:name |optional-number-input-remains-accepted)
+              :code $ quote $ let
+                  inspect $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Optional 'Number
+                      :return 'Bool
+                    number? value
+                assert= true $ inspect 1
+              :tags $ #{} :scalar-kind-evidence :unit
         'option:and-then $ %{} 'CodeEntry
           :doc "|Chains an Option-producing function over :some and preserves :none."
           :code $ quote $ defn option:and-then (opt f)

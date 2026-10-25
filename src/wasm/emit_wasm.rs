@@ -5638,6 +5638,16 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
   }
 }
 
+fn proven_scalar_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match annotation {
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("number"),
+    CalcitTypeAnnotation::Bool => Some("bool"),
+    CalcitTypeAnnotation::Nil => Some("nil"),
+    CalcitTypeAnnotation::Unit => Some("unit"),
+    _ => None,
+  }
+}
+
 fn nil_type_evidence_is_open(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Dynamic
@@ -6031,13 +6041,13 @@ fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion) => true,
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NumberQuestion))) => {
-      let proven_number = items
+      let proven_scalar = items
         .get(1)
         .and_then(infer_static_type_from_expr)
-        .is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number));
+        .is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number) || proven_scalar_kind(&annotation).is_some());
       // Do not revisit the proc head as a bare predicate value. Its proven
       // operand needs no specialization of unrelated generic parameters.
-      !proven_number || items.iter().skip(1).any(direct_scalar_type_test)
+      !proven_scalar || items.iter().skip(1).any(direct_scalar_type_test)
     }
     Calcit::List(items) => {
       let direct = match items.first() {
@@ -8067,9 +8077,9 @@ fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]
   Ok(())
 }
 
-/// Emit `type-of v`. All heap objects carry a type tag at `raw_base` (ptr - 8),
-/// so for values that look like heap pointers we read that tag; otherwise we
-/// fall back to `:number`.
+/// Emit `type-of v`, preserving proven scalar kinds before inspecting memory.
+/// Heap objects carry a type tag at `raw_base` (ptr - 8); values without
+/// concrete scalar evidence retain the existing pointer heuristic below.
 ///
 /// Pointer detection heuristic (enough for core-library usage patterns):
 /// - value must be a finite integer (== trunc(v))
@@ -8077,13 +8087,18 @@ fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]
 ///   8 bytes after the raw base)
 /// - the i32 offset at `(ptr - 8)` must contain a registered type tag id
 ///
-/// Values failing any check are reported as `:number`. This is a deliberate
-/// simplification — distinguishing bool/nil/tag/number without NaN-boxing is
-/// not supported and is unlikely to be needed by the subset of core functions
-/// currently compiled.
+/// Open values failing these checks retain the existing `:number` fallback.
+/// Nullable/open scalar values remain ambiguous under the erased f64 ABI.
 fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err(format!("type-of expects 1 arg, got {}", args.len()));
+  }
+  if let Some(kind) = infer_wasm_static_type(ctx, &args[0]).and_then(|annotation| proven_scalar_kind(&annotation)) {
+    let tag = get_type_tag(ctx, kind);
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(tag));
+    return Ok(());
   }
   let number_tag = get_type_tag(ctx, "number");
   let v_local = ctx.alloc_local_typed(ValType::F64);
@@ -8146,17 +8161,6 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 fn emit_type_predicate(ctx: &mut WasmGenCtx, type_name: &str, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err(format!("{}? expects 1 arg, got {}", type_name, args.len()));
-  }
-  // A proven Number may have the same bits as a live heap pointer. Preserve
-  // its call-site evidence instead of reclassifying it from linear memory.
-  if type_name == "number"
-    && infer_wasm_static_type(ctx, &args[0])
-      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
-  {
-    emit_expr(ctx, &args[0])?;
-    ctx.emit(Instruction::Drop);
-    ctx.emit(f64_const(1.0));
-    return Ok(());
   }
   let expected_tag = get_type_tag(ctx, type_name);
   // Emit type-of, which leaves a tag f64 on the stack
@@ -9873,6 +9877,7 @@ const BUILTIN_TYPE_TAGS: &[&str] = &[
   "number",
   "bool",
   "nil",
+  "unit",
   "tag",
   "fn",
   "string",
@@ -10927,10 +10932,10 @@ mod tests {
   }
 
   #[test]
-  fn component_variant_tags_are_available_without_constructor_literals() {
+  fn builtin_scalar_and_component_tags_are_available_without_source_literals() {
     let tags = super::collect_all_tags_from(&[], None);
-    for tag in ["none", "some", "ok", "err"] {
-      assert!(tags.contains_key(tag), "missing built-in Component variant tag {tag}");
+    for tag in ["none", "some", "ok", "err", "number", "bool", "nil", "unit"] {
+      assert!(tags.contains_key(tag), "missing built-in runtime tag {tag}");
     }
   }
 

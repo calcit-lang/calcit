@@ -185,6 +185,22 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
+        'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
+            if (<= remaining 0)
+              not $ number? value
+              recur (dec remaining) value extra
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Bool 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |known-bool-false-keeps-unrelated-generic)
+              :code $ quote $ assert= true (recursive-bool-number-kind 2 false :unused)
+              :tags $ #{} :scalar-kind-evidence :unit :wasm
+            %{} 'TestEntry (:name |known-bool-true-keeps-unrelated-generic)
+              :code $ quote $ assert= true (recursive-bool-number-kind 2 true :unused)
+              :tags $ #{} :scalar-kind-evidence :unit :wasm
         'recursive-hof-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-hof-number-kind (remaining values extra)
             if (<= remaining 0)
@@ -1316,6 +1332,8 @@
             assert= true $ recursive-number-kind-control 2 1 :unused
             assert= true $ recursive-hof-number-kind 2 ([] 1 2) :unused
             assert= true $ hof-number-argument-shadow 0
+            assert= true $ recursive-bool-number-kind 2 false :unused
+            assert= true $ recursive-bool-number-kind 2 true :unused
             recursive-number-kind 2 (assert-type 1 'Int8) :unused
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -1351,6 +1369,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-proven-scalar-argument-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-proven-scalar-argument-error (flag)
+            number? $ if flag
+              do (println |scalar-kind-argument-error) (raise |scalar-kind-argument-error)
+              , false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |known-bool-false-is-not-number)
+            :code $ quote $ assert= false (test-proven-scalar-argument-error false)
+            :tags $ #{} :scalar-kind-evidence :unit :wasm
         'test-qualified-symbol-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-qualified-symbol-helper (x)
             if

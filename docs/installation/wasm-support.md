@@ -27,7 +27,8 @@ aliases:
 | 构造 | 状态 | 证据或说明 | 验证 |
 | --- | --- | --- | --- |
 | `defn`、固定参数、`let`、`if`、`recur` 尾递归 | supported | 参数与返回值为 f64 值 ABI | core `:tests`，如 `calcit.core/recur` |
-| Number、Bool、nil、String、tag 字面量 | supported | nil、false 与 0 共用 f64 表示，见下一行 | core `:tests` |
+| Number、Bool、nil、String、tag 字面量 | supported | nil、false 与 0 共用 f64 表示，见下文类型判断的说明 | core `:tests` |
+| 具体标量输入的 `type-of`、`number?`、`bool?` | supported | 已证明的 Number（含数值 refinement）、Bool、Nil、Unit 优先使用真实类型证据，实参仍求值一次；不会将 false／nil／Unit 的零值重新解释为 Number，合法 Number 也不会被同值堆地址覆盖 | `calcit.core/number?` 的 `:scalar-kind-evidence` 测试与 WASM 参数失败路径回归 |
 | `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-collection-and-missing-paths` 等开放遍历排除项；静态 Map 与字面量空路径用例已通过 |
 | 数值排序比较 `&<`、`&>` 及其表层调用 | supported-with-type-evidence | 操作数需要 Number 证据；已知非 Number 保留实参求值后 trap，开放类型在 scalar 擦除前报告 `E_WASM_NIL_TYPE_EVIDENCE`。具体 Number 的泛型调用复用调用点特化；`identical?` 不受数值限制 | `calcit.core/contains?` 的 `:enum-numeric-evidence` 测试与 WASM 宿主失败路径回归 |
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
@@ -165,4 +166,4 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。
 - `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。
-- `=` 与 `type-of`、`&compare` 使用同一堆值判定（整数、位于已分配堆内、ptr-8 处为 `HEAP_MAGIC`）；没有 NaN-boxing，恰好等于存活堆对象地址的整数无法与指针区分。
+- `=`、`&compare` 和缺少具体标量证据的 `type-of` 仍使用堆值判定（整数、位于已分配堆内、ptr-8 处为 `HEAP_MAGIC`）；没有 NaN-boxing，开放／可空边界仍可能无法区分同值标量与指针。具体 Number、Bool、Nil、Unit 的静态证据不受该猜测覆盖。
