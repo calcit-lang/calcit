@@ -6235,16 +6235,17 @@ fn preprocess_known_function_call(
         }
         return Ok(specialized);
       }
-      // `empty?` forwards to the receiver's method and checks its Bool result.
+      // `empty?`, and `contains?` on receivers outside its List/String/Map/Set
+      // branches, forward to the receiver's method and check its Bool result.
       // Preserve that selected implementation instead of erasing its contract
       // through the generic dispatcher. An unproven result keeps the runtime check.
       if !call_has_type_warnings
         && ns.as_ref() == calcit::CORE_NS
-        && def.as_ref() == "empty?"
-        && current_args.len() == 1
+        && matches!((def.as_ref(), current_args.len()), ("empty?", 1) | ("contains?", 2))
         && let Some(receiver_type) = current_args.first().and_then(|receiver| resolve_type_value(receiver, scope_types))
+        && (def.as_ref() == "empty?" || public_contains_reaches_method(receiver_type.as_ref()))
         && let Some(impls) = get_impls_from_type(receiver_type.as_ref())
-        && let ImplMethodResolution::Selected(selected) = resolve_impl_method(receiver_type.as_ref(), &impls, "empty?")
+        && let ImplMethodResolution::Selected(selected) = resolve_impl_method(receiver_type.as_ref(), &impls, def.as_ref())
         && type_inference::infer_type_from_expr(selected.entry, scope_types)
           .and_then(|annotation| annotation.resolve_to_nonoptional_fn())
           .is_some_and(|signature| matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Bool))
@@ -6253,7 +6254,7 @@ fn preprocess_known_function_call(
           selected.entry,
           selected.impl_value,
           receiver_type.as_ref(),
-          "empty?",
+          def.as_ref(),
           file_ns,
           call_stack,
         )?
@@ -11316,6 +11317,21 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
     | CalcitTypeAnnotation::TypeSlot(_) => None,
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => static_method_descriptors(inner.as_ref()),
     _ => Some(vec![]),
+  }
+}
+
+/// The public `contains?` handles List, String, Map and Set receivers with its
+/// own key checks before falling back to the receiver's `.contains?` method.
+/// Only receivers proven to be Enum or Struct values reach that method call.
+fn public_contains_reaches_method(receiver_type: &CalcitTypeAnnotation) -> bool {
+  match receiver_type {
+    CalcitTypeAnnotation::Enum(_, _)
+    | CalcitTypeAnnotation::EnumValue(_)
+    | CalcitTypeAnnotation::AnonymousEnum
+    | CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::StructValue(_) => true,
+    CalcitTypeAnnotation::TypeRef(_, _) => receiver_type.resolve_to_enum().is_some() || receiver_type.resolve_to_struct().is_some(),
+    _ => false,
   }
 }
 

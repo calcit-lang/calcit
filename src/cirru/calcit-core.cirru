@@ -689,6 +689,19 @@
           :schema $ :: 'Fn $ {} (:return 'Enum)
             :args $ [] 'Enum 'Number 'Tag
           :tags $ #{} :builtin :internal
+        '&enum:contains? $ %{} 'CodeEntry
+          :doc "|Internal Enum `.contains?` implementation: check a Number index against the tag and payload positions. Other keys raise."
+          :code $ quote $ defn &enum:contains? (x k)
+            if (number? k)
+              if (&>= k 0)
+                &< k $ &enum:count x
+                , false
+              raise "|Enum .contains? expected a Number index"
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'K
+            :generics $ [] 'K
+          :tags $ #{} :internal
         '&enum:count $ %{} 'CodeEntry
           :doc "|Count tag and payload positions in an enum value."
           :code $ quote &runtime-implementation
@@ -6186,6 +6199,23 @@
                     has-index value $ / 1 0
                     has-index value $ / -1 0
                     has-index value $ sqrt -1
+              :tags $ #{} :core :enum-numeric-evidence :unit
+            %{} 'TestEntry (:name |public-enum-indices-keep-bool-result)
+              :code $ quote $ let
+                  value $ Option :some 1
+                  public-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert=
+                  [] true true true false false
+                  [] (contains? value 0) (contains? value 1) (contains? value 1.5) (contains? value 2) (contains? value -1)
+                assert=
+                  [] true true true false false true false
+                  [] (public-index value 0) (public-index value 1) (public-index value 1.5) (public-index value 2) (public-index value -1)
+                    public-index (Option :none) 0
+                    public-index (Option :none) 1
               :tags $ #{} :core :enum-numeric-evidence :unit
             %{} 'TestEntry (:name |enum-index-proof-keeps-map-keys-and-identity)
               :code $ quote $ do
@@ -14712,12 +14742,7 @@
           :schema $ :: 'Dynamic
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-enum-impl
-            &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
-              if (number? k)
-                if (&>= k 0)
-                  &< k $ &enum:count x
-                  , false
-                raise "|Enum .contains? expected a Number index"
+            &impl::new :&core-contains-enum-impl $ :: :contains? &enum:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-field-struct-impl $ %{} 'CodeEntry (:doc |)
