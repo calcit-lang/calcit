@@ -11322,12 +11322,12 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
 
 /// The public `contains?` handles List, String, Map and Set receivers with its
 /// own key checks before falling back to the receiver's `.contains?` method.
-/// Only receivers proven to be Enum or Struct values reach that method call.
+/// Only nominal Enum or Struct receivers reach that method with a statically
+/// known implementation; an open `'Enum` value may carry its own impl.
 fn public_contains_reaches_method(receiver_type: &CalcitTypeAnnotation) -> bool {
   match receiver_type {
     CalcitTypeAnnotation::Enum(_, _)
     | CalcitTypeAnnotation::EnumValue(_)
-    | CalcitTypeAnnotation::AnonymousEnum
     | CalcitTypeAnnotation::Struct(_, _)
     | CalcitTypeAnnotation::StructValue(_) => true,
     CalcitTypeAnnotation::TypeRef(_, _) => receiver_type.resolve_to_enum().is_some() || receiver_type.resolve_to_struct().is_some(),

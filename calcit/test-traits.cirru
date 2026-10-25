@@ -875,6 +875,35 @@
                     raise |contains-key-error
                 assert= 12 $ deref seen
               :tags $ #{} :contains-dispatch-boundary :trait :unit
+            %{} 'TestEntry (:name |contains-keeps-open-enum-impl)
+              :code $ quote $ let
+                  ReviewContainsOps $ deftrait ReviewContainsOps $ .contains?
+                    :: 'Fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                  ReviewContainsImpl $ defimpl ReviewContainsImpl ReviewContainsOps $ .contains?
+                    fn (self key)
+                      hint-fn $ {}
+                        :args $ [] 'Enum 'Number
+                        :return 'Bool
+                      , false
+                  ReviewContains $ impl-traits
+                    defenum ReviewContains $ :item 'Number
+                    , ReviewContainsImpl
+                  via-method $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Enum
+                      :return 'Bool
+                    .contains? value 0
+                  via-public $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Enum
+                      :return 'Bool
+                    contains? value 0
+                assert= false $ &trait-call ReviewContainsOps :contains? (ReviewContains :item 1) 0
+                assert= false $ via-method $ ReviewContains :item 1
+                assert= false $ via-public $ ReviewContains :item 1
+              :tags $ #{} :contains-dispatch-boundary :trait :unit
             %{} 'TestEntry (:name |struct-empty-and-count-share-semantics)
               :code $ quote $ let
                   empty-value $ EmptyStructProbe
