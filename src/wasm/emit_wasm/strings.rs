@@ -775,7 +775,9 @@ pub(super) fn emit_turn_string_from_local_with_type(
     at_def: Arc::from("__ts"),
   });
   let prev = ctx.locals.insert(sym.as_ref().to_owned(), v_local);
-  let prev_type = ctx.local_types.insert(sym.as_ref().to_owned(), type_info.clone());
+  let prev_type = ctx
+    .local_types
+    .insert(sym.as_ref().to_owned(), WasmTypeEvidence::contract(type_info.clone()));
   let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym.clone(),

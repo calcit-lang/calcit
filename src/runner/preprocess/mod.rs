@@ -9468,6 +9468,47 @@ fn pick_callable_from_method_entry(
   }
 }
 
+/// Retain runtime method precedence when a backend recovers the nominal
+/// identity of an already-checked open receiver at a concrete call site.
+pub(crate) fn resolve_runtime_method_callable(
+  receiver_type: &CalcitTypeAnnotation,
+  method_name: &str,
+  file_ns: &str,
+) -> Result<Option<Calcit>, String> {
+  if receiver_type.resolve_to_enum().is_none() && receiver_type.resolve_to_struct().is_none() {
+    return Ok(None);
+  }
+  let Some(impls) = get_impls_from_type(receiver_type) else {
+    return Ok(None);
+  };
+  // An already-checked open receiver uses runtime precedence, not the strict
+  // ambiguity policy for a nominal method written directly in source.
+  let selected = match resolve_impl_method(receiver_type, &impls, method_name) {
+    ImplMethodResolution::Selected(candidate) => candidate,
+    ImplMethodResolution::Ambiguous(mut candidates) => candidates.remove(0),
+    ImplMethodResolution::Missing => return Ok(None),
+  };
+  if let Calcit::Fn { info, .. } = selected.entry {
+    if !info.scope.is_empty() {
+      return Err(format!("selected .{method_name} implementation captures lexical state"));
+    }
+    // A backend can inline this already-compiled closed body without adding
+    // a synthetic definition after its function table has been assembled.
+    return Ok(Some(selected.entry.clone()));
+  }
+  pick_callable_from_method_entry(
+    selected.entry,
+    selected.impl_value,
+    receiver_type,
+    method_name,
+    file_ns,
+    &CallStackList::default(),
+  )
+  .map_err(|error| error.to_string())?
+  .map(Some)
+  .ok_or_else(|| format!("selected .{method_name} implementation is not a static callable"))
+}
+
 /// Select a direct target for a trait call whose receiver type is proven at a
 /// static backend call site. The trait identity, not only the method name, is
 /// part of the dispatch evidence.

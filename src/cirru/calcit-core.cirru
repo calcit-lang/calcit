@@ -6194,8 +6194,7 @@
             %{} 'TestEntry (:name |public-nominal-enum-indices)
               :code $ quote $ let
                   value $ Option :some 1
-                assert=
-                  [] true true true false false true false
+                assert= ([] true true true false false true false)
                   [] (contains? value 0) (contains? value 1) (contains? value 1.5) (contains? value 2) (contains? value -1)
                     contains? (Option :none) 0
                     contains? (Option :none) 1
@@ -6209,6 +6208,133 @@
                 assert= true $ identical? false false
                 assert= true $ identical? :same :same
               :tags $ #{} :core :enum-numeric-evidence :unit
+            %{} 'TestEntry (:name |public-enum-some-zero)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= true $ has-index (Option :some 1) 0
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-some-one)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= true $ has-index (Option :some 1) 1
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-some-fraction)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= true $ has-index (Option :some 1) 1.5
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-some-end)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= false $ has-index (Option :some 1) 2
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-some-negative)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= false $ has-index (Option :some 1) -1
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-none-zero)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= true $ has-index (Option :none) 0
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-none-one)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains? value index
+                assert= false $ has-index (Option :none) 1
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-generic-index-keeps-number-evidence)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'K
+                      :return 'Bool
+                      :generics $ [] 'K
+                    contains? value index
+                  value $ Option :some 1
+                assert= ([] true false false false false)
+                  [] (has-index value -0) (has-index value 2)
+                    has-index value $ / 1 0
+                    has-index value $ / -1 0
+                    has-index value $ sqrt -1
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-evaluates-receiver-then-key-once)
+              :code $ quote $ let
+                  has-index $ fn (value index)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number
+                      :return 'Bool
+                    contains?
+                      do (println |contains-receiver) value
+                      do (println |contains-key) index
+                assert= true $ has-index (Option :some 1) 1
+                assert= false $ has-index (Option :none) 1
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-if-retains-nominal)
+              :code $ quote $ let
+                  has-index $ fn (value index flag)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number 'Bool
+                      :return 'Bool
+                    contains? (if flag value value) index
+                assert= true $ has-index (Option :some 1) 1 true
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-let-retains-nominal)
+              :code $ quote $ let
+                  has-index $ fn (value index flag)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number 'Bool
+                      :return 'Bool
+                    contains?
+                      let
+                          copied value
+                        , copied
+                      , index
+                assert= true $ has-index (Option :some 1) 1 true
+              :tags $ #{} :public-enum-result-evidence :unit
+            %{} 'TestEntry (:name |public-enum-shadow-does-not-leak)
+              :code $ quote $ let
+                  has-index $ fn (value index flag)
+                    hint-fn $ {}
+                      :args $ [] 'Enum 'Number 'Bool
+                      :return 'Bool
+                    do
+                      assert= false $ contains?
+                        let
+                            value $ Option :none
+                          , value
+                        , index
+                      contains? value index
+                assert= true $ has-index (Option :some 1) 1 true
+              :tags $ #{} :public-enum-result-evidence :unit
         'cos $ %{} 'CodeEntry
           :doc "|公开的余弦函数。cos n 接收以弧度表示的 Number，返回 Number；保留原有非有限数语义。"
           :code $ quote &runtime-implementation
