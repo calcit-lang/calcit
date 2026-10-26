@@ -5863,16 +5863,15 @@ impl CalcitTypeAnnotation {
     }))
   }
 
-  /// Proc signatures implicitly quantify their type variables; ordinary
-  /// function parts may instead refer to rigid variables captured from a caller.
+  /// Proc inputs implicitly quantify their type variables. A return-only
+  /// placeholder is resolved by intrinsic inference, not selected by callers.
+  /// Ordinary function parts may instead capture rigid caller variables.
   pub(crate) fn from_proc_parts(
     arg_types: Vec<Arc<CalcitTypeAnnotation>>,
     return_type: Arc<CalcitTypeAnnotation>,
     runtime_arity: Option<super::ProcArity>,
   ) -> Self {
-    let mut types = arg_types.clone();
-    types.push(return_type.clone());
-    let mut generics = type_variable_names(&types).into_iter().collect::<Vec<_>>();
+    let mut generics = type_variable_names(&arg_types).into_iter().collect::<Vec<_>>();
     generics.sort();
     let Self::Fn(signature) = Self::from_function_parts(arg_types, return_type) else {
       unreachable!()

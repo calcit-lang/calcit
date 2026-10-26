@@ -1591,18 +1591,18 @@ pub(super) fn expression_is_proven_for(
             // Check the initializer in its parent environment. A shadowing
             // binding replaces prior proof even when its new type is Dynamic.
             let contextual_calls = self.contextual_calls;
+            let preserves_body = items
+              .iter()
+              .skip(2)
+              .all(|form| super::condition_evidence::preserves_locals(form, scope));
             // A contextual instantiation cannot retype a stored alias after an
             // effect may have changed it. Reuse predicate evidence lifetimes.
-            self.contextual_calls = contextual_calls
-              && items
-                .iter()
-                .skip(2)
-                .all(|form| super::condition_evidence::preserves_locals(form, scope));
+            self.contextual_calls = contextual_calls && preserves_body;
             let proven = self.check(value, expected, scope, aliases, false, depth + 1);
             self.contextual_calls = contextual_calls;
-            let mut body_aliases = aliases.clone();
+            let mut body_aliases = if preserves_body { aliases.clone() } else { HashMap::new() };
             body_aliases.remove(&local.sym);
-            if proven {
+            if proven && preserves_body {
               body_aliases.insert(local.sym.clone(), expected);
             }
             let mut body_scope = scope.clone();
