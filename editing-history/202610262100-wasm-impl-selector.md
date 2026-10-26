@@ -29,8 +29,11 @@ selector, and calls on them dispatch per identity. Open `if` joins, specialized 
 back edges change identity, recursive inline closures and `loop` forms use it instead of rejecting or
 falling back to contract dispatch.
 
-补充：参数位置的汇合只把汇合之前的非原子实参先绑定，原子实参保持原位，因为构造器等调用按语法读取它们（如
-`&%{}` 的 struct 引用）；`test-traits.main/branch-open-payload` 以直接构造器覆盖 struct 与 Option 的汇合载荷。`loop` 的退回路径不吞掉超过 8 个实现身份的诊断。
+补充：参数位置的汇合把汇合之前的表达式和运行期具名值先绑定。具名值可能内联有副作用的 initializer，不能因语法上是
+Import 就将它移到后续分支之后。构造器与 trait 调用的首项元数据、Ref 身份等仍保持原位；这些位置按语法读取，不是运行期值初始化。
+`test-traits.main/branch-open-payload` 以直接构造器覆盖 struct 与 Option 的汇合载荷。
+`branch-open-import-order` 用专用数值 Ref 记录前导具名值和后续分支条件，要求顺序为 12；JS 顶层初始化与 native 惰性值均保留原行为，WASM/WASI 也必须满足同一断言。
+`loop` 的退回路径不吞掉超过 8 个实现身份的诊断。
 固定参数内联闭包的 `recur` 现已支持，所以 `scripts/check-known-assertion.mjs` 改为运行该闭包的 WASM 产物，
 `calcit.core/foldl-compare#typed-number-exits` 移出 WASM/WASI 排除表，`docs/installation/wasm-support.md`
 同步支持状态。

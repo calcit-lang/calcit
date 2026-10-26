@@ -10275,15 +10275,25 @@ fn emit_call_per_selected_impl(
 }
 
 /// Bind call arguments up to a branch join in order, so the join becomes a
-/// selected local without moving any argument's evaluation. Atoms stay in
-/// place: they have no effects to order, and some heads read them
-/// syntactically, such as the struct reference of a constructor.
+/// selected local without moving any argument's evaluation. Imported values
+/// can inline effectful initializers and must be bound too. Other atoms stay
+/// in place because some heads read constructor/trait metadata syntactically.
 fn emit_call_binding_impl_join(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitList, join: usize) -> Result<(), String> {
   let ns: Arc<str> = Arc::from(ctx.source_ns.as_str());
   let mut call = vec![xs[0].clone()];
   let mut pairs = vec![];
   for (position, arg) in xs.drop_left().iter().enumerate() {
-    if position > join || (position < join && !matches!(arg, Calcit::List(_))) {
+    let metadata = position == 0
+      && matches!(
+        xs[0],
+        Calcit::Proc(CalcitProc::NativeStruct | CalcitProc::NativeNamedEnumNew | CalcitProc::NativeTraitCall)
+      );
+    let runtime_value = !metadata
+      && matches!(arg, Calcit::Import(import) if {
+        let qualified = format!("{}/{}", import.ns, import.def);
+        ctx.value_imports.contains_key(&qualified) && !ctx.atom_globals.contains_key(&qualified)
+      });
+    if position > join || (position < join && !matches!(arg, Calcit::List(_)) && !runtime_value) {
       call.push(arg.clone());
       continue;
     }

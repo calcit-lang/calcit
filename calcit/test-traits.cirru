@@ -113,6 +113,10 @@
         :code $ quote $ ns test-traits.identity
     'test-traits.main $ %{} 'FileEntry
       :defs $ {}
+        '*branch-import-order $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *branch-import-order 0
+          :examples $ []
+          :schema $ :: 'Ref 'Number
         'AliasFirst $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def AliasFirst (impl-traits AliasSharedBase AliasFirstImpl)
           :examples $ []
@@ -588,6 +592,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'Number
+        'branch-leading-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def branch-leading-number
+            do
+              reset! *branch-import-order $ +
+                * (deref *branch-import-order) 10
+                , 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Number
         'branch-open-argument $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-argument (flag)
             open-enum-public
@@ -636,6 +649,26 @@
             %{} 'TestEntry (:name |true-impl)
               :code $ quote $ assert= true (branch-open-effects false)
               :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-import-order $ %{} 'CodeEntry
+          :doc "|前导具名值先记录 1，后续实现分支条件再记录 2，最终必须为 12；此专用 Ref 不在测试入口重置，兼容 JS 顶层初始化及 native 惰性值求值。"
+          :code $ quote $ defn branch-open-import-order ()
+            let
+                result $ open-enum-after-number branch-leading-number $ if
+                  do
+                    reset! *branch-import-order $ +
+                      * (deref *branch-import-order) 10
+                      , 2
+                    , true
+                  ExplicitTraitFalse :item 1
+                  ExplicitTraitTrue :item 1
+              and (= result false)
+                = (deref *branch-import-order) 12
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |leading-import-before-impl-join)
+            :code $ quote $ assert= true (branch-open-import-order)
+            :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
         'branch-open-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-method (flag)
             let
@@ -931,6 +964,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Enum 'Number
+        'open-enum-after-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-enum-after-number (index value) (open-enum-public value index)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number 'Enum
         'open-enum-forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-enum-forward (value index) (open-enum-public value index)
           :examples $ []
