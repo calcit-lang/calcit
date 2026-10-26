@@ -654,9 +654,19 @@
         'branch-open-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-payload (flag)
             let
-                box $ OpenEnumBox :value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
-                wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
-              and (non-nil? box) (.some? wrapped)
+                box $ OpenEnumBox :value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
+                wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
+                expected $ if flag 1 2
+                check-value $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] 'Enum
+                    :return 'Bool
+                  let
+                      item $ .unwrap $ get value 1
+                    if (number? item) (= item expected) false
+              and
+                check-value $ :value box
+                check-value $ .unwrap wrapped
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Bool
