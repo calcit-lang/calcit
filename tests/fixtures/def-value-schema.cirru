@@ -3488,6 +3488,48 @@
                 callback app.wasm-alias/do
               assert= 42 $ callback
             :tags $ #{} :known-function-alias
+        'reverse-key $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reverse-key (value) (- 0 value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |known-target-through-static-argument)
+              :code $ quote $ assert= ([] 3 2 1)
+                .sort-by ([] 1 3 2) reverse-key
+              :tags $ #{} :known-function-alias :known-static-argument
+            %{} 'TestEntry (:name |known-target-immutable-alias)
+              :code $ quote $ let
+                  key reverse-key
+                assert= ([] 3 2 1)
+                  .sort-by ([] 1 3 2) key
+              :tags $ #{} :known-function-alias :known-static-argument
+            %{} 'TestEntry (:name |known-target-same-signature-shadow)
+              :code $ quote $ let
+                  key reverse-key
+                &let (key bump)
+                  assert= ([] 1 2 3)
+                    .sort-by ([] 1 3 2) key
+                assert= ([] 3 2 1)
+                  .sort-by ([] 1 3 2) key
+              :tags $ #{} :known-function-alias :known-static-argument
+            %{} 'TestEntry (:name |known-target-independent-calls)
+              :code $ quote $ do
+                assert= ([] 3 2 1)
+                  .sort-by ([] 1 3 2) reverse-key
+                assert= ([] 1 2 3)
+                  .sort-by ([] 1 3 2) bump
+              :tags $ #{} :known-function-alias :known-static-argument
+            %{} 'TestEntry (:name |known-target-receiver-once)
+              :code $ quote $ assert= ([] 3 2 1)
+                .sort-by
+                  do (println |known-sort-receiver) ([] 1 3 2)
+                  , reverse-key
+              :tags $ #{} :known-function-alias :known-static-argument
+            %{} 'TestEntry (:name |known-target-empty-input)
+              :code $ quote $ assert= ([])
+                .sort-by ([]) reverse-key
+              :tags $ #{} :known-function-alias :known-static-argument
         'sum-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-pair (left right) (+ left right)
           :examples $ []

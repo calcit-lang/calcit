@@ -6134,9 +6134,15 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       let closure = resolve_inline_closure(ctx, tail).expect("validated inline closure");
       bindings.push(InlineArgument::Closure(closure));
     } else {
+      let function_value = (!uses_recur).then(|| resolve_known_function_value(ctx, arg)).flatten();
       emit_expr(ctx, arg)?;
       let local = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(local));
+      // Non-recursive specialization gives this immutable parameter a fresh
+      // slot, just like an inline closure argument. A recur slot may change.
+      if let Some(definition) = function_value {
+        ctx.local_function_values.insert(local, definition);
+      }
       bindings.push(InlineArgument::Value(local));
     }
   }
@@ -10775,8 +10781,9 @@ mod tests {
     wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::wasm::host::calcit::{
-    Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitImpl, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc,
-    CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, MethodKind, SchemaKind,
+    Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitNumericRefinement,
+    CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, ImportInfo, MethodKind,
+    SchemaKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
@@ -10885,7 +10892,7 @@ mod tests {
   }
 
   #[test]
-  fn symbol_call_prefers_its_namespace_over_a_same_named_function() {
+  fn callee_identity_preserves_namespaces_and_specialized_arguments() {
     let mut fn_index = HashMap::from([
       ("tests.alpha/helper".to_string(), 4),
       ("tests.beta/helper".to_string(), 5),
@@ -10963,6 +10970,119 @@ mod tests {
     ctx.instructions.clear();
     emit_call_expr(&mut ctx, &items).expect("legacy bare symbol fallback");
     assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+
+    // A signature proves call shape, not the target or its host capabilities.
+    let callable = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(Default::default()),
+      runtime_arity: None,
+    })));
+    let local = |name: &str| {
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&Arc::from(name)),
+        sym: Arc::from(name),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.alpha"),
+          at_def: Arc::from("caller"),
+        }),
+        location: None,
+        type_info: callable.clone(),
+      })
+    };
+    let reference = |name: &str| CalcitImport {
+      ns: Arc::from("tests.beta"),
+      def: Arc::from(name),
+      info: Arc::new(ImportInfo::SameFile {
+        at_def: Arc::from("caller"),
+      }),
+      def_id: None,
+    };
+    ctx.static_fn_defs.insert(
+      "tests.beta/apply".into(),
+      Arc::new(StaticFnDef {
+        params: vec!["callback".into()],
+        body: vec![Calcit::from(vec![local("callback")])],
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+        callback_arities: HashMap::new(),
+        fixed_arity: true,
+        nil_sensitive: true,
+        trait_sensitive: false,
+        method_sensitive: false,
+      }),
+    );
+    let source = ctx.alloc_local();
+    ctx.locals.insert("source".into(), source);
+    ctx.local_function_values.insert(source, reference("helper"));
+    let Calcit::List(apply) = Calcit::from(vec![Calcit::Import(reference("apply")), local("source")]) else {
+      unreachable!()
+    };
+    let emitted = |instructions| CompiledFn {
+      export_name: None,
+      params: vec![],
+      results: vec![ValType::F64],
+      locals: vec![],
+      instructions,
+    };
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &apply).expect("known actual callback target");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+    let unsupported = HashMap::from([(
+      5,
+      (
+        "tests.beta/helper".into(),
+        "E_WASI_COMMAND_CAPABILITY: native-only host probe".into(),
+      ),
+    )]);
+    let host = reject_reachable_wasi_command_dependencies(&[emitted(ctx.instructions.clone())], 0, 0, &unsupported)
+      .expect_err("a known target must not bypass host validation");
+    assert!(host.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{host}");
+
+    ctx.local_function_values.remove(&source);
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &apply).expect("the same signature without target evidence");
+    assert!(
+      ctx
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, Instruction::CallIndirect { .. }))
+    );
+    let unknown = reject_reachable_wasi_command_dependencies(&[emitted(ctx.instructions.clone())], 0, 0, &HashMap::new())
+      .expect_err("a signature is not a known callee");
+    assert!(unknown.starts_with("E_WASI_COMMAND_INDIRECT:"), "{unknown}");
+
+    // Loop parameters are mutable slots, unlike the immutable bindings above.
+    // Do not retain an initial function target without a back-edge proof.
+    let mut recursive = ctx.static_fn_defs["tests.beta/apply"].as_ref().clone();
+    recursive.body = vec![Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.beta")),
+      Calcit::Bool(false),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), local("callback")]),
+      Calcit::from(vec![local("callback")]),
+    ])];
+    ctx.static_fn_defs.insert("tests.beta/apply-recur".into(), Arc::new(recursive));
+    ctx.local_function_values.insert(source, reference("helper"));
+    let Calcit::List(recursive_call) = Calcit::from(vec![Calcit::Import(reference("apply-recur")), local("source")]) else {
+      unreachable!()
+    };
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &recursive_call).expect("loop-carried function value remains indirect");
+    assert!(
+      ctx
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, Instruction::CallIndirect { .. }))
+    );
+    assert!(
+      !ctx
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, Instruction::Call(5)))
+    );
   }
 
   /// A runtime spread has no static length, so WASM must reject it for a
