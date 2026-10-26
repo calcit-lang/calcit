@@ -428,7 +428,67 @@ try {
     async () => {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
         "--tag", "empty-field-struct", "--backend", "native,js,wasm"],
-      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      { ...options, env: { ...process.env, CALCIT_BIN: binary, CALCIT_PROOF_AUDIT: "1" } });
+      // #2414: result context may instantiate this invocation, but it cannot
+      // erase actual inputs, callback outputs, lexical binders or alias writes.
+      const factoryNs = "test-types-inference.main";
+      const boxType = (item, seed = "String") => ["::", `'${factoryNs}/EmptyFieldBox`, `'${item}`, `'${seed}`];
+      const factoryFn = (args, returned, generics = [], features = []) => ["::", "'Fn", ["{}",
+        [":args", ["[]", ...args]], [":return", returned], [":generics", ["[]", ...generics]],
+        [":features", ["#{}", ...features]]]];
+      const factoryDef = (name, body, schema) => [
+        ["edit", "def", `${factoryNs}/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(body)],
+        ["edit", "schema", `${factoryNs}/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+      ];
+      const factoryHelpers = [
+        ...factoryDef("open-field-box", ["defn", "open-field-box", ["items"],
+          ["EmptyFieldBox", ":items", "items", ":seed", "|seed"]],
+          factoryFn([["::", "'List", "'Dynamic"]], boxType("Dynamic"))),
+        ...factoryDef("callback-field-box", ["defn", "callback-field-box", ["producer"],
+          ["EmptyFieldBox", ":items", ["[]", ["producer"]], ":seed", "|seed"]],
+          factoryFn([factoryFn([], "'T")], boxType("T"), ["'T"])),
+        ...factoryDef("return-identity", ["defn", "return-identity", ["value"], "value"],
+          factoryFn(["'T"], "'T", ["'T"])),
+      ];
+      const factoryNegatives = [
+        ["real-dynamic", ["assert-type", ["open-field-box", ["[]", "|wrong"]], boxType("Number")]],
+        ["known-store", ["assert-type", ["empty-field-box", "|seed"], boxType("Number", "Number")]],
+        ["callback-result", ["assert-type", ["callback-field-box", ["fn", [], "1"]], boxType("Bool")]],
+        ["existing-alias", ["let", [["box", ["empty-field-box", "|seed"]]],
+          ["assert-type", "box", boxType("Number")], ["assert-type", "box", boxType("String")]]],
+        ["changed-alias", ["assert-type", ["let", [["box", ["empty-field-box", "|seed"]]],
+          ["set!", "box", ["open-field-box", ["[]", "|wrong"]]], "box"], boxType("Number")]],
+        ["caller-binder", ["return-as-caller", "|caller"]],
+      ];
+      for (const [name, form] of factoryNegatives) {
+        const factorySnapshot = join(project, `factory-${name}.cirru`);
+        await copyFile("calcit/test-types-inference.cirru", factorySnapshot);
+        const features = name === "changed-alias" ? [":js-ffi"] : [];
+        const operations = [...factoryHelpers,
+          ...factoryDef("return-only-probe!", ["defn", "return-only-probe!", [], form, "&unit"],
+            factoryFn([], "'Unit", [], features)),
+          ["config", "set", "init-fn", `${factoryNs}/return-only-probe!`],
+          ["config", "set", "reload-fn", `${factoryNs}/return-only-probe!`],
+          ["config", "set", "mode", "js"],
+        ];
+        if (name === "caller-binder") operations.unshift(...factoryDef("return-as-caller",
+          ["defn", "return-as-caller", ["value"], ["return-identity", "1"]], factoryFn(["'T"], "'T", ["'T"])));
+        const runFactory = (...args) => execFileSync(binary, [factorySnapshot, ...args], options);
+        const preview = JSON.parse(runFactory("edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"));
+        runFactory("edit", "transaction", "--code", JSON.stringify(operations), "--expect-revision", preview.scoped_revision, "--format", "json");
+        const original = await readFile(factorySnapshot);
+        const output = join(project, `factory-${name}-js`);
+        for (const args of [["--check-only"], ["--emit-path", output, "js"]]) {
+          const rejected = spawnSync(binary, [factorySnapshot, ...args], options);
+          if (rejected.error) throw rejected.error;
+          assert.notEqual(rejected.status, 0, `${name}: output context cannot invent missing input evidence`);
+          const diagnostic = /E_ASSERT_TYPE_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION/;
+          assert.match(rejected.stdout + rejected.stderr, diagnostic, name);
+          assert.match(rejected.stdout + rejected.stderr, /return-only-probe!|return-as-caller/, name);
+          assert.deepEqual(await readFile(factorySnapshot), original);
+          if (args.includes("js")) await assertRejectedArtifacts(output, name, diagnostic, true);
+        }
+      }
       // #2121: enum payload names use their declaration namespace, including
       // recursive branches. Caller-owned generic arguments retain their identity.
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
