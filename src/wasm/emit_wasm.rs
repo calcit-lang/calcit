@@ -11266,7 +11266,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
     };
-    let mut ctx = WasmGenCtx::new(1, env);
+    let mut ctx = WasmGenCtx::new(1, env.clone());
     let numeric = WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number));
     ctx.recur_evidence = Some(vec![numeric.clone()]);
     validate_recur_evidence(&mut ctx, &[Calcit::Number(1.0)]).expect("same scalar contract");
@@ -11337,6 +11337,93 @@ mod tests {
     assert_eq!(ctx.recur_evidence.as_ref().unwrap().len(), 1);
     assert!(ctx.recur_evidence.as_ref().unwrap()[0] == numeric);
     assert_eq!(ctx.block_depth, 3);
+
+    // The IIFE fallback must not erase a selected loop's resource-limit error.
+    let count = super::MAX_IMPL_ALTERNATIVES + 1;
+    let mut limit_ctx = WasmGenCtx::new((count * 2 - 1) as u32, env);
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.wasm"),
+      at_def: Arc::from("impl-limit"),
+    });
+    let local = |name: &str, type_info: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from(name),
+        info: info.clone(),
+        location: None,
+        type_info,
+      })
+    };
+    let choices = (0..count)
+      .map(|index| {
+        if index > 0 {
+          let condition = format!("choose{index}");
+          limit_ctx.locals.insert(condition.clone(), (count + index - 1) as u32);
+          limit_ctx
+            .local_types
+            .insert(condition, WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Bool)));
+        }
+        let name = format!("choice{index}");
+        let mut prototype = CalcitStructDef::from_fields(EdnTag::new("LimitProbe"), vec![]);
+        prototype.definition_ref = Some(Arc::from("tests.wasm/LimitProbe"));
+        prototype.impls.push(Arc::new(CalcitImpl {
+          name: EdnTag::new(format!("LimitProbeImpl{index}")),
+          origin: None,
+          fields: Arc::new(vec![EdnTag::new("flag?")]),
+          values: Arc::new(vec![Calcit::Proc(CalcitProc::BoolQuestion)]),
+        }));
+        let annotation = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(prototype)));
+        limit_ctx.locals.insert(name.clone(), index as u32);
+        limit_ctx.local_types.insert(
+          name.clone(),
+          WasmTypeEvidence {
+            annotation: annotation.clone(),
+            exact_impls: true,
+          },
+        );
+        local(&name, annotation)
+      })
+      .collect::<Vec<_>>();
+    let body = |choices: &[Calcit]| {
+      choices
+        .iter()
+        .enumerate()
+        .skip(1)
+        .rev()
+        .fold(Calcit::Number(0.0), |tail, (index, choice)| {
+          Calcit::from(vec![
+            Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+            local(&format!("choose{index}"), Arc::new(CalcitTypeAnnotation::Bool)),
+            Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), choice.clone()]),
+            tail,
+          ])
+        })
+    };
+    super::emit_inline_iife(
+      &mut limit_ctx,
+      &["receiver".to_owned()],
+      &[body(&choices[..super::MAX_IMPL_ALTERNATIVES])],
+      &choices[..1],
+      None,
+      &[],
+    )
+    .expect("eight implementation identities still compile");
+    let error = super::emit_inline_iife(
+      &mut limit_ctx,
+      &["receiver".to_owned()],
+      &[body(&choices)],
+      &choices[..1],
+      None,
+      &[],
+    )
+    .expect_err("the ninth implementation identity must retain its limit diagnostic");
+    assert_eq!(
+      error,
+      format!(
+        "E_WASM_CALL_SPECIALIZATION: recur argument 1 carries more than {} implementation identities",
+        super::MAX_IMPL_ALTERNATIVES
+      )
+    );
   }
 
   #[test]
