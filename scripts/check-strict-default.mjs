@@ -138,6 +138,20 @@ for (const [backend, selection] of [["native", ["--exclude-tag", "js"]], ["js", 
   }), 0, `${backend} guard tests preserve calls, errors, checked values, methods and nominal Options`);
 }
 
+// Public contains? on a nominal Enum lowers to a generated impl callable; the
+// default proof audit must check it against that callable's generic contract.
+const publicContains = "tests/fixtures/public-contains-nominal.cirru";
+expectStatus(run([publicContains, "--check-only"]), 0, "check public contains? on nominal Enums from the entry");
+expectStatus(run([publicContains, "--check-only", "--all-defs"]), 0, "check public contains? on nominal Enums in every definition");
+const publicContainsRun = run([publicContains]);
+expectStatus(publicContainsRun, 0, "run public contains? on nominal Enums with the proof audit");
+assert.match(publicContainsRun.stdout, /\(\[\] true true false false true true true\)/);
+expectStatus(spawnSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", publicContains,
+  "--backend", "native,js,wasm", "--tag", "public-contains-nominal"], {
+  cwd: process.cwd(), encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
+  env: { ...process.env, CALCIT_BIN: resolve(binary) },
+}), 0, "public contains? on nominal Enums keeps the index range on every backend");
+
 for (const [label, body] of [
   ["unguarded", "f & args"],
   ["returning failure branch", "when (not (fn? f)) |not-a-function\n  f & args"],
