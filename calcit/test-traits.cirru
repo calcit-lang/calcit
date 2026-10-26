@@ -654,8 +654,7 @@
         'branch-open-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-payload (flag)
             let
-                box $ %{} OpenEnumBox $ :value
-                  if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+                box $ OpenEnumBox :value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
                 wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
               and (non-nil? box) (.some? wrapped)
           :examples $ []
