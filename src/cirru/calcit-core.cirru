@@ -11953,6 +11953,38 @@
                     number? value
                 assert= true $ inspect 1
               :tags $ #{} :scalar-kind-evidence :unit
+            %{} 'TestEntry (:name |proven-tags-are-not-numbers)
+              :code $ quote $ let
+                  inspect $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Tag
+                      :return 'Bool
+                    and (tag? value)
+                      not $ number? value
+                      = :tag $ type-of value
+                  value :ready
+                  alias value
+                assert= true $ tag? :ready
+                assert= false $ number? :ready
+                assert= :tag $ type-of :ready
+                assert= true $ inspect alias
+                assert= true $ inspect :number
+                assert= false $ tag? 0
+                assert= false $ tag? 1
+                assert= :number $ type-of 0
+              :tags $ #{} :scalar-kind-evidence :tag-kind-evidence :unit
+            %{} 'TestEntry (:name |tag-kind-predicates-evaluate-once)
+              :code $ quote $ let
+                  produce $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Tag
+                      :return 'Tag
+                    println |proven-tag-value
+                    , value
+                assert= false $ number? $ produce :ready
+                assert= true $ tag? $ produce :ready
+                assert= :tag $ type-of $ produce :ready
+              :tags $ #{} :scalar-kind-evidence :tag-kind-evidence :unit
         'option:and-then $ %{} 'CodeEntry
           :doc "|Chains an Option-producing function over :some and preserves :none."
           :code $ quote $ defn option:and-then (opt f)

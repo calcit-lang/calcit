@@ -5832,6 +5832,7 @@ fn proven_scalar_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str>
     CalcitTypeAnnotation::Bool => Some("bool"),
     CalcitTypeAnnotation::Nil => Some("nil"),
     CalcitTypeAnnotation::Unit => Some("unit"),
+    CalcitTypeAnnotation::Tag => Some("tag"),
     _ => None,
   }
 }
