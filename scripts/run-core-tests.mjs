@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseCirru } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, replayRevision } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
 const BACKENDS = ["native", "js", "wasm", "wasi"];
@@ -246,7 +246,7 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
   const transaction = `${snapshot}.transaction.json`;
   await writeFile(transaction, JSON.stringify(operations));
   const preview = JSON.parse(run(snapshot, "edit", "transaction", "--file", transaction, "--dry-run", "--format", "json"));
-  run(snapshot, "edit", "transaction", "--file", transaction, "--expect-revision", preview.scoped_revision, "--format", "json");
+  run(snapshot, "edit", "transaction", "--file", transaction, "--expect-revision", replayRevision(preview), "--format", "json");
   let namespaceIndex = 0;
   // `edit ns` owns its atomic write and is not a transaction child command.
   for (const [ns, form] of namespaces) {
@@ -254,7 +254,7 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
     await writeFile(namespaceFile, writeCirruCode([form]));
     const args = [snapshot, "edit", "ns", ns, "--file", namespaceFile, "--format", "json"];
     const preview = JSON.parse(run(...args, "--dry-run"));
-    run(...args, "--expect-revision", preview.scoped_revision ?? preview.original_revision);
+    run(...args, "--expect-revision", replayRevision(preview));
   }
   return { snapshot, entry: ["--init-fn", entry, "--reload-fn", entry] };
 };

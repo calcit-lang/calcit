@@ -1,4 +1,13 @@
 // Internal protocol shared by the runner and its host-level regression tests.
+// Replay Snapshots are private temporary copies. Guard the entire file rather
+// than listing thousands of touched definitions in a single process argument.
+export const replayRevision = (preview) => {
+  if (typeof preview.original_revision !== "string" || preview.original_revision.length === 0) {
+    throw new Error("Replay mutation preview is missing its original Snapshot revision");
+  }
+  return preview.original_revision;
+};
+
 /** Read only diagnostic-table code cells; prose and other columns are not coverage. */
 export const parseWasmDiagnosticTable = (text) => {
   const codes = new Set();

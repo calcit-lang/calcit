@@ -3,7 +3,19 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, replayRevision } from "./core-test-protocol.mjs";
+
+test("large replay mutations use a bounded full-file revision without dropping the guard", () => {
+  const original_revision = "0123456789abcdef0123456789abcdef";
+  const scoped_revision = "scope:" + Array.from({ length: 5850 }, (_, index) =>
+    `def:calcit.core/&calcit:test:${index}@absent`).join(",");
+  assert.ok(Buffer.byteLength(scoped_revision) > 128 * 1024);
+  assert.equal(replayRevision({ original_revision, scoped_revision }), original_revision);
+  assert.equal(replayRevision({ original_revision }), original_revision);
+  for (const preview of [{}, { scoped_revision }, { original_revision: "" }]) {
+    assert.throws(() => replayRevision(preview), /missing its original Snapshot revision/);
+  }
+});
 
 test("WASM diagnostic coverage comes from code cells, not prose or other tables", () => {
   const fixture = readFileSync(new URL("../tests/fixtures/wasm-support-matrix-parser.md", import.meta.url), "utf8");
