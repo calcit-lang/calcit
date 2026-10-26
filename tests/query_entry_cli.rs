@@ -151,6 +151,41 @@ fn run_isolated(directory: &Path, args: &[&str]) -> Output {
     .expect("isolated calcit command should run")
 }
 
+fn configure_isolated(directory: &Path, snapshot: &str, operations: &str) {
+  let preview = run_isolated(
+    directory,
+    &[
+      snapshot,
+      "edit",
+      "transaction",
+      "--code",
+      operations,
+      "--dry-run",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview);
+  let preview = parse_single_json(&preview);
+  let revision = preview["scoped_revision"]
+    .as_str()
+    .expect("preview should provide a scoped revision");
+  assert_success(&run_isolated(
+    directory,
+    &[
+      snapshot,
+      "edit",
+      "transaction",
+      "--code",
+      operations,
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  ));
+}
+
 /// #2406: module loading is a host/filesystem contract; observable assertions
 /// remain attached to the generated Calcit definition, not duplicated in Rust.
 #[test]
@@ -223,38 +258,7 @@ fn library_default_graph_is_independent_of_the_demo_entry() {
     ]
   ])
   .to_string();
-  let preview = run_isolated(
-    root,
-    &[
-      "library.cirru",
-      "edit",
-      "transaction",
-      "--code",
-      &operations,
-      "--dry-run",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&preview);
-  let preview = parse_single_json(&preview);
-  let revision = preview["scoped_revision"]
-    .as_str()
-    .expect("preview should provide a scoped revision");
-  assert_success(&run_isolated(
-    root,
-    &[
-      "library.cirru",
-      "edit",
-      "transaction",
-      "--code",
-      &operations,
-      "--expect-revision",
-      revision,
-      "--format",
-      "json",
-    ],
-  ));
+  configure_isolated(root, "library.cirru", &operations);
 
   assert_success(&run_isolated(
     root,
@@ -296,18 +300,33 @@ fn library_default_graph_is_independent_of_the_demo_entry() {
     "{replay}"
   );
 
-  // Selecting a root entry does not propagate that entry name into a dependency.
-  assert_success(&run_isolated(
-    root,
-    &[
-      "--entry",
-      "page",
-      "eval",
-      "--dep",
-      "./library.cirru",
-      "assert= 42 (app.core/increment 41)",
+  // Unlike eval, this root program actually selects its named entry. The
+  // dependency's equally named entry still must not load its missing module.
+  fs::copy("tests/fixtures/query-entry-page-only-module.cirru", root.join("consumer.cirru")).expect("copy independent consumer");
+  let operations = serde_json::json!([
+    [
+      "edit",
+      "def",
+      "page-icons.core/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () (assert= 42 (app.core/increment 41)) &unit"
     ],
-  ));
+    ["config", "add-entry", "page", "--from", "default", "--target", "native"],
+    ["config", "add-module", "./library.cirru", "--entry", "page"]
+  ])
+  .to_string();
+  configure_isolated(root, "consumer.cirru", &operations);
+  assert_success(&run_isolated(root, &["--entry", "page", "consumer.cirru", "--check-only"]));
+  assert_success(&run_isolated(root, &["--entry", "page", "consumer.cirru"]));
+  let default_consumer = run_isolated(root, &["consumer.cirru", "--check-only"]);
+  assert!(
+    !default_consumer.status.success(),
+    "the consumer default must not silently inherit the page module graph"
+  );
+  assert!(String::from_utf8_lossy(&default_consumer.stderr).contains("app.core"));
   let missing_demo = run_isolated(root, &["--entry", "page", "library.cirru", "--check-only"]);
   assert!(
     !missing_demo.status.success(),

@@ -215,11 +215,13 @@ entry 都是独立配置，不能假设其模块继承 default。
 库被消费时仍会递归装载自己的 default 模块图；只把 UI/Reel 等移到 `:dev-dependencies`，不能解除该装载要求。
 先按 [库 / Demo 模块边界](installation/modules.md#库和-demo-使用不同模块图) 分离入口和完整模块图，
 再用干净运行依赖消费者与完整 Demo entry 分别验收；不能删除 Demo 或静默忽略缺失模块。
-`--check-only` 只验证所选 entry 的可达预处理路径，默认遇到首个阻断问题即停。需要为迁移或批量修复收集互不依赖的问题时，使用同一入口的
+`--check-only` 默认只验证所选 entry 的可达预处理路径，默认遇到首个阻断问题即停。
+使用 `--all-defs` 时，会检查项目命名空间中的每个 definition（包括 entry 不可达的 definition），并隐含 `--keep-going`。
+需要为迁移或批量修复收集互不依赖的问题时，使用同一入口的
 `--keep-going --format edn`。报告中的 `failed` 是已确认的当前 definition 诊断，`blocked` 表示依赖失败而跳过，
 `cascaded` 表示无法安全归属当前 definition 的意外失败；三者都使进程非零退出。不要把 blocked 当成新的类型错误，也不要
 要求工具在 expression 内猜测恢复。Cirru EDN 是 Agent 默认结构化格式，只有下游只接受 JSON 时才改用
-`--format json`。该检查范围仍只包含所选 entry 的可达预处理路径，
+`--format json`。未使用 `--all-defs` 时，该检查范围只包含所选 entry 的可达预处理路径，
 而 `docs check-md` 默认只带所选 Snapshot 的 default entry 模块；有测试或文档专用模块时，可通过
 `--snapshot` 选择相应的专用 Snapshot，或重复传入 `--dep`，不能用 `--entry` 选择该命令的 named entry。
 动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
