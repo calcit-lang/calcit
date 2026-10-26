@@ -3086,14 +3086,20 @@ try {
       const scalarTailTests = tailTests.filter(test => test.name === "typed-number-exits");
       assert.equal(scalarTailTests.length, 1);
       setBody(scalarTailTests.map(test => test.code));
-      const closureTailOutput = join(project, "closure-tail-wasm");
-      const closureTail = spawnSync(binary, [snapshot, "wasm", "--emit-path", closureTailOutput], options);
-      if (closureTail.error) throw closureTail.error;
-      assert.equal(closureTail.status, 1);
-      assert.match(closureTail.stderr, /recur in a statically specialized closure is not yet supported/);
-      await assert.rejects(readFile(join(closureTailOutput, "program.wasm")), { code: "ENOENT" });
-      // Replay the same recurrence as a named function, the currently supported
-      // WASM ownership boundary; local closure recur remains explicitly rejected.
+      const runTailWasm = async (output) => {
+        run("wasm", "--emit-path", output);
+        const module = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
+        const imports = {};
+        for (const item of WebAssembly.Module.imports(module)) {
+          assert.equal(item.kind, "function");
+          imports[item.module] ??= {};
+          imports[item.module][item.name] = () => { throw new Error(`unexpected tail import ${item.module}.${item.name}`); };
+        }
+        return new WebAssembly.Instance(module, imports).exports["run-tests"]();
+      };
+      // A fixed-arity local closure with tail recur lowers to a specialized loop.
+      assert.equal(await runTailWasm(join(project, "closure-tail-wasm")), 1);
+      // Replay the same recurrence as a named function.
       const stepCode = scalarTailTests[0].code[1][0][1];
       assert.equal(stepCode[0], "fn");
       assert.equal(stepCode[2][0], "hint-fn");
@@ -3102,16 +3108,7 @@ try {
       run("edit", "schema", "calcit.assert-evidence/tail-step", "--input-format", "json-ast", "--code",
         JSON.stringify(["::", "'Fn", stepCode[2][1]]));
       setBody([["assert=", "0", ["tail-step", "4"]]]);
-      const tailWasmOutput = join(project, "tail-exits-wasm");
-      run("wasm", "--emit-path", tailWasmOutput);
-      const tailModule = new WebAssembly.Module(await readFile(join(tailWasmOutput, "program.wasm")));
-      const tailImports = {};
-      for (const item of WebAssembly.Module.imports(tailModule)) {
-        assert.equal(item.kind, "function");
-        tailImports[item.module] ??= {};
-        tailImports[item.module][item.name] = () => { throw new Error(`unexpected tail import ${item.module}.${item.name}`); };
-      }
-      assert.equal(new WebAssembly.Instance(tailModule, tailImports).exports["run-tests"](), 1);
+      assert.equal(await runTailWasm(join(project, "tail-exits-wasm")), 1);
       // A common input context cannot invent a common concrete output for the
       // members of a function list, including independently open callback bodies.
       for (const [name, callbacks] of [

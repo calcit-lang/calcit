@@ -42,7 +42,8 @@ aliases:
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
 | 局部 `fn` 与立即调用的 `fn`的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。函数体中的 `recur` 按同样规则重新绑定参数（`recur (&- n 1) n n` 把后两个实参打包进 `&` 参数） | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#optional-then-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#iife-rest-param-recur`、`calcit.core/hint-fn#rest-callee-in-hof` |
 | 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。实际经表调用时，N 个实参使用第 N 个函数表（N 不设上限，规范类型 `(f64 x N) -> f64` 按模块实际用到的最大 N 生成）；表中 `&` 函数的入口先打包 rest List，再调用原函数。`calcit wasi`：静态目标的具名别名可复用直接调用，未知的可达间接调用仍以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`、`calcit.core/hint-fn#plain-call-many-args-fn-value`（具名别名已回放 WASI，未知表调用仍受限） |
-| 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
+| 固定参数特化闭包与 `loop` 中的 `recur`，回边改变名义实现身份 | supported-with-type-evidence | 以调用实参证据开始特化循环；回边带来新的 exact 实现身份时，参数旁的 selector 按实际身份分派（每个参数至多 8 个），`if` 分支汇合同理（`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/foldl-compare#typed-number-exits`、`test-traits.main/closure-recur-switch#two-iterations`、`test-traits.main/loop-switch#two-iterations`、`test-traits.main/branch-open-public#true-impl` |
+| 嵌套 `fn` / `defn` 闭包值、带 `?` / `&` 参数的特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
 | 日志 Unit 返回与零/单参数 stdout | supported | core 宿主导入 `io.log_line(channel: f64, ptr: f64) -> ()`：channel `1/2` 分别表示 stdout/stderr，ptr 指向 tagged heap string；宿主每次写一行（含换行，空字符串也要输出空行），失败应抛错，不返回成功状态。WASI 使用标准通道 | `calcit.core/dbg#registered-stdout-returns-unit`、`registered-log-callback-returns-unit` |
 | stderr 与多参数单行日志 | supported | core 以 `channel=1/2` 区分 stdout/stderr，每次表层调用只发出一次 host call；WASI 使用标准通道。全部参数先按从左到右顺序求值，再格式化输出 | `calcit.core/dbg#registered-stderr-returns-unit`、`registered-log-arguments-evaluate-once-in-order` |
@@ -114,7 +115,7 @@ write-file
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |
-| `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或出现递归特化；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用或递归高阶调用；逐个写出参数，或使用 `([] ...)` 字面量 |
+| `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或特化展开中再次调用自身（尾部 `recur` 不在此列，见上方的特化循环；但回边缺少类型证据、或一个循环参数带来超过 8 个实现身份时也报此错误）；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用；非尾部的递归高阶调用改写为尾部 `recur`；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
