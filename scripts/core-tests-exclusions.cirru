@@ -188,7 +188,6 @@
       |calcit.core/map-kv#skips-nil-results "|replay: WASM replays from a separate namespace, where the calcit.core-only map-kv compatibility exemption does not apply (E_MAP_KV_UNPROVEN_CONTRACT)"
       |calcit.core/map-kv#transforms-each-entry "|replay: WASM replays from a separate namespace, where the calcit.core-only map-kv compatibility exemption does not apply (E_MAP_KV_UNPROVEN_CONTRACT)"
       |calcit.core/map-list-kv#preserves-iteration-effects-and-failure "|unsupported: unsupported proc in WASM: ref"
-      |calcit.core/map-entries#survives-sort-and-indexing "|unsupported: captured MapEntry sort-by callback reaches a WASM table index out of bounds"
       |calcit.core/mapcat#flat-map-keeps-order-type-and-callback-count "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/merge#combines-maps-left-to-right "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"
       |calcit.core/merge-non-nil#keeps-existing-values-for-nil "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"

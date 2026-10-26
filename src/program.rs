@@ -1147,18 +1147,38 @@ pub(crate) fn has_bundled_core_source() -> bool {
       })
       .collect()
   });
+  // Source code a previous call already matched against the embedded core.
+  // Preprocessing asks on every comparison it visits, and a deep comparison
+  // of the whole core per call made large projects time out.
+  type VerifiedCode = HashMap<(Arc<str>, Arc<str>), Calcit>;
+  static VERIFIED_CODE: LazyLock<std::sync::Mutex<VerifiedCode>> = LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
   // Schema parsing can re-enter PROGRAM_CODE_DATA. Initialize before taking
   // its read lock so a queued writer cannot deadlock a recursive read.
   let bundled = LazyLock::force(&BUNDLED_CORE);
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  let mut verified = VERIFIED_CODE.lock().unwrap_or_else(|error| error.into_inner());
   bundled.iter().all(|(namespace, bundled)| {
     source.get(namespace).is_some_and(|file| {
       file.import_map == bundled.import_map
         && bundled.defs.iter().all(|(name, expected)| {
-          file
-            .defs
-            .get(name)
-            .is_some_and(|entry| entry.code == expected.code && entry.ffi == expected.ffi)
+          file.defs.get(name).is_some_and(|entry| {
+            entry.ffi == expected.ffi && {
+              let key = (namespace.to_owned(), name.to_owned());
+              // Holding the verified value keeps its allocation alive, so a
+              // shared pointer always means the same unchanged code.
+              let known = match (&entry.code, verified.get(&key)) {
+                (Calcit::List(code), Some(Calcit::List(seen))) => Arc::ptr_eq(code, seen),
+                _ => false,
+              };
+              known || {
+                let same = entry.code == expected.code;
+                if same {
+                  verified.insert(key, entry.code.to_owned());
+                }
+                same
+              }
+            }
+          })
         })
     })
   })
