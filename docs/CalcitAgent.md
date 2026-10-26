@@ -224,7 +224,7 @@ entry 都是独立配置，不能假设其模块继承 default。
 `--format json`。未使用 `--all-defs` 时，该检查范围只包含所选 entry 的可达预处理路径，
 而 `docs check-md` 默认只带所选 Snapshot 的 default entry 模块；有测试或文档专用模块时，可通过
 `--snapshot` 选择相应的专用 Snapshot，或重复传入 `--dep`，不能用 `--entry` 选择该命令的 named entry。
-动态加载、未调用的公开 API 和外部消费者不在这些静态结果的证明范围内。
+`--all-defs` 会检查未调用的本地公开 API 定义；动态加载和外部消费者的实际调用仍需单独验收。
 
 `config modules --entry` 与顶层 `--entry` 均选择 named entry；`docs check-md --snapshot` 则选择用于
 检查的 Snapshot 文件（默认 `calcit.cirru`）。旧写法 `docs check-md --entry` 会报错并给出迁移提示，避免同名参数指代两种对象。
