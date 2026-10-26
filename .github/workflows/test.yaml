@@ -215,8 +215,8 @@ jobs:
           file target/release/calcit
           ldd target/release/calcit
           target/release/calcit -v
-          target/release/calcit calcit/test.cirru
-          target/release/calcit --emit-path target/no-wasm-js calcit/test.cirru js
+          target/release/calcit calcit/test.cirru --no-proof-audit
+          target/release/calcit --emit-path target/no-wasm-js calcit/test.cirru --no-proof-audit js
           if target/release/calcit wasm calcit/test.cirru >target/no-wasm-command.out 2>&1; then
             echo 'WASM command unexpectedly succeeded' >&2
             exit 1

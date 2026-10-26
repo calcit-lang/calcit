@@ -367,6 +367,9 @@ struct ProofErrorCollector {
 
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
+  /// Set by the default preflight proof: dependencies outside the project
+  /// (core and modules) compile ordinarily, since a user cannot fix them.
+  static PROOF_PROJECT_ONLY: Cell<bool> = const { Cell::new(false) };
   /// Dependencies already re-proved within the current outer assertion audit.
   /// Reset with the compiled-program checkpoint so no audit result outlives it.
   static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
@@ -405,10 +408,92 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   with_assertion_proof_policy(true, f)
 }
 
+/// Runs a preflight check and then restores the compiled program, so the run
+/// or codegen that follows compiles from the same state as without the
+/// preflight (JS codegen must not reuse native-compiled definitions).
+pub fn with_restored_compiled_program<R>(f: impl FnOnce() -> R) -> R {
+  let _compiled_checkpoint = program::checkpoint_compiled_program();
+  let _slot_checkpoint = calcit::checkpoint_type_slot_declarations();
+  f()
+}
+
+/// Run a check under directional assertion proof unless `--compat-types` or
+/// `--no-proof-audit` turned it off (#2121). Ordinary checking then agrees
+/// with the strict workflow instead of accepting Dynamic in both directions.
+/// The audit restores the compiled program afterwards, so codegen and
+/// execution still use ordinary compilation output.
+pub fn with_default_proof<R>(f: impl FnOnce() -> R) -> R {
+  if !default_proof_enabled() {
+    return f();
+  }
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      PROOF_PROJECT_ONLY.with(|enabled| enabled.set(self.0));
+    }
+  }
+  let _restore = Restore(PROOF_PROJECT_ONLY.with(|enabled| enabled.replace(true)));
+  with_assertion_proof(f)
+}
+
+static DEFAULT_PROOF_AUDIT: AtomicBool = AtomicBool::new(true);
+
+/// `--no-proof-audit` keeps strict diagnostics but skips the default audit,
+/// for programs that still rely on `assert-type` narrowing (#2121).
+pub fn set_default_proof_audit(enabled: bool) {
+  DEFAULT_PROOF_AUDIT.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether check-only, run, test and js run the default assertion-proof audit.
+pub fn default_proof_enabled() -> bool {
+  strict_types_enabled() && DEFAULT_PROOF_AUDIT.load(Ordering::Relaxed)
+}
+
+/// Under the default proof, a dependency outside the project keeps ordinary checking.
+fn skips_default_proof(ns: &str) -> bool {
+  PROOF_PROJECT_ONLY.with(Cell::get) && !should_emit_project_source_lint(ns)
+}
+
+/// [`with_default_proof`] for one check that reports into `check_warnings`.
+pub fn check_with_default_proof<R>(check_warnings: &RefCell<Vec<LocatedWarning>>, f: impl FnOnce() -> R) -> R {
+  with_default_proof(|| {
+    let start = check_warnings.borrow().len();
+    let result = f();
+    drop_macro_owned_proof_warnings(check_warnings, start);
+    result
+  })
+}
+
+/// Like the strict workflow review, proof re-checks expanded code in the
+/// caller's scope: warnings owned by a macro implementation describe syntax
+/// production, not the runtime expression. Drop those recorded after `start`
+/// while an assertion audit is active; ordinary checking keeps every warning.
+pub fn drop_macro_owned_proof_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>, start: usize) {
+  if !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    return;
+  }
+  let mut warnings = check_warnings.borrow_mut();
+  let mut index = 0;
+  warnings.retain(|warning| {
+    let keep = index < start || !is_macro_owned_warning(warning);
+    index += 1;
+    keep
+  });
+}
+
+fn is_macro_owned_warning(warning: &LocatedWarning) -> bool {
+  let owner = warning.location();
+  matches!(
+    program::lookup_def_schema(&owner.ns, &owner.def).as_ref(),
+    CalcitTypeAnnotation::Macro(_)
+  )
+}
+
 /// A compiled dependency is reusable outside audits, or once this audit re-proved it.
 fn compiled_def_is_reusable(ns: &str, def: &str) -> bool {
   program::lookup_compiled_def(ns, def).is_some()
     && (!REQUIRE_ASSERTION_PROOF.with(Cell::get)
+      || skips_default_proof(ns)
       || AUDIT_PROVEN_DEFS.with(|proven| proven.borrow().contains(&(Arc::from(ns), Arc::from(def)))))
 }
 
@@ -1503,7 +1588,7 @@ fn ensure_ns_def_preprocessed(
       // do not borrow or demand runtime proofs from compile-time helpers.
       let is_macro =
         matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"));
-      let resolved_result = if is_macro {
+      let resolved_result = if is_macro || skips_default_proof(ns) {
         with_assertion_proof_policy(false, compile)
       } else {
         compile()
@@ -14563,6 +14648,34 @@ fn preprocess_assert_type_with_obligation(
   {
     assertion_proof = Some(TypeProof::Proven);
   }
+  // A number literal in range is its own evidence for a numeric refinement.
+  if !assertion_proof.is_some_and(TypeProof::is_proven)
+    && matches!(
+      (&asserted_target, asserted_type.as_ref()),
+      (Calcit::Number(value), CalcitTypeAnnotation::Numeric(refinement)) if refinement.accepts(*value)
+    )
+  {
+    assertion_proof = Some(TypeProof::Proven);
+  }
+  // Restating the exact type the target already has needs no further proof.
+  if !assertion_proof.is_some_and(TypeProof::is_proven)
+    && current_type.as_ref().is_some_and(|current| {
+      // Generic binders are fresh per signature, so compare the rendered form.
+      current.as_ref() == asserted_type.as_ref()
+        || match (current.as_ref(), asserted_type.as_ref()) {
+          // The brief form omits these fields, so they are compared directly.
+          (CalcitTypeAnnotation::Fn(current_fn), CalcitTypeAnnotation::Fn(asserted_fn)) => {
+            current_fn.fn_kind == asserted_fn.fn_kind
+              && current_fn.features == asserted_fn.features
+              && current_fn.runtime_arity == asserted_fn.runtime_arity
+              && current.to_brief_string() == asserted_type.to_brief_string()
+          }
+          _ => false,
+        }
+    })
+  {
+    assertion_proof = Some(TypeProof::Proven);
+  }
   if let Some(current_type) = &current_type
     && assertion_proof.is_some_and(TypeProof::is_mismatch)
   {
@@ -15422,6 +15535,23 @@ fn find_unproven_generic_argument(
       return None;
     }
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
+      return None;
+    }
+    // A tag literal is a one-argument getter; ordinary checking types its use
+    // on getter receivers. Concrete scalar inputs still reach the proof.
+    if matches!(arg, Calcit::Tag(_))
+      && matches!(
+        expected.as_ref(),
+        CalcitTypeAnnotation::Fn(contract) if contract.arg_types.len() == 1
+          && matches!(
+            contract.arg_types[0].as_ref(),
+            CalcitTypeAnnotation::Map(..)
+              | CalcitTypeAnnotation::Struct(..)
+              | CalcitTypeAnnotation::Dynamic
+              | CalcitTypeAnnotation::TypeVar(_)
+          )
+      )
+    {
       return None;
     }
     let generics = signature

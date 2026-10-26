@@ -67,9 +67,10 @@ try {
   });
   const entry = ["defn", "main!", [], ...trees, "&unit"];
   run("edit", "def", "fix-command.reader/main!", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(entry));
-  run();
+  // The alias fixtures keep loose proc wrappers on purpose; the run checks behavior, not the proof audit.
+  run("--no-proof-audit");
   const output = join(project, "js-out");
-  run("--emit-path", output, "js");
+  run("--no-proof-audit", "--emit-path", output, "js");
   const generated = await import(pathToFileURL(join(output, "fix-command.reader.mjs")).href);
   generated.main_$x_();
 

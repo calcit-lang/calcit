@@ -301,10 +301,23 @@ calcit --compat-types --check-only
 calcit calcit.cirru --compat-types js
 ```
 
-`--compat-types` disables the default strict diagnostic promotion and the
+`--compat-types` disables the default strict diagnostic promotion, the
+default assertion-proof preflight (#2121), and the
 implicit JS FFI `:error` policy. It does not erase explicitly configured entry
 policies. It cannot be combined with `--strict-types`; the CLI rejects that
 contradictory request.
+
+`--no-proof-audit` keeps every other strict diagnostic but skips the default
+assertion-proof audit (#2121) for check-only, run and `js`. Use it for
+programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
+`calcit/test.cirru`. It is rejected together with `--compat-types`, which
+already skips the audit. Setting `CALCIT_PROOF_AUDIT=0` in the environment has
+the same effect for every command of a run; Calcit's own CI check-all uses it for
+its fixture programs.
+
+```bash
+calcit calcit.cirru --no-proof-audit --check-only
+```
 
 Strict preprocessing also rejects two constructs that manufacture `nil`
 implicitly:

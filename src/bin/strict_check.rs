@@ -343,6 +343,7 @@ fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec
 
       let warnings = RefCell::new(Vec::new());
       let outcome = runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &CallStackList::default());
+      runner::preprocess::drop_macro_owned_proof_warnings(&warnings, 0);
       for diagnostic in warnings.borrow().iter().map(warning_diagnostic) {
         if component_set.contains(&diagnostic.definition) {
           push_unique_diagnostic(confirmed.entry(diagnostic.definition.clone()).or_default(), diagnostic);
@@ -436,7 +437,13 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
   let format = StructuredOutputFormat::parse(raw_format, "check-only")?;
   let _output_guard = crate::ProgramOutputGuard::new(format != StructuredOutputFormat::Human, false);
   let (graph, definitions) = reachable_definitions(entries, all_defs)?;
-  let results = check_definitions(&graph, &definitions);
+  let mut results = check_definitions(&graph, &definitions);
+  // Like plain check-only, the proof audit runs once the ordinary check passes,
+  // so ordinary rejections keep their own diagnostics (#2121). One audit covers
+  // the whole check, so shared dependencies are proved once.
+  if runner::preprocess::default_proof_enabled() && results.iter().all(|result| result.status == "passed") {
+    results = runner::preprocess::with_default_proof(|| check_definitions(&graph, &definitions));
+  }
   let summary = CheckSummary {
     total: results.len(),
     passed: results.iter().filter(|result| result.status == "passed").count(),

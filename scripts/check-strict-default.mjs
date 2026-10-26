@@ -24,6 +24,9 @@ for (const path of entrypoints) {
   }
 }
 
+// This script checks the default proof audit itself, so a fixture-wide opt-out does not apply.
+delete process.env.CALCIT_PROOF_AUDIT;
+
 function run(args, input) {
   return spawnSync(binary, args, {
     cwd: process.cwd(),
@@ -82,8 +85,16 @@ for (const [label, source, diagnostic] of [
   assert.match(invalid.stderr, diagnostic, `${label}: report the malformed hint itself`);
 }
 
+// The scoped `:js-ffi` coercion passes ordinary strict checking; the default proof audit
+// does not count a non-host coercion as return evidence (#2121).
+expectStatus(
+  run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only", "--no-proof-audit"]),
+  0,
+  "default strict valid fixture",
+);
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
-expectStatus(scoped, 0, "default strict valid fixture");
+expectStatus(scoped, 1, "proof audit of a scoped non-host coercion");
+assert.match(scoped.stdout + scoped.stderr, /E_FN_RETURN_UNPROVEN/);
 
 // A compatibility policy cannot equate separately declared lexical binders.
 for (const inner of ["T", "U"]) {
@@ -340,9 +351,16 @@ try {
 
 // All-definitions scope (#1556): Calcit's own project and calcit.core carry proofs for every definition,
 // including ones no entry references. Core builtin placeholders are excluded, like `--check-only --ns`.
-expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs"]), 0, "all-defs check of the test project");
+// The language-feature test project keeps idioms the default proof audit rejects, so it opts out of the audit only.
+expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs", "--no-proof-audit"]), 0, "all-defs check of the test project");
+expectStatus(run(["calcit/test.cirru", "--check-only", "--no-proof-audit", "--compat-types"]), 1, "--no-proof-audit conflicts with --compat-types");
+// `--no-proof-audit` skips only the assertion-proof audit; the directional fixture fails by default and passes without it.
+const directionalProof = run(["calcit/type-fail/directional-default-p21.cirru", "--check-only"]);
+expectStatus(directionalProof, 1, "the default proof audit rejects a directional Dynamic argument");
+assert.match(directionalProof.stdout + directionalProof.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+expectStatus(run(["calcit/type-fail/directional-default-p21.cirru", "--check-only", "--no-proof-audit"]), 0, "--no-proof-audit skips the proof audit");
 expectStatus(
-  run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs"]),
+  run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs", "--no-proof-audit"]),
   0,
   "all-defs check of calcit.core",
 );
@@ -600,7 +618,7 @@ try {
   await rm(asyncFixture, { recursive: true, force: true });
 }
 
-const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only"]);
+const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only", "--no-proof-audit"]);
 expectStatus(explicitStrict, 0, "explicit strict accepts a checked open boundary without a quality budget");
 
 const unscoped = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--check-only"]);

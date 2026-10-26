@@ -38,6 +38,10 @@ if (!match || Number(match[1]) >= Number(match[2])) {
 }
 const [index, count] = [Number(match[1]), Number(match[2])];
 const dryRun = args.includes("--dry-run");
+// The check-all fixtures exercise language features, including open idioms the
+// default proof audit rejects, so they run like `--no-proof-audit`. The audit
+// itself is covered by the Rust tests and check-strict-default, which clears this.
+process.env.CALCIT_PROOF_AUDIT ??= "0";
 if (!dryRun && !process.env.CALCIT_BIN) {
   console.error("CALCIT_BIN must point at the prebuilt CLI");
   process.exit(2);

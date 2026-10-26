@@ -24,6 +24,37 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 默认检查证明 Dynamic 的流向（#2121）
+
+`--check-only`、直接运行与 `js` 编译前的默认预检查现在先做一次断言证明审计，
+语义与 `calcit strict` 一致：返回值声明为具体类型、但实际来自 `Dynamic`（或未证明的值）的函数报
+`E_FN_RETURN_UNPROVEN`；把未证明的值传给声明了具体参数类型的函数报 `E_CALL_ARGUMENT_UNPROVEN`。
+以前普通检查会把这类流向静默放行，只有 strict workflow 能发现。审计只在普通检查通过后运行，普通检查能发现的问题仍报原来的诊断；审计结束后编译结果恢复，
+运行与代码生成仍使用普通编译输出；宏展开位置（如 `defimpl`、`cond`）的告警按 strict 的规则过滤。
+
+迁移方式：
+
+- 值确实是开放数据时，把 schema 写成 `Dynamic`；声明为 `Dynamic` 的参数、返回值和局部值不受影响。
+- 值来自外部输入时，在边界处用受检 decoder 或 kind 守卫收窄，再交给具体类型的函数，例如
+  `if (string? value) value (raise |expected string)`。`assert-type` 不能证明 `Dynamic` 输入
+  （`E_ASSERT_TYPE_UNPROVEN`）。
+- `:js-ffi` 适配器里 `unsafe-coerce raw 'String` 这类非 host 目标不算证据，返回值会报
+  `E_FN_RETURN_UNPROVEN`；改用上面的 kind 守卫，host 对象用 `js-cast`。`:erased-cache` 适配器不受影响。
+- 只想保留其余严格诊断、暂时跳过这项审计时，加 `--no-proof-audit`。它只关闭断言证明审计，
+  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行。
+  它不能与 `--compat-types` 同时使用：
+
+```bash
+calcit calcit.cirru --no-proof-audit --check-only
+```
+
+- 只为暂时回到旧行为时，加 `--compat-types`：它关闭默认的严格诊断提升，也跳过这项审计；项目里显式配置的入口策略仍然生效（该选项计划在之后的非 patch 版本删除）：
+
+```bash
+calcit --compat-types --check-only
+calcit calcit.cirru --compat-types js
+```
+
 ## 0.31.0 类型擦除缓存的恢复边界 `:erased-cache`（#2358）
 
 memo 表一类缓存把值存成 Dynamic，取回时要恢复成调用方的类型。strict 下普通函数里的

@@ -49,6 +49,9 @@ pub struct ToplevelCalcit {
   /// temporarily restore pre-0.14 compatibility diagnostics during migration
   #[argh(switch)]
   pub compat_types: bool,
+  /// keep strict diagnostics but skip the default assertion-proof audit
+  #[argh(switch)]
+  pub no_proof_audit: bool,
   /// print FFI dylib calls and callbacks for debugging native crashes
   #[argh(switch)]
   pub trace_ffi: bool,

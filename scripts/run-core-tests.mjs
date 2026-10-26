@@ -69,6 +69,9 @@ const parseArgs = (argv) => {
 
 const options = parseArgs(process.argv.slice(2));
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
+// Replayed tests are fixture programs, including core tests the project-only
+// proof audit never sees in place, so they run like `--no-proof-audit`.
+process.env.CALCIT_PROOF_AUDIT ??= "0";
 const execOptions = { encoding: "utf8", stdio: "pipe", timeout: 300000, maxBuffer: 256 * 1024 * 1024 };
 // Preserve the selected entry's target, modules, slots and feature policy in
 // every source query, temporary mutation and backend compilation.
