@@ -6077,10 +6077,22 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
+  let uses_recur = definition.body.iter().any(check_uses_recur);
+  // A known callback also needs call-site specialization when no scalar or
+  // trait proof requires it. Its signature alone cannot identify the target.
+  let known_callback = !uses_recur
+    && definition.fixed_arity
+    && definition.params.len() == args.len()
+    && !ctx.specialization_stack.iter().any(|active| active == qualified)
+    && definition
+      .callback_arities
+      .keys()
+      .any(|index| args.get(*index).and_then(|arg| resolve_known_function_value(ctx, arg)).is_some());
   if closure_args.iter().all(Option::is_none)
     && nil_argument_types.is_none()
     && trait_argument_types.is_none()
     && method_argument_types.is_none()
+    && !known_callback
   {
     let Some(completed) = completed_args.as_deref() else {
       return Ok(false);
@@ -6118,7 +6130,6 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default()
     });
-  let uses_recur = definition.body.iter().any(check_uses_recur);
   if uses_recur && (closure_args.iter().any(Option::is_some) || argument_types.len() != args.len()) {
     return Err(format!(
       "E_WASM_CALL_SPECIALIZATION: `{qualified}` requires value arguments with proven loop-carried types"
@@ -11042,7 +11053,35 @@ mod tests {
       .expect_err("a known target must not bypass host validation");
     assert!(host.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{host}");
 
+    // Callback identity must select specialization even without a scalar or
+    // trait-sensitive body. An otherwise identical unknown value must not.
+    let mut ordinary = ctx.static_fn_defs["tests.beta/apply"].as_ref().clone();
+    ordinary.arg_types = vec![callable.clone()];
+    ordinary.callback_arities.insert(0, 0);
+    ordinary.nil_sensitive = false;
+    ctx.static_fn_defs.insert("tests.beta/apply-ordinary".into(), Arc::new(ordinary));
+    ctx.fn_index.insert("tests.beta/apply-ordinary".into(), 6);
+    ctx.fn_arity.insert("tests.beta/apply-ordinary".into(), 1);
+    let Calcit::List(ordinary_call) = Calcit::from(vec![Calcit::Import(reference("apply-ordinary")), local("source")]) else {
+      unreachable!()
+    };
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &ordinary_call).expect("known callback alone selects specialization");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+    let host = reject_reachable_wasi_command_dependencies(&[emitted(ctx.instructions.clone())], 0, 0, &unsupported)
+      .expect_err("ordinary callback specialization still checks host capabilities");
+    assert!(host.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{host}");
+
+    ctx.specialization_stack.push("tests.beta/apply-ordinary".into());
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &ordinary_call).expect("an active expansion is not recursively specialized");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(6))));
+    ctx.specialization_stack.pop();
+
     ctx.local_function_values.remove(&source);
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &ordinary_call).expect("an unknown callback keeps the ordinary compiled body");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(6))));
     ctx.instructions.clear();
     emit_call_expr(&mut ctx, &apply).expect("the same signature without target evidence");
     assert!(
