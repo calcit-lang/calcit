@@ -24,6 +24,9 @@ for (const path of entrypoints) {
   }
 }
 
+// This script checks the default proof audit itself, so a fixture-wide opt-out does not apply.
+delete process.env.CALCIT_PROOF_AUDIT;
+
 function run(args, input) {
   return spawnSync(binary, args, {
     cwd: process.cwd(),

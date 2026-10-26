@@ -16,7 +16,7 @@ check-only、直接运行与 `js` 的预检查（运行/代码生成前先做一
 审计只在普通检查通过后运行：普通检查能拒绝的代码仍报原来的诊断（例如
 `E_ERASED_GENERIC_RELATION`、`W_FN_RETURN_TYPE_MISMATCH`），js 编译失败仍生成
 `calcit.build-errors.mjs`。`eval` 与 public API 检查（`--check-only --ns`）不做审计。
-生态 26 个仓库默认模式全部通过。`calcit test` 暂不做逐项审计：试过之后生态里 phlox、respo、memof 的测试体被拒（测试里的开放写法），留作后续。
+生态 26 个仓库默认模式全部通过。默认的 `calcit test` 暂不做逐项审计：试过之后生态里 phlox、respo、memof 的测试体被拒（测试里的开放写法），留作后续。显式传入 `--strict-types` 时，原有的入口预检查（含 `test`）现在也带审计，结束后同样恢复编译状态。watch 模式的增量重载在运行或生成 JS 前同样审计；JS 预检查被审计拒绝时也写出 `calcit.build-errors.mjs`。
 
 新增 `--no-proof-audit`：只跳过审计，其余严格诊断照常，与 `--compat-types` 互斥。仓库内只有
 `calcit/test.cirru`（经模块带上 `test-algebra.cirru`）依赖审计拒绝的写法（`update x 0 inc` 把

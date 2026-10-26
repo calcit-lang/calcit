@@ -408,11 +408,6 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   with_assertion_proof_policy(true, f)
 }
 
-/// Run a check under directional assertion proof unless `--compat-types`
-/// selected the compatibility relation (#2121). Ordinary checking then agrees
-/// with the strict workflow instead of accepting Dynamic in both directions.
-/// The audit restores the compiled program afterwards, so codegen and
-/// execution still use ordinary compilation output.
 /// Runs a preflight check and then restores the compiled program, so the run
 /// or codegen that follows compiles from the same state as without the
 /// preflight (JS codegen must not reuse native-compiled definitions).
@@ -422,6 +417,11 @@ pub fn with_restored_compiled_program<R>(f: impl FnOnce() -> R) -> R {
   f()
 }
 
+/// Run a check under directional assertion proof unless `--compat-types` or
+/// `--no-proof-audit` turned it off (#2121). Ordinary checking then agrees
+/// with the strict workflow instead of accepting Dynamic in both directions.
+/// The audit restores the compiled program afterwards, so codegen and
+/// execution still use ordinary compilation output.
 pub fn with_default_proof<R>(f: impl FnOnce() -> R) -> R {
   if !default_proof_enabled() {
     return f();
@@ -14648,15 +14648,30 @@ fn preprocess_assert_type_with_obligation(
   {
     assertion_proof = Some(TypeProof::Proven);
   }
+  // A number literal in range is its own evidence for a numeric refinement.
+  if !assertion_proof.is_some_and(TypeProof::is_proven)
+    && matches!(
+      (&asserted_target, asserted_type.as_ref()),
+      (Calcit::Number(value), CalcitTypeAnnotation::Numeric(refinement)) if refinement.accepts(*value)
+    )
+  {
+    assertion_proof = Some(TypeProof::Proven);
+  }
   // Restating the exact type the target already has needs no further proof.
   if !assertion_proof.is_some_and(TypeProof::is_proven)
     && current_type.as_ref().is_some_and(|current| {
       // Generic binders are fresh per signature, so compare the rendered form.
       current.as_ref() == asserted_type.as_ref()
-        || matches!(
-          (current.as_ref(), asserted_type.as_ref()),
-          (CalcitTypeAnnotation::Fn(_), CalcitTypeAnnotation::Fn(_))
-        ) && current.to_brief_string() == asserted_type.to_brief_string()
+        || match (current.as_ref(), asserted_type.as_ref()) {
+          // The brief form omits these fields, so they are compared directly.
+          (CalcitTypeAnnotation::Fn(current_fn), CalcitTypeAnnotation::Fn(asserted_fn)) => {
+            current_fn.fn_kind == asserted_fn.fn_kind
+              && current_fn.features == asserted_fn.features
+              && current_fn.runtime_arity == asserted_fn.runtime_arity
+              && current.to_brief_string() == asserted_type.to_brief_string()
+          }
+          _ => false,
+        }
     })
   {
     assertion_proof = Some(TypeProof::Proven);
@@ -15522,8 +15537,20 @@ fn find_unproven_generic_argument(
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
       return None;
     }
-    // A tag literal is a one-argument getter; ordinary checking types its use.
-    if matches!(arg, Calcit::Tag(_)) && matches!(expected.as_ref(), CalcitTypeAnnotation::Fn(contract) if contract.arg_types.len() == 1)
+    // A tag literal is a one-argument getter; ordinary checking types its use
+    // on getter receivers. Concrete scalar inputs still reach the proof.
+    if matches!(arg, Calcit::Tag(_))
+      && matches!(
+        expected.as_ref(),
+        CalcitTypeAnnotation::Fn(contract) if contract.arg_types.len() == 1
+          && matches!(
+            contract.arg_types[0].as_ref(),
+            CalcitTypeAnnotation::Map(..)
+              | CalcitTypeAnnotation::Struct(..)
+              | CalcitTypeAnnotation::Dynamic
+              | CalcitTypeAnnotation::TypeVar(_)
+          )
+      )
     {
       return None;
     }

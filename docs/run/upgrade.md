@@ -48,7 +48,7 @@ related:
 calcit calcit.cirru --no-proof-audit --check-only
 ```
 
-- 只为暂时绕过全部严格诊断时，加 `--compat-types` 回到旧行为（同样跳过审计，该选项计划在之后的非 patch 版本删除）：
+- 只为暂时回到旧行为时，加 `--compat-types`：它关闭默认的严格诊断提升，也跳过这项审计；项目里显式配置的入口策略仍然生效（该选项计划在之后的非 patch 版本删除）：
 
 ```bash
 calcit --compat-types --check-only

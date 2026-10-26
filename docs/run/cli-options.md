@@ -311,7 +311,9 @@ contradictory request.
 assertion-proof audit (#2121) for check-only, run and `js`. Use it for
 programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
 `calcit/test.cirru`. It is rejected together with `--compat-types`, which
-already skips the audit.
+already skips the audit. Setting `CALCIT_PROOF_AUDIT=0` in the environment has
+the same effect for every command of a run; Calcit's own CI check-all uses it for
+its fixture programs.
 
 ```bash
 calcit calcit.cirru --no-proof-audit --check-only

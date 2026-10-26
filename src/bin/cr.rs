@@ -525,7 +525,10 @@ fn run_cli() -> Result<(), String> {
   if cli_args.no_proof_audit && cli_args.compat_types {
     return Err("`--no-proof-audit` is redundant with `--compat-types`, which already skips the proof audit.".to_owned());
   }
-  runner::preprocess::set_default_proof_audit(!cli_args.no_proof_audit);
+  // `CALCIT_PROOF_AUDIT=0` is the same switch for a whole run of fixture
+  // programs, such as the repository's check-all in CI.
+  let proof_audit_env_off = std::env::var("CALCIT_PROOF_AUDIT").is_ok_and(|value| value == "0");
+  runner::preprocess::set_default_proof_audit(!(cli_args.no_proof_audit || proof_audit_env_off));
 
   if cli_args.keep_going && !cli_args.check_only {
     return Err("`--keep-going` requires `--check-only`.".to_owned());
@@ -1022,13 +1025,9 @@ fn run_cli() -> Result<(), String> {
   // Explicit strict mode can preflight the selected entry before execution or
   // codegen, but type correctness must not depend on an analyzer budget.
   if cli_args.strict_types && !check_only && !is_public_check && !is_eval_mode {
-    run_check_only(&entries)?;
-  } else if runner::preprocess::default_proof_enabled()
-    && !check_only
-    && !is_eval_mode
-    && (cli_args.subcommand.is_none() || use_configured_js_mode)
-  {
-    run_default_proof_preflight(&entries)?;
+    runner::preprocess::with_restored_compiled_program(|| run_check_only(&entries))?;
+  } else if !check_only && !is_eval_mode && (cli_args.subcommand.is_none() || use_configured_js_mode) {
+    run_entry_proof_preflight(&entries, use_configured_js_mode.then_some(cli_args.emit_path.as_str()))?;
   }
 
   let task = if check_only && public_check_scope {
@@ -1908,7 +1907,16 @@ fn recall_program(
   // Create a minimal snapshot for documentation lookup during incremental updates
   // In practice, this could be enhanced to maintain documentation state
 
-  let task = if should_emit_js(&settings.subcommand, configured_run_mode) {
+  let emits_js = should_emit_js(&settings.subcommand, configured_run_mode);
+  // A reload is audited like startup, so it cannot run or emit what startup rejects.
+  let preflight = if settings.subcommand.is_none() || emits_js {
+    run_entry_proof_preflight(entries, emits_js.then_some(settings.emit_path.as_str()))
+  } else {
+    Ok(())
+  };
+  let task = if let Err(error) = preflight {
+    Err(error)
+  } else if emits_js {
     run_codegen_with_timeout(entries, &settings.emit_path, false, settings.timeout, settings.verbose)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
     run_codegen_with_timeout(entries, &settings.emit_path, true, settings.timeout, settings.verbose)
@@ -1993,6 +2001,28 @@ fn entries_passed(
 /// One proof audit covers both entries, so shared dependencies are proved once.
 fn prove_entries(entries: &ProgramEntries, check_warnings: &RefCell<Vec<LocatedWarning>>) -> EntryResults {
   runner::preprocess::check_with_default_proof(check_warnings, || compile_entries(entries, check_warnings))
+}
+
+/// The default proof preflight before a native run or JS codegen. A JS
+/// rejection also writes the build-error artifact, as a failed codegen does.
+fn run_entry_proof_preflight(entries: &ProgramEntries, js_emit_path: Option<&str>) -> Result<(), String> {
+  if !runner::preprocess::default_proof_enabled() {
+    return Ok(());
+  }
+  run_default_proof_preflight(entries).inspect_err(|error| {
+    if let Some(emit_path) = js_emit_path {
+      let js_file_path = Path::new(emit_path).join(format!("{COMPILE_ERRORS_FILE}.mjs"));
+      let written = fs::create_dir_all(emit_path).and_then(|_| {
+        fs::write(
+          &js_file_path,
+          format!("export default \"Preprocessing failed:\\n{}\";", error.trim().escape_default()),
+        )
+      });
+      if let Err(write_error) = written {
+        eprintln!("failed to write diagnostic artifact {}: {write_error}", js_file_path.display());
+      }
+    }
+  })
 }
 
 /// Native runs and JS codegen prove the entries before compiling them

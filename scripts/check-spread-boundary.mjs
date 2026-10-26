@@ -28,8 +28,9 @@ try {
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.spread-evidence/run-tests");
   run("config", "set", "reload-fn", "calcit.spread-evidence/run-tests");
-  run();
-  run("--emit-path", output, "js");
+  // The transplanted core tests are not project code the default proof audits.
+  run("--no-proof-audit");
+  run("--no-proof-audit", "--emit-path", output, "js");
   const generated = await import(pathToFileURL(join(output, "calcit.spread-evidence.mjs")).href);
   assert.equal(generated.run_tests(), 1);
 
