@@ -37,7 +37,9 @@
           :examples $ []
           :schema $ :: 'StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)
+          :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S)
+            :items $ :: 'List 'T
+            :seed 'S
           :examples $ []
           :schema $ :: 'StructDef
         'Job $ %{} 'CodeEntry (:doc |)
@@ -221,6 +223,13 @@
             %{} 'TestEntry (:name |method-keeps-unicode-string)
               :code $ quote $ assert= "|你" (bounded-slice "|你好")
               :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'branch-field-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-field-box (flag seed)
+            if flag (empty-field-box seed) (empty-field-box seed)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'String
+            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
         'call-callback-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-callback-envelope (dispatch! envelope)
             call-callback-holder dispatch! $ :holder envelope
@@ -275,6 +284,13 @@
             :code $ quote $ assert= 8
               consume-number-callback-map $ &{} :click $ fn (n) (&+ n 1)
             :tags $ #{} :map-callback-context :unit
+        'consume-number-field-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn consume-number-field-box (box)
+            assert= 0 $ .len $ :items box
+            assert= |seed $ :seed box
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
         'crossed-binder-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn crossed-binder-first (head-value other-value)
             hint-fn $ {}
@@ -313,7 +329,8 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
-        'empty-field-box $ %{} 'CodeEntry (:doc "|An empty List field keeps the declared element binder of a generic struct return.")
+        'empty-field-box $ %{} 'CodeEntry
+          :doc "|空列表字段保留泛型工厂的元素合同；调用处由断言、实参或返回值的期望类型实例化本次调用，输入 seed 的类型和外围泛型身份仍须独立证明。"
           :code $ quote $ defn empty-field-box (seed)
             EmptyFieldBox :items ([]) :seed seed
           :examples $ []
@@ -321,14 +338,44 @@
             :args $ [] 'S
             :generics $ [] 'T 'S
             :return $ :: 'test-types-inference.main/EmptyFieldBox 'T 'S
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
-            :code $ quote $ let
-                box $ assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'String)
-              do
-                assert= ([]) $ :items box
-                assert= |seed $ :seed box
-                assert= ([] 1) $ append (:items box) 1
-            :tags $ #{} :empty-field-struct :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
+              :code $ quote $ let
+                  box $ assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'String)
+                do
+                  assert= ([]) (:items box)
+                  assert= |seed $ :seed box
+                  assert= ([] 1)
+                    append (:items box) 1
+              :tags $ #{} :empty-field-struct :unit
+            %{} 'TestEntry (:name |independent-return-instantiations)
+              :code $ quote $ do
+                assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'String)
+                assert-type (empty-field-box |seed) (:: 'test-types-inference.main/EmptyFieldBox 'String 'String)
+                assert= |seed $ :seed $ empty-field-box |seed
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
+            %{} 'TestEntry (:name |declared-return-context)
+              :code $ quote $ consume-number-field-box (number-field-box |seed)
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
+            %{} 'TestEntry (:name |declared-argument-context)
+              :code $ quote $ consume-number-field-box (empty-field-box |seed)
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
+            %{} 'TestEntry (:name |caller-generic-and-transparent-let)
+              :code $ quote $ let
+                  box $ assert-type (lexical-field-box 7) (:: 'test-types-inference.main/EmptyFieldBox 'Number 'Number)
+                assert= 7 $ :seed box
+                assert= 0 $ .len $ :items box
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
+            %{} 'TestEntry (:name |independent-branch-exits)
+              :code $ quote $ do
+                consume-number-field-box $ branch-field-box true |seed
+                consume-number-field-box $ branch-field-box false |seed
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
+            %{} 'TestEntry (:name |known-function-alias-context)
+              :code $ quote $ let
+                  factory empty-field-box
+                consume-number-field-box $ factory |seed
+              :tags $ #{} :empty-field-struct :return-only-generic :unit
         'find-last-matching-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn find-last-matching-index (xs item) (.last-index-of xs item)
           :examples $ []
@@ -652,7 +699,8 @@
             %{} 'TestEntry (:name |preserves-empty-rest)
               :code $ quote $ assert= ([]) (inherited-rest-binders 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
-        'kept-members $ %{} 'CodeEntry (:doc "|An empty loop accumulator takes its element type from the members recur appends.")
+        'kept-members $ %{} 'CodeEntry
+          :doc "|An empty loop accumulator takes its element type from the members recur appends."
           :code $ quote $ defn kept-members (xs excluded)
             loop
                 i 0
@@ -670,10 +718,13 @@
             :return $ :: 'List 'T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-loop-accumulator)
             :code $ quote $ let
-                kept $ assert-type (kept-members ([] 1 2 3) 2) (:: 'List 'Number)
+                kept $ assert-type
+                  kept-members ([] 1 2 3) 2
+                  :: 'List 'Number
               do
                 assert= ([] 1 3) kept
-                assert= ([]) $ kept-members ([] |a) |a
+                assert= ([])
+                  kept-members ([] |a) |a
             :tags $ #{} :loop-empty-accumulator :unit
         'lexical-capture-callback $ %{} 'CodeEntry
           :doc "|Generates a callback capturing the caller's T without redeclaring it."
@@ -688,6 +739,16 @@
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'Syntax
+        'lexical-field-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-field-box (seed)
+            let
+                box $ empty-field-box seed
+              , box
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'S
+            :generics $ [] 'S
+            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'S
         'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-capture (value)
             let
@@ -1002,6 +1063,12 @@
                   map-through-method ([])
                     fn (_value) |unused
               :tags $ #{} :contextual-map-output :unit
+        'number-field-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn number-field-box (seed) (empty-field-box seed)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
         'option-recur-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-recur-sum (n acc)
             if (&<= n 0) (acc.unwrap-or 0)

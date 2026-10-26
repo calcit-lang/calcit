@@ -133,6 +133,10 @@ jobs:
             node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru \
               --target test-types-inference.main/test-fn-inference \
               --tag predicate-evaluation --backend native,wasi
+          CALCIT_PROOF_AUDIT=1 \
+            WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru \
+              --tag empty-field-struct --backend native,wasi
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/run-core-tests.mjs --snapshot tests/fixtures/def-value-schema.cirru \
               --tag known-function-alias --backend native,js,wasm,wasi

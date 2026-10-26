@@ -1532,6 +1532,7 @@ pub(super) fn expression_is_proven_for(
 ) -> bool {
   struct ExpressionCheck {
     remaining: usize,
+    contextual_calls: bool,
   }
 
   impl ExpressionCheck {
@@ -1589,10 +1590,19 @@ pub(super) fn expression_is_proven_for(
             };
             // Check the initializer in its parent environment. A shadowing
             // binding replaces prior proof even when its new type is Dynamic.
+            let contextual_calls = self.contextual_calls;
+            let preserves_body = items
+              .iter()
+              .skip(2)
+              .all(|form| super::condition_evidence::preserves_locals(form, scope));
+            // A contextual instantiation cannot retype a stored alias after an
+            // effect may have changed it. Reuse predicate evidence lifetimes.
+            self.contextual_calls = contextual_calls && preserves_body;
             let proven = self.check(value, expected, scope, aliases, false, depth + 1);
-            let mut body_aliases = aliases.clone();
+            self.contextual_calls = contextual_calls;
+            let mut body_aliases = if preserves_body { aliases.clone() } else { HashMap::new() };
             body_aliases.remove(&local.sym);
-            if proven {
+            if proven && preserves_body {
               body_aliases.insert(local.sym.clone(), expected);
             }
             let mut body_scope = scope.clone();
@@ -1638,6 +1648,9 @@ pub(super) fn expression_is_proven_for(
       // instead of turning it into Dynamic through constructor inference.
       if let Some(proven) = self.check_struct_literal(expr, expected, scope, aliases, depth) {
         return proven;
+      }
+      if self.contextual_calls && self.check_generic_call(expr, expected, scope, async_invocation) {
+        return true;
       }
       // Check exits before restricting generic evidence: wrappers such as if
       // and let may return empty constructors without binding member variables.
@@ -1692,6 +1705,78 @@ pub(super) fn expression_is_proven_for(
   }
 
   impl ExpressionCheck {
+    /// Instantiate only this call's binders from its result context, then
+    /// recheck every input and bound before exporting any result evidence.
+    fn check_generic_call(
+      &mut self,
+      expr: &Calcit,
+      expected: &CalcitTypeAnnotation,
+      scope: &ScopeTypes,
+      async_invocation: bool,
+    ) -> bool {
+      let Calcit::List(items) = expr else { return false };
+      let Some(signature) = items
+        .first()
+        .and_then(|head| resolve_type_value(head, scope))
+        .and_then(|ty| ty.resolve_to_nonoptional_fn())
+      else {
+        return false;
+      };
+      if signature.generics.is_empty() || !signature.return_type.contains_type_var() {
+        return false;
+      }
+      if !async_invocation
+        && resolve_type_value(expr, scope).is_some_and(|actual| super::type_inference::is_pending_async_value(&actual))
+      {
+        return false;
+      }
+      let Ok((arguments, signature)) = super::expanded_call_contract(&signature, &items.drop_left()) else {
+        return false;
+      };
+      let arity = signature.call_arity();
+      if arguments.len() < arity.min || arity.max.is_some_and(|max| arguments.len() > max) {
+        return false;
+      }
+      let Some(actual_types) = arguments
+        .iter()
+        .map(|arg| resolve_type_value(arg, scope))
+        .collect::<Option<Vec<_>>>()
+      else {
+        return false;
+      };
+      let mut parameters = signature.arg_types.clone();
+      parameters.extend(signature.rest_type.iter().cloned());
+      parameters.push(signature.return_type.clone());
+      let mut context = actual_types.clone();
+      context.push(Arc::new(expected.clone()));
+      let mut proof = scope.call_type_proof(&signature.generics, &parameters, &context);
+      proof.prepare_inputs(
+        arguments
+          .iter()
+          .zip(&actual_types)
+          .enumerate()
+          .filter_map(|(index, (argument, actual))| {
+            let parameter = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+            super::type_inference::generic_input_evidence(argument, actual, parameter)
+          }),
+      );
+      if !proof.prove(expected, &signature.return_type).is_proven() {
+        return false;
+      }
+      for (index, actual) in actual_types.iter().enumerate() {
+        let Some(parameter) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+          return false;
+        };
+        if !proof.prove(actual, parameter).is_proven() {
+          return false;
+        }
+      }
+      proof.prove_where_bounds(&signature.where_bounds, None).is_proven()
+        && proof
+          .result(&signature.return_type)
+          .is_some_and(|actual| actual.is_proven_for(expected))
+    }
+
     /// `None` leaves non-literals and non-generic expectations to the general proof.
     fn check_struct_literal<'a>(
       &mut self,
@@ -1740,7 +1825,11 @@ pub(super) fn expression_is_proven_for(
       .is_proven()
   }
 
-  ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
+  ExpressionCheck {
+    remaining: 16_384,
+    contextual_calls: true,
+  }
+  .check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
 }
 
 /// `set!` is the only operation that rebinds a lexical local (JS-FFI only). A
