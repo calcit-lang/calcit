@@ -124,8 +124,8 @@ jobs:
           yarn install --immutable
           yarn compile
           yarn procs-link
-          "$CALCIT_BIN" calcit/test.cirru
-          "$CALCIT_BIN" calcit/test.cirru js
+          "$CALCIT_BIN" calcit/test.cirru --no-proof-audit
+          "$CALCIT_BIN" calcit/test.cirru --no-proof-audit js
           cp -v scripts/main.mjs js-out/
           node js-out/main.mjs
           bash scripts/test-wasm.sh
@@ -159,8 +159,8 @@ jobs:
           file target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
           ldd target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm
           test "$(target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm -v)" = "$RELEASE_TAG"
-          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm calcit/test.cirru
-          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm --emit-path target/release/no-wasm-js calcit/test.cirru js
+          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm calcit/test.cirru --no-proof-audit
+          target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm --emit-path target/release/no-wasm-js calcit/test.cirru --no-proof-audit js
           if target/release/assets/calcit-ubuntu22.04-x86_64-no-wasm wasm calcit/test.cirru >target/release/no-wasm-command.out 2>&1; then
             echo 'WASM command unexpectedly succeeded' >&2
             exit 1

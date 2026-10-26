@@ -44,7 +44,7 @@ mod cr_type_fail_tests;
 #[path = "cr_tests/cirru_suite.rs"]
 mod cr_cirru_suite_tests;
 
-use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
+use calcit::calcit::{CalcitErr, CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, DynamicMethodsCommand,
@@ -470,7 +470,7 @@ fn run_public_check(
   let emit_preflight_output = options.format == "human" || options.format == "text";
   // Both entry preflight and selected definitions may expand logging macros.
   let _output_guard = ProgramOutputGuard::new(!emit_preflight_output, false);
-  let strict_preflight = || run_check_only_with_output(entries, emit_preflight_output);
+  let strict_preflight = || run_check_only_without_proof(entries, emit_preflight_output);
   public_api_check::run(
     options,
     snapshot,
@@ -522,6 +522,10 @@ fn run_cli() -> Result<(), String> {
   }
 
   let strict_type_policy = resolve_strict_type_policy(cli_args.strict_types, cli_args.compat_types)?;
+  if cli_args.no_proof_audit && cli_args.compat_types {
+    return Err("`--no-proof-audit` is redundant with `--compat-types`, which already skips the proof audit.".to_owned());
+  }
+  runner::preprocess::set_default_proof_audit(!cli_args.no_proof_audit);
 
   if cli_args.keep_going && !cli_args.check_only {
     return Err("`--keep-going` requires `--check-only`.".to_owned());
@@ -1010,7 +1014,7 @@ fn run_cli() -> Result<(), String> {
   }
 
   if is_eval_mode && !check_only {
-    run_check_only(&entries)?;
+    run_check_only_without_proof(&entries, true)?;
   }
 
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
@@ -1019,11 +1023,12 @@ fn run_cli() -> Result<(), String> {
   // codegen, but type correctness must not depend on an analyzer budget.
   if cli_args.strict_types && !check_only && !is_public_check && !is_eval_mode {
     run_check_only(&entries)?;
-  } else if strict_type_policy.diagnostics && !check_only && !is_eval_mode && (cli_args.subcommand.is_none() || use_configured_js_mode)
+  } else if runner::preprocess::default_proof_enabled()
+    && !check_only
+    && !is_eval_mode
+    && (cli_args.subcommand.is_none() || use_configured_js_mode)
   {
-    // Native runs and JS codegen prove the entries before compiling them
-    // ordinarily, so they reject what check-only rejects (#2121).
-    run_check_only_with_output(&entries, false)?;
+    run_default_proof_preflight(&entries)?;
   }
 
   let task = if check_only && public_check_scope {
@@ -1957,6 +1962,55 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
 }
 
 fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Result<(), String> {
+  check_entries(entries, emit_output, true)
+}
+
+/// Eval snippets and the public-definition preflight keep ordinary checking;
+/// the default proof covers check-only, run, test and js (#2121).
+fn run_check_only_without_proof(entries: &ProgramEntries, emit_output: bool) -> Result<(), String> {
+  check_entries(entries, emit_output, false)
+}
+
+type EntryResults = (Result<(), CalcitErr>, Option<Result<(), CalcitErr>>);
+
+fn compile_entries(entries: &ProgramEntries, check_warnings: &RefCell<Vec<LocatedWarning>>) -> EntryResults {
+  let init_result =
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default());
+  let reload_result = init_result.is_ok().then(|| {
+    runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
+  });
+  (init_result, reload_result)
+}
+
+fn entries_passed(
+  init_result: &Result<(), CalcitErr>,
+  reload_result: &Option<Result<(), CalcitErr>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> bool {
+  init_result.is_ok() && matches!(reload_result, Some(Ok(()))) && check_warnings.borrow().is_empty()
+}
+
+/// One proof audit covers both entries, so shared dependencies are proved once.
+fn prove_entries(entries: &ProgramEntries, check_warnings: &RefCell<Vec<LocatedWarning>>) -> EntryResults {
+  runner::preprocess::check_with_default_proof(check_warnings, || compile_entries(entries, check_warnings))
+}
+
+/// Native runs and JS codegen prove the entries before compiling them
+/// ordinarily (#2121). An ordinary failure is left to the run or codegen that
+/// follows, which reports it as before (including JS build-error artifacts).
+fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
+  runner::preprocess::with_restored_compiled_program(|| {
+    let check_warnings = RefCell::new(vec![]);
+    let (init_result, reload_result) = compile_entries(entries, &check_warnings);
+    if !entries_passed(&init_result, &reload_result, &check_warnings) {
+      return Ok(());
+    }
+    // The ordinary entries are compiled now, so the check below only adds the audit.
+    check_entries(entries, false, true)
+  })
+}
+
+fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
@@ -1964,15 +2018,15 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
     eprintln!("{}", "Check-only mode: validating code...".dimmed());
   }
 
-  // One proof audit covers both entries, so shared dependencies are proved once.
-  let (init_result, reload_result) = runner::preprocess::check_with_default_proof(check_warnings, || {
-    let init_result =
-      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default());
-    let reload_result = init_result.is_ok().then(|| {
-      runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
-    });
-    (init_result, reload_result)
-  });
+  let (mut init_result, mut reload_result) = compile_entries(entries, check_warnings);
+  let advisories = runner::preprocess::take_advisories();
+  // The proof audit runs only after the ordinary check passes, so ordinary
+  // rejections keep their own diagnostics and the audit adds the rest (#2121).
+  if prove && runner::preprocess::default_proof_enabled() && entries_passed(&init_result, &reload_result, check_warnings) {
+    (init_result, reload_result) = prove_entries(entries, check_warnings);
+    // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
+    drop(runner::preprocess::take_advisories());
+  }
 
   // preprocess init_fn
   match init_result {
@@ -2013,7 +2067,6 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
   }
 
   // Advisories never fail the check; they only point at calls that still work.
-  let advisories = runner::preprocess::take_advisories();
   if emit_output && !advisories.is_empty() {
     eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
     LocatedWarning::print_list(&advisories);

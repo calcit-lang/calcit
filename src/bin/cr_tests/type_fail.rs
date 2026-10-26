@@ -1991,26 +1991,12 @@ fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
     let _strict = StrictTypesReset::enabled();
     let strict_entries = load_fixture_entries(fixture);
-    // The default preflight runs the assertion proof (#2121), which reports
-    // the unproven argument first; the ordinary strict pass keeps the
-    // specific generic-relation diagnostic checked below.
     let err = run_check_only(&strict_entries).expect_err("an open generic binding must not be narrowed by a concrete callback");
-    assert!(err.contains("E_CALL_ARGUMENT_UNPROVEN"), "unexpected default proof error: {err}");
 
-    let warnings = RefCell::new(vec![]);
-    let err = runner::preprocess::ensure_ns_def_compiled(
-      &strict_entries.init_ns,
-      &strict_entries.init_def,
-      &warnings,
-      &CallStackList::default(),
-    )
-    .expect_err("the ordinary strict pass rejects the narrowing callback");
-    assert_eq!(
-      err.code.as_deref(),
-      Some("E_ERASED_GENERIC_RELATION"),
-      "unexpected strict generic-relation error: {err:?}"
+    assert!(
+      err.contains("E_ERASED_GENERIC_RELATION"),
+      "unexpected strict generic-relation error: {err}"
     );
-    let err = err.msg;
     assert!(err.contains("/compare-open`"), "callee should be explicit: {err}");
     assert!(err.contains("argument 2"), "narrowing argument should be identified: {err}");
     assert!(

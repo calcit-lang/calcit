@@ -260,56 +260,52 @@ pub fn run(
     preflight_ready = false;
   }
 
-  // One proof audit covers every selected definition, so shared dependencies are proved once.
-  runner::preprocess::with_default_proof(|| {
-    for row in prepared {
-      if preflight_ready {
-        let PreparedDefinition {
-          id,
-          namespace,
-          definition,
-          kind,
-          declared_target,
-          runtime_intrinsic,
-          ..
-        } = row;
-        checked_definition_ids.push(id.clone());
-        let warning_count = warnings.borrow().len();
-        let status = if runtime_intrinsic {
-          "intrinsic"
-        } else {
-          let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
-          runner::preprocess::drop_macro_owned_proof_warnings(&warnings, warning_count);
-          match result {
-            Ok(()) if warnings.borrow().len() == warning_count => "passed",
-            Ok(()) => "warning",
-            Err(error) => {
-              diagnostics.push(error_diagnostic(&error, &id));
-              diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
-              "failed"
-            }
-          }
-        };
-        results.push(DefinitionResult {
-          id,
-          namespace,
-          definition,
-          kind,
-          declared_target,
-          status,
-        });
+  for row in prepared {
+    if preflight_ready {
+      let PreparedDefinition {
+        id,
+        namespace,
+        definition,
+        kind,
+        declared_target,
+        runtime_intrinsic,
+        ..
+      } = row;
+      checked_definition_ids.push(id.clone());
+      let warning_count = warnings.borrow().len();
+      let status = if runtime_intrinsic {
+        "intrinsic"
       } else {
-        results.push(DefinitionResult {
-          id: row.id,
-          namespace: row.namespace,
-          definition: row.definition,
-          kind: row.kind,
-          declared_target: row.declared_target,
-          status: if row.rejected { "rejected" } else { "not_checked" },
-        });
-      }
+        let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
+        match result {
+          Ok(()) if warnings.borrow().len() == warning_count => "passed",
+          Ok(()) => "warning",
+          Err(error) => {
+            diagnostics.push(error_diagnostic(&error, &id));
+            diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
+            "failed"
+          }
+        }
+      };
+      results.push(DefinitionResult {
+        id,
+        namespace,
+        definition,
+        kind,
+        declared_target,
+        status,
+      });
+    } else {
+      results.push(DefinitionResult {
+        id: row.id,
+        namespace: row.namespace,
+        definition: row.definition,
+        kind: row.kind,
+        declared_target: row.declared_target,
+        status: if row.rejected { "rejected" } else { "not_checked" },
+      });
     }
-  });
+  }
 
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));
   // A dependency may already have been compiled through an earlier root.

@@ -26,10 +26,10 @@ related:
 
 ## 0.31.0 默认检查证明 Dynamic 的流向（#2121）
 
-`--check-only`、`test`、直接运行与 `js` 编译前的默认预检查现在先做一次断言证明审计，
+`--check-only`、直接运行与 `js` 编译前的默认预检查现在先做一次断言证明审计，
 语义与 `calcit strict` 一致：返回值声明为具体类型、但实际来自 `Dynamic`（或未证明的值）的函数报
 `E_FN_RETURN_UNPROVEN`；把未证明的值传给声明了具体参数类型的函数报 `E_CALL_ARGUMENT_UNPROVEN`。
-以前普通检查会把这类流向静默放行，只有 strict workflow 能发现。审计结束后编译结果恢复，
+以前普通检查会把这类流向静默放行，只有 strict workflow 能发现。审计只在普通检查通过后运行，普通检查能发现的问题仍报原来的诊断；审计结束后编译结果恢复，
 运行与代码生成仍使用普通编译输出；宏展开位置（如 `defimpl`、`cond`）的告警按 strict 的规则过滤。
 
 迁移方式：
@@ -40,8 +40,15 @@ related:
   （`E_ASSERT_TYPE_UNPROVEN`）。
 - `:js-ffi` 适配器里 `unsafe-coerce raw 'String` 这类非 host 目标不算证据，返回值会报
   `E_FN_RETURN_UNPROVEN`；改用上面的 kind 守卫，host 对象用 `js-cast`。`:erased-cache` 适配器不受影响。
-- 默认检查遇到泛型关系被具体回调收窄时，先报 `E_CALL_ARGUMENT_UNPROVEN`，与 `calcit strict` 一致。
-- 只为暂时绕过时，加 `--compat-types` 回到旧行为（该选项计划在之后的非 patch 版本删除）：
+- 只想保留其余严格诊断、暂时跳过这项审计时，加 `--no-proof-audit`。它只关闭断言证明审计，
+  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行。
+  它不能与 `--compat-types` 同时使用：
+
+```bash
+calcit calcit.cirru --no-proof-audit --check-only
+```
+
+- 只为暂时绕过全部严格诊断时，加 `--compat-types` 回到旧行为（同样跳过审计，该选项计划在之后的非 patch 版本删除）：
 
 ```bash
 calcit --compat-types --check-only

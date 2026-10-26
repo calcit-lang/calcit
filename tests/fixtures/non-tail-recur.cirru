@@ -95,7 +95,9 @@
                 a 1
               match (:: :some a)
                 (:some x)
-                  if (> x 3) x $ recur $ inc x
+                  if (number? x)
+                    if (> x 3) x $ recur $ inc x
+                    , 0
                 _ 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)

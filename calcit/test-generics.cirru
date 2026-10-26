@@ -69,7 +69,7 @@
                 s $ id2 |hi
                 debugged-n $ debug-id 1
                 debugged-s $ debug-id |hi
-              assert-type id $ :: 'Fn $ {} (:return 'T)
+              assert-type id2 $ :: 'Fn $ {} (:return 'T)
                 :generics $ [] 'T
                 :args $ [] 'T
               assert-type debug-id $ :: 'Fn $ {}

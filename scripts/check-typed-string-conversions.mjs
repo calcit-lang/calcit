@@ -47,7 +47,7 @@ for (const [source, expected] of [["nil", ""], ["true", "true"], [":ready", "rea
 const output = await mkdtemp(join(tmpdir(), "calcit-typed-string-conversions-"));
 try {
   await symlink(resolve("node_modules"), join(output, "node_modules"), "dir");
-  execFileSync(binary, ["--emit-path", output, snapshot, "js"], { stdio: "pipe" });
+  execFileSync(binary, ["--no-proof-audit", "--emit-path", output, snapshot, "js"], { stdio: "pipe" });
   const core = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   const runtime = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
 

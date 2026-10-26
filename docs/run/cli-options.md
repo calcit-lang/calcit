@@ -307,6 +307,16 @@ implicit JS FFI `:error` policy. It does not erase explicitly configured entry
 policies. It cannot be combined with `--strict-types`; the CLI rejects that
 contradictory request.
 
+`--no-proof-audit` keeps every other strict diagnostic but skips the default
+assertion-proof audit (#2121) for check-only, run and `js`. Use it for
+programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
+`calcit/test.cirru`. It is rejected together with `--compat-types`, which
+already skips the audit.
+
+```bash
+calcit calcit.cirru --no-proof-audit --check-only
+```
+
 Strict preprocessing also rejects two constructs that manufacture `nil`
 implicitly:
 

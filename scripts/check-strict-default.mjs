@@ -340,7 +340,14 @@ try {
 
 // All-definitions scope (#1556): Calcit's own project and calcit.core carry proofs for every definition,
 // including ones no entry references. Core builtin placeholders are excluded, like `--check-only --ns`.
-expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs"]), 0, "all-defs check of the test project");
+// The language-feature test project keeps idioms the default proof audit rejects, so it opts out of the audit only.
+expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs", "--no-proof-audit"]), 0, "all-defs check of the test project");
+expectStatus(run(["calcit/test.cirru", "--check-only", "--no-proof-audit", "--compat-types"]), 1, "--no-proof-audit conflicts with --compat-types");
+// `--no-proof-audit` skips only the assertion-proof audit; the directional fixture fails by default and passes without it.
+const directionalProof = run(["calcit/type-fail/directional-default-p21.cirru", "--check-only"]);
+expectStatus(directionalProof, 1, "the default proof audit rejects a directional Dynamic argument");
+assert.match(directionalProof.stdout + directionalProof.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+expectStatus(run(["calcit/type-fail/directional-default-p21.cirru", "--check-only", "--no-proof-audit"]), 0, "--no-proof-audit skips the proof audit");
 expectStatus(
   run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs"]),
   0,
