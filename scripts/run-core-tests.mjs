@@ -304,6 +304,11 @@ const results = new Map(); // id -> { backend -> { status, detail, trace } }
 const expectedTraces = new Map([
   ["test-traits.main/test-collection-traits#struct-empty-evaluates-receiver-once",
     ["struct-empty-receiver", "struct-empty-receiver"]],
+  ["test-traits.main/test-collection-traits#long-loop", ["explicit-contains-false-body"]],
+  ["test-traits.main/test-collection-traits#nested-loop-and-effects",
+    ["recur-receiver", "recur-index", "recur-receiver", "recur-index", "explicit-contains-false-body"]],
+  ["test-traits.main/test-collection-traits#nested-static-loop",
+    Array(4).fill("explicit-contains-false-body")],
 ]);
 const record = (test, backend, status, detail = "", trace = []) => {
   const expectedTrace = expectedTraces.get(test.id);

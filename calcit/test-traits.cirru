@@ -851,6 +851,78 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'test-traits.main/OpenContainsBase)
             :args $ [] 'test-traits.main/OpenContainsBase
+        'recur-construct-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-construct-contains? (value index)
+            if (> index 0)
+              recur (ExplicitTraitFalse :item index) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-method-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-method-contains? (value index)
+            if (> index 0)
+              recur value $ - index 1
+              .contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-nested-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-nested-contains? (value index)
+            assert= false $ recur-public-contains? value 2
+            if (> index 0)
+              recur value $ - index 1
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-option-variant? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-option-variant? (value index)
+            if (> index 0)
+              recur (Option :none) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-public-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-public-contains? (value index)
+            if (> index 0)
+              recur value $ - index 1
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-sequence-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-sequence-contains? (value index)
+            assert= 0 $ loop
+                value 1
+              if (> value 0)
+                recur $ - value 1
+                , value
+            if (> index 0)
+              recur
+                do (println |recur-receiver) value
+                do (println |recur-index) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-swap-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-swap-contains? (left right index)
+            if (> index 0)
+              recur right left $ - index 1
+              contains? left 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Enum 'Number
+        'recur-switch-contains? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-switch-contains? (value index)
+            if (> index 0)
+              recur (ExplicitTraitTrue :item 1) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
@@ -1138,6 +1210,54 @@
                 assert= true $ check-empty $ EmptyStructProbe
                 assert= false $ check-empty $ Person0 :name |Ada
               :tags $ #{} :struct-empty-input-evidence :unit
+            %{} 'TestEntry (:name |default-recur-method)
+              :code $ quote $ assert= true
+                recur-method-contains? (Option :some 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |custom-recur-method)
+              :code $ quote $ assert= false
+                recur-method-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |default-recur-public)
+              :code $ quote $ assert= true
+                recur-public-contains? (Option :some 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |custom-recur-public)
+              :code $ quote $ assert= false
+                recur-public-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |long-loop)
+              :code $ quote $ assert= false
+                recur-public-contains? (ExplicitTraitFalse :item 1) 10000
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |same-impl-new-payload)
+              :code $ quote $ assert= false
+                recur-construct-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |nested-loop-and-effects)
+              :code $ quote $ assert= false
+                recur-sequence-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |nested-static-loop)
+              :code $ quote $ assert= false
+                recur-nested-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |same-impl-new-variant)
+              :code $ quote $ assert= true
+                recur-option-variant? (Option :some 1) 2
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |parallel-swap-same-impl)
+              :code $ quote $ assert= false
+                recur-swap-contains? (ExplicitTraitFalse :item 1) (ExplicitTraitFalse :item 2) 1
+              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
+            %{} 'TestEntry (:name |changed-impl)
+              :code $ quote $ assert= true
+                recur-switch-contains? (ExplicitTraitFalse :item 1) 2
+              :tags $ #{} :recur-impl-changing :trait
+            %{} 'TestEntry (:name |parallel-swap-changed-impl)
+              :code $ quote $ assert= false
+                recur-swap-contains? (ExplicitTraitTrue :item 1) (ExplicitTraitFalse :item 1) 1
+              :tags $ #{} :recur-impl-changing :trait
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2
