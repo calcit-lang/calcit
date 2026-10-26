@@ -325,7 +325,6 @@
       |calcit.core/&list:map-pair#preserves-order-input-and-errors "|unsupported: E_WASI_COMMAND_DEPENDENCY: callback trace uses unsupported proc in WASM: ref"
       |calcit.core/&list:nth#rejects-non-integer-index "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&list:slice#rejects-fractional-bounds "|unsupported: unsupported syntax in WASM: try"
-      |calcit.core/&list:sort-by#sorts-by-function-key "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/&map:destruct#exposes-pairs-and-folds "|parity: traps (unreachable) at runtime; native passes"
       |calcit.core/&map:filter#visits-original-pairs-once-in-order "|unsupported: callback trace uses unsupported proc in WASM: ref"
       |calcit.core/&map:filter-kv#preserves-typed-fields-and-effects "|unsupported: unsupported proc in WASM: ref"
