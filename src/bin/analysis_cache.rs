@@ -293,6 +293,9 @@ struct CachedStrictCheck {
   core_revision: String,
   strict_types: bool,
   warn_dynamic_methods: bool,
+  /// Records written before the default proof audit read as unaudited, so they rerun once.
+  #[serde(default)]
+  proof_audit: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1077,6 +1080,7 @@ pub(crate) fn run_incremental_strict_check(
   let core_revision = calcit::core_snapshot_revision();
   let strict_types = runner::preprocess::is_strict_types_enabled();
   let warn_dynamic_methods = runner::preprocess::is_warn_dyn_method_enabled();
+  let proof_audit = runner::preprocess::default_proof_enabled();
 
   let (status, preprocessing_cached, reason) = match closure_revision {
     Ok(revision) => match cache.strict_check.as_ref() {
@@ -1084,7 +1088,8 @@ pub(crate) fn run_incremental_strict_check(
         if cached.closure_revision == revision
           && cached.core_revision == core_revision
           && cached.strict_types == strict_types
-          && cached.warn_dynamic_methods == warn_dynamic_methods =>
+          && cached.warn_dynamic_methods == warn_dynamic_methods
+          && cached.proof_audit == proof_audit =>
       {
         ("warm".to_owned(), true, None)
       }
@@ -1097,7 +1102,10 @@ pub(crate) fn run_incremental_strict_check(
                 "core-revision-changed".to_owned()
               } else if cached.closure_revision != revision {
                 "dependency-closure-changed".to_owned()
-              } else if cached.strict_types != strict_types || cached.warn_dynamic_methods != warn_dynamic_methods {
+              } else if cached.strict_types != strict_types
+                || cached.warn_dynamic_methods != warn_dynamic_methods
+                || cached.proof_audit != proof_audit
+              {
                 "preprocessing-policy-changed".to_owned()
               } else {
                 "preprocessing-not-cached".to_owned()
@@ -1110,6 +1118,7 @@ pub(crate) fn run_incremental_strict_check(
           core_revision,
           strict_types,
           warn_dynamic_methods,
+          proof_audit,
         });
         ("cold".to_owned(), false, reason)
       }
