@@ -30,7 +30,7 @@ back edges change identity, recursive inline closures and `loop` forms use it in
 falling back to contract dispatch.
 
 补充：参数位置的汇合只把汇合之前的非原子实参先绑定，原子实参保持原位，因为构造器等调用按语法读取它们（如
-`&%{}` 的 struct 引用）；`test-traits.main/branch-open-payload` 覆盖 struct 与 Option 构造器的汇合载荷。
+`&%{}` 的 struct 引用）；`test-traits.main/branch-open-payload` 以直接构造器覆盖 struct 与 Option 的汇合载荷。`loop` 的退回路径不吞掉超过 8 个实现身份的诊断。
 固定参数内联闭包的 `recur` 现已支持，所以 `scripts/check-known-assertion.mjs` 改为运行该闭包的 WASM 产物，
 `calcit.core/foldl-compare#typed-number-exits` 移出 WASM/WASI 排除表，`docs/installation/wasm-support.md`
 同步支持状态。

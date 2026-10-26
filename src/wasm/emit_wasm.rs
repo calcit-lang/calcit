@@ -5100,6 +5100,8 @@ impl ImplSelector {
 /// Internal marker, never surfaced: the loop is retried with wider
 /// alternatives once a back edge reveals another impl.
 const RECUR_IMPL_RETRY: &str = "RETRY_RECUR_IMPL_SELECTION";
+/// Ends the error for a loop parameter past `MAX_IMPL_ALTERNATIVES`.
+const IMPL_LIMIT: &str = "implementation identities";
 /// Bound the code duplicated per dispatch on a selected value.
 const MAX_IMPL_ALTERNATIVES: usize = 8;
 
@@ -6769,7 +6771,7 @@ fn emit_selected_recur_loop(
           }
           if alternatives[index].len() > MAX_IMPL_ALTERNATIVES {
             return Err(format!(
-              "E_WASM_CALL_SPECIALIZATION: recur argument {} carries more than {MAX_IMPL_ALTERNATIVES} implementation identities",
+              "E_WASM_CALL_SPECIALIZATION: recur argument {} carries more than {MAX_IMPL_ALTERNATIVES} {IMPL_LIMIT}",
               index + 1
             ));
           }
@@ -6950,7 +6952,8 @@ fn emit_inline_iife(
       Ok(()) => true,
       // Back edges without nominal evidence keep the unselected loop, which
       // dispatches by contract as before.
-      Err(error) if error.starts_with("E_WASM_CALL_SPECIALIZATION:") => {
+      // Past the identity limit the selected loop is required, so report it.
+      Err(error) if error.starts_with("E_WASM_CALL_SPECIALIZATION:") && !error.ends_with(IMPL_LIMIT) => {
         ctx.instructions.truncate(start);
         for (name, evidence) in params.iter().zip(&param_types) {
           if let Some(evidence) = evidence {
