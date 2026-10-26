@@ -651,7 +651,8 @@
             %{} 'TestEntry (:name |true-impl)
               :code $ quote $ assert= true (branch-open-method false)
               :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-payload $ %{} 'CodeEntry (:doc |)
+        'branch-open-payload $ %{} 'CodeEntry
+          :doc "|验证 Struct/Option 构造器的实参元数据及分支载荷数据，分别读取两种载体中的数值。该辅助用例覆盖载荷保存和读取；具备调用点证据的 trait 实现身份分派由 branch-open-method、branch-open-public 和 recur-switch-contains? 等回归覆盖。开放 Enum 字段的自定义 trait 证据传播属于不同验收范围。"
           :code $ quote $ defn branch-open-payload (flag)
             let
                 box $ OpenEnumBox :value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
