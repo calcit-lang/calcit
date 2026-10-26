@@ -82,8 +82,16 @@ for (const [label, source, diagnostic] of [
   assert.match(invalid.stderr, diagnostic, `${label}: report the malformed hint itself`);
 }
 
+// The scoped `:js-ffi` coercion passes ordinary strict checking; the default proof audit
+// does not count a non-host coercion as return evidence (#2121).
+expectStatus(
+  run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only", "--no-proof-audit"]),
+  0,
+  "default strict valid fixture",
+);
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
-expectStatus(scoped, 0, "default strict valid fixture");
+expectStatus(scoped, 1, "proof audit of a scoped non-host coercion");
+assert.match(scoped.stdout + scoped.stderr, /E_FN_RETURN_UNPROVEN/);
 
 // A compatibility policy cannot equate separately declared lexical binders.
 for (const inner of ["T", "U"]) {
@@ -349,7 +357,7 @@ expectStatus(directionalProof, 1, "the default proof audit rejects a directional
 assert.match(directionalProof.stdout + directionalProof.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
 expectStatus(run(["calcit/type-fail/directional-default-p21.cirru", "--check-only", "--no-proof-audit"]), 0, "--no-proof-audit skips the proof audit");
 expectStatus(
-  run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs"]),
+  run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs", "--no-proof-audit"]),
   0,
   "all-defs check of calcit.core",
 );
@@ -607,7 +615,7 @@ try {
   await rm(asyncFixture, { recursive: true, force: true });
 }
 
-const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only"]);
+const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only", "--no-proof-audit"]);
 expectStatus(explicitStrict, 0, "explicit strict accepts a checked open boundary without a quality budget");
 
 const unscoped = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--check-only"]);
