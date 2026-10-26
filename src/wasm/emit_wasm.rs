@@ -10272,13 +10272,15 @@ fn emit_call_per_selected_impl(
 }
 
 /// Bind call arguments up to a branch join in order, so the join becomes a
-/// selected local without moving any argument's evaluation.
+/// selected local without moving any argument's evaluation. Atoms stay in
+/// place: they have no effects to order, and some heads read them
+/// syntactically, such as the struct reference of a constructor.
 fn emit_call_binding_impl_join(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitList, join: usize) -> Result<(), String> {
   let ns: Arc<str> = Arc::from(ctx.source_ns.as_str());
   let mut call = vec![xs[0].clone()];
   let mut pairs = vec![];
   for (position, arg) in xs.drop_left().iter().enumerate() {
-    if position > join {
+    if position > join || (position < join && !matches!(arg, Calcit::List(_))) {
       call.push(arg.clone());
       continue;
     }

@@ -429,6 +429,10 @@
           :code $ quote $ def OpenContainsTrueLast (impl-traits OpenContainsBase OpenContainsFalseImpl OpenContainsTrueImpl)
           :examples $ []
           :schema $ :: 'EnumDef
+        'OpenEnumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OpenEnumBox (:value 'Enum)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
@@ -646,6 +650,23 @@
               :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
             %{} 'TestEntry (:name |true-impl)
               :code $ quote $ assert= true (branch-open-method false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-payload (flag)
+            let
+                box $ %{} OpenEnumBox $ :value
+                  if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+                wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+              and (non-nil? box) (.some? wrapped)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= true (branch-open-payload true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-payload false)
               :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
         'branch-open-public $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-public (flag)
