@@ -54,6 +54,24 @@ let
 
 `.parse-cirru` 的成功值是闭合的 `CirruQuote`；`.parse-cirru-list` 的成功值是递归的 String/List 语法数据，目前以 `List<Dynamic>` 表达，不是 `CirruQuote`。两者都要求 String 输入，旧的 `parse-cirru-list` 底层调用也会在严格检查阶段拒绝 Number 等非 String。Cirru EDN 和 JSON 的数据形状开放，普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
 
+已有的 `CirruQuote` 值用接收者方法按根节点形状读取，形状不匹配时返回 `:none`，不抛错：
+
+| 方法 | 类型 | 结果 |
+| --- | --- | --- |
+| `.list?` | `CirruQuote -> Bool` | 根节点是否为 list |
+| `.leaf?` | `CirruQuote -> Bool` | 根节点是否为 leaf |
+| `.to-list` | `CirruQuote -> Option<List<Dynamic>>` | list 根按原树递归转换，叶子保持原 token 文本；leaf 根为 `:none` |
+| `.leaf-text` | `CirruQuote -> Option<String>` | leaf 根返回原 token 文本，不解析前导冒号或竖线；list 根为 `:none` |
+
+`.to-list` 的 `:some` 值与同一文本 `.parse-cirru-list` 的 `:ok` 值结构相同，因此“解析新文本”和“转换已保存的 CirruQuote”得到同一种数据：
+
+```cirru
+match
+  .to-list $ cirru-quote (a (b c))
+  (:some rows) (assert= rows $ [] |a $ [] |b |c)
+  (:none) (raise "|stored tree root must be a list")
+```
+
 `format-cirru` 接受以 List 表示的 Cirru 顶层行，内部节点仍可递归包含 String/List；传入 Number 等非 List 会在严格检查阶段报类型不匹配。它与格式化任意可序列化数据的 `format-cirru-edn` 不是同一个契约。
 
 `format-cirru-one-liner` 也要求外层 List，格式化单个 Cirru 表达式；Number 等非 List 会在严格检查阶段报类型不匹配。内部 String/List 节点保持开放，不能据此外推为任意 Calcit 值格式化接口。

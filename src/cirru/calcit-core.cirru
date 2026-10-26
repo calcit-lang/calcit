@@ -283,7 +283,7 @@
             :args $ [] 'CirruQuote 'Number
           :tags $ #{} :builtin :internal
         '&cirru-quote:to-list $ %{} 'CodeEntry
-          :doc "|internal function for converting Cirru quote to list\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list\nConverts Cirru quote structure to regular list"
+          :doc "|internal function for converting Cirru quote to list; not a public entry, use the CirruQuote .to-list method (Option<List>) or .leaf-text (Option<String>) instead.\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list for list roots; a leaf root currently returns its token String although the schema says List\nConverts Cirru quote structure to regular list"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'List)
@@ -355,6 +355,29 @@
                   assert= 1 $ &compare text 7
                   assert= -1 $ &compare 1.5 text
               :tags $ #{} :core :unit
+        '&core-cirru-quote-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq."
+          :code $ quote $ def &core-cirru-quote-impls
+            [] &core-cirru-quote-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
+        '&core-cirru-quote-methods $ %{} 'CodeEntry
+          :doc "|CirruQuote 公开方法：.list?、.leaf?、.to-list、.leaf-text；形状不匹配时返回 :none，不抛错。"
+          :code $ quote $ def &core-cirru-quote-methods
+            &impl::new :&core-cirru-quote-methods (:: :list? cirru-quote:list?) (:: :leaf? cirru-quote:leaf?) (:: :to-list cirru-quote:to-list) (:: :leaf-text cirru-quote:leaf-text)
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |exposes-cirru-quote-methods)
+            :code $ quote $ let
+                methods $ &methods-of $ cirru-quote x
+              do
+                assert= true $ includes? methods .list?
+                assert= true $ includes? methods .leaf?
+                assert= true $ includes? methods .to-list
+                assert= true $ includes? methods .leaf-text
+            :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
@@ -522,7 +545,7 @@
           :schema $ :: 'Impl
           :tags $ #{} :internal
         '&core-scalar-impls $ %{} 'CodeEntry
-          :doc "|Built-in nominal Debug/Eq implementation list for scalar literals"
+          :doc "|Built-in nominal Debug/Eq implementation list for Unit"
           :code $ quote $ def &core-scalar-impls
             [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
           :examples $ []
@@ -1646,6 +1669,7 @@
             identity &core-enum-impls
             identity &core-struct-impls
             identity &core-scalar-impls
+            identity &core-cirru-quote-impls
             identity &core-text-scalar-impls
             identity &core-ref-impls
             identity Add
@@ -1659,7 +1683,7 @@
             identity ToString
             if
               &= (&get-calcit-backend) :js
-              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -5736,6 +5760,120 @@
             %{} 'TestEntry (:name |empty-list-has-no-sections)
               :code $ quote $ assert= ([])
                 chunks ([]) 3
+              :tags $ #{} :core :unit
+        'cirru-quote:leaf-text $ %{} 'CodeEntry
+          :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf-text。根节点为 leaf 时返回 (:some text)，text 为原 token 文本，不解析前导冒号或竖线；根节点为 list 时返回 :none。"
+          :code $ quote $ defn cirru-quote:leaf-text (x)
+            if
+              &= :leaf $ &cirru-type x
+              let
+                  text $ &cirru-quote:to-list x
+                if (string? text) (Option :some text) (Option :none)
+              Option :none
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'CirruQuote
+            :return $ :: 'Option 'String
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-token-text)
+            :code $ quote $ do
+              assert= (Option :some |x)
+                .leaf-text $ cirru-quote x
+              assert= (Option :some |:k)
+                .leaf-text $ cirru-quote :k
+              assert= (Option :some ||x)
+                .leaf-text $ cirru-quote |x
+              assert= (Option :some "|中文")
+                .leaf-text $ cirru-quote "中文"
+              assert= (Option :none)
+                .leaf-text $ cirru-quote $ a b
+              assert= (Option :none)
+                .leaf-text $ cirru-quote $
+              assert-type
+                .leaf-text $ cirru-quote x
+                :: 'Option 'String
+            :tags $ #{} :core :unit
+        'cirru-quote:leaf? $ %{} 'CodeEntry
+          :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf?。根节点为 leaf 时返回 true。"
+          :code $ quote $ defn cirru-quote:leaf? (x)
+            &= :leaf $ &cirru-type x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'CirruQuote
+          :tags $ #{} :internal
+        'cirru-quote:list? $ %{} 'CodeEntry
+          :doc "|CirruQuote 的内部方法实现；公开代码使用 .list?。根节点为 list 时返回 true。"
+          :code $ quote $ defn cirru-quote:list? (x)
+            &= :list $ &cirru-type x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'CirruQuote
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |reports-root-shape)
+            :code $ quote $ do
+              assert= true $ .list? $ cirru-quote (a b)
+              assert= true $ .list? $ cirru-quote ()
+              assert= false $ .list? $ cirru-quote x
+              assert= true $ .leaf? $ cirru-quote x
+              assert= false $ .leaf? $ cirru-quote (a b)
+              assert= false $ .leaf? $ cirru-quote ()
+            :tags $ #{} :core :unit
+        'cirru-quote:to-list $ %{} 'CodeEntry
+          :doc "|CirruQuote 的内部方法实现；公开代码使用 .to-list。根节点为 list 时返回 (:some rows)，按原树递归转换为 List，叶子保持原 token 文本；根节点为 leaf 时返回 :none。结果与同一文本 .parse-cirru-list 的 :ok 值结构相同。"
+          :code $ quote $ defn cirru-quote:to-list (x)
+            if
+              &= :list $ &cirru-type x
+              Option :some $ &cirru-quote:to-list x
+              Option :none
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'CirruQuote
+            :return $ :: 'Option $ :: 'List 'Dynamic
+          :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |converts-list-roots-only)
+              :code $ quote $ do
+                assert=
+                  Option :some $ []
+                  .to-list $ cirru-quote $
+                assert=
+                  Option :some $ [] |a $ [] |b ([] |c)
+                  .to-list $ cirru-quote $ a
+                    b $ c
+                assert=
+                  Option :some $ [] |:k ||x "|中文"
+                  .to-list $ cirru-quote $ :k |x "中文"
+                assert= (Option :none)
+                  .to-list $ cirru-quote x
+                assert-type
+                  .to-list $ cirru-quote $ a b
+                  :: 'Option $ :: 'List 'Dynamic
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-parse-cirru-list)
+              :code $ quote $ let
+                  text "|:k |x (中文 a.b) () (nested (deeper leaf))"
+                match (.parse-cirru text)
+                  (:ok tree)
+                    match (.parse-cirru-list text)
+                      (:ok rows)
+                        assert= (Option :some rows) (.to-list tree)
+                      (:err message) (raise message)
+                  (:err message) (raise message)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |converts-stored-subtrees)
+              :code $ quote $ match (.parse-cirru "|a :b")
+                (:ok tree)
+                  let
+                      line $ &cirru-nth tree 0
+                      token $ &cirru-nth line 1
+                    do
+                      assert= (Option :none) (.leaf-text line)
+                      assert= (Option :some |:b) (.leaf-text token)
+                      assert= (Option :none) (.to-list token)
+                      assert=
+                        Option :some $ [] |a |:b
+                        .to-list line
+                (:err message) (raise message)
               :tags $ #{} :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)

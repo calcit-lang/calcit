@@ -67,6 +67,8 @@ const runtimeMetadata = new Set([
   "&core-number-impls",
   "&core-number-methods",
   "&core-scalar-impls",
+  "&core-cirru-quote-impls",
+  "&core-cirru-quote-methods",
   "&core-text-scalar-impls",
   "&core-set-impls",
   "&core-set-methods",
@@ -357,6 +359,10 @@ const reviewedPublicBoundaryPositions = new Map([
   [
     "&cirru-quote:to-list|schema.return.item",
     "CirruQuote converts to a recursively heterogeneous syntax tree whose leaf-or-list union is not expressible; consumers must parse or narrow nodes before ordinary typed processing.",
+  ],
+  [
+    "cirru-quote:to-list|schema.return.type-arg.0.item",
+    "The .to-list method returns the same recursively heterogeneous syntax rows as .parse-cirru-list; the missing recursive leaf-or-list union is retained, and consumers narrow nodes before typed processing.",
   ],
   [
     "format-cirru|schema.args.0.item",
