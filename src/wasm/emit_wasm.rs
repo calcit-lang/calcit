@@ -5032,6 +5032,9 @@ struct WasmGenCtx {
   /// `&` parameters; a plain `recur` binds its arguments by the same rules as
   /// a call. `None` means every parameter is required.
   recur_shape: Option<(usize, bool)>,
+  /// A specialized loop must preserve these actual argument contracts on every
+  /// back edge; declared nominal shapes alone cannot preserve attached impls.
+  recur_evidence: Option<Vec<WasmTypeEvidence>>,
   /// Collected instructions
   instructions: Vec<Instruction<'static>>,
   /// Function name → index map for cross-function calls
@@ -5098,6 +5101,7 @@ impl WasmGenCtx {
       uses_recur: false,
       arg_indices: Vec::new(),
       recur_shape: None,
+      recur_evidence: None,
       instructions: Vec::new(),
       fn_index: env.fn_index,
       fn_arity: env.fn_arity,
@@ -6036,7 +6040,6 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   // Preserve the actual argument's identity even when its data shape matches.
   let method_argument_types = if (definition.method_sensitive || definition.trait_sensitive)
     && definition.fixed_arity
-    && !definition.body.iter().any(check_uses_recur)
     && !ctx.specialization_stack.iter().any(|active| active == qualified)
     && nil_argument_types.is_none()
     && trait_argument_types.is_none()
@@ -6099,7 +6102,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       "E_WASM_CALL_SPECIALIZATION: `{qualified}` requires a fixed known arity for call-site specialization"
     ));
   }
-  if definition.body.iter().any(check_uses_recur) || ctx.specialization_stack.iter().any(|active| active == qualified) {
+  if ctx.specialization_stack.iter().any(|active| active == qualified) {
     return Err(format!(
       "E_WASM_CALL_SPECIALIZATION: recursive specialization of `{qualified}` is not supported"
     ));
@@ -6115,6 +6118,12 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default()
     });
+  let uses_recur = definition.body.iter().any(check_uses_recur);
+  if uses_recur && (closure_args.iter().any(Option::is_some) || argument_types.len() != args.len()) {
+    return Err(format!(
+      "E_WASM_CALL_SPECIALIZATION: `{qualified}` requires value arguments with proven loop-carried types"
+    ));
+  }
   let mut bindings = Vec::with_capacity(args.len());
   for (arg, closure_arg) in args.iter().zip(closure_args) {
     if let Some((effects, tail)) = closure_arg {
@@ -6135,9 +6144,11 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   let caller_locals = std::mem::take(&mut ctx.locals);
   let caller_local_types = std::mem::take(&mut ctx.local_types);
   let caller_closures = std::mem::take(&mut ctx.lambda_locals);
+  let mut parameter_locals = Vec::with_capacity(definition.params.len());
   for (index, (param, binding)) in definition.params.iter().zip(bindings).enumerate() {
     match binding {
       InlineArgument::Value(local) => {
+        parameter_locals.push(local);
         ctx.locals.insert(param.clone(), local);
         if let Some(annotation) = argument_types.get(index) {
           ctx.local_types.insert(param.clone(), annotation.clone());
@@ -6149,7 +6160,12 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     }
   }
   ctx.specialization_stack.push(qualified.to_owned());
-  let result = emit_body(ctx, &definition.body);
+  let result = if uses_recur {
+    reject_non_tail_recur(&definition.body, qualified)
+      .and_then(|()| emit_recur_loop(ctx, parameter_locals, None, Some(argument_types), &definition.body))
+  } else {
+    emit_body(ctx, &definition.body)
+  };
   ctx.specialization_stack.pop();
   ctx.locals = caller_locals;
   ctx.local_types = caller_local_types;
@@ -6506,6 +6522,62 @@ fn reject_non_tail_recur(body: &[Calcit], owner: &str) -> Result<(), String> {
   }
 }
 
+/// Scope a loop's argument slots and proof independently of enclosing loops.
+fn emit_recur_loop(
+  ctx: &mut WasmGenCtx,
+  parameter_locals: Vec<u32>,
+  shape: Option<(usize, bool)>,
+  evidence: Option<Vec<WasmTypeEvidence>>,
+  body: &[Calcit],
+) -> Result<(), String> {
+  let old_arg_indices = std::mem::replace(&mut ctx.arg_indices, parameter_locals);
+  let old_recur_shape = std::mem::replace(&mut ctx.recur_shape, shape);
+  let old_evidence = std::mem::replace(&mut ctx.recur_evidence, evidence);
+  let old_block_depth = std::mem::replace(&mut ctx.block_depth, 0);
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
+  let result = emit_body(ctx, body);
+  ctx.emit(Instruction::End);
+  ctx.block_depth = old_block_depth;
+  ctx.arg_indices = old_arg_indices;
+  ctx.recur_shape = old_recur_shape;
+  ctx.recur_evidence = old_evidence;
+  result
+}
+
+/// Check loop-carried actual evidence before retaining it for another iteration.
+fn validate_recur_evidence(ctx: &WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  let Some(expected) = &ctx.recur_evidence else {
+    return Ok(());
+  };
+  if args.len() != expected.len() || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return Err("E_WASM_CALL_SPECIALIZATION: specialized recur requires a fixed proven argument list".into());
+  }
+  for (index, (arg, expected)) in args.iter().zip(expected).enumerate() {
+    let actual = infer_wasm_value_evidence(ctx, arg).ok_or_else(|| {
+      format!(
+        "E_WASM_CALL_SPECIALIZATION: recur argument {} has no loop-carried type evidence",
+        index + 1
+      )
+    })?;
+    let same_impls = !expected.exact_impls
+      || (actual.exact_impls
+        && match (expected.annotation.resolve_to_enum(), actual.annotation.resolve_to_enum()) {
+          (Some(expected), Some(actual)) => expected.impls == actual.impls,
+          _ => match (expected.annotation.resolve_to_struct(), actual.annotation.resolve_to_struct()) {
+            (Some(expected), Some(actual)) => expected.impls == actual.impls,
+            _ => false,
+          },
+        });
+    if !actual.annotation.is_proven_for(&expected.annotation) || !same_impls {
+      return Err(format!(
+        "E_WASM_CALL_SPECIALIZATION: recur argument {} does not preserve the loop-carried type and implementation identity",
+        index + 1
+      ));
+    }
+  }
+  Ok(())
+}
+
 fn check_uses_recur(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::Recur) => true,
@@ -6657,19 +6729,7 @@ fn emit_inline_iife(
   // Emit body — with a loop wrapper if TCO recur is needed.
   reject_non_tail_recur(body, "inline function")?;
   if uses_recur {
-    let old_arg_indices = std::mem::replace(&mut ctx.arg_indices, param_locals);
-    let old_recur_shape = std::mem::replace(&mut ctx.recur_shape, shape);
-    let old_block_depth = ctx.block_depth;
-    ctx.block_depth = 0;
-
-    ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
-    let result = emit_body(ctx, body);
-    ctx.emit(Instruction::End); // end loop
-
-    ctx.block_depth = old_block_depth;
-    ctx.arg_indices = old_arg_indices;
-    ctx.recur_shape = old_recur_shape;
-    result?;
+    emit_recur_loop(ctx, param_locals, shape, None, body)?;
   } else {
     emit_body(ctx, body)?;
   }
@@ -7775,6 +7835,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // Recur
     CalcitProc::Recur => {
+      validate_recur_evidence(ctx, args)?;
       // Check for spread: args may be [a1, ..., ak, ArgSpread, rest_list]
       let spread_pos = args.iter().position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
 
@@ -10703,26 +10764,27 @@ mod tests {
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
     HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx,
-    WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter,
-    build_rest_adapter, build_string_pool, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
-    build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module, call_indirect, component_abi_type,
-    component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, emit_call_expr, emit_call_spread, emit_call_spread_args_as_regular, emit_inline_closure_call,
-    emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports, mem_arg_f64, must_reject_extraction_failure,
-    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
-    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter,
+    build_component_import_adapter, build_rest_adapter, build_string_pool, build_wasi_component_open_at_fn,
+    build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
+    call_indirect, component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature,
+    component_memory_layout, component_task_return_signature, emit_call_expr, emit_call_spread, emit_call_spread_args_as_regular,
+    emit_inline_closure_call, emit_proc_call, emit_recur_loop, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
+    mem_arg_f64, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence,
+    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::wasm::host::calcit::{
-    Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
-    CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, MethodKind, SchemaKind,
+    Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitImpl, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc,
+    CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, MethodKind, SchemaKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
   use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
 
-  /// WASM lowers `recur` to a branch, so a non-tail use would silently restart the loop.
+  /// Branch lowering must reject invalid back edges and restore enclosing loop state.
   #[test]
-  fn rejects_recur_outside_tail_position() {
+  fn recur_lowering_preserves_tail_and_loop_evidence_boundaries() {
     let recur = || Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), Calcit::Number(1.0)]);
     let tail = [Calcit::from(vec![
       Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
@@ -10735,6 +10797,91 @@ mod tests {
     let escaping = [Calcit::from(vec![Calcit::Proc(CalcitProc::List), recur()])];
     let error = reject_non_tail_recur(&escaping, "tests.wasm/f").expect_err("non-tail recur");
     assert!(error.contains("tail position"), "{error}");
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(1, env);
+    let numeric = WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number));
+    ctx.recur_evidence = Some(vec![numeric.clone()]);
+    validate_recur_evidence(&ctx, &[Calcit::Number(1.0)]).expect("same scalar contract");
+    let error = validate_recur_evidence(&ctx, &[Calcit::Bool(false)]).expect_err("erased false is not Number zero");
+    assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
+
+    let mut left = CalcitStructDef::from_fields(EdnTag::new("LoopProbe"), vec![]);
+    left.definition_ref = Some(Arc::from("tests.wasm/LoopProbe"));
+    left.impls.push(Arc::new(CalcitImpl {
+      name: EdnTag::new("LoopProbeImpl"),
+      origin: None,
+      fields: Arc::new(vec![EdnTag::new("flag?")]),
+      values: Arc::new(vec![Calcit::Proc(CalcitProc::BoolQuestion)]),
+    }));
+    let mut right = left.clone();
+    right.impls[0] = Arc::new(CalcitImpl {
+      values: Arc::new(vec![Calcit::Proc(CalcitProc::StructQuestion)]),
+      ..(*left.impls[0]).clone()
+    });
+    let expected = WasmTypeEvidence {
+      annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left))),
+      exact_impls: true,
+    };
+    let changed = WasmTypeEvidence {
+      annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right))),
+      exact_impls: true,
+    };
+    assert!(
+      changed.annotation.is_proven_for(&expected.annotation),
+      "data shape alone accepts both values"
+    );
+    let receiver = Calcit::Symbol {
+      sym: Arc::from("receiver"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.wasm"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    };
+    ctx.locals.insert("receiver".to_owned(), 0);
+    ctx.recur_evidence = Some(vec![expected.clone()]);
+    ctx.local_types.insert("receiver".to_owned(), changed);
+    let error = validate_recur_evidence(&ctx, std::slice::from_ref(&receiver)).expect_err("same data, different impl");
+    assert!(error.contains("implementation identity"), "{error}");
+    ctx.local_types.insert("receiver".to_owned(), expected);
+    validate_recur_evidence(&ctx, &[receiver]).expect("the original actual implementation");
+
+    ctx.arg_indices = vec![0];
+    ctx.recur_shape = Some((1, false));
+    ctx.recur_evidence = Some(vec![numeric.clone()]);
+    ctx.block_depth = 3;
+    let inner = ctx.alloc_local();
+    let error = emit_recur_loop(
+      &mut ctx,
+      vec![inner],
+      None,
+      Some(vec![WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Bool))]),
+      &[recur()],
+    )
+    .expect_err("a nested loop changes its Bool argument to Number");
+    assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
+    assert_eq!(ctx.arg_indices, [0]);
+    assert_eq!(ctx.recur_shape, Some((1, false)));
+    assert_eq!(ctx.recur_evidence.as_ref().unwrap().len(), 1);
+    assert!(ctx.recur_evidence.as_ref().unwrap()[0] == numeric);
+    assert_eq!(ctx.block_depth, 3);
   }
 
   #[test]

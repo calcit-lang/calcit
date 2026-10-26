@@ -403,6 +403,8 @@ for (const [name, expected] of [
   ["test-enum-trait-invalid-ordered", ["enum-receiver", "enum-key"]],
   ["test-enum-trait-receiver-error", ["enum-receiver"]],
   ["test-enum-trait-key-error", ["enum-receiver", "enum-key"]],
+  ["test-enum-recur-receiver-error", ["recur-receiver", "recur-key", "recur-receiver"]],
+  ["test-enum-recur-key-error", ["recur-receiver", "recur-key", "recur-receiver", "recur-key"]],
 ]) {
   const start = wasmLog.length;
   checkTrap(`${name}()`, () => e[name]());

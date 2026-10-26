@@ -185,6 +185,28 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
+        'recur-enum-key-failure? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-enum-key-failure? (value index)
+            if (> index 0)
+              recur
+                do (println |recur-receiver) value
+                do (println |recur-key)
+                  if (= index 1) (raise |recur-key-error) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+        'recur-enum-receiver-failure? $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-enum-receiver-failure? (value index)
+            if (> index 0)
+              recur
+                do (println |recur-receiver)
+                  if (= index 1) (raise |recur-receiver-error) value
+                do (println |recur-key) (- index 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
         'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
             if (<= remaining 0)
@@ -677,6 +699,18 @@
             enum-index-helper
               do (println |enum-receiver) (raise |enum-receiver-error)
               do (println |enum-key) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-recur-key-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-recur-key-error ()
+            recur-enum-key-failure? (Option :some 1) 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-recur-receiver-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-recur-receiver-error ()
+            recur-enum-receiver-failure? (Option :some 1) 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
