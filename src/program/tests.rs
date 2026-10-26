@@ -59,6 +59,7 @@ fn bundled_core_initialization_releases_program_lock_for_schema_lookups() {
       .collect();
     *PROGRAM_CODE_DATA.write().expect("seed bundled source") = source;
     assert!(has_bundled_core_source(), "initialization order must not change the source proof");
+    assert!(has_bundled_core_source(), "a repeated check reuses the verified source");
     PROGRAM_CODE_DATA
       .write()
       .expect("replace a core predicate")
