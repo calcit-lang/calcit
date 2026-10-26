@@ -432,6 +432,7 @@ try {
       // #2414: result context may instantiate this invocation, but it cannot
       // erase actual inputs, callback outputs, lexical binders or alias writes.
       const factoryNs = "test-types-inference.main";
+      const factoryOptions = { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: "1" } };
       const boxType = (item, seed = "String") => ["::", `'${factoryNs}/EmptyFieldBox`, `'${item}`, `'${seed}`];
       const factoryFn = (args, returned, generics = [], features = []) => ["::", "'Fn", ["{}",
         [":args", ["[]", ...args]], [":return", returned], [":generics", ["[]", ...generics]],
@@ -473,13 +474,13 @@ try {
         ];
         if (name === "caller-binder") operations.unshift(...factoryDef("return-as-caller",
           ["defn", "return-as-caller", ["value"], ["return-identity", "1"]], factoryFn(["'T"], "'T", ["'T"])));
-        const runFactory = (...args) => execFileSync(binary, [factorySnapshot, ...args], options);
+        const runFactory = (...args) => execFileSync(binary, [factorySnapshot, ...args], factoryOptions);
         const preview = JSON.parse(runFactory("edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"));
         runFactory("edit", "transaction", "--code", JSON.stringify(operations), "--expect-revision", preview.scoped_revision, "--format", "json");
         const original = await readFile(factorySnapshot);
         const output = join(project, `factory-${name}-js`);
         for (const args of [["--check-only"], ["--emit-path", output, "js"]]) {
-          const rejected = spawnSync(binary, [factorySnapshot, ...args], options);
+          const rejected = spawnSync(binary, [factorySnapshot, ...args], factoryOptions);
           if (rejected.error) throw rejected.error;
           assert.notEqual(rejected.status, 0, `${name}: output context cannot invent missing input evidence`);
           const diagnostic = /E_ASSERT_TYPE_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION/;
