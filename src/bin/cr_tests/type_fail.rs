@@ -624,10 +624,10 @@ fn reset_diagnostic_renders_the_call_head_once() {
 }
 
 #[test]
-fn strict_public_dissoc_keeps_a_known_map_contract() {
+fn strict_public_dissoc_keeps_a_known_collection_contract() {
   run_with_large_stack(|| {
-    // Clearing an entry from a typed Map cache keeps the Map contract, while
-    // a key of the wrong type is still rejected by the Map key check.
+    // Removing an entry from a typed Map keeps the Map contract, while a key
+    // of the wrong type is still rejected by the Map key check.
     for (key_type, value, passes) in [
       ("'String", "dissoc (deref state) key", true),
       ("'String", "dissoc (deref state) key key", true),
@@ -636,15 +636,26 @@ fn strict_public_dissoc_keeps_a_known_map_contract() {
       let snippet = format!(
         "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state key)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref $ :: 'Map 'String 'Number) {key_type}) (:return 'Unit)\n      reset! state $ {value}\n      , &unit\n  , &unit"
       );
-      let mut entries = load_snippet_entries(&snippet);
-      entries.reload_fn = entries.init_fn.clone();
-      entries.reload_ns = entries.init_ns.clone();
-      entries.reload_def = entries.init_def.clone();
-      let _strict = StrictTypesReset::enabled();
-      let result = run_check_only(&entries);
-      assert_eq!(result.is_ok(), passes, "key={key_type}, value={value}: {result:?}");
+      assert_strict_snippet(&snippet, passes, &format!("key={key_type}, value={value}"));
+    }
+    // A List receiver keeps List<T> only when its single index is a proven Number.
+    for (index_type, passes) in [("'Number", true), ("'Dynamic", false)] {
+      let snippet = format!(
+        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state index)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref $ :: 'List 'String) {index_type}) (:return 'Unit)\n      reset! state $ dissoc (deref state) index\n      , &unit\n  , &unit"
+      );
+      assert_strict_snippet(&snippet, passes, &format!("list index={index_type}"));
     }
   });
+}
+
+fn assert_strict_snippet(snippet: &str, passes: bool, label: &str) {
+  let mut entries = load_snippet_entries(snippet);
+  entries.reload_fn = entries.init_fn.clone();
+  entries.reload_ns = entries.init_ns.clone();
+  entries.reload_def = entries.init_def.clone();
+  let _strict = StrictTypesReset::enabled();
+  let result = run_check_only(&entries);
+  assert_eq!(result.is_ok(), passes, "{label}: {result:?}");
 }
 
 #[test]
