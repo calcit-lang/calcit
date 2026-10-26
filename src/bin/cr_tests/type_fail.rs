@@ -1913,6 +1913,33 @@ fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
 }
 
 #[test]
+fn assertion_proof_keeps_assert_equal_option_erasure_quiet() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let path = "calcit/type-fail/assert-equal-option-proof.cirru";
+    let ns = "type-fail-assert-equal-option-proof.main";
+    injection::inject_platform_apis();
+    run_check_only(&load_fixture_entries(path)).expect("ordinary check accepts assert= on Option values");
+    // The audit ignores the `unsafe-coerce ... 'Dynamic` contract inside
+    // assert=, but an explicit erasure is still not a nullable-API use.
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::with_assertion_proof(|| {
+      runner::preprocess::trace_definition_source_expressions(ns, "main!", &warnings, &CallStackList::default()).map(|_| ())
+    })
+    .expect("assertion proof accepts assert= on Option values");
+    let codes = warnings
+      .borrow()
+      .iter()
+      .filter_map(|warning| warning.code().map(str::to_owned))
+      .collect::<Vec<_>>();
+    assert!(
+      !codes.iter().any(|code| code == "W_NOMINAL_ENUM_LEGACY_USE"),
+      "explicit Dynamic erasure must not warn as a nullable use: {codes:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";

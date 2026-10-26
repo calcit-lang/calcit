@@ -8553,6 +8553,23 @@ fn lowered_core_enum_constructor_name(value: &Calcit) -> Option<&str> {
   }
 }
 
+/// `unsafe-coerce x 'Dynamic` deliberately erases a value. Assertion proof
+/// ignores the coercion contract, but the erasure is still not a nullable use.
+fn is_explicit_dynamic_erasure(value: &Calcit) -> bool {
+  let Calcit::List(items) = value else {
+    return false;
+  };
+  if !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _))) {
+    return false;
+  }
+  matches!(
+    items.get(2),
+    Some(Calcit::List(target))
+      if matches!(target.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+        && matches!(target.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "Dynamic")
+  )
+}
+
 fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
   if let Some(value_type) = resolve_type_value(value, scope_types)
     && let Some(enum_name) = nominal_enum_type_name(value_type.as_ref())
@@ -8754,7 +8771,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     .take(structural_arg_count)
     .filter_map(|value| {
       // A literal `Option :some x` is a deliberate construction, not a migrated nullable API result.
-      if lowered_core_enum_constructor_name(value).is_some() {
+      if lowered_core_enum_constructor_name(value).is_some() || is_explicit_dynamic_erasure(value) {
         return None;
       }
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
