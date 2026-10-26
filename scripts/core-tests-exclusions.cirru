@@ -447,7 +447,6 @@
       |calcit.core/last#rejects-invalid-string-indices "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/loop#preserves-standalone-loop-effects "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/map#maps-map-pairs "|parity: collection result differs from native (assert= fails on the heap values)"
-      |calcit.core/map#maps-over-sets "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/map-entries#survives-sort-and-indexing "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/map-kv#empty-and-legacy-drop-sentinels "|parity: legacy nil drop result differs from native (assert= fails on the heap values), reproduced with the original map-kv body"
       |calcit.core/map-kv#preserves-order-collisions-and-input-3 "|unsupported: callback trace uses unsupported proc in WASM: ref"

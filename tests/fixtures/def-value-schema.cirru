@@ -3488,6 +3488,47 @@
                 callback app.wasm-alias/do
               assert= 42 $ callback
             :tags $ #{} :known-function-alias
+        'invoke-number-key $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn invoke-number-key (key value) (key value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'Number
+              , 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |known-callback-selects-specialization)
+              :code $ quote $ assert= -3 (invoke-number-key reverse-key 3)
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-immutable-alias)
+              :code $ quote $ let
+                  key reverse-key
+                assert= -3 $ invoke-number-key key 3
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-same-signature-shadow)
+              :code $ quote $ let
+                  key reverse-key
+                &let (key bump)
+                  assert= 4 $ invoke-number-key key 3
+                assert= -3 $ invoke-number-key key 3
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-independent-calls)
+              :code $ quote $ do
+                assert= -3 $ invoke-number-key reverse-key 3
+                assert= 4 $ invoke-number-key bump 3
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-set-map)
+              :code $ quote $ assert= (#{} -1 -2)
+                map (#{} 1 2) reverse-key
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-empty-set)
+              :code $ quote $ assert= (#{})
+                map (#{}) reverse-key
+              :tags $ #{} :known-callback-specialization :known-function-alias
+            %{} 'TestEntry (:name |known-callback-argument-once)
+              :code $ quote $ assert= -3
+                invoke-number-key reverse-key $ do (println |known-callback-value) 3
+              :tags $ #{} :known-callback-specialization :known-function-alias
         'reverse-key $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reverse-key (value) (- 0 value)
           :examples $ []
