@@ -16173,6 +16173,8 @@ fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
   let declared = program::lookup_def_schema(&info.def_ns, &info.name);
   let schema = if matches!(declared.as_ref(), CalcitTypeAnnotation::Fn(_)) {
     declared
+  } else if let Some(generated) = generated_callable_schema(&info.def_ns, &info.name) {
+    generated
   } else {
     Arc::new(CalcitTypeAnnotation::from_calcit_fn(info))
   };
@@ -16181,6 +16183,18 @@ fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
     unreachable!("CalcitTypeAnnotation::from_calcit_fn always returns Fn")
   };
   signature.clone()
+}
+
+/// A compiler-generated callable has no source entry; its stored contract
+/// (e.g. the trait method type of a synthesized nominal impl callable) keeps
+/// the generics that its rebuilt parameter list cannot express.
+fn generated_callable_schema(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  if program::has_def_code(ns, def) {
+    return None;
+  }
+  program::lookup_compiled_def(ns, def)
+    .map(|compiled| compiled.schema)
+    .filter(|schema| matches!(schema.as_ref(), CalcitTypeAnnotation::Fn(_)))
 }
 
 fn call_stack_contains_macro(call_stack: &CallStackList) -> bool {
