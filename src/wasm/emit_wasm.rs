@@ -5074,7 +5074,34 @@ struct WasmGenCtx {
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
   /// Active static specializations, used to reject recursive inlining deterministically.
   specialization_stack: Vec<String>,
+  /// Value locals whose attached impls are one of a finite set of actual
+  /// identities, chosen at runtime by an i32 selector local.
+  impl_selectors: HashMap<u32, ImplSelector>,
+  /// Per loop parameter: the impl alternatives carried across back edges.
+  recur_selectors: Vec<Option<ImplSelector>>,
+  /// Back-edge identities missing from the current loop's alternatives.
+  recur_missing: Vec<(usize, WasmTypeEvidence)>,
 }
+
+/// An i32 local selecting one entry of `alternatives` for a value local.
+/// Each alternative is exact evidence of a nominal value's attached impls.
+#[derive(Clone)]
+struct ImplSelector {
+  local: u32,
+  alternatives: Vec<WasmTypeEvidence>,
+}
+
+impl ImplSelector {
+  fn index_of(&self, evidence: &WasmTypeEvidence) -> Option<usize> {
+    self.alternatives.iter().position(|alternative| alternative == evidence)
+  }
+}
+
+/// Internal marker, never surfaced: the loop is retried with wider
+/// alternatives once a back edge reveals another impl.
+const RECUR_IMPL_RETRY: &str = "RETRY_RECUR_IMPL_SELECTION";
+/// Bound the code duplicated per dispatch on a selected value.
+const MAX_IMPL_ALTERNATIVES: usize = 8;
 
 impl WasmGenCtx {
   fn record_function_value(&mut self, qualified: &str) {
@@ -5120,6 +5147,9 @@ impl WasmGenCtx {
       boundary: env.boundary,
       lambda_locals: HashMap::new(),
       specialization_stack: vec![],
+      impl_selectors: HashMap::new(),
+      recur_selectors: vec![],
+      recur_missing: vec![],
     }
   }
 
@@ -5579,8 +5609,11 @@ fn emit_inline_closure_call(
       args.len()
     ));
   }
-  if closure.body.iter().any(check_uses_recur) {
-    return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
+  let uses_recur = closure.body.iter().any(check_uses_recur);
+  if uses_recur && (closure.rest || closure.required != closure.params.len()) {
+    return Err(
+      "recur in a statically specialized closure with optional or rest parameters is not yet supported in WASM codegen".into(),
+    );
   }
 
   let mut bound = Vec::with_capacity(args.len());
@@ -5593,8 +5626,9 @@ fn emit_inline_closure_call(
       emit_expr(ctx, arg)?;
       let idx = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(idx));
-      // This fresh argument slot belongs to a non-recursive inline invocation.
-      if let Some(definition) = function_value {
+      // This fresh argument slot belongs to a non-recursive inline invocation;
+      // `recur` may rebind it to another value.
+      if let Some(definition) = function_value.filter(|_| !uses_recur) {
         ctx.local_function_values.insert(idx, definition);
       }
       bound.push((InlineArgument::Value(idx), annotation));
@@ -5611,11 +5645,40 @@ fn emit_inline_closure_call(
     }
     ctx.specialization_stack.push(key.to_owned());
   }
-  let result = emit_inline_closure_with_bindings(ctx, closure, bindings);
+  let result = if uses_recur {
+    emit_inline_closure_loop(ctx, closure, bindings)
+  } else {
+    emit_inline_closure_with_bindings(ctx, closure, bindings)
+  };
   if expansion_key.is_some() {
     ctx.specialization_stack.pop();
   }
   result
+}
+
+/// Emit a fixed-arity recursive closure body as a specialized loop whose
+/// parameters start from the call's argument evidence.
+fn emit_inline_closure_loop(ctx: &mut WasmGenCtx, closure: &InlineClosure, bindings: Vec<InlineBinding>) -> Result<(), String> {
+  reject_non_tail_recur(&closure.body, "closure")?;
+  let mut parameter_locals = Vec::with_capacity(bindings.len());
+  let mut argument_types = Vec::with_capacity(bindings.len());
+  for (index, (binding, evidence)) in bindings.iter().enumerate() {
+    match (binding, evidence) {
+      (InlineArgument::Value(local), Some(evidence)) => {
+        parameter_locals.push(*local);
+        argument_types.push(evidence.clone());
+      }
+      _ => {
+        return Err(format!(
+          "E_WASM_CALL_SPECIALIZATION: recur in a statically specialized closure requires value evidence for argument {}",
+          index + 1
+        ));
+      }
+    }
+  }
+  scoped_inline_closure(ctx, closure, bindings, |ctx| {
+    emit_selected_recur_loop(ctx, &closure.params, parameter_locals, argument_types, &closure.body)
+  })
 }
 
 fn emit_inline_closure_with_bindings(
@@ -5623,11 +5686,21 @@ fn emit_inline_closure_with_bindings(
   closure: &InlineClosure,
   bindings: Vec<InlineBinding>,
 ) -> Result<(), String> {
+  scoped_inline_closure(ctx, closure, bindings, |ctx| emit_body(ctx, &closure.body))
+}
+
+/// Run `emit` in the closure's captured scope with its parameters bound.
+fn scoped_inline_closure(
+  ctx: &mut WasmGenCtx,
+  closure: &InlineClosure,
+  bindings: Vec<InlineBinding>,
+  emit: impl FnOnce(&mut WasmGenCtx) -> Result<(), String>,
+) -> Result<(), String> {
   let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
   let caller_local_types = std::mem::replace(&mut ctx.local_types, closure.captured_local_types.clone());
   let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
   install_inline_closure_bindings(ctx, closure, bindings);
-  let result = emit_body(ctx, &closure.body);
+  let result = emit(ctx);
   ctx.locals = caller_locals;
   ctx.local_types = caller_local_types;
   ctx.lambda_locals = caller_closures;
@@ -6180,7 +6253,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   ctx.specialization_stack.push(qualified.to_owned());
   let result = if uses_recur {
     reject_non_tail_recur(&definition.body, qualified)
-      .and_then(|()| emit_recur_loop(ctx, parameter_locals, None, Some(argument_types), &definition.body))
+      .and_then(|()| emit_selected_recur_loop(ctx, &definition.params, parameter_locals, argument_types, &definition.body))
   } else {
     emit_body(ctx, &definition.body)
   };
@@ -6563,20 +6636,40 @@ fn emit_recur_loop(
 }
 
 /// Check loop-carried actual evidence before retaining it for another iteration.
-fn validate_recur_evidence(ctx: &WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  let Some(expected) = &ctx.recur_evidence else {
-    return Ok(());
+/// Returns the selector assignment of each argument whose loop parameter
+/// carries one of several actual impl identities.
+fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<Option<(u32, usize)>>, String> {
+  let Some(expected) = ctx.recur_evidence.clone() else {
+    return Ok(vec![]);
   };
   if args.len() != expected.len() || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
     return Err("E_WASM_CALL_SPECIALIZATION: specialized recur requires a fixed proven argument list".into());
   }
-  for (index, (arg, expected)) in args.iter().zip(expected).enumerate() {
+  let mut assignments = Vec::with_capacity(args.len());
+  let mut changed = None;
+  for (index, (arg, expected)) in args.iter().zip(&expected).enumerate() {
     let actual = infer_wasm_value_evidence(ctx, arg).ok_or_else(|| {
       format!(
         "E_WASM_CALL_SPECIALIZATION: recur argument {} has no loop-carried type evidence",
         index + 1
       )
     })?;
+    let proven = actual.annotation.is_proven_for(&expected.annotation);
+    let nominal_identity = actual.exact_impls && is_nominal_value_annotation(&actual.annotation);
+    if let Some(selector) = ctx.recur_selectors.get(index).cloned().flatten()
+      && proven
+      && nominal_identity
+    {
+      match selector.index_of(&actual) {
+        Some(position) => assignments.push(Some((selector.local, position))),
+        None => {
+          ctx.recur_missing.push((index, actual));
+          changed.get_or_insert(index);
+          assignments.push(None);
+        }
+      }
+      continue;
+    }
     let same_impls = !expected.exact_impls
       || (actual.exact_impls
         && match (expected.annotation.resolve_to_enum(), actual.annotation.resolve_to_enum()) {
@@ -6586,14 +6679,108 @@ fn validate_recur_evidence(ctx: &WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
             _ => false,
           },
         });
-    if !actual.annotation.is_proven_for(&expected.annotation) || !same_impls {
+    if proven && !same_impls && expected.exact_impls && nominal_identity {
+      // Another actual identity reaches this back edge: retry the loop with
+      // a selector over every identity instead of guessing the first one.
+      ctx.recur_missing.push((index, actual));
+      changed.get_or_insert(index);
+      assignments.push(None);
+      continue;
+    }
+    if !proven || !same_impls {
       return Err(format!(
         "E_WASM_CALL_SPECIALIZATION: recur argument {} does not preserve the loop-carried type and implementation identity",
         index + 1
       ));
     }
+    assignments.push(None);
   }
-  Ok(())
+  if let Some(index) = changed {
+    return Err(format!(
+      "{RECUR_IMPL_RETRY}: recur argument {} changes the loop-carried implementation identity",
+      index + 1
+    ));
+  }
+  Ok(assignments)
+}
+
+fn is_nominal_value_annotation(annotation: &CalcitTypeAnnotation) -> bool {
+  annotation.resolve_to_enum().is_some() || annotation.resolve_to_struct().is_some()
+}
+
+/// Emit a specialized loop, widening each parameter's actual impl identities
+/// to every identity its back edges carry, selected at runtime.
+fn emit_selected_recur_loop(
+  ctx: &mut WasmGenCtx,
+  params: &[String],
+  parameter_locals: Vec<u32>,
+  argument_types: Vec<WasmTypeEvidence>,
+  body: &[Calcit],
+) -> Result<(), String> {
+  let mut alternatives: Vec<Vec<WasmTypeEvidence>> = argument_types.iter().map(|evidence| vec![evidence.clone()]).collect();
+  let start = ctx.instructions.len();
+  loop {
+    ctx.instructions.truncate(start);
+    let selectors: Vec<Option<ImplSelector>> = alternatives
+      .iter()
+      .map(|identities| {
+        (identities.len() > 1).then(|| ImplSelector {
+          local: ctx.alloc_local_typed(ValType::I32),
+          alternatives: identities.clone(),
+        })
+      })
+      .collect();
+    let mut old_types = vec![];
+    for ((selector, local), (param, initial)) in selectors.iter().zip(&parameter_locals).zip(params.iter().zip(&argument_types)) {
+      if let Some(selector) = selector {
+        // The argument value enters the loop as the first identity.
+        ctx.emit(Instruction::I32Const(0));
+        ctx.emit(Instruction::LocalSet(selector.local));
+        ctx.impl_selectors.insert(*local, selector.clone());
+        old_types.push((
+          param.clone(),
+          ctx
+            .local_types
+            .insert(param.clone(), WasmTypeEvidence::contract(initial.annotation.clone())),
+        ));
+      }
+    }
+    let old_selectors = std::mem::replace(&mut ctx.recur_selectors, selectors.clone());
+    let old_missing = std::mem::take(&mut ctx.recur_missing);
+    let result = emit_recur_loop(ctx, parameter_locals.clone(), None, Some(argument_types.clone()), body);
+    let missing = std::mem::replace(&mut ctx.recur_missing, old_missing);
+    ctx.recur_selectors = old_selectors;
+    for (selector, local) in selectors.iter().zip(&parameter_locals) {
+      if selector.is_some() {
+        ctx.impl_selectors.remove(local);
+      }
+    }
+    for (param, old) in old_types {
+      match old {
+        Some(evidence) => ctx.local_types.insert(param, evidence),
+        None => ctx.local_types.remove(&param),
+      };
+    }
+    match result {
+      Err(error) if error.starts_with(RECUR_IMPL_RETRY) && !missing.is_empty() => {
+        for (index, evidence) in missing {
+          if !alternatives[index].contains(&evidence) {
+            alternatives[index].push(evidence);
+          }
+          if alternatives[index].len() > MAX_IMPL_ALTERNATIVES {
+            return Err(format!(
+              "E_WASM_CALL_SPECIALIZATION: recur argument {} carries more than {MAX_IMPL_ALTERNATIVES} implementation identities",
+              index + 1
+            ));
+          }
+        }
+      }
+      Err(error) if error.starts_with(RECUR_IMPL_RETRY) => {
+        return Err(error.replacen(RECUR_IMPL_RETRY, "E_WASM_CALL_SPECIALIZATION", 1));
+      }
+      other => return other,
+    }
+  }
 }
 
 fn check_uses_recur(expr: &Calcit) -> bool {
@@ -6728,7 +6915,18 @@ fn emit_inline_iife(
   // Shadow outer locals with IIFE params (save old bindings for restoration).
   let mut saved: Vec<(String, Option<u32>, Option<WasmTypeEvidence>)> = Vec::new();
   let uses_recur = body.iter().any(check_uses_recur);
-  if uses_recur {
+  // Fixed parameters with nominal impl identities run as a selected loop, so
+  // each back edge carries its actual identity to later iterations.
+  let selected_types = (uses_recur && shape.is_none())
+    .then(|| param_types.iter().cloned().collect::<Option<Vec<_>>>())
+    .flatten()
+    .filter(|types| {
+      types.len() == params.len()
+        && types
+          .iter()
+          .any(|evidence| evidence.exact_impls && is_nominal_value_annotation(&evidence.annotation))
+    });
+  if uses_recur && selected_types.is_none() {
     // The initial call cannot establish an impl identity for later loop values.
     for evidence in param_types.iter_mut().flatten() {
       evidence.exact_impls = false;
@@ -6746,7 +6944,34 @@ fn emit_inline_iife(
 
   // Emit body — with a loop wrapper if TCO recur is needed.
   reject_non_tail_recur(body, "inline function")?;
-  if uses_recur {
+  let start = ctx.instructions.len();
+  let selected = match selected_types {
+    Some(types) => match emit_selected_recur_loop(ctx, params, param_locals.clone(), types, body) {
+      Ok(()) => true,
+      // Back edges without nominal evidence keep the unselected loop, which
+      // dispatches by contract as before.
+      Err(error) if error.starts_with("E_WASM_CALL_SPECIALIZATION:") => {
+        ctx.instructions.truncate(start);
+        for (name, evidence) in params.iter().zip(&param_types) {
+          if let Some(evidence) = evidence {
+            ctx.local_types.insert(
+              name.clone(),
+              WasmTypeEvidence {
+                exact_impls: false,
+                ..evidence.clone()
+              },
+            );
+          }
+        }
+        false
+      }
+      Err(error) => return Err(error),
+    },
+    None => false,
+  };
+  if selected {
+    // Already emitted as a selected loop.
+  } else if uses_recur {
     emit_recur_loop(ctx, param_locals, shape, None, body)?;
   } else {
     emit_body(ctx, body)?;
@@ -6922,6 +7147,20 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     let mut call = vec![Calcit::Import(definition)];
     call.extend(args_list);
     return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(&call[..]));
+  }
+
+  if !matches!(head, Calcit::Syntax(..))
+    && !args_list
+      .iter()
+      .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    if let Some((name, index)) = args_list.iter().find_map(|arg| selected_local(ctx, arg)) {
+      let name = name.to_owned();
+      return emit_call_per_selected_impl(ctx, xs, &name, index);
+    }
+    if let Some(join) = args_list.iter().position(|arg| impl_alternatives(ctx, arg).is_some()) {
+      return emit_call_binding_impl_join(ctx, xs, join);
+    }
   }
 
   match head {
@@ -7853,7 +8092,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // Recur
     CalcitProc::Recur => {
-      validate_recur_evidence(ctx, args)?;
+      let selections = validate_recur_evidence(ctx, args)?;
       // Check for spread: args may be [a1, ..., ak, ArgSpread, rest_list]
       let spread_pos = args.iter().position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
 
@@ -7912,6 +8151,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::LocalGet(tmp));
           ctx.emit(Instruction::LocalSet(ctx.arg_indices[i]));
         }
+        emit_recur_selections(ctx, &selections);
         ctx.emit(Instruction::Br(ctx.block_depth));
         ctx.emit(Instruction::Unreachable);
         Ok(())
@@ -7960,6 +8200,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.emit(Instruction::LocalGet(tmp));
           ctx.emit(Instruction::LocalSet(ctx.arg_indices[i]));
         }
+        emit_recur_selections(ctx, &selections);
         ctx.emit(Instruction::Br(ctx.block_depth)); // br to the recur loop
         // After unconditional br, mark as unreachable for the type checker
         ctx.emit(Instruction::Unreachable);
@@ -9861,20 +10102,7 @@ fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() < 2 || args.len() > 3 {
     return Err(format!("if expects 2-3 args, got {}", args.len()));
   }
-  let annotation = infer_wasm_static_type(ctx, &args[0])
-    .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven condition type in the current scalar ABI".to_owned())?;
-  let constant = scalar_truthiness_constant(&annotation)?;
-  // Always evaluate once, including effects and errors in a statically
-  // decided condition. Only Bool and supported nullable values use F64Ne.
-  emit_expr(ctx, &args[0])?;
-  if let Some(truthy) = constant {
-    ctx.emit(Instruction::Drop);
-    ctx.emit(Instruction::I32Const(i32::from(truthy)));
-  } else {
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Ne);
-  }
-
+  emit_if_condition(ctx, &args[0])?;
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   ctx.block_depth += 1;
   emit_expr(ctx, &args[1])?;
@@ -9887,6 +10115,195 @@ fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.block_depth -= 1;
   ctx.emit(Instruction::End);
   Ok(())
+}
+
+/// Leave an `if` condition's truthiness on the stack as i32.
+fn emit_if_condition(ctx: &mut WasmGenCtx, condition: &Calcit) -> Result<(), String> {
+  let annotation = infer_wasm_static_type(ctx, condition)
+    .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven condition type in the current scalar ABI".to_owned())?;
+  let constant = scalar_truthiness_constant(&annotation)?;
+  // Always evaluate once, including effects and errors in a statically
+  // decided condition. Only Bool and supported nullable values use F64Ne.
+  emit_expr(ctx, condition)?;
+  if let Some(truthy) = constant {
+    ctx.emit(Instruction::Drop);
+    ctx.emit(Instruction::I32Const(i32::from(truthy)));
+  } else {
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ne);
+  }
+  Ok(())
+}
+
+/// A local argument whose attached impls are chosen at runtime.
+fn selected_local<'a>(ctx: &WasmGenCtx, arg: &'a Calcit) -> Option<(&'a str, u32)> {
+  let name = match arg {
+    Calcit::Local(local) => local.sym.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    _ => return None,
+  };
+  let index = *ctx.locals.get(name)?;
+  ctx.impl_selectors.contains_key(&index).then_some((name, index))
+}
+
+/// Evidence that construction or transport fixed a nominal value's impls.
+fn exact_nominal_evidence(ctx: &WasmGenCtx, expr: &Calcit) -> Option<WasmTypeEvidence> {
+  infer_wasm_value_evidence(ctx, expr).filter(|evidence| evidence.exact_impls && is_nominal_value_annotation(&evidence.annotation))
+}
+
+/// The finite actual impl identities of a value whose `if` branches disagree.
+/// A data-shape join would discard them; `None` keeps ordinary lowering.
+fn impl_alternatives(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Vec<WasmTypeEvidence>> {
+  if let Some((_, index)) = selected_local(ctx, expr) {
+    return Some(ctx.impl_selectors[&index].alternatives.clone());
+  }
+  let Calcit::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 4 || !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) {
+    return None;
+  }
+  let mut alternatives: Vec<WasmTypeEvidence> = vec![];
+  for branch in [&items[2], &items[3]] {
+    if expression_definitely_diverges(branch) {
+      continue;
+    }
+    let identities = impl_alternatives(ctx, branch).or_else(|| exact_nominal_evidence(ctx, branch).map(|evidence| vec![evidence]))?;
+    for identity in identities {
+      if !alternatives.contains(&identity) {
+        alternatives.push(identity);
+      }
+    }
+  }
+  (alternatives.len() > 1 && alternatives.len() <= MAX_IMPL_ALTERNATIVES).then_some(alternatives)
+}
+
+/// Emit a value from `impl_alternatives`, recording its identity in `selector`.
+fn emit_selecting_value(ctx: &mut WasmGenCtx, expr: &Calcit, selector: &ImplSelector) -> Result<(), String> {
+  if let Some((_, index)) = selected_local(ctx, expr) {
+    let source = ctx.impl_selectors[&index].clone();
+    ctx.emit(Instruction::LocalGet(index));
+    for (from, identity) in source.alternatives.iter().enumerate() {
+      let to = selector
+        .index_of(identity)
+        .ok_or("E_WASM_TRAIT_TYPE_EVIDENCE: selected implementation is missing from its join")?;
+      ctx.emit(Instruction::LocalGet(source.local));
+      ctx.emit(Instruction::I32Const(from as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      ctx.emit(Instruction::I32Const(to as i32));
+      ctx.emit(Instruction::LocalSet(selector.local));
+      ctx.emit(Instruction::End);
+    }
+    return Ok(());
+  }
+  let Calcit::List(items) = expr else {
+    return Err("E_WASM_TRAIT_TYPE_EVIDENCE: selected implementation requires a branch join".into());
+  };
+  emit_if_condition(ctx, &items[1])?;
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.block_depth += 1;
+  let result = emit_selecting_branch(ctx, &items[2], selector).and_then(|()| {
+    ctx.emit(Instruction::Else);
+    emit_selecting_branch(ctx, &items[3], selector)
+  });
+  ctx.block_depth -= 1;
+  result?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_selecting_branch(ctx: &mut WasmGenCtx, branch: &Calcit, selector: &ImplSelector) -> Result<(), String> {
+  if expression_definitely_diverges(branch) {
+    return emit_expr(ctx, branch);
+  }
+  if impl_alternatives(ctx, branch).is_some() {
+    return emit_selecting_value(ctx, branch, selector);
+  }
+  let position = exact_nominal_evidence(ctx, branch)
+    .and_then(|evidence| selector.index_of(&evidence))
+    .ok_or("E_WASM_TRAIT_TYPE_EVIDENCE: branch implementation identity changed while lowering its join")?;
+  emit_expr(ctx, branch)?;
+  ctx.emit(Instruction::I32Const(position as i32));
+  ctx.emit(Instruction::LocalSet(selector.local));
+  Ok(())
+}
+
+/// Lower a call reading a selected local once per actual identity, so method
+/// selection and call-site specialization see exact evidence in each branch.
+/// Only the matching branch runs, keeping evaluation order and effects.
+fn emit_call_per_selected_impl(
+  ctx: &mut WasmGenCtx,
+  xs: &crate::wasm::host::calcit::CalcitList,
+  name: &str,
+  index: u32,
+) -> Result<(), String> {
+  let selector = ctx.impl_selectors.remove(&index).expect("selected local has a selector");
+  let old_type = ctx.local_types.get(name).cloned();
+  let old_depth = ctx.block_depth;
+  let last = selector.alternatives.len() - 1;
+  let result = (|| {
+    for (position, identity) in selector.alternatives.iter().enumerate() {
+      if position < last {
+        ctx.emit(Instruction::LocalGet(selector.local));
+        ctx.emit(Instruction::I32Const(position as i32));
+        ctx.emit(Instruction::I32Eq);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.block_depth += 1;
+      }
+      ctx.local_types.insert(name.to_owned(), identity.clone());
+      emit_call_expr(ctx, xs)?;
+      if position < last {
+        ctx.emit(Instruction::Else);
+      }
+    }
+    for _ in 0..last {
+      ctx.emit(Instruction::End);
+    }
+    Ok(())
+  })();
+  ctx.block_depth = old_depth;
+  match old_type {
+    Some(evidence) => ctx.local_types.insert(name.to_owned(), evidence),
+    None => ctx.local_types.remove(name),
+  };
+  ctx.impl_selectors.insert(index, selector);
+  result
+}
+
+/// Bind call arguments up to a branch join in order, so the join becomes a
+/// selected local without moving any argument's evaluation.
+fn emit_call_binding_impl_join(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitList, join: usize) -> Result<(), String> {
+  let ns: Arc<str> = Arc::from(ctx.source_ns.as_str());
+  let mut call = vec![xs[0].clone()];
+  let mut pairs = vec![];
+  for (position, arg) in xs.drop_left().iter().enumerate() {
+    if position > join {
+      call.push(arg.clone());
+      continue;
+    }
+    let name = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from(format!("&impl-join-arg:{}:{position}", ctx.next_local)),
+      info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+        at_ns: ns.clone(),
+        at_def: Arc::from(""),
+      }),
+      location: None,
+      type_info: DYNAMIC_TYPE.clone(),
+    });
+    pairs.push(Calcit::from(vec![name.clone(), arg.clone()]));
+    call.push(name);
+  }
+  emit_let_pairs(ctx, &pairs, &[Calcit::from(call)])
+}
+
+/// Write the impl identities a back edge carries into its loop selectors.
+fn emit_recur_selections(ctx: &mut WasmGenCtx, selections: &[Option<(u32, usize)>]) {
+  for (local, position) in selections.iter().flatten() {
+    ctx.emit(Instruction::I32Const(*position as i32));
+    ctx.emit(Instruction::LocalSet(*local));
+  }
 }
 
 /// Handle `calcit.core/let` in call position: `(let ((name val)...) body...)`.
@@ -9920,6 +10337,16 @@ fn emit_scoped_let(
     if let Some(closure) = resolve_inline_closure(ctx, value) {
       ctx.lambda_locals.insert(name.to_owned(), closure);
       ctx.declare_local(name);
+    } else if let Some(alternatives) = impl_alternatives(ctx, value) {
+      let selector = ImplSelector {
+        local: ctx.alloc_local_typed(ValType::I32),
+        alternatives,
+      };
+      emit_selecting_value(ctx, value, &selector)?;
+      ctx.lambda_locals.remove(name);
+      let index = ctx.declare_local(name);
+      ctx.emit(Instruction::LocalSet(index));
+      ctx.impl_selectors.insert(index, selector);
     } else {
       emit_expr(ctx, value)?;
       ctx.lambda_locals.remove(name);
@@ -10837,8 +11264,8 @@ mod tests {
     let mut ctx = WasmGenCtx::new(1, env);
     let numeric = WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number));
     ctx.recur_evidence = Some(vec![numeric.clone()]);
-    validate_recur_evidence(&ctx, &[Calcit::Number(1.0)]).expect("same scalar contract");
-    let error = validate_recur_evidence(&ctx, &[Calcit::Bool(false)]).expect_err("erased false is not Number zero");
+    validate_recur_evidence(&mut ctx, &[Calcit::Number(1.0)]).expect("same scalar contract");
+    let error = validate_recur_evidence(&mut ctx, &[Calcit::Bool(false)]).expect_err("erased false is not Number zero");
     assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
 
     let mut left = CalcitStructDef::from_fields(EdnTag::new("LoopProbe"), vec![]);
@@ -10877,10 +11304,14 @@ mod tests {
     ctx.locals.insert("receiver".to_owned(), 0);
     ctx.recur_evidence = Some(vec![expected.clone()]);
     ctx.local_types.insert("receiver".to_owned(), changed);
-    let error = validate_recur_evidence(&ctx, std::slice::from_ref(&receiver)).expect_err("same data, different impl");
-    assert!(error.contains("implementation identity"), "{error}");
+    let error = validate_recur_evidence(&mut ctx, std::slice::from_ref(&receiver)).expect_err("same data, different impl");
+    assert!(
+      error.starts_with(super::RECUR_IMPL_RETRY) && error.contains("implementation identity"),
+      "{error}"
+    );
+    assert_eq!(ctx.recur_missing.len(), 1, "the changed identity is kept for a selected retry");
     ctx.local_types.insert("receiver".to_owned(), expected);
-    validate_recur_evidence(&ctx, &[receiver]).expect("the original actual implementation");
+    validate_recur_evidence(&mut ctx, &[receiver]).expect("the original actual implementation");
 
     ctx.arg_indices = vec![0];
     ctx.recur_shape = Some((1, false));

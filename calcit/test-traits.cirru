@@ -584,6 +584,126 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'Number
+        'branch-open-argument $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-argument (flag)
+            open-enum-public
+              if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= false (branch-open-argument true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-argument false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-direct-public $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-direct-public (flag)
+            let
+                value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+              contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= false (branch-open-direct-public true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-direct-public false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-effects $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-effects (flag)
+            open-enum-public
+              if
+                do (println |branch-condition) flag
+                do (println |branch-false-impl) (ExplicitTraitFalse :item 1)
+                do (println |branch-true-impl) (ExplicitTraitTrue :item 1)
+              do (println |branch-key) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= false (branch-open-effects true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-effects false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-method (flag)
+            let
+                value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+              open-enum-method value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= false (branch-open-method true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-method false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'branch-open-public $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-public (flag)
+            let
+                value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 1)
+              open-enum-public value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |false-impl)
+              :code $ quote $ assert= false (branch-open-public true)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+            %{} 'TestEntry (:name |true-impl)
+              :code $ quote $ assert= true (branch-open-public false)
+              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
+        'closure-recur-same $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closure-recur-same (index)
+            let
+                check $ fn (value n)
+                  hint-fn $ {}
+                    :args $ [] 'Enum 'Number
+                    :return 'Bool
+                  if (> n 0)
+                    recur value $ - n 1
+                    contains? value 0
+              check (ExplicitTraitFalse :item 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |no-iteration)
+              :code $ quote $ assert= false (closure-recur-same 0)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
+            %{} 'TestEntry (:name |two-iterations)
+              :code $ quote $ assert= false (closure-recur-same 2)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
+        'closure-recur-switch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closure-recur-switch (index)
+            let
+                check $ fn (value n)
+                  hint-fn $ {}
+                    :args $ [] 'Enum 'Number
+                    :return 'Bool
+                  if (> n 0)
+                    recur (ExplicitTraitTrue :item 1) (- n 1)
+                    contains? value 0
+              check (ExplicitTraitFalse :item 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |no-iteration)
+              :code $ quote $ assert= false (closure-recur-switch 0)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
+            %{} 'TestEntry (:name |two-iterations)
+              :code $ quote $ assert= true (closure-recur-switch 2)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
         'compare-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn compare-with-trait (a b) (a .compare b)
           :examples $ []
@@ -647,6 +767,24 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'test-traits.main/RestBox $ :: 'List 'Number
+        'loop-switch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn loop-switch (index)
+            loop
+                value $ ExplicitTraitFalse :item 1
+                n index
+              if (> n 0)
+                recur (ExplicitTraitTrue :item 1) (- n 1)
+                contains? value 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |no-iteration)
+              :code $ quote $ assert= false (loop-switch 0)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
+            %{} 'TestEntry (:name |two-iterations)
+              :code $ quote $ assert= true (loop-switch 2)
+              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...")
             ; Test Debug trait - all types should have it
