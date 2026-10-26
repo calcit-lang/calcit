@@ -16,5 +16,6 @@
 - impl 变化的两项源码测试保留在同一 fixture，native/JS 执行真实语义；当前 WASM/WASI 明确拒绝不成立的不变量，不加入共同能力的排除表。
 - 扩展原低层 recur lowering 测试，检查相同数据合同却不同 callable 的拒绝、Number/Bool 擦除边界，以及生成失败时外层 loop 状态恢复。没有新增 Rust 测试数量；真实语言行为仍以 Calcit `:tests` 为主。
 - 共享运行器只补现有输出轨迹表，固定验证两次参数求值顺序、内层调用次数和长循环结束后的一次实际 impl 执行，不新增 runner、参数或统计系统。
+- 原 WASI job 复用同一运行器重放新 portable tag；native/JS/WASM 继续由既有 trait 全量和 impl portable 选择覆盖，不增加 CI job 或工具入口。
 - 原 WASM fixture 和宿主断言补充接收者、后续参数在第二次迭代失败的场景，确认第一次回边已执行、失败后不再执行后续参数或方法。陷阱和宿主日志需要由现有 JS runner 观察，不新增 Rust 测试或并行运行器。
 - Snapshot 使用官方 query、dry-run/scoped-revision 事务和完整 readback；保留原定义、附带测试、断言及 backend 排除。复跑原完整 core、WASM、Cargo、Clippy 和 check-all。

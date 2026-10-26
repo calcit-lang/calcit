@@ -140,6 +140,9 @@ jobs:
             node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru \
               --name distinct-impl-alias-callables --backend native,wasi
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru \
+              --tag recur-impl-evidence --backend native,wasi
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-nil-predicate.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-wasi-number-text.mjs
