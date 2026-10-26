@@ -405,6 +405,50 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   with_assertion_proof_policy(true, f)
 }
 
+/// Run a check under directional assertion proof unless `--compat-types`
+/// selected the compatibility relation (#2121). Ordinary checking then agrees
+/// with the strict workflow instead of accepting Dynamic in both directions.
+/// The audit restores the compiled program afterwards, so codegen and
+/// execution still use ordinary compilation output.
+pub fn with_default_proof<R>(f: impl FnOnce() -> R) -> R {
+  if strict_types_enabled() { with_assertion_proof(f) } else { f() }
+}
+
+/// [`with_default_proof`] for one check that reports into `check_warnings`.
+pub fn check_with_default_proof<R>(check_warnings: &RefCell<Vec<LocatedWarning>>, f: impl FnOnce() -> R) -> R {
+  with_default_proof(|| {
+    let start = check_warnings.borrow().len();
+    let result = f();
+    drop_macro_owned_proof_warnings(check_warnings, start);
+    result
+  })
+}
+
+/// Like the strict workflow review, proof re-checks expanded code in the
+/// caller's scope: warnings owned by a macro implementation describe syntax
+/// production, not the runtime expression. Drop those recorded after `start`
+/// while an assertion audit is active; ordinary checking keeps every warning.
+pub fn drop_macro_owned_proof_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>, start: usize) {
+  if !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    return;
+  }
+  let mut warnings = check_warnings.borrow_mut();
+  let mut index = 0;
+  warnings.retain(|warning| {
+    let keep = index < start || !is_macro_owned_warning(warning);
+    index += 1;
+    keep
+  });
+}
+
+fn is_macro_owned_warning(warning: &LocatedWarning) -> bool {
+  let owner = warning.location();
+  matches!(
+    program::lookup_def_schema(&owner.ns, &owner.def).as_ref(),
+    CalcitTypeAnnotation::Macro(_)
+  )
+}
+
 /// A compiled dependency is reusable outside audits, or once this audit re-proved it.
 fn compiled_def_is_reusable(ns: &str, def: &str) -> bool {
   program::lookup_compiled_def(ns, def).is_some()

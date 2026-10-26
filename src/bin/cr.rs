@@ -1013,13 +1013,18 @@ fn run_cli() -> Result<(), String> {
     run_check_only(&entries)?;
   }
 
+  let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
+
   // Explicit strict mode can preflight the selected entry before execution or
   // codegen, but type correctness must not depend on an analyzer budget.
   if cli_args.strict_types && !check_only && !is_public_check && !is_eval_mode {
     run_check_only(&entries)?;
+  } else if strict_type_policy.diagnostics && !check_only && !is_eval_mode && (cli_args.subcommand.is_none() || use_configured_js_mode)
+  {
+    // Native runs and JS codegen prove the entries before compiling them
+    // ordinarily, so they reject what check-only rejects (#2121).
+    run_check_only_with_output(&entries, false)?;
   }
-
-  let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only && public_check_scope {
     let options = cli_args::CheckPublicCommand {
@@ -1955,10 +1960,22 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  eprintln!("{}", "Check-only mode: validating code...".dimmed());
+  if emit_output {
+    eprintln!("{}", "Check-only mode: validating code...".dimmed());
+  }
+
+  // One proof audit covers both entries, so shared dependencies are proved once.
+  let (init_result, reload_result) = runner::preprocess::check_with_default_proof(check_warnings, || {
+    let init_result =
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default());
+    let reload_result = init_result.is_ok().then(|| {
+      runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
+    });
+    (init_result, reload_result)
+  });
 
   // preprocess init_fn
-  match runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+  match init_result {
     Ok(_) => {
       if emit_output {
         println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
@@ -1973,7 +1990,7 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
   }
 
   // preprocess reload_fn
-  match runner::preprocess::ensure_ns_def_compiled(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+  match reload_result.expect("reload_fn is checked once init_fn passes") {
     Ok(_) => {
       if emit_output {
         println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());

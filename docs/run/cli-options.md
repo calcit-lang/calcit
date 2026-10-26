@@ -301,7 +301,8 @@ calcit --compat-types --check-only
 calcit calcit.cirru --compat-types js
 ```
 
-`--compat-types` disables the default strict diagnostic promotion and the
+`--compat-types` disables the default strict diagnostic promotion, the
+default assertion-proof preflight (#2121), and the
 implicit JS FFI `:error` policy. It does not erase explicitly configured entry
 policies. It cannot be combined with `--strict-types`; the CLI rejects that
 contradictory request.

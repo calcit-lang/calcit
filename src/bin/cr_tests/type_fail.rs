@@ -1860,7 +1860,14 @@ fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
     );
 
     let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
-    run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
+    // A non-host coercion target is not proof evidence, so the default
+    // preflight (#2121) rejects the adapter's return; the ordinary pass
+    // still accepts the scoped coercion without leaking capability.
+    let err = run_check_only(&scoped).expect_err("a non-host coercion target does not prove the adapter return");
+    assert!(err.contains("E_FN_RETURN_UNPROVEN"), "unexpected scoped proof error: {err}");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&scoped.init_ns, &scoped.init_def, &warnings, &CallStackList::default())
+      .expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
 
     let global_leak = load_fixture_entries("calcit/type-fail/unsafe-coerce-global-leak-strict.cirru");
     let err = run_check_only(&global_leak).expect_err("a marked caller must not authorize a referenced top-level value");
@@ -1902,7 +1909,10 @@ fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
 
     // `:js-ffi` scopes the coercion, but only host handle targets count as
     // evidence there, so a Calcit generic return keeps its proof obligation.
-    run_check_only(&with_feature(":features $ #{} :js-ffi")).expect("js-ffi still scopes the coercion");
+    // The default preflight carries the same proof (#2121), so check-only
+    // rejects the js-ffi restore too.
+    let err = run_check_only(&with_feature(":features $ #{} :js-ffi")).expect_err("js-ffi scopes but does not prove the restore");
+    assert!(err.contains("E_ERASED_GENERIC_RELATION"), "unexpected js-ffi check error: {err}");
     let err = audit_restore().expect_err("js-ffi must not prove a Calcit cache restore");
     assert_eq!(
       err.code.as_deref(),
@@ -1939,18 +1949,68 @@ fn assertion_proof_keeps_assert_equal_option_erasure_quiet() {
   });
 }
 
+/// #2121: the default preflight proves directional Dynamic flows, while
+/// `--compat-types` keeps accepting them.
+#[test]
+fn default_proof_rejects_directional_dynamic_flows() {
+  let cases = [
+    ("p03", "E_FN_RETURN_UNPROVEN"),
+    ("p12", "E_FN_RETURN_UNPROVEN"),
+    ("p21", "E_CALL_ARGUMENT_UNPROVEN"),
+    ("p30", "E_FN_RETURN_UNPROVEN"),
+    ("p31", "E_CALL_ARGUMENT_UNPROVEN"),
+  ];
+  for (case, code) in cases {
+    run_with_large_stack(move || {
+      let path = format!("calcit/type-fail/directional-default-{case}.cirru");
+      injection::inject_platform_apis();
+      {
+        let _strict = StrictTypesReset::enabled();
+        let err = run_check_only(&load_fixture_entries(&path)).expect_err("default proof must reject the directional flow");
+        assert!(err.contains(code), "{case}: expected {code}, got: {err}");
+      }
+      let _compat = StrictTypesReset::disabled();
+      run_check_only(&load_fixture_entries(&path)).expect("--compat-types keeps the old behavior");
+    });
+  }
+}
+
+#[test]
+fn default_proof_accepts_explicit_dynamic_schemas() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    run_check_only(&load_fixture_entries("calcit/type-fail/directional-default-explicit-dynamic.cirru"))
+      .expect("values declared Dynamic stay accepted under the default proof");
+  });
+}
+
 #[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";
     let _strict = StrictTypesReset::enabled();
     let strict_entries = load_fixture_entries(fixture);
+    // The default preflight runs the assertion proof (#2121), which reports
+    // the unproven argument first; the ordinary strict pass keeps the
+    // specific generic-relation diagnostic checked below.
     let err = run_check_only(&strict_entries).expect_err("an open generic binding must not be narrowed by a concrete callback");
+    assert!(err.contains("E_CALL_ARGUMENT_UNPROVEN"), "unexpected default proof error: {err}");
 
-    assert!(
-      err.contains("E_ERASED_GENERIC_RELATION"),
-      "unexpected strict generic-relation error: {err}"
+    let warnings = RefCell::new(vec![]);
+    let err = runner::preprocess::ensure_ns_def_compiled(
+      &strict_entries.init_ns,
+      &strict_entries.init_def,
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("the ordinary strict pass rejects the narrowing callback");
+    assert_eq!(
+      err.code.as_deref(),
+      Some("E_ERASED_GENERIC_RELATION"),
+      "unexpected strict generic-relation error: {err:?}"
     );
+    let err = err.msg;
     assert!(err.contains("/compare-open`"), "callee should be explicit: {err}");
     assert!(err.contains("argument 2"), "narrowing argument should be identified: {err}");
     assert!(
