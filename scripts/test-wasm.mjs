@@ -379,18 +379,18 @@ check("test-enum-sum()", 30, e["test-enum-sum"]);
 check("test-enum-count()", 3, e["test-enum-count"]);
 
 // A valid Number may equal a live heap pointer. Its proven scalar type must
-// win over pointer heuristics in both direct and generic trait lowering.
+// win over pointer heuristics in direct, generic and explicit-origin lowering.
 const enumNumericPointer = allocString(0);
 new DataView(inst.exports.memory.buffer).setFloat64(enumNumericPointer, 0, true);
 assert.equal(readWasmStr(enumNumericPointer), "", "the numeric alias must identify a real live heap object");
-for (const route of ["direct", "helper"]) {
+for (const route of ["direct", "helper", "trait"]) {
   const name = `test-enum-number-index-${route}`;
   check(`${name}(live heap pointer as Number)`, 0, e[name], enumNumericPointer);
 }
 
 // Known nominal calls inline their trait implementation; generic calls use
 // scalar specialization. Neither route may compare an erased nil/Bool/Tag as Number.
-for (const route of ["direct", "helper"]) {
+for (const route of ["direct", "helper", "trait"]) {
   for (const key of ["nil", "false", "true", "string", "tag"]) {
     const name = `test-enum-invalid-${route}-${key}`;
     checkTrap(`${name}()`, () => e[name]());
@@ -400,6 +400,9 @@ for (const [name, expected] of [
   ["test-enum-invalid-ordered", ["enum-receiver", "enum-key"]],
   ["test-enum-receiver-error", ["enum-receiver"]],
   ["test-enum-key-error", ["enum-receiver", "enum-key"]],
+  ["test-enum-trait-invalid-ordered", ["enum-receiver", "enum-key"]],
+  ["test-enum-trait-receiver-error", ["enum-receiver"]],
+  ["test-enum-trait-key-error", ["enum-receiver", "enum-key"]],
 ]) {
   const start = wasmLog.length;
   checkTrap(`${name}()`, () => e[name]());

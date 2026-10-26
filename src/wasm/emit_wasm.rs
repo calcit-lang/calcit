@@ -6032,7 +6032,9 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   } else {
     None
   };
-  let method_argument_types = if definition.method_sensitive
+  // A nominal data contract alone does not identify its attached impls.
+  // Preserve the actual argument's identity even when its data shape matches.
+  let method_argument_types = if (definition.method_sensitive || definition.trait_sensitive)
     && definition.fixed_arity
     && !definition.body.iter().any(check_uses_recur)
     && !ctx.specialization_stack.iter().any(|active| active == qualified)
@@ -6040,11 +6042,8 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     && trait_argument_types.is_none()
   {
     resolve_static_specialization_types(ctx, &definition, args).filter(|actuals| {
-      actuals.iter().zip(&definition.arg_types).any(|(actual, expected)| {
-        actual.exact_impls
-          && (actual.annotation.resolve_to_enum().is_some() || actual.annotation.resolve_to_struct().is_some())
-          && expected.resolve_to_enum().is_none()
-          && expected.resolve_to_struct().is_none()
+      actuals.iter().any(|actual| {
+        actual.exact_impls && (actual.annotation.resolve_to_enum().is_some() || actual.annotation.resolve_to_struct().is_some())
       })
     })
   } else {
@@ -6917,25 +6916,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           && let Some(callable) = resolve_runtime_method_callable(&receiver.annotation, name, &ctx.source_ns)
             .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?
         {
-          if let Calcit::Fn { id, info } = &callable
-            && info.scope.is_empty()
-            && resolve_known_function_value(ctx, &callable).is_none()
-            && let Some(closure) = capture_inline_closure(ctx, &callable)
-          {
-            let closure = InlineClosure {
-              captured_locals: HashMap::new(),
-              captured_local_types: HashMap::new(),
-              captured_closures: HashMap::new(),
-              ..(*closure).clone()
-            };
-            return emit_inline_closure_call(ctx, &closure, &args_list, Some(&format!("method:{id}")));
-          }
-          let mut direct = vec![callable];
-          direct.extend(args_list);
-          let Calcit::List(items) = Calcit::from(direct) else {
-            unreachable!()
-          };
-          return emit_call_expr(ctx, &items);
+          return emit_resolved_method_call(ctx, callable, &args_list);
         }
         emit_method_invoke(ctx, name.as_ref(), &args_list)
       }
@@ -7550,6 +7531,29 @@ fn emit_list_slice_from_i32_local(ctx: &mut WasmGenCtx, src_i32: u32, from_idx: 
   Ok(())
 }
 
+/// Both ordinary and explicit-origin dispatch use the actual selected callable.
+fn emit_resolved_method_call(ctx: &mut WasmGenCtx, callable: Calcit, args: &[Calcit]) -> Result<(), String> {
+  if let Calcit::Fn { id, info } = &callable
+    && info.scope.is_empty()
+    && resolve_known_function_value(ctx, &callable).is_none()
+    && let Some(closure) = capture_inline_closure(ctx, &callable)
+  {
+    let closure = InlineClosure {
+      captured_locals: HashMap::new(),
+      captured_local_types: HashMap::new(),
+      captured_closures: HashMap::new(),
+      ..(*closure).clone()
+    };
+    return emit_inline_closure_call(ctx, &closure, args, Some(&format!("method:{id}")));
+  }
+  let mut direct = vec![callable];
+  direct.extend(args.iter().cloned());
+  let Calcit::List(items) = Calcit::from(direct) else {
+    unreachable!("selected method call is nonempty")
+  };
+  emit_call_expr(ctx, &items)
+}
+
 /// Lower a trait-origin-preserving call through its proven receiver type.
 fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() < 3 {
@@ -7558,9 +7562,19 @@ fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   let Calcit::Tag(method_name) = &args[1] else {
     return Err("E_WASM_TRAIT_CALL: method name must be a compile-time tag".into());
   };
-  let receiver_type = infer_wasm_static_type(ctx, &args[2])
-    .filter(|annotation| !nil_type_evidence_is_open(annotation.as_ref()) && !annotation.contains_type_var())
+  let receiver = infer_wasm_value_evidence(ctx, &args[2])
+    .filter(|evidence| !nil_type_evidence_is_open(&evidence.annotation) && !evidence.annotation.contains_type_var())
     .ok_or_else(|| "E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires a concrete receiver type".to_owned())?;
+  let receiver_type = receiver.annotation;
+  let nominal = receiver_type.resolve_to_enum().is_some()
+    || receiver_type.resolve_to_struct().is_some()
+    || matches!(receiver_type.as_ref(), CalcitTypeAnnotation::AnonymousEnum)
+    || matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "struct"));
+  if nominal && !receiver.exact_impls {
+    return Err(
+      "E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires the receiver's actual implementation identity, not only a data contract".into(),
+    );
+  }
   let file_ns = ctx
     .specialization_stack
     .last()
@@ -7568,13 +7582,7 @@ fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
     .unwrap_or(&ctx.source_ns);
   let callable = resolve_static_trait_callable(&args[0], method_name.ref_str(), receiver_type.as_ref(), file_ns)
     .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?;
-  let mut direct_call = Vec::with_capacity(args.len() - 1);
-  direct_call.push(callable);
-  direct_call.extend(args[2..].iter().cloned());
-  let Calcit::List(items) = Calcit::from(direct_call) else {
-    unreachable!("direct trait call is a nonempty expression")
-  };
-  emit_call_expr(ctx, &items)
+  emit_resolved_method_call(ctx, callable, &args[2..])
 }
 
 /// Emit instructions for builtin proc calls.

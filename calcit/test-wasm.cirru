@@ -587,6 +587,36 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
+        'test-enum-invalid-trait-false $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-trait-false ()
+            &trait-call Contains :contains? (Option :some 1) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-trait-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-trait-nil ()
+            &trait-call Contains :contains? (Option :some 1) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-trait-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-trait-string ()
+            &trait-call Contains :contains? (Option :some 1) |0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-trait-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-trait-tag ()
+            &trait-call Contains :contains? (Option :some 1) :zero
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-invalid-trait-true $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-invalid-trait-true ()
+            &trait-call Contains :contains? (Option :some 1) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'test-enum-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-key-error ()
             .contains?
@@ -633,6 +663,12 @@
         'test-enum-number-index-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-helper (index)
             enum-index-helper (Option :some 1) index
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Number
+        'test-enum-number-index-trait $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-number-index-trait (index)
+            &trait-call Contains :contains? (Option :some 1) index
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number
@@ -693,6 +729,31 @@
               &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-enum-trait-invalid-ordered $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-trait-invalid-ordered ()
+            &trait-call Contains :contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-trait-key-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-trait-key-error ()
+            &trait-call Contains :contains?
+              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-key) (raise |enum-key-error)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+        'test-enum-trait-receiver-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-enum-trait-receiver-error ()
+            &trait-call Contains :contains?
+              do (println |enum-receiver)
+                if (= 1 1) (raise |enum-receiver-error) (Option :some 1)
+              do (println |enum-key) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-enum-update-nth $ %{} 'CodeEntry
           :doc "|update an enum slot by index; an index past the payloads traps"
