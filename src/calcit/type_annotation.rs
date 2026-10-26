@@ -4745,7 +4745,8 @@ impl CalcitTypeAnnotation {
       Self::Numeric(_) => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
       Self::Nil | Self::Bool | Self::Tag | Self::Symbol => Some("&core-text-scalar-impls"),
-      Self::Unit | Self::CirruQuote => Some("&core-scalar-impls"),
+      Self::Unit => Some("&core-scalar-impls"),
+      Self::CirruQuote => Some("&core-cirru-quote-impls"),
       Self::Nullable(inner, NullableOrigin::Calcit) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -4888,6 +4889,7 @@ impl CalcitTypeAnnotation {
       Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
       Some("&core-fn-impls") => &["Debug"],
       Some("&core-scalar-impls") => &["Debug", "Eq"],
+      Some("&core-cirru-quote-impls") => &["Debug", "Eq"],
       Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],
       _ => &[],
     }
@@ -7444,7 +7446,8 @@ mod tests {
       (CalcitTypeAnnotation::Bool, "&core-text-scalar-impls"),
       (CalcitTypeAnnotation::Tag, "&core-text-scalar-impls"),
       (CalcitTypeAnnotation::Symbol, "&core-text-scalar-impls"),
-      (CalcitTypeAnnotation::CirruQuote, "&core-scalar-impls"),
+      (CalcitTypeAnnotation::Unit, "&core-scalar-impls"),
+      (CalcitTypeAnnotation::CirruQuote, "&core-cirru-quote-impls"),
     ];
 
     for (annotation, definition) in cases {

@@ -2826,6 +2826,7 @@ let calcit_builtin_impls = {
   enum: null as CalcitImplEntry,
   struct: null as CalcitImplEntry,
   scalar: null as CalcitImplEntry,
+  cirruQuote: null as CalcitImplEntry,
   textScalar: null as CalcitImplEntry,
   ref: null as CalcitImplEntry,
 };
@@ -2942,7 +2943,10 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[
   ) {
     tag = "&core-text-scalar-impls";
     impls = normalize_builtin_impls(scoped?.textScalar ?? calcit_builtin_impls.textScalar);
-  } else if (obj === undefined || obj instanceof CalcitCirruQuote) {
+  } else if (obj instanceof CalcitCirruQuote) {
+    tag = "&core-cirru-quote-impls";
+    impls = normalize_builtin_impls(scoped?.cirruQuote ?? calcit_builtin_impls.cirruQuote);
+  } else if (obj === undefined) {
     tag = "&core-scalar-impls";
     impls = normalize_builtin_impls(scoped?.scalar ?? calcit_builtin_impls.scalar);
   } else {

@@ -11014,6 +11014,7 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     CalcitTypeAnnotation::Ref(_) => "&core-ref-methods",
     CalcitTypeAnnotation::Number => "&core-number-methods",
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => "&core-fn-methods",
+    CalcitTypeAnnotation::CirruQuote => "&core-cirru-quote-methods",
     _ => return false,
   };
   candidate.impl_value.is_inherent() && candidate.impl_value.name().ref_str() == expected_name
@@ -11083,6 +11084,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Ref(_) => Some("&core-ref-impls"),
     CalcitTypeAnnotation::Number => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
+    CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }
