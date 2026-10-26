@@ -302,6 +302,7 @@ const buildBisect = async (tests, build, rejected) => {
 const results = new Map(); // id -> { backend -> { status, detail, trace } }
 // A native reference trace alone cannot prove the expected evaluation count.
 const expectedTraces = new Map([
+  ["calcit.core/number?#tag-kind-predicates-evaluate-once", Array(3).fill("proven-tag-value")],
   ["app.wasm-alias/invoke-number-key#known-callback-argument-once", ["known-callback-value"]],
   ["app.wasm-alias/reverse-key#known-target-receiver-once", ["known-sort-receiver"]],
   ["test-traits.main/test-collection-traits#struct-empty-evaluates-receiver-once",
