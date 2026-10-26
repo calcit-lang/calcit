@@ -211,8 +211,11 @@ calcit calcit.cirru docs check-md README.md --snapshot calcit.cirru --failures-o
 
 `caps tree` 和 `caps why` 回答“该仓库为什么被依赖解析器安装”；目前它们会合并显示两个根分组，
 所以根归属仍以 `deps.cirru` 为准。`config modules` 回答“某个 entry 配置加载哪些模块”；每个 named
-entry 都是独立配置，不能假设其模块继承 default。`--check-only` 只验证所选 entry 的可达预处理路径；
-默认遇到首个阻断问题即停。需要为迁移或批量修复收集互不依赖的问题时，使用同一入口的
+entry 都是独立配置，不能假设其模块继承 default。
+库被消费时仍会递归装载自己的 default 模块图；只把 UI/Reel 等移到 `:dev-dependencies`，不能解除该装载要求。
+先按 [库 / Demo 模块边界](installation/modules.md#库和-demo-使用不同模块图) 分离入口和完整模块图，
+再用干净运行依赖消费者与完整 Demo entry 分别验收；不能删除 Demo 或静默忽略缺失模块。
+`--check-only` 只验证所选 entry 的可达预处理路径，默认遇到首个阻断问题即停。需要为迁移或批量修复收集互不依赖的问题时，使用同一入口的
 `--keep-going --format edn`。报告中的 `failed` 是已确认的当前 definition 诊断，`blocked` 表示依赖失败而跳过，
 `cascaded` 表示无法安全归属当前 definition 的意外失败；三者都使进程非零退出。不要把 blocked 当成新的类型错误，也不要
 要求工具在 expression 内猜测恢复。Cirru EDN 是 Agent 默认结构化格式，只有下游只接受 JSON 时才改用

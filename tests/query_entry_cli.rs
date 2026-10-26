@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::Path;
 use std::process::{Command, Output};
 
 /// The default entry loads no modules; the `page` entry also loads
@@ -137,4 +139,214 @@ fn unknown_entry_is_rejected_even_for_project_definitions() {
   let defs = run_query(Some("missing"), &["defs", "app.main", "--format", "json"]);
   assert!(!defs.status.success());
   assert_eq!(parse_single_json(&defs)["command"], "query.defs");
+}
+
+fn run_isolated(directory: &Path, args: &[&str]) -> Output {
+  Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .current_dir(directory)
+    .args(["--tips-level", "none"])
+    .args(args)
+    .output()
+    .expect("isolated calcit command should run")
+}
+
+/// #2406: module loading is a host/filesystem contract; observable assertions
+/// remain attached to the generated Calcit definition, not duplicated in Rust.
+#[test]
+fn library_default_graph_is_independent_of_the_demo_entry() {
+  let directory = tempfile::tempdir().expect("temporary consumer should create");
+  let root = directory.path();
+  let snapshot = root.join("library.cirru");
+  fs::copy(FIXTURE, &snapshot).expect("copy opaque library fixture");
+  let operations = serde_json::json!([
+    ["config", "set", "target", "native"],
+    ["config", "set", "target", "native", "--entry", "page"],
+    ["config", "set", "init-fn", "app.demo/main!", "--entry", "page"],
+    ["config", "set", "reload-fn", "app.demo/main!", "--entry", "page"],
+    ["edit", "add-ns", "app.core"],
+    [
+      "edit",
+      "def",
+      "app.core/increment",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn increment (n) (&+ n 1)"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.core/increment",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+    ],
+    [
+      "edit",
+      "add-test",
+      "app.core/increment",
+      "increments-number",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ assert= 42 (increment 41)"
+    ],
+    ["edit", "add-ns", "app.demo"],
+    [
+      "edit",
+      "add-import",
+      "app.demo",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ page-icons.core :refer $ comp-icon"
+    ],
+    [
+      "edit",
+      "def",
+      "app.demo/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () (assert= |icon:demo (comp-icon |demo)) &unit"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.demo/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"
+    ]
+  ])
+  .to_string();
+  let preview = run_isolated(
+    root,
+    &[
+      "library.cirru",
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--dry-run",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview);
+  let preview = parse_single_json(&preview);
+  let revision = preview["scoped_revision"]
+    .as_str()
+    .expect("preview should provide a scoped revision");
+  assert_success(&run_isolated(
+    root,
+    &[
+      "library.cirru",
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  ));
+
+  assert_success(&run_isolated(
+    root,
+    &["eval", "--dep", "./library.cirru", "assert= 42 (app.core/increment 41)"],
+  ));
+  assert_success(&run_isolated(
+    root,
+    &["library.cirru", "test", "app.core/increment", "--require-match"],
+  ));
+  assert_success(&run_isolated(root, &["library.cirru", "--check-only", "--ns", "app.core"]));
+  let wrong_type = run_isolated(root, &["eval", "--dep", "./library.cirru", "app.core/increment |wrong"]);
+  assert!(
+    !wrong_type.status.success(),
+    "isolating the library must retain its Number input contract"
+  );
+  let diagnostic = format!("{}{}", stdout(&wrong_type), String::from_utf8_lossy(&wrong_type.stderr));
+  assert!(
+    diagnostic.to_lowercase().contains("number"),
+    "failure must retain the Number contract: {diagnostic}"
+  );
+
+  let replay = Command::new("node")
+    .current_dir(env!("CARGO_MANIFEST_DIR"))
+    .env("CALCIT_BIN", env!("CARGO_BIN_EXE_calcit"))
+    .args([
+      "scripts/run-core-tests.mjs",
+      "--snapshot",
+      snapshot.to_str().expect("fixture path should be UTF-8"),
+      "--target",
+      "app.core/increment",
+      "--backend",
+      "native,js",
+    ])
+    .output()
+    .expect("shared native/JS replay should run");
+  let replay = assert_success(&replay);
+  assert!(
+    replay.contains("native: ran 1 tests") && replay.contains("js: ran 1 tests"),
+    "{replay}"
+  );
+
+  // Selecting a root entry does not propagate that entry name into a dependency.
+  assert_success(&run_isolated(
+    root,
+    &[
+      "--entry",
+      "page",
+      "eval",
+      "--dep",
+      "./library.cirru",
+      "assert= 42 (app.core/increment 41)",
+    ],
+  ));
+  let missing_demo = run_isolated(root, &["--entry", "page", "library.cirru", "--check-only"]);
+  assert!(
+    !missing_demo.status.success(),
+    "an explicitly selected demo must not ignore its missing module"
+  );
+  assert!(String::from_utf8_lossy(&missing_demo.stderr).contains("query-entry-page-only-module.cirru"));
+  let incomplete_all = run_isolated(root, &["library.cirru", "--check-only", "--all-defs"]);
+  assert!(
+    !incomplete_all.status.success(),
+    "library-only checks must not masquerade as whole-project validation"
+  );
+  let diagnostic = format!("{}{}", stdout(&incomplete_all), String::from_utf8_lossy(&incomplete_all.stderr));
+  assert!(
+    diagnostic.contains("page-icons.core"),
+    "whole-project check must expose the demo dependency: {diagnostic}"
+  );
+
+  fs::copy(
+    "tests/fixtures/query-entry-page-only-module.cirru",
+    root.join("query-entry-page-only-module.cirru"),
+  )
+  .expect("install the actual demo dependency");
+  assert_success(&run_isolated(
+    root,
+    &["--entry", "page", "library.cirru", "--check-only", "--all-defs"],
+  ));
+  assert_success(&run_isolated(
+    root,
+    &[
+      "--entry",
+      "page",
+      "library.cirru",
+      "fix",
+      "--workflow",
+      "strict",
+      "--verify",
+      "--format",
+      "json",
+    ],
+  ));
+  assert_success(&run_isolated(root, &["--entry", "page", "library.cirru"]));
 }

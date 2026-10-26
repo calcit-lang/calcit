@@ -98,6 +98,10 @@ Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自项目 `.calcit/modules/`，目录结尾 `/` 补 `calcit.cirru`；旧 `compact.cirru` 模块会被拒绝）。
 
+根项目按所选 entry 加载模块；某个库作为依赖时，递归使用该库自己的 default 模块图。
+`deps.cirru` 的开发依赖分组不会改写这个图。库可将运行依赖留在 default，完整 Demo 放入独立 named entry；
+公开 namespace 的检查和包含 Demo 的全项目检查须分开验收，详见 [模块装载与库 / Demo 边界](../installation/modules.md)。
+
 程序 Snapshot 只通过 `calcit config` / `edit` / `tree` / `cursor` 修改，写入前读取
 `calcit docs agents --contract`。`edit format` 用于规范化序列化结果，不能代替受保护的结构化编辑。
 
