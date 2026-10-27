@@ -199,10 +199,13 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 运行器为每个测试生成一个零参数函数，写入临时 Snapshot，再分别执行：native 与 WASI 逐个打印标记后运行，JS 导入生成的模块逐个调用，WASM 在 Node 中实例化后逐个调用导出函数。native 是参照结果，JS 与 WASM 的 `println` 输出必须与 native 一致。失败报告列出测试 id、后端、期望与实际值，以及该测试在其它后端的状态。
 
-回放外部项目 Snapshot 时，运行器保留源目录已安装的 `.calcit/modules` 图，并复制
-该目录的 `deps.cirru`，让临时 Snapshot 使用相同的模块与 CLI 版本约束。
+回放外部项目 Snapshot 时，运行器在私有临时目录保留同级、上级及传递文件模块的
+路径关系，沿用选定入口的 modules 配置；JS 文件片段和对应 `deps.cirru` 也保留。
+已安装的 `.calcit/modules` 图只读复用，让临时 Snapshot 使用相同的模块与 CLI
+版本约束。cursor、错误状态和写锁留在临时目录，不写回源项目。
 从该项目目录运行并指定固定 `CALCIT_BIN`，生成 JS 使用该目录的 Node 依赖；
-运行器不安装依赖或写入模块缓存。
+运行器不安装依赖或写入模块缓存。真正缺失的文件模块在准备回放时明确失败，
+不会对每个测试重复二分同一个加载错误，也不记作 unsupported 或空通过。
 
 应用已有 browser/Node 等命名入口时，用同一个运行器的 `--entry` 选择原入口，
 再用 tag 或 definition scope 选择该宿主上的测试：

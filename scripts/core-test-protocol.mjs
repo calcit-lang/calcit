@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { copyFile, mkdir, realpath, symlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+
 // Internal protocol shared by the runner and its host-level regression tests.
 // Replay Snapshots are private temporary copies. Guard the entire file rather
 // than listing thousands of touched definitions in a single process argument.
@@ -6,6 +10,98 @@ export const replayRevision = (preview) => {
     throw new Error("Replay mutation preview is missing its original Snapshot revision");
   }
   return preview.original_revision;
+};
+
+// File modules, including transitive ones, resolve from the original project
+// directory. Mirror their paths privately instead of moving replay state back
+// into the source project or rewriting published module Snapshots.
+export const prepareReplayProject = async ({ root, snapshotPath, snapshot, entry = "default", nodeModules, readSnapshot, readModules }) => {
+  const sourceDirectory = await realpath(dirname(snapshotPath));
+  const moduleDirectory = join(sourceDirectory, ".calcit", "modules");
+  const mirror = (path) => join(root, "source", relative(parse(path).root, path));
+  const project = mirror(sourceDirectory);
+  await mkdir(project, { recursive: true });
+  await symlink(nodeModules, join(project, "node_modules"), "dir");
+  if (existsSync(moduleDirectory)) {
+    await mkdir(join(project, ".calcit"));
+    await symlink(moduleDirectory, join(project, ".calcit", "modules"), "dir");
+  }
+  const linkedRoots = [join(project, "node_modules"), join(project, ".calcit", "modules")];
+  const inLinkedView = (path) => linkedRoots.some(root => {
+    const child = relative(root, path);
+    return !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`);
+  });
+  const copy = async (path) => {
+    const destination = mirror(path);
+    if (inLinkedView(destination)) {
+      if (await realpath(path) !== await realpath(destination)) {
+        throw new Error(`Replay source file conflicts with the read-only dependency view: ${path}`);
+      }
+      return false;
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(path, destination);
+    return true;
+  };
+  const copyManifest = async (directory) => {
+    const path = join(directory, "deps.cirru");
+    if (existsSync(path)) await copy(path);
+  };
+  const visited = new Set();
+  const resources = new Set();
+  const visit = async (path, data, selectedEntry, staged) => {
+    const identity = `${path}\0${selectedEntry}\0${staged}`;
+    if (visited.has(identity)) return;
+    visited.add(identity);
+    if (staged) {
+      const directory = dirname(path);
+      await copyManifest(directory);
+      for (const file of Object.values(data[":files"] ?? {})) {
+        for (const definition of Object.values(file.defs ?? {})) {
+          const resource = definition.ffi?.[":js"]?.[":file"];
+          if (typeof resource !== "string") continue;
+          const original = resolve(directory, resource);
+          const localPath = relative(directory, original);
+          // An unused/missing JS implementation must not fail native replay.
+          // Invalid resource syntax remains the compiler's responsibility.
+          if (isAbsolute(resource) || localPath === ".." || localPath.startsWith(`..${sep}`)
+            || !existsSync(original) || resources.has(original)) continue;
+          resources.add(original);
+          const owner = await realpath(directory);
+          const ownedPath = relative(owner, await realpath(original));
+          if (inLinkedView(mirror(original))) {
+            await copy(original);
+            continue;
+          }
+          if (isAbsolute(ownedPath) || ownedPath === ".." || ownedPath.startsWith(`..${sep}`)) {
+            // Keep an escaping link outside the private owner too, so the
+            // compiler still rejects it rather than blessing copied bytes.
+            await mkdir(dirname(mirror(original)), { recursive: true });
+            await symlink(await realpath(original), mirror(original));
+          } else {
+            await copy(original);
+          }
+        }
+      }
+    }
+    // Use the CLI's normalized configuration rather than assuming an EDN
+    // entry key is a tag: the loader also accepts string entry names.
+    const modules = readModules(path, selectedEntry);
+    if (modules === undefined) throw new Error(`Replay module ${path} has no entry ${selectedEntry}`);
+    for (const module of modules) {
+      const candidate = module.endsWith("/") ? `${module}calcit.cirru` : module;
+      const local = candidate.startsWith("./");
+      const dependency = local ? resolve(sourceDirectory, candidate)
+        : isAbsolute(candidate) ? candidate : `${moduleDirectory}${sep}${candidate}`;
+      // A shared load failure is reported once, before per-test compilation
+      // bisection. Reading metadata never substitutes for executing assertions.
+      const imported = readSnapshot(dependency);
+      const staged = local && await copy(dependency);
+      await visit(dependency, imported, "default", staged);
+    }
+  };
+  await visit(join(sourceDirectory, basename(snapshotPath)), snapshot, entry, true);
+  return project;
 };
 
 /** Read only diagnostic-table code cells; prose and other columns are not coverage. */

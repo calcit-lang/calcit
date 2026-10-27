@@ -1,9 +1,115 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, replayRevision } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, prepareReplayProject, replayRevision } from "./core-test-protocol.mjs";
+
+test("replay retains named-entry, parent and transitive files without sharing project state", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "calcit-replay-context-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, "original", "project");
+  const projectAlias = join(root, "project-link");
+  const cache = join(root, "cache");
+  const output = join(root, "replay");
+  const write = async (path, contents) => {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, contents);
+  };
+  const metadata = (modules) => ({ ":entries": { ":default": { ":modules": modules } } });
+  // These are opaque host-test metadata files, not generated Calcit programs.
+  const source = metadata(["./missing-default.json"]);
+  source[":entries"][":browser"] = { ":modules": ["./sibling.json", "library.json", "./.calcit/modules/library.json"] };
+  source[":files"] = { main: { defs: { ffi: { ffi: { ":js": { ":file": "impl/identity.js" } } } } } };
+  const files = new Map([
+    [join(project, "source.json"), JSON.stringify(source)],
+    [join(project, "sibling.json"), JSON.stringify(metadata(["./../parent.json"]))],
+    [join(root, "original", "parent.json"), JSON.stringify(metadata(["./transitive.json"]))],
+    [join(project, "transitive.json"), JSON.stringify(metadata([]))],
+    [join(cache, "library.json"), JSON.stringify(metadata(["./transitive.json"]))],
+    [join(project, "deps.cirru"), "pinned manifest bytes"],
+    [join(project, "impl", "identity.js"), "(value) => value"],
+    [join(project, ".calcit", "cursor.cirru"), "original cursor"],
+    [join(project, ".calcit", "error.cirru"), "original error"],
+  ]);
+  for (const [path, contents] of files) await write(path, contents);
+  await symlink(cache, join(project, ".calcit", "modules"), "dir");
+  await symlink(project, projectAlias, "dir");
+  const replay = await prepareReplayProject({
+    root: output, snapshotPath: join(projectAlias, "source.json"), snapshot: source, entry: "browser",
+    nodeModules: join(root, "runtime"), readSnapshot: path => JSON.parse(readFileSync(path, "utf8")),
+    readModules: (path, entry) => JSON.parse(readFileSync(path, "utf8"))[":entries"]?.[`:${entry}`]?.[":modules"],
+  });
+  for (const path of ["sibling.json", "../parent.json", "transitive.json", "deps.cirru", "impl/identity.js"]) {
+    assert.equal(await readFile(join(replay, path), "utf8"), await readFile(join(project, path), "utf8"));
+  }
+  assert.equal(await realpath(join(replay, ".calcit", "modules")), await realpath(cache));
+  assert.equal(existsSync(join(replay, ".calcit", "cursor.cirru")), false);
+  assert.equal(existsSync(join(replay, ".calcit", "error.cirru")), false);
+  for (const [path, contents] of files) assert.equal(await readFile(path, "utf8"), contents);
+});
+
+test("replay never copies a local file into a different linked runtime graph", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "calcit-replay-runtime-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "original");
+  const runtime = join(root, "runtime");
+  await mkdir(join(source, "node_modules"), { recursive: true });
+  await mkdir(runtime);
+  const original = JSON.stringify({ ":entries": { ":default": { ":modules": [] } } });
+  await writeFile(join(source, "node_modules", "library.json"), original);
+  await writeFile(join(runtime, "library.json"), "unrelated installed bytes");
+  await assert.rejects(prepareReplayProject({
+    root: join(root, "replay"), snapshotPath: join(source, "source.json"), snapshot: {}, nodeModules: runtime,
+    readModules: path => path.endsWith("source.json") ? ["./node_modules/library.json"] : [],
+    readSnapshot: path => JSON.parse(readFileSync(path, "utf8")),
+  }), /conflicts with the read-only dependency view/);
+  assert.equal(await readFile(join(runtime, "library.json"), "utf8"), "unrelated installed bytes");
+  assert.equal(await readFile(join(source, "node_modules", "library.json"), "utf8"), original);
+});
+
+test("replay rejects genuinely missing modules before repeated compilation", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "calcit-replay-missing-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, "original", "source.json");
+  await mkdir(dirname(path));
+  let reads = 0;
+  await assert.rejects(prepareReplayProject({
+    root: join(root, "replay"), snapshotPath: path,
+    snapshot: { ":entries": { ":default": { ":modules": ["./missing.json"] } } },
+    nodeModules: join(root, "runtime"),
+    readSnapshot: path => { reads++; return JSON.parse(readFileSync(path, "utf8")); },
+    readModules: () => ["./missing.json"],
+  }), /ENOENT.*missing.json/);
+  assert.equal(reads, 1);
+});
+
+test("copying a JS resource cannot legitimize a symlink outside its original owner", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "calcit-replay-owner-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, "original");
+  await mkdir(project);
+  await writeFile(join(root, "outside.js"), "() => 1");
+  await symlink(join(root, "outside.js"), join(project, "escape.js"));
+  const replay = await prepareReplayProject({
+    root: join(root, "replay"), snapshotPath: join(project, "source.json"),
+    snapshot: { ":entries": { ":default": {} }, ":files": {
+      main: { defs: {
+        first: { ffi: { ":js": { ":file": "escape.js" } } },
+        second: { ffi: { ":js": { ":file": "escape.js" } } },
+        unused: { ffi: { ":js": { ":file": "missing.js" } } },
+      } },
+    } },
+    nodeModules: join(root, "runtime"), readSnapshot: () => { throw new Error("unexpected dependency"); },
+    readModules: () => [],
+  });
+  assert.equal(await realpath(join(replay, "escape.js")), await realpath(join(root, "outside.js")));
+  assert.ok(!((await realpath(join(replay, "escape.js"))).startsWith(`${replay}/`)));
+  assert.equal(existsSync(join(replay, "missing.js")), false);
+});
 
 test("large replay mutations use a bounded full-file revision without dropping the guard", () => {
   const original_revision = "0123456789abcdef0123456789abcdef";

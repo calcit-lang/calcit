@@ -15,14 +15,14 @@
 // backends must match its native trace. A run that selects zero tests fails.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { readdirSync, readFileSync } from "node:fs";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseCirru } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, replayRevision } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable, prepareReplayProject, replayRevision } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
 const BACKENDS = ["native", "js", "wasm", "wasi"];
@@ -171,19 +171,22 @@ if (exclusionProblems.length > 0) {
 
 // --- temporary Snapshots ---------------------------------------------------
 
-const fixture = await mkdtemp(join(tmpdir(), "calcit-core-tests-"));
-// Generated JS resolves @calcit/procs from the fixture directory upwards.
-await symlink(resolve("node_modules"), join(fixture, "node_modules"), "dir");
-// Downstream Snapshots retain their installed module graph and pinned CLI
-// manifest when replayed from a temporary directory. Keep caches read-only.
-const sourceDirectory = dirname(corePath);
-const sourceModules = join(sourceDirectory, ".calcit", "modules");
-if (existsSync(sourceModules)) {
-  await mkdir(join(fixture, ".calcit"));
-  await symlink(sourceModules, join(fixture, ".calcit", "modules"), "dir");
+const fixtureRoot = await mkdtemp(join(tmpdir(), "calcit-core-tests-"));
+let fixture;
+try {
+  fixture = await prepareReplayProject({
+    root: fixtureRoot, snapshotPath: corePath, snapshot: source,
+    entry: options.entry ?? "default", nodeModules: resolve("node_modules"),
+    readSnapshot: (path) => JSON.parse(run("cirru", "parse-edn", "--file", path)),
+    readModules: (path, entry) => {
+      const config = JSON.parse(execFileSync(binary, [path, "config", "show", "--format", "json"], execOptions));
+      return config.data.entries.find(candidate => candidate.name === entry)?.modules;
+    },
+  });
+} catch (error) {
+  await rm(fixtureRoot, { recursive: true, force: true });
+  throw error;
 }
-const sourceManifest = join(sourceDirectory, "deps.cirru");
-if (existsSync(sourceManifest)) await copyFile(sourceManifest, join(fixture, "deps.cirru"));
 let snapshotCounter = 0;
 
 const unitSchema = ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]];
@@ -568,7 +571,7 @@ try {
     console.log(`${backend}: ran ${included.length} tests in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }
 } finally {
-  await rm(fixture, { recursive: true, force: true });
+  await rm(fixtureRoot, { recursive: true, force: true });
 }
 
 // Per-test, per-backend status and trace for tools that judge results themselves.
