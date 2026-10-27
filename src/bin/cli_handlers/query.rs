@@ -1578,6 +1578,15 @@ mod type_query_tests {
       runner::preprocess::static_method_contract(&CalcitTypeAnnotation::AnonymousEnum, ".assoc").status,
       "open"
     );
+    // A same-named core function is only suggested when it accepts the receiver.
+    assert!(!runner::preprocess::core_function_accepts_receiver(
+      "trim",
+      &CalcitTypeAnnotation::AnonymousEnum
+    ));
+    assert!(runner::preprocess::core_function_accepts_receiver(
+      "trim",
+      &CalcitTypeAnnotation::String
+    ));
     // Nominal trait methods on the same receiver stay proven.
     assert_eq!(status_of(".count").status, "proven");
   }

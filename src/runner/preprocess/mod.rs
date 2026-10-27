@@ -11261,6 +11261,19 @@ pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str
   with_strict_dispatch_status(receiver, method_name, impls.as_deref(), contract)
 }
 
+/// Only suggest a same-named core function whose first parameter can take the
+/// receiver; otherwise the suggestion would fail for the same value.
+pub fn core_function_accepts_receiver(name: &str, receiver: &CalcitTypeAnnotation) -> bool {
+  let schema = program::lookup_def_schema(calcit::CORE_NS, name);
+  let Some(signature) = schema.as_function() else {
+    return false;
+  };
+  let Some(first) = signature.arg_types.first().or(signature.rest_type.as_ref()) else {
+    return false;
+  };
+  matches!(first.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)) || receiver.is_proven_for(first)
+}
+
 /// Discovery reports whether project code can call the method under strict
 /// checking, not only whether its schema resolves. Dispatch through an
 /// originless legacy bag is rejected with E_ORIGINLESS_METHOD_DISPATCH, so such
@@ -11282,7 +11295,10 @@ fn with_strict_dispatch_status(
   if !candidate.impl_value.is_inherent() || is_builtin_method_candidate(receiver, &candidate) {
     return contract;
   }
-  let alternative = if !bare_name.starts_with('&') && program::has_def_code(calcit::CORE_NS, bare_name) {
+  let alternative = if !bare_name.starts_with('&')
+    && program::has_def_code(calcit::CORE_NS, bare_name)
+    && core_function_accepts_receiver(bare_name, receiver)
+  {
     format!("call `{}/{bare_name}` directly", calcit::CORE_NS)
   } else {
     "call a typed named function directly".to_owned()
