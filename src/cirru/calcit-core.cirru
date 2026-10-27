@@ -9055,7 +9055,7 @@
             %{} 'TestEntry (:name |rejects-spread-non-list)
               :code $ quote $ assert= true
                 try
-                  format-cirru-one-liner & $ [] 1
+                  format-cirru-one-liner & $ identity $ [] 1
                   fn (error)
                     &str:includes? (str error) |expected
               :tags $ #{} :core :unit

@@ -2646,7 +2646,7 @@ fn concrete_return_proof_rejects_a_known_spread_argument_contradiction() {
     ],
   );
   assert!(!output.status.success());
-  assert!(String::from_utf8_lossy(&output.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
+  assert!(String::from_utf8_lossy(&output.stderr).contains("W_PROC_ARG_TYPE_MISMATCH"));
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 }
 

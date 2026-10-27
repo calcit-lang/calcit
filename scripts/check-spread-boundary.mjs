@@ -21,6 +21,23 @@ try {
   const elementSnapshot = join(project, "element-contract.cirru");
   await copyFile("calcit/add.cirru", elementSnapshot);
   const elementRun = (...args) => execFileSync(binary, [elementSnapshot, ...args], options);
+  for (const expression of ["&+ & ([] 1)", "&+ & ([] 1 2 3)", "&list:concat & ([])"]) {
+    const rejected = spawnSync(binary, ["eval", `println |spread-must-not-run\n${expression}`], options);
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+    assert.match(rejected.stderr, /expects (?:at least )?\d+ args, got \d+/);
+    assert.match(rejected.stderr, /@app\.main\/main! @\d/);
+    assert.doesNotMatch(rejected.stderr, /@app\.main\/gen%/);
+    assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
+  }
+  for (const audit of ["0", "1"]) {
+    const rejected = spawnSync(binary, ["eval", "println |spread-must-not-run\nformat-cirru-one-liner & ([] 1)"],
+      { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+    assert.match(rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
+    assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
+  }
   elementRun("query", "config", "--format", "edn");
   elementRun("query", "def", "app.main/main!", "--format", "edn");
   for (const call of [
