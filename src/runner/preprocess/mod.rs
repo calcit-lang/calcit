@@ -6116,6 +6116,14 @@ fn preprocess_known_function_call(
   let processed_call_args = CalcitList::from(ys.drop_left());
   if has_spread {
     reject_known_non_list_spreads(&processed_call_args, scope_types, call_stack, call_location.clone())?;
+    type_checking::check_fn_call_arity(
+      &head_form,
+      effective_user_call_schema(info.as_ref()).as_ref(),
+      &processed_call_args,
+      call_info,
+      "W_FN_ARG_TYPE_MISMATCH",
+      check_warnings,
+    );
     reject_strict_unproven_generic_relation(
       &head_form,
       &processed_call_args,
