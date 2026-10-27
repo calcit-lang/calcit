@@ -12,6 +12,7 @@ test("replay retains named-entry, parent and transitive files without sharing pr
   const root = await mkdtemp(join(tmpdir(), "calcit-replay-context-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const project = join(root, "original", "project");
+  const projectAlias = join(root, "project-link");
   const cache = join(root, "cache");
   const output = join(root, "replay");
   const write = async (path, contents) => {
@@ -36,8 +37,9 @@ test("replay retains named-entry, parent and transitive files without sharing pr
   ]);
   for (const [path, contents] of files) await write(path, contents);
   await symlink(cache, join(project, ".calcit", "modules"), "dir");
+  await symlink(project, projectAlias, "dir");
   const replay = await prepareReplayProject({
-    root: output, snapshotPath: join(project, "source.json"), snapshot: source, entry: "browser",
+    root: output, snapshotPath: join(projectAlias, "source.json"), snapshot: source, entry: "browser",
     nodeModules: join(root, "runtime"), readSnapshot: path => JSON.parse(readFileSync(path, "utf8")),
     readModules: (path, entry) => JSON.parse(readFileSync(path, "utf8"))[":entries"]?.[`:${entry}`]?.[":modules"],
   });
@@ -73,6 +75,7 @@ test("replay rejects genuinely missing modules before repeated compilation", asy
   const root = await mkdtemp(join(tmpdir(), "calcit-replay-missing-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, "original", "source.json");
+  await mkdir(dirname(path));
   let reads = 0;
   await assert.rejects(prepareReplayProject({
     root: join(root, "replay"), snapshotPath: path,

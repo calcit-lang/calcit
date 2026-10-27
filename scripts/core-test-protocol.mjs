@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, realpath, symlink } from "node:fs/promises";
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 
 // Internal protocol shared by the runner and its host-level regression tests.
 // Replay Snapshots are private temporary copies. Guard the entire file rather
@@ -16,7 +16,7 @@ export const replayRevision = (preview) => {
 // directory. Mirror their paths privately instead of moving replay state back
 // into the source project or rewriting published module Snapshots.
 export const prepareReplayProject = async ({ root, snapshotPath, snapshot, entry = "default", nodeModules, readSnapshot, readModules }) => {
-  const sourceDirectory = dirname(snapshotPath);
+  const sourceDirectory = await realpath(dirname(snapshotPath));
   const moduleDirectory = join(sourceDirectory, ".calcit", "modules");
   const mirror = (path) => join(root, "source", relative(parse(path).root, path));
   const project = mirror(sourceDirectory);
@@ -100,7 +100,7 @@ export const prepareReplayProject = async ({ root, snapshotPath, snapshot, entry
       await visit(dependency, imported, "default", staged);
     }
   };
-  await visit(snapshotPath, snapshot, entry, true);
+  await visit(join(sourceDirectory, basename(snapshotPath)), snapshot, entry, true);
   return project;
 };
 
