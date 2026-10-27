@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import assert from "node:assert/strict";
-import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -695,6 +695,89 @@ try {
   assert.equal(generated.test_explicit_trait_call(), 1, "generated JS must preserve duplicate-trait runtime errors");
 } finally {
   await rm(traitFixture, { recursive: true, force: true });
+}
+
+// This isolated policy fixture exercises otherwise rejected runtime operands.
+// Keep compatibility tests here, alongside the existing compatibility contracts;
+// ordinary entrypoints remain covered by the unchanged scanner above.
+const spreadFixture = await mkdtemp(join(tmpdir(), "calcit-compat-spread-"));
+try {
+  const snapshot = join(spreadFixture, "calcit.cirru");
+  const project = spreadFixture;
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
+  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  const inFixture = (...args) => {
+    const result = run([snapshot, ...args]);
+    expectStatus(result, 0, `compatibility spread fixture: ${args.slice(0, 3).join(" ")}`);
+    return result.stdout;
+  };
+  inFixture("edit", "add-ns", "calcit.spread-evidence");
+  inFixture("edit", "def", "calcit.spread-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests () 1");
+  inFixture("edit", "schema", "calcit.spread-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  inFixture("config", "set", "init-fn", "calcit.spread-evidence/run-tests");
+  inFixture("config", "set", "reload-fn", "calcit.spread-evidence/run-tests");
+  for (const expression of ["([] 1) .len &", ".len ([] 1) &", "({} (:a 1)) .dissoc :a & & ([] :b)"]) {
+    inFixture("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defwasm-export run-tests () (${expression})`);
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
+      const rejected = run([snapshot, "--compat-types", "--emit-path", join(project, "malformed"), ...mode]);
+      expectStatus(rejected, 1, `compatibility rejects malformed spread: ${expression} ${mode}`);
+      assert.match(rejected.stderr, /E_SPREAD_TYPE_MISMATCH/);
+      assert.match(rejected.stderr, /expected.*got/);
+    }
+  }
+  const opaque = [
+    [["[]", ":b"], 1],
+    [["[]"], 2],
+    [["{}", [":bad", "1"]], undefined],
+    [["#{}", ":b"], undefined],
+    ["0", undefined],
+    ["16392.5", undefined],
+  ];
+  for (let index = 0; index < opaque.length; index++) {
+    const [body, expected] = opaque[index];
+    const remaining = [["{}", [":a", "1"], [":b", "2"], [":c", "3"]], ".dissoc", ":a", "&", ["dynamic-spread-keys"]];
+    // Observe the Map using its existing count proc: compatibility mode does
+    // not retain enough result evidence for `.len` in this opaque ABI fixture.
+    const count = ["&map:count", remaining];
+    const result = expected === undefined ? count : ["let", [["result", count]], ["assert=", String(expected), "result"], "result"];
+    const operations = [
+      ["edit", "def", "calcit.spread-evidence/dynamic-spread-keys", ...(index === 0 ? [] : ["--overwrite"]), "--input-format", "json-ast", "--code",
+        JSON.stringify(["defn", "dynamic-spread-keys", [], body])],
+      ["edit", "schema", "calcit.spread-evidence/dynamic-spread-keys", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+      ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code",
+        JSON.stringify(["defwasm-export", "run-tests", [], result])],
+    ];
+    const transaction = JSON.stringify(operations);
+    const preview = JSON.parse(inFixture("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+    inFixture("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+    const native = run([snapshot, "--compat-types"]);
+    assert.ifError(native.error);
+    assert.equal(native.status, expected === undefined ? 1 : 0, native.stderr);
+    if (expected === undefined) assert.match(native.stderr, /expected list for spreading/);
+    const opaqueJs = join(project, `opaque-js-${index}`);
+    inFixture("--compat-types", "--emit-path", opaqueJs, "js");
+    const generated = await import(pathToFileURL(join(opaqueJs, "calcit.spread-evidence.mjs")).href);
+    if (expected === undefined) assert.throws(() => generated.run_tests());
+    else assert.equal(generated.run_tests(), expected);
+    const opaqueWasm = join(project, `opaque-wasm-${index}`);
+    inFixture("--compat-types", "--emit-path", opaqueWasm, "wasm");
+    const module = new WebAssembly.Module(await readFile(join(opaqueWasm, "program.wasm")));
+    const imports = {};
+    for (const { module: namespace, name, kind } of WebAssembly.Module.imports(module)) {
+      assert.equal(kind, "function");
+      (imports[namespace] ??= {})[name] = () => { throw new Error(`Unexpected host call: ${namespace}.${name}`); };
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    if (expected === undefined) assert.throws(() => instance.exports["run-tests"](), WebAssembly.RuntimeError);
+    else assert.equal(instance.exports["run-tests"](), expected);
+  }
+  console.log("Compatibility spread boundaries retain native/JS/WASM runtime contracts");
+} finally {
+  await rm(spreadFixture, { recursive: true, force: true });
 }
 
 const conflict = run(["calcit/test.cirru", "--strict-types", "--compat-types", "--check-only"]);
