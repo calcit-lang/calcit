@@ -89,6 +89,8 @@ const runtimePolymorphic = new Set([
   "&=",
   "&buffer",
   "&compare",
+  "&enum:assoc",
+  "&enum:nth",
   "&enum:params",
   "&format-ternary-tree",
   "&get-def-doc",
@@ -371,6 +373,18 @@ const reviewedPublicBoundaryPositions = new Map([
   [
     "format-cirru-one-liner|schema.args.0.item",
     "The one-line formatter consumes recursively heterogeneous Cirru syntax nodes; the missing recursive leaf-or-list union is retained as a reviewed presentation boundary.",
+  ],
+  [
+    "&str:concat|schema.args.0",
+    "The internal concatenation primitive renders each operand with the same universal string conversion as str; Dynamic is the honest presentation input, and only the String result carries evidence.",
+  ],
+  [
+    "&str:concat|schema.args.1",
+    "The internal concatenation primitive renders each operand with the same universal string conversion as str; Dynamic is the honest presentation input, and only the String result carries evidence.",
+  ],
+  [
+    "&map:diff-triple|schema.return.item",
+    "The result is a heterogeneous [drop-keys new-diff common-triples] triple of a Set, a Map and a List; a homogeneous List item cannot express the three slot types, so callers narrow each slot.",
   ],
   [
     "str|schema.args.0",
