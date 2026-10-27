@@ -179,6 +179,57 @@ mod core_snapshot_tests {
   }
 
   #[test]
+  fn generated_core_snapshot_proc_schemas_agree_with_proc_kind_arguments() {
+    use strum::IntoEnumIterator;
+
+    // Leaf kinds that both sides state concretely; Dynamic, type variables, containers and rest
+    // markers are refinements or arity metadata and are compared elsewhere.
+    fn concrete_kind(t: &CalcitTypeAnnotation) -> Option<String> {
+      match t {
+        CalcitTypeAnnotation::Bool
+        | CalcitTypeAnnotation::Number
+        | CalcitTypeAnnotation::String
+        | CalcitTypeAnnotation::Symbol
+        | CalcitTypeAnnotation::Tag
+        | CalcitTypeAnnotation::Buffer
+        | CalcitTypeAnnotation::CirruQuote
+        | CalcitTypeAnnotation::AnonymousEnum
+        | CalcitTypeAnnotation::Custom(_) => Some(format!("{t:?}")),
+        _ => None,
+      }
+    }
+
+    let snapshot = load_core_snapshot().expect("load generated core snapshot");
+    let core = snapshot.files.get("calcit.core").expect("calcit.core should exist");
+    let mut mismatches = vec![];
+    for proc in calcit::CalcitProc::iter() {
+      let Some(signature) = proc.get_type_signature() else {
+        continue;
+      };
+      let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(proc.as_ref()).map(|entry| entry.schema.as_ref()) else {
+        continue;
+      };
+      for (idx, (expected, shown)) in signature.arg_types.iter().zip(schema.arg_types.iter()).enumerate() {
+        if let (Some(expected), Some(shown)) = (concrete_kind(expected), concrete_kind(shown))
+          && expected != shown
+        {
+          mismatches.push(format!("{} arg {idx}: proc {expected}, schema {shown}", proc.as_ref()));
+        }
+      }
+    }
+    assert!(
+      mismatches.is_empty(),
+      "core :schema must not contradict the checked proc signature: {mismatches:?}"
+    );
+
+    let CalcitTypeAnnotation::Fn(get_name) = core.defs["&struct:get-name"].schema.as_ref() else {
+      panic!("&struct:get-name should keep a function schema");
+    };
+    assert!(matches!(get_name.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Custom(_))));
+    assert!(matches!(get_name.return_type.as_ref(), CalcitTypeAnnotation::Tag));
+  }
+
+  #[test]
   fn generated_core_snapshot_preserves_strict_macro_schemas() {
     let snapshot = load_core_snapshot().expect("load generated core snapshot");
     let let_entry = snapshot
