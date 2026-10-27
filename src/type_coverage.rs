@@ -946,7 +946,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "Keep this assertion at a small trusted boundary, validate or normalize untrusted runtime data into Option, Result, a struct, or an enum before it reaches application code, and add positive and negative runtime-contract tests.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
-    return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
+    return "Keep the dynamic value isolated at the declared FFI boundary (JS or native) and validate or convert it before typed code consumes it.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
     return "This Dynamic is an explicit open expression boundary inside a strict MacroSignature. Narrow the Expr semantic type when the macro contract guarantees more, but do not replace the phase-aware signature with whole-Dynamic.";
@@ -992,7 +992,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.detail.contains("map-key") || occurrence.detail.contains("map-value") {
     return "Use `:: :map <key-type> <value-type>` and replace each unresolved slot with a concrete type or a declared type variable.";
   }
-  "Replace `:dynamic` with a concrete schema, a declared type variable, or a trait-bounded variable; mark `:features $ #{} :js-ffi` only for an intentional JS FFI boundary."
+  "Replace `:dynamic` with a concrete schema, a declared type variable, or a trait-bounded variable; mark `:features $ #{} :js-ffi` only for an intentional JS or native FFI boundary."
 }
 
 fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
@@ -3965,6 +3965,11 @@ mod tests {
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].kind, WeakTypeKind::SchemaDynamic);
     assert_eq!(occurrences[0].intent, WeakTypeIntent::IntentionalJsFfi);
+    // The shared `:js-ffi` feature also marks native FFI boundaries (#581), so the
+    // suggestion must not send native modules looking for a JS adapter (#2434).
+    let suggestion = super::weak_type_suggestion(&occurrences[0]);
+    assert!(suggestion.contains("FFI boundary (JS or native)"), "{suggestion}");
+    assert!(!suggestion.contains("declared JS FFI"), "{suggestion}");
     clear_type_slots();
   }
 
