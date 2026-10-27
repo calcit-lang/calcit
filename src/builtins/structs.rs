@@ -338,7 +338,9 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               format!("&struct-def:new field `{field_name}` has invalid compact type expression: {message}"),
               "E_TYPE_EXPR_SYNTAX",
               &crate::call_stack::CallStackList::default(),
-              type_expr.get_location(),
+              type_expr
+                .get_location()
+                .or_else(|| crate::calcit::type_expr::first_location(type_expr)),
             ));
           }
           let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics.as_slice());
@@ -1495,8 +1497,11 @@ mod tests {
       let type_form = crate::data::cirru::code_to_calcit(&cirru_parser::parse(code).unwrap()[0], "app.main", "main!", vec![]).unwrap();
       Calcit::from(vec![Calcit::tag("x"), type_form])
     };
-    let error = new_struct(&[Calcit::tag("Foo"), field("quote $ List number")]).expect_err("lowercase type name");
-    assert_eq!(error.code(), Some("E_TYPE_EXPR_SYNTAX"), "unexpected error: {error}");
+    for code in ["quote $ List number", "quote $ list Number"] {
+      let error = new_struct(&[Calcit::tag("Foo"), field(code)]).expect_err(code);
+      assert_eq!(error.code(), Some("E_TYPE_EXPR_SYNTAX"), "unexpected error: {error}");
+      assert!(error.location.is_some(), "{code}: error should carry the field location");
+    }
     let Calcit::StructDef(def) = new_struct(&[Calcit::tag("Foo"), field("quote $ List Number")]).expect("compact field type") else {
       panic!("expected a struct definition");
     };

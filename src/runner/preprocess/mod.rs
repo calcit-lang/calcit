@@ -14822,15 +14822,8 @@ pub(super) fn desugar_compact_type_form(form: &Calcit, ctx: &PreprocessContext) 
       format!("invalid compact type expression: {message}"),
       "E_TYPE_EXPR_SYNTAX",
       ctx.call_stack,
-      form.get_location().or_else(|| first_location(form)),
+      form.get_location().or_else(|| crate::calcit::type_expr::first_location(form)),
     )),
-  }
-}
-
-fn first_location(form: &Calcit) -> Option<NodeLocation> {
-  match form {
-    Calcit::List(xs) => xs.iter().find_map(|x| x.get_location().or_else(|| first_location(x))),
-    _ => form.get_location(),
   }
 }
 

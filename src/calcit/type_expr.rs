@@ -67,8 +67,14 @@ pub(crate) fn desugar_quoted_form(form: &Calcit) -> Option<Result<Calcit, String
     return None;
   }
   let cirru = crate::data::cirru::calcit_to_cirru(payload).ok()?;
-  if !is_compact_payload(&cirru) {
+  // A quoted list in a type position only means a compact expression, so a
+  // misspelled head such as `list` is reported instead of parsed as a List value.
+  let Cirru::List(items) = &cirru else {
     return None;
+  };
+  match items.first() {
+    Some(Cirru::Leaf(head)) if !CANONICAL_HEADS.contains(&head.as_ref()) && !head.starts_with([':', '\'', '&']) => {}
+    _ => return None,
   }
   let (ns, def, coord) = match first_symbol(payload) {
     Some(Calcit::Symbol { info, location, .. }) => (
@@ -79,6 +85,15 @@ pub(crate) fn desugar_quoted_form(form: &Calcit) -> Option<Result<Calcit, String
     _ => (String::new(), String::new(), vec![]),
   };
   Some(desugar_type_expr(&cirru).and_then(|canonical| crate::data::cirru::code_to_calcit(&canonical, &ns, &def, coord)))
+}
+
+/// Location of the first located node inside `form`; a quoted list carries
+/// no location of its own.
+pub(crate) fn first_location(form: &Calcit) -> Option<crate::calcit::NodeLocation> {
+  match form {
+    Calcit::List(xs) => xs.iter().find_map(|x| x.get_location().or_else(|| first_location(x))),
+    _ => form.get_location(),
+  }
 }
 
 fn first_symbol(form: &Calcit) -> Option<&Calcit> {

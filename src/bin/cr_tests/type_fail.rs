@@ -4294,6 +4294,7 @@ fn type_fail_compact_type_expr_reports_syntax_errors() {
     for (code, expected) in [
       ("assert-type 1 $ quote $ Fn Number -> Number", "bare `->`"),
       ("assert-type ([] 1) $ quote $ List number", "`number` is not a type name"),
+      ("assert-type ([] 1) $ quote $ list Number", "`list` is not a type name"),
       ("assert-type 1 $ quote $ Fn Number", "needs a return clause"),
     ] {
       let entries = load_snippet_entries(code);
