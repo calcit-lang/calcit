@@ -4494,6 +4494,7 @@ fn preprocess_list_call(
               processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
+            reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
             for arg in processed_args.iter().skip(1) {
               check_value_position_nil_branch(arg, "method argument", true, scope_types, file_ns, call_stack)?;
             }
@@ -4554,11 +4555,7 @@ fn preprocess_list_call(
               return Ok(optimized_call);
             }
 
-            let mut ys = CalcitList::new_inner_from(&[typed_method]);
-            for arg in processed_args.iter() {
-              ys = ys.push(arg.to_owned());
-            }
-            return Ok(Calcit::from(CalcitList::from(ys)));
+            return Ok(build_inlined_call(typed_method, &processed_args, scope_types, file_ns));
           }
           // For non-struct/trait types (Dynamic, Fn, etc.), silently fall through —
           // `.method` is a normal argument.
@@ -5781,15 +5778,13 @@ fn preprocess_list_call(
           return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
         }
 
-        if !has_spread
-          && let Some(call_head) = ys.first()
+        if let Some(call_head) = ys.first()
           && let Some(qualified_call) = qualify_trait_bound_method_call(call_head, &processed_args, scope_types, file_ns, &def_name)
         {
           return Ok(qualified_call);
         }
 
-        if !has_spread
-          && let Some(call_head) = ys.first()
+        if let Some(call_head) = ys.first()
           && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, &call_info, call_stack)?
         {
           if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
@@ -6344,7 +6339,7 @@ fn preprocess_known_function_call(
           call_stack,
         )?
       {
-        let expanded = build_inlined_call(callable, &current_args, scope_types);
+        let expanded = build_inlined_call(callable, &current_args, scope_types, file_ns);
         return preprocess_recorded_lowering(
           post_lowering::RewriteOrigin::MethodInline,
           || Calcit::from(CalcitList::from(ys)),
@@ -9447,12 +9442,16 @@ fn qualify_trait_bound_method_call_inner(
   };
 
   // The where-bound determines the method origin; receiver-only runtime lookup can pick a different trait.
-  let mut items = Vec::with_capacity(args.len() + 3);
-  items.push(Calcit::Proc(CalcitProc::NativeTraitCall));
+  let mut items = Vec::with_capacity(args.len() + 2);
   items.push(trait_value);
   items.push(Calcit::Tag(cirru_edn::EdnTag::from(method_name.as_ref())));
   items.extend(args.iter().cloned());
-  Some(Calcit::from(items))
+  Some(build_inlined_call(
+    Calcit::Proc(CalcitProc::NativeTraitCall),
+    &CalcitList::from(items.as_slice()),
+    scope_types,
+    file_ns,
+  ))
 }
 
 /// Resolve a typed receiver method to a direct callable when its implementation
@@ -9507,7 +9506,7 @@ fn try_inline_method_call(
       if let Some(callable_head) =
         pick_callable_from_method_entry(method_entry, impl_value, type_ref, method_name.as_ref(), file_ns, call_stack)?
       {
-        let inlined = build_inlined_call(callable_head, args, scope_types);
+        let inlined = build_inlined_call(callable_head, args, scope_types, file_ns);
         post_lowering::record_rewrite(
           post_lowering::RewriteOrigin::MethodInline,
           || {
@@ -9973,7 +9972,14 @@ fn lower_static_struct_assoc(head: &Calcit, args: &CalcitList, scope_types: &Sco
   ])
 }
 
-fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
+fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) -> Calcit {
+  // Static target selection must retain ordinary argument expansion before
+  // execution; a raw `&` in a direct call is otherwise just another value.
+  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    let mut call_nodes = vec![Calcit::Syntax(CalcitSyntax::CallSpread, Arc::from(file_ns)), callable_head];
+    call_nodes.extend(args.iter().cloned());
+    return Calcit::from(call_nodes);
+  }
   if let Some(indexed_call) = lower_static_struct_assoc(&callable_head, args, scope_types) {
     return Calcit::from(indexed_call);
   }
@@ -17686,7 +17692,7 @@ mod tests {
     });
     let args = CalcitList::from(&[typed_local, Calcit::Number(3.0)] as &[Calcit]);
 
-    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new());
+    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new(), "tests");
     let Calcit::List(call) = resolved else {
       panic!("expected executable call")
     };
@@ -17711,7 +17717,7 @@ mod tests {
     });
     let args = CalcitList::from(&[dynamic_local, Calcit::Number(3.0)] as &[Calcit]);
 
-    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new());
+    let resolved = build_inlined_call(Calcit::Proc(CalcitProc::NativeNumberRem), &args, &ScopeTypes::new(), "tests");
     let Calcit::List(call) = resolved else {
       panic!("expected executable call")
     };

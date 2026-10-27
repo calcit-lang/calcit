@@ -83,6 +83,9 @@ try {
     ["let ((f (fn (x) x))) (f & (#{} 1))", true],
     ["&call-spread dissoc ({} (:a 1)) & (#{} :a)", true],
     ["dissoc ({} (:a 1) (:b 2)) & ([] :a) & (#{} :b)", true],
+    ["({} (:a 1) (:b 2)) .dissoc :a & (#{} :b)", true],
+    ["({} (:a 1) (:b 2)) .dissoc :a & 1", false],
+    ["([] 1) .concat ([] 2) & (#{} ([] 3))", true],
   ];
   for (const [expression, isSet] of bad) {
     run("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
