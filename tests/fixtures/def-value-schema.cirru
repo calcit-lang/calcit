@@ -406,9 +406,7 @@
             let
                 received $ ref 0
                 dispatch! $ fn (op)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Unit
+                  hint-fn $ quote $ Fn Number (-> Unit)
                   reset! received op
                   , &unit
                 controller $ Controller :dispatch $ ref dispatch!
@@ -534,11 +532,8 @@
               assert-type ([])
                 quote $ List T
               fn (acc item)
-                hint-fn $ {}
-                  :args $ []
-                    quote $ List T
-                    , 'T
-                  :return $ quote $ List T
+                hint-fn $ quote $ Fn (List T) T
+                  -> $ List T
                 append acc item
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -571,9 +566,7 @@
                 received $ ref |before
               generic-controller
                 fn (op)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :return 'Unit
+                  hint-fn $ quote $ Fn String (-> Unit)
                   reset! received op
                   , &unit
                 , |after
@@ -608,9 +601,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-order-through-nested-literal-spreads)
             :code $ quote $ let
                 sink $ fn (a b c)
-                  hint-fn $ {}
-                    :args $ [] 'Number 'Number 'Number
-                    :return $ quote $ List Number
+                  hint-fn $ quote $ Fn Number Number Number
+                    -> $ List Number
                   [] a b c
               assert= ([] 1 2 3)
                 sink & ([] 1) & $ [] 2 & $ [] 3
@@ -2574,10 +2566,7 @@
           :code $ quote $ defn make-arrays (n)
             js-array & $ map (range n)
               fn (_idx)
-                hint-fn $ {}
-                  :args $ [] 'Number
-                  :return 'JsObject
-                  :features $ #{} :js-ffi
+                hint-fn $ quote $ Fn Number (-> JsObject) (:features :js-ffi)
                 js-array
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'JsObject)
@@ -2587,10 +2576,7 @@
             %{} 'TestEntry (:name |empty-and-independent-children)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         empty-array $ make-arrays 0
                         arrays $ make-arrays 3
@@ -2609,10 +2595,7 @@
             %{} 'TestEntry (:name |preserves-open-elements)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         members $ decode-map-as ([] 0 false nil |) 'List
                         array $ js-array & members
@@ -2623,10 +2606,7 @@
             %{} 'TestEntry (:name |preserves-evaluation-order)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         trace $ ref $ [] 0
                         array $ js-array
@@ -2634,9 +2614,7 @@
                           , & $ do (swap! trace append 2)
                             map ([] 3 4)
                               fn (value)
-                                hint-fn $ {}
-                                  :args $ [] 'Number
-                                  :return 'Number
+                                hint-fn $ quote $ Fn Number (-> Number)
                                 swap! trace append value
                                 , value
                       assert= ([] 0 1 2 3 4) @trace
@@ -2835,9 +2813,7 @@
             %{} 'TestEntry (:name |nominal-option-callback-omission)
               :code $ quote $ let
                   with-extra $ fn (value extra)
-                    hint-fn $ {}
-                      :args $ [] 'Number $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (Option Number) (-> Number)
                     + value $ extra .unwrap-or 10
                 assert= ([] 11 12)
                   map ([] 1 2) with-extra
@@ -3059,9 +3035,7 @@
         'checked-open-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-open-selector (rows)
             &list:sort-by rows $ fn (row)
-              hint-fn $ {}
-                :args $ [] 'Dynamic
-                :return 'Number
+              hint-fn $ quote $ Fn Dynamic (-> Number)
               decode-map-as row 'Number
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -3436,9 +3410,7 @@
                 assert= 5 $ chosen 4
                 let
                     call-captured $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn Number (-> Number)
                       chosen value
                   let
                       chosen dec
@@ -3446,29 +3418,23 @@
                     assert= 5 $ call-captured 4
                 let
                     apply-chosen $ fn (chosen)
-                      hint-fn $ {}
-                        :args $ [] $ quote
-                          Fn Number $ -> Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn
+                        Fn Number $ -> Number
+                        -> Number
                       assert= 3 $ chosen 4
                       assert= 3 $ chosen & $ [] 4
                       chosen 4
                   assert= 3 $ apply-chosen $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     dec value
                 let
                     chosen $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn Number (-> Number)
                       dec value
                     apply-chosen $ fn (chosen)
-                      hint-fn $ {}
-                        :args $ [] $ quote
-                          Fn Number $ -> Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn
+                        Fn Number $ -> Number
+                        -> Number
                       chosen 4
                   assert= 4 $ apply-chosen sum-tail
               :tags $ #{} :known-function-alias

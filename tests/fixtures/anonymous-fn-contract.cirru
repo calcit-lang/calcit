@@ -12,10 +12,7 @@
       :defs $ {}
         'async-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (current previous)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Unit
-              :async true
+            hint-fn $ quote $ Fn Number Number (-> Unit) (:async)
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -57,9 +54,7 @@
         'make-echo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (seed)
             fn (value)
-              hint-fn $ {}
-                :args $ [] 'String
-                :return 'String
+              hint-fn $ quote $ Fn String (-> String)
               , value
           :examples $ []
           :schema $ :: 'Fn $ {}

@@ -144,9 +144,9 @@
           :examples $ []
         'local-head-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn local-head-read (let)
-            hint-fn $ {} (:return 'Bool)
-              :args $ [] $ quote
-                Fn Bool Bool $ -> Bool
+            hint-fn $ quote $ Fn
+              Fn Bool Bool $ -> Bool
+              -> Bool
             let shadow-sentinel false
           :examples $ []
         'loop-shadow $ %{} 'CodeEntry (:doc |)

@@ -58,11 +58,8 @@
           :code $ quote $ defn local-bound-counts ()
             let
                 counted $ fn (value)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :generics $ [] 'T
-                    :where $ {} $ 'T 'Countable
-                    :return 'Number
+                  hint-fn $ quote $ Fn T (-> Number) (:generics T)
+                    :where $ T Countable
                   count value
               assert= 3 $ counted $ [] 1 2 3
               assert= 0 $ counted $ []
@@ -117,10 +114,7 @@
           :code $ quote $ defn typed-rest-forward (xs)
             let
                 sink $ fn (label & values)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :rest 'Number
-                    :return 'Number
+                  hint-fn $ quote $ Fn String & Number (-> Number)
                   count values
               sink |numbers & xs
           :examples $ []

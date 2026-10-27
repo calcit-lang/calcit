@@ -96,10 +96,9 @@
             let
                 action main-unsupported!
                 invoke $ fn (callback)
-                  hint-fn $ {}
-                    :args $ [] $ quote
-                      Fn $ -> Unit
-                    :return 'Unit
+                  hint-fn $ quote $ Fn
+                    Fn $ -> Unit
+                    -> Unit
                   callback
               invoke action
           :examples $ []

@@ -31,3 +31,7 @@ def-value-schema fixture、test-traits、test-wasi-command 等）：只处理 `a
 `defstruct` 宏会把字段类型再 quote 一层，局部 `defstruct` 在 JS 端拿到的是未展开的精简列表，
 结构体相等性比较因此失败。现在预处理 `&struct-def:new` 调用时把内层精简类型换成规范代码（外层 quote 保留），
 两个后端读到同一份数据。
+
+`hint-fn` 改为整体写成 `hint-fn $ quote $ Fn …`，而不是保留外层 `{}` 只改内层。schema 推导在预处理之前就读取
+`hint-fn`，所以在 `code_to_calcit` 读入代码时把精简 `Fn` 换成它的 schema map，所有读取方看到同一形状；
+语法错误在读入时报告 `E_TYPE_EXPR_SYNTAX`。只写 `{} (:async true)` 这类部分字段的 hint 没有完整签名，保留 map 写法。

@@ -249,8 +249,8 @@ try {
             runRejected("query", "def", `app.main/${copyName}`, "--format", "edn");
             const badCode = structuredClone(code);
             const badSchema = structuredClone(schema);
-            assert.deepEqual(badCode[3][2], ["hint-fn", ["{}", [":args", ["[]", "'A"]], [":return", "'C"]]]);
-            if (variant === "wrong-input") badCode[3][2][1][1][1] = ["[]", "'B"];
+            assert.deepEqual(badCode[3][2], ["hint-fn", ["quote", ["Fn", "A", ["->", "C"]]]]);
+            if (variant === "wrong-input") badCode[3][2][1][1][1] = "B";
             else if (variant === "wrong-output") badCode[3][3] = "|not-a-generic";
             else {
               badCode[2] = ["h"];
@@ -3183,7 +3183,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/tail-step", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "tail-step", ...stepCode.slice(1)]));
       run("edit", "schema", "calcit.assert-evidence/tail-step", "--input-format", "json-ast", "--code",
-        JSON.stringify(["::", "'Fn", stepCode[2][1]]));
+        JSON.stringify(stepCode[2][1][0] === "quote" ? stepCode[2][1] : ["::", "'Fn", stepCode[2][1]]));
       setBody([["assert=", "0", ["tail-step", "4"]]]);
       assert.equal(await runTailWasm(join(project, "tail-exits-wasm")), 1);
       // A common input context cannot invent a common concrete output for the

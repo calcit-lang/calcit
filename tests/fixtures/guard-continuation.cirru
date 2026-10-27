@@ -96,28 +96,20 @@
               :code $ quote $ let
                   order $ ref |
                   callback $ fn (a b)
-                    hint-fn $ {}
-                      :args $ [] 'Number 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number Number (-> Number)
                     swap! order $ fn (text)
-                      hint-fn $ {}
-                        :args $ [] 'String
-                        :return 'String
+                      hint-fn $ quote $ Fn String (-> String)
                       str text |C
                     &+ a b
                   result $ call-value callback $ []
                     do
                       swap! order $ fn (text)
-                        hint-fn $ {}
-                          :args $ [] 'String
-                          :return 'String
+                        hint-fn $ quote $ Fn String (-> String)
                         str text |L
                       , 3
                     do
                       swap! order $ fn (text)
-                        hint-fn $ {}
-                          :args $ [] 'String
-                          :return 'String
+                        hint-fn $ quote $ Fn String (-> String)
                         str text |R
                       , 4
                 assert |expected-numeric-result $ number? result
@@ -133,16 +125,12 @@
                         do (reset! order |head) 7
                         do
                           swap! order $ fn (text)
-                            hint-fn $ {}
-                              :args $ [] 'String
-                              :return 'String
+                            hint-fn $ quote $ Fn String (-> String)
                             str text |args
                           []
                       , |missing-error
                     fn (message)
-                      hint-fn $ {}
-                        :args $ [] 'String
-                        :return 'String
+                      hint-fn $ quote $ Fn String (-> String)
                       , message
                 assert= |expected-function message
                 assert= |headargs $ deref order
@@ -152,9 +140,8 @@
                   present $ Option :some nil
                   absent $ Option :none
                   forward $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] $ quote (Option Nil)
-                      :return $ quote $ Option Nil
+                    hint-fn $ quote $ Fn (Option Nil)
+                      -> $ Option Nil
                     , value
                 assert= true $ identical? present $ call-value forward ([] present)
                 assert= true $ identical? absent $ call-value forward ([] absent)
@@ -182,9 +169,7 @@
                 message $ try
                   do (check-loop-each-iteration! 1) |missing-error
                   fn (message)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'String
+                    hint-fn $ quote $ Fn String (-> String)
                     , message
               assert= |expected-number message
             :tags $ #{} :guard-continuation :js :unit
@@ -233,9 +218,7 @@
             let
                 checked f
                 get-value $ fn ()
-                  hint-fn $ {}
-                    :args $ []
-                    :return 'Fn
+                  hint-fn $ quote $ Fn (-> Fn)
                   , checked
               set! f 1
               get-value
@@ -266,9 +249,7 @@
             %{} 'TestEntry (:name |guard-keeps-known-signature)
               :code $ quote $ let
                   callback $ keep-signature $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     .inc value
                 assert= 8 $ callback 7
               :tags $ #{} :guard-continuation :unit
@@ -277,9 +258,7 @@
               :code $ quote $ let
                   mark $ ref 0
                   callback $ keep-signature $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     .inc value
                 assert-type callback 'Fn
                 reset! mark 1

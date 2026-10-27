@@ -5,6 +5,34 @@ use cirru_parser::Cirru;
 use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
+/// `hint-fn $ quote $ Fn …` is read as the schema map of its canonical `Fn`, so
+/// every later reader of `hint-fn` sees one shape. Schema derivation reads the
+/// hint before preprocessing, so a malformed payload is reported here.
+fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
+  if !matches!(ys.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "hint-fn") || !matches!(ys.len(), 2 | 3) {
+    return None;
+  }
+  let Some(Cirru::List(quoted)) = ys.last() else {
+    return None;
+  };
+  if quoted.len() != 2 || quoted[0] != Cirru::leaf("quote") {
+    return None;
+  }
+  let payload = &quoted[1];
+  if !matches!(payload, Cirru::List(items) if items.first() == Some(&Cirru::leaf("Fn")))
+    || !crate::calcit::type_expr::is_compact_payload(payload)
+  {
+    return None;
+  }
+  match crate::calcit::type_expr::desugar_type_expr(payload) {
+    Ok(Cirru::List(canonical)) if canonical.len() == 3 => Some(Ok(canonical[2].to_owned())),
+    Ok(_) => None,
+    Err(message) => Some(Err(format!(
+      "[E_TYPE_EXPR_SYNTAX] invalid compact type expression in hint-fn: {message}"
+    ))),
+  }
+}
+
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
   let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
     at_ns: Arc::from(ns),
@@ -118,6 +146,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       },
     },
     Cirru::List(ys) => {
+      if let Some(schema) = desugar_compact_hint_fn(ys) {
+        let schema = schema?;
+        let mut rewritten = ys.to_owned();
+        let last = rewritten.len() - 1;
+        rewritten[last] = schema;
+        return code_to_calcit(&Cirru::List(rewritten), ns, def, coord.to_vec());
+      }
       let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
         if idx > 65535 {
@@ -482,5 +517,22 @@ mod tests {
     assert_eq!(source_path_to_reader_path(&code, &[4]), Some(vec![3]));
     assert_eq!(source_path_to_reader_path(&code, &[4, 4]), Some(vec![3, 3]));
     assert_eq!(source_path_to_reader_path(&code, &[3]), None, "comments have no reader node");
+  }
+
+  #[test]
+  fn compact_hint_fn_reads_as_schema_map() {
+    let parse = |text: &str| cirru_parser::parse(text).expect("parse cirru").remove(0);
+    let compact = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (-> String) (:async)"), "app", "f", vec![]).expect("compact hint");
+    let canonical = code_to_calcit(
+      &parse("hint-fn $ {} (:args $ [] 'Number) (:return 'String) (:async true)"),
+      "app",
+      "f",
+      vec![],
+    )
+    .expect("canonical hint");
+    assert_eq!(compact.to_string(), canonical.to_string());
+
+    let error = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect_err("malformed hint");
+    assert!(error.contains("E_TYPE_EXPR_SYNTAX"), "{error}");
   }
 }

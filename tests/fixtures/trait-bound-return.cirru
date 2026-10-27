@@ -92,13 +92,9 @@
                     defstruct Item $ :n 'Number
                     , implementation
                   change $ fn (data)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic
-                      :return 'Dynamic
+                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
                     update data :n $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Dynamic
-                        :return 'Number
+                      hint-fn $ quote $ Fn Dynamic (-> Number)
                       assert= ([] |start) @trace
                       reset! trace $ append @trace |callback
                       , 1
@@ -113,20 +109,14 @@
                   trace $ ref $ assert-type ([])
                     quote $ List String
                   change $ fn (data key)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic 'Dynamic
-                      :return 'Dynamic
+                    hint-fn $ quote $ Fn Dynamic Dynamic (-> Dynamic)
                     update-in data ([] key)
                       fn (current)
-                        hint-fn $ {}
-                          :args $ [] $ quote (Option Dynamic)
-                          :return 'Number
+                        hint-fn $ quote $ Fn (Option Dynamic) (-> Number)
                         reset! trace $ append @trace |callback
                         , 4
                   write $ fn (data key)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic 'Dynamic
-                      :return 'Dynamic
+                    hint-fn $ quote $ Fn Dynamic Dynamic (-> Dynamic)
                     assoc-in data ([] key) 4
                 assert= "|assoc on a list expected a Number index" $ try
                   change ([] 1) :bad
@@ -161,11 +151,8 @@
               :tags $ #{} :nested-write-contract :unit :update-method-contract
         'matching-body-contract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-body-contract (value)
-            hint-fn $ {}
-              :args $ [] 'T
-              :generics $ [] 'T
-              :where $ {} $ 'T 'ToString
-              :return 'String
+            hint-fn $ quote $ Fn T (-> String) (:generics T)
+              :where $ T ToString
             to-string value
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
@@ -179,10 +166,9 @@
             :tags $ #{} :body-hint-contract :unit
         'matching-empty-body-return $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-empty-body-return ()
-            hint-fn $ {}
-              :args $ []
-              :generics $ [] 'T
-              :return $ quote $ List T
+            hint-fn $ quote $ Fn
+              -> $ List T
+              :generics T
             []
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -264,10 +250,7 @@
           :code $ quote $ defn typed-rest-forward (xs)
             let
                 sink $ fn (label & values)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :rest 'Number
-                    :return 'Number
+                  hint-fn $ quote $ Fn String & Number (-> Number)
                   checked-count values
               sink |numbers & xs
           :examples $ []

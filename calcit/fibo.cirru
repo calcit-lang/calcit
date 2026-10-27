@@ -36,9 +36,7 @@
             :args $ [] 'Number
         'loop-rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-direct (n acc)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
+            hint-fn $ quote $ Fn Number Number (-> Number)
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ &number:rem n 97
           :examples $ []
@@ -46,9 +44,7 @@
             :args $ [] 'Number 'Number
         'loop-rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-typed (n acc)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
+            hint-fn $ quote $ Fn Number Number (-> Number)
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ .rem n 97
           :examples $ []
@@ -67,18 +63,14 @@
             :args $ []
         'rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-direct (n divisor)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
+            hint-fn $ quote $ Fn Number Number (-> Number)
             &number:rem n divisor
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
         'rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-typed (n divisor)
-            hint-fn $ {}
-              :args $ [] 'Number 'Number
-              :return 'Number
+            hint-fn $ quote $ Fn Number Number (-> Number)
             .rem n divisor
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

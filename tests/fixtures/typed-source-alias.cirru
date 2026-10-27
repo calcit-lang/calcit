@@ -54,10 +54,9 @@
             :tags $ #{} :alias-contract :unit
         'apply-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn apply-text (f x)
-            hint-fn $ {} (:return 'String)
-              :args $ []
-                quote $ Fn String $ -> String
-                , 'String
+            hint-fn $ quote $ Fn
+              Fn String $ -> String
+              , String (-> String)
             f x
           :examples $ []
         'consume-base $ %{} 'CodeEntry (:doc |)
@@ -144,8 +143,7 @@
             :tags $ #{} :alias-contract :unit
         'optional-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn optional-text (x)
-            hint-fn $ {} (:return 'String)
-              :args $ [] $ quote (Option String)
+            hint-fn $ quote $ Fn (Option String) (-> String)
             .unwrap-or x |fallback
           :examples $ []
         'produce-choice $ %{} 'CodeEntry (:doc |)
@@ -174,8 +172,7 @@
             :tags $ #{} :alias-contract :unit
         'rest-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rest-count (x & more)
-            hint-fn $ {} (:return 'Number) (:rest 'String)
-              :args $ [] 'String
+            hint-fn $ quote $ Fn String & String (-> Number)
             &list:count more
           :examples $ []
         'same-alias $ %{} 'CodeEntry (:doc |)
@@ -188,9 +185,7 @@
             :tags $ #{} :alias-contract :unit
         'same-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-first (left right)
-            hint-fn $ {} (:return 'T)
-              :generics $ [] 'T
-              :args $ [] 'T 'T
+            hint-fn $ quote $ Fn T T (-> T) (:generics T)
             , left
           :examples $ []
         'shortcut-proc $ %{} 'CodeEntry (:doc |)

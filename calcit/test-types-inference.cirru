@@ -75,9 +75,7 @@
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl SliceReceiverImpl Sliceable
             .slice $ fn (self start end)
-              hint-fn $ {}
-                :args $ [] 'test-types-inference.main/SliceReceiver 'Number $ quote (Option Number)
-                :return 'test-types-inference.main/SliceReceiver
+              hint-fn $ quote $ Fn test-types-inference.main/SliceReceiver Number (Option Number) (-> test-types-inference.main/SliceReceiver)
               struct-with self
                 :n $ + (:n self) start
                 :end end
@@ -125,11 +123,8 @@
           :code $ quote $ defn bounded-local-map (value)
             let
                 shorten $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return 'T
-                    :generics $ [] 'T
-                    :where $ {} $ 'T Sliceable
+                  hint-fn $ quote $ Fn T (-> T) (:generics T)
+                    :where $ T Sliceable
                   .slice item 0 $ Option :some 1
               shorten value
           :examples $ []
@@ -149,11 +144,8 @@
           :code $ quote $ defn bounded-map (value)
             map ([] value)
               fn (item)
-                hint-fn $ {}
-                  :args $ [] 'T
-                  :return 'T
-                  :generics $ [] 'T
-                  :where $ {} $ 'T Sliceable
+                hint-fn $ quote $ Fn T (-> T) (:generics T)
+                  :where $ T Sliceable
                 , item
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -187,10 +179,7 @@
           :code $ quote $ defn bounded-shadow-capture (value)
             let
                 describe $ fn (other)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return 'String
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T (-> String) (:generics T)
                   .debug value
               assert-type (describe 1) 'String
               , value
@@ -243,9 +232,7 @@
             :code $ quote $ assert= 8
               call-callback-envelope
                 fn (n)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Number
+                  hint-fn $ quote $ Fn Number (-> Number)
                   &+ n 1
                 CallbackEnvelope :holder $ CallbackHolder :callback $ fn (dispatch!) (dispatch! 7)
             :tags $ #{} :nominal-callback-context :unit
@@ -263,9 +250,7 @@
             :code $ quote $ assert= 8
               call-callback-holder
                 fn (n)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Number
+                  hint-fn $ quote $ Fn Number (-> Number)
                   &+ n 1
                 CallbackHolder :callback $ fn (dispatch!) (dispatch! 7)
             :tags $ #{} :nominal-callback-context :unit
@@ -292,15 +277,10 @@
             :args $ [] $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
         'crossed-binder-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn crossed-binder-first (head-value other-value)
-            hint-fn $ {}
-              :args $ [] 'D 'C
-              :return 'D
-              :generics $ [] 'C 'D
+            hint-fn $ quote $ Fn D C (-> D) (:generics C D)
             let
                 pass-value $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'D
-                    :return 'D
+                  hint-fn $ quote $ Fn D (-> D)
                   , item
               pass-value head-value
           :examples $ []
@@ -464,9 +444,8 @@
               :code $ quote $ let
                   calls $ ref 0
                   supply $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return $ quote $ List String
+                    hint-fn $ quote $ Fn
+                      -> $ List String
                     swap! calls inc
                     [] |one
                 assert= (Option :some |one)
@@ -756,9 +735,7 @@
           :code $ quote $ defn lexical-generic-capture (value)
             let
                 callback $ fn ()
-                  hint-fn $ {}
-                    :args $ []
-                    :return 'T
+                  hint-fn $ quote $ Fn (-> T)
                   , value
               callback
           :examples $ []
@@ -780,22 +757,19 @@
           :code $ quote $ defn lexical-generic-empty-collections (value)
             let
                 empty-list $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return $ quote $ List T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T
+                    -> $ List T
+                    :generics T
                   []
                 empty-map $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return $ quote $ Map Tag T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T
+                    -> $ Map Tag T
+                    :generics T
                   if (= item item) ({}) ({})
                 empty-set $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return $ quote $ Set T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T
+                    -> $ Set T
+                    :generics T
                   #{}
               assert= ({}) (empty-map value)
               assert= (#{}) (empty-set value)
@@ -848,10 +822,7 @@
           :code $ quote $ defn lexical-generic-identity (value)
             let
                 callback $ fn (other)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return 'T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T (-> T) (:generics T)
                   , other
               &+ (callback 1) 1
           :examples $ []
@@ -870,10 +841,7 @@
           :code $ quote $ defn lexical-generic-identity-renamed (value)
             let
                 callback $ fn (other)
-                  hint-fn $ {}
-                    :args $ [] 'U
-                    :return 'U
-                    :generics $ [] 'U
+                  hint-fn $ quote $ Fn U (-> U) (:generics U)
                   , other
               &+ (callback 1) 1
           :examples $ []
@@ -887,10 +855,7 @@
           :code $ quote $ defn lexical-generic-open-identity (value)
             let
                 callback $ fn (item)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return 'T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T (-> T) (:generics T)
                   , item
               callback value
           :examples $ []
@@ -909,26 +874,17 @@
               :tags $ #{} :generic :lexical-binder :unit
         'lexical-generic-shadow-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-shadow-capture (outer)
-            hint-fn $ {}
-              :args $ [] 'T
-              :return 'T
+            hint-fn $ quote $ Fn T (-> T)
             let
                 inner $ fn (value)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return 'T
-                    :generics $ [] 'T
+                  hint-fn $ quote $ Fn T (-> T) (:generics T)
                   let
                       capture $ fn ()
-                        hint-fn $ {}
-                          :args $ []
-                          :return 'T
+                        hint-fn $ quote $ Fn (-> T)
                         , value
                     capture
                 outer-capture $ fn ()
-                  hint-fn $ {}
-                    :args $ []
-                    :return 'T
+                  hint-fn $ quote $ Fn (-> T)
                   , outer
               assert= 1 $ inner 1
               outer-capture
@@ -1030,9 +986,7 @@
             %{} 'TestEntry (:name |transports-explicit-open-results)
               :code $ quote $ let
                   open-number $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Dynamic
+                    hint-fn $ quote $ Fn Number (-> Dynamic)
                     , value
                   result $ map-through-callback ([] 1 2) open-number
                   method-result $ map-through-method ([] 1 2) open-number
@@ -1092,38 +1046,28 @@
               :code $ quote $ do
                 assert= 7 $
                   fn (end)
-                    hint-fn $ {}
-                      :args $ [] $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn (Option Number) (-> Number)
                     end.unwrap-or 7
                 assert= 11 $
                   fn (end)
-                    hint-fn $ {}
-                      :args $ [] $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn (Option Number) (-> Number)
                     end.unwrap-or 7
                   Option :some 11
                 assert= 7 $
                   fn (end)
-                    hint-fn $ {}
-                      :args $ [] $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn (Option Number) (-> Number)
                     end.unwrap-or 7
                   Option :none
                 assert= 6 $
                   fn (n acc)
-                    hint-fn $ {}
-                      :args $ [] 'Number $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (Option Number) (-> Number)
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
                         Option :some $ &+ (acc.unwrap-or 0) n
                   , 3
                 assert= 16 $
                   fn (n acc)
-                    hint-fn $ {}
-                      :args $ [] 'Number $ quote (Option Number)
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (Option Number) (-> Number)
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
                         Option :some $ &+ (acc.unwrap-or 0) n
@@ -1232,9 +1176,8 @@
               :generics $ [] 'T
             let
                 wrap-value $ fn (other)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :return $ quote $ Option T
+                  hint-fn $ quote $ Fn T
+                    -> $ Option T
                   Option :some other
               wrap-value value
           :examples $ []
@@ -1310,9 +1253,7 @@
                   Marker $ defstruct EmptyMarker
                   marker-type $ impl-traits Marker $ defimpl EmptyMarkerImpl Emptyable
                     .empty $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Marker
-                        :return 'Marker
+                      hint-fn $ quote $ Fn Marker (-> Marker)
                       , value
                   value $ marker-type
                 assert= value $ renamed-inherited-empty value
@@ -1430,10 +1371,7 @@
             %{} 'TestEntry (:name |local-empty-option-before-payload)
               :code $ quote $ let
                   choose $ fn (left right)
-                    hint-fn $ {}
-                      :generics $ [] 'T
-                      :args $ [] 'T 'T
-                      :return 'T
+                    hint-fn $ quote $ Fn T T (-> T) (:generics T)
                     , right
                 assert= |x $ .unwrap $ choose (Option :none) (Option :some |x)
               :tags $ #{} :bottom :generic :unit
@@ -1447,11 +1385,7 @@
             %{} 'TestEntry (:name |local-variadic-bottom-refinement)
               :code $ quote $ let
                   check $ fn (left & right)
-                    hint-fn $ {}
-                      :generics $ [] 'T
-                      :args $ [] 'T
-                      :rest 'T
-                      :return 'Unit
+                    hint-fn $ quote $ Fn T & T (-> Unit) (:generics T)
                     , &unit
                 assert= &unit $ check (Option :none) (Option :some |x) (Option :none)
               :tags $ #{} :bottom :generic :unit
@@ -1461,11 +1395,7 @@
             %{} 'TestEntry (:name |variadic-nil-remains-homogeneous)
               :code $ quote $ let
                   check $ fn (left & right)
-                    hint-fn $ {}
-                      :generics $ [] 'T
-                      :args $ [] 'T
-                      :rest 'T
-                      :return 'Unit
+                    hint-fn $ quote $ Fn T & T (-> Unit) (:generics T)
                     , &unit
                 assert= true $ = nil nil nil
                 assert= &unit $ check nil nil nil
@@ -1544,9 +1474,7 @@
           :code $ quote $ defn test-fn-inference ()
             let
                 f $ fn (x)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Number
+                  hint-fn $ quote $ Fn Number (-> Number)
                   + x 1
               assert-type (f 1) 'Number
               assert-type
@@ -1560,33 +1488,24 @@
             %{} 'TestEntry (:name |type-predicates-evaluate-once-in-order)
               :code $ quote $ let
                   produce-number $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Number
+                    hint-fn $ quote $ Fn (-> Number)
                     println |predicate-number
                     , 7
                   produce-list $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return $ quote $ List Number
+                    hint-fn $ quote $ Fn
+                      -> $ List Number
                     println |predicate-list
                     [] 1 2
                   produce-bool $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Bool
+                    hint-fn $ quote $ Fn (-> Bool)
                     println |predicate-bool
                     , false
                   produce-bound-bool $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Bool
+                    hint-fn $ quote $ Fn (-> Bool)
                     println |predicate-bound
                     , false
                   local-callback $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     &+ value 1
                 assert= true $ bool? $ bool?
                   number? $ produce-number
@@ -1601,9 +1520,7 @@
             %{} 'TestEntry (:name |type-predicates-propagate-argument-errors)
               :code $ quote $ let
                   fail-bool $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Bool
+                    hint-fn $ quote $ Fn (-> Bool)
                     raise |predicate-must-run
                 assert= false $ try
                   bool? $ fail-bool
@@ -1613,9 +1530,7 @@
                   fn (message) (assert= |predicate-must-run message) false
                 let
                     open-bool $ fn ()
-                      hint-fn $ {}
-                        :args $ []
-                        :return 'Dynamic
+                      hint-fn $ quote $ Fn (-> Dynamic)
                       , false
                   assert= true $ bool? $ open-bool
                   assert= false $ number? $ open-bool
@@ -1862,36 +1777,16 @@
             %{} 'TestEntry (:name |fold-preserves-independent-generic-seed)
               :code $ quote $ let
                   keep-prefix $ fn (xs seed)
-                    hint-fn $ {}
-                      :generics $ [] 'Elem 'Acc
-                      :args $ []
-                        quote $ List Elem
-                        , 'Acc
-                      :return 'Acc
+                    hint-fn $ quote $ Fn (List Elem) Acc (-> Acc) (:generics Elem Acc)
                     foldl xs seed $ fn (acc item) acc
                   keep-method $ fn (xs seed)
-                    hint-fn $ {}
-                      :generics $ [] 'Elem 'Acc
-                      :args $ []
-                        quote $ List Elem
-                        , 'Acc
-                      :return 'Acc
+                    hint-fn $ quote $ Fn (List Elem) Acc (-> Acc) (:generics Elem Acc)
                     .foldl xs seed $ fn (acc item) acc
                   keep-postfix $ fn (xs seed)
-                    hint-fn $ {}
-                      :generics $ [] 'Elem 'Acc
-                      :args $ []
-                        quote $ List Elem
-                        , 'Acc
-                      :return 'Acc
+                    hint-fn $ quote $ Fn (List Elem) Acc (-> Acc) (:generics Elem Acc)
                     xs .foldl seed $ fn (acc item) acc
                   keep-threaded $ fn (xs seed)
-                    hint-fn $ {}
-                      :generics $ [] 'Elem 'Acc
-                      :args $ []
-                        quote $ List Elem
-                        , 'Acc
-                      :return 'Acc
+                    hint-fn $ quote $ Fn (List Elem) Acc (-> Acc) (:generics Elem Acc)
                     -> xs $ .foldl seed $ fn (acc item) acc
                 assert= |seed $ keep-prefix ([] 1 2) |seed
                 assert= 3 $ keep-prefix ([] |a |b) 3

@@ -27,9 +27,7 @@
             .show $ fn (self)
               println $ &struct:get self :name
             .rename $ fn (self name)
-              hint-fn $ {}
-                :args $ [] 'test-struct.main/Lagopus0 'String
-                :return 'Dynamic
+              hint-fn $ quote $ Fn test-struct.main/Lagopus0 String (-> Dynamic)
               .assoc self :name name
           :examples $ []
           :schema $ :: 'Impl
@@ -100,9 +98,7 @@
             %{} 'TestEntry (:name |typed-callback-members)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Unit
+                    hint-fn $ quote $ Fn Number (-> Unit)
                     , &unit
                   handlers $ {} $ :click callback
                   stored $ NullableEventStore :handlers handlers
@@ -870,9 +866,8 @@
               assert= 20 $ :age p1
               let
                   read-open $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic
-                      :return $ quote $ List (Option Dynamic)
+                    hint-fn $ quote $ Fn Dynamic
+                      -> $ List $ Option Dynamic
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
                   [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
@@ -888,9 +883,7 @@
                 complete $ %{} Point2D (:y 2) (:x 1)
                 alias $ %{} Shape (:x 1) (:y 2)
                 dynamic $ fn (prototype)
-                  hint-fn $ {}
-                    :args $ [] 'StructDef
-                    :return 'Dynamic
+                  hint-fn $ quote $ Fn StructDef (-> Dynamic)
                   %{} prototype (:x 1) (:y 2)
               assert= complete alias
               assert= complete $ dynamic Point2D
@@ -1019,9 +1012,7 @@
             try
               if fail? (raise |fixture-failure) true
               fn (message)
-                hint-fn $ {}
-                  :args $ [] 'String
-                  :return 'Bool
+                hint-fn $ quote $ Fn String (-> Bool)
                 , false
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -1092,9 +1083,7 @@
             try
               if fail? (raise |fixture-failure) |normal
               fn (message extra)
-                hint-fn $ {}
-                  :args $ [] 'String $ quote (Option Number)
-                  :return 'String
+                hint-fn $ quote $ Fn String (Option Number) (-> String)
                 assert= (Option :none) extra
                 , message
           :examples $ []
@@ -1127,10 +1116,7 @@
             try
               if fail? (raise |fixture-failure) 7
               fn (& messages)
-                hint-fn $ {}
-                  :args $ []
-                  :rest 'String
-                  :return 'Number
+                hint-fn $ quote $ Fn & String (-> Number)
                 .len messages
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

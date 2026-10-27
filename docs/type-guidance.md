@@ -43,7 +43,8 @@ assert-type map-fn $ quote $ Fn C
 ```
 
 可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
-字段类型，以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
+字段类型，`hint-fn` 的整个签名（`hint-fn $ quote $ Fn Number (-> String) (:async)`，只写 `:async` 等部分字段的 hint 仍用 `{}`），
+以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
 
 写法规则：
 

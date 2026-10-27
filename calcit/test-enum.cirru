@@ -118,9 +118,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (record)
-                  hint-fn $ {}
-                    :args $ [] 'Payload
-                    :return 'String
+                  hint-fn $ quote $ Fn Payload (-> String)
                   :value record
                 record $ Payload :value |Ada
               assert-type record 'Payload
@@ -136,9 +134,7 @@
             let
                 Payload $ defstruct LocalPayload $ :value 'Number
                 read $ fn (record)
-                  hint-fn $ {}
-                    :args $ [] 'Payload
-                    :return 'Number
+                  hint-fn $ quote $ Fn Payload (-> Number)
                   :value record
               read $ Payload :value 7
           :examples $ []
@@ -152,9 +148,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (Payload)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :return 'Payload
+                  hint-fn $ quote $ Fn String (-> Payload)
                   let
                       record $ recursive/Payload :value Payload
                     assert-type record 'Payload
@@ -271,20 +265,14 @@
           :code $ quote $ defn test-generic-enum-where-bounds ()
             let
                 render-maybe $ fn (v)
-                  hint-fn $ {}
-                    :generics $ [] 'T
-                    :where $ {} $ 'T Debug
-                    :args $ [] $ quote (Maybe1 T)
-                    :return 'String
+                  hint-fn $ quote $ Fn (Maybe1 T) (-> String) (:generics T)
+                    :where $ T Debug
                   match v
                     (:none) |none
                     (:some item) (item .debug)
                 render-duo $ fn (v)
-                  hint-fn $ {}
-                    :generics $ [] 'T 'U
-                    :where $ {} ('T Debug) ('U Debug)
-                    :args $ [] $ quote (Duo T U)
-                    :return 'String
+                  hint-fn $ quote $ Fn (Duo T U) (-> String) (:generics T U)
+                    :where (T Debug) (U Debug)
                   match v
                     (:pair left right)
                       str-spaced |pair (left .debug) (right .debug)
