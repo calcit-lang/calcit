@@ -83,11 +83,18 @@ try {
     ["let ((f (fn (x) x))) (f & (#{} 1))", true],
     ["&call-spread dissoc ({} (:a 1)) & (#{} :a)", true],
     ["dissoc ({} (:a 1) (:b 2)) & ([] :a) & (#{} :b)", true],
+    ["({} (:a 1) (:b 2)) .dissoc :a & (#{} :b)", true],
+    ["({} (:a 1) (:b 2)) .dissoc :a & 1", false],
+    ["([] 1) .concat ([] 2) & (#{} ([] 3))", true],
+    ["([] 1) .len &", false],
+    [".len ([] 1) &", false],
+    ["({} (:a 1)) .dissoc :a & & ([] :b)", false],
   ];
   for (const [expression, isSet] of bad) {
     run("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
-    for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
+    const modes = [[], ["--check-only"], ["js"], ["wasm"]];
+    for (const mode of modes) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
       assert.equal(result.status, 1, `${expression} ${mode}\n${result.stdout}\n${result.stderr}`);
@@ -99,7 +106,32 @@ try {
       assert.ok(result.stderr.includes("preprocessing"), result.stderr);
     }
   }
-  console.log("Known non-List spreads rejected before native/JS/WASM; shared native/JS List tests passed");
+  // Invalid call arity cannot reach definition tests. Literal expansion must
+  // reject extra operands before ordinary emission can leave an invalid stack.
+  run("edit", "def", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
+    "quote $ defn sink (n) n");
+  run("edit", "schema", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+  for (const [index, expression] of [
+    "sink & ([]) 6 7",
+    "let ((call sink)) (call & ([]) 6 7)",
+  ].entries()) {
+    const transaction = JSON.stringify([["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite",
+      "--input-format", "cirru", "--code", `quote $ defwasm-export run-tests () (${expression})`]]);
+    const preview = JSON.parse(run("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+    run("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+    const native = spawnSync(binary, [snapshot], options);
+    assert.ifError(native.error);
+    assert.equal(native.status, 1, native.stdout + native.stderr);
+    assert.match(native.stderr, /function arity mismatch.*expected 1 argument\(s\), got 2/);
+    const invalidOutput = join(project, `invalid-arity-${index}`);
+    const rejected = spawnSync(binary, [snapshot, "--emit-path", invalidOutput, "wasm"], options);
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+    assert.match(rejected.stderr, /E_WASM_CALL_SPECIALIZATION:.*expects at most 1 args, got 2/);
+    await assert.rejects(readFile(join(invalidOutput, "program.wasm")), { code: "ENOENT" });
+  }
+  console.log("List spreads, malformed markers and literal-call arity retain native/JS/WASM contracts");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

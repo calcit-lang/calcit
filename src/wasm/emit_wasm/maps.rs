@@ -114,68 +114,89 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
-/// `&map:dissoc map key` — new map without key (or same if key absent).
+/// `&map:dissoc map key ...` — remove every ordinary and spread key in order.
 pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  use crate::wasm::host::calcit::CalcitSyntax;
-
-  // Multi-key form: (&map:dissoc m k1 k2 ...) — chain dissoc calls
-  if args.len() > 2 && !matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-    // Evaluate map first, keep result accumulating
-    let acc = ctx.alloc_local();
-    emit_expr(ctx, &args[0])?;
-    ctx.emit(Instruction::LocalSet(acc));
-    for key_expr in &args[1..] {
-      let src_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(acc));
+  if args.len() < 2 {
+    return Err("&map:dissoc expects a map and at least one key".into());
+  }
+  let accumulator = emit_ptr_to_i32(ctx, &args[0])?;
+  let key_count = ctx.alloc_i32(0);
+  let mut arguments = args[1..].iter();
+  while let Some(argument) = arguments.next() {
+    if matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      let spread = arguments
+        .next()
+        .filter(|argument| !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+        .ok_or("&map:dissoc expects a List after &")?;
+      let value = ctx.alloc_local();
+      emit_expr(ctx, spread)?;
+      ctx.emit(Instruction::LocalSet(value));
+      if !infer_wasm_static_type(ctx, spread).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_))) {
+        // Open values must prove their runtime List representation before any
+        // pointer conversion or count/element load. Keep the typed fast path.
+        let is_heap = emit_is_heap_value(ctx, value);
+        ctx.emit(Instruction::LocalGet(is_heap));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(value));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::I32Const(4));
+        ctx.emit(Instruction::I32Sub);
+        ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+        ctx.emit(Instruction::I32Const(*ctx.tag_index.get("list").ok_or("list tag not found")? as i32));
+        ctx.emit(Instruction::I32Ne);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+      }
+      let list = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(value));
       ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(src_ptr));
-      let key_local = ctx.alloc_local();
-      emit_expr(ctx, key_expr)?;
-      ctx.emit(Instruction::LocalSet(key_local));
-      ctx.emit(Instruction::LocalGet(src_ptr));
-      ctx.emit(Instruction::LocalGet(key_local));
-      ctx.call_rt("__rt_map_dissoc");
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(acc));
+      ctx.emit(Instruction::LocalSet(list));
+      let count = emit_load_count_i32(ctx, list);
+      let index = ctx.alloc_i32(0);
+      ctx.begin_block();
+      ctx.begin_loop();
+      ctx.loop_exit_if_ge(index, count);
+      let key = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(list));
+      ctx.emit(Instruction::LocalGet(index));
+      ctx.emit(Instruction::I32Const(8));
+      ctx.emit(Instruction::I32Mul);
+      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+      ctx.emit(Instruction::LocalSet(key));
+      emit_map_dissoc_key(ctx, accumulator, key);
+      ctx.i32_inc(index);
+      ctx.i32_inc(key_count);
+      ctx.emit(Instruction::Br(0));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+    } else {
+      let key = ctx.alloc_local();
+      emit_expr(ctx, argument)?;
+      ctx.emit(Instruction::LocalSet(key));
+      emit_map_dissoc_key(ctx, accumulator, key);
+      ctx.i32_inc(key_count);
     }
-    ctx.emit(Instruction::LocalGet(acc));
-    return Ok(());
   }
-
-  // Handle spread form: (&map:dissoc x & rest_list) — rest_list[0] is the key
-  let (map_arg, key_arg_opt) = if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-    (&args[0], None)
-  } else if args.len() == 2 {
-    (&args[0], Some(&args[1]))
-  } else {
-    return Err("&map:dissoc expects 2+ args".into());
-  };
-
-  let src = emit_ptr_to_i32(ctx, map_arg)?;
-  let target = ctx.alloc_local();
-  if let Some(key_expr) = key_arg_opt {
-    emit_expr(ctx, key_expr)?;
-    ctx.emit(Instruction::LocalSet(target));
-  } else {
-    // Spread form: load key from rest_list[0]
-    let rest_list_f64 = ctx.alloc_local();
-    emit_expr(ctx, &args[2])?;
-    ctx.emit(Instruction::LocalSet(rest_list_f64));
-    let rest_list_i32 = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(rest_list_f64));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(rest_list_i32));
-    ctx.emit(Instruction::LocalGet(rest_list_i32));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-    ctx.emit(Instruction::LocalSet(target));
-  }
-  ctx.emit(Instruction::LocalGet(src));
-  ctx.emit(Instruction::LocalGet(target));
-  ctx.call_rt("__rt_map_dissoc");
-  ctx.emit(Instruction::F64ConvertI32U);
+  // An empty spread cannot satisfy the proc's minimum one-key contract.
+  ctx.emit(Instruction::LocalGet(key_count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.ptr_to_f64(accumulator);
   Ok(())
+}
+
+fn emit_map_dissoc_key(ctx: &mut WasmGenCtx, accumulator: u32, key: u32) {
+  ctx.emit(Instruction::LocalGet(accumulator));
+  ctx.emit(Instruction::LocalGet(key));
+  ctx.call_rt("__rt_map_dissoc");
+  ctx.emit(Instruction::LocalSet(accumulator));
 }
 
 /// `to-pairs map` — convert map to list of 2-element lists.

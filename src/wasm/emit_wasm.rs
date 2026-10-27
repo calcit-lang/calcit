@@ -7538,6 +7538,33 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
 
   let head = &args_list[0];
   let call_args = &args_list[1..];
+  // A known target and literal spreads carry ordinary-call evidence. Reuse
+  // specialization (for example Map `.merge`), while retaining the ABI guard
+  // below for unknown function-table targets whose Fn type does not prove arity.
+  if let Some(definition) = resolve_known_function_value(ctx, head) {
+    let mut expanded = vec![head.clone()];
+    let mut runtime_spreads = vec![];
+    expand_literal_spread_args("call", call_args, &mut expanded, &mut runtime_spreads)?;
+    if runtime_spreads.is_empty() {
+      let qualified = format!("{}/{}", definition.ns, definition.def);
+      reject_nil_specialized_spread_call(ctx, &qualified, definition.def.as_ref())?;
+      reject_trait_specialized_spread_call(ctx, &qualified, definition.def.as_ref())?;
+      let rest = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(definition.def.as_ref()));
+      if rest.is_none()
+        && let Some(arity) = ctx.fn_arity.get(&qualified).or_else(|| ctx.fn_arity.get(definition.def.as_ref()))
+        && expanded.len() - 1 > *arity as usize
+      {
+        return Err(format!(
+          "E_WASM_CALL_SPECIALIZATION: `{qualified}` expects at most {arity} args, got {}",
+          expanded.len() - 1
+        ));
+      }
+      return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(expanded.as_slice()));
+    }
+  }
   if (matches!(head, Calcit::Local(_)) || matches!(head, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
     && let Some(definition) = resolve_known_function_value(ctx, head)
   {

@@ -7663,22 +7663,57 @@
                 [] & $ [] 1 |two
               :tags $ #{} :core :spread-boundary :unit
             %{} 'TestEntry (:name |fixed-call-spread-evaluates-arguments-once)
-              :code $ quote $ assert= ([] 3 |ab)
+              :code $ quote $ do
+                assert= ([] 3 |ab)
+                  let
+                      *order $ ref |
+                      f $ fn (a b)
+                        hint-fn $ {}
+                          :args $ [] (quote Number) (quote Number)
+                          :return $ quote Number
+                        + a b
+                      result $ f & $ []
+                        do
+                          reset! *order $ str @*order |a
+                          , 1
+                        do
+                          reset! *order $ str @*order |b
+                          , 2
+                    [] result @*order
                 let
                     *order $ ref |
-                    f $ fn (a b)
-                      hint-fn $ {}
-                        :args $ [] (quote Number) (quote Number)
-                        :return $ quote Number
-                      + a b
-                    result $ f & $ []
+                    result $
                       do
-                        reset! *order $ str @*order |a
-                        , 1
-                      do
-                        reset! *order $ str @*order |b
-                        , 2
-                  [] result @*order
+                        reset! *order $ str @*order |r
+                        {} (|a 1) (|b 2) (|c 3) (|d 4)
+                      , .dissoc
+                        do
+                          reset! *order $ str @*order |a
+                          , |a
+                        , &
+                          do
+                            reset! *order $ str @*order |s
+                            [] |b
+                          do
+                            reset! *order $ str @*order |c
+                            , |c
+                  assert=
+                    {} $ |d 4
+                    , result
+                  assert= |rasc @*order
+                  reset! *order |
+                  assert= |spread-failed $ try
+                      {} $ |a 1
+                      , .dissoc
+                        do
+                          reset! *order $ str @*order |a
+                          , |a
+                        , & (raise |spread-failed)
+                          do
+                            reset! *order $ str @*order |c
+                            , |c
+                    fn (message) message
+                  assert= |a @*order
               :tags $ #{} :core :spread-proof :unit
             %{} 'TestEntry (:name |fixed-call-direct-evaluates-arguments-once)
               :code $ quote $ assert= ([] 3 |ab)
@@ -7711,6 +7746,38 @@
                 try (dissoc 1 :a)
                   fn (message) |rejected
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-spread-keeps-fixed-and-tail-keys)
+              :code $ quote $ let
+                  m $ {} (|a 1) (|b 2) (|c 3)
+                  expected $ {} $ |c 3
+                  remove-tail $ fn (source key tail)
+                    hint-fn $ {}
+                      :args $ [] (:: 'Map 'String 'Number) 'String $ :: 'List 'String
+                      :return $ :: 'Map 'String 'Number
+                    source .dissoc key & tail
+                assert= expected $ m .dissoc |a & $ [] |b
+                assert= expected $ .dissoc m |a & $ [] |b
+                assert= expected $ remove-tail m |a $ [] |b
+              :tags $ #{} :core :method-spread :unit
+            %{} 'TestEntry (:name |method-spread-keeps-multiple-and-empty-lists)
+              :code $ quote $ let
+                  m $ {} (|a 1) (|b 2) (|c 3) (|d 4) (|e 5)
+                assert=
+                  {} $ |e 5
+                  m .dissoc |a & ([] |b) |c & ([]) & $ [] |d
+                assert= m $ m .dissoc |missing & $ []
+              :tags $ #{} :core :method-spread :unit
+            %{} 'TestEntry (:name |method-spread-keeps-other-collection-arguments)
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  ([] 1) .concat ([] 2) & $ [] ([] 3) ([] 4)
+                assert=
+                  {} (|a 1) (|b 2) (|c 3)
+                  ({} (|a 1))
+                    , .merge
+                      {} $ |b 2
+                      , & $ [] $ {} (|c 3)
+              :tags $ #{} :core :method-spread :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
