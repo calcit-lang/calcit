@@ -1551,6 +1551,38 @@ mod type_query_tests {
   }
 
   #[test]
+  fn originless_enum_methods_are_not_reported_as_strict_callable() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    let contracts =
+      runner::preprocess::static_method_contracts(&CalcitTypeAnnotation::AnonymousEnum).expect("enum methods should resolve");
+    let status_of = |name: &str| {
+      contracts
+        .iter()
+        .find(|(method, _)| method.name == name)
+        .map(|(_, contract)| contract.clone())
+        .unwrap_or_else(|| panic!("enum method {name} should be discoverable"))
+    };
+    // Strict dispatch through `&core-enum-methods` fails with E_ORIGINLESS_METHOD_DISPATCH (#2441).
+    let assoc = status_of(".assoc");
+    assert_eq!(assoc.status, "open", "{assoc:?}");
+    let detail = assoc
+      .detail
+      .as_deref()
+      .expect("originless method should explain the strict rejection");
+    assert!(detail.contains("E_ORIGINLESS_METHOD_DISPATCH"), "{detail}");
+    assert!(detail.contains("`calcit.core/assoc`"), "{detail}");
+    assert_eq!(
+      runner::preprocess::static_method_contract(&CalcitTypeAnnotation::AnonymousEnum, ".assoc").status,
+      "open"
+    );
+    // Nominal trait methods on the same receiver stay proven.
+    assert_eq!(status_of(".count").status, "proven");
+  }
+
+  #[test]
   fn predicate_method_query_distinguishes_index_key_and_value_origins() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");

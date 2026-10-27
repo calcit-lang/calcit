@@ -11257,7 +11257,42 @@ fn refined_impl_method_schema(
 pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str) -> StaticMethodContract {
   let traits = trait_list_from_type(receiver);
   let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
-  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref(), None)
+  let contract = static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref(), None);
+  with_strict_dispatch_status(receiver, method_name, impls.as_deref(), contract)
+}
+
+/// Discovery reports whether project code can call the method under strict
+/// checking, not only whether its schema resolves. Dispatch through an
+/// originless legacy bag is rejected with E_ORIGINLESS_METHOD_DISPATCH, so such
+/// a method is never listed as proven. Checking itself keeps using the
+/// resolved schema from `scoped_static_method_contract`.
+fn with_strict_dispatch_status(
+  receiver: &CalcitTypeAnnotation,
+  method_name: &str,
+  impls: Option<&[Arc<CalcitImpl>]>,
+  mut contract: StaticMethodContract,
+) -> StaticMethodContract {
+  let Some(impls) = impls else {
+    return contract;
+  };
+  let bare_name = method_name.trim_start_matches('.');
+  let ImplMethodResolution::Selected(candidate) = resolve_impl_method(receiver, impls, bare_name) else {
+    return contract;
+  };
+  if !candidate.impl_value.is_inherent() || is_builtin_method_candidate(receiver, &candidate) {
+    return contract;
+  }
+  let alternative = if !bare_name.starts_with('&') && program::has_def_code(calcit::CORE_NS, bare_name) {
+    format!("call `{}/{bare_name}` directly", calcit::CORE_NS)
+  } else {
+    "call a typed named function directly".to_owned()
+  };
+  contract.status = "open";
+  contract.detail = Some(format!(
+    "strict checking rejects `.{bare_name}` with E_ORIGINLESS_METHOD_DISPATCH because it resolves only through originless legacy impl bag `{}`; {alternative}",
+    candidate.impl_value.name()
+  ));
+  contract
 }
 
 fn scoped_static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str, scope: &ScopeTypes) -> StaticMethodContract {
@@ -11277,6 +11312,7 @@ pub fn static_method_contracts(receiver: &CalcitTypeAnnotation) -> Option<Vec<(S
       .into_iter()
       .map(|descriptor| {
         let contract = static_method_contract_with_impls(receiver, &descriptor.name, traits.as_deref(), impls.as_deref(), None);
+        let contract = with_strict_dispatch_status(receiver, &descriptor.name, impls.as_deref(), contract);
         (descriptor, contract)
       })
       .collect(),
