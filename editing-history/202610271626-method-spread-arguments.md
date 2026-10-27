@@ -17,6 +17,8 @@ WASM 的字面量 List 展开还需复用普通调用的类型 specialization。
 沿用普通调用路径，未知长度的运行时展开仍走原有的受检协议。
 此复用还要求已有证据证明函数目标，未知函数表目标仍由原 ABI 门禁拒绝；
 声明为固定 Fn 本身不能证明实际实现不是 rest 函数，原宿主测试继续守住该边界。
+字面量 normalization 前也保留已有 nil/trait 展开拒绝门禁，确保失败仍由原有诊断说明；
+不能让普通 specialization 入口绕过展开调用自身尚未支持的证明边界。
 
 回归放在 definition `:tests`：直接/后置方法、精确的 Map/String/List 参数合同、
 多次与空展开、List concat 和 Map merge。已有 Ref 求值顺序测试保留原断言，扩展方法参数顺序和
