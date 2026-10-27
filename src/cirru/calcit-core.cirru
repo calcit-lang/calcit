@@ -713,7 +713,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Enum)
-            :args $ [] 'Enum 'Number 'Tag
+            :args $ [] 'Enum 'Number 'Dynamic
           :tags $ #{} :builtin :internal
         '&enum:count $ %{} 'CodeEntry
           :doc "|Count tag and payload positions in an enum value."
@@ -756,7 +756,7 @@
           :doc "|Read a tag or payload position from an enum value."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Tag)
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Enum 'Number
           :tags $ #{} :builtin :internal
         '&enum:params $ %{} 'CodeEntry (:doc "|Return enum payload parameters as a list.")
@@ -2475,7 +2475,7 @@
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
-            :args $ [] 'T $ :: 'List 'T
+            :args $ [] (:: 'List 'T) 'T
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
@@ -2710,7 +2710,7 @@
                 new-diff $ &list:nth triple 1
                 common-triples $ &list:nth triple 2
               [] drop-keys new-diff common-triples
-          :schema $ :: 'Fn $ {} (:return 'Enum)
+          :schema $ :: 'Fn $ {} (:return 'List)
             :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
             :generics $ [] 'K 'V 'W
           :tags $ #{} :builtin :internal
@@ -3480,11 +3480,11 @@
               assert= 0 $ &str:compare |a |a
             :tags $ #{} :core :unit
         '&str:concat $ %{} 'CodeEntry
-          :doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (string), b (string)\nReturns: string\nConcatenates two strings together"
+          :doc "|internal function for string concatenation\nSyntax: (&str:concat a b)\nParams: a (any value), b (any value)\nReturns: string\nConcatenates two strings together"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String 'String
+            :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |concatenates-string-and-number-values)
             :code $ quote $ do

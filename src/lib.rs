@@ -182,8 +182,8 @@ mod core_snapshot_tests {
   fn generated_core_snapshot_proc_schemas_agree_with_proc_kind_arguments() {
     use strum::IntoEnumIterator;
 
-    // Leaf kinds that both sides state concretely; Dynamic, type variables, containers and rest
-    // markers are refinements or arity metadata and are compared elsewhere.
+    // Kinds that both sides can state concretely. Element types, type variables and rest markers
+    // are refinements or arity metadata and are not compared here.
     fn concrete_kind(t: &CalcitTypeAnnotation) -> Option<String> {
       match t {
         CalcitTypeAnnotation::Bool
@@ -195,6 +195,29 @@ mod core_snapshot_tests {
         | CalcitTypeAnnotation::CirruQuote
         | CalcitTypeAnnotation::AnonymousEnum
         | CalcitTypeAnnotation::Custom(_) => Some(format!("{t:?}")),
+        CalcitTypeAnnotation::List(_) => Some("List".to_owned()),
+        CalcitTypeAnnotation::Map(..) => Some("Map".to_owned()),
+        CalcitTypeAnnotation::Set(_) => Some("Set".to_owned()),
+        _ => None,
+      }
+    }
+
+    // A schema contradicts the proc when both name different kinds, when it puts a type variable
+    // where the proc requires a concrete kind (e.g. swapped arguments), or when it names a scalar
+    // kind where the proc accepts or returns any value. Collection procs may take Dynamic while
+    // their schema documents the list contract, so collections are compared only against collections.
+    fn contradiction(expected: &CalcitTypeAnnotation, shown: &CalcitTypeAnnotation) -> Option<String> {
+      if let (Some(expected_kind), CalcitTypeAnnotation::TypeVar(name)) = (concrete_kind(expected), shown) {
+        return Some(format!("proc {expected_kind}, schema '{name}"));
+      }
+      let shown_kind = concrete_kind(shown)?;
+      let shown_is_collection = matches!(
+        shown,
+        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(..) | CalcitTypeAnnotation::Set(_)
+      );
+      match (expected, concrete_kind(expected)) {
+        (CalcitTypeAnnotation::Dynamic, _) if !shown_is_collection => Some(format!("proc Dynamic, schema {shown_kind}")),
+        (_, Some(expected_kind)) if expected_kind != shown_kind => Some(format!("proc {expected_kind}, schema {shown_kind}")),
         _ => None,
       }
     }
@@ -210,16 +233,12 @@ mod core_snapshot_tests {
         continue;
       };
       for (idx, (expected, shown)) in signature.arg_types.iter().zip(schema.arg_types.iter()).enumerate() {
-        if let (Some(expected), Some(shown)) = (concrete_kind(expected), concrete_kind(shown))
-          && expected != shown
-        {
-          mismatches.push(format!("{} arg {idx}: proc {expected}, schema {shown}", proc.as_ref()));
+        if let Some(detail) = contradiction(expected, shown) {
+          mismatches.push(format!("{} arg {idx}: {detail}", proc.as_ref()));
         }
       }
-      if let (Some(expected), Some(shown)) = (concrete_kind(&signature.return_type), concrete_kind(&schema.return_type))
-        && expected != shown
-      {
-        mismatches.push(format!("{} return: proc {expected}, schema {shown}", proc.as_ref()));
+      if let Some(detail) = contradiction(&signature.return_type, &schema.return_type) {
+        mismatches.push(format!("{} return: {detail}", proc.as_ref()));
       }
     }
     assert!(
