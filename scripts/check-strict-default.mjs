@@ -776,6 +776,48 @@ try {
     else assert.equal(instance.exports["run-tests"](), expected);
   }
   console.log("Compatibility spread boundaries retain native/JS/WASM runtime contracts");
+
+  // Legacy source is rejected by default; its retained compatibility path
+  // still obtains arity from lexical markers rather than schema slot count.
+  const optionalTests = ["let", [["alias", "legacy-sink"]],
+    ["assert=", "7", ["legacy-sink", "&", ["[]", "7"]]],
+    ["assert=", "7", ["legacy-sink", "&", ["[]", "7", "8"]]],
+    ["assert=", "7", ["alias", "&", ["[]", "7"]]],
+    ["assert=", "7", ["legacy-rest", "&", ["[]", "7"]]],
+    ["assert=", "7", ["legacy-rest", "&", ["[]", "7", "8", "9", "10"]]]];
+  const edits = [];
+  for (const [name, params, rest] of [["legacy-sink", ["x", "?", "y"], false], ["legacy-rest", ["x", "?", "y", "&", "values"], true]]) {
+    edits.push(
+      ["edit", "def", `calcit.spread-evidence/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, params, "x"])],
+      ["edit", "schema", `calcit.spread-evidence/${name}`, "--input-format", "json-ast", "--code",
+        JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", "'Number", "'Number"]], [":return", "'Number"], ...(rest ? [[":rest", "'Number"]] : [])]])],
+    );
+  }
+  edits.push(
+    ["edit", "add-test", "calcit.spread-evidence/legacy-sink", "lexical-optional-spreads", "--tags", "unit", "--input-format", "json-ast", "--code", JSON.stringify(optionalTests)],
+    ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(["defn", "run-tests", [], optionalTests, "7"])],
+  );
+  const transaction = JSON.stringify(edits);
+  const preview = JSON.parse(inFixture("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+  inFixture("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+  const strictOptional = run([snapshot, "--check-only"]);
+  expectStatus(strictOptional, 1, "default strict still rejects lexical optional parameters");
+  assert.match(strictOptional.stderr, /E_LEGACY_OPTIONAL_PARAM/);
+  inFixture("--compat-types", "test", "calcit.spread-evidence/legacy-sink", "--require-match");
+  inFixture("--compat-types");
+  const optionalJs = join(project, "optional-js");
+  inFixture("--compat-types", "--emit-path", optionalJs, "js");
+  assert.equal((await import(pathToFileURL(join(optionalJs, "calcit.spread-evidence.mjs")).href)).run_tests(), 7);
+  for (const expression of ["legacy-sink & ([])", "legacy-sink & ([] 7 8 9)", "legacy-rest & ([])"]) {
+    const edits = JSON.stringify([["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn run-tests () (${expression})`]]);
+    const preview = JSON.parse(inFixture("edit", "transaction", "--code", edits, "--dry-run", "--format", "json"));
+    inFixture("edit", "transaction", "--code", edits, "--expect-revision", preview.scoped_revision);
+    const rejected = run([snapshot, "--compat-types", "--check-only"]);
+    expectStatus(rejected, 1, `lexical optional bounds still reject ${expression}`);
+    assert.match(rejected.stderr, /W_FN_ARG_TYPE_MISMATCH/);
+  }
+  console.log("Lexical optional spreads retain native/JS compatibility and default strict rejection");
 } finally {
   await rm(spreadFixture, { recursive: true, force: true });
 }

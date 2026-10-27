@@ -24,6 +24,30 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.32.0 已知回调检查调用参数数量（未发布）
+
+有具体 `Fn` 合同的回调，调用时必须满足声明的参数范围。此前 `Fn(Number) -> Number`
+被写成 `callback 7 8` 时，严格检查可能通过，直到 native 或 JS 执行才报错；现在会在源调用处
+以现有 `W_LOCAL_FN_ARG_TYPE_MISMATCH` 拒绝，零参数回调、局部别名、捕获和计算出的回调同样适用。
+已知函数的字面量 List 展开也会检查展开后的数量，例如单参数函数的 `f & ([]) 6 7`。
+
+修复调用时按实际业务合同删去多余实参或补齐缺失实参。若业务确实需要不同签名，需同步修改
+函数实现、调用方和测试；不应扩大 Dynamic 或通过类型标记掩盖参数错误。
+
+```cirru
+let
+    invoke $ fn (callback)
+      hint-fn $ {}
+        :args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+        :return 'Number
+      callback 7
+  assert= 8 $ invoke $ fn (value) (inc value)
+```
+
+末尾 `Option<T>` 的省略语法及显式 `Some`/`None`、带 `:rest` 的可变参数调用继续遵守原合同。
+只保存或传递裸 `Fn` 不会被假定为零参数签名；无法确定长度的展开仍使用现有证明与运行时边界。
+本项属于 0.32.0 的新拒绝行为，0.31.1 发布版不含此收紧。
+
 ## 0.31.0 读取旧存档中的 CirruQuote
 
 旧存档中的 `CirruQuote` 直接通过公开接收者方法读取。`.to-list` 对列表根返回

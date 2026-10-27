@@ -1278,6 +1278,9 @@ pub(crate) fn check_resolved_fn_call_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  if check_fn_call_arity(head_form, fn_annot, args, call_info, "W_LOCAL_FN_ARG_TYPE_MISMATCH", check_warnings) {
+    return;
+  }
   if fn_annot.arg_types.is_empty() && fn_annot.rest_type.is_none() {
     return;
   }
@@ -1304,6 +1307,52 @@ pub(crate) fn check_resolved_fn_call_arg_types(
       "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
     )
   });
+}
+
+/// Check a known callable's range without evaluating or rewriting operands.
+/// An unknown spread length is left to the existing spread proof/runtime path.
+pub(super) fn check_fn_call_arity(
+  head: &Calcit,
+  signature: &crate::calcit::CalcitFnTypeAnnotation,
+  args: &CalcitList,
+  call_info: &CallTypeCheckInfo<'_>,
+  warning_code: &'static str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> bool {
+  let expanded = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    match super::type_inference::expand_literal_call_arguments(args) {
+      Ok(arguments) => Some(arguments),
+      Err(_) => return false,
+    }
+  } else {
+    None
+  };
+  let actual_count = expanded.as_ref().unwrap_or(args).len();
+  let arity = signature.call_arity();
+  if actual_count >= arity.min && arity.max.is_none_or(|max| actual_count <= max) {
+    return false;
+  }
+  let expected = match arity.max {
+    None => format!("at least {}", arity.min),
+    Some(max) if max != arity.min => format!("{}..={max}", arity.min),
+    Some(max) => max.to_string(),
+  };
+  let location = call_info.call_location.clone().or_else(|| {
+    let owner = super::source_location_in_namespace(head, call_info.file_ns)?;
+    super::source_argument_location(head, Some(&owner))
+  });
+  let definition = location.as_ref().map_or(call_info.def_name, |location| location.def.as_ref());
+  gen_check_warning_code_at(
+    format!(
+      "[Warn] Function `{head}` expects {expected} args, got {actual_count} in call at {}/{}",
+      call_info.file_ns, definition
+    ),
+    warning_code,
+    call_info.file_ns,
+    location,
+    check_warnings,
+  );
+  true
 }
 
 /// Check trait method arity and reuse ordinary callable argument proof.

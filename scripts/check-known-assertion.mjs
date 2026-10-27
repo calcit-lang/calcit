@@ -4800,6 +4800,89 @@ try {
         }
       }
     },
+    async () => {
+      // #2430: a known callback's parameter count is part of its call contract.
+      await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+      const fnType = (args, rest) => ["::", "'Fn", ["{}", [":args", ["[]", ...args]], [":return", "'Number"],
+        ...(rest ? [[":rest", rest]] : [])]];
+      const oneType = fnType(["'Number"]);
+      const zeroType = fnType([]);
+      const optionalType = fnType(["'Number", ["::", "'Option", "'Number"]]);
+      const restType = fnType(["'Number"], "'Number");
+      const define = (name, code, schema) => [
+        ["edit", "def", `fix-command.main/${name}`, "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(code)],
+        ["edit", "schema", `fix-command.main/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+      ];
+      const transact = commands => {
+        const code = JSON.stringify(commands);
+        const preview = JSON.parse(run("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+        run("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision);
+      };
+      transact([
+        ...define("onearg", ["defn", "onearg", ["n"], ["inc", "n"]], oneType),
+        ...define("zeroarg", ["defn", "zeroarg", [], "8"], zeroType),
+        ...define("optional-arg", ["defn", "optional-arg", ["n", "delta"], "n"], optionalType),
+        ...define("rest-args", ["defn", "rest-args", ["n", "&", "values"], "n"], restType),
+      ]);
+      const cases = [
+        ["extra", oneType, "onearg", ["callback", "7", "8"], /expects 1 args, got 2/],
+        ["missing", oneType, "onearg", ["callback"], /expects 1 args, got 0/],
+        ["alias", oneType, "onearg", ["let", [["alias", "callback"]], ["alias", "7", "8"]], /expects 1 args, got 2/],
+        ["capture", oneType, "onearg", ["let", [["captured", ["fn", [], ["hint-fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]], ["callback", "7", "8"]]]], ["captured"]], /expects 1 args, got 2/],
+        ["computed", oneType, "onearg", ["let", [["stored", ["ref", "callback"]]], [["deref", "stored"], "7", "8"]], /expects 1 args, got 2/],
+        ["zero-extra", zeroType, "zeroarg", ["callback", "7"], /expects 0 args, got 1/],
+        ["optional-missing", optionalType, "optional-arg", ["callback"], /expects 1\.\.=2 args, got 0/],
+        ["optional-extra", optionalType, "optional-arg", ["callback", "7", ["Option", ":some", "2"], "9"], /expects 1\.\.=2 args, got 3/],
+        ["rest-missing", restType, "rest-args", ["callback"], /expects at least 1 args, got 0/],
+        ["spread-extra", oneType, "onearg", ["callback", "&", ["[]"], "7", "8"], /expects 1 args, got 2/],
+        ["spread-missing", oneType, "onearg", ["callback", "&", ["[]"]], /expects 1 args, got 0/],
+      ];
+      // Check default proof audit, independently of the enclosing fixture mode.
+      const checkedOptions = { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: "1" } };
+      const diagnostic = /W_LOCAL_FN_ARG_TYPE_MISMATCH/;
+      for (const [name, callbackType, callee, expression, message] of cases) {
+        transact([
+          ...define("invoke", ["defn", "invoke", ["callback"], expression], fnType([callbackType])),
+          ...define("main!", ["defn", "main!", [], ["println", "|arity-side-effect-must-not-run"],
+            ["assert=", "8", ["invoke", callee]], "&unit"],
+          ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]]),
+        ]);
+        const original = await readFile(snapshot);
+        const checked = spawnSync(binary, [snapshot, "--check-only", "--all-defs", "--format", "json"], checkedOptions);
+        assert.ifError(checked.error);
+        assert.equal(checked.status, 1, `${name}\n${checked.stdout}\n${checked.stderr}`);
+        const definition = JSON.parse(checked.stdout).data.definitions.find(item => item.definition === "fix-command.main/invoke");
+        assert.equal(definition.status, "failed", `${name}: ${JSON.stringify(definition)}`);
+        const problem = definition.diagnostics.find(item => diagnostic.test(item.code));
+        assert.ok(problem, JSON.stringify(definition));
+        assert.match(problem.message, message);
+        assert.ok(problem.path.length > 0, "the callback call retains its source coordinate");
+        const strict = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], checkedOptions);
+        assert.ifError(strict.error);
+        assert.equal(strict.status, 1, `${name}\n${strict.stdout}\n${strict.stderr}`);
+        const report = JSON.parse(strict.stdout);
+        assert.equal(report.data.workflow.status, "failed");
+        assert.match(JSON.stringify(report.data.workflow), diagnostic);
+        for (const mode of [[], ["js"], ["wasm"], ["wasi"]]) {
+          const output = join(project, `callback-arity-${name}-${mode[0] ?? "native"}`);
+          const rejected = spawnSync(binary, [snapshot, "--emit-path", output, ...mode], checkedOptions);
+          assert.ifError(rejected.error);
+          assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
+          const detail = mode[0] === "js"
+            ? await readFile(join(output, "calcit.build-errors.mjs"), "utf8")
+            : `${rejected.stdout}\n${rejected.stderr}`;
+          assert.match(detail, diagnostic);
+          assert.match(detail, message);
+          assert.doesNotMatch(rejected.stdout, /^arity-side-effect-must-not-run$/m);
+          await assertRejectedArtifacts(output, name, diagnostic);
+        }
+        assert.deepEqual(await readFile(snapshot), original);
+      }
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+        "--target", "test-types-inference.main/test-fn-inference", "--tag", "callback-arity",
+        "--backend", "native,js"], { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      console.log("Known callback arity rejects before effects/emission; fixed, optional, rest and captured calls retain native/JS behavior");
+    },
   ];
 
   const selected = process.env.CALCIT_KNOWN_ASSERTION_PART;
