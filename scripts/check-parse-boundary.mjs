@@ -74,6 +74,22 @@ try {
       }
     }
   }
+  // Invalid source calls cannot be definition tests that pass strict checking.
+  for (const method of [".list?", ".leaf?", ".to-list", ".leaf-text"]) {
+    for (const [source, diagnostic] of [
+      [`${method} 1`, /unknown method .* for number/],
+      [method, /invoke-method expected an operand, but received none/],
+      [`${method} (cirru-quote (a b)) 1`, /Method .* expects 1 args \(including receiver\), got 2/],
+    ]) {
+      const rejected = spawnSync(binary, [snapshot, "eval", source], options);
+      if (rejected.error) throw rejected.error;
+      const message = `${rejected.stdout}\n${rejected.stderr}`;
+      assert.equal(rejected.status, 1, message);
+      assert.match(message, diagnostic);
+      assert.doesNotMatch(message, /internal compiler error/);
+      assert.deepEqual(await readFile(snapshot), original, "rejected quote calls must not mutate source");
+    }
+  }
   run("test", "--tag", "parse-boundary", "--require-match");
 
   // Reuse the source tests verbatim in generated JS, not host-side decoder assertions.
