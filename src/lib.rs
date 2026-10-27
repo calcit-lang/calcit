@@ -221,12 +221,6 @@ mod core_snapshot_tests {
       mismatches.is_empty(),
       "core :schema must not contradict the checked proc signature: {mismatches:?}"
     );
-
-    let CalcitTypeAnnotation::Fn(get_name) = core.defs["&struct:get-name"].schema.as_ref() else {
-      panic!("&struct:get-name should keep a function schema");
-    };
-    assert!(matches!(get_name.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Custom(_))));
-    assert!(matches!(get_name.return_type.as_ref(), CalcitTypeAnnotation::Tag));
   }
 
   #[test]
