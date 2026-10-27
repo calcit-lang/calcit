@@ -23,9 +23,18 @@ Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间
 类型位置可以用 `quote $ …` 写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价：
 
 ```cirru
-assert-type xs $ quote $ List Number
+let
+    xs $ [] 1 2 3
+    pick $ fn (x) x
+  assert-type xs $ quote $ List Number
+  assert-type pick $ quote $ Fn T (-> T) (:generics T)
+  println $ count xs
+```
+
+嵌套回调、泛型和约束按子句分行：
+
+```cirru.no-check
 assert-type table $ quote $ Map String (List app.schema/Item)
-assert-type f $ quote $ Fn Number String (-> Bool)
 assert-type map-fn $ quote $ Fn C
   Fn T $ -> U
   -> Dynamic

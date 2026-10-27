@@ -181,7 +181,7 @@ let
 
 - 精简写法：在 `assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型位置和 `calcit edit schema --code` 中可以写 `quote $ …`，类型名大写开头，不加 `'`：
 
-```cirru
+```cirru.no-check
 assert-type xs $ quote $ List Number
 assert-type f $ quote $ Fn T (-> T) (:generics T)
 ```
