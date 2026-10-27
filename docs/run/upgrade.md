@@ -24,6 +24,43 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 读取旧存档中的 CirruQuote
+
+旧存档中的 `CirruQuote` 直接通过公开接收者方法读取。`.to-list` 对列表根返回
+`Some<List<Dynamic>>`，对叶根返回 `None`；`.leaf-text` 对叶根返回原始 token 的
+`Some<String>`，对列表根返回 `None`。`.list?` / `.leaf?` 可查询根的形状。
+
+下面用字面量代替已经从存档取出的 `saved`，实际迁移时保留原 `:tree` 值：
+
+```cirru
+let
+    saved $ cirru-quote (a (b c))
+  match (.to-list saved)
+    (:some tree) tree
+    (:none) (raise "|Expected a list-root saved tree")
+```
+
+输入是新的源文本时，使用 String `.parse-cirru-list` 并处理 `Result`：
+
+```cirru
+match (.parse-cirru-list "|a (b c)")
+  (:ok rows) rows
+  (:err message) (raise message)
+```
+
+存档里的 `:code` 可能已与 `:tree` 不同，迁移转换的是保存的树，保留原 storage key、字段、
+空列表及 token 文本，不清空缓存或重新解析 `:code`。树成员仍是异构的 String/List 数据，
+消费具体成员时使用受检解码或形状守卫。方法与示例可通过现有命令查询：
+
+```bash
+calcit query type "'CirruQuote"
+calcit query def calcit.core/cirru-quote:to-list --raw
+```
+
+旧 `&cirru-quote:to-list` 是内部兼容入口，0.31.x 保留其已有行为；叶根实际返回 String，
+旧签名不能作为 List 的证明。应用迁移到公开方法；后续内部合同收敛需同时保留
+`.leaf-text` 的原始 token 语义。完整数据形状和用法见 [Cirru EDN](../data/edn.md)。
+
 ## 0.31.0 默认检查证明 Dynamic 的流向（#2121）
 
 `--check-only`、直接运行与 `js` 编译前的默认预检查现在先做一次断言证明审计，

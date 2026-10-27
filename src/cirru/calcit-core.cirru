@@ -369,15 +369,42 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |exposes-cirru-quote-methods)
-            :code $ quote $ let
-                methods $ &methods-of $ cirru-quote x
-              do
-                assert= true $ includes? methods .list?
-                assert= true $ includes? methods .leaf?
-                assert= true $ includes? methods .to-list
-                assert= true $ includes? methods .leaf-text
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |exposes-cirru-quote-methods)
+              :code $ quote $ let
+                  methods $ &methods-of $ cirru-quote x
+                do
+                  assert= true $ includes? methods .list?
+                  assert= true $ includes? methods .leaf?
+                  assert= true $ includes? methods .to-list
+                  assert= true $ includes? methods .leaf-text
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |propagates-receiver-errors)
+              :code $ quote $ let
+                  *calls $ ref 0
+                  broken-quote $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'CirruQuote
+                    reset! *calls $ inc @*calls
+                    raise |quote-receiver-failed
+                assert= |quote-receiver-failed $ try
+                  .to-list $ broken-quote
+                  fn (message) message
+                assert= 1 @*calls
+                assert= |quote-receiver-failed $ try
+                  .leaf-text $ broken-quote
+                  fn (message) message
+                assert= 2 @*calls
+                assert= |quote-receiver-failed $ try
+                  .list? $ broken-quote
+                  fn (message) message
+                assert= 3 @*calls
+                assert= |quote-receiver-failed $ try
+                  .leaf? $ broken-quote
+                  fn (message) message
+                assert= 4 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
@@ -5775,24 +5802,39 @@
             :args $ [] 'CirruQuote
             :return $ :: 'Option 'String
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-token-text)
-            :code $ quote $ do
-              assert= (Option :some |x)
-                .leaf-text $ cirru-quote x
-              assert= (Option :some |:k)
-                .leaf-text $ cirru-quote :k
-              assert= (Option :some ||x)
-                .leaf-text $ cirru-quote |x
-              assert= (Option :some "|中文")
-                .leaf-text $ cirru-quote "中文"
-              assert= (Option :none)
-                .leaf-text $ cirru-quote $ a b
-              assert= (Option :none)
-                .leaf-text $ cirru-quote $
-              assert-type
-                .leaf-text $ cirru-quote x
-                :: 'Option 'String
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-token-text)
+              :code $ quote $ do
+                assert= (Option :some |x)
+                  .leaf-text $ cirru-quote x
+                assert= (Option :some |:k)
+                  .leaf-text $ cirru-quote :k
+                assert= (Option :some ||x)
+                  .leaf-text $ cirru-quote |x
+                assert= (Option :some "|中文")
+                  .leaf-text $ cirru-quote "中文"
+                assert= (Option :none)
+                  .leaf-text $ cirru-quote $ a b
+                assert= (Option :none)
+                  .leaf-text $ cirru-quote $
+                assert-type
+                  .leaf-text $ cirru-quote x
+                  :: 'Option 'String
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-receiver-once)
+              :code $ quote $ let
+                  *calls $ ref 0
+                assert= (Option :some "|中文")
+                  .leaf-text $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote "中文"
+                assert= 1 @*calls
+                assert= (Option :none)
+                  .leaf-text $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote $ a b
+                assert= 2 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote:leaf? $ %{} 'CodeEntry
           :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf?。根节点为 leaf 时返回 true。"
           :code $ quote $ defn cirru-quote:leaf? (x)
@@ -5875,6 +5917,29 @@
                         .to-list line
                 (:err message) (raise message)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-receivers-once)
+              :code $ quote $ let
+                  *calls $ ref 0
+                assert=
+                  Option :some $ [] |a |b
+                  .to-list $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote $ a b
+                assert= 1 @*calls
+                assert= (Option :none)
+                  .to-list $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote token
+                assert= 2 @*calls
+                assert= true $ .list? $ do
+                  reset! *calls $ inc @*calls
+                  cirru-quote $ a b
+                assert= 3 @*calls
+                assert= true $ .leaf? $ do
+                  reset! *calls $ inc @*calls
+                  cirru-quote token
+                assert= 4 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)
             &= (type-of x) :cirru-quote
