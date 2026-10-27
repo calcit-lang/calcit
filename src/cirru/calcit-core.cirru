@@ -58,7 +58,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Struct)
-            :args $ [] 'Struct
+            :args $ [] 'StructDef
           :tags $ #{} :builtin :internal
         '&* $ %{} 'CodeEntry
           :doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats"
@@ -687,27 +687,27 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Tag 'Tag
+            :args $ [] 'EnumDef 'Tag
           :tags $ #{} :builtin :internal
         '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Tag)
-            :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'EnumDef)
+            :args $ [] 'EnumDef
           :tags $ #{} :builtin :internal
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             &enum-def:new :Result ([] :ok :number) ([] :err :string)
-          :schema $ :: 'Fn $ {} (:return 'Tag)
+          :schema $ :: 'Fn $ {} (:return 'EnumDef)
             :args $ [] 'Tag
           :tags $ #{} :builtin :internal
         '&enum-def:variant-arity $ %{} 'CodeEntry (:doc "|Read the payload arity of an EnumDef variant.")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Tag 'Tag
+            :args $ [] 'EnumDef 'Tag
           :tags $ #{} :builtin :internal
         '&enum:assoc $ %{} 'CodeEntry (:doc "|Associate a payload position on an enum value.")
           :code $ quote &runtime-implementation
@@ -3769,15 +3769,15 @@
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Tag)
-            :args $ [] 'Tag
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ [] 'StructDef
           :tags $ #{} :builtin :internal
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|Create a StructDef from a name and declared field types."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             &struct-def:new :Person ([] :name :string) ([] :age :number)
-          :schema $ :: 'Fn $ {} (:return 'Tag)
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ [] 'Tag
           :tags $ #{} :builtin :internal
         '&struct-match-internal $ %{} 'CodeEntry (:doc |)
