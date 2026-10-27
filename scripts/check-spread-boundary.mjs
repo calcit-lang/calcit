@@ -86,11 +86,16 @@ try {
     ["({} (:a 1) (:b 2)) .dissoc :a & (#{} :b)", true],
     ["({} (:a 1) (:b 2)) .dissoc :a & 1", false],
     ["([] 1) .concat ([] 2) & (#{} ([] 3))", true],
+    ["([] 1) .len &", false, true],
+    [".len ([] 1) &", false, true],
+    ["({} (:a 1)) .dissoc :a & & ([] :b)", false, true],
   ];
-  for (const [expression, isSet] of bad) {
+  for (const [expression, isSet, checkCompatibility] of bad) {
     run("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
-    for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
+    const modes = [[], ["--check-only"], ["js"], ["wasm"]];
+    if (checkCompatibility) modes.push(...modes.map(mode => ["--compat-types", ...mode]));
+    for (const mode of modes) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
       assert.equal(result.status, 1, `${expression} ${mode}\n${result.stdout}\n${result.stderr}`);
@@ -102,7 +107,56 @@ try {
       assert.ok(result.stderr.includes("preprocessing"), result.stderr);
     }
   }
-  console.log("Known non-List spreads rejected before native/JS/WASM; shared native/JS List tests passed");
+  // Compatibility keeps this explicitly open boundary reachable. Native/JS
+  // validate its value at runtime; WASM must check the heap kind before reads.
+  const opaque = [
+    [["[]", ":b"], 1],
+    [["[]"], 2],
+    [["{}", [":bad", "1"]], undefined],
+    [["#{}", ":b"], undefined],
+    ["0", undefined],
+    ["16392.5", undefined],
+  ];
+  for (let index = 0; index < opaque.length; index++) {
+    const [body, expected] = opaque[index];
+    const remaining = [["{}", [":a", "1"], [":b", "2"], [":c", "3"]], ".dissoc", ":a", "&", ["dynamic-spread-keys"]];
+    // Observe the Map using its existing count proc: compatibility mode does
+    // not retain enough result evidence for `.len` in this opaque ABI fixture.
+    const count = ["&map:count", remaining];
+    const result = expected === undefined ? count : ["let", [["result", count]], ["assert=", String(expected), "result"], "result"];
+    const operations = [
+      ["edit", "def", "calcit.spread-evidence/dynamic-spread-keys", ...(index === 0 ? [] : ["--overwrite"]), "--input-format", "json-ast", "--code",
+        JSON.stringify(["defn", "dynamic-spread-keys", [], body])],
+      ["edit", "schema", "calcit.spread-evidence/dynamic-spread-keys", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+      ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code",
+        JSON.stringify(["defwasm-export", "run-tests", [], result])],
+    ];
+    const transaction = JSON.stringify(operations);
+    const preview = JSON.parse(run("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+    run("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+    const native = spawnSync(binary, ["--compat-types", snapshot], options);
+    assert.ifError(native.error);
+    assert.equal(native.status, expected === undefined ? 1 : 0, native.stderr);
+    if (expected === undefined) assert.match(native.stderr, /expected list for spreading/);
+    const opaqueJs = join(project, `opaque-js-${index}`);
+    run("--compat-types", "--emit-path", opaqueJs, "js");
+    const generated = await import(pathToFileURL(join(opaqueJs, "calcit.spread-evidence.mjs")).href);
+    if (expected === undefined) assert.throws(() => generated.run_tests());
+    else assert.equal(generated.run_tests(), expected);
+    const opaqueWasm = join(project, `opaque-wasm-${index}`);
+    run("--compat-types", "--emit-path", opaqueWasm, "wasm");
+    const module = new WebAssembly.Module(await readFile(join(opaqueWasm, "program.wasm")));
+    const imports = {};
+    for (const { module: namespace, name, kind } of WebAssembly.Module.imports(module)) {
+      assert.equal(kind, "function");
+      (imports[namespace] ??= {})[name] = () => { throw new Error(`Unexpected host call: ${namespace}.${name}`); };
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    if (expected === undefined) assert.throws(() => instance.exports["run-tests"](), WebAssembly.RuntimeError);
+    else assert.equal(instance.exports["run-tests"](), expected);
+  }
+  console.log("List spreads, malformed markers and opaque runtime values retain native/JS/WASM contracts");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

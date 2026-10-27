@@ -3687,34 +3687,42 @@ fn reject_known_non_list_spreads(
   call_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
   let expected = CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone());
-  let mut spreading = false;
-  for arg in args.iter() {
-    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      spreading = true;
+  let mut arguments = args.iter();
+  while let Some(marker) = arguments.next() {
+    if !matches!(marker, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
       continue;
     }
-    if spreading {
-      spreading = false;
-      if let Some(actual) = resolve_type_value(arg, scope_types)
-        && actual.prove_with_bindings(&expected, &mut HashMap::new()).is_mismatch()
-      {
-        let hint = if matches!(actual.as_ref(), CalcitTypeAnnotation::Set(_)) {
-          "convert the Set explicitly with `.to-list` before spreading"
-        } else {
-          "pass a List containing the arguments intended for this call"
-        };
-        return Err(CalcitErr::use_msg_stack_location_with_code(
-          CalcitErrKind::Type,
-          format!(
-            "spread operand must be a List: expected `{}`, got `{}`; {hint}",
-            expected.to_brief_string(),
-            actual.to_brief_string(),
-          ),
+    let arg = arguments
+      .next()
+      .filter(|argument| !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+      .ok_or_else(|| {
+        CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Arity,
+          "spread operand must be a List: expected a List after `&`, got no operand; pass a List containing the arguments intended for this call",
           "E_SPREAD_TYPE_MISMATCH",
           call_stack,
-          arg.get_location().or_else(|| call_location.clone()),
-        ));
-      }
+          marker.get_location().or_else(|| call_location.clone()),
+        )
+      })?;
+    if let Some(actual) = resolve_type_value(arg, scope_types)
+      && actual.prove_with_bindings(&expected, &mut HashMap::new()).is_mismatch()
+    {
+      let hint = if matches!(actual.as_ref(), CalcitTypeAnnotation::Set(_)) {
+        "convert the Set explicitly with `.to-list` before spreading"
+      } else {
+        "pass a List containing the arguments intended for this call"
+      };
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "spread operand must be a List: expected `{}`, got `{}`; {hint}",
+          expected.to_brief_string(),
+          actual.to_brief_string(),
+        ),
+        "E_SPREAD_TYPE_MISMATCH",
+        call_stack,
+        arg.get_location().or_else(|| call_location.clone()),
+      ));
     }
   }
   Ok(())

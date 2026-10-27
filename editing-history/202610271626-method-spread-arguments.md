@@ -7,10 +7,13 @@ Manuscript 的 0.31.0 迁移复现了 `m .dissoc key & keys` 在 native 只删�
 统一在构造已选择的调用时保留展开标记，覆盖后置、前置、trait origin 和无法内联的
 方法路径。类型证据仍用于选择目标；不改回开放 native call，不扩大 Dynamic，也不新增
 迁移规则或诊断编号。后置语法复用现有的非 List 展开检查。
+该检查同时要求每个 `&` 都有操作数，兼容模式也不能静默忽略末尾或连续标记。
 
 WASM 的 Map 删除器原来只读取展开列表第一项，混合参数还会把 `&` 当成表达式。
 改为按原顺序求值固定参数与展开 List，逐个删除所有 key；空 List 不贡献 key，
 总共没有 key 时仍失败。Map 接收者和每个参数只求值一次。
+不透明展开值复用已有 heap magic/tag 判断，在指针转换与 count/元素读取前确认 List；
+静态已证明的 List 保留直接路径。原边界脚本覆盖有效/空 List、Map、Set 和标量的真实执行。
 
 WASM 的字面量 List 展开还需复用普通调用的类型 specialization。普通同型 Map merge
 能够执行，若直接调用未 specialization 的 rest 函数体却会生成无效模块；字面量展开后

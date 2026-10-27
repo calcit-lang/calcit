@@ -128,7 +128,33 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
         .next()
         .filter(|argument| !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
         .ok_or("&map:dissoc expects a List after &")?;
-      let list = emit_ptr_to_i32(ctx, spread)?;
+      let value = ctx.alloc_local();
+      emit_expr(ctx, spread)?;
+      ctx.emit(Instruction::LocalSet(value));
+      if !infer_wasm_static_type(ctx, spread).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_))) {
+        // Open values must prove their runtime List representation before any
+        // pointer conversion or count/element load. Keep the typed fast path.
+        let is_heap = emit_is_heap_value(ctx, value);
+        ctx.emit(Instruction::LocalGet(is_heap));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(value));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::I32Const(4));
+        ctx.emit(Instruction::I32Sub);
+        ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+        ctx.emit(Instruction::I32Const(*ctx.tag_index.get("list").ok_or("list tag not found")? as i32));
+        ctx.emit(Instruction::I32Ne);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+      }
+      let list = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(list));
       let count = emit_load_count_i32(ctx, list);
       let index = ctx.alloc_i32(0);
       ctx.begin_block();
