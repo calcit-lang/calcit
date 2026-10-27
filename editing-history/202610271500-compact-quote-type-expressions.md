@@ -21,3 +21,9 @@ JS 运行时类型匹配和 WASM lowering 都不变。
 验证：`cargo test --lib type_expr`（含 core 全部 539 条 schema 的精简打印 → 写入 → 还原往返），
 `cargo test --bin calcit type_fail_compact`，`test-types.cirru` 的 `:compact-type-expr` 测试在 native/JS 运行，
 以及改写为精简写法的 test-generics/enum/traits/struct 用例。
+
+第二轮按结构批量改写了约 315 处类型位置（calcit-core 约 154 处，test-types-inference、
+def-value-schema fixture、test-traits、test-wasi-command 等）：只处理 `assert-type`、`unsafe-coerce`、
+`parse-cirru-edn-as`、`decode-map-as`（含 try- 变体）的类型参数和 `defstruct` 字段里的 `::` 列表，
+`quasiquote` 内部（core 宏模板）、含 tag 或未加引号叶子（值引用类型，如 `(:: 'List Person)`）、
+缺 `:return` 的 Fn 一律保留原样，保证语义不变。改写后用 `calcit edit format` 恢复排版。

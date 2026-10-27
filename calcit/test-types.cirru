@@ -301,8 +301,9 @@
             assert= true $ result:err? $ number->float32 0.1
             assert= (Result :ok 0.1) (number->float64 0.1)
             assert= ([] 127)
-              parse-cirru-edn-as "|[] 127" $ :: 'List 'Int8
-            assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (:: 'List 'Int8)
+              parse-cirru-edn-as "|[] 127" $ quote $ List Int8
+            assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128"
+              quote $ List Int8
             do true
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)

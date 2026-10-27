@@ -110,7 +110,8 @@
             %{} 'TestEntry
               :name |nested-writes-keep-callback-errors-and-enum-values
               :code $ quote $ let
-                  trace $ ref $ assert-type ([]) (:: 'List 'String)
+                  trace $ ref $ assert-type ([])
+                    quote $ List String
                   change $ fn (data key)
                     hint-fn $ {}
                       :args $ [] 'Dynamic 'Dynamic

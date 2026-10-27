@@ -4144,6 +4144,12 @@ fn preprocess_list_call(
       xs.drop_left(),
     ),
   };
+  let args = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructNew)) {
+    let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+    desugar_struct_field_types(&args, &ctx)?
+  } else {
+    args
+  };
   // A literal argument list has exact positional evidence and no observable
   // allocation identity. Lower only the canonical helper, not a same-name
   // user function, and leave nonliteral/spread-bearing lists on their own path.
@@ -14809,6 +14815,40 @@ pub fn preprocess_unsafe_coerce(
     target_form,
     desugar_compact_type_form(args.get(1).expect("declared unsafe-coerce type"), ctx)?,
   ]))
+}
+
+/// `defstruct` quotes each field type once more, so a compact field type reaches
+/// `&struct-def:new` as `([] :field (quote (quote …)))`. Swap the inner form for
+/// the canonical type code, still quoted, so every backend reads the same data.
+fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Result<CalcitList, CalcitErr> {
+  let mut changed = false;
+  let mut ys: Vec<Calcit> = Vec::with_capacity(args.len());
+  for arg in args.iter() {
+    if let Calcit::List(entry) = arg
+      && entry.len() == 3
+      && let Some(Calcit::List(quoted)) = entry.get(2)
+      && quoted.len() == 2
+      && match quoted.first() {
+        Some(Calcit::Syntax(CalcitSyntax::Quote, _)) => true,
+        Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "quote",
+        _ => false,
+      }
+      && let Some(inner) = quoted.get(1)
+      && crate::calcit::type_expr::desugar_quoted_form(inner).is_some()
+    {
+      let mut items: Vec<Calcit> = entry.iter().take(2).cloned().collect();
+      items.push(Calcit::from(vec![quoted[0].to_owned(), desugar_compact_type_form(inner, ctx)?]));
+      ys.push(Calcit::from(items));
+      changed = true;
+    } else {
+      ys.push(arg.to_owned());
+    }
+  }
+  Ok(if changed {
+    CalcitList::from(ys.as_slice())
+  } else {
+    args.to_owned()
+  })
 }
 
 /// Expand a compact `quote $ Fn …` type expression into its canonical form so

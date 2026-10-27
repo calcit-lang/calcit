@@ -12,7 +12,7 @@
       :defs $ {}
         'EdnEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EdnEnvelope (:request-id 'String)
-            :note $ :: 'Option 'String
+            :note $ quote $ Option String
             :outcome 'EdnOutcome
           :examples $ []
           :schema $ :: 'StructDef
@@ -226,9 +226,11 @@
         'edn-nominal-roundtrip-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-nominal-roundtrip-main! ()
             let
-                outcome $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
+                outcome $ EdnOutcome :ready $ assert-type ([] 1 -2)
+                  quote $ List Int32
                 envelope $ EdnEnvelope :request-id |r1 :note (Option :some "|hello world") :outcome outcome
-                typed-result $ assert-type (Result :ok outcome) (:: 'Result 'app.main/EdnOutcome 'String)
+                typed-result $ assert-type (Result :ok outcome)
+                  quote $ Result app.main/EdnOutcome String
               match
                 edn-parse-outcome $ format-cirru-edn outcome
                 (:err _) (quit! 1)
@@ -261,7 +263,7 @@
             :return $ :: 'Result 'app.main/EdnEnvelope 'String
         'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-int-list (text)
-            try-parse-cirru-edn-as text $ :: 'List 'Int32
+            try-parse-cirru-edn-as text $ quote $ List Int32
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -438,7 +440,7 @@
             :args $ []
         'edn-parse-nested-int-lists $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-nested-int-lists (text)
-            try-parse-cirru-edn-as text $ :: 'List $ :: 'List 'Int32
+            try-parse-cirru-edn-as text $ quote $ List (List Int32)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -462,7 +464,7 @@
             :tags $ #{} :core :edn :unit :wasi :wasm
         'edn-parse-nested-string-lists $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-nested-string-lists (text)
-            try-parse-cirru-edn-as text $ :: 'List $ :: 'List 'String
+            try-parse-cirru-edn-as text $ quote $ List (List String)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -483,7 +485,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
             :code $ quote $ do
               assert=
-                Result :ok $ EdnOutcome :ready $ assert-type ([] 1 -2) (:: 'List 'Int32)
+                Result :ok $ EdnOutcome :ready $ assert-type ([] 1 -2)
+                  quote $ List Int32
                 edn-parse-outcome "|%:: 'EdnOutcome 'ready ([] 1 -2)"
               assert=
                 Result :ok $ EdnOutcome :idle
@@ -516,7 +519,7 @@
             :args $ []
         'edn-parse-result-outcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-result-outcome (text)
-            try-parse-cirru-edn-as text $ :: 'Result 'app.main/EdnOutcome 'String
+            try-parse-cirru-edn-as text $ quote $ Result app.main/EdnOutcome String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -564,7 +567,7 @@
                 result:err? $ &list:nth (edn-parse-scalars) 13
         'edn-parse-string-int-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-string-int-map (text)
-            try-parse-cirru-edn-as text $ :: 'Map 'String 'Int32
+            try-parse-cirru-edn-as text $ quote $ Map String Int32
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -576,7 +579,7 @@
             :tags $ #{} :core :unit
         'edn-parse-string-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-string-list (text)
-            try-parse-cirru-edn-as text $ :: 'List 'String
+            try-parse-cirru-edn-as text $ quote $ List String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
@@ -588,7 +591,7 @@
             :tags $ #{} :core :unit
         'edn-parse-tag-string-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-tag-string-map (text)
-            try-parse-cirru-edn-as text $ :: 'Map 'Tag 'String
+            try-parse-cirru-edn-as text $ quote $ Map Tag String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
