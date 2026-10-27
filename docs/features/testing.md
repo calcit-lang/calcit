@@ -228,7 +228,7 @@ node scripts/run-core-tests.mjs --snapshot calcit.cirru --entry server --tag nod
 
 ### 差分随机测试
 
-`scripts/fuzz-primitives.mjs` 用固定随机种子生成数值、字符串与列表原语的调用，输入覆盖 NaN、±inf、`-0`、i32 与安全整数边界、非 ASCII 文本、空值和越界下标，再交给上面的运行器在各后端执行。每个调用的结果以 `turn-string` 文本输出，与 native 比较：native 返回时其它后端必须返回相同文本，native 报错时其它后端必须报错或 trap。
+`scripts/fuzz-primitives.mjs` 用固定随机种子生成数值、字符串与列表原语的调用，输入覆盖 NaN、±inf、`-0`、i32 与安全整数边界、非 ASCII 文本、空值和越界下标，再交给上面的运行器在各后端执行。数值与计数结果经 `to-string` 转成文本，其余标量按共享协议输出，再与 native 比较：native 返回时其它后端必须返回相同文本，native 报错时其它后端必须报错或 trap。
 
 ```bash
 # PR 中的小规模运行：每个原语 6 次调用
@@ -303,3 +303,33 @@ snapshot being tested. Keep `calcit/test-*.cirru`
 when a case verifies several definitions together, parser syntax, stateful
 behavior, JavaScript/WASM code generation, or a full program flow. Those files
 are integration fixtures rather than a substitute for definition-local tests.
+
+## 主仓库开发回归
+
+开发 Calcit 编译器和 runtime 时，在仓库根目录执行：
+
+```bash
+cargo test
+CALCIT_PROOF_AUDIT=0 CALCIT_LINT_CORE=1 yarn check-all
+```
+
+第二条命令使用与现有 CI 相同的通用语言 fixture 模式。CI 的入口是
+[`scripts/ci-check-all.mjs`](../../scripts/ci-check-all.mjs)，它将同一套
+`package.json` 中的 `check-all` 步骤分配到多个 runner。
+
+- `CALCIT_PROOF_AUDIT=0` 让通用 fixture 保留其有意测试的开放写法，严格类型诊断继续生效。
+- `CALCIT_LINT_CORE=1` 开启与 CI 一致的改写后节点校验，检查 lowering 是否保留类型证据。
+
+默认证明审计仍由完整回归中的
+[`scripts/check-strict-default.mjs`](../../scripts/check-strict-default.mjs)
+验证。该脚本主动清除 `CALCIT_PROOF_AUDIT`，执行默认审计的合法用例与错误拒绝用例；
+通用 fixture 模式不会替代这一门禁。对比本地与 CI 的结果时，先记录完整命令和上述两个环境变量。
+
+普通业务项目继续使用默认证明审计：
+
+```bash
+calcit calcit.cirru --check-only
+calcit fix --workflow strict --verify --format edn
+```
+
+上面的 fixture 环境变量仅用于 Calcit 主仓库回归，不应写入业务项目脚本或全局 shell 配置。
