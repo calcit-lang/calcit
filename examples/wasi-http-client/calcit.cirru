@@ -32,14 +32,14 @@
           :schema $ :: 'EnumDef
         'HttpRequest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HttpRequest (:method 'component-wasm-async-import.starter/HttpMethod) (:url 'String)
-            :headers $ quote $ List component-wasm-async-import.starter/HttpHeader
+            :headers $ :: 'List 'component-wasm-async-import.starter/HttpHeader
             :body 'component-wasm-async-import.starter/HttpBody
             :max-response-bytes 'UInt64
           :examples $ []
           :schema $ :: 'StructDef
         'HttpResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HttpResponse (:status 'UInt16)
-            :headers $ quote $ List component-wasm-async-import.starter/HttpHeader
+            :headers $ :: 'List 'component-wasm-async-import.starter/HttpHeader
             :body 'component-wasm-async-import.starter/HttpBody
           :examples $ []
           :schema $ :: 'StructDef
