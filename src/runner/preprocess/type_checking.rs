@@ -871,9 +871,21 @@ pub(crate) fn check_proc_arg_types(
     }
   }
 
-  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    return;
-  }
+  // Literal spread changes the call shape, not its argument contract. Keep
+  // ordinary checking (including eval) aligned with the proof traversal.
+  // Only inspect the expanded operands; leave the executable call unchanged.
+  let expanded_args;
+  let args = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    match super::type_inference::expand_literal_call_arguments(args) {
+      Ok(arguments) => {
+        expanded_args = arguments;
+        &expanded_args
+      }
+      Err(_) => return,
+    }
+  } else {
+    args
+  };
 
   // Check argument count
   let Some(arity) = proc.arity() else {

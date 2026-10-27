@@ -13,6 +13,54 @@ const options = { encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16
 const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 
 try {
+  // #2432: eval and Snapshot calls must check literal-spread element types
+  // during ordinary preprocessing, independently of the extra proof audit.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+    "--target", "test-types-inference.main/test-list-inference", "--tag", "spread-element-contract",
+    "--backend", "native,js,wasm"], { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+  const elementSnapshot = join(project, "element-contract.cirru");
+  await copyFile("calcit/add.cirru", elementSnapshot);
+  const elementRun = (...args) => execFileSync(binary, [elementSnapshot, ...args], options);
+  elementRun("query", "config", "--format", "edn");
+  elementRun("query", "def", "app.main/main!", "--format", "edn");
+  for (const call of [
+    "xs .concat ([] 2) & ([] ([] |wrong))",
+    ".concat xs ([] 2) & ([] ([] |wrong))",
+    "&list:concat xs ([] 2) & ([] ([] |wrong))",
+    "&list:concat xs & ([]) ([] 2) & ([] ([] |wrong))",
+    "&list:concat xs ([] 2) ([] |wrong)",
+  ]) {
+    const expression = `let\n    append-wrong $ fn (xs)\n      hint-fn $ {}\n        :args $ [] $ :: 'List 'Number\n        :return $ :: 'List 'Number\n      ${call}\n    result $ append-wrong $ [] 1\n  &+ (.unwrap $ .get result 2) 1`;
+    // This effect precedes the invalid call: runtime failure is too late.
+    const source = `println |spread-must-not-run\n${expression}`;
+    const transaction = JSON.stringify([
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn main! ()\n${source.split("\n").map(line => `  ${line}`).join("\n")}\n  , &unit`],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ]);
+    const preview = JSON.parse(elementRun("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+    elementRun("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+    for (const audit of ["0", "1"]) {
+      for (const args of [
+        ["eval", source], ["eval", "--stdin"],
+        [elementSnapshot, "--check-only", "--all-defs"], [elementSnapshot],
+        [elementSnapshot, "--emit-path", output, "js"],
+        [elementSnapshot, "--emit-path", output, "wasm"],
+        [elementSnapshot, "--emit-path", output, "wasi"],
+      ]) {
+        const rejected = spawnSync(binary, args, { ...options, input: source,
+          env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
+        assert.ifError(rejected.error);
+        assert.equal(rejected.status, 1, `${call}: ${args[0]} audit=${audit}\n${rejected.stdout}\n${rejected.stderr}`);
+        assert.match(rejected.stdout + rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
+        assert.match(rejected.stdout + rejected.stderr,
+          args.includes("--all-defs") ? /app\.main\/main!/ : /app\.main\/main!.*@\d/);
+        assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
+        assert.doesNotMatch(rejected.stderr, /&\+ requires 2 numbers/);
+      }
+    }
+  }
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   run("test", "--tag", "spread-boundary", "--require-match");

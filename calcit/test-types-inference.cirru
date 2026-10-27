@@ -2013,6 +2013,25 @@
                 assert= 3 $ keep-threaded ([] |a |b) 3
                 assert= |empty $ keep-threaded ([]) |empty
               :tags $ #{} :fold-method-context :unit
+            %{} 'TestEntry (:name |literal-spread-preserves-element-contract)
+              :code $ quote $ let
+                  append-numbers $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return $ :: 'List 'Number
+                    xs .concat ([] 2) & $ [] $ [] 3
+                  transport $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Dynamic
+                      :return $ :: 'List 'Dynamic
+                    xs .concat & $ [] $ [] |value
+                assert= ([] 1 2 3)
+                  append-numbers $ [] 1
+                assert= ([] 1 |value)
+                  transport $ [] 1
+                assert= ([] 1 2 3)
+                  &list:concat ([] 1) & ([]) ([] 2) & $ [] $ [] 3
+              :tags $ #{} :spread-element-contract :unit
         'test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map-inference ()
             let
