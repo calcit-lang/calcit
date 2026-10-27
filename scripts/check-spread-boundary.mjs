@@ -21,7 +21,7 @@ try {
   const elementSnapshot = join(project, "element-contract.cirru");
   await copyFile("calcit/add.cirru", elementSnapshot);
   const elementRun = (...args) => execFileSync(binary, [elementSnapshot, ...args], options);
-  for (const expression of ["&+ & ([] 1)", "&+ & ([] 1 2 3)", "&list:concat & ([])"]) {
+  for (const expression of ["&+ & ([] 1)", "&+ & ([] 1 2 3)", "&map:dissoc & ([])"]) {
     const rejected = spawnSync(binary, ["eval", `println |spread-must-not-run\n${expression}`], options);
     assert.ifError(rejected.error);
     assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
