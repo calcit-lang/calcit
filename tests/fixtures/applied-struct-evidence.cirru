@@ -178,7 +178,7 @@
           :examples $ []
           :schema $ :: 'StructDef
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny 'Int8) (:wide 'UInt16) (:single 'Float32)
+          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny :int8) (:wide 'UInt16) (:single 'Float32)
           :examples $ []
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)

@@ -8,6 +8,21 @@ use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, C
 /// `hint-fn $ quote $ Fn …` is read as the schema map of its canonical `Fn`, so
 /// every later reader of `hint-fn` sees one shape. Schema derivation reads the
 /// hint before preprocessing, so a malformed payload is reported here.
+/// Drop `(; …)` comment lists the way the reader does, so a commented compact
+/// signature desugars like the uncommented one.
+fn strip_comments(node: &Cirru) -> Cirru {
+  match node {
+    Cirru::Leaf(_) => node.to_owned(),
+    Cirru::List(items) => Cirru::List(
+      items
+        .iter()
+        .filter(|item| !matches!(item, Cirru::List(xs) if xs.len() > 1 && xs[0] == Cirru::leaf(";")))
+        .map(strip_comments)
+        .collect(),
+    ),
+  }
+}
+
 fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
   if !matches!(ys.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "hint-fn") || !matches!(ys.len(), 2 | 3) {
     return None;
@@ -18,7 +33,7 @@ fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
   if quoted.len() != 2 || quoted[0] != Cirru::leaf("quote") {
     return None;
   }
-  let payload = &quoted[1];
+  let payload = &strip_comments(&quoted[1]);
   if !matches!(payload, Cirru::List(items) if items.first() == Some(&Cirru::leaf("Fn")))
     || !crate::calcit::type_expr::is_compact_payload(payload)
   {
@@ -34,6 +49,12 @@ fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
 }
 
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
+  code_to_calcit_in(xs, ns, def, coord, false)
+}
+
+/// `in_quote` marks a subtree under `quote`: it is data, so a `hint-fn` list
+/// there keeps its written shape.
+fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote: bool) -> Result<Calcit, String> {
   let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
     at_ns: Arc::from(ns),
     at_def: Arc::from(def),
@@ -146,13 +167,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       },
     },
     Cirru::List(ys) => {
-      if let Some(schema) = desugar_compact_hint_fn(ys) {
+      if !in_quote && let Some(schema) = desugar_compact_hint_fn(ys) {
         let schema = schema?;
         let mut rewritten = ys.to_owned();
         let last = rewritten.len() - 1;
         rewritten[last] = schema;
-        return code_to_calcit(&Cirru::List(rewritten), ns, def, coord.to_vec());
+        return code_to_calcit_in(&Cirru::List(rewritten), ns, def, coord.to_vec(), in_quote);
       }
+      let child_in_quote = in_quote || ys.first() == Some(&Cirru::leaf("quote"));
       let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
         if idx > 65535 {
@@ -204,7 +226,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
           }
         }
 
-        zs.push(code_to_calcit(y, ns, def, next_coord)?);
+        zs.push(code_to_calcit_in(y, ns, def, next_coord, child_in_quote)?);
       }
       Ok(Calcit::from(CalcitList::Vector(zs)))
     }
@@ -531,6 +553,19 @@ mod tests {
     )
     .expect("canonical hint");
     assert_eq!(compact.to_string(), canonical.to_string());
+
+    let commented = code_to_calcit(
+      &parse("hint-fn $ quote $ Fn Number (; note) (-> String) (:async)"),
+      "app",
+      "f",
+      vec![],
+    )
+    .expect("commented compact hint");
+    assert_eq!(commented.to_string(), canonical.to_string());
+
+    // Quoted data keeps its written shape, even when it is not a valid signature.
+    let data = code_to_calcit(&parse("quote $ hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect("quoted hint data");
+    assert!(data.to_string().contains("Fn"), "{data}");
 
     let error = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect_err("malformed hint");
     assert!(error.contains("E_TYPE_EXPR_SYNTAX"), "{error}");
