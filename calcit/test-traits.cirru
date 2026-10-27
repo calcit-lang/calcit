@@ -164,10 +164,8 @@
           :code $ quote $ defimpl AliasGenericImpl AliasGenericOps
             .read-value $ fn (self dispatch!)
               hint-fn $ {}
-                :args $ [] 'test-traits.main/AliasSharedBase $ :: 'Fn
-                  {}
-                    :args $ [] 'Number
-                    :return 'R
+                :args $ [] 'test-traits.main/AliasSharedBase $ quote
+                  Fn Number $ -> R
                 :return 'R
                 :generics $ [] 'R
               dispatch! 0
@@ -490,7 +488,7 @@
                   supply $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'List 'Number
+                      :return $ quote $ List Number
                     swap! calls inc
                     [] 1 2
                 assert= 13 $ &trait-call RestBoxOps :sum (RestBox :value 10) |numbers & $ supply
@@ -543,7 +541,7 @@
             .find $ fn (self text)
               hint-fn $ {}
                 :args $ [] 'test-traits.main/ResultBox 'String
-                :return $ :: 'Option 'Number
+                :return $ quote $ Option Number
               Option :some $ :value self
           :examples $ []
           :schema $ :: 'Impl
@@ -1806,12 +1804,12 @@
                 to-some $ fn (x)
                   hint-fn $ {}
                     :args $ [] 'Number
-                    :return $ :: 'Option 'Number
+                    :return $ quote $ Option Number
                   Option :some $ inc x
                 to-ok $ fn (x)
                   hint-fn $ {}
                     :args $ [] 'Number
-                    :return $ :: 'Result 'Number 'String
+                    :return $ quote $ Result Number String
                   Result :ok $ inc x
               assert= true $ opt-some .some?
               assert= true $ opt-none .none?

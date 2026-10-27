@@ -76,7 +76,7 @@
           :code $ quote $ defimpl SliceReceiverImpl Sliceable
             .slice $ fn (self start end)
               hint-fn $ {}
-                :args $ [] 'test-types-inference.main/SliceReceiver 'Number $ :: 'Option 'Number
+                :args $ [] 'test-types-inference.main/SliceReceiver 'Number $ quote (Option Number)
                 :return 'test-types-inference.main/SliceReceiver
               struct-with self
                 :n $ + (:n self) start
@@ -466,7 +466,7 @@
                   supply $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'List 'String
+                      :return $ quote $ List String
                     swap! calls inc
                     [] |one
                 assert= (Option :some |one)
@@ -782,19 +782,19 @@
                 empty-list $ fn (item)
                   hint-fn $ {}
                     :args $ [] 'T
-                    :return $ :: 'List 'T
+                    :return $ quote $ List T
                     :generics $ [] 'T
                   []
                 empty-map $ fn (item)
                   hint-fn $ {}
                     :args $ [] 'T
-                    :return $ :: 'Map 'Tag 'T
+                    :return $ quote $ Map Tag T
                     :generics $ [] 'T
                   if (= item item) ({}) ({})
                 empty-set $ fn (item)
                   hint-fn $ {}
                     :args $ [] 'T
-                    :return $ :: 'Set 'T
+                    :return $ quote $ Set T
                     :generics $ [] 'T
                   #{}
               assert= ({}) (empty-map value)
@@ -1093,27 +1093,27 @@
                 assert= 7 $
                   fn (end)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Option 'Number
+                      :args $ [] $ quote (Option Number)
                       :return 'Number
                     end.unwrap-or 7
                 assert= 11 $
                   fn (end)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Option 'Number
+                      :args $ [] $ quote (Option Number)
                       :return 'Number
                     end.unwrap-or 7
                   Option :some 11
                 assert= 7 $
                   fn (end)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Option 'Number
+                      :args $ [] $ quote (Option Number)
                       :return 'Number
                     end.unwrap-or 7
                   Option :none
                 assert= 6 $
                   fn (n acc)
                     hint-fn $ {}
-                      :args $ [] 'Number $ :: 'Option 'Number
+                      :args $ [] 'Number $ quote (Option Number)
                       :return 'Number
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
@@ -1122,7 +1122,7 @@
                 assert= 16 $
                   fn (n acc)
                     hint-fn $ {}
-                      :args $ [] 'Number $ :: 'Option 'Number
+                      :args $ [] 'Number $ quote (Option Number)
                       :return 'Number
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
@@ -1234,7 +1234,7 @@
                 wrap-value $ fn (other)
                   hint-fn $ {}
                     :args $ [] 'T
-                    :return $ :: 'Option 'T
+                    :return $ quote $ Option T
                   Option :some other
               wrap-value value
           :examples $ []
@@ -1568,7 +1568,7 @@
                   produce-list $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'List 'Number
+                      :return $ quote $ List Number
                     println |predicate-list
                     [] 1 2
                   produce-bool $ fn ()
@@ -1864,25 +1864,33 @@
                   keep-prefix $ fn (xs seed)
                     hint-fn $ {}
                       :generics $ [] 'Elem 'Acc
-                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :args $ []
+                        quote $ List Elem
+                        , 'Acc
                       :return 'Acc
                     foldl xs seed $ fn (acc item) acc
                   keep-method $ fn (xs seed)
                     hint-fn $ {}
                       :generics $ [] 'Elem 'Acc
-                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :args $ []
+                        quote $ List Elem
+                        , 'Acc
                       :return 'Acc
                     .foldl xs seed $ fn (acc item) acc
                   keep-postfix $ fn (xs seed)
                     hint-fn $ {}
                       :generics $ [] 'Elem 'Acc
-                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :args $ []
+                        quote $ List Elem
+                        , 'Acc
                       :return 'Acc
                     xs .foldl seed $ fn (acc item) acc
                   keep-threaded $ fn (xs seed)
                     hint-fn $ {}
                       :generics $ [] 'Elem 'Acc
-                      :args $ [] (:: 'List 'Elem) 'Acc
+                      :args $ []
+                        quote $ List Elem
+                        , 'Acc
                       :return 'Acc
                     -> xs $ .foldl seed $ fn (acc item) acc
                 assert= |seed $ keep-prefix ([] 1 2) |seed

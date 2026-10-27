@@ -28,7 +28,7 @@
           :schema $ :: 'StructDef
         'OuterLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OuterLike ([] 'Db)
-            :reel $ :: 'app.applied-model/ReelLike 'Db
+            :reel $ quote $ app.applied-model/ReelLike Db
           :examples $ []
           :schema $ :: 'StructDef
         'PairLike $ %{} 'CodeEntry (:doc |)
@@ -41,7 +41,7 @@
           :schema $ :: 'StructDef
         'ReelLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ReelLike ([] 'Db) (:base 'Db) (:db 'Db)
-            :records $ :: 'List $ :: 'List 'Dynamic
+            :records $ quote $ List (List Dynamic)
             :merged? 'Bool
           :examples $ []
           :schema $ :: 'StructDef
@@ -164,21 +164,21 @@
       :defs $ {}
         'CoreNominalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CoreNominalBox
-            :maybe $ :: 'Option 'Number
-            :qualified $ :: 'calcit.core/Option 'Number
-            :outcome $ :: 'Result 'Number 'String
+            :maybe $ quote $ Option Number
+            :qualified $ quote $ calcit.core/Option Number
+            :outcome $ quote $ Result Number String
           :examples $ []
           :schema $ :: 'StructDef
         'NilBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NilBox
-            :opt $ :: 'Optional 'Number
+            :opt $ quote $ Optional Number
             :none 'Nil
-            :host $ :: 'JsNullish 'Number
+            :host $ quote $ JsNullish Number
           :examples $ []
           :schema $ :: 'StructDef
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny :int8) (:wide 'UInt16) (:single 'Float32)
+          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny 'Int8) (:wide 'UInt16) (:single 'Float32)
           :examples $ []
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)

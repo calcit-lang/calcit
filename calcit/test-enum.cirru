@@ -274,7 +274,7 @@
                   hint-fn $ {}
                     :generics $ [] 'T
                     :where $ {} $ 'T Debug
-                    :args $ [] $ :: 'Maybe1 'T
+                    :args $ [] $ quote (Maybe1 T)
                     :return 'String
                   match v
                     (:none) |none
@@ -283,7 +283,7 @@
                   hint-fn $ {}
                     :generics $ [] 'T 'U
                     :where $ {} ('T Debug) ('U Debug)
-                    :args $ [] $ :: 'Duo 'T 'U
+                    :args $ [] $ quote (Duo T U)
                     :return 'String
                   match v
                     (:pair left right)

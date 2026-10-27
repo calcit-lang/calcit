@@ -276,7 +276,7 @@
                   supply $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'List 'String
+                      :return $ quote $ List String
                     swap! calls inc
                     [] |one
                 assert= |one $ .emit host & $ supply

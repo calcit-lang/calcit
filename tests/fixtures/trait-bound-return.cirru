@@ -119,7 +119,7 @@
                     update-in data ([] key)
                       fn (current)
                         hint-fn $ {}
-                          :args $ [] $ :: 'Option 'Dynamic
+                          :args $ [] $ quote (Option Dynamic)
                           :return 'Number
                         reset! trace $ append @trace |callback
                         , 4
@@ -182,7 +182,7 @@
             hint-fn $ {}
               :args $ []
               :generics $ [] 'T
-              :return $ :: 'List 'T
+              :return $ quote $ List T
             []
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -194,7 +194,8 @@
             :tags $ #{} :body-hint-contract :unit
         'partial-body-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-body-rest (& values)
-            hint-fn $ {} $ :return (:: 'List 'T)
+            hint-fn $ {} $ :return
+              quote $ List T
             , values
           :examples $ []
           :schema $ :: 'Fn $ {} (:rest 'T)
@@ -226,7 +227,8 @@
               :tags $ #{} :body-hint-contract :unit
         'partial-empty-body-return $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-empty-body-return ()
-            hint-fn $ {} $ :return (:: 'List 'T)
+            hint-fn $ {} $ :return
+              quote $ List T
             []
           :examples $ []
           :schema $ :: 'Fn $ {}

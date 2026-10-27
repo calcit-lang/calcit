@@ -211,13 +211,17 @@
             let
                 f1 $ fn (a ? b c)
                   hint-fn $ {}
-                    :args $ [] 'Tag (:: 'Optional 'Tag) (:: 'Optional 'Tag)
-                    :return $ :: 'List $ :: 'Optional 'Tag
+                    :args $ [] 'Tag
+                      quote $ Optional Tag
+                      quote $ Optional Tag
+                    :return $ quote $ List (Optional Tag)
                   [] a b c
                 f2 $ fn (a maybe-label maybe-count)
                   hint-fn $ {}
-                    :args $ [] 'Number (:: 'Option 'String) (:: 'Option 'Number)
-                    :return $ :: 'List 'Dynamic
+                    :args $ [] 'Number
+                      quote $ Option String
+                      quote $ Option Number
+                    :return $ quote $ List Dynamic
                   [] a maybe-label maybe-count
               assert= (f1 :a) ([] :a nil nil)
               assert= (f1 :a :b) ([] :a :b nil)

@@ -368,15 +368,42 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |exposes-cirru-quote-methods)
-            :code $ quote $ let
-                methods $ &methods-of $ cirru-quote x
-              do
-                assert= true $ includes? methods .list?
-                assert= true $ includes? methods .leaf?
-                assert= true $ includes? methods .to-list
-                assert= true $ includes? methods .leaf-text
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |exposes-cirru-quote-methods)
+              :code $ quote $ let
+                  methods $ &methods-of $ cirru-quote x
+                do
+                  assert= true $ includes? methods .list?
+                  assert= true $ includes? methods .leaf?
+                  assert= true $ includes? methods .to-list
+                  assert= true $ includes? methods .leaf-text
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |propagates-receiver-errors)
+              :code $ quote $ let
+                  *calls $ ref 0
+                  broken-quote $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'CirruQuote
+                    reset! *calls $ inc @*calls
+                    raise |quote-receiver-failed
+                assert= |quote-receiver-failed $ try
+                  .to-list $ broken-quote
+                  fn (message) message
+                assert= 1 @*calls
+                assert= |quote-receiver-failed $ try
+                  .leaf-text $ broken-quote
+                  fn (message) message
+                assert= 2 @*calls
+                assert= |quote-receiver-failed $ try
+                  .list? $ broken-quote
+                  fn (message) message
+                assert= 3 @*calls
+                assert= |quote-receiver-failed $ try
+                  .leaf? $ broken-quote
+                  fn (message) message
+                assert= 4 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
@@ -1869,8 +1896,10 @@
             reduce xs ([])
               defn %&list:filter (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'T) 'T
-                  :return $ :: 'List 'T
+                  :args $ []
+                    quote $ List T
+                    , 'T
+                  :return $ quote $ List T
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1934,7 +1963,9 @@
             foldr-shortcut xs (Option :none) (Option :none)
               fn (_acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Option 'T) 'T
+                  :args $ []
+                    quote $ Option T
+                    , 'T
                   :return 'Enum
                 if (f x)
                   :: true $ Option :some x
@@ -2112,10 +2143,8 @@
               :code $ quote $ let
                   all-proven $ fn (xs predicate)
                     hint-fn $ {}
-                      :args $ [] 'Dynamic $ :: 'Fn
-                        {}
-                          :args $ [] 'Dynamic
-                          :return 'Bool
+                      :args $ [] 'Dynamic $ quote
+                        Fn Dynamic $ -> Bool
                       :return 'Bool
                     &list:foldl-shortcut xs true true $ fn (acc item)
                       if (predicate item) (:: false acc) (:: true false)
@@ -2220,8 +2249,10 @@
             foldl xs ([])
               defn %&list:map (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'U) 'T
-                  :return $ :: 'List 'U
+                  :args $ []
+                    quote $ List U
+                    , 'T
+                  :return $ quote $ List U
                 append acc $ f x
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2292,12 +2323,14 @@
               :code $ quote $ let
                   consume $ fn (pairs)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List (:: 'List 'Dynamic)
+                      :args $ [] $ quote
+                        List $ List Dynamic
                       :return 'Number
                     count pairs
                   produce $ fn (tasks)
                     hint-fn $ {} (:return 'Number)
-                      :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+                      :args $ [] $ quote
+                        Map String $ Map Tag Dynamic
                     consume $ &list:map-pair (&map:to-list tasks)
                       fn (k task) ([] k 4)
                 assert= 1 $ produce $ {}
@@ -2307,8 +2340,9 @@
               :code $ quote $ let
                   produce $ fn (tasks)
                     hint-fn $ {}
-                      :return $ :: 'List 'Number
-                      :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+                      :return $ quote $ List Number
+                      :args $ [] $ quote
+                        Map String $ Map Tag Dynamic
                     &list:map-pair (&map:to-list tasks)
                       fn (k task) 4
                 assert= ([] 4)
@@ -2422,8 +2456,10 @@
             foldl xs ([])
               defn %&list:numbers (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'Number) 'Dynamic
-                  :return $ :: 'List 'Number
+                  :args $ []
+                    quote $ List Number
+                    , 'Dynamic
+                  :return $ quote $ List Number
                 if (number? x) (append acc x) (raise "|expected a Number item")
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2731,8 +2767,10 @@
             &map:fold-kv xs (&map:empty xs)
               defn %&map:filter (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) 'K 'V
-                  :return $ :: 'Map 'K 'V
+                  :args $ []
+                    quote $ Map K V
+                    , 'K 'V
+                  :return $ quote $ Map K V
                 if
                   f $ [] key value
                   &map:assoc acc key value
@@ -2777,8 +2815,10 @@
             &map:fold-kv xs (&map:empty xs)
               fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) 'K 'V
-                  :return $ :: 'Map 'K 'V
+                  :args $ []
+                    quote $ Map K V
+                    , 'K 'V
+                  :return $ quote $ Map K V
                 if (f key value) (&map:assoc acc key value) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2872,8 +2912,10 @@
             &map:fold-kv xs ({})
               fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) 'K 'V
-                  :return $ :: 'Map 'Dynamic 'Dynamic
+                  :args $ []
+                    quote $ Map Dynamic Dynamic
+                    , 'K 'V
+                  :return $ quote $ Map Dynamic Dynamic
                 &let
                   result $ f $ [] key value
                   assert "|expected pair returned when mapping hashmap" $ and (list? result)
@@ -2914,8 +2956,10 @@
               foldl xs ([])
                 defn %&map:map-list (acc pair)
                   hint-fn $ {}
-                    :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
-                    :return $ :: 'List 'U
+                    :args $ []
+                      quote $ List U
+                      quote $ List Dynamic
+                    :return $ quote $ List U
                   append acc $ f pair
               raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
           :examples $ []
@@ -3299,8 +3343,10 @@
             reduce (&set:to-list xs) (#{})
               defn %&set:filter (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Set 'T) 'T
-                  :return $ :: 'Set 'T
+                  :args $ []
+                    quote $ Set T
+                    , 'T
+                  :return $ quote $ Set T
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -3341,8 +3387,10 @@
             reduce (&set:to-list xs) (#{})
               defn %&set:map (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'Set 'U) 'T
-                  :return $ :: 'Set 'U
+                  :args $ []
+                    quote $ Set U
+                    , 'T
+                  :return $ quote $ Set U
                 &include acc $ f x
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -4586,15 +4634,15 @@
               :code $ quote $ let
                   project $ fn (input)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Result 'Number 'String
-                      :return $ :: 'Result 'Number 'String
+                      :args $ [] $ quote (Result Number String)
+                      :return $ quote $ Result Number String
                     match input
                       (:ok value) (Result :ok value)
                       (:err reason) (Result :err reason)
                   choose $ fn (flag)
                     hint-fn $ {}
                       :args $ [] 'Bool
-                      :return $ :: 'Result 'Number 'String
+                      :return $ quote $ Result Number String
                     if flag (Result :ok 1) (Result :err |failed)
                 assert= (Result :ok 1)
                   project $ Result :ok 1
@@ -4776,7 +4824,7 @@
                   make-source $ fn (value)
                     hint-fn $ {}
                       :args $ [] 'Dynamic
-                      :return $ :: 'Ref 'Dynamic
+                      :return $ quote $ Ref Dynamic
                     ref value
                   source $ make-source nil
                   observed $ ref 0
@@ -5322,8 +5370,8 @@
               :code $ quote $ let
                   write $ fn (db)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Map 'Tag 'Dynamic
-                      :return $ :: 'Map 'Tag 'Dynamic
+                      :args $ [] $ quote (Map Tag Dynamic)
+                      :return $ quote $ Map Tag Dynamic
                     assoc-in db ([] :repo :current) |main
                 assert=
                   {}
@@ -5340,8 +5388,9 @@
               :code $ quote $ let
                   write $ fn (db)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Map 'Tag (:: 'Map 'String 'Dynamic)
-                      :return $ :: 'Map 'Tag $ :: 'Map 'String 'Dynamic
+                      :args $ [] $ quote
+                        Map Tag $ Map String Dynamic
+                      :return $ quote $ Map Tag (Map String Dynamic)
                     assoc-in db ([] :repo |branch :current) |main
                 assert=
                   {} $ :repo $ {}
@@ -5356,8 +5405,10 @@
               :code $ quote $ let
                   write $ fn (db key)
                     hint-fn $ {}
-                      :args $ [] (:: 'Map 'K 'Dynamic) 'K
-                      :return $ :: 'Map 'K 'Dynamic
+                      :args $ []
+                        quote $ Map K Dynamic
+                        , 'K
+                      :return $ quote $ Map K Dynamic
                       :generics $ [] 'K
                     assoc-in db ([] key) |main
                 assert=
@@ -5382,7 +5433,7 @@
                   make-root $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'Map 'Tag 'Dynamic
+                      :return $ quote $ Map Tag Dynamic
                     assert= 0 @trace
                     reset! trace 1
                     {} $ :kept 7
@@ -5735,24 +5786,39 @@
             :args $ [] 'CirruQuote
             :return $ :: 'Option 'String
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-token-text)
-            :code $ quote $ do
-              assert= (Option :some |x)
-                .leaf-text $ cirru-quote x
-              assert= (Option :some |:k)
-                .leaf-text $ cirru-quote :k
-              assert= (Option :some ||x)
-                .leaf-text $ cirru-quote |x
-              assert= (Option :some "|中文")
-                .leaf-text $ cirru-quote "中文"
-              assert= (Option :none)
-                .leaf-text $ cirru-quote $ a b
-              assert= (Option :none)
-                .leaf-text $ cirru-quote $
-              assert-type
-                .leaf-text $ cirru-quote x
-                quote $ Option String
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-token-text)
+              :code $ quote $ do
+                assert= (Option :some |x)
+                  .leaf-text $ cirru-quote x
+                assert= (Option :some |:k)
+                  .leaf-text $ cirru-quote :k
+                assert= (Option :some ||x)
+                  .leaf-text $ cirru-quote |x
+                assert= (Option :some "|中文")
+                  .leaf-text $ cirru-quote "中文"
+                assert= (Option :none)
+                  .leaf-text $ cirru-quote $ a b
+                assert= (Option :none)
+                  .leaf-text $ cirru-quote $
+                assert-type
+                  .leaf-text $ cirru-quote x
+                  quote $ Option String
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-receiver-once)
+              :code $ quote $ let
+                  *calls $ ref 0
+                assert= (Option :some "|中文")
+                  .leaf-text $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote "中文"
+                assert= 1 @*calls
+                assert= (Option :none)
+                  .leaf-text $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote $ a b
+                assert= 2 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote:leaf? $ %{} 'CodeEntry
           :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf?。根节点为 leaf 时返回 true。"
           :code $ quote $ defn cirru-quote:leaf? (x)
@@ -5835,6 +5901,29 @@
                         .to-list line
                 (:err message) (raise message)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-receivers-once)
+              :code $ quote $ let
+                  *calls $ ref 0
+                assert=
+                  Option :some $ [] |a |b
+                  .to-list $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote $ a b
+                assert= 1 @*calls
+                assert= (Option :none)
+                  .to-list $ do
+                    reset! *calls $ inc @*calls
+                    cirru-quote token
+                assert= 2 @*calls
+                assert= true $ .list? $ do
+                  reset! *calls $ inc @*calls
+                  cirru-quote $ a b
+                assert= 3 @*calls
+                assert= true $ .leaf? $ do
+                  reset! *calls $ inc @*calls
+                  cirru-quote token
+                assert= 4 @*calls
+              :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)
             &= (type-of x) :cirru-quote
@@ -7253,7 +7342,7 @@
             &let
               requires-entry? $ fn (entry)
                 hint-fn $ {}
-                  :args $ [] $ :: 'List 'T
+                  :args $ [] $ quote (List T)
                   :return 'Bool
                   :generics $ [] 'T
                 and
@@ -7274,7 +7363,7 @@
                   normalized $ &list:map
                     &list:filter entries $ fn (entry)
                       hint-fn $ {}
-                        :args $ [] $ :: 'List 'T
+                        :args $ [] $ quote (List T)
                         :return 'Bool
                         :generics $ [] 'T
                       not $ requires-entry? entry
@@ -7384,22 +7473,22 @@
               :code $ quote $ let
                   head-or $ fn (fallback xs)
                     hint-fn $ {}
-                      :args $ [] 'Number $ :: 'List 'Number
+                      :args $ [] 'Number $ quote (List Number)
                       :return 'Number
                     &+ 0 $ match (destruct-list xs)
                       (:some h _) h
                       (:none) fallback
                   tail-size $ fn (xs)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Number
+                      :args $ [] $ quote (List Number)
                       :return 'Number
                     match (destruct-list xs)
                       (:some _ t) (&list:count t)
                       (:none) -1
                   head-and-count $ fn (xs)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Number
-                      :return $ :: 'List 'Number
+                      :args $ [] $ quote (List Number)
+                      :return $ quote $ List Number
                     match (destruct-list xs)
                       (:none) ([])
                       (:some h t)
@@ -7421,7 +7510,7 @@
               :code $ quote $ let
                   sum-from $ fn (acc xs)
                     hint-fn $ {}
-                      :args $ [] 'Number $ :: 'List 'Number
+                      :args $ [] 'Number $ quote (List Number)
                       :return 'Number
                     match (destruct-list xs)
                       (:none) acc
@@ -7435,7 +7524,7 @@
               :code $ quote $ let
                   report $ fn (xs)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Number
+                      :args $ [] $ quote (List Number)
                       :return 'Number
                     match (destruct-list xs)
                       (:none) (println |empty)
@@ -7627,22 +7716,57 @@
                 [] & $ [] 1 |two
               :tags $ #{} :core :spread-boundary :unit
             %{} 'TestEntry (:name |fixed-call-spread-evaluates-arguments-once)
-              :code $ quote $ assert= ([] 3 |ab)
+              :code $ quote $ do
+                assert= ([] 3 |ab)
+                  let
+                      *order $ ref |
+                      f $ fn (a b)
+                        hint-fn $ {}
+                          :args $ [] (quote Number) (quote Number)
+                          :return $ quote Number
+                        + a b
+                      result $ f & $ []
+                        do
+                          reset! *order $ str @*order |a
+                          , 1
+                        do
+                          reset! *order $ str @*order |b
+                          , 2
+                    [] result @*order
                 let
                     *order $ ref |
-                    f $ fn (a b)
-                      hint-fn $ {}
-                        :args $ [] (quote Number) (quote Number)
-                        :return $ quote Number
-                      + a b
-                    result $ f & $ []
+                    result $
                       do
-                        reset! *order $ str @*order |a
-                        , 1
-                      do
-                        reset! *order $ str @*order |b
-                        , 2
-                  [] result @*order
+                        reset! *order $ str @*order |r
+                        {} (|a 1) (|b 2) (|c 3) (|d 4)
+                      , .dissoc
+                        do
+                          reset! *order $ str @*order |a
+                          , |a
+                        , &
+                          do
+                            reset! *order $ str @*order |s
+                            [] |b
+                          do
+                            reset! *order $ str @*order |c
+                            , |c
+                  assert=
+                    {} $ |d 4
+                    , result
+                  assert= |rasc @*order
+                  reset! *order |
+                  assert= |spread-failed $ try
+                      {} $ |a 1
+                      , .dissoc
+                        do
+                          reset! *order $ str @*order |a
+                          , |a
+                        , & (raise |spread-failed)
+                          do
+                            reset! *order $ str @*order |c
+                            , |c
+                    fn (message) message
+                  assert= |a @*order
               :tags $ #{} :core :spread-proof :unit
             %{} 'TestEntry (:name |fixed-call-direct-evaluates-arguments-once)
               :code $ quote $ assert= ([] 3 |ab)
@@ -7675,6 +7799,40 @@
                 try (dissoc 1 :a)
                   fn (message) |rejected
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-spread-keeps-fixed-and-tail-keys)
+              :code $ quote $ let
+                  m $ {} (|a 1) (|b 2) (|c 3)
+                  expected $ {} $ |c 3
+                  remove-tail $ fn (source key tail)
+                    hint-fn $ {}
+                      :args $ []
+                        quote $ Map String Number
+                        , 'String $ quote (List String)
+                      :return $ quote $ Map String Number
+                    source .dissoc key & tail
+                assert= expected $ m .dissoc |a & $ [] |b
+                assert= expected $ .dissoc m |a & $ [] |b
+                assert= expected $ remove-tail m |a $ [] |b
+              :tags $ #{} :core :method-spread :unit
+            %{} 'TestEntry (:name |method-spread-keeps-multiple-and-empty-lists)
+              :code $ quote $ let
+                  m $ {} (|a 1) (|b 2) (|c 3) (|d 4) (|e 5)
+                assert=
+                  {} $ |e 5
+                  m .dissoc |a & ([] |b) |c & ([]) & $ [] |d
+                assert= m $ m .dissoc |missing & $ []
+              :tags $ #{} :core :method-spread :unit
+            %{} 'TestEntry (:name |method-spread-keeps-other-collection-arguments)
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  ([] 1) .concat ([] 2) & $ [] ([] 3) ([] 4)
+                assert=
+                  {} (|a 1) (|b 2) (|c 3)
+                  ({} (|a 1))
+                    , .merge
+                      {} $ |b 2
+                      , & $ [] $ {} (|c 3)
+              :tags $ #{} :core :method-spread :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
@@ -8347,8 +8505,10 @@
             &map:fold-kv xs ({})
               fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'R 'S) 'K 'V
-                  :return $ :: 'Map 'R 'S
+                  :args $ []
+                    quote $ Map R S
+                    , 'K 'V
+                  :return $ quote $ Map R S
                 match (f key value)
                   (:keep next-key next-value) (&map:assoc acc next-key next-value)
                   (:drop) acc
@@ -8398,12 +8558,11 @@
               :code $ quote $ let
                   choose $ fn (xs f)
                     hint-fn $ {}
-                      :args $ [] (:: 'Map 'K 'V)
-                        :: 'Fn $ {}
-                          :args $ [] 'K 'V
-                          :return $ :: 'MapEntryDecision 'R 'S
+                      :args $ []
+                        quote $ Map K V
+                        quote $ Fn K V $ -> (MapEntryDecision R S)
                       :generics $ [] 'K 'V 'R 'S
-                      :return $ :: 'Map 'R 'S
+                      :return $ quote $ Map R S
                     xs .filter-map-kv f
                   selected $ choose
                     {}
@@ -8597,7 +8756,7 @@
             :code $ quote $ let
                 explicit-sync $ fn (counter)
                   hint-fn $ {}
-                    :args $ [] $ :: 'Ref 'Number
+                    :args $ [] $ quote (Ref Number)
                     :return 'Unit
                     :async true
                   add-watch! counter :changes $ fn (current previous)
@@ -8608,17 +8767,14 @@
                     , &unit
                 implicit-sync $ fn (counter)
                   hint-fn $ {}
-                    :args $ [] $ :: 'Ref 'Number
+                    :args $ [] $ quote (Ref Number)
                     :return 'Unit
                     :async true
                   add-watch! counter :changes $ fn (current previous) &unit
                 accept-async $ fn (callback)
                   hint-fn $ {}
-                    :args $ [] $ :: 'Fn
-                      {}
-                        :args $ [] 'Number 'Number
-                        :return 'Unit
-                        :async true
+                    :args $ [] $ quote
+                      Fn Number Number (-> Unit) (:async)
                     :return 'Unit
                   assert= true $ fn? callback
                   , &unit
@@ -9398,9 +9554,9 @@
                 xs xs0
               hint-fn $ {}
                 :args $ []
-                  :: 'Map 'K $ :: 'List 'T
-                  :: 'List 'T
-                :return $ :: 'Map 'K $ :: 'List 'T
+                  quote $ Map K $ List T
+                  quote $ List T
+                :return $ quote $ Map K (List T)
               &list-match-internal xs acc (x0 xss)
                 let
                     key $ f x0
@@ -9491,9 +9647,7 @@
                   apply-one $ fn (callback value)
                     hint-fn $ {}
                       :args $ []
-                        :: 'Fn $ {}
-                          :args $ [] 'Number
-                          :return 'Number
+                        quote $ Fn Number $ -> Number
                         , 'Number
                       :return 'Number
                     callback value
@@ -9505,7 +9659,7 @@
               :code $ quote $ let
                   count-values $ fn (xs)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Number
+                      :args $ [] $ quote (List Number)
                       :return 'Number
                     .len xs
                 assert= 0 $ count-values $ []
@@ -9527,9 +9681,7 @@
                     hint-fn $ {}
                       :generics $ [] 'T
                       :args $ []
-                        :: 'Fn $ {}
-                          :args $ [] 'T
-                          :return 'T
+                        quote $ Fn T $ -> T
                         , 'T
                       :return 'T
                     callback value
@@ -9581,10 +9733,8 @@
               :code $ quote $ let
                   invoke $ fn (callback)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Fn
-                        {}
-                          :args $ [] 'Number
-                          :return 'Number
+                      :args $ [] $ quote
+                        Fn Number $ -> Number
                       :return 'Number
                     callback 3
                 assert= 4 $ invoke $ fn (x)
@@ -9765,14 +9915,15 @@
                   identity-list $ fn (xs)
                     hint-fn $ {}
                       :generics $ [] 'T
-                      :args $ [] $ :: 'List 'T
-                      :return $ :: 'List 'T
+                      :args $ [] $ quote (List T)
+                      :return $ quote $ List T
                     , xs
                   forward $ fn (xs)
                     hint-fn $ {}
                       :generics $ [] 'T
-                      :args $ [] $ :: 'List (:: 'Optional 'T)
-                      :return $ :: 'List $ :: 'Optional 'T
+                      :args $ [] $ quote
+                        List $ Optional T
+                      :return $ quote $ List (Optional T)
                     identity-list xs
                 assert= ([] 1 2)
                   forward $ [] 1 2
@@ -9818,7 +9969,7 @@
                     &+ value 1
                   from-open $ fn (items)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Dynamic
+                      :args $ [] $ quote (List Dynamic)
                       :return 'Number
                     &let
                       v $ &list:nth items 0
@@ -9830,7 +9981,7 @@
               :code $ quote $ let
                   classify $ fn (items)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Dynamic
+                      :args $ [] $ quote (List Dynamic)
                       :return 'Data
                     &let
                       v $ &list:nth items 0
@@ -9850,7 +10001,7 @@
                     , value
                   first-open $ fn (items)
                     hint-fn $ {}
-                      :args $ [] $ :: 'List 'Dynamic
+                      :args $ [] $ quote (List Dynamic)
                       :return 'Dynamic
                     same $ &list:nth items 0
                 assert= |wrong $ first-open $ [] |wrong
@@ -10163,12 +10314,12 @@
               :code $ quote $ let
                   choose-bool $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Optional 'Bool
+                      :args $ [] $ quote (Optional Bool)
                       :return 'String
                     if value |yes |no
                   choose-text $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Optional 'String
+                      :args $ [] $ quote (Optional String)
                       :return 'String
                     if value |yes |no
                 assert= |no $ choose-bool nil
@@ -10440,9 +10591,12 @@
                 xs xs0
                 ys ys0
               hint-fn $ {}
-                :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
+                :args $ []
+                  quote $ List T
+                  quote $ List T
+                  quote $ List T
                 :generics $ [] 'T
-                :return $ :: 'List 'T
+                :return $ quote $ List T
               if
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur
@@ -10490,8 +10644,11 @@
                 xs xs0
                 beginning? true
               hint-fn $ {}
-                :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
-                :return $ :: 'List 'T
+                :args $ []
+                  quote $ List T
+                  quote $ List T
+                  , 'Bool
+                :return $ quote $ List T
               &list-match-internal xs acc (x0 xss)
                 recur
                   append
@@ -10535,7 +10692,9 @@
                 xs xs0
                 beginning? true
               hint-fn $ {}
-                :args $ [] 'String (:: 'List 'T) 'Bool
+                :args $ [] 'String
+                  quote $ List T
+                  , 'Bool
                 :return 'String
               &list-match-internal xs acc (x0 xss)
                 recur
@@ -11105,8 +11264,10 @@
             foldl xs ([])
               defn %map-indexed (acc x)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'U) 'T
-                  :return $ :: 'List 'U
+                  :args $ []
+                    quote $ List U
+                    , 'T
+                  :return $ quote $ List U
                 append acc $ f (&list:count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
@@ -11286,8 +11447,10 @@
             &map:fold-kv xs ([])
               fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'U) 'K 'V
-                  :return $ :: 'List 'U
+                  :args $ []
+                    quote $ List U
+                    , 'K 'V
+                  :return $ quote $ List U
                 append acc $ f key value
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -11428,7 +11591,7 @@
                     read-input $ fn ()
                       hint-fn $ {}
                         :args $ []
-                        :return $ :: 'Map 'Tag 'Dynamic
+                        :return $ quote $ Map Tag Dynamic
                       {} (:time 12) (:missing nil)
                     input $ read-input
                     defaults $ {} $ :done? false
@@ -11550,27 +11713,27 @@
                   explicit-option $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'String
+                      :return $ quote $ Option String
                     if (> x 0) (Option :some |pos) (Option :none)
                   from-nil-join $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'String
+                      :return $ quote $ Option String
                     nil->option $ if (> x 0) |pos nil
                   from-when $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'String
+                      :return $ quote $ Option String
                     nil->option $ when (> x 0) |pos
                   from-do-nil $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'String
+                      :return $ quote $ Option String
                     nil->option $ if (> x 0) |pos $ do nil
                   from-nil-local $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'String
+                      :return $ quote $ Option String
                     let
                         n nil
                       nil->option $ if (> x 0) |pos n
@@ -11591,17 +11754,17 @@
                   from-if $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'Number
+                      :return $ quote $ Option Number
                     nil->option $ if (> x 0) x
                   from-optional $ fn (x)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Optional 'Number
-                      :return $ :: 'Option 'Number
+                      :args $ [] $ quote (Optional Number)
+                      :return $ quote $ Option Number
                     nil->option x
                   from-branches $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'Number
+                      :return $ quote $ Option Number
                     if (> x 0) (nil->option x) (nil->option nil)
                   numbers $ assert-type ([] 1 2)
                     quote $ List Number
@@ -12067,7 +12230,7 @@
               :code $ quote $ let
                   inspect $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Optional 'Number
+                      :args $ [] $ quote (Optional Number)
                       :return 'Bool
                     number? value
                 assert= true $ inspect 1
@@ -12403,8 +12566,10 @@
             reduce xs ({})
               defn %pairs-map (acc pair)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) 'P
-                  :return $ :: 'Map 'Dynamic 'Dynamic
+                  :args $ []
+                    quote $ Map Dynamic Dynamic
+                    , 'P
+                  :return $ quote $ Map Dynamic Dynamic
                 assert "|expects pair for pairs-map" $ if (list? pair)
                   &= 2 $ &list:count pair
                   , false
@@ -12882,8 +13047,10 @@
                 acc $ []
                 n n0
               hint-fn $ {}
-                :args $ [] (:: 'List 'T) 'Number
-                :return $ :: 'List 'T
+                :args $ []
+                  quote $ List T
+                  , 'Number
+                :return $ quote $ List T
               if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -13224,8 +13391,10 @@
             foldl xs (&{})
               defn %select-keys (acc k)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) 'K
-                  :return $ :: 'Map 'K 'V
+                  :args $ []
+                    quote $ Map K V
+                    , 'K
+                  :return $ quote $ Map K V
                 match (&map:get m k)
                   (:some value) (&map:assoc acc k value)
                   (:none) acc
@@ -13332,12 +13501,12 @@
               :code $ quote $ let
                   default-end $ fn (end)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Option 'Number
+                      :args $ [] $ quote (Option Number)
                       :return 'Number
                     end.unwrap-or 99
                   take-prefix $ fn (value end)
                     hint-fn $ {}
-                      :args $ [] 'String $ :: 'Option 'Number
+                      :args $ [] 'String $ quote (Option Number)
                       :return 'String
                     value.slice 0 end
                 assert= 99 $ default-end
@@ -14427,8 +14596,10 @@
             assert "|expected map for unselecting" $ map? m
             foldl xs m $ defn %unselect-keys (acc k)
               hint-fn $ {}
-                :args $ [] (:: 'Map 'K 'V) 'K
-                :return $ :: 'Map 'K 'V
+                :args $ []
+                  quote $ Map K V
+                  , 'K
+                :return $ quote $ Map K V
               &map:dissoc acc k
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -14633,11 +14804,11 @@
               :code $ quote $ let
                   change $ fn (data path)
                     hint-fn $ {}
-                      :args $ [] 'Dynamic $ :: 'List 'Tag
+                      :args $ [] 'Dynamic $ quote (List Tag)
                       :return 'Dynamic
                     update-in data path $ fn (current)
                       hint-fn $ {}
-                        :args $ [] $ :: 'Option 'Dynamic
+                        :args $ [] $ quote (Option Dynamic)
                         :return 'Number
                       if (current.none?) 1 $ inc $ decode-map-as (current.unwrap) 'Number
                 assert=
@@ -14653,11 +14824,11 @@
               :code $ quote $ let
                   replace-leaf $ fn (data path)
                     hint-fn $ {}
-                      :args $ [] 'Dynamic $ :: 'List 'Tag
+                      :args $ [] 'Dynamic $ quote (List Tag)
                       :return 'Dynamic
                     update-in data path $ fn (current)
                       hint-fn $ {}
-                        :args $ [] $ :: 'Option 'Dynamic
+                        :args $ [] $ quote (Option Dynamic)
                         :return 'String
                       if (current.some?) |present |missing
                 assert=
@@ -14673,8 +14844,9 @@
               :code $ quote $ let
                   increment $ fn (data)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
-                      :return $ :: 'Map 'Tag $ :: 'Map 'Tag 'Number
+                      :args $ [] $ quote
+                        Map Tag $ Map Tag Number
+                      :return $ quote $ Map Tag (Map Tag Number)
                     update-in data ([] :nested :count)
                       fn (current)
                         inc $ current.unwrap-or 0
@@ -14712,7 +14884,7 @@
                       reset! trace $ append @trace |updater
                       fn (current)
                         hint-fn $ {}
-                          :args $ [] $ :: 'Option 'Number
+                          :args $ [] $ quote (Option Number)
                           :return 'String
                         reset! trace $ append @trace |callback
                         to-string $ current.unwrap
@@ -14723,12 +14895,12 @@
               :code $ quote $ let
                   write $ fn (db)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Map 'Tag 'Dynamic
-                      :return $ :: 'Map 'Tag 'Dynamic
+                      :args $ [] $ quote (Map Tag Dynamic)
+                      :return $ quote $ Map Tag Dynamic
                     update-in db ([] :repo :current)
                       fn (value)
                         hint-fn $ {}
-                          :args $ [] $ :: 'Option 'Dynamic
+                          :args $ [] $ quote (Option Dynamic)
                           :return 'String
                         identity |main
                 assert=
@@ -14909,8 +15081,11 @@
                 xs xs0
                 ys ys0
               hint-fn $ {}
-                :args $ [] (:: 'Map 'K 'V) (:: 'List 'K) (:: 'List 'V)
-                :return $ :: 'Map 'K 'V
+                :args $ []
+                  quote $ Map K V
+                  quote $ List K
+                  quote $ List V
+                :return $ quote $ Map K V
               if
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur

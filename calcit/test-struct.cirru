@@ -55,7 +55,7 @@
           :schema $ :: 'StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox ([] 'T) (:value 'T)
-            :count $ :: 'Option 'Number
+            :count $ quote $ Option Number
           :examples $ []
           :schema $ :: 'StructDef
         'Demo $ %{} 'CodeEntry (:doc |)
@@ -193,8 +193,8 @@
               :tags $ #{} :collection-proof
         'OptionFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionFields
-            :count $ :: 'Option 'Number
-            :label $ :: 'Option 'String
+            :count $ quote $ Option Number
+            :label $ quote $ Option String
           :examples $ []
           :schema $ :: 'StructDef
           :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
@@ -209,8 +209,8 @@
         'OptionalFields $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture (Optional fields, optional-proof); retire with Optional (0.32.0). OptionFields is the Option form."
           :code $ quote $ defstruct OptionalFields
-            :count $ :: 'Optional 'Number
-            :label $ :: 'Optional 'String
+            :count $ quote $ Optional Number
+            :label $ quote $ Optional String
           :examples $ []
           :schema $ :: 'StructDef
           :tests $ [] $ %{} 'TestEntry
@@ -222,7 +222,7 @@
         'OptionalGeneric $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture (generic Optional field); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionalGeneric ([] 'T)
-            :value $ :: 'Optional 'T
+            :value $ quote $ Optional T
           :examples $ []
           :schema $ :: 'StructDef
         'Person $ %{} 'CodeEntry (:doc |)
@@ -369,7 +369,7 @@
             let
                 values $ assert-type
                   {} (:present 7) (:absent nil)
-                  :: 'Map 'Tag $ :: 'JsNullish 'Number
+                  quote $ Map Tag $ JsNullish Number
                 alias values
               NullableNumberStore :values alias :nested $ [] alias
           :examples $ []
@@ -430,7 +430,7 @@
                   initial $ #{}
                   alias initial
                 if flag alias $ #{}
-              :: 'Set 'String
+              quote $ Set String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Bool
@@ -872,7 +872,7 @@
                   read-open $ fn (value)
                     hint-fn $ {}
                       :args $ [] 'Dynamic
-                      :return $ :: 'List $ :: 'Option 'Dynamic
+                      :return $ quote $ List (Option Dynamic)
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
                   [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
@@ -1093,7 +1093,7 @@
               if fail? (raise |fixture-failure) |normal
               fn (message extra)
                 hint-fn $ {}
-                  :args $ [] 'String $ :: 'Option 'Number
+                  :args $ [] 'String $ quote (Option Number)
                   :return 'String
                 assert= (Option :none) extra
                 , message

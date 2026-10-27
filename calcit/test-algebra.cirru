@@ -49,9 +49,8 @@
           :code $ quote $ defimpl AlgebraBoxMapImpl AlgebraMap
             .map $ fn (box f)
               hint-fn $ {}
-                :args $ [] 'test-algebra.main/AlgebraBox0 $ :: 'Fn
-                  {} (:return 'Dynamic)
-                    :args $ [] 'Dynamic
+                :args $ [] 'test-algebra.main/AlgebraBox0 $ quote
+                  Fn Dynamic $ -> Dynamic
                 :return 'Dynamic
               .assoc box :value $ f $ &struct:get box :value
           :examples $ []

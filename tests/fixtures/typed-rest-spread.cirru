@@ -51,7 +51,7 @@
                   source $ fn ()
                     hint-fn $ {}
                       :args $ []
-                      :return $ :: 'List 'Number
+                      :return $ quote $ List Number
                     reset! calls $ inc @calls
                     [] 30 40
                 assert= 4 $ sink |numbers 10 20 & $ source

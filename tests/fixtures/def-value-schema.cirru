@@ -535,8 +535,10 @@
                 quote $ List T
               fn (acc item)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'T) 'T
-                  :return $ :: 'List 'T
+                  :args $ []
+                    quote $ List T
+                    , 'T
+                  :return $ quote $ List T
                 append acc item
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -608,7 +610,7 @@
                 sink $ fn (a b c)
                   hint-fn $ {}
                     :args $ [] 'Number 'Number 'Number
-                    :return $ :: 'List 'Number
+                    :return $ quote $ List Number
                   [] a b c
               assert= ([] 1 2 3)
                 sink & ([] 1) & $ [] 2 & $ [] 3
@@ -2834,7 +2836,7 @@
               :code $ quote $ let
                   with-extra $ fn (value extra)
                     hint-fn $ {}
-                      :args $ [] 'Number $ :: 'Option 'Number
+                      :args $ [] 'Number $ quote (Option Number)
                       :return 'Number
                     + value $ extra .unwrap-or 10
                 assert= ([] 11 12)
@@ -3445,10 +3447,8 @@
                 let
                     apply-chosen $ fn (chosen)
                       hint-fn $ {}
-                        :args $ [] $ :: 'Fn
-                          {}
-                            :args $ [] 'Number
-                            :return 'Number
+                        :args $ [] $ quote
+                          Fn Number $ -> Number
                         :return 'Number
                       assert= 3 $ chosen 4
                       assert= 3 $ chosen & $ [] 4
@@ -3466,10 +3466,8 @@
                       dec value
                     apply-chosen $ fn (chosen)
                       hint-fn $ {}
-                        :args $ [] $ :: 'Fn
-                          {}
-                            :args $ [] 'Number
-                            :return 'Number
+                        :args $ [] $ quote
+                          Fn Number $ -> Number
                         :return 'Number
                       chosen 4
                   assert= 4 $ apply-chosen sum-tail

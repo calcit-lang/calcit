@@ -38,10 +38,8 @@
                   expected-value $ Person :name |Ada :age 42
                   invoke $ fn (callback)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Fn
-                        {}
-                          :args $ [] *callback
-                          :return 'Unit
+                      :args $ [] $ quote
+                        Fn *callback $ -> Unit
                       :return 'Unit
                     callback expected-value
                 invoke $ fn (value)

@@ -1171,14 +1171,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // Compiler-generated nominal method callables have no Snapshot definition.
   // Their checked trait schema lives in the compiled payload; looking only in
   // source metadata would discard that contract after method lowering.
-  let source_schema = program::lookup_def_schema(ns, def);
-  let callable_schema = if !program::has_def_code(ns, def) {
-    program::lookup_compiled_def(ns, def)
-      .map(|compiled| compiled.schema)
-      .unwrap_or(source_schema)
-  } else {
-    source_schema
-  };
+  let callable_schema = lookup_definition_value_schema(ns, def);
   let declared_schema = resolve_namespace_type_refs_for_body(callable_schema, ns);
   let open_return = matches!(declared_schema.as_ref(), CalcitTypeAnnotation::Fn(info) if matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
   if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
@@ -3404,8 +3397,21 @@ fn infer_definition_value_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnno
   inferred
 }
 
-fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+/// Generated callables have no source entry; retain their checked compiled
+/// contract for both ordinary calls and first-class/spread-call inference.
+fn lookup_definition_value_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
   let schema = program::lookup_def_schema(ns, def);
+  if !program::has_def_code(ns, def) {
+    program::lookup_compiled_def(ns, def)
+      .map(|compiled| compiled.schema)
+      .unwrap_or(schema)
+  } else {
+    schema
+  }
+}
+
+fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let schema = lookup_definition_value_schema(ns, def);
 
   // A declaration has a stable source origin. Re-running its constructor
   // during inference would mint unrelated runtime IDs on every lookup.

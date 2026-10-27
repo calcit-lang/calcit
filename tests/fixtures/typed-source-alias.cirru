@@ -56,8 +56,7 @@
           :code $ quote $ defn apply-text (f x)
             hint-fn $ {} (:return 'String)
               :args $ []
-                :: 'Fn $ {} (:return 'String)
-                  :args $ [] 'String
+                quote $ Fn String $ -> String
                 , 'String
             f x
           :examples $ []
@@ -146,7 +145,7 @@
         'optional-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn optional-text (x)
             hint-fn $ {} (:return 'String)
-              :args $ [] $ :: 'Option 'String
+              :args $ [] $ quote (Option String)
             .unwrap-or x |fallback
           :examples $ []
         'produce-choice $ %{} 'CodeEntry (:doc |)

@@ -153,8 +153,8 @@
                   absent $ Option :none
                   forward $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ :: 'Option 'Nil
-                      :return $ :: 'Option 'Nil
+                      :args $ [] $ quote (Option Nil)
+                      :return $ quote $ Option Nil
                     , value
                 assert= true $ identical? present $ call-value forward ([] present)
                 assert= true $ identical? absent $ call-value forward ([] absent)
