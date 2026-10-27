@@ -3864,7 +3864,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Tag)
-            :args $ [] 'Tag
+            :args $ [] 'Struct
           :tags $ #{} :builtin :internal
         '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
           :code $ quote &runtime-implementation
