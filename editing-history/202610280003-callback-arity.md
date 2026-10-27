@@ -17,6 +17,11 @@
 修复在推导时保留现有参数形状；`Optional` 值类型自身不代表参数可省略。原 fixture 与断言保留，
 旧 `Optional` 的退场继续由 #2233 管理，本次不借参数校验提前删除。
 
+PR 审查进一步发现直接函数的声明 schema 也没有保存 `?` 数量。有效调用合同继续从声明读取
+参数/返回类型与泛型，但数量从运行时函数的源码参数形状取得。默认 strict 早已拒绝用户源码
+中的旧 `?`，这次恢复的是仍保留的兼容路径，不解除默认拒绝。复现使用两个 Number schema 槽，
+而不是把 Optional 弃用 warning 当成调用数量回归。
+
 ## 兼容边界
 
 该改动新增运行前拒绝，归属 0.32.0，不回移到 0.31.1。合法末尾 Option 省略、显式 Option、
@@ -30,6 +35,8 @@ Option/rest、求值顺序与次数、抛错后的短路和裸 Fn 传递，通�
 现有 `check-known-assertion.mjs` 增加独立分片，验证 11 类非法调用在默认 proof audit 的
 全定义检查、完整 strict、native/JS/WASM/WASI 入口被拒绝，保留 source path、无执行标记或可执行产物。
 现有 spread 脚本改为验证更早的源层拒绝，不删除原来的非法调用。
+旧 `?` 的正常调用与缺少/超出数量测试保留在已有 strict-default 的隔离兼容 fixture；合法语义
+写为附带 Calcit 测试并在 native/JS 执行，同时断言默认模式仍报告 `E_LEGACY_OPTIONAL_PARAM`。
 
 执行完整 Cargo、Clippy、格式检查和原 CI `check-all`，以及真实 Cyan Red / Axis 的完整 strict、
 定义测试及 JS 构建。真实项目只用临时副本及已安装发布依赖，候选 CLI 明确为未发布源码，

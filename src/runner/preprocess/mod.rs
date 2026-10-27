@@ -16200,19 +16200,29 @@ fn reject_strict_dynamic_nominal_argument(
 }
 
 fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
+  let runtime = CalcitTypeAnnotation::from_calcit_fn(info);
   let declared = program::lookup_def_schema(&info.def_ns, &info.name);
   let schema = if matches!(declared.as_ref(), CalcitTypeAnnotation::Fn(_)) {
     declared
   } else if let Some(generated) = generated_callable_schema(&info.def_ns, &info.name) {
     generated
   } else {
-    Arc::new(CalcitTypeAnnotation::from_calcit_fn(info))
+    Arc::new(runtime.clone())
   };
   let qualified = resolve_namespace_type_refs_for_body(schema, &info.def_ns);
   let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
     unreachable!("CalcitTypeAnnotation::from_calcit_fn always returns Fn")
   };
-  signature.clone()
+  // A declaration supplies types, while lexical parameters supply call bounds
+  // (including legacy `?`, which is not encoded by ordinary argument types).
+  let CalcitTypeAnnotation::Fn(runtime) = runtime else {
+    unreachable!()
+  };
+  let mut effective = signature.clone();
+  if effective.runtime_arity != runtime.runtime_arity {
+    Arc::make_mut(&mut effective).runtime_arity = runtime.runtime_arity;
+  }
+  effective
 }
 
 /// A compiler-generated callable has no source entry; its stored contract
