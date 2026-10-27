@@ -1230,6 +1230,20 @@ for (const { name, base, expectedStatus = 0, check } of [
     check: (result) => assert.ok(result.data.methods.some((method) => method.name === ".contains-index?")),
   },
   {
+    name: "originless Enum method EDN",
+    base: ["query", "type", "'Enum"],
+    check: (result) => {
+      for (const name of [".assoc", ".empty?"]) {
+        const method = result.data.methods.find(item => item.name === name);
+        assert.equal(method.status, "open");
+        assert.match(method.detail, /E_ORIGINLESS_METHOD_DISPATCH/);
+        assert.equal(method.origin, "<originless>/&core-enum-methods");
+        assert.ok(!Object.hasOwn(method, "call_types"));
+      }
+      assert.equal(result.data.methods.find(item => item.name === ".count").status, "proven");
+    },
+  },
+  {
     name: "variadic list method EDN",
     base: ["calcit/test.cirru", "query", "type", ":: 'List 'Number"],
     check: (result) => {
