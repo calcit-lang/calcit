@@ -331,6 +331,16 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           };
+          // Report malformed compact `quote $ …` field types instead of widening them to Dynamic.
+          if let Some(Err(message)) = crate::calcit::type_expr::desugar_quoted_form(type_expr) {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!("&struct-def:new field `{field_name}` has invalid compact type expression: {message}"),
+              "E_TYPE_EXPR_SYNTAX",
+              &crate::call_stack::CallStackList::default(),
+              type_expr.get_location(),
+            ));
+          }
           let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_expr, generics.as_slice());
           if let Err(e) = field_type.validate_applied_type_args() {
             let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
@@ -1477,6 +1487,22 @@ mod tests {
 
   fn callable_proc() -> Calcit {
     Calcit::Proc(CalcitProc::NativeResetGenSymIndex)
+  }
+
+  #[test]
+  fn struct_fields_report_malformed_compact_types() {
+    let field = |code: &str| {
+      let type_form = crate::data::cirru::code_to_calcit(&cirru_parser::parse(code).unwrap()[0], "app.main", "main!", vec![]).unwrap();
+      Calcit::from(vec![Calcit::tag("x"), type_form])
+    };
+    let error = new_struct(&[Calcit::tag("Foo"), field("quote $ List number")]).expect_err("lowercase type name");
+    assert_eq!(error.code(), Some("E_TYPE_EXPR_SYNTAX"), "unexpected error: {error}");
+    let Calcit::StructDef(def) = new_struct(&[Calcit::tag("Foo"), field("quote $ List Number")]).expect("compact field type") else {
+      panic!("expected a struct definition");
+    };
+    assert!(
+      matches!(def.field_types[0].as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number))
+    );
   }
 
   fn indexed_struct_fixture() -> Calcit {

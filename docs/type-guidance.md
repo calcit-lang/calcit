@@ -42,8 +42,8 @@ assert-type map-fn $ quote $ Fn C
   :where $ C Mappable
 ```
 
-可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，以及
-`calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
+可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
+字段类型，以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
 
 写法规则：
 
@@ -65,7 +65,7 @@ calcit eval 'assert-type ([] 1) $ quote $ List number'
 - 小写叶子、`'x`、tag 类型和裸 `->` 不属于精简写法，会报错。
 - `.`、`=`、`forall` 留给将来的类型运算符；`:generics` 中的列表项和参数化 trait 约束暂不支持。
 - `Macro` 合同暂时只能写规范形式。
-- 其它类型位置（如 `hint-fn`、`defstruct` 字段）继续使用规范形式。
+- `hint-fn` 等其它类型位置继续使用规范形式。
 
 ## 可省略声明的闭合 helper
 
