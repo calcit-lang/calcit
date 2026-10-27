@@ -106,7 +106,32 @@ try {
       assert.ok(result.stderr.includes("preprocessing"), result.stderr);
     }
   }
-  console.log("List spreads and malformed markers retain native/JS/WASM contracts");
+  // Invalid call arity cannot reach definition tests. Literal expansion must
+  // reject extra operands before ordinary emission can leave an invalid stack.
+  run("edit", "def", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
+    "quote $ defn sink (n) n");
+  run("edit", "schema", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+  for (const [index, expression] of [
+    "sink & ([]) 6 7",
+    "let ((call sink)) (call & ([]) 6 7)",
+  ].entries()) {
+    const transaction = JSON.stringify([["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite",
+      "--input-format", "cirru", "--code", `quote $ defwasm-export run-tests () (${expression})`]]);
+    const preview = JSON.parse(run("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
+    run("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
+    const native = spawnSync(binary, [snapshot], options);
+    assert.ifError(native.error);
+    assert.equal(native.status, 1, native.stdout + native.stderr);
+    assert.match(native.stderr, /function arity mismatch.*expected 1 argument\(s\), got 2/);
+    const invalidOutput = join(project, `invalid-arity-${index}`);
+    const rejected = spawnSync(binary, [snapshot, "--emit-path", invalidOutput, "wasm"], options);
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+    assert.match(rejected.stderr, /E_WASM_CALL_SPECIALIZATION:.*expects at most 1 args, got 2/);
+    await assert.rejects(readFile(join(invalidOutput, "program.wasm")), { code: "ENOENT" });
+  }
+  console.log("List spreads, malformed markers and literal-call arity retain native/JS/WASM contracts");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

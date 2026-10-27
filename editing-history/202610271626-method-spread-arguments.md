@@ -21,8 +21,11 @@ WASM 的字面量 List 展开还需复用普通调用的类型 specialization。
 沿用普通调用路径，未知长度的运行时展开仍走原有的受检协议。
 此复用还要求已有证据证明函数目标，未知函数表目标仍由原 ABI 门禁拒绝；
 声明为固定 Fn 本身不能证明实际实现不是 rest 函数，原宿主测试继续守住该边界。
-字面量 normalization 前也保留已有 nil/trait 展开拒绝门禁，确保失败仍由原有诊断说明；
+字面量展开后、进入普通 specialization 前仍保留已有 nil/trait 展开拒绝门禁，确保失败仍由原有诊断说明；
 不能让普通 specialization 入口绕过展开调用自身尚未支持的证明边界。
+同一入口也检查已知固定目标的实际参数上限，避免字面量展开后多出的值破坏 WASM operand stack；
+rest 目标仍按原协议打包，未知目标继续走原 ABI 门禁。原边界脚本保留 native arity 错误，
+并验证 WASM 拒绝过量参数且不生成无效产物。
 编译器生成的 impl callable 没有 Snapshot 定义，其已检查的 trait schema 保存在 compiled payload；
 普通调用与展开调用共享这一 schema 查询，避免带 rest 的方法 lowering 后把 Number 丢成 Dynamic。
 原 RestBox definition 测试和 post-lowering 精度门禁保持不变。

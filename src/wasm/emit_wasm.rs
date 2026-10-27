@@ -7549,6 +7549,19 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       let qualified = format!("{}/{}", definition.ns, definition.def);
       reject_nil_specialized_spread_call(ctx, &qualified, definition.def.as_ref())?;
       reject_trait_specialized_spread_call(ctx, &qualified, definition.def.as_ref())?;
+      let rest = ctx
+        .fn_has_rest
+        .get(&qualified)
+        .or_else(|| ctx.fn_has_rest.get(definition.def.as_ref()));
+      if rest.is_none()
+        && let Some(arity) = ctx.fn_arity.get(&qualified).or_else(|| ctx.fn_arity.get(definition.def.as_ref()))
+        && expanded.len() - 1 > *arity as usize
+      {
+        return Err(format!(
+          "E_WASM_CALL_SPECIALIZATION: `{qualified}` expects at most {arity} args, got {}",
+          expanded.len() - 1
+        ));
+      }
       return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(expanded.as_slice()));
     }
   }
