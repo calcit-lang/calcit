@@ -27,3 +27,7 @@ def-value-schema fixture、test-traits、test-wasi-command 等）：只处理 `a
 `parse-cirru-edn-as`、`decode-map-as`（含 try- 变体）的类型参数和 `defstruct` 字段里的 `::` 列表，
 `quasiquote` 内部（core 宏模板）、含 tag 或未加引号叶子（值引用类型，如 `(:: 'List Person)`）、
 缺 `:return` 的 Fn 一律保留原样，保证语义不变。改写后用 `calcit edit format` 恢复排版。
+
+`defstruct` 宏会把字段类型再 quote 一层，局部 `defstruct` 在 JS 端拿到的是未展开的精简列表，
+结构体相等性比较因此失败。现在预处理 `&struct-def:new` 调用时把内层精简类型换成规范代码（外层 quote 保留），
+两个后端读到同一份数据。
