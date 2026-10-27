@@ -78,6 +78,22 @@ const scenarios = [
       assert.equal(result.data.id, "calcit.core/read-dir");
     },
   })),
+  ...["def", "schema", "context"].map(command => ({
+    name: `struct name ${command} requires a Struct value and returns a Tag`,
+    args: ["calcit/test.cirru", "query", command, "calcit.core/&struct:get-name", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.id, "calcit.core/&struct:get-name");
+      if (command === "def") {
+        const fields = new Map(result.data.schema.slice(1));
+        assert.deepEqual(fields.get(":args"), ["[]", "'Struct"]);
+        assert.equal(fields.get(":return"), "'Tag");
+      } else {
+        const schema = result.data.schema ?? result.data.canonical_schema;
+        assert.match(schema, /:args \$ \[\] 'Struct/);
+        assert.match(schema, /:return 'Tag/);
+      }
+    },
+  })),
   {
     name: "non-nil predicate context distinguishes Option variants",
     args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/non-nil?", "--format", "json"],
@@ -1192,6 +1208,7 @@ const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
   ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")
+    || scenario.name.startsWith("struct name ")
     || scenario.name === "lexical collection query keeps source generic names"
     || scenario.name.startsWith("bounded receiver ")).map(({ name, args, check }) => ({
     name: `${name} EDN`,

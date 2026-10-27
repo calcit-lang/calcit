@@ -131,6 +131,24 @@ mod core_snapshot_tests {
   use super::*;
 
   #[test]
+  fn generated_struct_name_schema_matches_runtime_signature() {
+    let snapshot = load_core_snapshot().expect("load generated core snapshot");
+    let entry = &snapshot.files["calcit.core"].defs["&struct:get-name"];
+    let CalcitTypeAnnotation::Fn(schema) = entry.schema.as_ref() else {
+      panic!("struct name query should retain its callable schema");
+    };
+    let runtime = CalcitProc::NativeStructGetName.get_type_signature().expect("runtime signature");
+    assert_eq!(
+      schema.arg_types, runtime.arg_types,
+      "query parameters must match the actual Proc contract"
+    );
+    assert_eq!(
+      schema.return_type, runtime.return_type,
+      "query return type must match the actual Proc contract"
+    );
+  }
+
+  #[test]
   fn generated_core_snapshot_preserves_generic_function_schemas() {
     let snapshot = load_core_snapshot().expect("load generated core snapshot");
     let map_entry = snapshot
