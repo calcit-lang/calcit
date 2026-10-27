@@ -216,6 +216,11 @@ mod core_snapshot_tests {
           mismatches.push(format!("{} arg {idx}: proc {expected}, schema {shown}", proc.as_ref()));
         }
       }
+      if let (Some(expected), Some(shown)) = (concrete_kind(&signature.return_type), concrete_kind(&schema.return_type))
+        && expected != shown
+      {
+        mismatches.push(format!("{} return: proc {expected}, schema {shown}", proc.as_ref()));
+      }
     }
     assert!(
       mismatches.is_empty(),
