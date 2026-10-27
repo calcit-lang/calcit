@@ -1776,18 +1776,20 @@
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
             let
                 opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none) (:: 'Option 'Number)
+                opt-none $ assert-type (Option :none)
+                  quote $ Option Number
                 res-ok $ Result :ok 1
-                res-err $ assert-type (Result :err |oops) (:: 'Result 'Number 'String)
+                res-err $ assert-type (Result :err |oops)
+                  quote $ Result Number String
                 step $ fn (x)
                   hint-fn $ {}
                     :args $ [] 'Number
                     :return 'Number
                   inc x
-              assert-type opt-some $ :: 'Option 'Number
-              assert-type opt-none $ :: 'Option 'Number
-              assert-type res-ok $ :: 'Result 'Number 'String
-              assert-type res-err $ :: 'Result 'Number 'String
+              assert-type opt-some $ quote $ Option Number
+              assert-type opt-none $ quote $ Option Number
+              assert-type res-ok $ quote $ Result Number String
+              assert-type res-err $ quote $ Result Number String
               assert= (Option :some 2) (opt-some .map step)
               assert= (Option :none) (opt-none .map step)
               assert= (Result :ok 2) (res-ok .map step)
@@ -1796,9 +1798,11 @@
                 opt-some .map $ fn (x) (inc x)
             let
                 opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none) (:: 'Option 'Number)
+                opt-none $ assert-type (Option :none)
+                  quote $ Option Number
                 res-ok $ Result :ok 1
-                res-err $ assert-type (Result :err |oops) (:: 'Result 'Number 'String)
+                res-err $ assert-type (Result :err |oops)
+                  quote $ Result Number String
                 to-some $ fn (x)
                   hint-fn $ {}
                     :args $ [] 'Number
@@ -1826,7 +1830,8 @@
                 res-err .unwrap-or 9
                 , .round
               assert= 9 $
-                  assert-type (Option :none) (:: 'Option 'Number)
+                  assert-type (Option :none)
+                    quote $ Option Number
                   , .unwrap-or 9
                 , .round
               assert= (Result :ok 2) (res-ok .and-then to-ok)
@@ -1837,7 +1842,8 @@
                 open-map $ assert-type
                   {} (:a 1) (:b |x)
                   :: 'Map 'Tag 'Dynamic
-                open-list $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
+                open-list $ assert-type ([] 1 |x)
+                  quote $ List Dynamic
                 present $ get open-map :a
               do
                 assert= (Option :some 1) present

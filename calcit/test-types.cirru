@@ -95,6 +95,20 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'compact-type-exprs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compact-type-exprs (text)
+            let
+                pick $ fn (x) x
+                typed-pick $ assert-type pick $ quote
+                  Fn T (-> T) (:generics T)
+                items $ parse-cirru-edn-as text $ quote (List Number)
+              &+ (typed-pick 1) (count items)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
+          :tests $ [] $ %{} 'TestEntry (:name |compact-type-expressions)
+            :code $ quote $ assert= 4 (compact-type-exprs "|[] 1 2 3")
+            :tags $ #{} :compact-type-expr
         'describe-typed $ %{} 'CodeEntry (:doc "|Combines typed label and number")
           :code $ quote $ defn describe-typed (label value) (str label "|: " value)
           :examples $ []

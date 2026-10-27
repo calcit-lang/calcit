@@ -18,6 +18,46 @@ Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间
 类型关系。完整的分层 owner、开放值与 Agent source-fix 契约见
 [`09-12-layered-semantics-and-agent-fixes-rfc.md`](../RFCs/09-12-layered-semantics-and-agent-fixes-rfc.md)。
 
+## 精简类型表达式
+
+类型位置可以用 `quote $ …` 写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价：
+
+```cirru
+assert-type xs $ quote $ List Number
+assert-type table $ quote $ Map String (List app.schema/Item)
+assert-type f $ quote $ Fn Number String (-> Bool)
+assert-type map-fn $ quote $ Fn C
+  Fn T $ -> U
+  -> Dynamic
+  :generics C T U
+  :where $ C Mappable
+```
+
+可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，以及
+`calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
+
+写法规则：
+
+- 不带 `/` 的类型名和泛型变量以大写字母开头，不加 `'`；带 `/` 的限定名大小写不限；`*name` 是 type slot。
+- `(Name 参数…)` 是类型应用，覆盖 `List`、`Map`、`Option`、`Result` 和带泛型的 Struct/Enum；无参数时直接写 `Name`。
+- `Fn` 先写位置参数，`& T` 表示剩余参数，返回值写成恰好一个 `(-> T)` 子句；无具体返回类型时写 `(-> Dynamic)`。
+- 其余子句以 tag 开头，各占一行或写在括号里：`:generics T U`、`:where (T Trait…)`、`:async`、`:features :js-ffi`。
+  `:where` 只能约束本层 `:generics` 声明的变量，内层 `Fn` 不能重复声明外层的变量。
+
+语法错误在预处理时报告 `E_TYPE_EXPR_SYNTAX`，例如：
+
+```bash
+calcit eval 'assert-type ([] 1) $ quote $ List number'
+# [E_TYPE_EXPR_SYNTAX] invalid compact type expression: `number` is not a type name; …
+```
+
+### 限制
+
+- 小写叶子、`'x`、tag 类型和裸 `->` 不属于精简写法，会报错。
+- `.`、`=`、`forall` 留给将来的类型运算符；`:generics` 中的列表项和参数化 trait 约束暂不支持。
+- `Macro` 合同暂时只能写规范形式。
+- 其它类型位置（如 `hint-fn`、`defstruct` 字段）继续使用规范形式。
+
 ## 可省略声明的闭合 helper
 
 普通、非递归、零参数 `defn`，在函数体能够证明完整返回类型时，可以省略重复的 root `:schema`。例如下列 helper 可由正常预处理得到 `Fn () -> Number`：

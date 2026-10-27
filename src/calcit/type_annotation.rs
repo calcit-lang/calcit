@@ -3776,6 +3776,17 @@ impl CalcitTypeAnnotation {
       return DYNAMIC_TYPE.clone();
     }
 
+    // `quote $ Fn …` and `quote $ List …` are compact spellings of the
+    // canonical forms; without this a quoted list would parse as a List value.
+    match crate::calcit::type_expr::desugar_quoted_form(form) {
+      Some(Ok(canonical)) => return parse_nested(&canonical),
+      Some(Err(message)) => {
+        eprintln!("[Error] invalid compact type expression: {message}");
+        return DYNAMIC_TYPE.clone();
+      }
+      None => {}
+    }
+
     // A definition value used in a type-expression position denotes its
     // instance type. Runtime expression inference still classifies the same
     // value as StructDef/EnumDef; this branch is deliberately schema-only.

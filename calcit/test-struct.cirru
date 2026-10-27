@@ -388,7 +388,8 @@
         'collect-unique-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collect-unique-proof (names)
             let
-                initial $ assert-type (#{}) (:: 'Set 'String)
+                initial $ assert-type (#{})
+                  quote $ Set String
               fold names initial $ fn (days name)
                 .union days $ #{} name
           :examples $ []
@@ -404,7 +405,8 @@
             :tags $ #{} :empty-container-proof
         'empty-list-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-list-proof ()
-            assert-type ([]) (:: 'List 'String)
+            assert-type ([])
+              quote $ List String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []

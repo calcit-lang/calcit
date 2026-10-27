@@ -18,6 +18,7 @@ mod symbol;
 mod syntax_name;
 mod thunk;
 pub(crate) mod type_annotation;
+pub(crate) mod type_expr;
 
 use core::cmp::Ord;
 use std::cmp::Eq;

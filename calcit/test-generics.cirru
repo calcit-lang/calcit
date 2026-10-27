@@ -69,14 +69,9 @@
                 s $ id2 |hi
                 debugged-n $ debug-id 1
                 debugged-s $ debug-id |hi
-              assert-type id2 $ :: 'Fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T
-              assert-type debug-id $ :: 'Fn $ {}
-                :generics $ [] 'T
-                :where $ {} $ 'T Debug
-                :args $ [] 'T
-                :return 'String
+              assert-type id2 $ quote $ Fn T (-> T) (:generics T)
+              assert-type debug-id $ quote $ Fn T (-> String) (:generics T)
+                :where $ T Debug
               assert-type n 'Number
               assert-type s 'String
               assert= |1 debugged-n
