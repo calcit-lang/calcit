@@ -1500,47 +1500,6 @@ mod type_query_tests {
   }
 
   #[test]
-  fn enum_originless_method_query_retains_schema_without_claiming_strict_call_proof() {
-    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let snapshot = load_core_snapshot().expect("core snapshot should load");
-    prepare_program_for_type_query_on_cli_stack(snapshot);
-    let receiver = parse_type_annotation_query("'Enum").expect("Enum query should parse");
-    let contract = runner::preprocess::static_method_contract(receiver.as_ref(), ".assoc");
-    assert_eq!(contract.status, "open");
-    assert!(
-      method_call_types(&contract).is_none(),
-      "rejected dispatch must not advertise executable call evidence"
-    );
-    assert_eq!(contract.definition.as_deref(), Some("calcit.core/&enum:assoc"));
-    assert_eq!(contract.return_type.as_ref().unwrap().describe(), "enum");
-    assert_eq!(
-      contract
-        .arg_types
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(|arg| arg.describe())
-        .collect::<Vec<_>>(),
-      ["number", "dynamic"]
-    );
-    let detail = contract
-      .detail
-      .as_deref()
-      .expect("strict dispatch limitation should be discoverable");
-    assert!(detail.contains("E_ORIGINLESS_METHOD_DISPATCH"));
-    assert!(detail.contains("&core-enum-methods"));
-    let contracts = runner::preprocess::static_method_contracts(receiver.as_ref()).expect("Enum methods");
-    let (_, listed) = contracts.iter().find(|(descriptor, _)| descriptor.name == ".assoc").unwrap();
-    assert_eq!(listed.status, contract.status);
-    assert_eq!(listed.detail, contract.detail);
-    let (_, empty) = contracts.iter().find(|(descriptor, _)| descriptor.name == ".empty?").unwrap();
-    assert_eq!(empty.status, "open", "a closed signature cannot prove rejected dispatch");
-    assert_eq!(empty.return_type.as_ref().unwrap().describe(), "bool");
-    let (_, count) = contracts.iter().find(|(descriptor, _)| descriptor.name == ".count").unwrap();
-    assert_eq!(count.status, "proven", "nominal trait origins remain available");
-  }
-
-  #[test]
   fn number_type_query_uses_static_dispatch_metadata() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");

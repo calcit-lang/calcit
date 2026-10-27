@@ -10251,7 +10251,8 @@ fn validate_method_call(
     ImplMethodResolution::Selected(candidate)
       if strict_types_enabled()
         && should_emit_project_source_lint(file_ns)
-        && is_originless_legacy_method(type_value.as_ref(), &candidate) =>
+        && candidate.impl_value.is_inherent()
+        && !is_builtin_method_candidate(type_value.as_ref(), &candidate) =>
     {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
@@ -11047,10 +11048,6 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
   candidate.impl_value.is_inherent() && candidate.impl_value.name().ref_str() == expected_name
 }
 
-fn is_originless_legacy_method(receiver: &CalcitTypeAnnotation, candidate: &ImplMethodCandidate<'_>) -> bool {
-  candidate.impl_value.is_inherent() && !is_builtin_method_candidate(receiver, candidate)
-}
-
 fn impl_candidate_origin(candidate: &ImplMethodCandidate<'_>) -> String {
   candidate
     .impl_value
@@ -11146,14 +11143,6 @@ pub struct StaticMethodContract {
 }
 
 impl StaticMethodContract {
-  fn with_dispatch_limit(mut self, detail: Option<String>) -> Self {
-    if let Some(detail) = detail {
-      self.status = "open";
-      self.detail = Some(detail);
-    }
-    self
-  }
-
   fn open(detail: impl Into<String>) -> Self {
     Self {
       status: "open",
@@ -11302,7 +11291,6 @@ fn static_method_contract_with_impls(
   scope: Option<&ScopeTypes>,
 ) -> StaticMethodContract {
   let bare_name = method_name.trim_start_matches('.');
-  let mut dispatch_limit = None;
   let (schema, definition) = if let Some(traits) = traits {
     match resolve_trait_method(traits, bare_name) {
       TraitMethodResolution::Selected(candidate) => (candidate.method_type, Some(candidate.trait_def.origin_label())),
@@ -11333,22 +11321,16 @@ fn static_method_contract_with_impls(
       }
       ImplMethodResolution::Missing => return StaticMethodContract::open("method is not present in the resolved implementation"),
     };
-    if is_originless_legacy_method(receiver, &selected) {
-      dispatch_limit = Some(format!(
-        "E_ORIGINLESS_METHOD_DISPATCH: strict method `.{bare_name}` resolves only through originless legacy impl bag `{}`; define a nominal trait with deftrait/defimpl, or call a typed named function directly",
-        selected.impl_value.name()
-      ));
-    }
     let entry = selected.entry;
     match entry {
       Calcit::Import(import) => {
         if let Some(contract) = checked_core_method_contract(receiver, &import.ns, &import.def) {
-          return contract.with_dispatch_limit(dispatch_limit);
+          return contract;
         }
       }
       Calcit::Fn { info, .. } => {
         if let Some(contract) = checked_core_method_contract(receiver, &info.def_ns, &info.name) {
-          return contract.with_dispatch_limit(dispatch_limit);
+          return contract;
         }
       }
       _ => {}
@@ -11462,7 +11444,6 @@ fn static_method_contract_with_impls(
     definition,
     detail: has_open_types.then(|| "specialized schema retains Dynamic or DynFn; precise call contract is unproven".to_owned()),
   }
-  .with_dispatch_limit(dispatch_limit)
 }
 
 /// List methods available for a statically known type, ordered from higher to

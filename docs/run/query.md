@@ -207,8 +207,6 @@ calcit query def 'calcit.core/&map:get' --format edn
 标为“目标”的名字只有在当前版本的查询中实际存在且类型契约可用时才可生成调用；
 `open` 表示查询证明不足，不能直接等同于运行失败，也不能绕过严格检查。
 
-如果实现仅来自严格模式拒绝的无名义来源旧方法包，查询也会标为 `open`，并在 `detail` 中说明 `E_ORIGINLESS_METHOD_DISPATCH`；已知参数和返回类型仍保留供阅读。例如 Enum 的 `.assoc` 不能仅因有完整签名就视为可迁移目标：现有 `assoc op 0 tag` 调用应保留，或在有合适名义 trait 合同后再迁移。该提示复用实际分派判定，不改变严格检查，也不把内部 definition path 变为公开 API 建议。
-
 结构化方法条目中的 `:call-types`（JSON 为 `call_types`）补充已解析的参数、rest 和返回类型语法节点；参数不含隐式接收者，Fn 回调及泛型变量不会退化成显示字符串。它复用已有 checker 的证明，只在 `proven` 且语法可表达时提供；`open/ambiguous` 没有该字段。原有 `parameter-types/return-type` 仍便于阅读，schema 原声明仍通过 definition path 查询。比如 List `.get` 的实现 `get` 可处理开放值，但具体 List 查询给出的调用返回类型是 `Option<Number>`，不能只凭实现的宽 schema 判断方法类型。默认 human 使用同一方法列表，不增加命令或参数。
 
 Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
