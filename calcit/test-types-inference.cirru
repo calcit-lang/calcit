@@ -1620,6 +1620,124 @@
                     predicate bool?
                   assert= true $ predicate false
               :tags $ #{} :predicate-errors :unit
+            %{} 'TestEntry (:name |known-callback-arity-ranges)
+              :code $ quote $ let
+                  one $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x 1
+                  zero $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Number
+                    , 8
+                  optional $ fn (x delta)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    + x $ match delta
+                      (:some n) n
+                      (:none) 0
+                  rest-values $ fn (x & values)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :rest 'Number
+                      :return 'Number
+                    foldl values x $ fn (acc n) (&+ acc n)
+                  invoke-one $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Fn
+                        {}
+                          :args $ [] 'Number
+                          :return 'Number
+                      :return 'Number
+                    let
+                        alias callback
+                        captured $ fn ()
+                          hint-fn $ {}
+                            :args $ []
+                            :return 'Number
+                          alias 7
+                      captured
+                  invoke-zero $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Fn
+                        {}
+                          :args $ []
+                          :return 'Number
+                      :return 'Number
+                    callback
+                  invoke-optional $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Fn
+                        {}
+                          :args $ [] 'Number $ :: 'Option 'Number
+                          :return 'Number
+                      :return 'Unit
+                    assert= 7 $ callback 7
+                    assert= 9 $ callback 7 $ Option :some 2
+                    assert= 7 $ callback & $ [] 7
+                    , &unit
+                  invoke-rest $ fn (callback values)
+                    hint-fn $ {}
+                      :args $ []
+                        :: 'Fn $ {}
+                          :args $ [] 'Number
+                          :rest 'Number
+                          :return 'Number
+                        :: 'List 'Number
+                      :return 'Unit
+                    assert= 7 $ callback 7
+                    assert= 24 $ callback 7 8 9
+                    assert= 24 $ callback 7 & values
+                    , &unit
+                assert= 8 $ invoke-one one
+                assert= 8 $ invoke-zero zero
+                invoke-optional optional
+                invoke-rest rest-values $ [] 8 9
+              :tags $ #{} :callback-arity :unit
+            %{} 'TestEntry (:name |known-callback-evaluation-and-open-transport)
+              :code $ quote $ let
+                  trace $ ref |
+                  record $ fn (label value)
+                    hint-fn $ {}
+                      :args $ [] 'String 'Number
+                      :return 'Number
+                    reset! trace $ str (deref trace) label
+                    , value
+                  add $ fn (left right)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Number
+                    record |c $ + left right
+                  produce $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'Fn $ {}
+                        :args $ [] 'Number 'Number
+                        :return 'Number
+                    reset! trace $ str (deref trace) |h
+                    , add
+                  keep-open $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] 'Fn
+                      :return 'Fn
+                    , callback
+                assert= 15 $
+                  produce
+                  record |a 7
+                  record |b 8
+                assert= |habc $ deref trace
+                reset! trace |
+                assert= 9 $ try
+                    produce
+                    raise |stop
+                    record |b 8
+                  fn (message) (assert= |stop message) 9
+                assert= |h $ deref trace
+                assert= true $ fn? $ keep-open add
+              :tags $ #{} :callback-arity :unit
         'test-generics-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-generics-identity ()
             let

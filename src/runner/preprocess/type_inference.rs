@@ -2319,10 +2319,29 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     Some(Calcit::Syntax(CalcitSyntax::Defmacro, _)) => SchemaKind::Macro,
     _ => fn_annotation.fn_kind,
   };
+  // Legacy `?` is a property of the lexical parameter list, not of the
+  // Optional value type. Preserve it when a local function gains a signature.
+  let runtime_arity = fn_annotation.runtime_arity.or_else(|| {
+    let Calcit::List(params) = xs.get(2)? else { return None };
+    let shape = super::analyze_def_schema_param_shape(params);
+    if shape.optional == 0 || !shape.errors.is_empty() {
+      return None;
+    }
+    let fixed_count = shape.required + shape.optional;
+    let optional_count = if shape.has_rest {
+      shape.optional
+    } else {
+      shape.optional.max(calcit::trailing_option_arg_count(&arg_types, fixed_count))
+    };
+    Some(calcit::ProcArity {
+      min: fixed_count - optional_count,
+      max: (!shape.has_rest).then_some(fixed_count),
+    })
+  });
 
   mark_async_callable(
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      runtime_arity: fn_annotation.runtime_arity,
+      runtime_arity,
       generics: fn_annotation.generics.clone(),
       where_bounds: fn_annotation.where_bounds.clone(),
       arg_types,
