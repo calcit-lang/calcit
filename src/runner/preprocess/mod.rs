@@ -9580,14 +9580,20 @@ fn pick_callable_from_method_entry(
   }
 }
 
-/// Retain runtime method precedence when a backend recovers the nominal
-/// identity of an already-checked open receiver at a concrete call site.
+/// Resolve checked runtime dispatch through a fixed builtin method table, or
+/// a nominal receiver whose actual value proves its attached implementations.
 pub(crate) fn resolve_runtime_method_callable(
   receiver_type: &CalcitTypeAnnotation,
+  exact_impls: bool,
   method_name: &str,
   file_ns: &str,
 ) -> Result<Option<Calcit>, String> {
-  if receiver_type.resolve_to_enum().is_none() && receiver_type.resolve_to_struct().is_none() {
+  // Container payload variables do not change a builtin's method table. A
+  // nullable contract may also hold nil, so it cannot select the inner table.
+  let fixed_builtin = !matches!(receiver_type, CalcitTypeAnnotation::Nullable(_, _))
+    && core_impl_list_symbol_from_type_annotation(receiver_type).is_some();
+  let nominal = receiver_type.resolve_to_enum().is_some() || receiver_type.resolve_to_struct().is_some();
+  if !fixed_builtin && !(nominal && exact_impls) {
     return Ok(None);
   }
   let Some(impls) = get_impls_from_type(receiver_type) else {

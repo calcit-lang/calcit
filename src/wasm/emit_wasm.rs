@@ -5776,10 +5776,7 @@ fn infer_wasm_evidence_in_scope(
       .and_then(|head| match head {
         Calcit::Method(name, MethodKind::Invoke(_)) => {
           let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, visiting)?;
-          if !receiver.exact_impls {
-            return None;
-          }
-          let callable = resolve_runtime_method_callable(&receiver.annotation, name, &ctx.source_ns).ok()??;
+          let callable = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns).ok()??;
           let mut direct = vec![callable];
           direct.extend(items.iter().skip(1).cloned());
           infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, visiting)
@@ -7232,8 +7229,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     Calcit::Method(name, kind) => match kind {
       MethodKind::Invoke(_) => {
         if let Some(receiver) = args_list.first().and_then(|arg| infer_wasm_value_evidence(ctx, arg))
-          && receiver.exact_impls
-          && let Some(callable) = resolve_runtime_method_callable(&receiver.annotation, name, &ctx.source_ns)
+          && let Some(callable) = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns)
             .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?
         {
           return emit_resolved_method_call(ctx, callable, &args_list);

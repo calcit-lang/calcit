@@ -2005,7 +2005,7 @@
           :code $ quote $ defn &list:find-last-index (xs f)
             let
                 index $ foldr-shortcut xs
-                  dec $ count xs
+                  dec $ .len xs
                   , -1 $ fn (idx x)
                     if (f x) (:: true idx)
                       :: false $ &- idx 1
