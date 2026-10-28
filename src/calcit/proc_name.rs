@@ -186,6 +186,8 @@ pub enum CalcitProc {
   JsonPretty,
   #[strum(serialize = "&cirru-quote:to-list")]
   NativeCirruQuoteToList,
+  #[strum(serialize = "&cirru-quote:leaf-text")]
+  NativeCirruQuoteLeafText,
   // time
   #[strum(serialize = "monotonic-time-ms")]
   MonotonicTimeMs,
@@ -1508,6 +1510,10 @@ impl CalcitProc {
       }),
       NativeCirruQuoteToList => Some(ProcTypeSignature {
         return_type: some_tag("list"),
+        arg_types: vec![some_tag("cirru-quote")],
+      }),
+      NativeCirruQuoteLeafText => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
         arg_types: vec![some_tag("cirru-quote")],
       }),
       NativeCirruNth => Some(ProcTypeSignature {

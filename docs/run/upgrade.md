@@ -24,7 +24,42 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.32.0 类型签名只用 quote 精简写法（#2450，未发布）
+## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435，未发布）
+
+旧的内部入口 `&cirru-quote:to-list` 签名声明返回 List，但在 0.32.x 及更早版本中，叶根会返回 token
+String，strict 检查因此可能把一个 String 当成 List 放行，运行时才在后续操作里崩溃。从 0.33.0 起，
+它只接受列表根；遇到叶根时 native 与 JS 都报类型错误，不再返回 String：
+
+```text
+&cirru-quote:to-list requires a list root, but received the leaf `x`; use .to-list for Option<List> or .leaf-text for the token
+```
+
+公开方法不变：`.to-list` 对列表根返回 `(:some rows)`、对叶根返回 `:none`；`.leaf-text` 对叶根返回
+原始 token 文本（不解析前导冒号或竖线）、对列表根返回 `:none`。`.leaf-text` 现在使用新的内部
+`&cirru-quote:leaf-text` 读取 token，这个内部入口对列表根同样报错，应用代码不要直接调用。
+
+迁移方式：先用 0.32.x 搜索直接调用旧入口的位置，
+
+```bash
+calcit query search '&cirru-quote:to-list'
+```
+
+再把依赖叶根返回 String 的写法改成公开方法，例如把
+`if (string? (&cirru-quote:to-list node)) …` 改为先用 `.leaf?` 或 `.leaf-text` 区分叶根：
+
+```cirru
+let
+    node $ cirru-quote token
+  match (.leaf-text node)
+    (:some text) text
+    (:none) $ match (.to-list node)
+      (:some rows) rows
+      (:none) (raise "|unreachable: a CirruQuote root is a leaf or a list")
+```
+
+只处理列表根的调用（例如整个文件的解析结果、顶层表达式）结果不变。
+
+## 0.32.0 类型签名只用 quote 精简写法（#2450）
 
 Snapshot 里的 `:schema` 和代码类型位置不再接受 `:: 'Fn $ {} (:args …) (:return …)`、`:: 'List 'Number`、
 `:number` 这类旧写法，加载时报 `E_LEGACY_TYPE_SYNTAX` 并给出对应的精简写法。迁移命令：
@@ -44,7 +79,7 @@ calcit <snapshot> edit format
 `canonical_schema` 与 `tree` 同样如此；没有精简拼写的形状仍显示规范 EDN。脚本里按旧文本（如 `':: 'List 'Number'`、`"'Number"`）
 匹配查询结果的，需要改为新写法。`calcit query type` 的参数也可以直接写 `List Number`、`Map String (List Number)` 或单个类型名 `Number`。
 
-## 0.32.0 已知回调检查调用参数数量（未发布）
+## 0.32.0 已知回调检查调用参数数量
 
 有具体 `Fn` 合同的回调，调用时必须满足声明的参数范围。此前 `Fn(Number) -> Number`
 被写成 `callback 7 8` 时，严格检查可能通过，直到 native 或 JS 执行才报错；现在会在源调用处
@@ -68,7 +103,7 @@ let
 只保存或传递裸 `Fn` 不会被假定为零参数签名；无法确定长度的展开仍使用现有证明与运行时边界。
 本项属于 0.32.0 的新拒绝行为，0.31.1 发布版不含此收紧。
 
-## 0.32.0 native 的 `identical?` 按引用比较（#2448，未发布）
+## 0.32.0 native 的 `identical?` 按引用比较（#2448）
 
 native 解释器上的 `identical?` 此前退化为值相等，与 JS 的 `===` 不一致：分别构造、内容相同的值在 native
 返回 `true`，在 JS 返回 `false`。现在两端一致：nil、布尔、数字、字符串和 tag 按值比较；List、Map、Set、
@@ -88,7 +123,7 @@ let
 比较内容改用 `=`；保留元素身份比较时先解包 Option，再对元素调用 `identical?`。没有改变内容的
 `decode-map-as` 继续返回原值，`identical?` 保持成立。
 
-## 0.32.0 删除两参数 `hint-fn f schema`（#2378，未发布）
+## 0.32.0 删除两参数 `hint-fn f schema`（#2378）
 
 0.31.0 在 `--check-only` 的 `Notes:` 中以 `W_LEGACY_HINT_FN_TARGET` 提示的两参数形式现已删除。写出
 `hint-fn f schema` 会在预处理时于目标 `f` 的源码位置报 `E_LEGACY_HINT_FN_TARGET`，不再运行或生成代码。
@@ -138,9 +173,9 @@ calcit query type "'CirruQuote"
 calcit query def calcit.core/cirru-quote:to-list --raw
 ```
 
-旧 `&cirru-quote:to-list` 是内部兼容入口，0.31.x 保留其已有行为；叶根实际返回 String，
-旧签名不能作为 List 的证明。应用迁移到公开方法；后续内部合同收敛需同时保留
-`.leaf-text` 的原始 token 语义。完整数据形状和用法见 [Cirru EDN](../data/edn.md)。
+旧 `&cirru-quote:to-list` 是内部兼容入口，0.31.x 与 0.32.x 保留其已有行为；叶根实际返回 String，
+旧签名不能作为 List 的证明。应用迁移到公开方法；0.33.0 起它对叶根报错，见上文
+「0.33.0 内部 `&cirru-quote:to-list` 只接受列表根」。完整数据形状和用法见 [Cirru EDN](../data/edn.md)。
 
 ## 0.31.0 默认检查证明 Dynamic 的流向（#2121）
 

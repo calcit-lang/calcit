@@ -36,6 +36,17 @@ try {
   assert.equal(runtime.format_cirru(tree, true), "\na (b c) (d e)\n");
   assert.equal(runtime.format_cirru_edn(tree), runtime.format_cirru_edn(tree, true));
   assert.notEqual(runtime.format_cirru_edn(tree, false), runtime.format_cirru_edn(tree, true));
+  // The internal CirruQuote procs reject the root shape they cannot represent
+  // instead of returning a String where the schema promises a List (#2435).
+  const listRoot = runtime._$n_cirru_nth(runtime.parse_cirru("a b"), 0);
+  const leafRoot = runtime._$n_cirru_nth(listRoot, 1);
+  assert.equal(runtime._$n_cirru_quote_$o_leaf_text(runtime._$n_cirru_nth(runtime._$n_cirru_nth(runtime.parse_cirru("|:k"), 0), 0)), "|:k");
+  assert.equal(runtime._$n_cirru_quote_$o_leaf_text(leafRoot), "b");
+  assert.throws(() => runtime._$n_cirru_quote_$o_to_list(leafRoot), /requires a list root, but received the leaf `b`/);
+  assert.throws(() => runtime._$n_cirru_quote_$o_leaf_text(listRoot), /requires a leaf root, but received a list/);
+  for (const proc of [runtime._$n_cirru_quote_$o_to_list, runtime._$n_cirru_quote_$o_leaf_text]) {
+    assert.throws(() => proc("b"), /requires a Cirru quote/);
+  }
   const originalError = console.error;
   const errors = [];
   console.error = (...args) => errors.push(args);
@@ -89,6 +100,17 @@ try {
       assert.doesNotMatch(message, /internal compiler error/);
       assert.deepEqual(await readFile(snapshot), original, "rejected quote calls must not mutate source");
     }
+  }
+  for (const [source, diagnostic] of [
+    ["&cirru-quote:to-list (cirru-quote x)", /requires a list root, but received the leaf `x`/],
+    ["&cirru-quote:leaf-text (cirru-quote (a b))", /requires a leaf root, but received a list/],
+  ]) {
+    const rejected = spawnSync(binary, [snapshot, "eval", source], options);
+    if (rejected.error) throw rejected.error;
+    const message = `${rejected.stdout}\n${rejected.stderr}`;
+    assert.equal(rejected.status, 1, message);
+    assert.match(message, diagnostic);
+    assert.doesNotMatch(message, /internal compiler error/);
   }
   run("test", "--tag", "parse-boundary", "--require-match");
 
