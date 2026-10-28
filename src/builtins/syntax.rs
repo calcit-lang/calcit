@@ -522,11 +522,11 @@ mod tests {
     ]);
     let wildcard = Calcit::from(vec![make_symbol("_", "tests.match", "indexed"), Calcit::Number(-1.0)]);
     let table = Calcit::from(vec![Calcit::Nil, some_branch, wildcard]);
-    let make_expr = |extra| {
+    let make_expr = |extra: Vec<Calcit>| {
       CalcitList::Vector(vec![
         Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(Calcit::Tag(EdnTag::from("some"))),
-          extra,
+          extra: Arc::new(extra),
           sum_type: Some(enum_def.clone()),
         }),
         Calcit::EnumDef(enum_def.as_ref().to_owned()),

@@ -639,7 +639,7 @@ impl EffectsGraphAnalyzer {
         self.walk_expr(code, current_ns, out, depth);
       }
       Calcit::Enum(enum_value) => {
-        for item in &enum_value.extra {
+        for item in enum_value.extra.iter() {
           self.walk_expr(item, current_ns, out, depth);
         }
       }
@@ -1055,7 +1055,7 @@ fn extract_call_targets_recursive(code: &Calcit, current_ns: &str, calls: &mut V
       extract_call_targets_recursive(code, current_ns, calls);
     }
     Calcit::Enum(enum_value) => {
-      for item in &enum_value.extra {
+      for item in enum_value.extra.iter() {
         extract_call_targets_recursive(item, current_ns, calls);
       }
     }

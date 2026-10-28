@@ -451,8 +451,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeLessThan => logics::binary_less(args),
     NativeGreaterThan => logics::binary_greater(args),
     Not => logics::not(args),
-    // in Rust, no real pointer `identical?`, fallback to value equal
-    Identical => logics::binary_equal(args),
+    Identical => logics::identical(args),
     // math
     NativeAdd => math::binary_add(args),
     NativeMinus => math::binary_minus(args),

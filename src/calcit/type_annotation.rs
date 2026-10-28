@@ -3233,7 +3233,7 @@ impl CalcitTypeAnnotation {
       }
       Edn::Enum(view) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Self::edn_type_to_calcit(&Edn::Symbol(view.variant.clone()))),
-        extra: view.extra.iter().map(Self::edn_type_to_calcit).collect(),
+        extra: view.extra.iter().map(Self::edn_type_to_calcit).collect::<Vec<_>>().into(),
         sum_type: None,
       }),
       _ => Calcit::Nil,
@@ -6006,18 +6006,18 @@ impl CalcitTypeAnnotation {
       Self::Fn(_) => Calcit::Tag(EdnTag::from("fn")),
       Self::Variadic(inner) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
-        extra: vec![inner.to_calcit()],
+        extra: vec![inner.to_calcit()].into(),
         sum_type: None,
       }),
       Self::Custom(value) => value.as_ref().to_owned(),
       Self::Nullable(inner, NullableOrigin::Calcit) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
-        extra: vec![inner.to_calcit()],
+        extra: vec![inner.to_calcit()].into(),
         sum_type: None,
       }),
       Self::Nullable(inner, NullableOrigin::JsHost) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::from("js-nullish"))),
-        extra: vec![inner.to_calcit()],
+        extra: vec![inner.to_calcit()].into(),
         sum_type: None,
       }),
       Self::Struct(struct_def, args) => {

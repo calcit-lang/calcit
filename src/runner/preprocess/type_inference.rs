@@ -5237,7 +5237,7 @@ mod tests {
   fn typed_decode_expression_has_declared_target_type() {
     let target = Calcit::Enum(calcit::CalcitEnumValue {
       tag: Arc::new(Calcit::tag("list")),
-      extra: vec![Calcit::tag("number")],
+      extra: vec![Calcit::tag("number")].into(),
       sum_type: None,
     });
     for syntax in [CalcitSyntax::ParseCirruEdnAs, CalcitSyntax::DecodeMapAs] {
@@ -5258,7 +5258,7 @@ mod tests {
   fn safe_typed_decode_expression_has_result_target_type() {
     let target = Calcit::Enum(calcit::CalcitEnumValue {
       tag: Arc::new(Calcit::tag("list")),
-      extra: vec![Calcit::tag("number")],
+      extra: vec![Calcit::tag("number")].into(),
       sum_type: None,
     });
     for syntax in [CalcitSyntax::TryParseCirruEdnAs, CalcitSyntax::TryDecodeMapAs] {
@@ -5283,7 +5283,7 @@ mod tests {
   fn assert_type_expression_has_declared_target_type() {
     let target = Calcit::Enum(calcit::CalcitEnumValue {
       tag: Arc::new(Calcit::tag("list")),
-      extra: vec![Calcit::tag("number")],
+      extra: vec![Calcit::tag("number")].into(),
       sum_type: None,
     });
     let expression = Calcit::from(vec![

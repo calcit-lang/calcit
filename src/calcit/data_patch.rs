@@ -279,7 +279,7 @@ fn apply_patch_node(
           format!("base enum variant does not match :{expected_tag}; use Replace for variant changes"),
         ));
       }
-      let mut payloads = enum_value.extra.clone();
+      let mut payloads = enum_value.extra.as_ref().clone();
       for (payload_index, child_patch) in updates {
         let child_node = payload_nodes
           .get(*payload_index)
@@ -296,7 +296,7 @@ fn apply_patch_node(
       }
       Ok(Calcit::Enum(CalcitEnumValue {
         tag: enum_value.tag.clone(),
-        extra: payloads,
+        extra: Arc::new(payloads),
         sum_type: enum_value.sum_type.clone(),
       }))
     }
@@ -421,7 +421,7 @@ mod tests {
     let score_node = variants[variant].1[0];
     let base = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("score"))),
-      extra: vec![Calcit::Number(1.0)],
+      extra: vec![Calcit::Number(1.0)].into(),
       sum_type: Some(nominal),
     });
     let patch = DataPatch::new(
@@ -444,7 +444,7 @@ mod tests {
     let Calcit::Enum(enum_value) = value else {
       panic!("patched outcome must remain an enum");
     };
-    assert_eq!(enum_value.extra, vec![Calcit::Number(2.0)]);
+    assert_eq!(*enum_value.extra, vec![Calcit::Number(2.0)]);
     assert!(enum_value.sum_type.is_some());
   }
 }

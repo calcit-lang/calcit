@@ -7,7 +7,7 @@ use super::{CalcitEnumDef, CalcitImpl};
 #[derive(Debug, Clone)]
 pub struct CalcitEnumValue {
   pub tag: Arc<Calcit>,
-  pub extra: Vec<Calcit>,
+  pub extra: Arc<Vec<Calcit>>,
   pub sum_type: Option<Arc<CalcitEnumDef>>,
 }
 

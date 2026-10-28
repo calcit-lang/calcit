@@ -44,7 +44,7 @@ fn core_enum_def(name: &'static str) -> Result<Arc<CalcitEnumDef>, CalcitErr> {
 pub(crate) fn value(name: &'static str, tag: &str, extra: Vec<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Enum(CalcitEnumValue {
     tag: Arc::new(Calcit::tag(tag)),
-    extra,
+    extra: extra.into(),
     sum_type: Some(core_enum_def(name)?),
   }))
 }
