@@ -13,8 +13,7 @@
         'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 的标准输出与错误输出回归入口。")
           :code $ quote $ defn main! () (println "|你好" 42) (eprintln "|错误") (echo |done) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
             :code $ quote $ assert= &unit (main!)
         'main-file! $ %{} 'CodeEntry (:doc |)
@@ -32,8 +31,7 @@
               result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-growth-loop! $ %{} 'CodeEntry (:doc "|验证大文件读取后反复构造小型 Result 值不会越界。")
           :code $ quote $ defn main-growth-loop! ()
             let
@@ -44,8 +42,7 @@
                 assert= true $ result:ok? $ Result :ok index
               println |Growth-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-overflow! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-overflow! ()
             assert= 4194305 $ count $ str
@@ -57,8 +54,7 @@
                 , |x
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-read-loop! $ %{} 'CodeEntry (:doc "|验证同一内联循环先读取成功文件、再读取缺失文件时稳定返回 Result 错误。")
           :code $ quote $ defn main-read-loop! ()
             each ([] |workspace/valid.txt |workspace/no-such-file |workspace/no-such-file |workspace/no-such-file)
@@ -70,8 +66,7 @@
                     assert= true $ result:err? result
             println |Read-loop-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-unknown-alias! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unknown-alias! ()
             let
@@ -82,15 +77,13 @@
                     , inc dec
                 println $ action 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-unsupported! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported! ()
             assert= true $ result:ok? $ .read-dir (fs:path |workspace)
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main-unsupported-alias! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported-alias! ()
             let
@@ -102,15 +95,13 @@
                   callback
               invoke action
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'read-workspace-file $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-workspace-file (path)
             .read-text $ fs:path path
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'String 'String
+          :schema $ quote $ Fn String
+            -> $ Result String String
           :tests $ []
             %{} 'TestEntry (:name |reads-project-file)
               :code $ quote $ assert= true
@@ -123,13 +114,11 @@
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'transform-content $ %{} 'CodeEntry (:doc "|组合前缀和正文的纯文本转换。")
           :code $ quote $ defn transform-content (prefix content) (str prefix content)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String 'String
+          :schema $ quote $ Fn String String (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |prefixes-text)
             :code $ quote $ assert= "|prefix: payload" (transform-content "|prefix: " |payload)
             :tags $ #{} :unit :wasi
@@ -137,9 +126,8 @@
           :code $ quote $ defn write-workspace-file (path content)
             .write-text! (fs:path path) content
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'String
-            :return $ :: 'Result 'Unit 'String
+          :schema $ quote $ Fn String String
+            -> $ Result Unit String
           :tests $ [] $ %{} 'TestEntry (:name |denies-missing-root)
             :code $ quote $ assert= true
               result:err? $ write-workspace-file |/calcit-no-such-preopen/file.txt |content

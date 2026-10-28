@@ -13,27 +13,25 @@
         '*path-effects $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *path-effects 0
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         'BenchUser $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct BenchUser (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'bench-read-dynamic! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-read-dynamic! ()
             println $ loop-read read-dynamic 100000
               &{} :a $ &{} :b 2
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'bench-read-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-read-typed! ()
             println $ loop-read read-typed 100000
               &{} :a $ &{} :b 2
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'bench-write-dynamic! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-dynamic! ()
             println $ .unwrap-or
@@ -42,8 +40,7 @@
                 [] :a :b
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'bench-write-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-typed! ()
             println $ .unwrap-or
@@ -52,28 +49,22 @@
                 [] :a :b
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'loop-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-read (reader n data acc)
             if (&< n 1) acc $ recur reader (&- n 1) data $ &+ acc
               .unwrap-or (reader data) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-              :: 'Fn $ {}
-                :args $ [] 'Dynamic
-                :return $ :: 'Result 'Dynamic 'PathError
-              , 'Number 'Dynamic 'Number
+          :schema $ quote $ Fn
+            Fn Dynamic $ -> $ Result Dynamic PathError
+            , Number Dynamic Number (-> Number)
         'loop-write $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-write (writer n data)
             if (&< n 1) data $ recur writer (&- n 1) (writer data n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-              :: 'Fn $ {} (:return 'Dynamic)
-                :args $ [] 'Dynamic 'Number
-              , 'Number 'Dynamic
+          :schema $ quote $ Fn
+            Fn Dynamic Number $ -> Dynamic
+            , Number Dynamic (-> Dynamic)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
@@ -107,8 +98,7 @@
                   write-effectful-typed (&{}) 3
                 assert= 123 @*path-effects
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'mark-key! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mark-key! (step key)
             reset! *path-effects $ &+
@@ -116,8 +106,7 @@
               , step
             , key
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Tag)
-            :args $ [] 'Number 'Tag
+          :schema $ quote $ Fn Number Tag (-> Tag)
         'mark-value! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mark-value! (step value)
             reset! *path-effects $ &+
@@ -125,73 +114,67 @@
               , step
             , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'read-dynamic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-dynamic (data)
             get-in data $ [] :a :b
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
-            :return $ :: 'Result 'Dynamic 'PathError
+          :schema $ quote $ Fn Dynamic
+            -> $ Result Dynamic PathError
         'read-effectful-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-effectful-typed (data)
             get-in data $ [] (mark-key! 1 :a) (mark-key! 2 :b)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
-            :return $ :: 'Result 'Number 'PathError
+          :schema $ quote $ Fn
+            Map Tag $ Map Tag Number
+            -> $ Result Number PathError
         'read-indexed-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-indexed-typed (data)
             get-in data $ [] 0 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'List 'Number)
-            :return $ :: 'Result 'Number 'PathError
+          :schema $ quote $ Fn
+            List $ List Number
+            -> $ Result Number PathError
         'read-optional-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-optional-typed (data)
             get-in data $ [] :value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Tag (:: 'Option 'Number)
-            :return $ :: 'Result (:: 'Option 'Number) 'PathError
+          :schema $ quote $ Fn
+            Map Tag $ Option Number
+            -> $ Result (Option Number) PathError
         'read-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-typed (data)
             get-in data $ [] :a :b
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
-            :return $ :: 'Result 'Number 'PathError
+          :schema $ quote $ Fn
+            Map Tag $ Map Tag Number
+            -> $ Result Number PathError
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'write-dynamic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-dynamic (data value)
             assoc-in data ([] :a :b) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic (-> Dynamic)
         'write-effectful-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-effectful-typed (data value)
             assoc-in data
               [] (mark-key! 1 :a) (mark-key! 2 :b)
               mark-value! 3 value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-              :: 'Map 'Tag $ :: 'Map 'Tag 'Number
-              , 'Number
-            :return $ :: 'Map 'Tag $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            Map Tag $ Map Tag Number
+            , Number
+              -> $ Map Tag $ Map Tag Number
         'write-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-typed (data value)
             assoc-in data ([] :a :b) value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-              :: 'Map 'Tag $ :: 'Map 'Tag 'Number
-              , 'Number
-            :return $ :: 'Map 'Tag $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            Map Tag $ Map Tag Number
+            , Number
+              -> $ Map Tag $ Map Tag Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns bench-literal-paths.main (:require)

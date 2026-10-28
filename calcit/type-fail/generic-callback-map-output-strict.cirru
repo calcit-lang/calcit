@@ -21,12 +21,10 @@
               &map:assoc selected |b |wrong
               , |done
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|泛型回调输出类型的严格负例")
         :code $ quote $ ns type-fail-generic-callback-map-output-strict.main

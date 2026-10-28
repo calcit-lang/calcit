@@ -17,18 +17,15 @@
           :doc "|Dynamic argument must be narrowed before nominal Option/Result method syntax."
           :code $ quote $ defn consume-dynamic (value) (value .unwrap-or 0)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes consume-dynamic reachable.")
           :code $ quote $ defn main! ()
             consume-dynamic $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict Dynamic nominal-method fixture.")
         :code $ quote $ ns type-fail-dynamic-nominal-method-strict.main

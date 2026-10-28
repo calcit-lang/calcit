@@ -17,88 +17,87 @@
                 :atom x
                 , x
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         '%r $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl %r DemoGetTrait
             .get $ fn (self) 1
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         '*defref-demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *defref-demo 1
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         '*ref-demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *ref-demo 0
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         'AtomBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def AtomBox (impl-traits AtomBox0 %A)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'AtomBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum AtomBox (:atom 'Dynamic)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'AtomDerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AtomDerefTrait (.deref :fn)
+          :code $ quote $ deftrait AtomDerefTrait (.deref 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Demo (impl-traits Demo0 %r)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Demo0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Demo (:a 'Dynamic)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'DemoGetTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait DemoGetTrait (.get :fn)
+          :code $ quote $ deftrait DemoGetTrait (.get 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Deref $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Deref DerefTrait
             .deref $ fn (self) 2
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'DerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait DerefTrait (.deref :fn)
+          :code $ quote $ deftrait DerefTrait (.deref 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Num $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Num NumTrait
             .inc $ fn (x) (update x 1 inc)
             .show $ fn (x)
               str $ &enum:nth x 1
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'NumBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def NumBox (impl-traits NumBox0 Num)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'NumBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum NumBox (:number 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'NumTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait NumTrait (.inc :fn) (.show :fn)
+          :code $ quote $ deftrait NumTrait (.inc 'Fn) (.show 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'ValueBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def ValueBox (impl-traits ValueBox0 Deref)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'ValueBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum ValueBox (:value 'Dynamic)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'cross-module-counter-next $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cross-module-counter-next (input)
             let
                 typed $ assert-type input 'test-traits.external/Counter
               :value $ typed .next
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |resolves-module-struct-trait)
             :code $ quote $ assert= 2
               cross-module-counter-next $ %{} test-traits.external/Counter $ :value 1
@@ -144,20 +143,17 @@
             inside-js: $ test-js/main!
             do true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
           :code $ quote $ def query-search-node-kinds
             [] Option $ Option :none
           :examples $ []
-          :schema $ :: 'List 'Dynamic
+          :schema $ quote $ List Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-anonymous-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing tuple")
             assert= :enum $ type-of $ :: :a :b
@@ -203,8 +199,7 @@
               assert= "|(%:: 'Demo :a 1)" $ str b
             assert= "|(%:: _ :a :b :c)" $ str $ :: :a :b :c
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-arguments $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing arguments")
             ; "legacy-optional-contract: f1 pins `?` parameters hinted as Optional (E_LEGACY_OPTIONAL_PARAM era); f2 below is the Option form. Delete f1 when Optional is retired (0.32.0)."
@@ -226,8 +221,7 @@
                 f2 2 $ Option :some |ready
                 [] 2 (Option :some |ready) (Option :none)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
@@ -238,14 +232,12 @@
             assert= 1 $ .deref $ %:: AtomBox :atom 1
             assert= 2 $ .deref $ %:: AtomBox :atom 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-buffer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title |Buffer)
             println "|buffer value:" $ &buffer 0x11 |11
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-cirru-parser $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing Cirru parser")
             assert= (parse-cirru-list "|def f (a b) $ + a b")
@@ -269,8 +261,7 @@
               tagging-edn $ {} (|a 1)
                 :b $ [] $ {} (|c 3) (4 5)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-detects $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-detects ()
             assert-detect fn? $ fn () 1
@@ -319,13 +310,11 @@
             assert= false $ .ok? $ get-in ([] 1 2 3) ([] :a)
             assert= 1 $ non-nil! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-display-stack $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-effect $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing effect")
             println "|Env mode:" $ get-env |mode
@@ -345,9 +334,8 @@
                 assert-type (missing-file.write-text! |content)
                   quote $ Result Unit String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Result 'Unit 'String
+          :schema $ quote $ Fn
+            -> $ Result Unit String
         'test-fn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing fn")
             &let
@@ -358,8 +346,7 @@
               assert= ([] 1 2 3 4 5)
                 coll-f 1 & ([] 2 3 4) 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-fn-eq $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing equality of functions")
             let
@@ -369,8 +356,7 @@
               assert= b b
               assert= false $ &= a b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-if $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing if with nil")
             assert= (if false 1) (if nil 1)
@@ -379,8 +365,7 @@
             assert= (if false 1 2) (if &unit 1 2)
             assert= true $ not &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-json $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing JSON")
             let
@@ -399,8 +384,7 @@
             assert= "|\"ok\"" $ json-stringify :ok
             assert= "|{\n  \"a\": 1\n}" $ json-pretty $ {} (:a 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing method")
             let
@@ -423,8 +407,7 @@
                   assert= (%:: NumBox :number 2) a2
                   assert= |1 $ .show a1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-refs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
             assert= &unit $ add-watch! *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
@@ -474,8 +457,7 @@
               assert= 2 $ reset! watched 2
               assert= 1 @notifications
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-tag ()
             ; assert "|tag function" $ =
@@ -489,8 +471,7 @@
                 [] $ &{} :a 1
                 , :a
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-try $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-try ()
             assert= false $ try
@@ -503,8 +484,7 @@
               fn (error) (str :a)
             println "|Finished testing try"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
           :require (test-hygienic.main :as test-hygienic) (test-macro.main :as test-macro) (test-recursion.main :as test-recursion) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)

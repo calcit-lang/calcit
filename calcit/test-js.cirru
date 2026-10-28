@@ -12,68 +12,52 @@
       :defs $ {}
         'TestArray $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestArray (:length 'Number) (:0 'Dynamic) (:1 'Dynamic) (:2 'Dynamic)
-            .0 $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestArray
-              :return 'Dynamic
-            .2 $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestArray
-              :return 'Dynamic
+            .0 $ quote $ Fn test-js.main/TestArray (-> Dynamic)
+            .2 $ quote $ Fn test-js.main/TestArray (-> Dynamic)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TestConsole $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestConsole
-            .log $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestConsole 'Dynamic
-              :return 'Unit
+            .log $ quote $ Fn test-js.main/TestConsole Dynamic (-> Unit)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TestDate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestDate
-            .now $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestDate
-              :return 'Number
+            .now $ quote $ Fn test-js.main/TestDate (-> Number)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TestMath $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestMath (:PI 'Number)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TestObject $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestObject (:a 'Dynamic) (:a-b 'Dynamic) (:b 'Dynamic) (:c 'Dynamic)
-            .f $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestObject
-              :return 'Dynamic
+            .f $ quote $ Fn test-js.main/TestObject (-> Dynamic)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :writable $ #{} :a :a-b :b
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TestStringChain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestStringChain
-            .upper $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestStringChain
-              :return 'test-js.main/TestStringChain
-            .lower $ :: 'Fn $ {}
-              :args $ [] 'test-js.main/TestStringChain
-              :return 'String
+            .upper $ quote $ Fn test-js.main/TestStringChain (-> test-js.main/TestStringChain)
+            .lower $ quote $ Fn test-js.main/TestStringChain (-> String)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :names $ {} (:lower |toLowerCase) (:upper |toUpperCase)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
             &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] $ :: 'Expr 'String
+          :schema $ quote $ Macro (Expr String)
+            -> $ Expr Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            hint-fn $ {} $ :async true
+            hint-fn $ quote Async
             log-title "|Testing js"
             test-js
             test-let-example
@@ -95,16 +79,11 @@
             test-nested-external-chain
             do true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'reassign-same-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reassign-same-generic (value replacement) (set! value replacement) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T 'T
-            :features $ #{} :js-ffi
-            :generics $ [] 'T
+          :schema $ quote $ Fn T T (-> T) (:generics T) (:features :js-ffi)
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
               :code $ quote $ do
@@ -127,13 +106,13 @@
           :code $ quote $ fn ()
             let
                 f1 $ fn ()
-                  hint-fn $ {} $ :async true
+                  hint-fn $ quote Async
                   new js/Promise $ fn (resolve reject)
                     js/setTimeout
                       fn () (println "|async code finished after 200ms") (resolve true)
                       , 200
                 f2 $ fn ()
-                  hint-fn $ {} $ :async true
+                  hint-fn $ quote Async
                   js-await $ f1
                   assert= true $ if true $ js-await (f1)
                   let
@@ -141,20 +120,18 @@
                     assert= true a
               f2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-async-in-data $ %{} 'CodeEntry
           :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
           :code $ quote $ fn ()
-            hint-fn $ {} $ :async true
+            hint-fn $ quote Async
             let
                 timeout $ fn (ms)
                   new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
                 f 0
                 f $ let
                     b $ fn ()
-                      hint-fn $ {} $ :async true
+                      hint-fn $ quote Async
                       let
                           a 1
                           a $ js-await $ timeout 200
@@ -162,12 +139,10 @@
                   b
               js/console.log "|a promise from nested let" $ js-await f
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-case-async $ %{} 'CodeEntry (:doc "|case async")
           :code $ quote $ fn ()
-            hint-fn $ {} $ :async true
+            hint-fn $ quote Async
             let
                 a $ {} $ :a 1
                 b $ option:unwrap $ get a :a
@@ -180,9 +155,7 @@
                       , 100
               assert= ret |one
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-collection $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing quick collection syntax")
             &let
@@ -223,21 +196,17 @@
               assert= nil $ .?!2 f
               assert= 2 $ .?!0 e
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-data-gen $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code gen from Cirru Edn")
             assert=
               :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
               load-data-code "|:: :code $ quote $ + 1 2"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-for-await $ %{} 'CodeEntry (:doc "|for await")
           :code $ quote $ fn ()
-            hint-fn $ {} (:async true)
-              :features $ #{} :js-ffi
+            hint-fn $ quote $ Async (:features :js-ffi)
             let
                 gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
                 ret $ js-await $ js-for-await (gen)
@@ -246,9 +215,7 @@
                       js/setTimeout $ fn () $ resolve item
               assert= 3 ret
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-js $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             js/console.log $ js/Math.pow 4 4
@@ -321,9 +288,7 @@
               &{} |a 1 :b 2 |c $ [] 3 4
               to-calcit-data $ &js-object |a 1 |:b 2 :c $ [] 3 4
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-let-example $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code emitting of using let")
             let
@@ -343,8 +308,7 @@
               assert= a $ [] 0 1 2 3 4
               assert= b -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-method-tag-access $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-method-tag-access ()
             let
@@ -354,8 +318,7 @@
                   another $ make-reel-for-tag-access
                 , another.:store
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |registers-method-only-tag)
             :code $ quote $ test-method-tag-access
         'test-nested-external-arity-fail $ %{} 'CodeEntry (:doc |)
@@ -364,9 +327,7 @@
                 base $ unsafe-coerce |AbC test-js.main/TestStringChain
               .lower $ .upper base |unexpected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> String) (:features :js-ffi)
         'test-nested-external-chain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-nested-external-chain ()
             let
@@ -375,9 +336,7 @@
               assert= |abc $ .lower $ .upper base
               assert= |abc $ .lower upper
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Unit) (:features :js-ffi)
         'test-property $ %{} 'CodeEntry (:doc "|try property ops")
           :code $ quote $ fn ()
             let
@@ -387,9 +346,7 @@
               js-delete a |b
               assert= js/undefined $ js-get a |b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-regexp $ %{} 'CodeEntry (:doc "|try raw code and regexp")
           :code $ quote $ fn ()
             let
@@ -400,9 +357,7 @@
               assert= true $ pattern.!test |12
               assert= false $ pattern.!test |xy
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-return-raw-code $ %{} 'CodeEntry (:doc "|return with &raw-code")
           :code $ quote $ fn ()
             let
@@ -412,9 +367,7 @@
               assert= (f true) 1
               assert= (f false) 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-tag-keys $ %{} 'CodeEntry (:doc "|tag keys for js")
           :code $ quote $ fn ()
             assert= |a_b $ to-string :a_b
@@ -422,8 +375,7 @@
             assert= |a?b $ to-string :a?b
             assert= |ab! $ to-string :ab!
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-js.main
           :require (|os :as os) (|assert :as assert)

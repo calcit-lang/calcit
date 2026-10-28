@@ -13,17 +13,16 @@
         'Message $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Message (:empty) (:pair 'String 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'checked-core-alias-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-core-alias-count (value)
             if (core/string? value) (core/count value) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry
             :name |namespace-alias-retains-primitive-and-function-identity
             :code $ quote $ do
@@ -35,8 +34,7 @@
           :code $ quote $ defn checked-open-count (value)
             if (list? value) (count value) (raise |expected-countable-list)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |narrowed-list-counts)
             :code $ quote $ do
               assert= 0 $ checked-open-count $ []
@@ -46,8 +44,7 @@
           :code $ quote $ defn checked-string-count (value)
             if (calcit.core/string? value) (count value) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-origin-narrows-only-strings)
             :code $ quote $ do
               assert= 3 $ checked-string-count "|A😀𠮷"
@@ -65,23 +62,20 @@
               assert= 0 $ counted $ []
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-expanded-bound)
             :code $ quote $ assert= &unit (local-bound-counts)
             :tags $ #{} :count-contract :unit
         'main! $ %{} 'CodeEntry (:doc |Entry.)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'nominal-counts $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nominal-counts (person message)
             [] (count person) (count message)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'fix-command.main/Person 'fix-command.main/Message
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn fix-command.main/Person fix-command.main/Message
+            -> $ List Number
           :tests $ [] $ %{} 'TestEntry (:name |field-and-tag-counts)
             :code $ quote $ do
               assert= ([] 2 3)
@@ -92,19 +86,18 @@
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'typed-loop-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-loop-count (values)
             loop
                 remaining values
                 index 0
-                seen $ assert-type ([]) (:: List Number)
+                seen $ assert-type ([])
+                  quote $ List Number
               if (empty? remaining) (count seen)
                 recur (rest remaining) (inc index) (append seen index)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-initializer-types)
             :code $ quote $ do
               assert= 0 $ typed-loop-count $ []
@@ -118,8 +111,7 @@
                   count values
               sink |numbers & xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |nonempty-and-empty)
             :code $ quote $ do
               assert= 3 $ typed-rest-forward $ [] 1 2 3

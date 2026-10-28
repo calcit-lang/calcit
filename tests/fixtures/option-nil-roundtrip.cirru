@@ -13,13 +13,11 @@
         'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 退出码集成测试入口。")
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
     'app.other $ %{} 'FileEntry
@@ -27,8 +25,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unwrap-value (value) (.unwrap-or value nil)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.other
     'app.roundtrip $ %{} 'FileEntry
@@ -37,15 +34,14 @@
           :code $ quote $ def Other
             defenum Other (:some 'Dynamic) (:none)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'match-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn match-value (value)
             match value
               (:some item) item
               (:none) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil
@@ -78,8 +74,7 @@
               (:none)
                 ;nil (raise |must-not-run) (.unwrap-or value nil)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil
@@ -93,8 +88,7 @@
           :code $ quote $ defn nil-macro-prefix (value)
             .unwrap-or value $ ;nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil
@@ -108,8 +102,7 @@
           :code $ quote $ defn nil-macro-receiver (value)
             value .unwrap-or $ calcit.core/;nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil
@@ -125,24 +118,21 @@
               (:some item) item
               (:none) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Other
+          :schema $ quote $ Fn Other (-> Dynamic)
         'quoted-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn quoted-value ()
             quote $ .unwrap-or
               get ({}) :name
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'read-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-field (data)
             either
               .unwrap-or (get data :name) nil
               , |fallback
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |missing-fallback)
               :code $ quote $ assert= |fallback
@@ -162,8 +152,9 @@
               (:some item) item
               (:none) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Ref (:: 'Option 'Dynamic)
+          :schema $ quote $ Fn
+            Ref $ Option Dynamic
+            -> Dynamic
           :tests $ []
             %{} 'TestEntry (:name |reader-absence)
               :code $ quote $ assert= nil
@@ -176,8 +167,7 @@
         'threaded-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn threaded-value (value) (value .unwrap-or nil)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil
@@ -206,8 +196,7 @@
         'unwrap-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unwrap-value (value) (.unwrap-or value nil)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |keeps-absence)
               :code $ quote $ assert= nil

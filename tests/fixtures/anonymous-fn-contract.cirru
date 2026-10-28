@@ -15,22 +15,18 @@
             hint-fn $ quote $ Fn Number Number (-> Unit) (:async)
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Unit)
         'async-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
-            hint-fn $ {} $ :async true
+            hint-fn $ quote Async
             , 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'count-items $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (items) (.count items)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Countable
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Countable
           :tests $ [] $ %{} 'TestEntry (:name |uses-definition-trait-bound)
             :code $ quote $ let
                 numbers $ [] 1 2 3
@@ -41,26 +37,22 @@
         'increment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (n) (&+ n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |uses-definition-input-context)
             :code $ quote $ assert= 8 (increment 7)
             :tags $ #{} :fn-contract :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'make-echo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (seed)
             fn (value)
               hint-fn $ quote $ Fn String (-> String)
               , value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number
-            :return $ :: 'Fn $ {} (:return 'String)
-              :args $ [] 'String
+          :schema $ quote $ Fn Number
+            -> $ Fn String $ -> String
           :tests $ [] $ %{} 'TestEntry (:name |keeps-nested-function-context-independent)
             :code $ quote $ let
                 echo-text $ make-echo 7
@@ -69,9 +61,8 @@
         'option-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Option 'Nil
-            :return $ :: 'Option 'Nil
+          :schema $ quote $ Fn (Option Nil)
+            -> $ Option Nil
           :tests $ [] $ %{} 'TestEntry (:name |preserves-none-and-some-nil)
             :code $ quote $ let
                 present $ Option :some nil

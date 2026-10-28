@@ -43,8 +43,24 @@ assert-type map-fn $ quote $ Fn C
 ```
 
 可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
-字段类型，`hint-fn` 的整个签名（`hint-fn $ quote $ Fn Number (-> String) (:async)`，只写 `:async` 等部分字段的 hint 仍用 `{}`），
-以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 仍保存规范 EDN 形式，检查器和各后端读到的类型相同。
+字段类型、`defenum` 载荷类型、`deftrait` 方法类型，`hint-fn` 的整个签名（`hint-fn $ quote $ Fn Number (-> String) (:async)`；
+只标记异步时写 `hint-fn $ quote Async`，或 `hint-fn $ quote $ Async (:features :js-ffi)`），
+以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 的 `:schema` 也以这种写法保存，例如
+`:schema $ quote $ Fn String (-> Number)`，单个类型名保存为 `:schema $ quote Dynamic`。检查器和各后端读到的类型相同。
+
+`Macro` 合同同样有精简写法：位置参数是必填参数，`& T` 是剩余参数，`(-> T)` 是展开结果：
+
+```cirru.no-check
+quote $ Macro (Expr Dynamic) & SyntaxList (-> (Expr Struct))
+quote $ Macro (Expr T)
+  -> $ Expr T
+  :optional (Expr Dynamic)
+  :capabilities :platform-read
+  :generics T
+```
+
+`calcit <snapshot> edit format` 会把 `:schema`，以及上述代码位置里的 `:: 'List 'Number`、`{} (:args …) (:return …)` 等规范形式
+改写为精简写法；改写前后的类型逐一比对，无法等价表达的形式（值引用如 `:: 'List Person`、只写部分字段的 hint）保持原样。
 
 写法规则：
 
@@ -65,8 +81,7 @@ calcit eval 'assert-type ([] 1) $ quote $ List number'
 
 - 小写叶子、`'x`、tag 类型和裸 `->` 不属于精简写法，会报错。
 - `.`、`=`、`forall` 留给将来的类型运算符；`:generics` 中的列表项和参数化 trait 约束暂不支持。
-- `Macro` 合同暂时只能写规范形式。
-- `hint-fn` 等其它类型位置继续使用规范形式。
+- `assert-type` 的值引用（如 `:: 'List Person`，`Person` 是局部绑定）仍用规范形式。
 
 ## 可省略声明的闭合 helper
 

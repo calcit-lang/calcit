@@ -12,17 +12,15 @@
       :defs $ {}
         'DomElement $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait DomElement
-            .select! $ :: 'Fn $ {}
-              :args $ [] 'defprobe.macros/DomElement
-              :return 'Unit
+            .select! $ quote $ Fn defprobe.macros/DomElement (-> Unit)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :names $ {} $ :select! |select
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Effect $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Effect (:name 'Tag) (:coord 'List) (:args 'List) (:method 'Fn)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'defeffect $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro defeffect (effect-name args params & body)
             let
@@ -36,10 +34,8 @@
                   let[] ~args ~args-var $ let[] ~params ~params-var $ ~
                     quasiquote $ do ~@body
           :examples $ []
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{}
-            :expansion $ :: 'Definition 'Fn
-            :required $ [] 'SyntaxSymbol 'SyntaxList 'SyntaxList
+          :schema $ quote $ Macro SyntaxSymbol SyntaxList SyntaxList & Syntax
+            -> $ Definition Fn
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns defprobe.macros
     'defprobe.main $ %{} 'FileEntry
@@ -49,23 +45,19 @@
             when (= action :mount)
               .select! $ unsafe-coerce el 'defprobe.macros/DomElement
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'defprobe.macros/Effect)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> defprobe.macros/Effect) (:features :js-ffi)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             hint-fn $ quote $ Fn (-> Unit)
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! ()
             hint-fn $ quote $ Fn (-> Unit)
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns defprobe.main
           :require $ defprobe.macros :refer $ defeffect

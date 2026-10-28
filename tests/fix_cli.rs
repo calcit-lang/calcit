@@ -5182,7 +5182,7 @@ fn nested_fn_schema_nominal_names_resolve_in_declaration_namespace() {
 
   // Positive control: the same program with the nested name written qualified.
   let source = fs::read_to_string(&snapshot).unwrap();
-  let qualified = source.replace(":args $ [] 'State", ":args $ [] 'quatrefoil.types/State");
+  let qualified = source.replace("Fn State $ -> Number", "Fn quatrefoil.types/State $ -> Number");
   assert_ne!(source, qualified);
   let control = directory.path().join("control.cirru");
   fs::write(&control, qualified).unwrap();
@@ -6584,8 +6584,8 @@ fn semantic_rename_updates_schema_trait_bounds_atomically() {
   assert_eq!(applied_report["data"]["validation"]["checked_operations"], 2);
   let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
   assert!(updated.contains("deftrait RenamedTrait"), "snapshot:\n{updated}");
-  assert!(updated.contains("'T 'RenamedTrait"), "snapshot:\n{updated}");
-  assert!(!updated.contains("'T 'RenameTrait"), "snapshot:\n{updated}");
+  assert!(updated.contains(":where $ T RenamedTrait"), "snapshot:\n{updated}");
+  assert!(!updated.contains("T RenameTrait"), "snapshot:\n{updated}");
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after trait-bound rename");
 }
 
@@ -7522,7 +7522,10 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
   );
   assert_success(&argument_applied, "apply callsite-backed schema");
   let updated = fs::read_to_string(&native_snapshot).expect("updated snapshot should read");
-  assert!(updated.contains("(:return 'Number)"));
+  assert!(
+    updated.contains("Fn (-> Number)") && updated.contains("Fn Number (-> Number)"),
+    "snapshot:\n{updated}"
+  );
   assert!(updated.contains("defn inferred-add-one (x) + x 1"));
   assert_success(
     &run_calcit(&native_snapshot, &["--check-only"]),
@@ -9746,7 +9749,7 @@ fn scoped_fix_preserves_unselected_short_schema_surface() {
     "restore the unrelated short Option schema",
   );
   let before = fs::read_to_string(&snapshot).expect("read baseline Snapshot");
-  assert!(before.contains(":return $ :: 'Option 'Dynamic"));
+  assert!(before.contains("-> $ Option Dynamic"));
   assert_eq!(before.matches("option:unwrap value").count(), 1);
 
   let args = [

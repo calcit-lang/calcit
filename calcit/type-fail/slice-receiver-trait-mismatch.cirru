@@ -16,12 +16,10 @@
             slice 1 0 $ Option :some 1
             , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Namespace for slice receiver trait mismatch")
         :code $ quote $ ns type-fail-slice-receiver-trait.main

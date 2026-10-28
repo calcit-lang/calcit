@@ -13,25 +13,23 @@
         '*fix-person-calls $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *fix-person-calls 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'FixPerson $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct FixPerson (:name 'String) (:age 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'FixPersonChoice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum FixPersonChoice (:person 'fix-command.main/FixPerson) (:none)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'ambiguous $ %{} 'CodeEntry (:doc "|Removed predicate needs a semantic choice.")
           :code $ quote $ defn ambiguous (value) (tuple? value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Bool)
         'defaulted-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn defaulted-struct-field (person) (:name person)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'fix-command.main/FixPerson
+          :schema $ quote $ Fn fix-command.main/FixPerson (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-business-default-path)
             :code $ quote $ assert= |Ada
               defaulted-struct-field $ FixPerson :name |Ada :age 1
@@ -39,8 +37,7 @@
         'dynamic-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dynamic-struct-field (value) (get value :name)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-dynamic-lookup)
             :code $ quote $ assert= (Option :some |Ada)
               dynamic-struct-field $ {} $ :name |Ada
@@ -48,9 +45,8 @@
         'fixable $ %{} 'CodeEntry (:doc "|Exact removed API call.")
           :code $ quote $ defn fixable (value) (tuple-enum value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Enum
-            :return $ :: 'calcit.core/Option 'EnumDef
+          :schema $ quote $ Fn Enum
+            -> $ calcit.core/Option EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |returns-enum-definition)
             :code $ quote $ assert= (Option :some Option)
               fixable $ Option :some 1
@@ -58,8 +54,7 @@
         'legacy-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn legacy-enum () (%:: FixPersonChoice :none)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPersonChoice)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPersonChoice)
           :tests $ [] $ %{} 'TestEntry (:name |migrates-to-direct-enum-constructor)
             :code $ quote $ assert= (FixPersonChoice :none) (legacy-enum)
             :tags $ #{} :migration
@@ -68,8 +63,7 @@
             %:: FixPersonChoice :person $ let () $ do &unit
               %{} FixPerson (:name |Ada) (:age 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPersonChoice)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPersonChoice)
           :tests $ [] $ %{} 'TestEntry (:name |composes-enum-let-do)
             :code $ quote $ assert=
               FixPersonChoice :person $ FixPerson :name |Ada :age 1
@@ -79,8 +73,7 @@
           :code $ quote $ defn legacy-nested ()
             do &unit $ %:: FixPersonChoice :person $ %{} FixPerson (:name |Ada) (:age 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPersonChoice)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPersonChoice)
           :tests $ [] $ %{} 'TestEntry (:name |composes-constructor-and-do-migrations)
             :code $ quote $ assert=
               FixPersonChoice :person $ FixPerson :name |Ada :age 1
@@ -90,8 +83,7 @@
           :code $ quote $ defn legacy-struct ()
             %{} FixPerson (:name |Ada) (:age 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPerson)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPerson)
           :tests $ [] $ %{} 'TestEntry (:name |migrates-to-direct-struct-constructor)
             :code $ quote $ assert= (FixPerson :name |Ada :age 1) (legacy-struct)
             :tags $ #{} :migration
@@ -101,16 +93,14 @@
               :name $ let () $ do |ignored |Ada
               :age 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPerson)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPerson)
           :tests $ [] $ %{} 'TestEntry (:name |composes-struct-let-do)
             :code $ quote $ assert= (FixPerson :name |Ada :age 1) (legacy-struct-overlap)
             :tags $ #{} :migration
         'macro-origin-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn macro-origin-struct-field (person) (:name person)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'fix-command.main/FixPerson
+          :schema $ quote $ Fn fix-command.main/FixPerson (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-ambiguous-macro-origin)
             :code $ quote $ assert= |Ada
               macro-origin-struct-field $ FixPerson :name |Ada :age 1
@@ -118,18 +108,15 @@
         'main! $ %{} 'CodeEntry (:doc |Entry.)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'make-fix-person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-fix-person () (swap! *fix-person-calls inc) (FixPerson :name |Ada :age 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.main/FixPerson)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.main/FixPerson)
         'option-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-struct-field (person) (get person :name)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'calcit.core/Option 'fix-command.main/FixPerson
+          :schema $ quote $ Fn (calcit.core/Option fix-command.main/FixPerson) (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-option-receiver)
             :code $ quote $ assert= (Option :none)
               option-struct-field $ Option :some $ FixPerson :name |Ada :age 1
@@ -138,8 +125,7 @@
           :code $ quote $ defn quoted-legacy-constructor ()
             quote $ %:: FixPersonChoice :none
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-constructor-data)
             :code $ quote $ assert=
               quote $ %:: FixPersonChoice :none
@@ -149,8 +135,7 @@
           :code $ quote $ defn quoted-single-do ()
             quote $ do $ + 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-single-do-as-data)
             :code $ quote $ assert=
               quote $ do $ + 1 2
@@ -159,14 +144,12 @@
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'required-struct-complex $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn required-struct-complex ()
             :name $ make-fix-person
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |evaluates-complex-receiver-once)
             :code $ quote $ do (reset! *fix-person-calls 0)
               assert= |Ada $ required-struct-complex
@@ -175,8 +158,7 @@
         'required-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn required-struct-field (person) (:name person)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'fix-command.main/FixPerson
+          :schema $ quote $ Fn fix-command.main/FixPerson (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |migrates-declared-field)
             :code $ quote $ assert= |Ada
               required-struct-field $ FixPerson :name |Ada :age 1
@@ -184,8 +166,7 @@
         'runtime-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn runtime-struct-field (person field) (get person field)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Tag
+          :schema $ quote $ Fn Dynamic Tag (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-runtime-key)
             :code $ quote $ assert= (Option :some |Ada)
               runtime-struct-field (FixPerson :name |Ada :age 1) :name
@@ -194,19 +175,15 @@
           :doc "|A local binding that shares the removed core API name."
           :code $ quote $ defn shadowed (tuple-enum value) (tuple-enum value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-              :: 'Fn $ {} (:return 'Dynamic)
-                :args $ [] 'Dynamic
-              , 'Dynamic
+          :schema $ quote $ Fn
+            Fn Dynamic $ -> Dynamic
+            , Dynamic (-> Dynamic)
         'shadowed-struct-get $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn shadowed-struct-get (get person) (get person :name)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
-              :: 'Fn $ {} (:return 'String)
-                :args $ [] 'fix-command.main/FixPerson 'Tag
-              , 'fix-command.main/FixPerson
+          :schema $ quote $ Fn
+            Fn fix-command.main/FixPerson Tag $ -> String
+            , fix-command.main/FixPerson (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-local-get-shadow)
             :code $ quote $ assert= |shadow
               shadowed-struct-get
@@ -216,10 +193,8 @@
         'single-do-macro $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro single-do-macro (value) (do value)
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'Syntax
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |preserves-macro-body-boundary)
             :code $ quote $ assert= 3 (single-do-macro 3)
             :tags $ #{} :migration
@@ -231,16 +206,14 @@
                 do $ + (do chosen) 1
                 do 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |unwraps-single-expression-wrappers)
             :code $ quote $ assert= 3 (single-do-positions 2)
             :tags $ #{} :migration
         'union-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn union-struct-field (person) (get person :name)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'fix-command.main/FixPersonChoice
+          :schema $ quote $ Fn fix-command.main/FixPersonChoice (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-enum-union-receiver)
             :code $ quote $ assert= (Option :none)
               union-struct-field $ FixPersonChoice :person $ FixPerson :name |Ada :age 1
@@ -248,8 +221,7 @@
         'unknown-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unknown-struct-field (person) (get person :missing)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-unknown-field-for-review)
             :code $ quote $ assert= (Option :none)
               unknown-struct-field $ FixPerson :name |Ada :age 1

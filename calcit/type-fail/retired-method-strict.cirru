@@ -49,50 +49,41 @@
         'contains-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn contains-list (xs) (xs .contains? 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Dynamic)
         'contains-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn contains-string (s) (s .contains? 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Dynamic)
         'join-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn join-list (xs) (xs .join 0)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'run-contains-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-contains-list ()
             contains-list $ [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'run-contains-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-contains-string () (contains-string |abc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'run-join-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-join-list ()
             join-list $ [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'run-values-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-values-map ()
             values-map $ &{} :a 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'values-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn values-map (m) (m .values)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn (Map Tag Number) (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Strict retired method fixture.")
         :code $ quote $ ns type-fail-retired-method-strict.main

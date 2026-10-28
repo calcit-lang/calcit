@@ -18,17 +18,14 @@
           :doc "|An unsafe assertion without lexical FFI capability must fail."
           :code $ quote $ defn coerce-host (value) (unsafe-coerce value 'String)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> String)
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes coerce-host reachable.")
           :code $ quote $ defn main! () (coerce-host 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict unscoped unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-unscoped-strict.main

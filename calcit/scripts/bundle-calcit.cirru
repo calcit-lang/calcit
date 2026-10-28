@@ -64,10 +64,10 @@
               write-file output-path $ format-cirru-edn snapshot
               println $ str-spaced |wrote output-path |with (count files) |namespaces
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main

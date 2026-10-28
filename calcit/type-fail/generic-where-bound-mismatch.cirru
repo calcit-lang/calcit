@@ -13,19 +13,15 @@
         'main! $ %{} 'CodeEntry (:doc "|Entry for generic where-bound mismatch")
           :code $ quote $ defn main! () (require-mappable 1) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'require-mappable $ %{} 'CodeEntry (:doc "|Requires the argument type to satisfy Mappable")
           :code $ quote $ defn require-mappable (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Mappable
+          :schema $ quote $ Fn T (-> T) (:generics T)
+            :where $ T Mappable
       :ns $ %{} 'NsEntry (:doc "|Namespace for generic where-bound mismatch")
         :code $ quote $ ns type-fail-generic-where-bound.main

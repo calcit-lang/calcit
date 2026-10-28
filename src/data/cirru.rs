@@ -34,6 +34,9 @@ fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
     return None;
   }
   let payload = &strip_comments(&quoted[1]);
+  if let Some(marker) = crate::calcit::type_expr::desugar_async_hint(payload) {
+    return Some(marker.map_err(|message| format!("[E_TYPE_EXPR_SYNTAX] invalid compact type expression in hint-fn: {message}")));
+  }
   if !matches!(payload, Cirru::List(items) if items.first() == Some(&Cirru::leaf("Fn")))
     || !crate::calcit::type_expr::is_compact_payload(payload)
   {
@@ -46,6 +49,57 @@ fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
       "[E_TYPE_EXPR_SYNTAX] invalid compact type expression in hint-fn: {message}"
     ))),
   }
+}
+
+/// Canonical type code for a `quote $ <compact>` node, or `None` when `node` is
+/// not a compact type expression.
+fn desugar_quoted_compact_type(node: &Cirru) -> Option<Result<Cirru, String>> {
+  let Cirru::List(quoted) = node else { return None };
+  if quoted.len() != 2 || quoted[0] != Cirru::leaf("quote") {
+    return None;
+  }
+  let payload = strip_comments(&quoted[1]);
+  if !crate::calcit::type_expr::is_compact_payload(&payload) {
+    return None;
+  }
+  Some(
+    crate::calcit::type_expr::desugar_type_expr(&payload)
+      .map_err(|message| format!("[E_TYPE_EXPR_SYNTAX] invalid compact type expression: {message}")),
+  )
+}
+
+/// `deftrait` method types and `defenum` payload types written as
+/// `quote $ Fn …` are read as their canonical forms, so the macros and every
+/// source-level reader of trait and enum declarations see one shape.
+fn desugar_compact_definition_types(ys: &[Cirru]) -> Option<Result<Vec<Cirru>, String>> {
+  let head = match ys.first() {
+    Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "deftrait" | "defenum") => head.as_ref(),
+    _ => return None,
+  };
+  let mut rewritten = ys.to_owned();
+  let mut changed = false;
+  for entry in rewritten.iter_mut().skip(2) {
+    let Cirru::List(items) = entry else { continue };
+    let type_indexes: Vec<usize> = match head {
+      "deftrait" => match items.as_slice() {
+        [Cirru::Leaf(bracket), _, _] if bracket.as_ref() == "[]" => vec![2],
+        [_, _] => vec![1],
+        _ => vec![],
+      },
+      _ if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.starts_with(':')) => (1..items.len()).collect(),
+      _ => vec![],
+    };
+    for index in type_indexes {
+      if let Some(result) = desugar_quoted_compact_type(&items[index]) {
+        match result {
+          Ok(canonical) => items[index] = canonical,
+          Err(message) => return Some(Err(message)),
+        }
+        changed = true;
+      }
+    }
+  }
+  changed.then_some(Ok(rewritten))
 }
 
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
@@ -173,6 +227,9 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
         let last = rewritten.len() - 1;
         rewritten[last] = schema;
         return code_to_calcit_in(&Cirru::List(rewritten), ns, def, coord.to_vec(), in_quote);
+      }
+      if !in_quote && let Some(rewritten) = desugar_compact_definition_types(ys) {
+        return code_to_calcit_in(&Cirru::List(rewritten?), ns, def, coord.to_vec(), in_quote);
       }
       let child_in_quote = in_quote || ys.first() == Some(&Cirru::leaf("quote"));
       let mut zs: Vec<Calcit> = vec![];
@@ -566,6 +623,14 @@ mod tests {
     // Quoted data keeps its written shape, even when it is not a valid signature.
     let data = code_to_calcit(&parse("quote $ hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect("quoted hint data");
     assert!(data.to_string().contains("Fn"), "{data}");
+
+    let marker = code_to_calcit(&parse("hint-fn $ quote $ Async"), "app", "f", vec![]).expect("async marker");
+    let marker_map = code_to_calcit(&parse("hint-fn $ {} (:async true)"), "app", "f", vec![]).expect("async map");
+    assert_eq!(marker.to_string(), marker_map.to_string());
+    let ffi = code_to_calcit(&parse("hint-fn $ quote $ Async (:features :js-ffi)"), "app", "f", vec![]).expect("async ffi marker");
+    let ffi_map =
+      code_to_calcit(&parse("hint-fn $ {} (:async true) (:features $ #{} :js-ffi)"), "app", "f", vec![]).expect("async ffi map");
+    assert_eq!(ffi.to_string(), ffi_map.to_string());
 
     let error = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect_err("malformed hint");
     assert!(error.contains("E_TYPE_EXPR_SYNTAX"), "{error}");

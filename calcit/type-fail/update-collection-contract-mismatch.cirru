@@ -18,18 +18,15 @@
             update (&{} :a 1) :a string-id
             update ([] 1 2) 0 $ fn (x) (str x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'string-id $ %{} 'CodeEntry (:doc "|Deliberately incompatible updater")
           :code $ quote $ defn string-id (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
       :ns $ %{} 'NsEntry
         :doc "|Namespace for update collection contract mismatch"
         :code $ quote $ ns type-fail-update-collection-contract.main

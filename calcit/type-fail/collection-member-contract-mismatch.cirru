@@ -67,26 +67,19 @@
             partial-generic-check (&{} :a |bad) 1
             partial-variadic-check (&{} :a |bad) (&{} 1 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'partial-generic-check $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-generic-check (items fallback) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'Map 'T 'Number) 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (Map T Number) T (-> Unit) (:generics T)
         'partial-variadic-check $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-variadic-check (& items) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
-            :generics $ [] 'T
-            :rest $ :: 'Map 'T 'Number
+          :schema $ quote $ Fn & (Map T Number) (-> Unit) (:generics T)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry
         :doc "|Namespace for collection member contract mismatches"
         :code $ quote $ ns type-fail-collection-member-contract.main

@@ -13,17 +13,14 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'read-dir $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-dir (path) (&str:concat |reader:dir: path)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'read-file $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-file (path) (&str:concat |reader:file: path)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.reader

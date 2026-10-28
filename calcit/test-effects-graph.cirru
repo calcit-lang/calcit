@@ -23,7 +23,7 @@
           :examples $ []
         'async-hint-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn async-hint-helper (x)
-            hint-fn $ {} $ :async true
+            hint-fn $ quote Async
             , x
           :examples $ []
         'binding-helper $ %{} 'CodeEntry (:doc |)
@@ -55,7 +55,7 @@
         'io-helper $ %{} 'CodeEntry (:doc "|reads a file path")
           :code $ quote $ defn io-helper (path) (read-file path)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'js-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn js-helper () (js/console.log |hi)
           :examples $ []
@@ -76,7 +76,7 @@
             declared-caller
             tag-caller
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'missing-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn missing-helper () (missing.ns/thing 1)
           :examples $ []
@@ -97,7 +97,7 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'scope-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn scope-helper (xs)
             map xs $ fn (io-helper) (io-helper 1)
@@ -117,7 +117,7 @@
         'state-helper $ %{} 'CodeEntry (:doc "|defines and mutates an atom")
           :code $ quote $ defn state-helper () (defref *counter 0) (reset! *counter 1) (swap! *counter inc)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'sync-hint-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sync-hint-helper (x)
             hint-fn $ {} $ :async false

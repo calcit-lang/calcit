@@ -14,18 +14,15 @@
           :doc "|Expect preprocess error: code has & rest but schema is missing :rest"
           :code $ quote $ defn bad-rest (& xs) (do xs)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'List)
-            :args $ []
+          :schema $ quote $ Fn (-> List)
         'main! $ %{} 'CodeEntry (:doc "|Entry for type-fail schema rest mismatch")
           :code $ quote $ defn main! ()
             do (; calling to force preprocessing of bad-rest) (bad-rest 1 2 3) (println |unreachable)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Namespace for schema rest mismatch")
         :code $ quote $ ns type-fail-schema-rest-missing.main

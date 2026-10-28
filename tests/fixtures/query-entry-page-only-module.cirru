@@ -13,12 +13,10 @@
         'comp-icon $ %{} 'CodeEntry (:doc "|按名称渲染图标标签。")
           :code $ quote $ defn comp-icon (icon-name) (&str:concat |icon: icon-name)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns page-icons.core

@@ -13,35 +13,35 @@
         'AliasBase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AliasBase (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'AliasEnriched $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def AliasEnriched (impl-traits AliasBase AliasMarkerImpl)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'AliasMarker $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait AliasMarker
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'AliasMarkerImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasMarkerImpl AliasMarker
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'ChoiceBase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum ChoiceBase (:value 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'ChoiceEnriched $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def ChoiceEnriched (impl-traits ChoiceBase AliasMarkerImpl)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'OtherBase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OtherBase (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OtherChoice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum OtherChoice (:value 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'apply-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def apply-alias fix-command.alias-evidence/apply-text
           :examples $ []
@@ -62,8 +62,7 @@
         'consume-base $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn consume-base (value) (:value value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'fix-command.alias-evidence/AliasBase
+          :schema $ quote $ Fn fix-command.alias-evidence/AliasBase (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |trait-bearing-producer)
             :code $ quote $ do
               assert= 1 $ fix-command.alias-evidence/consume-base $ fix-command.alias-evidence/produce-enriched
@@ -73,8 +72,7 @@
         'consume-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn consume-choice (value) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] 'fix-command.alias-evidence/ChoiceBase
+          :schema $ quote $ Fn fix-command.alias-evidence/ChoiceBase (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |trait-bearing-producer)
             :code $ quote $ do
               assert= &unit $ fix-command.alias-evidence/consume-choice $ fix-command.alias-evidence/produce-choice
@@ -84,8 +82,7 @@
         'echo-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def echo-alias fix-command.alias-evidence/echo-string
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |direct-and-local-values)
             :code $ quote $ let
                 local-f fix-command.alias-evidence/echo-alias
@@ -101,8 +98,7 @@
         'echo-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn echo-string (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'empty-proc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def empty-proc &list:empty?
           :examples $ []
@@ -112,7 +108,7 @@
                 .map
                   [] ([]) ([] 1)
                   , fix-command.alias-evidence/empty-proc
-                :: List Bool
+                quote $ List Bool
               assert= ([] true false)
                 .map
                   [] ([]) ([] 1)
@@ -149,13 +145,11 @@
         'produce-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn produce-choice () (ChoiceEnriched :value 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.alias-evidence/ChoiceEnriched)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.alias-evidence/ChoiceEnriched)
         'produce-enriched $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn produce-enriched () (AliasEnriched :value 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.alias-evidence/AliasEnriched)
-            :args $ []
+          :schema $ quote $ Fn (-> fix-command.alias-evidence/AliasEnriched)
         'range-proc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def range-proc &list:range
           :examples $ []
@@ -210,8 +204,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ assert= true
               string? $ fix-command.import-core/builtin-id
@@ -224,8 +217,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ assert= true
               string? $ fix-command.import-direct/builtin-id
@@ -237,8 +229,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () |module-id
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.import-source
     'fix-command.import-valid $ %{} 'FileEntry
@@ -246,8 +237,7 @@
         'builtin-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ do
               assert= true $ string? $ fix-command.import-valid/builtin-id
@@ -256,13 +246,11 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (builtin-id) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'qualified-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn qualified-id () (fix-command.import-source/generate-id!)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |qualified-source)
             :code $ quote $ assert= |module-id (fix-command.import-valid/qualified-id)
             :tags $ #{} :alias-contract :unit
@@ -274,7 +262,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 20
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.left
     'fix-command.other-side $ %{} 'FileEntry
@@ -282,11 +270,11 @@
         'AliasBase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AliasBase (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'state-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 40
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.other-side
     'fix-command.other_side $ %{} 'FileEntry
@@ -294,7 +282,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 50
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.other_side
     'fix-command.reader $ %{} 'FileEntry
@@ -302,26 +290,23 @@
         'dash-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def dash-value 60
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'read-dir $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-dir (path) (&str:concat |reader:dir: path)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'read-file $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-file (path) (&str:concat |reader:file: path)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'state-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 10
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
           :tests $ [] $ %{} 'TestEntry (:name |namespace-identity)
             :code $ quote $ do (assert= 10 fix-command.reader/state-alias) (assert= 20 fix-command.left/state-alias) (assert= 30 fix-command.right/state-alias) (assert= 20 left/state-alias) (assert= 30 right/state-alias)
               let
@@ -352,6 +337,6 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 30
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.right

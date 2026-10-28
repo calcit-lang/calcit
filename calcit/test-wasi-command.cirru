@@ -15,18 +15,18 @@
             :note $ quote $ Option String
             :outcome 'EdnOutcome
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'EdnJob $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EdnJob (:name 'String) (:count 'Int32) (:ready 'Bool)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'EdnOutcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum EdnOutcome
-            :ready $ :: 'List 'Int32
+            :ready $ quote $ List Int32
             :failed 'String
             :idle
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'clock-fixed-main! $ %{} 'CodeEntry (:doc "|用确定性的 WASI 假宿主验证时钟编号与纳秒到毫秒的换算。")
           :code $ quote $ defn clock-fixed-main! ()
             if
@@ -36,15 +36,13 @@
               println "|WASI-fixed-clocks: ok"
               quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :time :wasi
         'clock-main! $ %{} 'CodeEntry (:doc "|输出系统时钟与单调时钟，用于验证 WASI capability wiring。")
           :code $ quote $ defn clock-main! ()
             if (clocks-valid?) (println "|WASI-clocks: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :time :wasi
         'clocks-valid? $ %{} 'CodeEntry (:doc "|验证系统时钟为正数，且单调时钟在同一进程内不会倒退。")
           :code $ quote $ defn clocks-valid? ()
@@ -54,8 +52,7 @@
                 after $ monotonic-time-ms
               and (number? wall) (> wall 0) (number? before) (number? after) (>= after before)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tags $ #{} :core :time :unit :wasi :wasm
           :tests $ [] $ %{} 'TestEntry (:name |valid-readings)
             :code $ quote $ assert= true (clocks-valid?)
@@ -70,8 +67,7 @@
                   println |WASI-enum-arity-error:-ok
                   quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-file-roundtrip-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取有类型 Cirru EDN，更新计数并写回规范化数据。")
           :code $ quote $ defn edn-file-roundtrip-main! ()
             let
@@ -95,8 +91,7 @@
                                   (:ok _) (println |WASI-typed-EDN-file:-ok)
                                   (:err _) (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :edn :file :wasi
         'edn-format-escaped-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-escaped-over-limit-main! ()
@@ -119,8 +114,7 @@
                 x15 $ &str:concat x14 x14
               println $ format-cirru-edn x15
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-format-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-main! ()
             println $ format-cirru-edn $ [] :ready :paused
@@ -134,20 +128,17 @@
             println $ format-cirru-edn $ {} (:b |two) (:a |one)
             println $ format-cirru-edn $ {} ("|b key" |two) (|a |one)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-format-only-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-only-main! ()
             println $ format-cirru-edn $ EdnOutcome :failed |offline
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-format-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-over-limit-main! ()
             println $ format-cirru-edn $ repeat :item 22000
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-format-samples $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-format-samples ()
             []
@@ -162,9 +153,8 @@
               format-cirru-edn $ {} (:b |two) (:a |one)
               format-cirru-edn $ {} ("|b key" |two) (|a |one)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'String
+          :schema $ quote $ Fn
+            -> $ List String
           :tests $ [] $ %{} 'TestEntry (:name |formats-closed-scalars-and-lists)
             :code $ quote $ assert=
               []
@@ -199,8 +189,7 @@
                 x14 $ &str:concat x13 x13
               println $ format-cirru-edn x14
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-nested-roundtrip-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-nested-roundtrip-main! ()
             let
@@ -221,8 +210,7 @@
                         println |WASI-recursive-typed-EDN:-ok
                         quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-nominal-roundtrip-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-nominal-roundtrip-main! ()
             let
@@ -253,21 +241,18 @@
                             println |WASI-nominal-typed-EDN:-ok
                             quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-envelope (text) (try-parse-cirru-edn-as text 'EdnEnvelope)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'app.main/EdnEnvelope 'String
+          :schema $ quote $ Fn String
+            -> $ Result app.main/EdnEnvelope String
         'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-int-list (text)
             try-parse-cirru-edn-as text $ quote $ List Int32
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result (:: 'List 'Int32) 'String
+          :schema $ quote $ Fn String
+            -> $ Result (List Int32) String
           :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-int-lists)
             :code $ quote $ do
               assert=
@@ -282,9 +267,8 @@
         'edn-parse-job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-job (text) (try-parse-cirru-edn-as text 'EdnJob)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'app.main/EdnJob 'String
+          :schema $ quote $ Fn String
+            -> $ Result app.main/EdnJob String
           :tests $ []
             %{} 'TestEntry (:name |round-trips-scalar-struct)
               :code $ quote $ do
@@ -312,9 +296,8 @@
         'edn-parse-large-fraction $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-large-fraction (text) (try-parse-cirru-edn-as text 'Int64)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'Int64 'String
+          :schema $ quote $ Fn String
+            -> $ Result Int64 String
           :tests $ [] $ %{} 'TestEntry (:name |rejects-rounded-fraction)
             :code $ quote $ assert= true
               result:err? $ edn-parse-large-fraction |9007199254740990.5
@@ -339,8 +322,7 @@
               assert= true $ result:err? $ edn-parse-int-list "|[] 1 |bad"
               println |WASI-typed-EDN-lists:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-list-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-list-over-limit-main! ()
             let
@@ -361,8 +343,7 @@
               assert= true $ result:err? $ edn-parse-int-list input
               println |WASI-typed-EDN-list-limit:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-main! ()
             let
@@ -391,8 +372,7 @@
               assert= true $ result:err? $ &list:nth results 13
               println |WASI-typed-EDN-scalars:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-map-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-map-main! ()
             let
@@ -415,8 +395,7 @@
               assert= true $ result:err? $ edn-parse-large-fraction |9007199254740990.5
               println |WASI-typed-EDN-maps:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-map-over-limit-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-map-over-limit-main! ()
             let
@@ -436,17 +415,15 @@
               assert= true $ result:err? $ edn-parse-tag-string-map input
               println |WASI-typed-EDN-map-limit:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-nested-int-lists $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-nested-int-lists (text)
             try-parse-cirru-edn-as text $ quote $ List (List Int32)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result
-              :: 'List $ :: 'List 'Int32
-              , 'String
+          :schema $ quote $ Fn String
+            -> $ Result
+              List $ List Int32
+              , String
           :tests $ [] $ %{} 'TestEntry (:name |parses-and-formats-closed-nesting)
             :code $ quote $ do
               let
@@ -466,11 +443,10 @@
           :code $ quote $ defn edn-parse-nested-string-lists (text)
             try-parse-cirru-edn-as text $ quote $ List (List String)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result
-              :: 'List $ :: 'List 'String
-              , 'String
+          :schema $ quote $ Fn String
+            -> $ Result
+              List $ List String
+              , String
           :tests $ [] $ %{} 'TestEntry (:name |ignores-parentheses-inside-quoted-strings)
             :code $ quote $ assert=
               Result :ok $ [] $ [] "|(" "|)"
@@ -479,9 +455,8 @@
         'edn-parse-outcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-outcome (text) (try-parse-cirru-edn-as text 'EdnOutcome)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'app.main/EdnOutcome 'String
+          :schema $ quote $ Fn String
+            -> $ Result app.main/EdnOutcome String
           :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
             :code $ quote $ do
               assert=
@@ -515,15 +490,13 @@
               assert= true $ result:err? $ try-parse-cirru-edn-as x14 'String
               println |WASI-typed-EDN-limit:-ok
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-parse-result-outcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-result-outcome (text)
             try-parse-cirru-edn-as text $ quote $ Result app.main/EdnOutcome String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result (:: 'Result 'app.main/EdnOutcome 'String) 'String
+          :schema $ quote $ Fn String
+            -> $ Result (Result app.main/EdnOutcome String) String
         'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-scalars ()
             [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag) (try-parse-cirru-edn-as "|do nil" 'Unit)
@@ -538,9 +511,8 @@
                 str "|do " (char-from-code 34) ||bad (char-from-code 92) |q $ char-from-code 34
                 , 'String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List $ :: 'Result 'Dynamic 'String
+          :schema $ quote $ Fn
+            -> $ List $ Result Dynamic String
           :tests $ []
             %{} 'TestEntry (:name |parses-bounded-scalars)
               :code $ quote $ assert=
@@ -569,9 +541,8 @@
           :code $ quote $ defn edn-parse-string-int-map (text)
             try-parse-cirru-edn-as text $ quote $ Map String Int32
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result (:: 'Map 'String 'Int32) 'String
+          :schema $ quote $ Fn String
+            -> $ Result (Map String Int32) String
           :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-map-key)
             :code $ quote $ assert=
               Result :ok $ {,} "|two words" 2 |tail -3
@@ -581,9 +552,8 @@
           :code $ quote $ defn edn-parse-string-list (text)
             try-parse-cirru-edn-as text $ quote $ List String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result (:: 'List 'String) 'String
+          :schema $ quote $ Fn String
+            -> $ Result (List String) String
           :tests $ [] $ %{} 'TestEntry (:name |preserves-quoted-string-items)
             :code $ quote $ assert=
               Result :ok $ [] |hello "|two words" |tail
@@ -593,9 +563,8 @@
           :code $ quote $ defn edn-parse-tag-string-map (text)
             try-parse-cirru-edn-as text $ quote $ Map Tag String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result (:: 'Map 'Tag 'String) 'String
+          :schema $ quote $ Fn String
+            -> $ Result (Map Tag String) String
           :tests $ [] $ %{} 'TestEntry (:name |parses-bounded-tag-string-map)
             :code $ quote $ do
               assert=
@@ -623,8 +592,7 @@
                     println $ format-cirru-edn value
                 quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'edn-transform-count-map $ %{} 'CodeEntry (:doc "|递增有类型计数并显式保留 Int32 越界错误。")
           :code $ quote $ defn edn-transform-count-map (data)
             let
@@ -636,9 +604,8 @@
                 Result :ok $ &map:assoc data |processed $ assert-type next-count 'Int32
                 Result :err |Int32-overflow
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String 'Int32
-            :return $ :: 'Result (:: 'Map 'String 'Int32) 'String
+          :schema $ quote $ Fn (Map String Int32)
+            -> $ Result (Map String Int32) String
           :tags $ #{} :edn :wasi
           :tests $ []
             %{} 'TestEntry (:name |increments-count)
@@ -660,33 +627,28 @@
         'exit-7! $ %{} 'CodeEntry (:doc "|以状态码 7 终止进程，用于验证 command 退出边界。")
           :code $ quote $ defn exit-7! () (quit! 7)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :control :wasi
         'exit-invalid! $ %{} 'CodeEntry (:doc "|以越界状态码终止进程，用于验证各 command backend 拒绝隐式取模。")
           :code $ quote $ defn exit-invalid! () (quit! 256)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :control :wasi
         'filesystem-absolute-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filesystem-absolute-main! ()
             if (filesystem-read-error? |/workspace/input.txt) (println "|WASI-filesystem-absolute: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'filesystem-denied-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filesystem-denied-main! ()
             if (filesystem-read-error? |workspace/input.txt) (println "|WASI-filesystem-denied: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'filesystem-invalid-utf8-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filesystem-invalid-utf8-main! ()
             if (filesystem-read-error? |workspace/invalid.txt) (println "|WASI-filesystem-invalid-utf8: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'filesystem-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filesystem-main! ()
             let
@@ -700,14 +662,12 @@
                   (:err _) false
               if (and input-ok? output-ok?) (println "|WASI-filesystem: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'filesystem-read-dir-error-main! $ %{} 'CodeEntry (:doc "|通过 WASI 假宿主验证畸形目录记录仍返回 Result :err。")
           :code $ quote $ defn filesystem-read-dir-error-main! ()
             if (filesystem-read-dir-error? |workspace/listing) (println "|WASI-read-dir-error: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :file :wasi
         'filesystem-read-dir-error? $ %{} 'CodeEntry (:doc "|验证目录枚举失败仍以 Result :err 表达。")
           :code $ quote $ defn filesystem-read-dir-error? (path)
@@ -716,8 +676,7 @@
               (:ok _) false
               (:err _) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Bool)
           :tags $ #{} :file :unit :wasi
           :tests $ [] $ %{} 'TestEntry (:name |missing-directory)
             :code $ quote $ assert= true (filesystem-read-dir-error? |/calcit-wasi-filesystem-does-not-exist)
@@ -737,8 +696,7 @@
                   quit! 1
               (:err _) (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :file :wasi
         'filesystem-read-error? $ %{} 'CodeEntry
           :doc "|验证 FsPath 文本读取失败仍以 Result :err 表达，不把 host error 泄漏为异常。"
@@ -748,8 +706,7 @@
               (:ok _) false
               (:err _) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |missing-path)
             :code $ quote $ assert= true
               filesystem-read-error? |/calcit-wasi-filesystem-does-not-exist/input.txt
@@ -758,8 +715,7 @@
           :code $ quote $ defn filesystem-traversal-main! ()
             if (filesystem-read-error? |workspace/../secret.txt) (println "|WASI-filesystem-traversal: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println |WASI-stdout: "|你好") (echo |WASI-echo) (eprintln |WASI-stderr: 42)
             println |WASI-env: $
@@ -769,16 +725,14 @@
               fn (arg) (println |WASI-arg: arg)
             + 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |returns-three)
             :code $ quote $ assert= 3 (main!)
             :tags $ #{} :core :unit :wasi :wasm
         'needs-arg $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn needs-arg (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |returns-input)
             :code $ quote $ assert= 3 (needs-arg 3)
             :tags $ #{} :core :unit :wasi :wasm
@@ -788,8 +742,7 @@
                 refinement :not-a-refinement
               if (&number:fits? 3 refinement) (quit! 1) (println |WASI-number-fits-unknown:-ok)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :wasi :wasm
         'random-error? $ %{} 'CodeEntry (:doc "|验证越界的安全随机请求返回 String 错误。")
           :code $ quote $ defn random-error? (size)
@@ -797,8 +750,7 @@
               (:ok _) false
               (:err message) (string? message)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
           :tags $ #{} :core :crypto :unit :wasi :wasm
           :tests $ []
             %{} 'TestEntry (:name |rejects-negative-length)
@@ -814,8 +766,7 @@
           :code $ quote $ defn random-fixed-main! ()
             if (random-success? 4) (println "|secure-random-fixed: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :crypto :wasi
         'random-main! $ %{} 'CodeEntry (:doc "|验证安全随机 API 的成功与越界 Result 语义。")
           :code $ quote $ defn random-main! ()
@@ -824,8 +775,7 @@
               println "|secure-random: ok"
               quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :crypto :wasi
         'random-success? $ %{} 'CodeEntry (:doc "|验证指定长度的安全随机请求返回 Buffer。")
           :code $ quote $ defn random-success? (size)
@@ -833,8 +783,7 @@
               (:ok bytes) (buffer? bytes)
               (:err _) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
           :tags $ #{} :core :crypto :unit :wasi :wasm
           :tests $ []
             %{} 'TestEntry (:name |returns-empty-buffer)
@@ -846,10 +795,9 @@
         'read-args $ %{} 'CodeEntry (:doc "|读取当前宿主进程的完整参数列表。")
           :code $ quote $ defn read-args () (get-args)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :features $ #{} :env :io
-            :return $ :: 'List 'String
+          :schema $ quote $ Fn
+            -> $ List String
+            :features :env :io
           :tests $ [] $ %{} 'TestEntry (:name |returns-strings)
             :code $ quote $ assert= true
               every? (read-args) string?
@@ -858,9 +806,8 @@
           :code $ quote $ defn read-clocks ()
             [] (unix-time-ms) (monotonic-time-ms)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn
+            -> $ List Number
           :tags $ #{} :time :wasi
           :tests $ [] $ %{} 'TestEntry (:name |returns-numbers)
             :code $ quote $ assert= true
@@ -869,16 +816,14 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'wait-error? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wait-error? (duration)
             match (wait-ms duration)
               (:ok _) false
               (:err message) (string? message)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
           :tags $ #{} :core :io :time :unit :wasi
           :tests $ []
             %{} 'TestEntry (:name |rejects-negative)
@@ -894,8 +839,7 @@
           :code $ quote $ defn wait-failure-main! ()
             if (wait-error? 1) (println "|WASI-wait-error: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :io :time :wasi
         'wait-fixed-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wait-fixed-main! ()
@@ -904,15 +848,13 @@
               println "|WASI-fixed-wait: ok"
               quit! 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :io :time :wasi
         'wait-main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wait-main! ()
             if (wait-success? 1) (println "|WASI-wait: ok") (quit! 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :io :time :wasi
         'wait-success? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wait-success? (duration)
@@ -920,8 +862,7 @@
               (:ok _) true
               (:err _) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
           :tags $ #{} :core :io :time :unit :wasi
           :tests $ []
             %{} 'TestEntry (:name |zero-succeeds)

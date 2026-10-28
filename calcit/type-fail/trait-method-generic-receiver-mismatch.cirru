@@ -18,25 +18,21 @@
           :code $ quote $ defn invalid-result-callback (result)
             result .and-then $ fn (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Result 'Number 'String
-            :return $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn (Result Number String)
+            -> $ Result Number String
         'main! $ %{} 'CodeEntry
           :doc "|Entry for generic Option receiver method argument mismatch"
           :code $ quote $ defn main! (option) (option .unwrap-or 0)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Option 'String
+          :schema $ quote $ Fn (Option String) (-> Dynamic)
         'plus1 $ %{} 'CodeEntry
           :doc "|Schema expects :number, call-site passes :string"
           :code $ quote $ defn plus1 (x) (&+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Namespace for generic method receiver mismatch")
         :code $ quote $ ns type-fail-trait-method-generic-receiver.main

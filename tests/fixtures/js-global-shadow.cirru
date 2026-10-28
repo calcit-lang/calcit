@@ -15,27 +15,25 @@
             hint-fn $ quote $ Fn (-> Dynamic)
             Element :name |probe
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             hint-fn $ quote $ Fn (-> Dynamic)
             resolve-ctor
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! ()
             hint-fn $ quote $ Fn (-> Unit)
             , &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'resolve-ctor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn resolve-ctor ()
             hint-fn $ quote $ Fn (-> Dynamic) (:features :js-ffi)
             if (exists? js/Element) js/Element js/Error
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns js-global-shadow.main
           :require $ js-global-shadow.schema :refer $ Element
@@ -44,6 +42,6 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Element (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns js-global-shadow.schema

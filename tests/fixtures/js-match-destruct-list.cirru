@@ -17,24 +17,21 @@
               (:none) 0
               (:some a_b _) a_b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'first-or $ %{} 'CodeEntry (:doc "|Fused: (:some) first with a `_` tail binder.")
           :code $ quote $ defn first-or (xs)
             match (destruct-list xs)
               (:some h _) h
               (:none) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'head-plus-one $ %{} 'CodeEntry (:doc "|Fused in expression position.")
           :code $ quote $ defn head-plus-one (xs)
             &+ 1 $ match (destruct-list xs)
               (:none) 0
               (:some h _) h
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println $ sum-list $ [] 1 2 3
@@ -45,16 +42,14 @@
             println $ escaped-shadow $ [] 5
             println $ same-binders $ [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'rest-size $ %{} 'CodeEntry (:doc "|Fused: `_` head binder.")
           :code $ quote $ defn rest-size (xs)
             match (destruct-list xs)
               (:none) -1
               (:some _ t) (&list:count t)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'same-binders $ %{} 'CodeEntry
           :doc "|Generic path: head and tail binders share a name."
           :code $ quote $ defn same-binders (xs)
@@ -62,8 +57,7 @@
               (:none) 0
               (:some h h) (&list:count h)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'shadowed-subject $ %{} 'CodeEntry
           :doc "|Generic path: the head binder shadows the subject."
           :code $ quote $ defn shadowed-subject (xs)
@@ -71,8 +65,7 @@
               (:none) 0
               (:some xs _) xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'sum-list $ %{} 'CodeEntry
           :doc "|Fused: (:none) first, recursive call in the (:some) branch."
           :code $ quote $ defn sum-list (xs)
@@ -81,7 +74,6 @@
               (:some h t)
                 &+ h $ sum-list t
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns js-match-destruct-list.main (:require)

@@ -13,8 +13,7 @@
         '%make-plugin $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn %make-plugin (value) (%:: Plugin :item value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'fix-command.reader/Plugin)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> fix-command.reader/Plugin)
           :tests $ [] $ %{} 'TestEntry (:name |nominal-method)
             :code $ quote $ assert= 3
               .render $ %make-plugin 3
@@ -24,36 +23,32 @@
         'Plugin0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Plugin0 (:item 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'PluginImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl PluginImpl PluginTrait (.render plugin-get)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'PluginTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait PluginTrait (.render :fn)
+          :code $ quote $ deftrait PluginTrait (.render 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             assert= 3 $ .render $ %make-plugin 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'plugin-get $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn plugin-get (self)
             match self
               (:item value) value
               _ $ raise |invalid-plugin
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'fix-command.reader/Plugin
+          :schema $ quote $ Fn fix-command.reader/Plugin (-> Number)
         'unused-enum-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unused-enum-index (key)
             .contains? (Option :some 1) key
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'K
-            :generics $ [] 'K
+          :schema $ quote $ Fn K (-> Bool) (:generics K)
           :tests $ []
             %{} 'TestEntry (:name |numeric-index)
               :code $ quote $ assert= true (unused-enum-index 1.5)

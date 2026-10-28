@@ -38,8 +38,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |closed-helper-contract)
               :code $ quote $ do

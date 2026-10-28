@@ -18,37 +18,32 @@
           :doc "|Stands in for a cache whose storage erases the value type."
           :code $ quote $ defn erased-call (key f) (f)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'Fn
-              {} (:return 'Dynamic)
-                :args $ []
+          :schema $ quote $ Fn Dynamic
+            Fn $ -> Dynamic
+            -> Dynamic
         'main! $ %{} 'CodeEntry
           :doc "|Callers use the adapter without needing the feature themselves."
           :code $ quote $ defn main! () (restore-cached :text make-text) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'make-text $ %{} 'CodeEntry
           :doc "|A typed producer stored through the erased cache."
           :code $ quote $ defn make-text () |fresh
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'restore-cached $ %{} 'CodeEntry
           :doc "|Restores the producer's value from the erased cache; the producer's instantiation supplies the type."
           :code $ quote $ defn restore-cached (key f)
             unsafe-coerce (erased-call key f) 'R
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'R)
-            :args $ [] 'K $ :: 'Fn
-              {} (:return 'R)
-                :args $ []
-            :features $ #{} :erased-cache
-            :generics $ [] 'K 'R
+          :schema $ quote $ Fn K
+            Fn $ -> R
+            -> R
+            :generics K R
+            :features :erased-cache
       :ns $ %{} 'NsEntry (:doc "|Strict erased-cache unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-erased-cache-strict.main

@@ -15,13 +15,11 @@
             option-value $ Option :some nil
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'option-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn (value) nil
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Option 'Nil
-            :return $ :: 'Option 'Nil
+          :schema $ quote $ Fn (Option Nil)
+            -> $ Option Nil
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

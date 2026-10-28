@@ -13,15 +13,13 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-assert $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Assert in different order")
             assert (= 1 1) |string
             assert |string $ = 1 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-case $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-case () (log-title "|Testing case")
             let
@@ -67,8 +65,7 @@
                 quote $ match (+ 1 2) (1 |one) (2 |two) (3 |three)
             assert= |two $ case (+ 1 1) (1 |one) (2 |two) (3 |three)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-detector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Detector function")
             inside-eval: (&reset-gensym-index!)
@@ -86,8 +83,7 @@
                     eprintln "|  value is:" v__1
                     raise "|Not satisfied in assertion!"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-expr-in-case $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-expr-in-case ()
             assert= |5 $ case (+ 1 4)
@@ -97,8 +93,7 @@
               (+ 2 3) |5
               (+ 2 4) |6
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-extract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Extract map via tags")
             inside-eval: (&reset-gensym-index!)
@@ -125,16 +120,14 @@
                   true |other
                 macroexpand-all $ quote $ if (= a 1) |one |other
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-gensym $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-if-let $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|if let")
             assert= 6 $ if-let
@@ -156,8 +149,7 @@
                 a $ Option :some 10
                 , 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-lambda $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing lambda macro")
             inside-eval:
@@ -189,21 +181,18 @@
                 macroexpand-all $ quote $ \ + x % %2
                 macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x % %2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-misc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title |misc)
             assert= (noted nothing 1) 1
             inside-eval: $ println $ &extract-code-into-edn 'code
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-or-linear-expansion ()
             assert= |done $ or false false false false false false false false false false false false false false false false false false false false |done
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-thread-macros $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-thread-macros () (log-title "|Testing thread macros")
             inside-eval:
@@ -258,8 +247,7 @@
             assert= 35 $ ->% 3 (+ % 4) (* % 5)
             assert= 36 $ ->% 3 (+ % %) (* % %)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing with-cpu-time")
             inside-eval: (&reset-gensym-index!)
@@ -283,8 +271,7 @@
               with-cpu-time $ &+ 1 2
               , 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-macro.main
           :require $ [] util.core :refer $ [] log-title inside-eval:

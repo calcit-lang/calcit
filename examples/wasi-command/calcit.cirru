@@ -13,18 +13,16 @@
         'Manifest $ %{} 'CodeEntry (:doc "|小型配置清单：具名、启用状态与版本号。")
           :code $ quote $ defstruct Manifest (:name 'String) (:enabled 'Bool) (:revision 'Int32)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'decode-manifest $ %{} 'CodeEntry (:doc "|把 Cirru EDN 文本明确解码为 Manifest；非法结构返回 Result 错误。")
           :code $ quote $ defn decode-manifest (text) (try-parse-cirru-edn-as text 'Manifest)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Result 'app.main/Manifest 'String
+          :schema $ quote $ Fn String
+            -> $ Result app.main/Manifest String
         'fail! $ %{} 'CodeEntry (:doc "|向 stderr 输出错误并以指定状态码退出。")
           :code $ quote $ defn fail! (code message) (eprintln message) (quit! code)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] 'Number 'String
+          :schema $ quote $ Fn Number String (-> Unit)
         'main! $ %{} 'CodeEntry (:doc "|读取 guest 文件，添加可选前缀并写入目标 guest 文件。")
           :code $ quote $ defn main! ()
             let
@@ -49,8 +47,7 @@
                     (:err message)
                       fail! 66 $ str "|Failed to read " input-path |: message
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'manifest-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取、转换并写回配置清单；失败以稳定退出码报告。")
           :code $ quote $ defn manifest-main! ()
             match
@@ -68,8 +65,7 @@
                         fail! 73 $ str |output: message
                       (:ok _) (println |Manifest-written)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'manifest-stdin-main! $ %{} 'CodeEntry
           :doc "|从 stdin 读取 Cirru EDN 并复用 process-manifest，将结果写到 stdout；读取失败退出 66，业务失败退出 65。"
           :code $ quote $ defn manifest-stdin-main! ()
@@ -80,8 +76,7 @@
                   (:err message) (fail! 65 message)
                   (:ok output) (echo output)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'method-eval-main! $ %{} 'CodeEntry
           :doc "|验收普通 Result.map 的 receiver 与回调实参副作用只各执行一次；不用于正式文件业务。"
           :code $ quote $ defn method-eval-main! ()
@@ -96,16 +91,14 @@
                 (:ok value) (println value)
                 (:err message) (fail! 70 message)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'process-manifest $ %{} 'CodeEntry (:doc "|使用普通 Result 方法串联解码、业务变换和 Cirru EDN 输出。")
           :code $ quote $ defn process-manifest (prefix content)
             (decode-manifest content) .and-then $ fn (manifest)
               (transform-manifest prefix manifest) .map $ fn (updated) (format-cirru-edn updated)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'String
-            :return $ :: 'Result 'String 'String
+          :schema $ quote $ Fn String String
+            -> $ Result String String
           :tests $ []
             %{} 'TestEntry (:name |transforms-typed-config)
               :code $ quote $ match
@@ -141,13 +134,11 @@
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'transform-content $ %{} 'CodeEntry (:doc "|为文本内容添加由环境变量提供的前缀。")
           :code $ quote $ defn transform-content (prefix content) (str prefix content)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String 'String
+          :schema $ quote $ Fn String String (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |prefixes-text)
             :code $ quote $ assert= "|prefix: payload" (transform-content "|prefix: " |payload)
             :tags $ #{} :unit :wasi
@@ -161,8 +152,7 @@
                 Result :err |invalid-manifest
                 Result :ok $ Manifest :name (str prefix name) :enabled (:enabled manifest) :revision revision
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'app.main/Manifest
-            :return $ :: 'Result 'app.main/Manifest 'String
+          :schema $ quote $ Fn String app.main/Manifest
+            -> $ Result app.main/Manifest String
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

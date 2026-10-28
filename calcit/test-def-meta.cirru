@@ -13,18 +13,15 @@
         'MetaSample $ %{} 'CodeEntry (:doc "|Sample definition for def metadata lookup tests")
           :code $ quote $ defn MetaSample (x) (+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc "|Run def metadata lookup tests")
           :code $ quote $ defn main! () (log-title "|Testing def metadata") (test-local-def) (test-core-def) (test-missing-doc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-core-def $ %{} 'CodeEntry (:doc "|lookup calcit.core definitions")
           :code $ quote $ defn test-core-def ()
             inside-eval: $ let
@@ -34,8 +31,7 @@
               assert= :Fn $ &enum:nth schema 0
               assert= true $ option:some? $ get (&enum:nth schema 1) :args
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-local-def $ %{} 'CodeEntry (:doc "|lookup local definition metadata")
           :code $ quote $ defn test-local-def ()
             inside-eval: $ let
@@ -46,14 +42,12 @@
               assert= (Option :some 'Number)
                 get (&enum:nth schema 1) :return
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-missing-doc $ %{} 'CodeEntry (:doc "|missing definition returns empty doc string")
           :code $ quote $ defn test-missing-doc ()
             inside-eval: $ assert= | $ &get-def-doc |test-def-meta.main/not-a-real-def
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-def-meta.main
           :require $ util.core :refer $ log-title inside-eval:

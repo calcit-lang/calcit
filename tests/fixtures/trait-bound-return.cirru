@@ -16,30 +16,22 @@
               defstruct Label $ :value 'String
               , LabelRenderImpl
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'LabelRenderImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl LabelRenderImpl Renderable (.render render-label) (.identity label-identity)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'Renderable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Renderable
-            .render $ :: 'Fn $ {}
-              :args $ [] 'T 'String
-              :return 'String
-              :generics $ [] 'T
-            .identity $ :: 'Fn $ {}
-              :args $ [] 'T 'U
-              :return 'U
-              :generics $ [] 'T 'U
+            .render $ quote $ Fn T String (-> String) (:generics T)
+            .identity $ quote $ Fn T U (-> U) (:generics T U)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'checked-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-count (x) (.count x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Countable
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Countable
           :tests $ [] $ %{} 'TestEntry (:name |collection-method-results)
             :code $ quote $ do
               assert= 0 $ checked-count $ []
@@ -51,10 +43,8 @@
         'identity-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn identity-with-trait (self value) (.identity self value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'U)
-            :args $ [] 'T 'U
-            :generics $ [] 'T 'U
-            :where $ {} $ 'T 'Renderable
+          :schema $ quote $ Fn T U (-> U) (:generics T U)
+            :where $ T Renderable
           :tests $ [] $ %{} 'TestEntry (:name |substitutes-generic-results)
             :code $ quote $ let
                 label $ Label :value |Ada
@@ -66,23 +56,17 @@
         'label-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn label-identity (self value) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'U)
-            :args $ [] 'fix-command.main/Label 'U
-            :generics $ [] 'U
+          :schema $ quote $ Fn fix-command.main/Label U (-> U) (:generics U)
         'main! $ %{} 'CodeEntry (:doc |Entry.)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |update-keeps-custom-struct-result-guard)
               :code $ quote $ let
                   trace $ ref $ [] |start
                   Override $ deftrait Override $ .assoc
-                    :: 'Fn $ {}
-                      :args $ [] 'T 'Tag 'Number
-                      :return 'String
-                      :generics $ [] 'T
+                    quote $ Fn T Tag Number (-> String) (:generics T)
                   implementation $ defimpl CustomAssoc Override $ .assoc
                     fn (_self _key _value)
                       assert= ([] |start |callback) @trace
@@ -155,10 +139,8 @@
               :where $ T ToString
             to-string value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'ToString
+          :schema $ quote $ Fn T (-> String) (:generics T)
+            :where $ T ToString
           :tests $ [] $ %{} 'TestEntry (:name |single-matching-hint)
             :code $ quote $ do
               assert= |1 $ matching-body-contract 1
@@ -171,10 +153,9 @@
               :generics T
             []
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn
+            -> $ List T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |return-only-generic)
             :code $ quote $ assert= ([]) (matching-empty-body-return)
             :tags $ #{} :body-hint-contract :unit
@@ -184,10 +165,9 @@
               quote $ List T
             , values
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'T)
-            :args $ []
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn & T
+            -> $ List T
+            :generics T
           :tests $ []
             %{} 'TestEntry (:name |numbers)
               :code $ quote $ assert= ([] 1 2) (partial-body-rest 1 2)
@@ -200,10 +180,8 @@
             hint-fn $ {} $ :return 'String
             to-string value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'ToString
+          :schema $ quote $ Fn T (-> String) (:generics T)
+            :where $ T ToString
           :tests $ []
             %{} 'TestEntry (:name |number)
               :code $ quote $ assert= |1 (partial-body-return 1)
@@ -217,30 +195,25 @@
               quote $ List T
             []
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn
+            -> $ List T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |return-only-generic)
             :code $ quote $ assert= ([]) (partial-empty-body-return)
             :tags $ #{} :body-hint-contract :unit
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'render-label $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn render-label (self prefix) prefix
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'fix-command.main/Label 'String
+          :schema $ quote $ Fn fix-command.main/Label String (-> String)
         'render-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn render-with-trait (value prefix) (.render value prefix)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T 'String
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Renderable
+          :schema $ quote $ Fn T String (-> String) (:generics T)
+            :where $ T Renderable
           :tests $ [] $ %{} 'TestEntry (:name |custom-trait-string-result)
             :code $ quote $ do
               assert= |prefix $ render-with-trait (Label :value |Ada) |prefix
@@ -254,8 +227,7 @@
                   checked-count values
               sink |numbers & xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |nonempty-and-empty)
             :code $ quote $ do
               assert= 3 $ typed-rest-forward $ [] 1 2 3

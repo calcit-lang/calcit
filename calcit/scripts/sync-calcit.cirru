@@ -110,11 +110,11 @@
               write-file calcit-path $ format-cirru-edn result
               println $ str-spaced |synced compact-path |to calcit-path
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
           :require $ bisection-key.util :refer $ assoc-append val-nth

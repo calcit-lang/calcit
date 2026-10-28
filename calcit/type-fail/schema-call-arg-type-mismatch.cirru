@@ -20,18 +20,15 @@
               plus1 text
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'plus1 $ %{} 'CodeEntry
           :doc "|Schema expects :number, call-site passes :string"
           :code $ quote $ defn plus1 (x) (&+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Namespace for schema call-site mismatch")
         :code $ quote $ ns type-fail-schema-call-arg-type.main

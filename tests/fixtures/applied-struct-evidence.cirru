@@ -13,11 +13,11 @@
         'DbA $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DbA (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'DbB $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DbB (:value 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.applied-data
     'app.applied-model $ %{} 'FileEntry
@@ -25,44 +25,40 @@
         'ClosedLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ClosedLike ([] 'Db) (:base 'Db) (:db 'Db)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OuterLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OuterLike ([] 'Db)
             :reel $ quote $ app.applied-model/ReelLike Db
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'PairLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PairLike ([] 'Key 'Payload) (:key 'Key) (:payload 'Payload)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'ReelAlias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def ReelAlias ReelLike
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'ReelLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ReelLike ([] 'Db) (:base 'Db) (:db 'Db)
             :records $ quote $ List (List Dynamic)
             :merged? 'Bool
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'keep-db $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn keep-db (reel) (:db reel)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Db)
-            :args $ [] $ :: 'app.applied-model/ReelLike 'Db
-            :generics $ [] 'Db
+          :schema $ quote $ Fn (app.applied-model/ReelLike Db) (-> Db) (:generics Db)
         'step $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn step (reel updater)
             ReelLike :base (:base reel) :db
               updater $ :db reel
               , :records (:records reel) :merged? $ :merged? reel
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'app.applied-model/ReelLike 'Db)
-              :: 'Fn $ {} (:return 'Db)
-                :args $ [] 'Db
-            :generics $ [] 'Db
-            :return $ :: 'app.applied-model/ReelLike 'Db
+          :schema $ quote $ Fn (app.applied-model/ReelLike Db)
+            Fn Db $ -> Db
+            -> $ app.applied-model/ReelLike Db
+            :generics Db
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.applied-model
           :require $ app.applied-data :refer $ DbA DbB
@@ -72,28 +68,24 @@
           :code $ quote $ defn append-b (db)
             data/DbB :value $ str (:value db) |!
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'data/DbB)
-            :args $ [] 'data/DbB
+          :schema $ quote $ Fn data/DbB (-> data/DbB)
         'bump-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bump-a (db)
             data/DbA :value $ .inc $ :value db
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'data/DbA)
-            :args $ [] 'data/DbA
+          :schema $ quote $ Fn data/DbA (-> data/DbA)
         'make-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-pair (key payload) (model/PairLike :key key :payload payload)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'data/DbA 'Dynamic
-            :return $ :: 'model/PairLike 'data/DbA 'Dynamic
+          :schema $ quote $ Fn data/DbA Dynamic
+            -> $ model/PairLike data/DbA Dynamic
         'read-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-a (reel)
             let
                 alias $ model/keep-db reel
               .inc $ :value alias
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'model/ReelLike 'data/DbA
+          :schema $ quote $ Fn (model/ReelLike data/DbA) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |two-db-updaters-preserve-history)
             :code $ quote $ let
                 a $ model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records
@@ -113,14 +105,12 @@
           :code $ quote $ defn read-b (reel)
             .len $ :value $ :db reel
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'model/ReelLike 'data/DbB
+          :schema $ quote $ Fn (model/ReelLike data/DbB) (-> Number)
         'read-closed-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-closed-a (reel)
             .inc $ :value $ :db reel
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'model/ClosedLike 'data/DbA
+          :schema $ quote $ Fn (model/ClosedLike data/DbA) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |closed-construction-and-alias)
             :code $ quote $ let
                 reel $ model/ClosedLike :base (data/DbA :value 0) :db $ data/DbA :value 2
@@ -132,8 +122,7 @@
           :code $ quote $ defn read-key (pair)
             .inc $ :value $ :key pair
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'model/PairLike 'data/DbA 'Dynamic
+          :schema $ quote $ Fn (model/PairLike data/DbA Dynamic) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |independent-generic-open-payload)
             :code $ quote $ assert= 5
               read-key $ make-pair (data/DbA :value 4) ([] 1 |open)
@@ -142,8 +131,7 @@
           :code $ quote $ defn read-nested-a (outer)
             read-a $ :reel outer
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'model/OuterLike 'data/DbA
+          :schema $ quote $ Fn (model/OuterLike data/DbA) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |aliases-and-nested-fields)
             :code $ quote $ let
                 alias $ model/ReelAlias :merged? false :records ([]) :db (data/DbA :value 8) :base $ data/DbA :value 0
@@ -154,9 +142,8 @@
         'with-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn with-a (reel db) (.assoc reel :db db)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'model/ReelLike 'data/DbA) 'data/DbA
-            :return $ :: 'model/ReelLike 'data/DbA
+          :schema $ quote $ Fn (model/ReelLike data/DbA) data/DbA
+            -> $ model/ReelLike data/DbA
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.applied-reader
           :require (app.applied-data :as data) (app.applied-model :as model)
@@ -168,7 +155,7 @@
             :qualified $ quote $ calcit.core/Option Number
             :outcome $ quote $ Result Number String
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NilBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NilBox
@@ -176,11 +163,11 @@
             :none 'Nil
             :host $ quote $ JsNullish Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny :int8) (:wide 'UInt16) (:single 'Float32)
+          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny 'Int8) (:wide 'UInt16) (:single 'Float32)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.checked-write
     'app.foreign-nominal $ %{} 'FileEntry
@@ -188,11 +175,11 @@
         'Option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Option (:none) (:some 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.foreign-nominal
     'app.main $ %{} 'FileEntry
@@ -200,12 +187,10 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

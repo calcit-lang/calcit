@@ -14,8 +14,7 @@
           :code $ quote $ defn add-and-double (a b)
             &* (&+ a b) 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.helper
     'test-wasm.layout $ %{} 'FileEntry
@@ -23,7 +22,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:z 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.layout
     'test-wasm.main $ %{} 'FileEntry
@@ -31,56 +30,51 @@
         '*wasm-atom-counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *wasm-atom-counter 20
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         '*wasm-ref-counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *wasm-ref-counter 10
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def MeasuredPoint (impl-traits PointValue PointScoreImpl)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NominalPayload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalPayload (:label 'String) (:point Point)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Point $ %{} 'CodeEntry
           :doc "|Struct definition (via legacy defrecord) for WASM test"
           :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'PointScore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait PointScore
-            .score $ :: 'Fn $ {}
-              :args $ [] 'test-wasm.main/PointValue
-              :return 'Number
+            .score $ quote $ Fn test-wasm.main/PointValue (-> Number)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'PointScoreImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl PointScoreImpl PointScore (.score point:score)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'PointValue $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PointValue (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
           :code $ quote $ defwasm-export add-two (a b) (&+ a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'bump-atom-counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export bump-atom-counter (n)
             reset! *wasm-atom-counter $ &+ @*wasm-atom-counter n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'bump-ref-counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export bump-ref-counter (n)
             reset! *wasm-ref-counter $ &+ @*wasm-ref-counter n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |accumulates-namespaced-ref)
             :code $ quote $ let
                 before $ deref *wasm-ref-counter
@@ -95,59 +89,49 @@
               &+ 1 $ collatz-steps $ &/ n 2
               &+ 1 $ collatz-steps $ &+ (&* 3 n) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'collect-rest $ %{} 'CodeEntry (:doc "|returns rest list unchanged")
           :code $ quote $ defwasm-export collect-rest (a & xs) xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number)
-            :args $ [] 'Number
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn Number & Number
+            -> $ List Number
         'compare-wasm-ascending $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export compare-wasm-ascending (a b) (&- a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'enum-index-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-index-helper (value key) (.contains? value key)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Enum 'K
-            :generics $ [] 'K
+          :schema $ quote $ Fn Enum K (-> Bool) (:generics K)
         'factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
           :code $ quote $ defwasm-export factorial (n)
             if (&< n 2) 1 $ &* n $ factorial (&- n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'fibo $ %{} 'CodeEntry (:doc "|Fibonacci — recursive")
           :code $ quote $ defwasm-export fibo (n)
             if (&< n 2) 1 $ &+
               fibo $ &- n 1
               fibo $ &- n 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'gcd $ %{} 'CodeEntry (:doc "|Greatest common divisor")
           :code $ quote $ defwasm-export gcd (a b)
             if (&= b 0) a $ recur b $ &number:rem a b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'hof-number-argument-shadow $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn hof-number-argument-shadow (__hof_arg__)
             = 0 $ count $ filter ([] |a |b) number?
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |callback-input-keeps-own-type)
             :code $ quote $ assert= true (hof-number-argument-shadow 0)
             :tags $ #{} :hof-number-scope :numeric-recursion-evidence :unit :wasm
         'host-string-upcase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-string-upcase (text) |host |string-upcase
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'join-items-str $ %{} 'CodeEntry
           :doc "|appends each generic element to a String with str inside a loop"
           :code $ quote $ defn join-items-str (xs)
@@ -157,34 +141,26 @@
               if (&list:empty? items) acc $ recur (&list:rest items)
                 str acc $ &list:nth items 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] $ :: 'List 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (List T) (-> String) (:generics T)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export main! ()
             println $ fibo 10
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'point:generic-score $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:generic-score (x) (x .score)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'PointScore
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T PointScore
         'point:score $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score (self) (:value self)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'test-wasm.main/PointValue
+          :schema $ quote $ Fn test-wasm.main/PointValue (-> Number)
         'point:score-through-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score-through-helper (x) (point:generic-score x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'PointScore
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T PointScore
         'recur-enum-key-failure? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-enum-key-failure? (value index)
             if (> index 0)
@@ -194,8 +170,7 @@
                   if (= index 1) (raise |recur-key-error) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Enum 'Number
+          :schema $ quote $ Fn Enum Number (-> Bool)
         'recur-enum-receiver-failure? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-enum-receiver-failure? (value index)
             if (> index 0)
@@ -205,17 +180,14 @@
                 do (println |recur-key) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Enum 'Number
+          :schema $ quote $ Fn Enum Number (-> Bool)
         'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
             if (<= remaining 0)
               not $ number? value
               recur (dec remaining) value extra
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number 'Bool 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn Number Bool T (-> Bool) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |known-bool-false-keeps-unrelated-generic)
               :code $ quote $ assert= true (recursive-bool-number-kind 2 false :unused)
@@ -229,9 +201,7 @@
               = 2 $ count $ filter values number?
               recur (dec remaining) values extra
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number (:: 'List 'Number) 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn Number (List Number) T (-> Bool) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |numeric-filter-keeps-recursion)
             :code $ quote $ assert= true
               recursive-hof-number-kind 2 ([] 1 2) :unused
@@ -241,9 +211,7 @@
             if (<= remaining 0) (number? value)
               recur (dec remaining) value extra
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number 'Int8 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn Number Int8 T (-> Bool) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
             :code $ quote $ assert= true
               recursive-number-kind 2 (assert-type 1 'Int8) :unused
@@ -253,17 +221,14 @@
             if (<= remaining 0) (number? value)
               recur (dec remaining) value extra
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number 'Number 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn Number Number T (-> Bool) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
             :code $ quote $ assert= true (recursive-number-kind-control 2 1 :unused)
             :tags $ #{} :numeric-recursion-evidence :unit :wasm
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'sum-destruct-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-destruct-list (acc xs)
             match (destruct-list xs)
@@ -271,8 +236,7 @@
               (:some h t)
                 recur (&+ acc h) t
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'List 'Number
+          :schema $ quote $ Fn Number (List Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |fused-match-with-recur)
             :code $ quote $ do
               assert= 0 $ sum-destruct-list 0 $ []
@@ -283,87 +247,72 @@
           :code $ quote $ defwasm-export sum-destruct-range (n)
             sum-destruct-list 0 $ range n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'sum-range $ %{} 'CodeEntry (:doc "|Sum 1..n via helper")
           :code $ quote $ defwasm-export sum-range (n) (sum-range-step 0 1 n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'sum-range-step $ %{} 'CodeEntry (:doc "|Sum step helper: sum-range-step(acc, i, n)")
           :code $ quote $ defwasm-export sum-range-step (acc i n)
             if (&> i n) acc $ recur (&+ acc i) (&+ i 1) n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number 'Number
+          :schema $ quote $ Fn Number Number Number (-> Number)
         'sum-rest $ %{} 'CodeEntry (:doc "|variadic sum: a + b + rest...")
           :code $ quote $ defwasm-export sum-rest (a b & xs)
             sum-rest-list (&+ a b) xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number & Number (-> Number)
         'sum-rest-forward $ %{} 'CodeEntry (:doc "|forwards a rest list via &call-spread")
           :code $ quote $ defwasm-export sum-rest-forward (a b & xs) (sum-rest a b & xs)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number & Number (-> Number)
         'sum-rest-list $ %{} 'CodeEntry (:doc "|helper: sums a list via recur")
           :code $ quote $ defwasm-export sum-rest-list (acc xs)
             if (&list:empty? xs) acc $ recur
               &+ acc $ .unwrap $ .first xs
               &list:rest xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'List 'Number
+          :schema $ quote $ Fn Number (List Number) (-> Number)
         'tail-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export tail-count (n) (tail-count-step n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'tail-count-step $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tail-count-step (n)
             if (&<= n 0) 0 $ tail-count-step $ &- n 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |large-direct-self-tail-call)
             :code $ quote $ assert= 0 (tail-count-step 100000)
             :tags $ #{} :wasm
         'test-abs $ %{} 'CodeEntry (:doc "|abs from calcit.core")
           :code $ quote $ defwasm-export test-abs (x) (abs x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-bit-and $ %{} 'CodeEntry (:doc "|Bitwise AND")
           :code $ quote $ defwasm-export test-bit-and (a b) (bit-and a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-bit-not $ %{} 'CodeEntry (:doc "|Bitwise NOT")
           :code $ quote $ defwasm-export test-bit-not (a) (bit-not a)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-bit-or $ %{} 'CodeEntry (:doc "|Bitwise OR")
           :code $ quote $ defwasm-export test-bit-or (a b) (bit-or a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-bit-shl $ %{} 'CodeEntry (:doc "|Bitwise shift left")
           :code $ quote $ defwasm-export test-bit-shl (a b) (bit-shl a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-bit-shr $ %{} 'CodeEntry (:doc "|Bitwise shift right")
           :code $ quote $ defwasm-export test-bit-shr (a b) (bit-shr a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-bit-xor $ %{} 'CodeEntry (:doc "|Bitwise XOR")
           :code $ quote $ defwasm-export test-bit-xor (a b) (bit-xor a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-buf-list-doseq $ %{} 'CodeEntry (:doc "||buf-list: use doseq to push 4 items, count=4")
           :code $ quote $ defwasm-export test-buf-list-doseq ()
             let
@@ -373,8 +322,7 @@
                 &buf-list:push buf n
               &buf-list:count buf
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-buf-list-each $ %{} 'CodeEntry (:doc "||buf-list: use each to push 3 items, count=3")
           :code $ quote $ defwasm-export test-buf-list-each ()
             let
@@ -383,8 +331,7 @@
                 fn (x) (&buf-list:push buf x)
               &buf-list:count buf
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-buf-list-filter $ %{} 'CodeEntry
           :doc "||buf-list: concat [1..5], filter even from to-list, count=2"
           :code $ quote $ defwasm-export test-buf-list-filter ()
@@ -395,8 +342,7 @@
                 fn (x)
                   &= (&number:rem x 2) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-buf-list-map $ %{} 'CodeEntry (:doc "||buf-list: concat 3 items, map to-list, count=3")
           :code $ quote $ defwasm-export test-buf-list-map ()
             let
@@ -405,8 +351,7 @@
               &list:count $ map (&buf-list:to-list buf)
                 fn (x) (&* x 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-buf-list-push $ %{} 'CodeEntry (:doc "||buf-list push 3 items, count=3")
           :code $ quote $ defwasm-export test-buf-list-push ()
             let
@@ -416,8 +361,7 @@
               &buf-list:push buf 30
               &buf-list:count buf
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-buf-list-to-list $ %{} 'CodeEntry (:doc "||buf-list concat [1,2,3] then to-list, count=3")
           :code $ quote $ defwasm-export test-buf-list-to-list ()
             let
@@ -426,23 +370,19 @@
               &buf-list:concat buf items
               &list:count $ &buf-list:to-list buf
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-call-spread-rest $ %{} 'CodeEntry (:doc "|rest list forwarding via &call-spread")
           :code $ quote $ defwasm-export test-call-spread-rest () (sum-rest-forward 1 2 3 4 5)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-ceil $ %{} 'CodeEntry (:doc "|ceil function")
           :code $ quote $ defwasm-export test-ceil (x) (ceil x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-char-from-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-char-from-code (n) (char-from-code n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> String)
         'test-closure-capture-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-closure-capture-map ()
             let
@@ -455,8 +395,7 @@
                   values $ map ([] 1 2 3) add-offset
                 if (&list:includes? values 11) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-lexical-capture-through-map)
             :code $ quote $ assert= 1 (test-closure-capture-map)
             :tags $ #{} :core :unit :wasm
@@ -469,8 +408,7 @@
                     + x $ * 10 idx
               if (&list:includes? values 15) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-number-index-in-wasm)
             :code $ quote $ assert= 1 (test-closure-map-indexed)
             :tags $ #{} :core :unit :wasm
@@ -478,18 +416,15 @@
           :code $ quote $ defwasm-export test-compare (a b)
             if (&< a b) -1 $ if (&> a b) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-cos $ %{} 'CodeEntry (:doc "|cos via host import")
           :code $ quote $ defwasm-export test-cos (x) (cos x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-cross-ns $ %{} 'CodeEntry (:doc "|Cross-namespace function call")
           :code $ quote $ defwasm-export test-cross-ns (a b) (helper/add-and-double a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-custom-trait-score $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-custom-trait-score (x)
             if
@@ -498,8 +433,7 @@
                 , x
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |selects-nominal-trait)
             :code $ quote $ assert= 1 (test-custom-trait-score 42)
             :tags $ #{} :core :wasm
@@ -507,142 +441,120 @@
           :code $ quote $ defwasm-export test-display-by-bin ()
             &str:count $ &number:display-by 17 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-display-by-count $ %{} 'CodeEntry (:doc "|length of &number:display-by n base")
           :code $ quote $ defwasm-export test-display-by-count (n base)
             &str:count $ &number:display-by n base
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-display-by-hex $ %{} 'CodeEntry (:doc "|17 in hex = 0x11, length 4")
           :code $ quote $ defwasm-export test-display-by-hex ()
             &str:count $ &number:display-by 17 16
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-assoc $ %{} 'CodeEntry (:doc "|Enum assoc updates payload by index")
           :code $ quote $ defwasm-export test-enum-assoc ()
             &let
               t $ &enum:assoc (:: :pair 10 20) 1 9
               &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-count $ %{} 'CodeEntry (:doc "|Enum count returns payload count")
           :code $ quote $ defwasm-export test-enum-count ()
             &let
               t $ :: :pair 10 20
               &enum:count t
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-invalid-direct-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-false ()
             .contains? (Option :some 1) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-nil ()
             .contains? (Option :some 1) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-string ()
             .contains? (Option :some 1) |0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-tag ()
             .contains? (Option :some 1) :zero
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-true ()
             .contains? (Option :some 1) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-false ()
             enum-index-helper (Option :some 1) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-nil ()
             enum-index-helper (Option :some 1) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-string ()
             enum-index-helper (Option :some 1) |0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-tag ()
             enum-index-helper (Option :some 1) :zero
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-true ()
             enum-index-helper (Option :some 1) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-ordered $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-ordered ()
             .contains?
               do (println |enum-receiver) (Option :some 1)
               do (println |enum-key) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-false ()
             &trait-call Contains :contains? (Option :some 1) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-nil ()
             &trait-call Contains :contains? (Option :some 1) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-string ()
             &trait-call Contains :contains? (Option :some 1) |0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-tag ()
             &trait-call Contains :contains? (Option :some 1) :zero
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-true ()
             &trait-call Contains :contains? (Option :some 1) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-key-error ()
             .contains?
               do (println |enum-receiver) (Option :some 1)
               do (println |enum-key) (raise |enum-key-error)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-map-set-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-map-set-equality ()
             if
@@ -656,8 +568,7 @@
                 , 1 0
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-map-set-inequality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-map-set-inequality ()
             if
@@ -670,46 +581,39 @@
                   Option :some $ #{} 1 3
                 , 0 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-number-index-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-direct (index)
             .contains? (Option :some 1) index
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
         'test-enum-number-index-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-helper (index)
             enum-index-helper (Option :some 1) index
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
         'test-enum-number-index-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-trait (index)
             &trait-call Contains :contains? (Option :some 1) index
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Bool)
         'test-enum-receiver-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-receiver-error ()
             enum-index-helper
               do (println |enum-receiver) (raise |enum-receiver-error)
               do (println |enum-key) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-recur-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-recur-key-error ()
             recur-enum-key-failure? (Option :some 1) 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-recur-receiver-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-recur-receiver-error ()
             recur-enum-receiver-failure? (Option :some 1) 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()
             if
@@ -737,8 +641,7 @@
                 , 0
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-structural-inequality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-inequality ()
             if
@@ -749,8 +652,7 @@
                   &= (Option :none) (Option :some 1)
                   , 0 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-sum $ %{} 'CodeEntry
           :doc "|Enum create + nth access: idx 1 and 2 are payloads"
           :code $ quote $ defwasm-export test-enum-sum ()
@@ -758,24 +660,21 @@
               t $ :: :pair 10 20
               &+ (&enum:nth t 1) (&enum:nth t 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-enum-trait-invalid-ordered $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-trait-invalid-ordered ()
             &trait-call Contains :contains?
               do (println |enum-receiver) (Option :some 1)
               do (println |enum-key) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-trait-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-trait-key-error ()
             &trait-call Contains :contains?
               do (println |enum-receiver) (Option :some 1)
               do (println |enum-key) (raise |enum-key-error)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-trait-receiver-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-trait-receiver-error ()
             &trait-call Contains :contains?
@@ -783,8 +682,7 @@
                 if (= 1 1) (raise |enum-receiver-error) (Option :some 1)
               do (println |enum-key) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-enum-update-nth $ %{} 'CodeEntry
           :doc "|update an enum slot by index; an index past the payloads traps"
           :code $ quote $ defwasm-export test-enum-update-nth (i)
@@ -792,8 +690,7 @@
               update (:: :a 1 2) i $ fn (x) (&+ x 10)
               , i
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-filter-map-kv $ %{} 'CodeEntry
           :doc "|Typed filter-map-kv keeps two transformed entries and drops one."
           :code $ quote $ defwasm-export test-filter-map-kv ()
@@ -806,8 +703,7 @@
               &+ (&map:count output)
                 option:unwrap $ &map:get output :c
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-find-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-found ()
             option:unwrap-or
@@ -815,8 +711,7 @@
                 fn (x) (> x 1)
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-find-index-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-index-found ()
             option:unwrap-or
@@ -824,8 +719,7 @@
                 fn (x) (> x 1)
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-find-index-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-index-not-found ()
             option:unwrap-or
@@ -833,8 +727,7 @@
                 fn (x) (> x 9)
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-find-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-not-found ()
             option:unwrap-or
@@ -842,32 +735,27 @@
                 fn (x) (> x 9)
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-floor $ %{} 'CodeEntry (:doc "|floor function")
           :code $ quote $ defwasm-export test-floor (x) (floor x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-get-char-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-get-char-code (s) (get-char-code s)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Number)
         'test-gte $ %{} 'CodeEntry (:doc |greater-than-or-equal)
           :code $ quote $ defwasm-export test-gte (a b)
             if (&> a b) 1 $ if (&= a b) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-hash-number $ %{} 'CodeEntry (:doc "|hash on number returns stable non-zero value")
           :code $ quote $ defwasm-export test-hash-number ()
             if
               &> (&hash 42) 0
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-let-chain $ %{} 'CodeEntry (:doc "|chained let bindings")
           :code $ quote $ defwasm-export test-let-chain (x)
             &let
@@ -876,36 +764,31 @@
                 b $ &+ a 1
                 &* b 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-list-assoc-after $ %{} 'CodeEntry (:doc "|assoc-after inserts element after index")
           :code $ quote $ defwasm-export test-list-assoc-after ()
             &let
               xs $ &list:assoc-after ([] 10 20 30) 0 99
               &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-assoc-before $ %{} 'CodeEntry (:doc "|assoc-before inserts element before index")
           :code $ quote $ defwasm-export test-list-assoc-before ()
             &let
               xs $ &list:assoc-before ([] 10 20 30) 1 99
               &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-butlast $ %{} 'CodeEntry (:doc "|butlast drops last element")
           :code $ quote $ defwasm-export test-list-butlast ()
             &list:count $ butlast $ [] 10 20 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-butlast-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-butlast-empty ()
             &list:count $ butlast $ []
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defwasm-export test-list-contains ()
             &let
@@ -914,8 +797,7 @@
                 if (&list:contains? xs 2) 1 0
                 if (&list:contains? xs 5) 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-contains-method $ %{} 'CodeEntry (:doc "|.contains-index? dispatches on list")
           :code $ quote $ defwasm-export test-list-contains-method ()
             &+
@@ -926,50 +808,43 @@
                 .contains-index? ([] 10 20 30) 9
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-count $ %{} 'CodeEntry (:doc "|list count")
           :code $ quote $ defwasm-export test-list-count ()
             &list:count $ [] 10 20 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-empty-false $ %{} 'CodeEntry (:doc "|non-empty list not empty")
           :code $ quote $ defwasm-export test-list-empty-false ()
             if
               &list:empty? $ [] 1
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty list")
           :code $ quote $ defwasm-export test-list-empty-method ()
             count $ .empty $ [] 10 20 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-empty-true $ %{} 'CodeEntry (:doc "|empty list is empty")
           :code $ quote $ defwasm-export test-list-empty-true ()
             if
               &list:empty? $ []
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-empty?-method $ %{} 'CodeEntry (:doc "|.empty? uses generic method dispatch")
           :code $ quote $ defwasm-export test-list-empty?-method ()
             if
               .empty? $ []
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-first $ %{} 'CodeEntry (:doc "|list first element")
           :code $ quote $ defwasm-export test-list-first ()
             .unwrap $ .first $ [] 42 99
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |checked-sequence-values)
             :code $ quote $ do
               assert= 42 $ test-list-first
@@ -989,8 +864,7 @@
           :code $ quote $ defwasm-export test-list-first-generic ()
             option:unwrap $ first $ [] 42 99
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-flat-map-method $ %{} 'CodeEntry (:doc "|typed List .flat-map keeps mapped element order")
           :code $ quote $ defwasm-export test-list-flat-map-method ()
             &let
@@ -1000,8 +874,7 @@
                   [] x $ &+ x 10
               &+ (&list:count xs) (&list:nth xs 3)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-includes $ %{} 'CodeEntry (:doc "|includes checks value presence")
           :code $ quote $ defwasm-export test-list-includes ()
             &+
@@ -1012,8 +885,7 @@
                 &list:includes? ([] 10 20 30) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on list")
           :code $ quote $ defwasm-export test-list-includes-method ()
             &+
@@ -1024,8 +896,7 @@
                 .includes? ([] 10 20 30) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-index-methods $ %{} 'CodeEntry (:doc "|验证 List .get/.nth 在 WASM 中共享有类型的 Option 索引读取。")
           :code $ quote $ defwasm-export test-list-index-methods ()
             let
@@ -1034,8 +905,7 @@
                 option:unwrap-or (xs .get 1) -1
                 option:unwrap-or (xs .get 2) -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-join-string $ %{} 'CodeEntry
           :doc "|List join-string method and prefix preserve rendering"
           :code $ quote $ defwasm-export test-list-join-string ()
@@ -1045,46 +915,39 @@
                 , .join-string |-
               &str:count $ join-string ([] 1 2 3) |-
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-max-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-max-empty ()
             option:unwrap-or
               .max $ []
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-nth $ %{} 'CodeEntry (:doc "|list nth element")
           :code $ quote $ defwasm-export test-list-nth (i)
             &list:nth ([] 10 20 30 40) i
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-list-prepend $ %{} 'CodeEntry (:doc "|prepend returns correct first elem")
           :code $ quote $ defwasm-export test-list-prepend ()
             .unwrap $ .first $ prepend ([] 10 20) 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-rest-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-rest-empty ()
             &list:count $ &list:rest $ []
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-rest-first $ %{} 'CodeEntry (:doc "|first of rest")
           :code $ quote $ defwasm-export test-list-rest-first ()
             .unwrap $ .first $ &list:rest ([] 10 20 30)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-rest-generic-first $ %{} 'CodeEntry (:doc "|generic rest() on list via invoke")
           :code $ quote $ defwasm-export test-list-rest-generic-first ()
             option:unwrap $ first $ rest ([] 10 20 30)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-reverse $ %{} 'CodeEntry (:doc "|reverse a list")
           :code $ quote $ defwasm-export test-list-reverse ()
             &let
@@ -1093,8 +956,7 @@
                 .unwrap $ .first xs
                 &list:nth xs 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-slice $ %{} 'CodeEntry (:doc "|slice with start and end")
           :code $ quote $ defwasm-export test-list-slice ()
             &let
@@ -1102,14 +964,12 @@
               &+ (&list:count xs)
                 .unwrap $ .first xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-slice-count $ %{} 'CodeEntry (:doc "|count of &list:slice over a 3-item list")
           :code $ quote $ defwasm-export test-list-slice-count (start end)
             &list:count $ &list:slice ([] 10 20 30) start end
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-list-sort-ascending $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-ascending ()
             &let
@@ -1118,8 +978,7 @@
                 * 10 $ .unwrap $ .first ys
                 .unwrap $ .last ys
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-sort-descending $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-descending ()
             &let
@@ -1129,8 +988,7 @@
                 * 10 $ .unwrap $ .first ys
                 .unwrap $ .last ys
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-sort-dynamic-callee $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-dynamic-callee ()
             &let (comparator compare-wasm-ascending)
@@ -1140,8 +998,7 @@
                   * 10 $ .unwrap $ .first ys
                   .unwrap $ .last ys
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-sort-input-immutable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-input-immutable ()
             &let
@@ -1152,8 +1009,7 @@
                   * 10 $ .unwrap $ .first xs
                   .unwrap $ .first ys
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list-sort-stable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-stable ()
             &let
@@ -1167,28 +1023,24 @@
                   * 10 $ &list:nth (&list:nth ys 2) 1
                   &list:nth (&list:nth ys 3) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list?-false $ %{} 'CodeEntry (:doc "|list? on number returns false (0)")
           :code $ quote $ defwasm-export test-list?-false ()
             if (list? 42) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-list?-true $ %{} 'CodeEntry (:doc "|list? on a list returns true (1)")
           :code $ quote $ defwasm-export test-list?-true ()
             if
               list? $ [] 1 2
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-lte $ %{} 'CodeEntry (:doc |less-than-or-equal)
           :code $ quote $ defwasm-export test-lte (a b)
             if (&< a b) 1 $ if (&= a b) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-map-bucket-update $ %{} 'CodeEntry
           :doc "|update on collided numeric keys keeps lookup correct"
           :code $ quote $ defwasm-export test-map-bucket-update (a b)
@@ -1198,8 +1050,7 @@
                 option:unwrap $ &map:get m a
                 option:unwrap $ &map:get m b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-map-contains $ %{} 'CodeEntry (:doc "|contains checks key presence")
           :code $ quote $ defwasm-export test-map-contains ()
             &+
@@ -1210,8 +1061,7 @@
                 &map:contains? (&{} :a 1 :b 2) :z
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-contains-method $ %{} 'CodeEntry (:doc "|.contains-key? dispatches on map")
           :code $ quote $ defwasm-export test-map-contains-method ()
             &+
@@ -1222,55 +1072,47 @@
                 .contains-key? (&{} :a 1 :b 2) :z
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-count $ %{} 'CodeEntry (:doc "|map count")
           :code $ quote $ defwasm-export test-map-count ()
             &map:count $ &{} :a 1 :b 2 :c 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-empty-false $ %{} 'CodeEntry (:doc "|non-empty map not empty")
           :code $ quote $ defwasm-export test-map-empty-false ()
             if
               &map:empty? $ &{} :a 1
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty map")
           :code $ quote $ defwasm-export test-map-empty-method ()
             count $ .empty $ &{} :a 1 :b 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-empty-true $ %{} 'CodeEntry (:doc "|empty map is empty")
           :code $ quote $ defwasm-export test-map-empty-true ()
             if
               &map:empty? $ &{}
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-get $ %{} 'CodeEntry (:doc "|map get by key")
           :code $ quote $ defwasm-export test-map-get ()
             option:unwrap $ &map:get (&{} :a 10 :b 20 :c 30) :b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-hash-index1 $ %{} 'CodeEntry (:doc "|second 5 bits of number hash")
           :code $ quote $ defwasm-export test-map-hash-index1 (n)
             bit-and
               bit-shr (&hash n) 5
               , 31
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-map-hash-value $ %{} 'CodeEntry (:doc "|raw hash for numeric key")
           :code $ quote $ defwasm-export test-map-hash-value (n) (&hash n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-map-includes $ %{} 'CodeEntry (:doc "|map includes checks value")
           :code $ quote $ defwasm-export test-map-includes ()
             &+
@@ -1281,8 +1123,7 @@
                 &map:includes? (&{} :a 10 :b 20) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-includes-method $ %{} 'CodeEntry (:doc "|.contains-value? dispatches on map")
           :code $ quote $ defwasm-export test-map-includes-method ()
             &+
@@ -1293,21 +1134,18 @@
                 .contains-value? (&{} :a 10 :b 20) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-keys-method $ %{} 'CodeEntry
           :doc "|typed `.keys` lowers to `&map:keys` and returns Set<K> across WASM."
           :code $ quote $ defwasm-export test-map-keys-method ()
             &set:count $ .keys $ &{} :a 1 :b 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-merge $ %{} 'CodeEntry (:doc "|merge two maps, b overrides a")
           :code $ quote $ defwasm-export test-map-merge ()
             &map:count $ &merge (&{} :a 1 :b 2) (&{} :b 3 :c 4)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
           :code $ quote $ defwasm-export test-map-merge-method ()
             option:unwrap $ &map:get
@@ -1315,16 +1153,14 @@
                 , .merge (&{} :b 3) (&{} :b 99)
               , :b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
           :code $ quote $ defwasm-export test-map-merge-value ()
             option:unwrap $ &map:get
               &merge (&{} :a 1 :b 2) (&{} :b 99)
               , :b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-map-two-keys-sum $ %{} 'CodeEntry (:doc "|sum lookups for two numeric keys")
           :code $ quote $ defwasm-export test-map-two-keys-sum (a b)
             &let
@@ -1333,16 +1169,14 @@
                 option:unwrap $ &map:get m a
                 option:unwrap $ &map:get m b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-map?-true $ %{} 'CodeEntry (:doc "|map? on map returns true (1)")
           :code $ quote $ defwasm-export test-map?-true ()
             if
               map? $ &{} :a 1
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-match-sub $ %{} 'CodeEntry (:doc "|Match on second variant")
           :code $ quote $ defwasm-export test-match-sub (x y)
             &let
@@ -1352,8 +1186,7 @@
                 (:sub a b) (&- a b)
                 _ 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-match-tag $ %{} 'CodeEntry (:doc "|Match on enum tag")
           :code $ quote $ defwasm-export test-match-tag (x y)
             &let
@@ -1363,8 +1196,7 @@
                 (:sub a b) (&- a b)
                 _ 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-match-wildcard $ %{} 'CodeEntry (:doc "|Match falls to wildcard")
           :code $ quote $ defwasm-export test-match-wildcard ()
             &let
@@ -1373,35 +1205,29 @@
                 (:add a b) (&+ a b)
                 _ -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-max $ %{} 'CodeEntry (:doc "|max of two numbers")
           :code $ quote $ defwasm-export test-max (a b)
             if (&> a b) a b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-method-get-char-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-method-get-char-code (s) (s .get-char-code)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Number)
         'test-min $ %{} 'CodeEntry (:doc "|min of two numbers")
           :code $ quote $ defwasm-export test-min (a b)
             if (&< a b) a b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-negate $ %{} 'CodeEntry (:doc "|negate from calcit.core")
           :code $ quote $ defwasm-export test-negate (x) (negate x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-not $ %{} 'CodeEntry (:doc "|not operation")
           :code $ quote $ defwasm-export test-not (x) (not x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |boolean-not-contract)
             :code $ quote $ do
               assert= true $ test-not false
@@ -1410,14 +1236,12 @@
         'test-number-compare-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-number-compare-method () (.compare 1 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-number-predicate-hof-pointer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-number-predicate-hof-pointer (value)
             count $ filter ([] value 2) number?
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-number-predicate-recursion $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-number-predicate-recursion ()
             assert= true $ recursive-number-kind-control 2 1 :unused
@@ -1427,20 +1251,17 @@
             assert= true $ recursive-bool-number-kind 2 true :unused
             recursive-number-kind 2 (assert-type 1 'Int8) :unused
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-number?-true $ %{} 'CodeEntry (:doc "|number? on number returns true (1)")
           :code $ quote $ defwasm-export test-number?-true ()
             if (number? 42) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-option-some-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-some-method ()
             (Option :some 1) .some?
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |typed-predicate)
             :code $ quote $ assert= true (test-option-some-method)
             :tags $ #{} :wasm
@@ -1448,26 +1269,22 @@
           :code $ quote $ defwasm-export test-option-unwrap-or ()
             (Option :none) .unwrap-or 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-pow $ %{} 'CodeEntry (:doc "|pow via host import")
           :code $ quote $ defwasm-export test-pow (base exp) (pow base exp)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-println $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-println () do (println 42) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-proven-scalar-argument-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-proven-scalar-argument-error (flag)
             number? $ if flag
               do (println |scalar-kind-argument-error) (raise |scalar-kind-argument-error)
               , false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |known-bool-false-is-not-number)
             :code $ quote $ assert= false (test-proven-scalar-argument-error false)
             :tags $ #{} :scalar-kind-evidence :unit :wasm
@@ -1479,8 +1296,7 @@
                 , x
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-namespace-identity)
             :code $ quote $ assert= 1 (test-qualified-symbol-helper 42)
             :tags $ #{} :core :wasm
@@ -1488,14 +1304,12 @@
           :code $ quote $ defwasm-export test-range ()
             &list:count $ range 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-range-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-range-count (a b step)
             &list:count $ range a b step
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number 'Number
+          :schema $ quote $ Fn Number Number Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |accumulates-fractional-step)
             :code $ quote $ &let
               _ $ assert= 11 $ test-range-count 0 1 0.1
@@ -1507,8 +1321,7 @@
           :code $ quote $ defwasm-export test-range-count-from (a b)
             &list:count $ range a b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-bounds)
             :code $ quote $ assert= 3 (test-range-count-from 1.5 3.7)
             :tags $ #{} :core :wasm
@@ -1516,8 +1329,7 @@
           :code $ quote $ defwasm-export test-range-count-to (n)
             &list:count $ range n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-bound)
             :code $ quote $ assert= 3 (test-range-count-to 2.5)
             :tags $ #{} :core :wasm
@@ -1525,8 +1337,7 @@
           :code $ quote $ defwasm-export test-range-first-from (a b)
             &list:nth (range a b) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-base)
             :code $ quote $ assert= 1.5 (test-range-first-from 1.5 3.7)
             :tags $ #{} :core :wasm
@@ -1536,8 +1347,7 @@
               xs $ range a b step
               &list:nth xs $ &- (&list:count xs) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number 'Number
+          :schema $ quote $ Fn Number Number Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |ends-at-accumulated-value)
             :code $ quote $ assert= 0.9999999999999999 (test-range-last 0 1 0.1)
             :tags $ #{} :core :wasm
@@ -1547,41 +1357,34 @@
               xs $ range 5
               &+ (&list:nth xs 0) (&list:nth xs 4)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-range-two-args $ %{} 'CodeEntry (:doc "|range 2 5 creates 3 elements")
           :code $ quote $ defwasm-export test-range-two-args ()
             &list:count $ range 2 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-rem $ %{} 'CodeEntry (:doc |remainder)
           :code $ quote $ defwasm-export test-rem (a b) (.rem a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-rest-count $ %{} 'CodeEntry (:doc "|rest args count: 3 extras")
           :code $ quote $ defwasm-export test-rest-count ()
             &list:count $ collect-rest 1 2 3 4
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-rest-empty $ %{} 'CodeEntry (:doc "|rest args with no extras: 10+20 = 30")
           :code $ quote $ defwasm-export test-rest-empty () (sum-rest 10 20)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-rest-sum $ %{} 'CodeEntry (:doc "|rest args: 1+2+3+4+5 = 15")
           :code $ quote $ defwasm-export test-rest-sum () (sum-rest 1 2 3 4 5)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-result-ok-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-result-ok-method ()
             (Result :ok 1) .ok?
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |typed-predicate)
             :code $ quote $ assert= true (test-result-ok-method)
             :tags $ #{} :wasm
@@ -1589,13 +1392,11 @@
           :code $ quote $ defwasm-export test-result-unwrap-or ()
             (Result :err 3) .unwrap-or 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-round $ %{} 'CodeEntry (:doc "|round function")
           :code $ quote $ defwasm-export test-round (x) (round x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-set-contains-fn $ %{} 'CodeEntry
           :doc "|prefix contains? checks set members; the Set .contains? method was retired in 0.29.0"
           :code $ quote $ defwasm-export test-set-contains-fn ()
@@ -1607,26 +1408,22 @@
                 contains? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-count $ %{} 'CodeEntry (:doc "|set count")
           :code $ quote $ defwasm-export test-set-count ()
             &set:count $ #{} 10 20 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-difference $ %{} 'CodeEntry (:doc "|difference removes elements in second set")
           :code $ quote $ defwasm-export test-set-difference ()
             &set:count $ &difference (#{} 10 20 30 40) (#{} 20 40)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-difference-empty $ %{} 'CodeEntry (:doc "|difference with disjoint sets keeps all")
           :code $ quote $ defwasm-export test-set-difference-empty ()
             &set:count $ &difference (#{} 10 20) (#{} 30 40)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-empty $ %{} 'CodeEntry (:doc "|empty set")
           :code $ quote $ defwasm-export test-set-empty ()
             &+
@@ -1637,26 +1434,22 @@
                 &set:empty? $ #{} 1
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-empty-method $ %{} 'CodeEntry (:doc "|.empty returns an empty set")
           :code $ quote $ defwasm-export test-set-empty-method ()
             count $ .empty $ #{} 10 20 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-exclude $ %{} 'CodeEntry (:doc "|exclude removes element")
           :code $ quote $ defwasm-export test-set-exclude ()
             &set:count $ &exclude (#{} 10 20 30) 20
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-include $ %{} 'CodeEntry (:doc "|include adds element")
           :code $ quote $ defwasm-export test-set-include ()
             &set:count $ &include (#{} 10 20) 30
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-includes $ %{} 'CodeEntry (:doc "|set includes value")
           :code $ quote $ defwasm-export test-set-includes ()
             &+
@@ -1667,8 +1460,7 @@
                 &set:includes? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on set")
           :code $ quote $ defwasm-export test-set-includes-method ()
             &+
@@ -1679,54 +1471,46 @@
                 .includes? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on set")
           :code $ quote $ defwasm-export test-set-max-method ()
             option:unwrap-or
               .max $ #{} 10 20 30 15
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on set")
           :code $ quote $ defwasm-export test-set-min-method ()
             option:unwrap-or
               .min $ #{} 10 20 30 15
               , -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-union $ %{} 'CodeEntry (:doc "|union merges two sets")
           :code $ quote $ defwasm-export test-set-union ()
             &set:count $ &union (#{} 10 20) (#{} 20 30 40)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-union-method $ %{} 'CodeEntry (:doc "|typed Set .union deduplicates variadic inputs")
           :code $ quote $ defwasm-export test-set-union-method ()
             &set:count $
               #{} 10 20
               , .union (#{} 20 30) (#{} 10 40)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-set-union-same $ %{} 'CodeEntry (:doc "|union of identical sets")
           :code $ quote $ defwasm-export test-set-union-same ()
             &set:count $ &union (#{} 10 20 30) (#{} 10 20 30)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-sin $ %{} 'CodeEntry (:doc "|sin via host import")
           :code $ quote $ defwasm-export test-sin (x) (sin x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-sqrt $ %{} 'CodeEntry (:doc "|sqrt function")
           :code $ quote $ defwasm-export test-sqrt (x) (sqrt x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'test-static-option-result-inline-closures $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-static-option-result-inline-closures ()
             let
@@ -1751,8 +1535,7 @@
                   + x offset
               + option-value result-value alias-value shadow-value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry
             :name |specializes-inline-callbacks-across-static-functions
             :code $ quote $ assert= 35 (test-static-option-result-inline-closures)
@@ -1768,91 +1551,76 @@
                   , 0
               + option-value result-value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |lowers-static-trait-methods)
             :code $ quote $ assert= 16 (test-static-option-result-methods)
             :tags $ #{} :core :unit :wasm
         'test-str-character-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-character-count () (&str:count "|A😀")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-compare-eq $ %{} 'CodeEntry (:doc "|compare equal strings = 0")
           :code $ quote $ defwasm-export test-str-compare-eq () (&str:compare |abc |abc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-compare-gt $ %{} 'CodeEntry (:doc "|compare abd > abc = 1")
           :code $ quote $ defwasm-export test-str-compare-gt () (&str:compare |abd |abc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-compare-lt $ %{} 'CodeEntry (:doc "|compare abc < abd = -1")
           :code $ quote $ defwasm-export test-str-compare-lt () (&str:compare |abc |abd)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-concat $ %{} 'CodeEntry (:doc "|concat two strings and return character count")
           :code $ quote $ defwasm-export test-str-concat ()
             &str:count $ &str:concat |foo |bar
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-contains-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-false () (&str:contains? |hello 10)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-str-contains-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-true () (&str:contains? |hello 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-str-count $ %{} 'CodeEntry (:doc "|string character count")
           :code $ quote $ defwasm-export test-str-count () (&str:count |hello)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-empty-false $ %{} 'CodeEntry (:doc "|non-empty string has non-zero count")
           :code $ quote $ defwasm-export test-str-empty-false ()
             &= (&str:count |hi) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-str-empty-true $ %{} 'CodeEntry (:doc "|rest of 1-char string has 0 characters")
           :code $ quote $ defwasm-export test-str-empty-true ()
             &=
               &str:count $ &str:rest |a
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-str-escape $ %{} 'CodeEntry (:doc "|escape special chars")
           :code $ quote $ defwasm-export test-str-escape ()
             &str:count $ &str:escape |hello
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-find-index-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-found ()
             option:unwrap-or (.find-index |hello |ell) -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-find-index-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-not-found ()
             option:unwrap-or (.find-index |hello |xyz) -1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-first $ %{} 'CodeEntry
           :doc "|非空字符串的首字符：hello 返回 h；通过 String.first 和 Option.unwrap 显式取值。"
           :code $ quote $ defwasm-export test-str-first ()
             .unwrap $ .first |hello
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |checked-first-character)
             :code $ quote $ assert= |h (test-str-first)
             :tags $ #{} :core :wasm
@@ -1863,24 +1631,21 @@
               join-items-str $ [] 5 6 7
               , |n567
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |converts-each-iteration)
             :code $ quote $ assert= 0 (test-str-generic-loop)
             :tags $ #{} :unit :wasm
         'test-str-includes-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-false () (|hello .includes? |xyz)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
             :code $ quote $ assert= false (|hello .includes? |xyz)
             :tags $ #{} :wasm
         'test-str-includes-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-true () (|hello .includes? |ell)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |uses-typed-string-method)
             :code $ quote $ assert= true (|hello .includes? |ell)
             :tags $ #{} :wasm
@@ -1892,42 +1657,35 @@
                 , |e
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-pad-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-pad-left ()
             &str:count $ &str:pad-left |hi 5 |-
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-pad-right $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-pad-right ()
             &str:count $ &str:pad-right |hi 5 |-
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-rest $ %{} 'CodeEntry (:doc "|rest of hello has 4 characters")
           :code $ quote $ defwasm-export test-str-rest ()
             &str:count $ &str:rest |hello
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-slice $ %{} 'CodeEntry (:doc "|slice 1..4 from abcde = 3 characters (bcd)")
           :code $ quote $ defwasm-export test-str-slice ()
             &str:count $ &str:slice |abcde 1 4
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-str-utf8-byte-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-utf8-byte-count () (&str:utf8-byte-count "|A😀")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-string-compare-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-string-compare-method () (.compare |abc |abd)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-struct-container-hash $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-struct-container-hash ()
             let
@@ -1953,8 +1711,7 @@
                     , 8
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-container-hash)
             :tags $ #{} :struct-identity :unit :wasm
@@ -1968,8 +1725,7 @@
                   not $ point .contains-field? :missing
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |typed-field-predicate)
             :code $ quote $ assert= 1 (test-struct-contains-field)
             :tags $ #{} :unit :wasm
@@ -1995,8 +1751,7 @@
                   &= other aliased
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-edn-identity)
             :tags $ #{} :struct-identity :unit :wasm
@@ -2010,8 +1765,7 @@
                   , Point
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-struct-field-order $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-struct-field-order ()
             let
@@ -2022,8 +1776,7 @@
               assert= 2 $ :y point
               , 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |source-field-order)
             :code $ quote $ assert= 1 (test-struct-field-order)
             :tags $ #{} :struct-field-order :unit :wasm
@@ -2035,8 +1788,7 @@
                   , :x $ do (println |struct-failure-x) 1
               + (:x point) (:y point)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |source-failure-order)
             :code $ quote $ assert= 0
               try (test-struct-field-order-failure 0)
@@ -2052,8 +1804,7 @@
               assert= 2 $ :y point
               , 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |source-field-order)
             :code $ quote $ assert= 1 (test-struct-field-order-forward)
             :tags $ #{} :struct-field-order :unit :wasm
@@ -2065,8 +1816,7 @@
                 &= (&struct:field-tag point 0) :x
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-struct-get-name $ %{} 'CodeEntry (:doc "|struct get-name returns struct tag")
           :code $ quote $ defwasm-export test-struct-get-name ()
             &let
@@ -2075,8 +1825,7 @@
                 &= (&struct:get-name point) :Point
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-struct-hash $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-struct-hash ()
             let
@@ -2087,8 +1836,7 @@
                   = (&hash a) (&hash b)
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-hash)
             :tags $ #{} :struct-identity :unit :wasm
@@ -2108,8 +1856,7 @@
                   not $ .contains-field? different :x
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-layout-identity)
             :tags $ #{} :struct-identity :unit :wasm
@@ -2130,8 +1877,7 @@
                     , 20
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-map-key)
             :tags $ #{} :struct-identity :unit :wasm
@@ -2143,8 +1889,7 @@
                 b $ %{} Point (:x 3) (:y 4)
                 if (&struct:matches? a b) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-struct-nominal-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-struct-nominal-equality ()
             let
@@ -2156,8 +1901,7 @@
                   not $ &= a other
                 , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
             :code $ quote $ assert= 1 (test-struct-nominal-equality)
             :tags $ #{} :struct-identity :unit :wasm
@@ -2167,8 +1911,7 @@
               p $ %{} Point (:x x) (:y y)
               &+ (:x p) (:y p)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-struct-to-map $ %{} 'CodeEntry (:doc "|struct to-map exposes field values by tag")
           :code $ quote $ defwasm-export test-struct-to-map ()
             &let
@@ -2179,20 +1922,17 @@
                   option:unwrap $ &map:get m :x
                   option:unwrap $ &map:get m :y
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-tag-eq $ %{} 'CodeEntry (:doc "|Tag equality — same tags")
           :code $ quote $ defwasm-export test-tag-eq ()
             if (&= :ok :ok) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-tag-neq $ %{} 'CodeEntry (:doc "|Tag inequality — different tags")
           :code $ quote $ defwasm-export test-tag-neq ()
             if (&= :ok :err) 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-to-pairs $ %{} 'CodeEntry (:doc "|to-pairs count")
           :code $ quote $ defwasm-export test-to-pairs ()
             &let
@@ -2200,13 +1940,11 @@
               &+ (.len ps)
                 .len $ .unwrap $ .first (.to-list ps)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-to-string-method-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-to-string-method-value (x) (x .to-string)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-runtime-number-text)
             :code $ quote $ do
               assert= |0.5 $ test-to-string-method-value 0.5
@@ -2220,8 +1958,7 @@
               &= (to-string x) |42
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |specializes-runtime-number)
             :code $ quote $ assert= 1 (test-to-string-number 42)
             :tags $ #{} :core :wasm
@@ -2235,8 +1972,7 @@
                 &= (to-string :ready) |ready
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-scalar-text)
             :code $ quote $ assert= 1 (test-to-string-scalars)
             :tags $ #{} :core :wasm
@@ -2248,8 +1984,7 @@
                   = (to-string yes) |true
                   = (to-string no) |false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |bool-text-parity)
             :code $ quote $ assert= true (test-turn-string-bool)
             :tags $ #{} :core :wasm
@@ -2259,8 +1994,7 @@
               = (to-string nil) |
               = (to-string |hello) |hello
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |nil-string-text-parity)
             :code $ quote $ assert= true (test-turn-string-nil-string)
             :tags $ #{} :core :wasm
@@ -2271,8 +2005,7 @@
               = (to-string 1.5) |1.5
               = (to-string 1.5) |1.5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |number-text-parity)
             :code $ quote $ assert= true (test-turn-string-number)
             :tags $ #{} :core :wasm
@@ -2281,8 +2014,7 @@
             &let (name :wasm-name)
               = (to-string name) |wasm-name
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |tag-text-parity)
             :code $ quote $ assert= true (test-turn-string-tag)
             :tags $ #{} :core :wasm
@@ -2294,8 +2026,7 @@
                 , :enum
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-type-of-list $ %{} 'CodeEntry (:doc "|type-of list == :list tag")
           :code $ quote $ defwasm-export test-type-of-list ()
             if
@@ -2304,8 +2035,7 @@
                 , :list
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-type-of-map $ %{} 'CodeEntry (:doc "|type-of map == :map tag")
           :code $ quote $ defwasm-export test-type-of-map ()
             if
@@ -2314,16 +2044,14 @@
                 , :map
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-type-of-number $ %{} 'CodeEntry (:doc "|type-of number == :number tag")
           :code $ quote $ defwasm-export test-type-of-number ()
             if
               &= (type-of 42) :number
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-type-of-set $ %{} 'CodeEntry (:doc "|type-of set == :set tag")
           :code $ quote $ defwasm-export test-type-of-set ()
             if
@@ -2332,15 +2060,13 @@
                 , :set
               , 1 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'wasm-add-four $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-add-four (x)
             hint-fn $ quote $ Fn Number (-> Number)
             + x 4
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'wasm-apply-after-shadow $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-apply-after-shadow (value f)
             let
@@ -2348,35 +2074,30 @@
                 f 7
               + before f
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn Number
+            Fn Number $ -> Number
+            -> Number
         'wasm-apply-via-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-apply-via-alias (value f)
             let
                 g f
               g value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn Number
+            Fn Number $ -> Number
+            -> Number
         'wasm-ffi-add $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-ffi-add (a b) (&+ a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'wasm-ffi-async-echo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-ffi-async-echo (text) text
           :examples $ []
-          :schema $ :: 'Fn $ {} (:async true) (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String) (:async)
         'wasm-ffi-upcase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-ffi-upcase (text) (host-string-upcase text)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.main
           :require (test-wasm.helper :as helper) (test-wasm.nominal :as nominal) (test-wasm.layout :as layout)
@@ -2385,7 +2106,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.nominal
     'test-wasm.specialization-fail $ %{} 'FileEntry
@@ -2393,73 +2114,62 @@
         'apply-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn apply-one (f) (f 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn
+            Fn Number $ -> Number
+            -> Number
         'escape-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn escape-callback (f) f
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
-            :return $ :: 'Fn $ {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ quote $ Fn
+            Fn Number $ -> Number
+            -> $ Fn Number $ -> Number
         'recursive-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-callback (n f)
             if (> n 0)
               recursive-callback (- n 1) f
               f n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn Number
+            Fn Number $ -> Number
+            -> Number
         'rest-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rest-callback (f & xs)
             f $ count xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
-            :args $ [] $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn
+            Fn Number $ -> Number
+            , & Number (-> Number)
         'test-closure-escape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-closure-escape ()
             escape-callback $ fn (x) (+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-dynamic-closure-callee $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-dynamic-closure-callee ()
             let
                 callee $ if true apply-one apply-one
               callee $ fn (x) (+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-recursive-closure-specialization $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-closure-specialization ()
             recursive-callback 1 $ fn (x) (+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-rest-closure-specialization $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-rest-closure-specialization ()
             rest-callback
               fn (x) (+ x 1)
               , 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-spread-closure-specialization $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-spread-closure-specialization ()
             rest-callback
               fn (x) (+ x 1)
               , & $ [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.specialization-fail
     'test-wasm.zzz-collision $ %{} 'FileEntry
@@ -2467,7 +2177,6 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score (self) -99
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.zzz-collision
