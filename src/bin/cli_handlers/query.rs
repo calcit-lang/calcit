@@ -220,7 +220,7 @@ fn method_call_types(contract: &runner::preprocess::StaticMethodContract) -> Opt
     return None;
   }
   let node = |annotation: &CalcitTypeAnnotation| {
-    query_schema_cirru(annotation, true)
+    canonical_schema_cirru(annotation, true)
       .ok()
       .flatten()
       .map(|cirru| cirru_to_json(&cirru))
@@ -604,13 +604,32 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
 }
 
 fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
-  let schema_edn = match annotation {
-    CalcitTypeAnnotation::Dynamic => return Ok(None),
+  // Show the compact spelling stored in `:schema`; shapes without one keep the canonical EDN.
+  // Unwrapped callers (JSON data, reference coordinates) stay on the canonical shape.
+  if wrapped
+    && !matches!(annotation, CalcitTypeAnnotation::Dynamic)
+    && let Some(compact) = snapshot::compact_type_display(&query_schema_edn(annotation, wrapped))
+  {
+    return Ok(Some(compact));
+  }
+  canonical_schema_cirru(annotation, wrapped)
+}
+
+fn query_schema_edn(annotation: &CalcitTypeAnnotation, wrapped: bool) -> cirru_edn::Edn {
+  match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
     CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
     other => other.to_type_edn(),
-  };
+  }
+}
+
+/// Canonical `:: 'Fn $ {} …` syntax, for machine-readable exports.
+fn canonical_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
+  if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+    return Ok(None);
+  }
+  let schema_edn = query_schema_edn(annotation, wrapped);
   snapshot::schema_edn_to_cirru(&schema_edn).map(|cirru| {
     let normalized = match cirru {
       Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "do") => {
@@ -1118,20 +1137,22 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
   }
   if trimmed.starts_with('(') {
     return Err(format!(
-      "Type annotation `{target}` has an extra outer parenthesis layer. Use Cirru directly, for example `:: 'List 'Number`."
+      "Type annotation `{target}` has an extra outer parenthesis layer. Use Cirru directly, for example `List Number`."
     ));
   }
   if !trimmed.chars().any(char::is_whitespace) {
     let is_quoted_symbol = trimmed.starts_with('\'');
     let name = trimmed.strip_prefix(':').or_else(|| trimmed.strip_prefix('\'')).unwrap_or(trimmed);
     let is_legacy_type_name = LEGACY_SIMPLE_TYPES.contains(&name);
-    let is_builtin_type_symbol = is_quoted_symbol
+    let is_builtin_type_symbol = (is_quoted_symbol || !trimmed.starts_with(':'))
       && !name.starts_with(':')
       && !name.starts_with('\'')
-      && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some();
+      && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some()
+      // Constructors that need a payload have no bare meaning.
+      && !matches!(name, "Optional" | "JsNullish" | "Variadic");
     if !is_legacy_type_name && !is_builtin_type_symbol {
       return Err(format!(
-        "Unknown builtin type `{target}`. Use a builtin type symbol such as `'Number`, a type expression such as `:: 'List 'Number`, or `namespace/definition`."
+        "Unknown builtin type `{target}`. Use a builtin type name such as `Number`, a type expression such as `List Number`, or `namespace/definition`."
       ));
     }
     return Ok(Arc::new(CalcitTypeAnnotation::from_tag_name(name)));
@@ -1141,7 +1162,21 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
   if nodes.len() != 1 {
     return Err(format!("Type annotation must contain exactly one expression, got {}", nodes.len()));
   }
-  let form = code_to_calcit(&nodes[0], "query.type", "target", vec![])?;
+  // A bare compact type such as `List Number` reads the same as `quote $ List Number` in code.
+  let node = match &nodes[0] {
+    // Qualified heads such as `calcit.core/Option` are type names too.
+    Cirru::List(items)
+      if matches!(items.first(), Some(Cirru::Leaf(head))
+        if head.rsplit('/').next().is_some_and(|name| name.starts_with(|c: char| c.is_ascii_uppercase()))) =>
+    {
+      Cirru::List(vec![Cirru::leaf("quote"), nodes[0].clone()])
+    }
+    other => other.clone(),
+  };
+  let form = code_to_calcit(&node, "query.type", "target", vec![])?;
+  if let Some(error) = calcit::calcit::compact_type_syntax_error(&form) {
+    return Err(format!("Invalid type expression `{target}`: {error}"));
+  }
   Ok(CalcitTypeAnnotation::parse_type_annotation_form(&form))
 }
 
@@ -1274,11 +1309,34 @@ mod type_query_tests {
 
   #[test]
   fn unknown_builtin_type_suggests_canonical_symbols() {
-    let error = parse_type_annotation_query("String").expect_err("unquoted String should be rejected");
+    let annotation = parse_type_annotation_query("String").expect("bare builtin name reads like the compact syntax");
+    assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
+    let error = parse_type_annotation_query("Banana").expect_err("unknown bare name should be rejected");
     assert_eq!(
       error,
-      "Unknown builtin type `String`. Use a builtin type symbol such as `'Number`, a type expression such as `:: 'List 'Number`, or `namespace/definition`."
+      "Unknown builtin type `Banana`. Use a builtin type name such as `Number`, a type expression such as `List Number`, or `namespace/definition`."
     );
+  }
+
+  #[test]
+  fn parses_bare_compact_type_expressions() {
+    let annotation = parse_type_annotation_query("Map String (List Number)").expect("compact map type should parse");
+    assert_eq!(
+      format_type_query_annotation(annotation.as_ref()).expect("map should format"),
+      "Map String $ List Number"
+    );
+    let error = parse_type_annotation_query("Fn Number").expect_err("Fn without a return clause should be rejected");
+    assert!(error.contains("return clause"), "unexpected error: {error}");
+    let error = parse_type_annotation_query("List Number String").expect_err("surplus type arguments should be rejected");
+    assert!(error.contains("takes 1 type argument"), "unexpected error: {error}");
+    let annotation = parse_type_annotation_query("calcit.core/Option Number").expect("qualified compact head should parse");
+    assert_eq!(
+      format_type_query_annotation(annotation.as_ref()).expect("option should format"),
+      "calcit.core/Option Number"
+    );
+    for name in ["Optional", "'Optional", "JsNullish", "Variadic"] {
+      assert!(parse_type_annotation_query(name).is_err(), "{name} needs a payload");
+    }
   }
 
   #[test]
@@ -1293,7 +1351,7 @@ mod type_query_tests {
     assert_eq!(annotation.to_brief_string(), "dynamic");
     assert_eq!(
       format_type_query_annotation(annotation.as_ref()).expect("alias should format"),
-      "'Dynamic"
+      "Dynamic"
     );
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic));
     assert!(CalcitTypeAnnotation::String.is_compatible_with(annotation.as_ref()));
@@ -1319,14 +1377,11 @@ mod type_query_tests {
   fn renders_type_annotations_without_edn_top_level_wrapper() {
     assert_eq!(
       format_type_query_annotation(&CalcitTypeAnnotation::Number).expect("number should format"),
-      "'Number"
+      "Number"
     );
     let list_type = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
-    assert_eq!(
-      format_type_query_annotation(&list_type).expect("list should format"),
-      ":: 'List 'Number"
-    );
-    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), "'Ref");
+    assert_eq!(format_type_query_annotation(&list_type).expect("list should format"), "List Number");
+    assert_eq!(format_query_schema(&CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone()), true), "Ref");
   }
 
   #[test]
@@ -1339,15 +1394,15 @@ mod type_query_tests {
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["command"], "query.schema");
     assert_eq!(value["data"]["id"], "app.main/*enabled?");
-    assert_eq!(value["data"]["canonical_schema"], ":: 'Ref 'Bool");
-    assert_eq!(value["data"]["tree"], serde_json::json!(["::", "'Ref", "'Bool"]));
+    assert_eq!(value["data"]["canonical_schema"], "Ref Bool");
+    assert_eq!(value["data"]["tree"], serde_json::json!(["Ref", "Bool"]));
 
     let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
     let output = format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned(), None)
       .expect("broad ref JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
-    assert_eq!(value["data"]["canonical_schema"], "'Ref");
-    assert_eq!(value["data"]["tree"], "'Ref");
+    assert_eq!(value["data"]["canonical_schema"], "Ref");
+    assert_eq!(value["data"]["tree"], "Ref");
   }
 
   #[test]
@@ -1362,9 +1417,7 @@ mod type_query_tests {
     let annotation = snapshot::parse_schema_annotation_for_write(&schema).expect("strict macro schema");
 
     let displayed = format_query_schema(annotation.as_ref(), true);
-    assert!(displayed.contains(":: 'Macro"), "unexpected schema: {displayed}");
-    assert!(displayed.contains(":required"), "unexpected schema: {displayed}");
-    assert!(displayed.contains(":capabilities $ #{}"), "unexpected schema: {displayed}");
+    assert_eq!(displayed, "Macro SyntaxList & Syntax $ -> $ Expr Dynamic");
     assert_eq!(
       context_schema(annotation.as_ref()).expect("context schema"),
       Some(displayed.trim().to_owned())
@@ -1379,7 +1432,7 @@ mod type_query_tests {
     )
     .expect("macro schema JSON");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
-    assert_eq!(value["data"]["tree"][1], "'Macro");
+    assert_eq!(value["data"]["tree"][0], "Macro");
   }
 
   #[test]
@@ -2327,7 +2380,17 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
 }
 
 pub(crate) fn format_type_query_annotation(annotation: &CalcitTypeAnnotation) -> Result<String, String> {
-  cirru_edn::format(&annotation.to_type_edn(), true)
+  let edn = annotation.to_type_edn();
+  match snapshot::compact_type_display(&edn) {
+    Some(Cirru::Leaf(name)) => return Ok(name.to_string()),
+    Some(compact) => {
+      return cirru_parser::format(std::slice::from_ref(&compact), true.into())
+        .map(normalize_single_schema_display)
+        .map_err(|error| format!("Failed to format resolved type: {error}"));
+    }
+    None => {}
+  }
+  cirru_edn::format(&edn, true)
     .map(|text| {
       let rendered = text.trim();
       rendered.strip_prefix("do ").unwrap_or(rendered).to_owned()
@@ -5405,9 +5468,8 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str, entry: Optio
       let display = truncate_chars_with_dots(&preview, 120);
       out.push_str(&markdown_fenced_block("cirru", &display));
     }
-    Cirru::Leaf(_) => {
-      let preview = code_entry.code.format_one_liner()?;
-      out.push_str(&markdown_fenced_block("cirru", &preview));
+    Cirru::Leaf(leaf) => {
+      out.push_str(&markdown_fenced_block("cirru", leaf));
     }
     _ => {
       let _ = writeln!(&mut out, "_Empty or invalid definition._");

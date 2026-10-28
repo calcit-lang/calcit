@@ -39,6 +39,11 @@ calcit <snapshot> edit format
 `calcit edit schema` 等编辑命令仍接受旧写法，写回时存为精简写法，并提示 `W_LEGACY_TYPE_SYNTAX`。
 漏写 quote 的 `assert-type xs (List String)` 现在报 `E_TYPE_EXPR_SYNTAX`，改为 `assert-type xs $ quote $ List String`。
 
+`calcit query type`、`query type-at`、`query schema`、`query def`、`query peek`、`query defs --signatures` 和 `query context`
+也用精简写法显示类型，例如 `List Number`、`Fn String $ -> Number`，JSON 里的 `canonical_type`、`inferred_type`、
+`canonical_schema` 与 `tree` 同样如此；没有精简拼写的形状仍显示规范 EDN。脚本里按旧文本（如 `':: 'List 'Number'`、`"'Number"`）
+匹配查询结果的，需要改为新写法。`calcit query type` 的参数也可以直接写 `List Number`、`Map String (List Number)` 或单个类型名 `Number`。
+
 ## 0.32.0 已知回调检查调用参数数量（未发布）
 
 有具体 `Fn` 合同的回调，调用时必须满足声明的参数范围。此前 `Fn(Number) -> Number`

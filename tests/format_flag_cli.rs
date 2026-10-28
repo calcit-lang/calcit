@@ -445,7 +445,7 @@ fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing()
     signatures["data"]["definitions"][2]["signature"]
       .as_str()
       .unwrap()
-      .contains("'Number")
+      .starts_with("Fn ")
   );
   let human = stdout(&call(&["query", "defs", "test-effects-graph.enumeration", "--signatures"]));
   for definition in signatures["data"]["definitions"].as_array().unwrap() {

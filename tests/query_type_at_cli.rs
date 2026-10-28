@@ -60,7 +60,7 @@ fn imported_constants_report_their_declared_contract_inside_and_outside_macros()
     let (_, report) = type_at(target, path);
     let context = format!("{target} {path}");
     assert_eq!(report["data"]["expression"], expression, "{context}");
-    assert_eq!(report["data"]["inferred_type"], ":: 'Map 'Tag 'Number", "{context}");
+    assert_eq!(report["data"]["inferred_type"], "Map Tag Number", "{context}");
     assert_eq!(report["data"]["confidence"], "exact", "{context}");
     assert_eq!(diagnostic_codes(&report), Vec::<String>::new(), "{context}");
     let evidence = &report["data"]["evidence"][0];
@@ -83,7 +83,7 @@ fn imported_constants_report_their_declared_contract_inside_and_outside_macros()
 #[test]
 fn definition_contract_lookup_does_not_evaluate_the_definition() {
   let (output, report) = type_at("app.main/comp-styled", "@3.3");
-  assert_eq!(report["data"]["inferred_type"], ":: 'Map 'Tag 'Number");
+  assert_eq!(report["data"]["inferred_type"], "Map Tag Number");
   let printed = format!(
     "{}{}",
     String::from_utf8_lossy(&output.stdout),
@@ -95,7 +95,7 @@ fn definition_contract_lookup_does_not_evaluate_the_definition() {
 #[test]
 fn lexical_bindings_shadow_same_named_imports() {
   // `column` is a parameter and `global` a `&let` binding, both inside `defcomp`.
-  for (path, expected) in [("@3.2.1", "'Dynamic"), ("@3.2.2", "'Number")] {
+  for (path, expected) in [("@3.2.1", "Dynamic"), ("@3.2.2", "Number")] {
     let (_, report) = type_at("app.main/shadowed", path);
     assert_eq!(report["data"]["inferred_type"], expected, "{path}");
     let detail = report["data"]["evidence"][0]["detail"].as_str().expect("evidence detail");
@@ -108,7 +108,7 @@ fn lexical_bindings_shadow_same_named_imports() {
 fn open_and_quoted_references_stay_unproven() {
   // A Dynamic declaration is reported as declared, without inventing members.
   let (_, opaque) = type_at("app.main/opaque-styled", "@3.1.1");
-  assert_eq!(opaque["data"]["inferred_type"], "'Dynamic");
+  assert_eq!(opaque["data"]["inferred_type"], "Dynamic");
   assert_eq!(opaque["data"]["confidence"], "unknown");
   assert!(has_next(&opaque, "query def 'app.ui/opaque'"));
 

@@ -2506,7 +2506,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         let inferred = run_calcit(&snapshot, &["query", "type-at", &target, "--path", "@3", "--format", "json"]);
         assert_success(&inferred, "inspect the actual generic result, not its declared return");
         let inferred = parse_stdout(&inferred);
-        assert_eq!(inferred["data"]["inferred_type"], ":: 'Map 'Tag 'Dynamic", "{name}: {inferred}");
+        assert_eq!(inferred["data"]["inferred_type"], "Map Tag Dynamic", "{name}: {inferred}");
       }
     }
     assert_eq!(fs::read(&snapshot).unwrap(), original);
@@ -8781,7 +8781,7 @@ fn empty_option_helpers_infer_fallback_type_for_both_constructor_spellings() {
     );
     assert_success(&result, "empty Option fallback type query");
     let report = parse_stdout(&result);
-    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["inferred_type"], "Number", "{report}");
     assert_eq!(report["data"]["confidence"], "exact", "{report}");
   }
 }
@@ -8930,7 +8930,7 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
     );
     assert_success(&result, "Result fallback type query");
     let report = parse_stdout(&result);
-    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["inferred_type"], "Number", "{report}");
     assert_eq!(report["data"]["confidence"], "exact", "{report}");
   }
   let receiver = run_calcit(
@@ -8955,13 +8955,13 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
 #[test]
 fn result_success_with_dynamic_payload_stays_open_across_fallback() {
   for (definition, expected_type, expected_confidence) in [
-    ("infer-later-dynamic-generic", "'Dynamic", "unknown"),
-    ("infer-result-ok-open", "'Dynamic", "unknown"),
-    ("infer-named-result-ok-open", "'Dynamic", "unknown"),
-    ("infer-result-ok-concrete", "'Number", "exact"),
-    ("infer-named-result-ok-concrete", "'Number", "exact"),
-    ("infer-result-err-fallback", "'Number", "exact"),
-    ("infer-named-result-err-fallback", "'Number", "exact"),
+    ("infer-later-dynamic-generic", "Dynamic", "unknown"),
+    ("infer-result-ok-open", "Dynamic", "unknown"),
+    ("infer-named-result-ok-open", "Dynamic", "unknown"),
+    ("infer-result-ok-concrete", "Number", "exact"),
+    ("infer-named-result-ok-concrete", "Number", "exact"),
+    ("infer-result-err-fallback", "Number", "exact"),
+    ("infer-named-result-err-fallback", "Number", "exact"),
   ] {
     let target = format!("test-types-inference.main/{definition}");
     let result = run_calcit(
@@ -9504,7 +9504,7 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
   assert_success(&queried, "query original nth result");
   let evidence = parse_stdout(&queried);
   assert_eq!(evidence["data"]["confidence"], "exact", "{evidence}");
-  assert_eq!(evidence["data"]["inferred_type"], ":: 'calcit.core/Option 'Number", "{evidence}");
+  assert_eq!(evidence["data"]["inferred_type"], "calcit.core/Option Number", "{evidence}");
   let selector = [
     "--rule",
     "core-option-method-v1",
@@ -9988,10 +9988,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&query, "query imported callable return type");
   let report = parse_stdout(&query);
-  assert_eq!(
-    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
-    "{report}"
-  );
+  assert_eq!(report["data"]["inferred_type"], "fix-command.foreign/Option Number", "{report}");
   assert!(
     report["data"]["static_methods"].as_array().is_none_or(|methods| !methods
       .iter()
@@ -10039,10 +10036,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&hinted, "query hint-only imported return type");
   let report = parse_stdout(&hinted);
-  assert_eq!(
-    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
-    "{report}"
-  );
+  assert_eq!(report["data"]["inferred_type"], "fix-command.foreign/Option Number", "{report}");
 
   assert_success(
     &run_calcit(
@@ -10102,7 +10096,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   assert_success(&foreign_again, "query foreign return after caller shadowing");
   let foreign_again_report = parse_stdout(&foreign_again);
   assert_eq!(
-    foreign_again_report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    foreign_again_report["data"]["inferred_type"], "fix-command.foreign/Option Number",
     "{foreign_again_report}"
   );
   assert_success(
@@ -10132,7 +10126,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&passed, "query generic caller-owned return type");
   let report = parse_stdout(&passed);
-  assert_eq!(report["data"]["inferred_type"], ":: 'fix-command.main/Option 'Number", "{report}");
+  assert_eq!(report["data"]["inferred_type"], "fix-command.main/Option Number", "{report}");
 }
 
 #[test]
