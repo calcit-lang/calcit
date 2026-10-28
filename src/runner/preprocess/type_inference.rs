@@ -3501,12 +3501,8 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
     }
   }
 
-  // An explicitly open value contract stays open through imported aliases.
-  // Only a missing schema may borrow concrete evidence from its initializer;
-  // nominal/trait declarations above retain their definition metadata.
-  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) && !crate::snapshot::schema_annotation_is_missing(&schema) {
-    return Some(schema);
-  }
+  let explicitly_dynamic =
+    matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) && !crate::snapshot::schema_annotation_is_missing(&schema);
 
   // Static data/trait/impl declarations carry richer metadata in their
   // preprocessed value than in the intentionally broad top-level schema.
@@ -3524,9 +3520,19 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
         | CalcitTypeAnnotation::EnumDef(..)
         | CalcitTypeAnnotation::Trait(..)
     ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_)));
-    if is_concrete_metadata {
+    let is_definition_metadata = matches!(
+      inferred.as_ref(),
+      CalcitTypeAnnotation::StructDef(..) | CalcitTypeAnnotation::EnumDef(..) | CalcitTypeAnnotation::Trait(..)
+    ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_)));
+    if is_concrete_metadata && (!explicitly_dynamic || is_definition_metadata) {
       return Some(inferred);
     }
+  }
+
+  // Preserve definition descriptors above, but never recover an ordinary
+  // value's concrete type through an explicitly open producer contract.
+  if explicitly_dynamic {
+    return Some(schema);
   }
 
   if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
