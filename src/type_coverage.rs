@@ -946,7 +946,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "Keep this assertion at a small trusted boundary, validate or normalize untrusted runtime data into Option, Result, a struct, or an enum before it reaches application code, and add positive and negative runtime-contract tests.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
-    return "Keep the dynamic value isolated at the declared JS FFI boundary and validate or convert it before typed code consumes it.";
+    return "Keep the dynamic value isolated at the declared FFI boundary and validate or convert it before typed code consumes it.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
     return "This Dynamic is an explicit open expression boundary inside a strict MacroSignature. Narrow the Expr semantic type when the macro contract guarantees more, but do not replace the phase-aware signature with whole-Dynamic.";
