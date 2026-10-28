@@ -10004,7 +10004,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   assert_success(&foreign_again, "query foreign return after caller shadowing");
   let foreign_again_report = parse_stdout(&foreign_again);
   assert_eq!(
-    foreign_again_report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    foreign_again_report["data"]["inferred_type"], "fix-command.foreign/Option Number",
     "{foreign_again_report}"
   );
   assert_success(
@@ -10034,7 +10034,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&passed, "query generic caller-owned return type");
   let report = parse_stdout(&passed);
-  assert_eq!(report["data"]["inferred_type"], ":: 'fix-command.main/Option 'Number", "{report}");
+  assert_eq!(report["data"]["inferred_type"], "fix-command.main/Option Number", "{report}");
 }
 
 #[test]

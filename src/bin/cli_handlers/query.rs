@@ -220,7 +220,7 @@ fn method_call_types(contract: &runner::preprocess::StaticMethodContract) -> Opt
     return None;
   }
   let node = |annotation: &CalcitTypeAnnotation| {
-    query_schema_cirru(annotation, true)
+    canonical_schema_cirru(annotation, true)
       .ok()
       .flatten()
       .map(|cirru| cirru_to_json(&cirru))
@@ -604,17 +604,32 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
 }
 
 fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
-  let schema_edn = match annotation {
-    CalcitTypeAnnotation::Dynamic => return Ok(None),
+  // Show the compact spelling stored in `:schema`; shapes without one keep the canonical EDN.
+  // Unwrapped callers (JSON data, reference coordinates) stay on the canonical shape.
+  if wrapped
+    && !matches!(annotation, CalcitTypeAnnotation::Dynamic)
+    && let Some(compact) = snapshot::compact_type_display(&query_schema_edn(annotation, wrapped))
+  {
+    return Ok(Some(compact));
+  }
+  canonical_schema_cirru(annotation, wrapped)
+}
+
+fn query_schema_edn(annotation: &CalcitTypeAnnotation, wrapped: bool) -> cirru_edn::Edn {
+  match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_schema_edn(),
     CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
     other => other.to_type_edn(),
-  };
-  // Show the compact spelling stored in `:schema`; shapes without one keep the canonical EDN.
-  if let Some(compact) = snapshot::compact_type_display(&schema_edn) {
-    return Ok(Some(compact));
   }
+}
+
+/// Canonical `:: 'Fn $ {} …` syntax, for machine-readable exports.
+fn canonical_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
+  if matches!(annotation, CalcitTypeAnnotation::Dynamic) {
+    return Ok(None);
+  }
+  let schema_edn = query_schema_edn(annotation, wrapped);
   snapshot::schema_edn_to_cirru(&schema_edn).map(|cirru| {
     let normalized = match cirru {
       Cirru::List(items) if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "do") => {
@@ -1132,7 +1147,9 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
     let is_builtin_type_symbol = (is_quoted_symbol || !trimmed.starts_with(':'))
       && !name.starts_with(':')
       && !name.starts_with('\'')
-      && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some();
+      && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some()
+      // Constructors that need a payload have no bare meaning.
+      && !matches!(name, "Optional" | "JsNullish" | "Variadic");
     if !is_legacy_type_name && !is_builtin_type_symbol {
       return Err(format!(
         "Unknown builtin type `{target}`. Use a builtin type name such as `Number`, a type expression such as `List Number`, or `namespace/definition`."
@@ -1147,7 +1164,11 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
   }
   // A bare compact type such as `List Number` reads the same as `quote $ List Number` in code.
   let node = match &nodes[0] {
-    Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if head.starts_with(|c: char| c.is_ascii_uppercase())) => {
+    // Qualified heads such as `calcit.core/Option` are type names too.
+    Cirru::List(items)
+      if matches!(items.first(), Some(Cirru::Leaf(head))
+        if head.rsplit('/').next().is_some_and(|name| name.starts_with(|c: char| c.is_ascii_uppercase()))) =>
+    {
       Cirru::List(vec![Cirru::leaf("quote"), nodes[0].clone()])
     }
     other => other.clone(),
@@ -1306,6 +1327,16 @@ mod type_query_tests {
     );
     let error = parse_type_annotation_query("Fn Number").expect_err("Fn without a return clause should be rejected");
     assert!(error.contains("return clause"), "unexpected error: {error}");
+    let error = parse_type_annotation_query("List Number String").expect_err("surplus type arguments should be rejected");
+    assert!(error.contains("takes 1 type argument"), "unexpected error: {error}");
+    let annotation = parse_type_annotation_query("calcit.core/Option Number").expect("qualified compact head should parse");
+    assert_eq!(
+      format_type_query_annotation(annotation.as_ref()).expect("option should format"),
+      "calcit.core/Option Number"
+    );
+    for name in ["Optional", "'Optional", "JsNullish", "Variadic"] {
+      assert!(parse_type_annotation_query(name).is_err(), "{name} needs a payload");
+    }
   }
 
   #[test]
@@ -1684,15 +1715,16 @@ mod type_query_tests {
     let receiver = parse_type_annotation_query(":: 'List 'Number").expect("list type");
     let get = runner::preprocess::static_method_contract(receiver.as_ref(), ".get");
     let nodes = method_call_types(&get).expect("proven positional lookup should export nodes");
-    assert_eq!(nodes.parameters, vec![serde_json::json!("Number")]);
-    assert_eq!(nodes.returns, serde_json::json!(["calcit.core/Option", "Number"]));
+    assert_eq!(nodes.parameters, vec![serde_json::json!("'Number")]);
+    assert_eq!(nodes.returns, serde_json::json!(["::", "'calcit.core/Option", "'Number"]));
     assert!(nodes.rest.is_none());
 
     let fold = runner::preprocess::static_method_contract(receiver.as_ref(), ".fold");
     let nodes = method_call_types(&fold).expect("proven callback should export syntax nodes");
-    assert_eq!(nodes.parameters[0], serde_json::json!("U"));
-    assert_eq!(nodes.parameters[1][0], "Fn");
-    assert_eq!(nodes.returns, serde_json::json!("U"));
+    assert_eq!(nodes.parameters[0], serde_json::json!("'U"));
+    assert_eq!(nodes.parameters[1][0], "::");
+    assert_eq!(nodes.parameters[1][1], "'Fn");
+    assert_eq!(nodes.returns, serde_json::json!("'U"));
     let open = runner::preprocess::static_method_contract(receiver.as_ref(), ".each");
     assert_eq!(open.status, "open");
     assert_eq!(open.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> dynamic");
@@ -1830,7 +1862,7 @@ mod type_query_tests {
     assert_eq!(option_map.return_type.as_ref().unwrap().describe(), "type calcit.core/Option<'U>");
     assert_eq!(option_map.generics, vec!["U"]);
     let nodes = method_call_types(&option_map).expect("generic output should retain callable syntax evidence");
-    assert_eq!(nodes.returns, serde_json::json!(["calcit.core/Option", "U"]));
+    assert_eq!(nodes.returns, serde_json::json!(["::", "'calcit.core/Option", "'U"]));
     let open_map = runner::preprocess::static_method_contract(open_option.as_ref(), ".map");
     assert_eq!(open_map.status, "open", "an open receiver payload still needs call-site proof");
     assert!(method_call_types(&open_map).is_none());

@@ -239,6 +239,16 @@ fn desugar_leaf(name: &str) -> Result<Cirru, String> {
   ))
 }
 
+/// Builtin type constructors read a fixed number of type arguments; surplus or
+/// missing arguments would otherwise be dropped or defaulted silently.
+fn builtin_constructor_arity(head: &str) -> Option<usize> {
+  match head {
+    "List" | "Set" | "Ref" | "Option" | "JsNullish" | "Optional" => Some(1),
+    "Map" | "Result" => Some(2),
+    _ => None,
+  }
+}
+
 fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
   match node {
     Cirru::Leaf(name) => desugar_leaf(name),
@@ -257,6 +267,11 @@ fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
             return Err(format!(
               "type application `({head})` has no arguments; write `{head}` without parentheses"
             ));
+          }
+          if let Some(expected) = builtin_constructor_arity(head)
+            && items.len() - 1 != expected
+          {
+            return Err(format!("`{head}` takes {expected} type argument(s), got {}", items.len() - 1));
           }
           let mut out = vec![Cirru::leaf("::"), quoted(head)];
           for arg in &items[1..] {

@@ -199,8 +199,8 @@ const scenarios = [
       assert.equal(method.definition, "calcit.core/option:map");
       assert.equal(method.return_type, "type calcit.core/Option<'U>");
       if (payload === "Number") {
-        assert.deepEqual(method.call_types.returns, ["calcit.core/Option", "U"]);
-        assert.equal(method.call_types.parameters[0][0], "Fn");
+        assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'U"]);
+        assert.equal(method.call_types.parameters[0][1], "'Fn");
       } else {
         assert.equal(method.call_types, undefined);
       }
@@ -213,7 +213,7 @@ const scenarios = [
       const method = result.data.methods.find(method => method.name === ".map");
       assert.equal(method.status, "proven");
       assert.deepEqual(method.generics, ["ResultMapOutput"]);
-      assert.deepEqual(method.call_types.returns, ["calcit.core/Result", "ResultMapOutput", "String"]);
+      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Result", "'ResultMapOutput", "'String"]);
     },
   },
   {
@@ -281,9 +281,9 @@ const scenarios = [
       }
       assert.equal(fold?.status, "proven");
       assert.equal(fold?.definition, "calcit.core/fold");
-      assert.equal(fold.call_types.parameters[0], "U");
-      assert.equal(fold.call_types.parameters[1][0], "Fn");
-      assert.equal(fold.call_types.returns, "U");
+      assert.equal(fold.call_types.parameters[0], "'U");
+      assert.deepEqual(fold.call_types.parameters[1].slice(0, 2), ["::", "'Fn"]);
+      assert.equal(fold.call_types.returns, "'U");
       const intersperse = result.data.methods.find((method) => method.name === ".intersperse");
       assert.ok(!result.data.methods.some((method) => method.name === ".join"), ".join was retired from List");
       assert.equal(intersperse?.status, "proven");
@@ -306,9 +306,9 @@ const scenarios = [
       assert.deepEqual(get?.parameter_types, ["number"]);
       assert.equal(get?.return_type, "type calcit.core/Option<number>");
       assert.deepEqual(get.call_types, {
-        parameters: ["Number"],
+        parameters: ["'Number"],
         rest: null,
-        returns: ["calcit.core/Option", "Number"],
+        returns: ["::", "'calcit.core/Option", "'Number"],
       });
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
@@ -391,7 +391,7 @@ const scenarios = [
       }
       const closed = result.data.methods.find(method => method.name === ".parse-float");
       assert.equal(closed?.status, "proven");
-      assert.deepEqual(closed.call_types.returns, ["calcit.core/Result", "Number", "String"]);
+      assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
       assert.ok(result.data.methods.some(method => method.name === ".len"), "String keeps .len");
       assert.ok(!result.data.methods.some(method => method.name === ".count"), ".count was retired from String");
     },
@@ -494,7 +494,7 @@ const scenarios = [
       assert.equal(result.data.inferred_type, "List T");
       const method = result.data.static_methods.find(item => item.name === ".get");
       assert.deepEqual(method.generics, ["T"]);
-      assert.deepEqual(method.call_types.returns, ["calcit.core/Option", "T"]);
+      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'T"]);
       assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
     },
   },
@@ -511,7 +511,7 @@ const scenarios = [
       const method = result.data.static_methods[0];
       assert.equal(method.status, "proven");
       assert.equal(method.return_type, `'${variable}`);
-      assert.equal(method.call_types.returns, variable);
+      assert.equal(method.call_types.returns, `'${variable}`);
       assert.equal(method.definition, "calcit.core/Sliceable");
       assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
     },
