@@ -24,6 +24,21 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.32.0 类型签名只用 quote 精简写法（#2450，未发布）
+
+Snapshot 里的 `:schema` 和代码类型位置不再接受 `:: 'Fn $ {} (:args …) (:return …)`、`:: 'List 'Number`、
+`:number` 这类旧写法，加载时报 `E_LEGACY_TYPE_SYNTAX` 并给出对应的精简写法。迁移命令：
+
+```bash
+calcit <snapshot> edit format
+```
+
+它把 `:schema` 改为 `quote $ Fn String (-> Number)`，把 `assert-type`、`defstruct`、`defenum`、`deftrait`
+里的类型改为 `quote $ List Number`，把 `hint-fn` 改为不带 quote 的 `hint-fn $ Fn String (-> Number)`
+（只标记异步时为 `hint-fn Async`）。值引用（如 `:: 'List Person`）和只写部分字段的 hint 保持原样。
+`calcit edit schema` 等编辑命令仍接受旧写法，写回时存为精简写法，并提示 `W_LEGACY_TYPE_SYNTAX`。
+漏写 quote 的 `assert-type xs (List String)` 现在报 `E_TYPE_EXPR_SYNTAX`，改为 `assert-type xs $ quote $ List String`。
+
 ## 0.32.0 已知回调检查调用参数数量（未发布）
 
 有具体 `Fn` 合同的回调，调用时必须满足声明的参数范围。此前 `Fn(Number) -> Number`
@@ -628,7 +643,7 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 ## 0.31.0 校验 hint-fn 的实际合同位置
 
 需要为局部实现补充签名时，在函数体开头使用 `hint-fn $ {} (:args $ [] 'String) (:return 'String)`。两参数形式 `hint-fn f $ {} ...` 暂时保留兼容：已有完整签名必须能证明请求的合同，无签名 `fn` 仍走旧的元数据补充路径。迁移时把合同移到实际函数体，随后直接传递或调用 `f`。
-函数体的 Map 不包 `:: 'Fn`；后者仍用于 CodeEntry schema 和嵌套函数类型。
+函数体的 Map 不包 `:: 'Fn`。0.32.0 起 CodeEntry schema 改用 `quote $ Fn …`，函数体写 `hint-fn $ Fn …`，见本页开头的说明。
 旧版静默接受的错误 schema、非函数目标、与已有签名矛盾的注解、零参数或多余参数现在会在预处理时报错；`hint-fn schema (fn ...)` 不是回调包装器。
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
 合法元数据表达式继续返回 Nil，这不是业务缺失值，不需要迁移为 Option。

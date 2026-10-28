@@ -4276,7 +4276,9 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
     Some("fn" | "defn" | "defmacro" | "defcomp" | "defeffect") => {
       let args_index = if head == Some("fn") { 1 } else { 2 };
       let type_index = args_index + 1;
-      if let Some(type_form) = items.get(type_index)
+      // A lone form after the parameters is the body's value, not a return label.
+      if items.len() > type_index + 1
+        && let Some(type_form) = items.get(type_index)
         && (canonicalize_legacy_type_leaf(type_form).is_some()
           || matches!(type_form, Cirru::List(inner) if matches!(inner.first(), Some(Cirru::Leaf(marker)) if marker.as_ref() == "::")))
       {
@@ -5495,6 +5497,10 @@ mod tests {
       data_text.contains(":kind :string"),
       "ordinary tag data must not be rewritten: {data_text}"
     );
+
+    // With nothing after it, the form is the body's value: a tag, not a return type.
+    let tag_body = parse_one("defn kind-name () :string");
+    assert_eq!(canonicalize_code_type_syntax(&tag_body), (tag_body.clone(), 0));
 
     let compact = parse_one("assert-type f $ quote $ Fn T (-> T) (:generics T)");
     let (formatted, compact_count) = canonicalize_code_type_syntax(&compact);
