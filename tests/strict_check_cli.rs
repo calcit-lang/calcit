@@ -51,7 +51,7 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
-fn enum_schema_alias_proves_entry_slot_callbacks_without_accepting_open_inputs() {
+fn enum_schema_and_inferred_aliases_prove_entry_slots_without_accepting_open_inputs() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
@@ -98,10 +98,57 @@ fn enum_schema_alias_proves_entry_slot_callbacks_without_accepting_open_inputs()
     ),
     "apply guarded slot fixture",
   );
-  for args in [vec!["--check-only", "--all-defs"], vec!["--check-only"], vec![]] {
-    assert_success(&run_calcit(&snapshot, &args), "Enum alias works in both callback directions");
+  for entry in ["default", "inferred"] {
+    for args in [vec!["--check-only", "--all-defs"], vec!["--check-only"], vec![]] {
+      let mut selected = vec!["--entry", entry];
+      selected.extend(args);
+      assert_success(
+        &run_calcit(&snapshot, &selected),
+        "declared/inferred Enum aliases work in both callback directions",
+      );
+    }
   }
-  for binding in ["app.main/Wrong", ":dynamic"] {
+  // A runtime effect in the representative is not evaluated by type checking.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/Effectful",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def Effectful $ do (println |SLOT_INITIALIZER_EXECUTED) (:: :sample)",
+      ],
+    ),
+    "add effectful representative",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/Effectful"]),
+    "bind effectful representative",
+  );
+  for args in [vec!["--check-only"], vec!["--check-only", "--all-defs"], vec![]] {
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "representative inference must not execute the initializer");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SLOT_INITIALIZER_EXECUTED"));
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/UnannotatedWrong",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def UnannotatedWrong |text",
+      ],
+    ),
+    "add inferred wrong kind",
+  );
+  for binding in ["app.main/Wrong", "app.main/UnannotatedWrong", ":dynamic"] {
     assert_success(
       &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", binding]),
       "select negative slot binding",
@@ -133,6 +180,26 @@ fn enum_schema_alias_proves_entry_slot_callbacks_without_accepting_open_inputs()
   let result = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
   assert!(!result.status.success());
   assert!(String::from_utf8_lossy(&result.stdout).contains("E_UNBOUND_TYPE_SLOT"));
+  for (name, code) in [
+    ("app.main/CycleA", "quote $ def CycleA CycleB"),
+    ("app.main/CycleB", "quote $ def CycleB CycleA"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", name, "--input-format", "cirru", "--code", code]),
+      "add cyclic representative",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/CycleA"]),
+    "bind cyclic representative",
+  );
+  let result = run_calcit(&snapshot, &["--check-only"]);
+  assert_eq!(
+    result.status.code(),
+    Some(1),
+    "cycles must fail normally, not overflow or terminate by signal"
+  );
+  assert!(String::from_utf8_lossy(&result.stderr).contains("TYPE_MISMATCH"));
 }
 
 #[test]

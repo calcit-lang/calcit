@@ -1533,6 +1533,27 @@ fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit,
   );
 }
 
+/// Compile representative source through the ordinary guards without evaluating
+/// its initializer. Slot inference then reads the existing compiled metadata.
+fn ensure_entry_slot_representatives(
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let mut bindings: Vec<_> = calcit::entry_type_slots().into_values().collect();
+  bindings.sort_by_key(|binding| binding.to_brief_string());
+  for binding in bindings {
+    if let CalcitTypeAnnotation::TypeRef(path, _) = binding.as_ref()
+      && let Some((ns, def)) = path.rsplit_once('/')
+      && matches!(program::lookup_def_schema(ns, def).as_ref(), CalcitTypeAnnotation::Dynamic)
+      && binding.resolve_to_enum().is_none()
+      && binding.resolve_to_struct().is_none()
+    {
+      ensure_ns_def_preprocessed(ns, def, check_warnings, call_stack)?;
+    }
+  }
+  Ok(())
+}
+
 fn ensure_ns_def_preprocessed(
   raw_ns: &str,
   raw_def: &str,
@@ -1559,6 +1580,7 @@ fn ensure_ns_def_preprocessed(
 
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
+      ensure_entry_slot_representatives(check_warnings, call_stack)?;
       // Only a computed root operator needs source-shape validation. Ordinary
       // declarations and all nested function bodies retain their existing path.
       if matches!(&code, Calcit::List(items) if matches!(items.first(), Some(Calcit::List(_)))) {
@@ -2421,6 +2443,8 @@ pub fn compile_source_def_for_snapshot(
   if compiled_def_is_reusable(ns, def) {
     return Ok(());
   }
+
+  ensure_entry_slot_representatives(check_warnings, call_stack)?;
 
   let Some(code) = program::lookup_def_code(ns, def) else {
     let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
@@ -21912,7 +21936,12 @@ mod tests {
     )
     .expect("persisted raw IR may reorder fields when its concrete Struct layout remains exact");
 
-    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+    calcit::register_program_lookups(
+      program::lookup_runtime_ready,
+      program::lookup_def_code,
+      program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
+    );
     let snapshot_ns = "tests.raw-constructor-snapshot";
     let struct_source_marker = Calcit::from(vec![Calcit::Symbol {
       sym: Arc::from("defstruct"),
@@ -22139,7 +22168,12 @@ mod tests {
   #[test]
   fn nested_struct_field_type_inherits_the_declaring_namespace() {
     let _guard = lock_preprocess_test_state();
-    calcit::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+    calcit::register_program_lookups(
+      program::lookup_runtime_ready,
+      program::lookup_def_code,
+      program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
+    );
 
     let ns = "tests.nested-struct-owner";
     let mut router_def = CalcitStructDef::from_fields(EdnTag::from("Router"), vec![EdnTag::from("name")]);

@@ -41,7 +41,12 @@ fn bundled_core_initialization_releases_program_lock_for_schema_lookups() {
   }
 
   if std::env::var_os(CHILD).is_some() {
-    calcit::register_program_lookups(lookup_runtime_ready, audited_lookup, lookup_def_schema);
+    calcit::register_program_lookups(
+      lookup_runtime_ready,
+      audited_lookup,
+      lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
+    );
     assert!(!has_bundled_core_source(), "an empty program is not the bundled core");
     assert!(
       LOOKUPS.load(Ordering::Relaxed) > 0,
@@ -218,7 +223,12 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
 fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
-  calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
+  calcit::register_program_lookups(
+    lookup_runtime_ready,
+    lookup_def_code,
+    lookup_def_schema,
+    crate::runner::preprocess::infer_static_definition_type,
+  );
 
   let wrapper_code = code_to_calcit(
     &cirru_list(vec![
@@ -272,7 +282,12 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
 fn recursive_type_alias_relation_is_finite_and_incompatible() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
-  calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
+  calcit::register_program_lookups(
+    lookup_runtime_ready,
+    lookup_def_code,
+    lookup_def_schema,
+    crate::runner::preprocess::infer_static_definition_type,
+  );
 
   let alias = |target: &str| ProgramDefEntry {
     tags: Default::default(),
@@ -920,6 +935,69 @@ fn clear_runtime_caches_for_reload_with_reload_libs_clears_all_namespaces() {
 
   let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled data");
   assert!(compiled.is_empty());
+}
+
+#[test]
+fn entry_slot_inference_rechecks_consumers_after_transitive_source_changes() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  struct ClearSlots;
+  impl Drop for ClearSlots {
+    fn drop(&mut self) {
+      calcit::clear_type_slots();
+    }
+  }
+  let _slots = ClearSlots;
+  let path = "tests/fixtures/enum-slot-alias.cirru";
+  let source = std::fs::read_to_string(path).expect("shared Calcit fixture");
+  let data = cirru_edn::parse(&source).expect("parse shared fixture");
+  let mut snapshot = snapshot::load_snapshot_data(&data, path).expect("load shared fixture");
+  snapshot.select_entry(Some("inferred")).expect("inferred entry");
+  snapshot.files.extend(crate::load_core_snapshot().expect("core source").files);
+  let mut source = extract_program_data(&snapshot).expect("program source");
+  // This in-process regression needs only the callback contract; the shared
+  // Calcit tests exercise its assertion through the fully initialized CLI.
+  source.get_mut("app.main").unwrap().defs.get_mut("callback").unwrap().code = code_to_calcit(
+    &Cirru::List(vec![
+      Cirru::leaf("defn"),
+      Cirru::leaf("callback"),
+      Cirru::List(vec![Cirru::leaf("op")]),
+      Cirru::leaf("&unit"),
+    ]),
+    "app.main",
+    "callback",
+    vec![],
+  )
+  .expect("callback without CLI host logging");
+  *PROGRAM_CODE_DATA.write().expect("install source") = source;
+  let warnings = RefCell::new(vec![]);
+  runner::preprocess::ensure_ns_def_compiled("app.main", "main!", &warnings, &CallStackList::default()).expect("initial compile");
+  assert!(warnings.borrow().is_empty(), "{:?}", warnings.borrow());
+  assert!(matches!(
+    calcit::resolve_type_slot("dispatch-op").as_deref(),
+    Some(CalcitTypeAnnotation::AnonymousEnum)
+  ));
+
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.ops"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::new(),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([("Representative".to_owned(), Cirru::leaf("|changed-kind").into())]),
+    },
+  );
+  apply_code_changes(&changes).expect("change aliased representative");
+  let result = runner::preprocess::ensure_ns_def_compiled("app.main", "main!", &warnings, &CallStackList::default());
+  assert!(
+    result.is_err() || !warnings.borrow().is_empty(),
+    "the old Enum callback proof must be invalidated"
+  );
+  assert!(matches!(
+    calcit::resolve_type_slot("dispatch-op").as_deref(),
+    Some(CalcitTypeAnnotation::String)
+  ));
 }
 
 #[test]

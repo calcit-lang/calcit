@@ -46,9 +46,11 @@ pub(crate) fn has_lexical_type_variables(types: &[Arc<CalcitTypeAnnotation>]) ->
 // ---------------------------------------------------------------------------
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
 type SchemaLookupFn = fn(&str, &str) -> Arc<CalcitTypeAnnotation>;
+type InferredTypeLookupFn = fn(&str, &str) -> Option<Arc<CalcitTypeAnnotation>>;
 static LOOKUP_RUNTIME_READY_DEF: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
 static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
+static LOOKUP_INFERRED_DEF_TYPE: OnceLock<InferredTypeLookupFn> = OnceLock::new();
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
   /// Global type-slot registry: maps slot names to their bound type annotations.
@@ -64,10 +66,16 @@ thread_local! {
 /// Register program-level lookup functions.  Must be called once at startup
 /// (e.g. from `program::extract_program_data`) before any type-annotation
 /// resolution that needs import-chain traversal.
-pub fn register_program_lookups(runtime_ready_lookup: LookupFn, code_lookup: LookupFn, schema_lookup: SchemaLookupFn) {
+pub fn register_program_lookups(
+  runtime_ready_lookup: LookupFn,
+  code_lookup: LookupFn,
+  schema_lookup: SchemaLookupFn,
+  inferred_type_lookup: InferredTypeLookupFn,
+) {
   let _ = LOOKUP_RUNTIME_READY_DEF.set(runtime_ready_lookup);
   let _ = LOOKUP_DEF_CODE.set(code_lookup);
   let _ = LOOKUP_DEF_SCHEMA.set(schema_lookup);
+  let _ = LOOKUP_INFERRED_DEF_TYPE.set(inferred_type_lookup);
 }
 
 pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: impl FnOnce() -> T) -> T {
@@ -158,8 +166,21 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
     return override_val;
   }
   let entry_value = ENTRY_TYPE_SLOTS.with(|slots| slots.borrow().get(name).cloned());
-  if entry_value.is_some() {
-    return entry_value;
+  if let Some(binding) = entry_value {
+    // Keep nominal declarations and explicit aliases symbolic. Only a value
+    // representative without a schema uses ordinary compiled-source inference.
+    if let CalcitTypeAnnotation::TypeRef(path, args) = binding.as_ref()
+      && args.is_empty()
+      && let Some((ns, def)) = path.rsplit_once('/')
+      && lookup_schema_registered(ns, def).is_none()
+      && binding.resolve_to_enum().is_none()
+      && binding.resolve_to_struct().is_none()
+      && let Some(inferred) = LOOKUP_INFERRED_DEF_TYPE.get().and_then(|lookup| lookup(ns, def))
+      && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic)
+    {
+      return Some(inferred);
+    }
+    return Some(binding);
   }
   TYPE_SLOTS.with(|slots| slots.borrow().get(name).and_then(|v| v.clone()))
 }
@@ -7229,6 +7250,7 @@ mod tests {
       crate::program::lookup_runtime_ready,
       crate::program::lookup_def_code,
       crate::program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
     );
     let alias_ref = |name: &'static str| {
       Arc::new(CalcitTypeAnnotation::TypeRef(
@@ -7284,6 +7306,7 @@ mod tests {
       crate::program::lookup_runtime_ready,
       crate::program::lookup_def_code,
       crate::program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
     );
     let namespace = "tests.runtime-alias";
     let alias_ref = |name: &'static str| {
@@ -7510,6 +7533,7 @@ mod tests {
       crate::program::lookup_runtime_ready,
       crate::program::lookup_def_code,
       crate::program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
     );
     let mut definition = CalcitStructDef::from_fields(EdnTag::new("Box"), vec![EdnTag::new("value")]);
     definition.definition_ref = Some(Arc::from("tests.nominal-capability/Box"));
@@ -7771,6 +7795,7 @@ mod tests {
       crate::program::lookup_runtime_ready,
       crate::program::lookup_def_code,
       crate::program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
     );
     let bare_placeholder = CalcitTrait::new_reference("DomElement");
     let runtime_trait = CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]);

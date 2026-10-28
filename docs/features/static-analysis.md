@@ -1014,19 +1014,26 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 
 同一个已绑定 slot 可以同时出现在 callback 的声明与传入函数的参数中；检查器比较两端绑定后的具体类型，并继续检查函数参数方差和返回值。重复引用同名 slot 不会被当作循环绑定；真正的循环、未绑定 slot，以及从 `Dynamic` 到具体类型的证据缺失仍按各自的检查规则处理。
 
-沿用匿名 Enum 协议的应用可以将槽绑定到显式声明 `Enum` schema 的值定义，例如
-`app.schema/DispatchOp`。该 schema 表示既有的开放 Enum 家族，不会创建新的名义 Enum，
-也不会证明某个 tag 的业务含义。可以用以下命令为已有代表值补上类型并绑定：
+沿用匿名 Enum 协议的应用可以把槽直接绑定到代表值，例如：
+
+```cirru.no-check
+def DispatchOp $ :: :unhandled
+```
 
 ```bash
-calcit edit schema app.schema/DispatchOp --input-format cirru --code 'quote Enum'
 calcit config set-type-slot :dispatch-op app.schema/DispatchOp
 calcit --check-only --all-defs
 ```
 
-该槽与 `Fn Enum (-> Unit)` 回调按解析后的 schema 比较，两个方向的调用都保留参数检查。
-没有 schema 的普通代表值不会因为被配置为槽路径就自动变成类型别名；不要用 `:dynamic`
-替代缺少的类型证据。
+没有显式 schema 时，检查器复用普通定义的静态推断，沿定义引用取得代表值类型；
+已有显式 schema 仍作为合同，名义 Enum/Struct 定义仍保留自己的类型身份。
+匿名代表值推断为开放 `Enum` 家族，不会证明某个 tag 的业务含义；该槽与
+`Fn Enum (-> Unit)` 按正常参数方差比较，两个方向的调用都保留检查。
+
+类型检查会预处理代表值及其依赖，但不执行其运行时初始化。它不是运行时惰性求值的
+新承诺：JS 模块仍遵循原有初始化行为，代表值宜使用简单数据。推断不能把循环引用、
+未解析或 `Dynamic` 证据变成具体类型；不要用 `:dynamic` 代替缺少的类型证据。
+带有入口槽的增量源码变更会重新构建编译证据，避免沿用旧代表值的类型。
 
 Struct 回调字段的类型关系已因未绑定 slot 而失败时，同样报告已有的 `E_UNBOUND_TYPE_SLOT`，
 给出实际字段路径、调用者源码坐标及 `calcit config set-type-slot` 提示，而不是只显示两个看似相同的函数类型。
