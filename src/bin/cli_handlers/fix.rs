@@ -1150,10 +1150,11 @@ fn collect_rows_by_definition_entry<T>(
   Ok(ranked.into_iter().map(|(_, row)| row).collect())
 }
 
-/// Run `f` with the type slots of the entry owning `namespace/definition`.
+/// Install the type slots of the entry owning `namespace/definition`.
 /// Definitions that no entry reaches use the default entry. No-op outside a
-/// whole-project plan.
-pub(super) fn with_definition_entry_context<T>(namespace: &str, definition: &str, f: impl FnOnce() -> T) -> T {
+/// whole-project plan. Slots stay installed until another definition switches
+/// them, so planners call this at the top of each per-definition step.
+pub(super) fn select_definition_entry_context(namespace: &str, definition: &str) {
   ENTRY_TYPE_SLOT_PLAN.with(|plan| {
     let mut plan = plan.borrow_mut();
     if let Some(plan) = plan.as_mut() {
@@ -1168,6 +1169,11 @@ pub(super) fn with_definition_entry_context<T>(namespace: &str, definition: &str
       }
     }
   });
+}
+
+/// Run `f` with the type slots of the entry owning `namespace/definition`.
+pub(super) fn with_definition_entry_context<T>(namespace: &str, definition: &str, f: impl FnOnce() -> T) -> T {
+  select_definition_entry_context(namespace, definition);
   f()
 }
 
@@ -3452,6 +3458,7 @@ fn plan_core_nominal_method_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -3787,6 +3794,7 @@ fn plan_attached_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = &snapshot.files[namespace].defs[definition];
     let mut regions = entry
       .tests
@@ -4022,6 +4030,7 @@ fn plan_core_identity_conversion_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let file = snapshot
       .files
       .get(namespace)
@@ -4341,6 +4350,7 @@ fn plan_redundant_do_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -4432,6 +4442,7 @@ fn plan_single_expression_do_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -4552,6 +4563,7 @@ fn plan_named_constructor_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)

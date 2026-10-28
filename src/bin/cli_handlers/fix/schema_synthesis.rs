@@ -638,6 +638,7 @@ pub(crate) fn collect_schema_evidence_candidates(
   let mut candidates = Vec::new();
   let mut source_usages = SourceUsageInventory::new();
   for (namespace, definition) in targets {
+    super::select_definition_entry_context(namespace, definition);
     if let Some(candidate) =
       schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, true, &mut source_usages)?
     {
