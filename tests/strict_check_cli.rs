@@ -998,3 +998,46 @@ fn all_defs_requires_direct_check_only_and_rejects_incremental() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("--all-defs"), "{args:?}");
   }
 }
+
+/// #2449: `.each` relates the receiver's elements to the callback exactly like `each`,
+/// while a mismatched callback or an open receiver stays rejected.
+#[test]
+fn each_method_keeps_the_element_callback_relation() {
+  let fixture = fs::read_to_string("tests/fixtures/method-each-contract.cirru").expect("each fixture should read");
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(&snapshot, &fixture).expect("each fixture should write");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "typed element callbacks through .each",
+  );
+
+  let typed_callback = "hint-fn $ Fn app.main/Res (-> Unit)";
+  let open_receiver = "hint-fn $ Fn (List app.main/Res) (List app.main/Res) (-> Unit)";
+  for (label, source, code) in [
+    (
+      "callback for another element type",
+      fixture
+        .replace(typed_callback, "hint-fn $ Fn String (-> Unit)")
+        .replace("assert |kind $ = (:kind r) :font", ", &unit"),
+      "W_METHOD_ARG_TYPE_MISMATCH",
+    ),
+    (
+      "open receiver",
+      fixture
+        .replace(open_receiver, "hint-fn $ Fn (List Dynamic) (List Dynamic) (-> Unit)")
+        .replace(
+          ":schema $ quote $ Fn (List app.main/Res) (List app.main/Res) (-> Unit)",
+          ":schema $ quote $ Fn (List Dynamic) (List Dynamic) (-> Unit)",
+        ),
+      "E_CALL_ARGUMENT_UNPROVEN",
+    ),
+  ] {
+    assert_ne!(source, fixture, "{label}: fixture edit should apply");
+    fs::write(&snapshot, &source).expect("variant should write");
+    let output = run_calcit(&snapshot, &["--check-only"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{label} should be rejected");
+    assert!(stderr.contains(code) && stderr.contains("`.each`"), "{label}:\n{stderr}");
+  }
+}
