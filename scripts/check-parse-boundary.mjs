@@ -46,6 +46,8 @@ try {
   assert.throws(() => runtime._$n_cirru_quote_$o_leaf_text(listRoot), /requires a leaf root, but received a list/);
   for (const proc of [runtime._$n_cirru_quote_$o_to_list, runtime._$n_cirru_quote_$o_leaf_text]) {
     assert.throws(() => proc("b"), /requires a Cirru quote/);
+    assert.throws(() => proc(), /takes 1 argument/);
+    assert.throws(() => proc(leafRoot, leafRoot), /takes 1 argument/);
   }
   const originalError = console.error;
   const errors = [];

@@ -5269,6 +5269,15 @@
                     reset! *calls $ inc @*calls
                     cirru-quote $ a b
                 assert= 2 @*calls
+                assert= true $ try
+                  &let ()
+                    .leaf-text $ do
+                      reset! *calls $ inc @*calls
+                      raise |boom
+                      cirru-quote x
+                    , false
+                  fn (error) true
+                assert= 3 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote:leaf? $ %{} 'CodeEntry
           :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf?。根节点为 leaf 时返回 true。"
@@ -5371,6 +5380,15 @@
                   reset! *calls $ inc @*calls
                   cirru-quote token
                 assert= 4 @*calls
+                assert= true $ try
+                  &let ()
+                    .to-list $ do
+                      reset! *calls $ inc @*calls
+                      raise |boom
+                      cirru-quote $ a b
+                    , false
+                  fn (error) true
+                assert= 5 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)
