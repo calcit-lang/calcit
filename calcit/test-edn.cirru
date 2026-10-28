@@ -32,7 +32,7 @@
           :schema $ :: 'StructDef
         'Response $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Response (:code 'Number)
-            :message $ :: 'Option 'String
+            :message $ quote $ Option String
             :body 'Dynamic
           :examples $ []
           :schema $ :: 'StructDef
@@ -298,10 +298,10 @@
                   , false
                 fn (error) true
               assert= (#{} 1)
-                parse-cirru-edn-as "|#{} 1 1" $ :: 'Set 'Number
+                parse-cirru-edn-as "|#{} 1 1" $ quote $ Set Number
               assert=
                 {} $ :a |second
-                parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ :: 'Map 'Tag 'String
+                parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ quote $ Map Tag String
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

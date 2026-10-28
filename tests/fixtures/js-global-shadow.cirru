@@ -12,34 +12,25 @@
       :defs $ {}
         'imported-element $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn imported-element ()
-            hint-fn $ {}
-              :args $ []
-              :return 'Dynamic
+            hint-fn $ quote $ Fn (-> Dynamic)
             Element :name |probe
           :examples $ []
           :schema $ :: 'Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            hint-fn $ {}
-              :args $ []
-              :return 'Dynamic
+            hint-fn $ quote $ Fn (-> Dynamic)
             resolve-ctor
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! ()
-            hint-fn $ {}
-              :args $ []
-              :return 'Unit
+            hint-fn $ quote $ Fn (-> Unit)
             , &unit
           :examples $ []
           :schema $ :: 'Dynamic
         'resolve-ctor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn resolve-ctor ()
-            hint-fn $ {}
-              :args $ []
-              :return 'Dynamic
-              :features $ #{} :js-ffi
+            hint-fn $ quote $ Fn (-> Dynamic) (:features :js-ffi)
             if (exists? js/Element) js/Element js/Error
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)

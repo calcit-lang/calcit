@@ -27,9 +27,7 @@
             .show $ fn (self)
               println $ &struct:get self :name
             .rename $ fn (self name)
-              hint-fn $ {}
-                :args $ [] 'test-struct.main/Lagopus0 'String
-                :return 'Dynamic
+              hint-fn $ quote $ Fn test-struct.main/Lagopus0 String (-> Dynamic)
               .assoc self :name name
           :examples $ []
           :schema $ :: 'Impl
@@ -55,7 +53,7 @@
           :schema $ :: 'StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox ([] 'T) (:value 'T)
-            :count $ :: 'Option 'Number
+            :count $ quote $ Option Number
           :examples $ []
           :schema $ :: 'StructDef
         'Demo $ %{} 'CodeEntry (:doc |)
@@ -100,9 +98,7 @@
             %{} 'TestEntry (:name |typed-callback-members)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Unit
+                    hint-fn $ quote $ Fn Number (-> Unit)
                     , &unit
                   handlers $ {} $ :click callback
                   stored $ NullableEventStore :handlers handlers
@@ -193,8 +189,8 @@
               :tags $ #{} :collection-proof
         'OptionFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionFields
-            :count $ :: 'Option 'Number
-            :label $ :: 'Option 'String
+            :count $ quote $ Option Number
+            :label $ quote $ Option String
           :examples $ []
           :schema $ :: 'StructDef
           :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
@@ -209,8 +205,8 @@
         'OptionalFields $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture (Optional fields, optional-proof); retire with Optional (0.32.0). OptionFields is the Option form."
           :code $ quote $ defstruct OptionalFields
-            :count $ :: 'Optional 'Number
-            :label $ :: 'Optional 'String
+            :count $ quote $ Optional Number
+            :label $ quote $ Optional String
           :examples $ []
           :schema $ :: 'StructDef
           :tests $ [] $ %{} 'TestEntry
@@ -222,7 +218,7 @@
         'OptionalGeneric $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture (generic Optional field); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionalGeneric ([] 'T)
-            :value $ :: 'Optional 'T
+            :value $ quote $ Optional T
           :examples $ []
           :schema $ :: 'StructDef
         'Person $ %{} 'CodeEntry (:doc |)
@@ -369,7 +365,7 @@
             let
                 values $ assert-type
                   {} (:present 7) (:absent nil)
-                  :: 'Map 'Tag $ :: 'JsNullish 'Number
+                  quote $ Map Tag $ JsNullish Number
                 alias values
               NullableNumberStore :values alias :nested $ [] alias
           :examples $ []
@@ -388,7 +384,8 @@
         'collect-unique-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collect-unique-proof (names)
             let
-                initial $ assert-type (#{}) (:: 'Set 'String)
+                initial $ assert-type (#{})
+                  quote $ Set String
               fold names initial $ fn (days name)
                 .union days $ #{} name
           :examples $ []
@@ -404,7 +401,8 @@
             :tags $ #{} :empty-container-proof
         'empty-list-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-list-proof ()
-            assert-type ([]) (:: 'List 'String)
+            assert-type ([])
+              quote $ List String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
@@ -428,7 +426,7 @@
                   initial $ #{}
                   alias initial
                 if flag alias $ #{}
-              :: 'Set 'String
+              quote $ Set String
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Bool
@@ -868,9 +866,8 @@
               assert= 20 $ :age p1
               let
                   read-open $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic
-                      :return $ :: 'List $ :: 'Option 'Dynamic
+                    hint-fn $ quote $ Fn Dynamic
+                      -> $ List $ Option Dynamic
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
                   [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
@@ -886,9 +883,7 @@
                 complete $ %{} Point2D (:y 2) (:x 1)
                 alias $ %{} Shape (:x 1) (:y 2)
                 dynamic $ fn (prototype)
-                  hint-fn $ {}
-                    :args $ [] 'StructDef
-                    :return 'Dynamic
+                  hint-fn $ quote $ Fn StructDef (-> Dynamic)
                   %{} prototype (:x 1) (:y 2)
               assert= complete alias
               assert= complete $ dynamic Point2D
@@ -1017,9 +1012,7 @@
             try
               if fail? (raise |fixture-failure) true
               fn (message)
-                hint-fn $ {}
-                  :args $ [] 'String
-                  :return 'Bool
+                hint-fn $ quote $ Fn String (-> Bool)
                 , false
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -1090,9 +1083,7 @@
             try
               if fail? (raise |fixture-failure) |normal
               fn (message extra)
-                hint-fn $ {}
-                  :args $ [] 'String $ :: 'Option 'Number
-                  :return 'String
+                hint-fn $ quote $ Fn String (Option Number) (-> String)
                 assert= (Option :none) extra
                 , message
           :examples $ []
@@ -1125,10 +1116,7 @@
             try
               if fail? (raise |fixture-failure) 7
               fn (& messages)
-                hint-fn $ {}
-                  :args $ []
-                  :rest 'String
-                  :return 'Number
+                hint-fn $ quote $ Fn & String (-> Number)
                 .len messages
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

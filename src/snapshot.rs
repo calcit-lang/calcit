@@ -1976,6 +1976,11 @@ impl From<CodeEntry> for Edn {
 /// Cirru formatter requires a top-level expression, so they are converted
 /// directly into EDN before type parsing.
 pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  // Compact `Fn Number (-> String)` input is surface syntax; storage keeps the canonical form.
+  if crate::calcit::type_expr::is_compact_payload(schema) {
+    let canonical = crate::calcit::type_expr::desugar_type_expr(schema).map_err(|e| format!("invalid compact type expression: {e}"))?;
+    return parse_schema_annotation_for_write(&canonical);
+  }
   validate_schema_for_write(schema)?;
   if !matches!(schema, Cirru::Leaf(_)) {
     parse_schema_data(schema)?;
@@ -3853,6 +3858,14 @@ fn canonicalize_legacy_type_leaf(node: &Cirru) -> Option<Cirru> {
 }
 
 fn canonicalize_type_expression(node: &Cirru) -> (Cirru, usize) {
+  // `quote $ Fn …` is already the compact source syntax; it has no legacy tags to rewrite.
+  if let Cirru::List(items) = node
+    && let [Cirru::Leaf(head), payload] = items.as_slice()
+    && head.as_ref() == "quote"
+    && crate::calcit::type_expr::is_compact_payload(payload)
+  {
+    return (node.clone(), 0);
+  }
   if let Some(canonical) = canonicalize_legacy_type_leaf(node) {
     return (canonical, 1);
   }
@@ -5008,6 +5021,11 @@ mod tests {
       data_text.contains(":kind :string"),
       "ordinary tag data must not be rewritten: {data_text}"
     );
+
+    let compact = parse_one("assert-type f $ quote $ Fn T (-> T) (:generics T)");
+    let (formatted, compact_count) = canonicalize_code_type_syntax(&compact);
+    assert_eq!(compact_count, 0);
+    assert_eq!(formatted, compact, "compact quote type expressions are already canonical source");
   }
 
   #[test]

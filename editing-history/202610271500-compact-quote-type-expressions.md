@@ -1,0 +1,37 @@
+# 精简 quote 类型表达式（#2433）
+
+`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数和
+`calcit edit schema --code` 接受 `quote $ Fn Number (-> String)` 这类精简写法。它只是表层语法：
+预处理和 schema 写入入口先把它展开为规范的 `:: 'Fn $ {} …` 代码形式，Snapshot 存储、类型检查器、
+JS 运行时类型匹配和 WASM lowering 都不变。
+
+选型依据记在 issue 中：生态 16,254 条 schema 的精简写法约为 EDN 的 0.60；
+`calcit cirru format` 对箭头写法会折出 `, -> …` 续行，所以返回值改为一个 `(-> T)` 子句，
+其余属性用 tag 开头的子句。名字规则把未限定的小写叶子和符号叶子留给运算符，
+`:generics` 列表项、参数化 trait、`.`、`=`、`forall` 都先报错保留位置；未知子句报错，
+避免新版本写入的子句在旧版本中被静默忽略。
+
+以前 `quote $ Banana Number` 会落入 `from_calcit` 兜底，被当作 `List<Dynamic>` 静默通过；
+现在它按 `Banana<Number>` 检查，语法错误报告 `E_TYPE_EXPR_SYNTAX`。新编号的原因：
+现有编号都描述类型关系或 schema 存储，没有“类型表达式本身不合语法”这一类。
+
+`calcit edit format` 的旧 tag 写法规范化会给列表补 `::`，这会把精简写法改坏，
+因此遇到 `quote <精简 payload>` 时整体跳过。
+
+验证：`cargo test --lib type_expr`（含 core 全部 539 条 schema 的精简打印 → 写入 → 还原往返），
+`cargo test --bin calcit type_fail_compact`，`test-types.cirru` 的 `:compact-type-expr` 测试在 native/JS 运行，
+以及改写为精简写法的 test-generics/enum/traits/struct 用例。
+
+第二轮按结构批量改写了约 315 处类型位置（calcit-core 约 154 处，test-types-inference、
+def-value-schema fixture、test-traits、test-wasi-command 等）：只处理 `assert-type`、`unsafe-coerce`、
+`parse-cirru-edn-as`、`decode-map-as`（含 try- 变体）的类型参数和 `defstruct` 字段里的 `::` 列表，
+`quasiquote` 内部（core 宏模板）、含 tag 或未加引号叶子（值引用类型，如 `(:: 'List Person)`）、
+缺 `:return` 的 Fn 一律保留原样，保证语义不变。改写后用 `calcit edit format` 恢复排版。
+
+`defstruct` 宏会把字段类型再 quote 一层，局部 `defstruct` 在 JS 端拿到的是未展开的精简列表，
+结构体相等性比较因此失败。现在预处理 `&struct-def:new` 调用时把内层精简类型换成规范代码（外层 quote 保留），
+两个后端读到同一份数据。
+
+`hint-fn` 改为整体写成 `hint-fn $ quote $ Fn …`，而不是保留外层 `{}` 只改内层。schema 推导在预处理之前就读取
+`hint-fn`，所以在 `code_to_calcit` 读入代码时把精简 `Fn` 换成它的 schema map，所有读取方看到同一形状；
+语法错误在读入时报告 `E_TYPE_EXPR_SYNTAX`。只写 `{} (:async true)` 这类部分字段的 hint 没有完整签名，保留 map 写法。

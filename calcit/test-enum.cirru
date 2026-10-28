@@ -118,9 +118,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (record)
-                  hint-fn $ {}
-                    :args $ [] 'Payload
-                    :return 'String
+                  hint-fn $ quote $ Fn Payload (-> String)
                   :value record
                 record $ Payload :value |Ada
               assert-type record 'Payload
@@ -136,9 +134,7 @@
             let
                 Payload $ defstruct LocalPayload $ :value 'Number
                 read $ fn (record)
-                  hint-fn $ {}
-                    :args $ [] 'Payload
-                    :return 'Number
+                  hint-fn $ quote $ Fn Payload (-> Number)
                   :value record
               read $ Payload :value 7
           :examples $ []
@@ -152,9 +148,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (Payload)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :return 'Payload
+                  hint-fn $ quote $ Fn String (-> Payload)
                   let
                       record $ recursive/Payload :value Payload
                     assert-type record 'Payload
@@ -251,10 +245,10 @@
                   none-value $ %:: Maybe1 :none
                   pair-value $ %:: Duo :pair 1 |hi
                   swapped-value $ %:: Duo :swapped |hi 1
-                assert-type some-num $ :: 'Maybe1 'Number
-                assert-type none-value $ :: 'Maybe1 'Dynamic
-                assert-type pair-value $ :: 'Duo 'Number 'String
-                assert-type swapped-value $ :: 'Duo 'Number 'String
+                assert-type some-num $ quote $ Maybe1 Number
+                assert-type none-value $ quote $ Maybe1 Dynamic
+                assert-type pair-value $ quote $ Duo Number String
+                assert-type swapped-value $ quote $ Duo Number String
                 assert= (Option :some 1)
                   unwrap-maybe $ %:: Maybe1 :some 1
                 assert= (Option :none)
@@ -271,20 +265,14 @@
           :code $ quote $ defn test-generic-enum-where-bounds ()
             let
                 render-maybe $ fn (v)
-                  hint-fn $ {}
-                    :generics $ [] 'T
-                    :where $ {} $ 'T Debug
-                    :args $ [] $ :: 'Maybe1 'T
-                    :return 'String
+                  hint-fn $ quote $ Fn (Maybe1 T) (-> String) (:generics T)
+                    :where $ T Debug
                   match v
                     (:none) |none
                     (:some item) (item .debug)
                 render-duo $ fn (v)
-                  hint-fn $ {}
-                    :generics $ [] 'T 'U
-                    :where $ {} ('T Debug) ('U Debug)
-                    :args $ [] $ :: 'Duo 'T 'U
-                    :return 'String
+                  hint-fn $ quote $ Fn (Duo T U) (-> String) (:generics T U)
+                    :where (T Debug) (U Debug)
                   match v
                     (:pair left right)
                       str-spaced |pair (left .debug) (right .debug)
@@ -292,7 +280,8 @@
                       str-spaced |swapped (right .debug) (left .debug)
               println "|Testing generic enum where-bounds..."
               assert= |1 $ render-maybe $ %:: Maybe1 :some 1
-              assert= |none $ render-maybe $ assert-type (Maybe1 :none) (:: 'Maybe1 'Number)
+              assert= |none $ render-maybe $ assert-type (Maybe1 :none)
+                quote $ Maybe1 Number
               assert= (str-spaced |pair |1 |hi)
                 render-duo $ %:: Duo :pair 1 |hi
               assert= (str-spaced |swapped |hi |1)
@@ -359,8 +348,8 @@
                     some-value $ %:: ShownMaybe :some 1
                   let
                       none-value $ %:: ShownMaybe :none
-                    assert-type box $ :: 'ShownBox 'Number
-                    assert-type some-value $ :: 'ShownMaybe 'Number
+                    assert-type box $ quote $ ShownBox Number
+                    assert-type some-value $ quote $ ShownMaybe Number
                     assert= |1 $ match some-value
                       (:some item) (item .debug)
                       (:none) |none

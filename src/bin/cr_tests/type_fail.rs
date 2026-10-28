@@ -4285,3 +4285,31 @@ fn generic_return_kind_guard_cannot_forge_payload_type() {
     }
   });
 }
+
+/// Compact quote type expressions report grammar errors instead of falling
+/// back to a List value type (#2433).
+#[test]
+fn type_fail_compact_type_expr_reports_syntax_errors() {
+  run_with_large_stack(|| {
+    for (code, expected) in [
+      ("assert-type 1 $ quote $ Fn Number -> Number", "bare `->`"),
+      ("assert-type ([] 1) $ quote $ List number", "`number` is not a type name"),
+      ("assert-type ([] 1) $ quote $ list Number", "`list` is not a type name"),
+      ("assert-type 1 $ quote $ Fn Number", "needs a return clause"),
+    ] {
+      let entries = load_snippet_entries(code);
+      let warnings = RefCell::new(vec![]);
+      let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect_err(code);
+      let message = error.to_string();
+      assert!(message.contains("E_TYPE_EXPR_SYNTAX"), "{code}: unexpected error {message}");
+      assert!(message.contains(expected), "{code}: expected `{expected}` in {message}");
+    }
+
+    let entries = load_snippet_entries("assert-type ([] |a) $ quote $ List Number");
+    let warnings = RefCell::new(vec![]);
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("a compact List type keeps its element type");
+    assert!(error.to_string().contains("E_ASSERT_TYPE_MISMATCH"), "unexpected error: {error}");
+  });
+}

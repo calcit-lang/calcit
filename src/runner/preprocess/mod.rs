@@ -4152,6 +4152,12 @@ fn preprocess_list_call(
       xs.drop_left(),
     ),
   };
+  let args = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructNew)) {
+    let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+    desugar_struct_field_types(&args, &ctx)?
+  } else {
+    args
+  };
   // A literal argument list has exact positional evidence and no observable
   // allocation identity. Lower only the canonical helper, not a same-name
   // user function, and leave nonliteral/spread-bearing lists on their own path.
@@ -14610,7 +14616,7 @@ fn preprocess_assert_type_with_obligation(
   }
 
   let target_raw = args.get(0).unwrap();
-  let type_form = args.get(1).unwrap();
+  let type_form = &desugar_compact_type_form(args.get(1).unwrap(), ctx)?;
 
   let expanded_absence =
     resolve_type_value(target_raw, &ScopeTypes::new()).is_some_and(|annotation| type_inference::has_inferred_empty_slot(&annotation));
@@ -14881,8 +14887,58 @@ pub fn preprocess_unsafe_coerce(
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     target_form,
-    args.get(1).expect("declared unsafe-coerce type").to_owned(),
+    desugar_compact_type_form(args.get(1).expect("declared unsafe-coerce type"), ctx)?,
   ]))
+}
+
+/// `defstruct` quotes each field type once more, so a compact field type reaches
+/// `&struct-def:new` as `([] :field (quote (quote …)))`. Swap the inner form for
+/// the canonical type code, still quoted, so every backend reads the same data.
+fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Result<CalcitList, CalcitErr> {
+  let mut changed = false;
+  let mut ys: Vec<Calcit> = Vec::with_capacity(args.len());
+  for arg in args.iter() {
+    if let Calcit::List(entry) = arg
+      && entry.len() == 3
+      && let Some(Calcit::List(quoted)) = entry.get(2)
+      && quoted.len() == 2
+      && match quoted.first() {
+        Some(Calcit::Syntax(CalcitSyntax::Quote, _)) => true,
+        Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "quote",
+        _ => false,
+      }
+      && let Some(inner) = quoted.get(1)
+      && crate::calcit::type_expr::desugar_quoted_form(inner).is_some()
+    {
+      let mut items: Vec<Calcit> = entry.iter().take(2).cloned().collect();
+      items.push(Calcit::from(vec![quoted[0].to_owned(), desugar_compact_type_form(inner, ctx)?]));
+      ys.push(Calcit::from(items));
+      changed = true;
+    } else {
+      ys.push(arg.to_owned());
+    }
+  }
+  Ok(if changed {
+    CalcitList::from(ys.as_slice())
+  } else {
+    args.to_owned()
+  })
+}
+
+/// Expand a compact `quote $ Fn …` type expression into its canonical form so
+/// later passes and backends only see one shape. Other forms are returned as-is.
+pub(super) fn desugar_compact_type_form(form: &Calcit, ctx: &PreprocessContext) -> Result<Calcit, CalcitErr> {
+  match crate::calcit::type_expr::desugar_quoted_form(form) {
+    None => Ok(form.to_owned()),
+    Some(Ok(canonical)) => Ok(canonical),
+    Some(Err(message)) => Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("invalid compact type expression: {message}"),
+      "E_TYPE_EXPR_SYNTAX",
+      ctx.call_stack,
+      form.get_location().or_else(|| crate::calcit::type_expr::first_location(form)),
+    )),
+  }
 }
 
 /// Qualify namespace-aliased type names (`alias/Def`) inside a decoder type form
@@ -14990,7 +15046,7 @@ pub fn preprocess_parse_cirru_edn_as(
       text_form.get_location(),
     ));
   }
-  let source_type_form = args.get(1).expect("validated parse-cirru-edn-as type");
+  let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated parse-cirru-edn-as type"), ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   note_legacy_optional_type(
@@ -15055,7 +15111,7 @@ pub fn preprocess_decode_map_as(
       value_form.get_location(),
     ));
   }
-  let source_type_form = args.get(1).expect("validated decode-map-as type");
+  let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated decode-map-as type"), ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   note_legacy_optional_type(

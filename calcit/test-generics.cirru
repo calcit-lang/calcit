@@ -16,7 +16,7 @@
           :schema $ :: 'StructDef
         'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
           :code $ quote $ defstruct Holder ([] 'T)
-            :box $ :: 'Box 'T
+            :box $ quote $ Box T
           :examples $ []
           :schema $ :: 'StructDef
         'Node $ %{} 'CodeEntry (:doc |)
@@ -53,30 +53,19 @@
                   hint-fn $ {} $ :generics ([] 'T)
                   do x
                 id2 $ fn (x)
-                  hint-fn $ {}
-                    :args $ [] 'T
-                    :generics $ [] 'T
-                    :return 'T
+                  hint-fn $ quote $ Fn T (-> T) (:generics T)
                   do x
                 debug-id $ fn (x)
-                  hint-fn $ {}
-                    :generics $ [] 'T
-                    :where $ {} $ 'T Debug
-                    :args $ [] 'T
-                    :return 'String
+                  hint-fn $ quote $ Fn T (-> String) (:generics T)
+                    :where $ T Debug
                   x .debug
                 n $ id2 1
                 s $ id2 |hi
                 debugged-n $ debug-id 1
                 debugged-s $ debug-id |hi
-              assert-type id2 $ :: 'Fn $ {} (:return 'T)
-                :generics $ [] 'T
-                :args $ [] 'T
-              assert-type debug-id $ :: 'Fn $ {}
-                :generics $ [] 'T
-                :where $ {} $ 'T Debug
-                :args $ [] 'T
-                :return 'String
+              assert-type id2 $ quote $ Fn T (-> T) (:generics T)
+              assert-type debug-id $ quote $ Fn T (-> String) (:generics T)
+                :where $ T Debug
               assert-type n 'Number
               assert-type s 'String
               assert= |1 debugged-n

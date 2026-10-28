@@ -13,7 +13,7 @@
         'Box $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Box
-            :value $ :: 'Optional 'app.binding-proof/Value
+            :value $ quote $ Optional app.binding-proof/Value
           :examples $ []
           :schema $ :: 'StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
@@ -23,7 +23,7 @@
         'OptionBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionBox
-            :value $ :: 'Optional $ :: 'Option 'String
+            :value $ quote $ Optional (Option String)
           :examples $ []
           :schema $ :: 'StructDef
         'Value $ %{} 'CodeEntry (:doc |)
@@ -320,10 +320,8 @@
       :defs $ {}
         'Controller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Controller ([] 'Op)
-            :dispatch $ :: 'Ref $ :: 'Fn
-              {}
-                :args $ [] 'Op
-                :return 'Unit
+            :dispatch $ quote $ Ref
+              Fn Op $ -> Unit
           :examples $ []
           :schema $ :: 'StructDef
         'RepeatedPayload $ %{} 'CodeEntry (:doc |)
@@ -334,7 +332,7 @@
           :code $ quote $ defn branch-empty-generic-list (anchor flag open)
             assert-type
               if flag ([]) ([])
-              :: 'List 'T
+              quote $ List T
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -349,7 +347,7 @@
           :code $ quote $ defn branch-nonempty-generic-list (anchor flag open)
             assert-type
               if flag ([]) ([] 1)
-              :: 'List 'T
+              quote $ List T
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -359,7 +357,7 @@
           :code $ quote $ defn branch-open-generic-list (anchor flag open)
             assert-type
               if flag ([]) open
-              :: 'List 'T
+              quote $ List T
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -408,9 +406,7 @@
             let
                 received $ ref 0
                 dispatch! $ fn (op)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Unit
+                  hint-fn $ quote $ Fn Number (-> Unit)
                   reset! received op
                   , &unit
                 controller $ Controller :dispatch $ ref dispatch!
@@ -440,7 +436,8 @@
               :tags $ #{} :ref-callback-inference
         'empty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-generic-list (anchor)
-            assert-type ([]) (:: 'List 'T)
+            assert-type ([])
+              quote $ List T
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -452,7 +449,8 @@
             :tags $ #{} :empty-generic-family
         'empty-generic-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-generic-map (anchor)
-            assert-type ({}) (:: 'Map 'K 'V)
+            assert-type ({})
+              quote $ Map K V
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -464,7 +462,8 @@
             :tags $ #{} :empty-generic-family
         'empty-generic-set $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-generic-set (anchor)
-            assert-type (#{}) (:: 'Set 'T)
+            assert-type (#{})
+              quote $ Set T
             , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -478,7 +477,7 @@
           :code $ quote $ defn enum-claim-open (raw)
             let
                 seed $ Result :ok raw
-              assert-type seed $ :: 'Result 'Number 'String
+              assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -488,7 +487,7 @@
           :code $ quote $ defn enum-claim-wrong ()
             let
                 seed $ Result :ok |wrong
-              assert-type seed $ :: 'Result 'Number 'String
+              assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -498,7 +497,7 @@
           :code $ quote $ defn enum-inconsistent-pair (value)
             let
                 pair $ RepeatedPayload :pair value 1
-              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -509,7 +508,7 @@
           :code $ quote $ defn enum-open-peer (value raw)
             let
                 pair $ RepeatedPayload :pair value raw
-              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -520,7 +519,7 @@
           :code $ quote $ defn enum-specialize-caller (value)
             let
                 seed $ Result :ok value
-              assert-type seed $ :: 'Result 'Number 'String
+              assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -530,11 +529,11 @@
         'fold-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fold-generic-list (xs)
             foldl xs
-              assert-type ([]) (:: 'List 'T)
+              assert-type ([])
+                quote $ List T
               fn (acc item)
-                hint-fn $ {}
-                  :args $ [] (:: 'List 'T) 'T
-                  :return $ :: 'List 'T
+                hint-fn $ quote $ Fn (List T) T
+                  -> $ List T
                 append acc item
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -567,9 +566,7 @@
                 received $ ref |before
               generic-controller
                 fn (op)
-                  hint-fn $ {}
-                    :args $ [] 'String
-                    :return 'Unit
+                  hint-fn $ quote $ Fn String (-> Unit)
                   reset! received op
                   , &unit
                 , |after
@@ -604,9 +601,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-order-through-nested-literal-spreads)
             :code $ quote $ let
                 sink $ fn (a b c)
-                  hint-fn $ {}
-                    :args $ [] 'Number 'Number 'Number
-                    :return $ :: 'List 'Number
+                  hint-fn $ quote $ Fn Number Number Number
+                    -> $ List Number
                   [] a b c
               assert= ([] 1 2 3)
                 sink & ([] 1) & $ [] 2 & $ [] 3
@@ -626,7 +622,8 @@
             :args $ []
         'nonempty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nonempty-generic-list (anchor)
-            assert-type ([] 1) (:: 'List 'T)
+            assert-type ([] 1)
+              quote $ List T
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -639,7 +636,7 @@
             :args $ [] $ :: 'Map 'Number 'Number
         'open-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-generic-list (anchor values)
-            assert-type values $ :: 'List 'Number
+            assert-type values $ quote $ List Number
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
@@ -648,7 +645,7 @@
           :code $ quote $ defn wrap-generic-error (error)
             let
                 seed $ Result :err error
-              assert-type seed $ :: 'Result 'String $ :: 'List 'E
+              assert-type seed $ quote $ Result String (List E)
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -664,7 +661,7 @@
           :code $ quote $ defn wrap-generic-map (users)
             let
                 seed $ Result :ok users
-              assert-type seed $ :: 'Result (:: 'Map 'String 'T) 'String
+              assert-type seed $ quote $ Result (Map String T) String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -680,7 +677,7 @@
           :code $ quote $ defn wrap-generic-pair (left right)
             let
                 pair $ RepeatedPayload :pair left right
-              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -694,7 +691,7 @@
           :code $ quote $ defn wrap-generic-value (value)
             let
                 seed $ Result :ok value
-              assert-type seed $ :: 'Result 'T 'String
+              assert-type seed $ quote $ Result T String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -708,7 +705,7 @@
           :code $ quote $ defn wrap-renamed-map (users)
             let
                 seed $ Result :ok users
-              assert-type seed $ :: 'Result (:: 'Map 'String 'U) 'String
+              assert-type seed $ quote $ Result (Map String U) String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1084,7 +1081,7 @@
           :schema $ :: 'StructDef
         'AppliedBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AppliedBox
-            :item $ :: 'app.dynamic-write/GenericBox 'Number
+            :item $ quote $ app.dynamic-write/GenericBox Number
           :examples $ []
           :schema $ :: 'StructDef
         'Box $ %{} 'CodeEntry (:doc |)
@@ -1093,30 +1090,29 @@
           :schema $ :: 'StructDef
         'FunctionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct FunctionBox
-            :apply $ :: 'Fn $ {}
-              :args $ [] 'Number
-              :return 'Number
+            :apply $ quote $ Fn Number (-> Number)
           :examples $ []
           :schema $ :: 'StructDef
         'GenericBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct GenericBox ([] 'T)
-            :items $ :: 'List 'T
+            :items $ quote $ List T
           :examples $ []
           :schema $ :: 'StructDef
         'HostScalarBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HostScalarBox
-            :value $ :: 'JsNullish 'Number
+            :value $ quote $ JsNullish Number
           :examples $ []
           :schema $ :: 'StructDef
         'ListBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ListBox
-            :items $ :: 'List 'Number
+            :items $ quote $ List Number
           :examples $ []
           :schema $ :: 'StructDef
         'MapBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct MapBox
-            :items $ :: 'Map 'Tag $ :: 'List (:: 'Optional 'Number)
+            :items $ quote $ Map Tag
+              List $ Optional Number
           :examples $ []
           :schema $ :: 'StructDef
         'NestedRefBox $ %{} 'CodeEntry (:doc |)
@@ -1130,29 +1126,25 @@
         'NullableFunctionBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableFunctionBox
-            :value $ :: 'Optional $ :: 'Fn
-              {}
-                :args $ [] 'Number
-                :return 'Number
+            :value $ quote $ Optional
+              Fn Number $ -> Number
           :examples $ []
           :schema $ :: 'StructDef
         'NullableRefBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableRefBox
-            :value $ :: 'Optional $ :: 'Ref 'Number
+            :value $ quote $ Optional (Ref Number)
           :examples $ []
           :schema $ :: 'StructDef
         'NullishFunctionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullishFunctionBox
-            :value $ :: 'JsNullish $ :: 'Fn
-              {}
-                :args $ [] 'Number
-                :return 'Number
+            :value $ quote $ JsNullish
+              Fn Number $ -> Number
           :examples $ []
           :schema $ :: 'StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenBox
-            :items $ :: 'List 'Dynamic
+            :items $ quote $ List Dynamic
           :examples $ []
           :schema $ :: 'StructDef
         'OpenCallableBox $ %{} 'CodeEntry (:doc |)
@@ -1161,22 +1153,22 @@
           :schema $ :: 'StructDef
         'OpenRefBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenRefBox
-            :cell $ :: 'Ref 'Dynamic
+            :cell $ quote $ Ref Dynamic
           :examples $ []
           :schema $ :: 'StructDef
         'OptionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionBox
-            :item $ :: 'Option 'Number
+            :item $ quote $ Option Number
           :examples $ []
           :schema $ :: 'StructDef
         'RefBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct RefBox
-            :cell $ :: 'Ref 'Number
+            :cell $ quote $ Ref Number
           :examples $ []
           :schema $ :: 'StructDef
         'SetBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct SetBox
-            :items $ :: 'Set 'Number
+            :items $ quote $ Set Number
           :examples $ []
           :schema $ :: 'StructDef
         'UserAlias $ %{} 'CodeEntry (:doc |)
@@ -2074,7 +2066,7 @@
           :code $ quote $ defn incompatible-generics (xs ys flag)
             let
                 result $ if flag xs ys
-              assert-type result $ :: 'List 'T
+              assert-type result $ quote $ List T
               , result
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2085,7 +2077,7 @@
           :code $ quote $ defn list-alias ()
             let
                 items $ []
-              assert-type items $ :: 'List 'Number
+              assert-type items $ quote $ List Number
               , items
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2098,7 +2090,7 @@
           :code $ quote $ defn map-alias ()
             let
                 items $ {}
-              assert-type items $ :: 'Map 'String 'Number
+              assert-type items $ quote $ Map String Number
               , items
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2141,7 +2133,7 @@
           :code $ quote $ defn nested-empty ()
             let
                 rows $ [] $ {}
-              assert-type rows $ :: 'List $ :: 'Map 'String 'Number
+              assert-type rows $ quote $ List (Map String Number)
               , rows
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2154,7 +2146,7 @@
             :tags $ #{} :empty-collection-evidence
         'open-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-map (items)
-            assert-type items $ :: 'Map 'String 'Number
+            assert-type items $ quote $ Map String Number
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Dynamic 'Dynamic
@@ -2164,7 +2156,7 @@
             let
                 items $ {}
               set! items $ {} $ |a |wrong
-              assert-type items $ :: 'Map 'String 'Number
+              assert-type items $ quote $ Map String Number
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
@@ -2189,14 +2181,15 @@
         'ref-invariant $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ref-invariant ()
             let
-                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
-              assert-type cell $ :: 'Ref $ :: 'Map 'String 'Dynamic
+                cell $ ref $ assert-type ({})
+                  quote $ Map String Number
+              assert-type cell $ quote $ Ref (Map String Dynamic)
           :examples $ []
         'result-seed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn result-seed ()
             let
                 seed $ Result :ok $ {}
-              assert-type seed $ :: 'Result (:: 'Map 'String 'Number) 'String
+              assert-type seed $ quote $ Result (Map String Number) String
               , seed
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2211,7 +2204,7 @@
           :code $ quote $ defn set-alias ()
             let
                 items $ #{}
-              assert-type items $ :: 'Set 'Number
+              assert-type items $ quote $ Set Number
               , items
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2226,7 +2219,7 @@
                 items $ {}
               let
                   items raw
-                assert-type items $ :: 'Map 'String 'Number
+                assert-type items $ quote $ Map String Number
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Dynamic 'Dynamic
@@ -2316,7 +2309,8 @@
         'typed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-assignment ()
             let
-                items $ assert-type ({}) (:: 'Map 'String 'Number)
+                items $ assert-type ({})
+                  quote $ Map String Number
               set! items $ {} $ |a 1
               , items
           :examples $ []
@@ -2332,7 +2326,8 @@
         'typed-ref $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-ref ()
             let
-                slot $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+                slot $ ref $ assert-type ({})
+                  quote $ Map String Number
               reset! slot $ {} $ |a 1
               deref slot
           :examples $ []
@@ -2348,25 +2343,28 @@
           :code $ quote $ defn wrong-grown-list ()
             let
                 items $ []
-              assert-type (.append items |wrong) (:: 'List 'Number)
+              assert-type (.append items |wrong)
+                quote $ List Number
           :examples $ []
         'wrong-grown-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-grown-map ()
             let
                 items $ {}
-              assert-type (&map:assoc items |a |wrong) (:: 'Map 'String 'Number)
+              assert-type (&map:assoc items |a |wrong)
+                quote $ Map String Number
           :examples $ []
         'wrong-grown-set $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-grown-set ()
             let
                 items $ #{}
-              assert-type (.include items |wrong) (:: 'Set 'Number)
+              assert-type (.include items |wrong)
+                quote $ Set Number
           :examples $ []
         'wrong-map-member $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-map-member ()
             let
                 items $ {} $ |a |wrong
-              assert-type items $ :: 'Map 'String 'Number
+              assert-type items $ quote $ Map String Number
           :examples $ []
         'wrong-match-payload-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-match-payload-assignment (value choice)
@@ -2381,7 +2379,8 @@
         'wrong-ref-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-ref-alias ()
             let
-                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+                cell $ ref $ assert-type ({})
+                  quote $ Map String Number
                 alias cell
               reset! alias $ {} $ |a |wrong
           :examples $ []
@@ -2406,9 +2405,9 @@
         'Fields $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Fields
-            :mapping $ :: 'Optional $ :: 'Map 'Tag 'String
-            :items $ :: 'Optional $ :: 'List 'Number
-            :members $ :: 'Optional $ :: 'Set 'String
+            :mapping $ quote $ Optional (Map Tag String)
+            :items $ quote $ Optional (List Number)
+            :members $ quote $ Optional (Set String)
           :examples $ []
           :schema $ :: 'StructDef
         'open-map $ %{} 'CodeEntry (:doc |)
@@ -2541,8 +2540,8 @@
         'Database $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Database
-            :users $ :: 'Map 'String 'User
-            :maybe $ :: 'Optional 'User
+            :users $ quote $ Map String User
+            :maybe $ quote $ Optional User
           :examples $ []
           :schema $ :: 'StructDef
         'Envelope $ %{} 'CodeEntry (:doc |)
@@ -2567,10 +2566,7 @@
           :code $ quote $ defn make-arrays (n)
             js-array & $ map (range n)
               fn (_idx)
-                hint-fn $ {}
-                  :args $ [] 'Number
-                  :return 'JsObject
-                  :features $ #{} :js-ffi
+                hint-fn $ quote $ Fn Number (-> JsObject) (:features :js-ffi)
                 js-array
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'JsObject)
@@ -2580,32 +2576,26 @@
             %{} 'TestEntry (:name |empty-and-independent-children)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         empty-array $ make-arrays 0
                         arrays $ make-arrays 3
                       assert= ([])
                         decode-map-as (to-calcit-data empty-array)
-                          :: 'List $ :: 'List 'Number
+                          quote $ List $ List Number
                       assert |independent-children $ not $ identical? (aget arrays 0) (aget arrays 1)
                       js/Reflect.set (aget arrays 0) |0 7
                       assert=
                         [] ([] 7) ([]) ([])
                         decode-map-as (to-calcit-data arrays)
-                          :: 'List $ :: 'List 'Number
+                          quote $ List $ List Number
                     , &unit
                 verify!
               :tags $ #{} :js-array-spread :unit
             %{} 'TestEntry (:name |preserves-open-elements)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         members $ decode-map-as ([] 0 false nil |) 'List
                         array $ js-array & members
@@ -2616,10 +2606,7 @@
             %{} 'TestEntry (:name |preserves-evaluation-order)
               :code $ quote $ let
                   verify! $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Unit
-                      :features $ #{} :js-ffi
+                    hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
                     let
                         trace $ ref $ [] 0
                         array $ js-array
@@ -2627,9 +2614,7 @@
                           , & $ do (swap! trace append 2)
                             map ([] 3 4)
                               fn (value)
-                                hint-fn $ {}
-                                  :args $ [] 'Number
-                                  :return 'Number
+                                hint-fn $ quote $ Fn Number (-> Number)
                                 swap! trace append value
                                 , value
                       assert= ([] 0 1 2 3 4) @trace
@@ -2715,7 +2700,7 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ {} $ :years ([] 2025 2026)
-                    :: 'Map 'Tag $ :: 'List 'Number
+                    quote $ Map Tag $ List Number
                   (:ok data)
                     assert=
                       Option :some $ [] 2025 2026
@@ -2724,7 +2709,7 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ {} $ :years ([] 2025 |bad)
-                    :: 'Map 'Tag $ :: 'List 'Number
+                    quote $ Map Tag $ List Number
                   (:ok _) (raise |invalid-storage-accepted)
                   (:err reason)
                     assert= true $ .includes? reason |[1]
@@ -2732,12 +2717,12 @@
             %{} 'TestEntry (:name |member-key-contract)
               :code $ quote $ do
                 match
-                  try-decode-map-as members $ :: 'Map 'Number 'String
+                  try-decode-map-as members $ quote $ Map Number String
                   (:ok data)
                     assert= (Option :some |Ada) (get data 1)
                   (:err reason) (raise reason)
                 match
-                  try-decode-map-as members $ :: 'Map 'String 'String
+                  try-decode-map-as members $ quote $ Map String String
                   (:ok _) (raise |numeric-member-key-accepted-as-string)
                   (:err reason)
                     assert= true $ .includes? reason |key
@@ -2747,14 +2732,14 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ [] |Ada |secret
-                    :: 'List 'String
+                    quote $ List String
                   (:ok credentials)
                     assert= ([] |Ada |secret) credentials
                   (:err reason) (raise reason)
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ [] |Ada 42
-                    :: 'List 'String
+                    quote $ List String
                   (:ok _) (raise |invalid-credentials-accepted)
                   (:err reason)
                     assert= true $ .includes? reason |[1]
@@ -2828,9 +2813,7 @@
             %{} 'TestEntry (:name |nominal-option-callback-omission)
               :code $ quote $ let
                   with-extra $ fn (value extra)
-                    hint-fn $ {}
-                      :args $ [] 'Number $ :: 'Option 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (Option Number) (-> Number)
                     + value $ extra .unwrap-or 10
                 assert= ([] 11 12)
                   map ([] 1 2) with-extra
@@ -3052,9 +3035,7 @@
         'checked-open-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-open-selector (rows)
             &list:sort-by rows $ fn (row)
-              hint-fn $ {}
-                :args $ [] 'Dynamic
-                :return 'Number
+              hint-fn $ quote $ Fn Dynamic (-> Number)
               decode-map-as row 'Number
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -3398,7 +3379,7 @@
           :schema $ :: 'StructDef
         'PatchCandidate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PatchCandidate
-            :raw $ :: 'Map 'Tag 'Dynamic
+            :raw $ quote $ Map Tag Dynamic
             :typed 'app.values/ClientProjection
           :examples $ []
           :schema $ :: 'StructDef
@@ -3429,9 +3410,7 @@
                 assert= 5 $ chosen 4
                 let
                     call-captured $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn Number (-> Number)
                       chosen value
                   let
                       chosen dec
@@ -3439,33 +3418,23 @@
                     assert= 5 $ call-captured 4
                 let
                     apply-chosen $ fn (chosen)
-                      hint-fn $ {}
-                        :args $ [] $ :: 'Fn
-                          {}
-                            :args $ [] 'Number
-                            :return 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn
+                        Fn Number $ -> Number
+                        -> Number
                       assert= 3 $ chosen 4
                       assert= 3 $ chosen & $ [] 4
                       chosen 4
                   assert= 3 $ apply-chosen $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     dec value
                 let
                     chosen $ fn (value)
-                      hint-fn $ {}
-                        :args $ [] 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn Number (-> Number)
                       dec value
                     apply-chosen $ fn (chosen)
-                      hint-fn $ {}
-                        :args $ [] $ :: 'Fn
-                          {}
-                            :args $ [] 'Number
-                            :return 'Number
-                        :return 'Number
+                      hint-fn $ quote $ Fn
+                        Fn Number $ -> Number
+                        -> Number
                       chosen 4
                   assert= 4 $ apply-chosen sum-tail
               :tags $ #{} :known-function-alias

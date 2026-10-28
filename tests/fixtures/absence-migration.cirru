@@ -20,6 +20,7 @@
           :code $ quote $ defn main! () &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)
           :examples $ []
@@ -280,9 +281,7 @@
                 get-in base $ [] :value
                 , |unexpected-success
               fn (message)
-                hint-fn $ {}
-                  :args $ [] 'String
-                  :return 'String
+                hint-fn $ quote $ Fn String (-> String)
                 , message
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)

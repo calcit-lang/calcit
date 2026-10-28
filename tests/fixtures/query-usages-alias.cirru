@@ -34,10 +34,9 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-      :ns $ %{} 'CodeEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.alias-caller
           :require $ app.schema :as schema
-        :examples $ []
     'app.core-fallback $ %{} 'FileEntry
       :defs $ {}
         'implicit $ %{} 'CodeEntry (:doc |)
@@ -59,9 +58,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-      :ns $ %{} 'CodeEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
-        :examples $ []
     'app.refer-caller $ %{} 'FileEntry
       :defs $ {}
         'qualified-call $ %{} 'CodeEntry (:doc |)
@@ -84,10 +82,9 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Story)
             :args $ [] 'Story
-      :ns $ %{} 'CodeEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.refer-caller
           :require $ app.schema :refer $ decode-story Story
-        :examples $ []
     'app.schema $ %{} 'FileEntry
       :defs $ {}
         'Story $ %{} 'CodeEntry (:doc |)
@@ -104,9 +101,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-      :ns $ %{} 'CodeEntry (:doc |)
+      :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.schema
-        :examples $ []
     'app.shadow $ %{} 'FileEntry
       :defs $ {}
         'alias-let-shadow $ %{} 'CodeEntry (:doc |)
@@ -148,11 +144,9 @@
           :examples $ []
         'local-head-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn local-head-read (let)
-            hint-fn $ {} (:return 'Bool)
-              :args $ [] $ :: 'Fn
-                {}
-                  :args $ [] 'Bool 'Bool
-                  :return 'Bool
+            hint-fn $ quote $ Fn
+              Fn Bool Bool $ -> Bool
+              -> Bool
             let shadow-sentinel false
           :examples $ []
         'loop-shadow $ %{} 'CodeEntry (:doc |)

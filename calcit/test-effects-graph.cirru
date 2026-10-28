@@ -89,13 +89,9 @@
           :examples $ []
         'nested-async-hint-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested-async-hint-helper (callback)
-            hint-fn $ {}
-              :args $ [] $ :: 'Fn
-                {}
-                  :args $ [] 'Number
-                  :return 'Unit
-                  :async true
-              :return 'Unit
+            hint-fn $ quote $ Fn
+              Fn Number (-> Unit) (:async)
+              -> Unit
             , &unit
           :examples $ []
         'reload! $ %{} 'CodeEntry (:doc |)
