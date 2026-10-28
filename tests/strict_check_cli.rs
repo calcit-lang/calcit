@@ -51,6 +51,49 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
+  for (kind, target, code) in [
+    (
+      "def",
+      "OpenCountable",
+      "quote $ def OpenCountable $ assert-type ([] 1) calcit.core/Countable",
+    ),
+    ("schema", "OpenCountable", "quote Dynamic"),
+    ("def", "AliasCountable", "quote $ def AliasCountable OpenCountable"),
+    ("def", "consume-countable", "quote $ defn consume-countable (x) &unit"),
+    ("schema", "consume-countable", "quote $ Fn calcit.core/Countable (-> Unit)"),
+    ("def", "main!", "quote $ defn main! () (consume-countable AliasCountable) &unit"),
+  ] {
+    let target = format!("app.main/{target}");
+    let mut args = vec!["edit", kind, &target, "--input-format", "cirru", "--code", code];
+    if target == "app.main/main!" {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "prepare asserted capability alias");
+  }
+
+  let rejected = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!rejected.status.success(), "explicit Dynamic must not recover a Trait capability");
+  assert!(
+    String::from_utf8_lossy(&rejected.stderr).contains("E_CALL_ARGUMENT_UNPROVEN"),
+    "{}",
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "schema", "app.main/OpenCountable", "--clear"]),
+    "remove the open declaration for the inference control",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only"]),
+    "a missing schema can retain independently checked trait evidence",
+  );
+}
+
+#[test]
 fn enum_schema_and_inferred_aliases_prove_entry_slots_without_accepting_open_inputs() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

@@ -3519,9 +3519,11 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
         | CalcitTypeAnnotation::EnumDef(..)
         | CalcitTypeAnnotation::Trait(..)
     ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_)));
+    // Trait annotations prove capabilities of values; only Custom(Trait)
+    // describes the trait definition itself.
     let is_definition_metadata = matches!(
       inferred.as_ref(),
-      CalcitTypeAnnotation::StructDef(..) | CalcitTypeAnnotation::EnumDef(..) | CalcitTypeAnnotation::Trait(..)
+      CalcitTypeAnnotation::StructDef(..) | CalcitTypeAnnotation::EnumDef(..)
     ) || matches!(inferred.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_)));
     if is_concrete_metadata && (!explicitly_dynamic || is_definition_metadata) {
       return Some(inferred);
