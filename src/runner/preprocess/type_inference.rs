@@ -3508,7 +3508,6 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
   // preprocessed value than in the intentionally broad top-level schema.
   // Prefer that concrete metadata so definition values stay distinct from
   // their instance types and imported `impl-traits` calls retain their method table.
-  // imported `impl-traits` calls keep their nominal type and method table.
   if let Some(compiled) = program::lookup_compiled_def(ns, def)
     && let Some(inferred) = infer_type_from_expr(&compiled.preprocessed_code, &ScopeTypes::new())
   {

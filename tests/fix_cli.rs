@@ -8044,6 +8044,24 @@ fn schema_synthesis_preserves_precise_ref_shape_and_partial_holes() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
 
+  // This test explicitly requests a migration from an open declaration;
+  // ordinary consumers in the shared fixture use its precise Ref contract.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/*fix-person-calls",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote Dynamic",
+      ],
+    ),
+    "prepare explicit Dynamic ref for schema synthesis",
+  );
+
   let atom_preview = run_fix(
     &snapshot,
     &[
