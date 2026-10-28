@@ -321,7 +321,11 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
   };
   let mut review_required = Vec::new();
   let mut retained_boundaries = Vec::new();
-  for row in type_coverage::collect_weak_type_rows(&options, snapshot)? {
+  let rows = collect_rows_by_definition_entry(
+    || type_coverage::collect_weak_type_rows(&options, snapshot),
+    |row| (row.ns.as_str(), row.def.as_str()),
+  )?;
+  for row in rows {
     let definition = format!("{}/{}", row.ns, row.def);
     for occurrence in row.occurrences {
       let finding = StrictWorkflowTypeFinding {
@@ -475,6 +479,7 @@ pub(crate) fn handle_fix_command(
   // A whole-project plan covers definitions from every named entry, so it has
   // no single host target. Entry-scoped checks still enforce their own target.
   let _target_scope = FixTargetScope::new(options.ns.is_none());
+  let _type_slot_scope = EntryTypeSlotScope::new(options.ns.is_none(), compiled_snapshot)?;
   let selected_rules = selected_rule_ids(options);
   let source_snapshot = load_snapshot(snapshot_file)?;
   let source_content = fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read {snapshot_file}: {error}"))?;
@@ -500,11 +505,13 @@ pub(crate) fn handle_fix_command(
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   };
-  let selected_definitions = if (schema_synthesis && validation_only) || optional_parameters {
+  let mut selected_definitions = if (schema_synthesis && validation_only) || optional_parameters {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   } else {
     project_definitions.clone()
   };
+  // Stable: definitions keep their sorted order within each owning entry.
+  selected_definitions.sort_by_key(|(namespace, definition)| definition_entry_rank(namespace, definition));
   let mut boundary_suggestions = Vec::new();
   let mut boundary_diagnostics = Vec::new();
   let review_rule = selected_rules.iter().copied().find(|rule| {
@@ -523,7 +530,9 @@ pub(crate) fn handle_fix_command(
     with_legacy_migration_mode(|| {
       let warnings = RefCell::new(Vec::new());
       for (namespace, definition) in &selected_definitions {
-        if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
+        if let Err(error) = with_definition_entry_context(namespace, definition, || {
+          runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
+        }) {
           boundary_diagnostics.push(compiler_review::boundary_diagnostic(&error, &format!("{namespace}/{definition}")));
         }
       }
@@ -537,7 +546,9 @@ pub(crate) fn handle_fix_command(
       let mut collect_warnings = || {
         let warnings = RefCell::new(Vec::new());
         for (namespace, definition) in &selected_definitions {
-          if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
+          if let Err(error) = with_definition_entry_context(namespace, definition, || {
+            runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
+          }) {
             // Keep declaration conflicts and compiler contradictions even when
             // a later source-proof pass cannot replay the failing definition.
             let owner = error.location.as_ref().map_or_else(
@@ -1025,6 +1036,147 @@ impl Drop for FixTargetScope {
   }
 }
 
+thread_local! {
+  static ENTRY_TYPE_SLOT_PLAN: RefCell<Option<EntryTypeSlotPlan>> = const { RefCell::new(None) };
+}
+
+/// Whole-project analysis spans every entry, so each definition is checked with
+/// the type-slot bindings of the entry that reaches it instead of the outer
+/// `--entry` (#2452). Owners follow the default entry first, then entry names.
+struct EntryTypeSlotPlan {
+  bindings: Vec<std::collections::HashMap<String, String>>,
+  owners: std::collections::HashMap<(String, String), usize>,
+  current: Option<usize>,
+}
+
+struct EntryTypeSlotScope(std::collections::HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>);
+
+impl EntryTypeSlotScope {
+  /// Install a per-definition plan for a whole-project run with several entries.
+  fn new(whole_project: bool, snapshot: &Snapshot) -> Result<Option<Self>, String> {
+    if !whole_project || snapshot.entries.len() < 2 {
+      return Ok(None);
+    }
+    let mut names = snapshot.entries.keys().cloned().collect::<Vec<_>>();
+    names.sort_by_key(|name| (name != calcit::snapshot::DEFAULT_ENTRY_NAME, name.clone()));
+    let mut bindings = Vec::with_capacity(names.len());
+    let mut owners = std::collections::HashMap::new();
+    for (index, name) in names.iter().enumerate() {
+      let entry = &snapshot.entries[name];
+      for (slot, type_path) in &entry.type_slots {
+        if let Some((ns, def)) = type_path.rsplit_once('/')
+          && !snapshot.files.get(ns).is_some_and(|file| file.defs.contains_key(def))
+        {
+          return Err(format!(
+            "entries.{name}.type-slots.{slot}: unknown type definition `{type_path}`; load its module and use a full `namespace/definition` path"
+          ));
+        }
+      }
+      let mut roots = Vec::new();
+      for root in [&entry.init_fn, &entry.reload_fn] {
+        if let Some((ns, def)) = root.rsplit_once('/') {
+          roots.push((ns.to_owned(), def.to_owned()));
+        }
+      }
+      for definition in calcit::call_tree::reachable_definitions(&roots) {
+        owners.entry(definition).or_insert(index);
+      }
+      bindings.push(entry.type_slots.clone());
+    }
+    let scope = Self(calcit::calcit::entry_type_slots());
+    // Reject malformed bindings before any definition depends on them.
+    for (name, slots) in names.iter().zip(&bindings) {
+      calcit::calcit::configure_entry_type_slots(slots).map_err(|message| format!("entries.{name}.type-slots: {message}"))?;
+    }
+    calcit::calcit::install_entry_type_slots(scope.0.clone());
+    ENTRY_TYPE_SLOT_PLAN.with(|plan| {
+      *plan.borrow_mut() = Some(EntryTypeSlotPlan {
+        bindings,
+        owners,
+        current: None,
+      })
+    });
+    Ok(Some(scope))
+  }
+}
+
+impl Drop for EntryTypeSlotScope {
+  fn drop(&mut self) {
+    ENTRY_TYPE_SLOT_PLAN.with(|plan| plan.borrow_mut().take());
+    calcit::calcit::install_entry_type_slots(std::mem::take(&mut self.0));
+  }
+}
+
+/// Rank used to analyze definitions entry by entry, so a shared dependency is
+/// first compiled under the earliest entry that reaches it.
+fn definition_entry_rank(namespace: &str, definition: &str) -> usize {
+  ENTRY_TYPE_SLOT_PLAN.with(|plan| {
+    plan
+      .borrow()
+      .as_ref()
+      .and_then(|plan| plan.owners.get(&(namespace.to_owned(), definition.to_owned())).copied())
+      .unwrap_or(0)
+  })
+}
+
+/// Run a whole-project collector once per entry context and keep each row
+/// from the context of its owning entry. Rows keep the collector's order.
+fn collect_rows_by_definition_entry<T>(
+  mut collect: impl FnMut() -> Result<Vec<T>, String>,
+  definition_of: impl Fn(&T) -> (&str, &str),
+) -> Result<Vec<T>, String> {
+  let entry_count = ENTRY_TYPE_SLOT_PLAN.with(|plan| plan.borrow().as_ref().map(|plan| plan.bindings.len()));
+  let Some(entry_count) = entry_count else {
+    return collect();
+  };
+  let mut ranked = Vec::new();
+  for owner in 0..entry_count {
+    ENTRY_TYPE_SLOT_PLAN.with(|plan| {
+      let mut plan = plan.borrow_mut();
+      let plan = plan.as_mut().expect("entry plan stays installed while collecting");
+      if plan.current != Some(owner) {
+        calcit::calcit::configure_entry_type_slots(&plan.bindings[owner]).expect("entry type slots were validated");
+        plan.current = Some(owner);
+      }
+    });
+    for (position, row) in collect()?.into_iter().enumerate() {
+      let (namespace, definition) = definition_of(&row);
+      if definition_entry_rank(namespace, definition) == owner {
+        ranked.push((position, row));
+      }
+    }
+  }
+  ranked.sort_by_key(|(position, _)| *position);
+  Ok(ranked.into_iter().map(|(_, row)| row).collect())
+}
+
+/// Install the type slots of the entry owning `namespace/definition`.
+/// Definitions that no entry reaches use the default entry. No-op outside a
+/// whole-project plan. Slots stay installed until another definition switches
+/// them, so planners call this at the top of each per-definition step.
+pub(super) fn select_definition_entry_context(namespace: &str, definition: &str) {
+  ENTRY_TYPE_SLOT_PLAN.with(|plan| {
+    let mut plan = plan.borrow_mut();
+    if let Some(plan) = plan.as_mut() {
+      let owner = plan
+        .owners
+        .get(&(namespace.to_owned(), definition.to_owned()))
+        .copied()
+        .unwrap_or(0);
+      if plan.current != Some(owner) {
+        calcit::calcit::configure_entry_type_slots(&plan.bindings[owner]).expect("entry type slots were validated");
+        plan.current = Some(owner);
+      }
+    }
+  });
+}
+
+/// Run `f` with the type slots of the entry owning `namespace/definition`.
+pub(super) fn with_definition_entry_context<T>(namespace: &str, definition: &str, f: impl FnOnce() -> T) -> T {
+  select_definition_entry_context(namespace, definition);
+  f()
+}
+
 /// Recreate the exact selection arguments for staged post-fix validation.
 fn fix_scope_args(options: &FixCommand) -> Vec<String> {
   let mut args = Vec::new();
@@ -1495,8 +1647,10 @@ fn select_definitions(
 fn compile_selected_definitions(definitions: &[(String, String)]) -> Result<Vec<LocatedWarning>, String> {
   let warnings = RefCell::new(Vec::new());
   for (namespace, definition) in definitions {
-    runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
-      .map_err(|failure| {
+    with_definition_entry_context(namespace, definition, || {
+      runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
+    })
+    .map_err(|failure| {
         let hint = if failure.msg.starts_with("unknown ns/def in program:") {
           " Check each entry's declared modules with `calcit <snapshot> config modules --entry <entry>`, then add or install the missing dependency."
         } else {
@@ -3304,6 +3458,7 @@ fn plan_core_nominal_method_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -3639,6 +3794,7 @@ fn plan_attached_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = &snapshot.files[namespace].defs[definition];
     let mut regions = entry
       .tests
@@ -3874,6 +4030,7 @@ fn plan_core_identity_conversion_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let file = snapshot
       .files
       .get(namespace)
@@ -4193,6 +4350,7 @@ fn plan_redundant_do_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -4284,6 +4442,7 @@ fn plan_single_expression_do_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)
@@ -4404,6 +4563,7 @@ fn plan_named_constructor_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
+    select_definition_entry_context(namespace, definition);
     let entry = snapshot
       .files
       .get(namespace)

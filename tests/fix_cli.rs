@@ -5951,6 +5951,98 @@ fn strict_workflow_replays_type_slot_declarations_without_hiding_duplicates() {
   }));
 }
 
+const ENTRY_TYPE_SLOTS_FIXTURE: &str = r#"
+{}
+  :package |app
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :dispatch-op |app.main/Op
+    :downloader $ {} (:description |) (:init-fn 'app.dl/main!) (:mode :native) (:reload-fn 'app.dl/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :job-op |app.dl.jobs/Job
+  :files $ {}
+    'app.dl $ %{} 'FileEntry
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            jobs/run-job! $ jobs/Job :fetch
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.dl
+          :require $ app.dl.jobs :as jobs
+    'app.dl.jobs $ %{} 'FileEntry
+      :defs $ {}
+        'Job $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Job (:fetch)
+          :examples $ []
+          :schema $ quote EnumDef
+        'job-slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :job-op
+          :examples $ []
+        'run-job! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn run-job! (job) &unit
+          :examples $ []
+          :schema $ quote $ Fn *job-op (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.dl.jobs
+    'app.main $ %{} 'FileEntry
+      :defs $ {}
+        'Op $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Op (:inc) (:dec)
+          :examples $ []
+          :schema $ quote EnumDef
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            send! $ Op :inc
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+        'send! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn send! (op) &unit
+          :examples $ []
+          :schema $ quote $ Fn *dispatch-op (-> Unit)
+        'slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :dispatch-op
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+"#;
+
+#[test]
+fn strict_workflow_checks_each_definition_with_its_entry_type_slots() {
+  // #2452: whole-project diagnostics must not depend on the outer `--entry`.
+  // Each entry binds a slot the other lacks; every definition must be checked
+  // with the slots of the entry that reaches it, including through `:as`.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::write(&snapshot, ENTRY_TYPE_SLOTS_FIXTURE).expect("entry type-slot fixture should write");
+
+  let args = ["--workflow", "strict", "--verify", "--format", "json"];
+  let reports = [
+    run_fix(&snapshot, &args),
+    run_fix_with_entry(&snapshot, "default", &args),
+    run_fix_with_entry(&snapshot, "downloader", &args),
+  ];
+  for output in &reports {
+    assert_success(output, "whole-project workflow under any outer entry");
+    let report = parse_stdout(output);
+    assert_eq!(report["diagnostics"], serde_json::json!([]));
+    assert_eq!(report["data"]["workflow"]["status"], "passed");
+    let results = report["data"]["workflow"]["verification"]["results"]
+      .as_array()
+      .expect("verification results should be an array");
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|result| result["status"] == "passed"));
+  }
+}
+
 #[test]
 fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   let directory = TestDirectory::create();
