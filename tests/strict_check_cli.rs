@@ -51,6 +51,91 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn enum_schema_alias_proves_entry_slot_callbacks_without_accepting_open_inputs() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
+  let operations = vec![
+    serde_json::json!([
+      "edit",
+      "def",
+      "app.main/Wrong",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def Wrong |text"
+    ]),
+    serde_json::json!([
+      "edit",
+      "schema",
+      "app.main/Wrong",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote String"
+    ]),
+  ];
+  let operations = serde_json::to_string(&operations).unwrap();
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "preview entry slot callback fixture");
+  let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &operations,
+        "--expect-revision",
+        preview["scoped_revision"].as_str().unwrap(),
+        "--format",
+        "json",
+      ],
+    ),
+    "apply guarded slot fixture",
+  );
+  for args in [vec!["--check-only", "--all-defs"], vec!["--check-only"], vec![]] {
+    assert_success(&run_calcit(&snapshot, &args), "Enum alias works in both callback directions");
+  }
+  for binding in ["app.main/Wrong", ":dynamic"] {
+    assert_success(
+      &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", binding]),
+      "select negative slot binding",
+    );
+    let result = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+    assert!(
+      !result.status.success(),
+      "{binding} must not prove Enum: {}",
+      String::from_utf8_lossy(&result.stdout)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(
+      report["data"]["definitions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+          |item| item["diagnostics"].as_array().unwrap().iter().any(|diagnostic| diagnostic["code"]
+            .as_str()
+            .is_some_and(|code| code.contains("TYPE_MISMATCH") || code.starts_with("E_CALL_ARGUMENT_")))
+        ),
+      "{report}"
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["config", "rm-type-slot", "dispatch-op"]),
+    "remove slot binding",
+  );
+  let result = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(!result.status.success());
+  assert!(String::from_utf8_lossy(&result.stdout).contains("E_UNBOUND_TYPE_SLOT"));
+}
+
+#[test]
 fn malformed_struct_match_reports_the_pattern_without_log_capability_noise() {
   let directory = TestDirectory::create();
   for (arm, expected) in [

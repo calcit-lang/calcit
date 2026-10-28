@@ -1014,6 +1014,20 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 
 同一个已绑定 slot 可以同时出现在 callback 的声明与传入函数的参数中；检查器比较两端绑定后的具体类型，并继续检查函数参数方差和返回值。重复引用同名 slot 不会被当作循环绑定；真正的循环、未绑定 slot，以及从 `Dynamic` 到具体类型的证据缺失仍按各自的检查规则处理。
 
+沿用匿名 Enum 协议的应用可以将槽绑定到显式声明 `Enum` schema 的值定义，例如
+`app.schema/DispatchOp`。该 schema 表示既有的开放 Enum 家族，不会创建新的名义 Enum，
+也不会证明某个 tag 的业务含义。可以用以下命令为已有代表值补上类型并绑定：
+
+```bash
+calcit edit schema app.schema/DispatchOp --input-format cirru --code 'quote Enum'
+calcit config set-type-slot :dispatch-op app.schema/DispatchOp
+calcit --check-only --all-defs
+```
+
+该槽与 `Fn Enum (-> Unit)` 回调按解析后的 schema 比较，两个方向的调用都保留参数检查。
+没有 schema 的普通代表值不会因为被配置为槽路径就自动变成类型别名；不要用 `:dynamic`
+替代缺少的类型证据。
+
 Struct 回调字段的类型关系已因未绑定 slot 而失败时，同样报告已有的 `E_UNBOUND_TYPE_SLOT`，
 给出实际字段路径、调用者源码坐标及 `calcit config set-type-slot` 提示，而不是只显示两个看似相同的函数类型。
 为当前选中的 entry 绑定真实名义类型后重新检查；不同 entry 需要分别配置。
