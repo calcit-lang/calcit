@@ -56,6 +56,33 @@ The expression is compiled in the owning definition's namespace. It can use that
 
 Use a file or stdin for a multiline expression. As with other AST edit commands, the input must contain exactly one quoted node.
 
+### 测试中的显式宿主能力
+
+测试共享所属 namespace 的名字解析，但不继承所属定义 schema 的 `:features`。
+直接读取宿主字段、调用宿主方法或执行 `js-cast` 的测试，把这些操作放进现有
+`hint-fn` 显式标注的局部函数，再调用它；普通断言不需要增加 feature。
+
+```cirru.no-check
+let
+    check-host! $ fn ()
+      hint-fn $ Fn (-> Unit) (:features :js-ffi)
+      let
+          host $ checked-counter-host $ make-counter-host 3
+        assert= 3 $ host :total
+      , &unit
+  check-host!
+```
+
+这里的 `checked-counter-host` 和 `make-counter-host` 来自测试所在 namespace；
+这个例子展示 `calcit/js-ffi-module/calcit.cirru` 中实际回放的测试结构。
+`calcit test` 与跨后端定义测试运行器都保留这个显式词法边界，不为生成的测试函数
+自动开启 `:js-ffi`。删除局部注解后，直接宿主操作仍报 `E_JS_FFI_FEATURE_REQUIRED`。
+
+feature 声明不会增加 backend 能力：JS-only 的测试仍需选择 JS 后端，文件片段、
+模块依赖和 browser/node target 仍须有效；原生测试可以调用显式标注的普通函数，
+但不会因此获得 JavaScript 宿主实现。不要用测试 tag、排除项或拥有者的 feature
+代替测试体所需的显式声明。
+
 ## Inspect and Maintain Tests
 
 ```bash

@@ -245,26 +245,57 @@ try {
   assert.equal(api.next_count(), 4, "normal Calcit imports must share one JS FFI definition instance");
   assert.notEqual(module.count_a, module.count_b, "each Calcit definition receives its own expression instance");
 
-  // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
-  const hostTests = [];
+  // Keep the original attached assertions discoverable, without granting the
+  // synthetic runner the owning definition's host permissions.
   for (const [target, count] of [["app.main/checked-counter-host", 6], ["app.main/counter-add", 2], ["app.main/rest-host-output", 8]]) {
     const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
       [input, "query", "context", target, "--test-limit", "8", "--budget", "20000", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
     assert.equal(hostContext.data.tests.truncated, false);
     assert.equal(hostContext.data.tests.items.length, count);
     assert.ok(hostContext.data.tests.items.every(test => !test.truncated && test.tree), "replay complete source tests, never truncated views");
-    hostTests.push(...hostContext.data.tests.items.map(test => test.tree));
   }
-  const hostEntry = ["defn", "replay-host-tests!", [], ...hostTests, "&unit"];
-  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
-    "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });
-  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "schema", "app.main/replay-host-tests!",
-    "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :js-ffi)"], { cwd: fixture });
+  const replayScript = resolve(repository, "scripts/run-core-tests.mjs");
+  const replayResults = join(fixture, "host-test-results.json");
+  const replayOptions = { cwd: repository, encoding: "utf8", env: { ...process.env, CALCIT_BIN: binary }, maxBuffer: 16 * 1024 * 1024 };
+  execFileSync(process.execPath, [replayScript, "--snapshot", moduleSnapshot, "--backend", "js", "--results-json", replayResults], replayOptions);
+  const hostResults = JSON.parse(await readFile(replayResults, "utf8"));
+  assert.equal(Object.keys(hostResults).length, 17, "replay every original attached test");
+  for (const [id, result] of Object.entries(hostResults)) assert.equal(result.js.status, "pass", `${id}: ${JSON.stringify(result)}`);
+
+  const missingFeatureSnapshot = join(fixture, "js-ffi-module/missing-test-feature.cirru");
+  await cp(moduleSnapshot, missingFeatureSnapshot);
+  const missingFeatureTest = JSON.parse(run(moduleSnapshot, "query", "def", "app.main/checked-counter-host", "--format", "json"))
+    .data.tests.find(test => test.name === "mapped-field").code;
+  // Remove only the explicit local annotation; retain the exact host assertion.
+  assert.equal(missingFeatureTest[1][0][1][2][0], "hint-fn");
+  missingFeatureTest[1][0][1].splice(2, 1);
+  run(missingFeatureSnapshot, "edit", "add-test", "app.main/checked-counter-host", "mapped-field", "--overwrite",
+    "--input-format", "json-ast", "--code", JSON.stringify(missingFeatureTest), "--tags", "unit");
+  const missingFeature = spawnSync(process.execPath, [replayScript, "--snapshot", missingFeatureSnapshot,
+    "--target", "app.main/checked-counter-host", "--name", "mapped-field", "--backend", "js"], replayOptions);
+  assert.ifError(missingFeature.error);
+  assert.notEqual(missingFeature.status, 0, "tests must not inherit their owner's js-ffi feature");
+  assert.match(`${missingFeature.stdout}\n${missingFeature.stderr}`, /E_JS_FFI_FEATURE_REQUIRED/);
+  const nativeMissingFeature = spawnSync(binary, [missingFeatureSnapshot, "test", "app.main/checked-counter-host",
+    "--name", "mapped-field", "--format", "json"], { cwd: fixture, encoding: "utf8" });
+  assert.notEqual(nativeMissingFeature.status, 0);
+  assert.match(`${nativeMissingFeature.stdout}\n${nativeMissingFeature.stderr}`, /E_JS_FFI_FEATURE_REQUIRED/);
+  run(missingFeatureSnapshot, "edit", "add-test", "app.main/checked-counter-host", "explicit-native-context",
+    "--input-format", "cirru", "--code",
+    "quote $ let ((check! $ fn () (hint-fn $ Fn (-> Unit) (:features :js-ffi)) (assert= 3 $ + 1 2) &unit)) (check!)");
+  const nativeContext = JSON.parse(run(missingFeatureSnapshot, "test", "app.main/checked-counter-host",
+    "--name", "explicit-native-context", "--format", "json"));
+  assert.equal(nativeContext.passed, 1, "native tests retain explicit local annotations without needing a JS host");
+
+  // Emit the public adapters used by the independent JS host-shape checks below.
+  // Merely reference them; their attached assertions were replayed above.
+  const hostEntry = ["defn", "host-fixture-roots!", [], "make-counter-host", "make-callable-counter-host",
+    "checked-counter-host", "counter-add", "&unit"];
+  run(moduleSnapshot, "edit", "def", "app.main/host-fixture-roots!", "--input-format", "json-ast", "--code", JSON.stringify(hostEntry));
+  run(moduleSnapshot, "edit", "schema", "app.main/host-fixture-roots!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)");
   const hostOutput = join(fixture, "host-generated");
-  execFileSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!",
-    "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
+  run(input, "--init-fn", "app.main/host-fixture-roots!", "--emit-path", hostOutput, "js");
   const hostModule = await import(pathToFileURL(join(hostOutput, "app.main.mjs")).href);
-  hostModule.replay_host_tests_$x_();
   const restProof = JSON.parse(run(moduleSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"));
   assert.equal(restProof.data.workflow.status, "passed", "method spread preserves independent return and argument proof");
   assert.deepEqual(restProof.diagnostics, []);
@@ -357,19 +388,19 @@ try {
   }
   const trappingCallable = new Proxy(callable, { getOwnPropertyDescriptor() { throw underlying; } });
   assert.throws(() => hostModule.checked_counter_host(trappingCallable), error => error instanceof TypeError && error.cause === underlying);
-  const castNative = spawnSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!"],
+  const castNative = spawnSync(binary, [moduleSnapshot, "test", "app.main/checked-counter-host", "--name", "mapped-field", "--format", "json"],
     { cwd: fixture, encoding: "utf8" });
   assert.notEqual(castNative.status, 0);
-  assert.match(castNative.stderr, /unavailable in the native runtime/);
+  assert.match(`${castNative.stdout}\n${castNative.stderr}`, /unavailable in the native runtime/);
 
   const checkedSchema = "quote $ Fn JsObject (-> app.main/CounterHost) (:features :js-ffi)";
   const checkedBody = "quote $ defn checked-counter-host (value) (js-cast value 'CounterHost)";
   const mutateCast = (command, code) => execFileSync(resolve(repository, "target/debug/calcit"),
     [moduleSnapshot, "edit", command, "app.main/checked-counter-host", ...(command === "def" ? ["--overwrite"] : []),
       "--input-format", "cirru", "--code", code], { cwd: fixture, stdio: "pipe" });
-  const rejectCast = pattern => {
+  const rejectCast = (pattern, entry = "app.main/host-fixture-roots!") => {
     const checked = spawnSync(resolve(repository, "target/debug/calcit"),
-      [input, "--init-fn", "app.main/replay-host-tests!", "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8" });
+      [input, "--init-fn", entry, "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8" });
     assert.notEqual(checked.status, 0, "invalid cast contracts must fail before JS execution");
     assert.match(`${checked.stdout}\n${checked.stderr}`, pattern);
   };
@@ -388,12 +419,14 @@ try {
   mutateCast("def", "quote $ defn checked-counter-host (value) (js-cast value)");
   rejectCast(/expects a value and an external-object trait/);
   mutateCast("def", checkedBody);
-  // Host handles have no value equality; the replay entry is rebuilt from source above when needed.
-  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!", "--overwrite",
+  // Host handles have no value equality, even with an explicit host capability.
+  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/reject-host-equality!",
     "--input-format", "cirru", "--code",
-    "quote $ defn replay-host-tests! () $ let ((host $ checked-counter-host $ make-counter-host 3)) (assert= true $ = host host) &unit"],
+    "quote $ defn reject-host-equality! () $ let ((host $ checked-counter-host $ make-counter-host 3)) (assert= true $ = host host) &unit"],
     { cwd: fixture, stdio: "pipe" });
-  rejectCast(/W_HOST_VALUE_EQUALITY[^\n]*identical\?/);
+  run(moduleSnapshot, "edit", "schema", "app.main/reject-host-equality!", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Unit) (:features :js-ffi)");
+  rejectCast(/W_HOST_VALUE_EQUALITY[^\n]*identical\?/, "app.main/reject-host-equality!");
 
   const fileExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js");
   const originalExpression = await readFile(fileExpression, "utf8");
