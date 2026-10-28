@@ -6827,12 +6827,29 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
     return Ok(());
   }
   for (i, expr) in executable.iter().enumerate() {
+    let is_last = i == executable.len() - 1;
+    // A quoted name before the result, such as the return label in
+    // `fn (x) 'Number x`, has no effect and no runtime quote value to build.
+    if !is_last && is_quoted_leaf(expr) {
+      continue;
+    }
     emit_expr(ctx, expr)?;
-    if i < executable.len() - 1 {
+    if !is_last {
       ctx.emit(Instruction::Drop);
     }
   }
   Ok(())
+}
+
+fn is_quoted_leaf(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(items) => {
+      items.len() == 2
+        && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+        && matches!(items.get(1), Some(Calcit::Symbol { .. }))
+    }
+    _ => false,
+  }
 }
 
 /// Emit an inline IIFE with TCO: `((defn name (params...) body...) init_args...)`.

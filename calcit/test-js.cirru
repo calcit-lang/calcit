@@ -56,13 +56,7 @@
           :schema $ quote $ Macro (Expr String)
             -> $ Expr Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! ()
-            hint-fn $ quote Async
-            log-title "|Testing js"
-            test-js
-            test-let-example
-            test-collection
-            test-async
+          :code $ quote $ defn main! () (hint-fn Async) (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
             js-await $ test-async-in-data
             test-data-gen
             test-regexp
@@ -105,14 +99,12 @@
         'test-async $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
-                f1 $ fn ()
-                  hint-fn $ quote Async
+                f1 $ fn () (hint-fn Async)
                   new js/Promise $ fn (resolve reject)
                     js/setTimeout
                       fn () (println "|async code finished after 200ms") (resolve true)
                       , 200
-                f2 $ fn ()
-                  hint-fn $ quote Async
+                f2 $ fn () (hint-fn Async)
                   js-await $ f1
                   assert= true $ if true $ js-await (f1)
                   let
@@ -123,15 +115,13 @@
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-async-in-data $ %{} 'CodeEntry
           :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
-          :code $ quote $ fn ()
-            hint-fn $ quote Async
+          :code $ quote $ fn () (hint-fn Async)
             let
                 timeout $ fn (ms)
                   new js/Promise $ fn (resolve reject) (js/setTimeout resolve ms)
                 f 0
                 f $ let
-                    b $ fn ()
-                      hint-fn $ quote Async
+                    b $ fn () (hint-fn Async)
                       let
                           a 1
                           a $ js-await $ timeout 200
@@ -141,8 +131,7 @@
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-case-async $ %{} 'CodeEntry (:doc "|case async")
-          :code $ quote $ fn ()
-            hint-fn $ quote Async
+          :code $ quote $ fn () (hint-fn Async)
             let
                 a $ {} $ :a 1
                 b $ option:unwrap $ get a :a
@@ -206,7 +195,7 @@
           :schema $ quote $ Fn (-> Unit)
         'test-for-await $ %{} 'CodeEntry (:doc "|for await")
           :code $ quote $ fn ()
-            hint-fn $ quote $ Async (:features :js-ffi)
+            hint-fn $ Async $ :features :js-ffi
             let
                 gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
                 ret $ js-await $ js-for-await (gen)

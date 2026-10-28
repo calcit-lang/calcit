@@ -193,7 +193,7 @@ try {
       ["edit", "def", exportName, "--overwrite", "--input-format", "json-ast", "--code",
         JSON.stringify(["defwasm-export", "format-modes", args, ["format-cirru-edn", ["[]", "|a"], flag], "&unit"])],
       ["edit", "schema", exportName, "--input-format", "cirru", "--code",
-        `quote $ :: 'Fn $ {} (:args $ [] ${args.length ? "'Bool" : ""}) (:return 'Unit)`],
+        `quote $ Fn ${args.length ? "Bool " : ""}(-> Unit)`],
     ]);
     const rejectedOutput = join(project, `wasm-${name}`);
     const rejected = spawnSync(binary, [...wasmArgs, "--emit-path", rejectedOutput], options);

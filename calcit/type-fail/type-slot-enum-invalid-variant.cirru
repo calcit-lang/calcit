@@ -36,8 +36,7 @@
         'takes-action $ %{} 'CodeEntry (:doc "|Function expecting a type-slot-bound enum value")
           :code $ quote $ defn takes-action (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] '*dispatch-op
+          :schema $ quote $ Fn *dispatch-op (-> Dynamic)
       :ns $ %{} 'NsEntry
         :doc "|Namespace for type-slot enum invalid variant detection"
         :code $ quote $ ns type-fail-type-slot-enum-invalid-variant.main

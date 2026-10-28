@@ -14452,7 +14452,7 @@ pub fn preprocess_hint_fn(
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       format!(
-        "hint-fn expects a schema Map, or a local function and a schema Map; got {} arguments",
+        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got {} arguments",
         args.len()
       ),
       ctx.call_stack,
@@ -14543,7 +14543,7 @@ pub fn preprocess_hint_fn(
   else {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,
-      "hint-fn expects a schema Map: use `(hint-fn $ {} (:args ...) (:return ...))` in a function body, or `(hint-fn f schema)` for a local function; do not wrap the schema in `:: 'Fn` or use hint-fn as a callback wrapper",
+      "hint-fn expects a function type: use `hint-fn $ Fn Number (-> String)` (or `hint-fn Async`) in a function body, or `hint-fn f $ Fn …` for a local function; do not use hint-fn as a callback wrapper",
       ctx.call_stack,
       args.get(args.len() - 1).and_then(Calcit::get_location),
     ));
@@ -14929,6 +14929,15 @@ fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Res
 /// later passes and backends only see one shape. Other forms are returned as-is.
 pub(super) fn desugar_compact_type_form(form: &Calcit, ctx: &PreprocessContext) -> Result<Calcit, CalcitErr> {
   match crate::calcit::type_expr::desugar_quoted_form(form) {
+    None if let Some(payload) = crate::calcit::type_expr::unquoted_compact_form(form) => {
+      Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!("type expression `{payload}` needs a quote in this position; write `quote $ {payload}`"),
+        "E_TYPE_EXPR_SYNTAX",
+        ctx.call_stack,
+        form.get_location().or_else(|| crate::calcit::type_expr::first_location(form)),
+      ))
+    }
     None => Ok(form.to_owned()),
     Some(Ok(canonical)) => Ok(canonical),
     Some(Err(message)) => Err(CalcitErr::use_msg_stack_location_with_code(

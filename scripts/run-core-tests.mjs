@@ -189,7 +189,7 @@ try {
 }
 let snapshotCounter = 0;
 
-const unitSchema = ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]];
+const unitSchema = ["quote", ["Fn", ["->", "Unit"]]];
 const namespaceForms = new Map();
 const sourceNamespace = (ns) => {
   if (!namespaceForms.has(ns)) namespaceForms.set(ns, parseCirru(run(corePath, "query", "ns", ns, "--format", "cirru"))[0]);

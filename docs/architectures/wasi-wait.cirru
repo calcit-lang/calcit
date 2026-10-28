@@ -9,20 +9,14 @@
       :kind :fn
       :doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。"
       :params $ [] 'result-type 'milliseconds 'host-error
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'EnumDef 'Number 'String
-          :return $ :: 'Result 'Unit 'String
+      :schema $ quote $ Fn EnumDef Number String $ -> $ Result Unit String
       :code $ quote &runtime-implementation
     'calcit.core/wait-ms $ {}
       :mode :ensure
       :kind :fn
       :doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。"
       :params $ [] 'milliseconds
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'Number
-          :return $ :: 'Result 'Unit 'String
+      :schema $ quote $ Fn Number $ -> $ Result Unit String
       :code $ quote
         defn wait-ms (milliseconds)
           if

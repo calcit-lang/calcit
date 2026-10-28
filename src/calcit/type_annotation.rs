@@ -3804,6 +3804,13 @@ impl CalcitTypeAnnotation {
       if let Some(builtin) = Self::builtin_type_from_symbol_name(&name) {
         return Arc::new(builtin);
       }
+      // Compact type expressions spell a slot `'*name`, the same symbol a
+      // Snapshot schema stores, so a quoted slot is still a slot in code.
+      if let Some(slot_name) = name.strip_prefix('*')
+        && !slot_name.is_empty()
+      {
+        return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
+      }
       // A qualified quoted name cannot be a lexical type variable. Preserve
       // it as a nominal reference even in unscoped `assert-type` forms, so a
       // later Struct field access can resolve its declaration.
@@ -3823,6 +3830,11 @@ impl CalcitTypeAnnotation {
       }
       if sym.starts_with('\'') {
         let stripped = sym.trim_start_matches('\'');
+        if let Some(slot_name) = stripped.strip_prefix('*')
+          && !slot_name.is_empty()
+        {
+          return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
+        }
         let n_quotes = sym.len() - stripped.len();
         if n_quotes > 1 {
           eprintln!("[Error] Type variable `{sym}` has excess leading quotes — expected a single-quoted uppercase symbol like `'T`");

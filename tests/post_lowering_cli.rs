@@ -107,7 +107,7 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ deftrait NodeHost\n  .text $ :: 'Fn $ {} (:args $ [] 'NodeHost) (:return 'String)\n  .number $ :: 'Fn $ {} (:args $ [] 'NodeHost 'Number) (:return 'Number)\n  .open $ :: 'Fn $ {} (:args $ [] 'NodeHost) (:return 'Dynamic)"
+        "quote $ deftrait NodeHost\n  .text $ quote $ Fn NodeHost (-> String)\n  .number $ quote $ Fn NodeHost Number (-> Number)\n  .open $ quote $ Fn NodeHost (-> Dynamic)"
       ],
       [
         "edit",
@@ -132,7 +132,7 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)"
+        "quote $ Fn app.main/NodeHost (-> String) (:features :js-ffi)"
       ],
       [
         "edit",
@@ -150,7 +150,7 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)"
+        "quote $ Fn app.main/NodeHost (-> String) (:features :js-ffi)"
       ],
       [
         "edit",
@@ -169,7 +169,7 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"
+        "quote $ Fn (-> Unit)"
       ],
       ["config", "set", "reload-fn", "app.main/main!"],
       ["config", "set", "mode", "js"],
@@ -248,32 +248,32 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
     (
       "open-result",
       "quote $ defn open-result (host) (host .open)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)",
+      "quote $ Fn app.main/NodeHost (-> String) (:features :js-ffi)",
     ),
     (
       "wrong-input",
       "quote $ defn wrong-input (host) (host .number |bad)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'Number) (:features $ #{} :js-ffi)",
+      "quote $ Fn app.main/NodeHost (-> Number) (:features :js-ffi)",
     ),
     (
       "wrong-arity",
       "quote $ defn wrong-arity (host) (host .text 1)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)",
+      "quote $ Fn app.main/NodeHost (-> String) (:features :js-ffi)",
     ),
     (
       "open-receiver",
       "quote $ defn open-receiver (host) (host .text)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String) (:features $ #{} :js-ffi)",
+      "quote $ Fn Dynamic (-> String) (:features :js-ffi)",
     ),
     (
       "missing-feature",
       "quote $ defn missing-feature (host) (host .text)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String)",
+      "quote $ Fn app.main/NodeHost (-> String)",
     ),
     (
       "rigid-caller",
       "quote $ defn rigid-caller (items) (items .append 1)",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'T)) (:return $ :: 'List 'T) (:generics $ [] 'T)",
+      "quote $ Fn (List T) (-> $ List T) (:generics T)",
     ),
   ] {
     define(&snapshot, name, code, schema, false);
@@ -368,7 +368,7 @@ fn semantic_query_entry_selects_modules_slots_policy_and_search_override() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] '*entry-value) (:return 'test-nil.main/NumberBox)"
+        "quote $ Fn *entry-value (-> test-nil.main/NumberBox)"
       ],
       ["config", "set-type-slot", ":entry-value", "test-nil.main/NumberBox"],
       [
@@ -395,7 +395,7 @@ fn semantic_query_entry_selects_modules_slots_policy_and_search_override() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'JsNullish 'JsObject)"
+        "quote $ Fn (-> $ JsNullish JsObject)"
       ],
       ["config", "set", "feature-policy.js-ffi", "allow"],
       ["config", "set", "--entry", "isolated", "feature-policy.js-ffi", "error"]
@@ -516,7 +516,7 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
   // Nominal declarations carry no function schema.
   for (name, code) in [
     ("Node", "quote $ defstruct Node (:name 'String)"),
-    ("Component", "quote $ defstruct Component (:tree (:: 'Option 'Node))"),
+    ("Component", "quote $ defstruct Component (:tree $ quote $ Option Node)"),
   ] {
     let target = format!("app.main/{name}");
     assert_success(
@@ -530,7 +530,7 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     &snapshot,
     "build-component",
     "quote $ defn build-component () $ let ((absent-tree $ Option :none)) (Component :tree absent-tree)",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'app.main/Component)",
+    "quote $ Fn (-> app.main/Component)",
     false,
   );
   // #1378: typed `get` lowering keeps the `Option<Node>` payload.
@@ -538,7 +538,7 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     &snapshot,
     "find-node",
     "quote $ defn find-node (nodes) $ get nodes :a",
-    "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'app.main/Node)) (:return $ :: 'Option 'app.main/Node)",
+    "quote $ Fn (Map Tag app.main/Node) (-> $ Option app.main/Node)",
     false,
   );
   // #1494: an inlined builtin method keeps its argument checks and `Map<Tag, Number>` result.
@@ -546,7 +546,7 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     &snapshot,
     "add-key",
     "quote $ defn add-key (m) $ m .assoc :b 2",
-    "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return $ :: 'Map 'Tag 'Number)",
+    "quote $ Fn (Map Tag Number) (-> $ Map Tag Number)",
     false,
   );
   // #2068: open descendants do not erase a proven root Map or its key type.
@@ -554,22 +554,22 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     (
       "write-open-map",
       "quote $ defn write-open-map (db) $ assoc-in db ([] :repo :current) |main",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Dynamic)) (:return $ :: 'Map 'Tag 'Dynamic)",
+      "quote $ Fn (Map Tag Dynamic) (-> $ Map Tag Dynamic)",
     ),
     (
       "write-generic-key",
       "quote $ defn write-generic-key (db key) $ assoc-in db ([] key :current) |main",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'K 'Dynamic) 'K) (:return $ :: 'Map 'K 'Dynamic) (:generics $ [] 'K)",
+      "quote $ Fn (Map K Dynamic) K (-> $ Map K Dynamic) (:generics K)",
     ),
     (
       "write-nested-prefix",
       "quote $ defn write-nested-prefix (db) $ assoc-in db ([] :repo |current :value) |main",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag (:: 'Map 'String 'Dynamic))) (:return $ :: 'Map 'Tag (:: 'Map 'String 'Dynamic))",
+      "quote $ Fn (Map Tag $ Map String Dynamic) (-> $ Map Tag $ Map String Dynamic)",
     ),
     (
       "update-open-map",
-      "quote $ defn update-open-map (db) $ update-in db ([] :current) $ fn (value) (hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'String)) |main",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Dynamic)) (:return $ :: 'Map 'Tag 'Dynamic)",
+      "quote $ defn update-open-map (db) $ update-in db ([] :current) $ fn (value) (hint-fn $ Fn (Option Dynamic) (-> String)) |main",
+      "quote $ Fn (Map Tag Dynamic) (-> $ Map Tag Dynamic)",
     ),
   ] {
     define(&snapshot, name, code, schema, false);
@@ -581,12 +581,12 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     (
       "when-nullable",
       "quote $ defn when-nullable (flag) $ when flag 1",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return $ :: 'JsNullish 'Number)",
+      "quote $ Fn Bool (-> $ JsNullish Number)",
     ),
     (
       "case-option",
       "quote $ defn case-option (flag) $ nil->option $ case flag (true |hit)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return $ :: 'Option 'String)",
+      "quote $ Fn Bool (-> $ Option String)",
     ),
   ] {
     define(&snapshot, name, code, schema, false);
@@ -596,14 +596,14 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     &snapshot,
     "typed-recur",
     "quote $ defn typed-recur (label index) $ if (>= index 2) index $ recur label (inc index)",
-    "quote $ :: 'Fn $ {} (:args $ [] 'String 'Number) (:return 'Number)",
+    "quote $ Fn String Number (-> Number)",
     false,
   );
   define(
     &snapshot,
     "main!",
     "quote $ defn main! () $ typed-recur |point 0",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+    "quote $ Fn (-> Number)",
     true,
   );
 
@@ -628,56 +628,56 @@ fn open_path_write_proof_does_not_invent_receiver_shapes() {
     (
       "empty",
       "assoc-in db ([]) |changed",
-      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "(Map Tag Dynamic) (List Tag) Tag",
+      "(Map Tag Dynamic)",
     ),
     (
       "unknown",
       "assoc-in db path |changed",
-      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "(Map Tag Dynamic) (List Tag) Tag",
+      "(Map Tag Dynamic)",
     ),
     (
       "wrong-key",
       "assoc-in db ([] |wrong) |changed",
-      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "(Map Tag Dynamic) (List Tag) Tag",
+      "(Map Tag Dynamic)",
     ),
     (
       "wrong-leaf",
       "assoc-in db ([] :count) |changed",
-      "(:: 'Map 'Tag 'Number) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Number)",
+      "(Map Tag Number) (List Tag) Tag",
+      "(Map Tag Number)",
     ),
     (
       "scalar-hop",
       "assoc-in db ([] :count :value) 1",
-      "(:: 'Map 'Tag 'Number) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Number)",
+      "(Map Tag Number) (List Tag) Tag",
+      "(Map Tag Number)",
     ),
     (
       "open-root",
       "assoc-in db ([] :count) 1",
-      "'Dynamic (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "Dynamic (List Tag) Tag",
+      "(Map Tag Dynamic)",
     ),
     (
       "unknown-key",
       "assoc-in db ([] key) 1",
-      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Dynamic",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "(Map Tag Dynamic) (List Tag) Dynamic",
+      "(Map Tag Dynamic)",
     ),
     (
       "known-prefix-family",
       "assoc-in db ([] :repo) |changed",
-      "(:: 'Map 'Tag (:: 'Map 'String 'Dynamic)) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag (:: 'Map 'String 'Dynamic))",
+      "(Map Tag (Map String Dynamic)) (List Tag) Tag",
+      "(Map Tag $ Map String Dynamic)",
     ),
     (
       "empty-update",
-      "update-in db ([]) $ fn (value) (hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'String)) |changed",
-      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
-      "(:: 'Map 'Tag 'Dynamic)",
+      "update-in db ([]) $ fn (value) (hint-fn $ Fn (Option Dynamic) (-> String)) |changed",
+      "(Map Tag Dynamic) (List Tag) Tag",
+      "(Map Tag Dynamic)",
     ),
   ] {
     let snapshot = directory.snapshot();
@@ -686,7 +686,7 @@ fn open_path_write_proof_does_not_invent_receiver_shapes() {
       &snapshot,
       "rejected",
       &format!("quote $ defn rejected (db path key) ({body})"),
-      &format!("quote $ :: 'Fn $ {{}} (:args $ [] {arguments}) (:return {returned})"),
+      &format!("quote $ Fn {arguments} (-> {returned})"),
       false,
     );
     let before = fs::read(&snapshot).expect("read source before proof");
@@ -728,20 +728,14 @@ fn reader_shorthand_inside_a_sibling_does_not_shift_type_at_expected_context() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal source should copy");
-  define(
-    &snapshot,
-    "data",
-    "quote $ def data $ {} (1 :a)",
-    "quote $ :: 'Map 'Number 'Tag",
-    false,
-  );
+  define(&snapshot, "data", "quote $ def data $ {} (1 :a)", "quote $ Map Number Tag", false);
   // The receiver is an import without a location, so the call's source path
   // must not be derived from the `'Set` leaf inside the initial value.
   define(
     &snapshot,
     "collect",
-    "quote $ defn collect () $ foldl (map-entries data) (assert-type (#{}) (:: 'Set 'Tag)) $ fn (acc pair) (hint-fn $ {} (:args $ [] (:: 'Set 'Tag) (:: 'MapEntry 'Number 'Tag)) (:return $ :: 'Set 'Tag)) (include acc $ :value pair)",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Set 'Tag)",
+    "quote $ defn collect () $ foldl (map-entries data) (assert-type (#{}) $ quote $ Set Tag) $ fn (acc pair) (hint-fn $ Fn (Set Tag) (MapEntry Number Tag) (-> $ Set Tag)) $ include acc (:value pair)",
+    "quote $ Fn (-> $ Set Tag)",
     false,
   );
   let queried = run_calcit(

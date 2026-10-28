@@ -347,7 +347,7 @@ fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing()
       "schema",
       "test-effects-graph.enumeration/λ-计数!",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      "quote $ Fn Number (-> Number)",
       "--input-format",
       "cirru"
     ],

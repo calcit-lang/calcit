@@ -254,9 +254,7 @@ let
     xs $ [] 1 2 3 4 5
   println $ .fold xs 0
     fn (acc x)
-      hint-fn $ {}
-        :args $ [] 'Number 'Number
-        :return 'Number
+      hint-fn $ Fn Number Number (-> Number)
       + acc x
   ; => 15
   println $ any? xs

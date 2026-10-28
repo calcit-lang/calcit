@@ -43,7 +43,7 @@ leads_to:
 
 `?` 表示返回布尔判断，`!` 只用于确有作用或特殊控制语义的公开名字；不要机械地给每个动词添加后缀。模块名和普通函数继续用 kebab-case。公开名称是否是方法由类型契约和解析证据决定，不由字符串里是否有 `:` 或 `&` 决定。内部 helper 与 primitive 暂有不同实现命名；它们不是两套公开语言风格，不承诺用户可依赖其拼写。下一步先迁移公开调用，再根据真实编译器重复逻辑决定是否调整内部名字，避免为了表面一致重做 lowering。
 
-已知 `List<T>` 的 `.first`、`.last`、`.get` 和 `String` 的 `.first`、`.last`、`.nth` 使用同一接收者证明推导 `Option<T>` 或 `Option<String>`；`calcit query type ":: 'List 'Number" --format edn` 可查看参数、返回值和 `proven` 状态。List 的旧 `.nth` 已在 0.29.0 删除，改用 `.get`。开放接收者或 Enum 的异质 payload 不能仅凭方法名得到具体成员类型；查询保持开放证据，不把 `Dynamic` 伪装为已证明的 `T`。
+已知 `List<T>` 的 `.first`、`.last`、`.get` 和 `String` 的 `.first`、`.last`、`.nth` 使用同一接收者证明推导 `Option<T>` 或 `Option<String>`；`calcit query type "quote $ List Number" --format edn` 可查看参数、返回值和 `proven` 状态。List 的旧 `.nth` 已在 0.29.0 删除，改用 `.get`。开放接收者或 Enum 的异质 payload 不能仅凭方法名得到具体成员类型；查询保持开放证据，不把 `Dynamic` 伪装为已证明的 `T`。
 
 同类型的 `Option` / `Result` 值可以直接用 `=` 比较，名义 Struct 字段读取与直接构造值采用同一契约。空变体没有 payload 时，可先绑定预期值并用 `assert-type` 补充完整泛型类型，再与字段比较；payload 类型仍必须匹配。判断是否有值也可使用 `.some?` / `.none?`，不要把 Option 与 nil 或裸 payload 比较。
 
@@ -156,7 +156,7 @@ Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value
 
 0.28.0 保留可精确查询的旧 Map `.add` 作为人工兼容入口，不提供自动改写。#1458 的消费者盘点确认已知活跃下游默认分支没有调用后，0.29.0 删除了该方法，写下它会得到 `E_RETIRED_METHOD` 并提示改用 `.assoc key value`。
 
-历史基线曾出现 `query type ":: 'List 'Number"` 的 `.reduce` 为 proven、`.append/.foldl` 为 open；目前这些方法已能从公开泛型 schema 获得 proven 契约。seeded `.fold` 也保持 `U, (U,T)->U -> U` 的 proven 方法契约；List 的旧 `.reduce` 已在 0.29.0 删除，自动迁移需用 0.28.x 的 CLI 运行 `core-list-fold-v1`。前缀 `reduce`、自定义 trait 和开放接收者不按名字批量改写，不能用 primitive 替换用户方法测试来绕过。
+历史基线曾出现 `query type "quote $ List Number"` 的 `.reduce` 为 proven、`.append/.foldl` 为 open；目前这些方法已能从公开泛型 schema 获得 proven 契约。seeded `.fold` 也保持 `U, (U,T)->U -> U` 的 proven 方法契约；List 的旧 `.reduce` 已在 0.29.0 删除，自动迁移需用 0.28.x 的 CLI 运行 `core-list-fold-v1`。前缀 `reduce`、自定义 trait 和开放接收者不按名字批量改写，不能用 primitive 替换用户方法测试来绕过。
 
 List/Map/Set 的 `.count` 已在 0.31.0 退场，规则 `core-collection-len-v1` 只在 0.30.x 的 CLI 提供；Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
@@ -323,10 +323,10 @@ assert= true $ &str:includes? |abc |b
 ```bash
 calcit docs read api-roles.md '逐族命名决策'
 calcit docs read api-roles.md '谓词与成员查询'
-calcit query type ":: 'Option 'Number"
+calcit query type "quote $ Option Number"
 calcit query type "'String"
-calcit query type ":: 'List 'Number"
-calcit query type ":: 'Map 'Tag 'Number"
+calcit query type "quote $ List Number"
+calcit query type "quote $ Map Tag Number"
 calcit query type calcit.core/FsPath
 calcit query def 'calcit.core/Option' --format edn
 calcit query def 'calcit.core/Result' --format edn
@@ -341,11 +341,11 @@ calcit analyze check-examples --ns calcit.core --def fold
 
 `open` 不一定表示整个方法签名未知。接收者已成功绑定到现有 schema 时，查询保留已声明的参数与返回类型，例如 `calcit query type "'String" --format edn` 中 `.parse-json` 和 `.parse-cirru-edn` 的零参数与 `Result<Dynamic, String>` 返回结构；成功 payload 仍是开放数据，需要在具体使用前解码或收窄，错误分支则已有 String 类型。开放 callback 或集合元素同样按声明展示，不推测为具体类型。缺失 schema、接收者绑定失败或分派歧义时仍不提供签名。结构化 `call-types` 只为 `proven` 方法提供；自动 fix 和核心契约冻结仍必须检查证明状态，不能仅凭签名字段存在就放行。
 
-具体接收者的实现可以提供比开放 trait 声明更精确的泛型关系。例如 `calcit query type ":: 'Option 'Number" --format edn` 的 `.map` 保留 `Fn<Number,U> → Option<U>`，并列出泛型 U；U 不是 Dynamic，也不是已经选择的业务类型。实现细化须保留 trait 的可证明接收者约束与 feature；闭合 trait 签名不会被覆盖。`Option<Dynamic>` 仍为 open，Agent 应先查询实际调用的 `type-at/context`，不能凭方法名强制把未知 payload 收窄。
+具体接收者的实现可以提供比开放 trait 声明更精确的泛型关系。例如 `calcit query type "quote $ Option Number" --format edn` 的 `.map` 保留 `Fn<Number,U> → Option<U>`，并列出泛型 U；U 不是 Dynamic，也不是已经选择的业务类型。实现细化须保留 trait 的可证明接收者约束与 feature；闭合 trait 签名不会被覆盖。`Option<Dynamic>` 仍为 open，Agent 应先查询实际调用的 `type-at/context`，不能凭方法名强制把未知 payload 收窄。
 
 结构升级后，使用 `calcit fix --preset core-api-0.28-v1 --format edn` 统一预览已证明的核心 API 叶子改名，再按 revision 应用。`:code` 自动扫描，attached `:tests` / `:examples` 人工核对；重复预览的自动建议应为空，剩余 `requires-review` 不等于已迁移。Option/Result helper 和完整构造调用仍分步迁移，顺序与范围见 [0.28 核心 API 命名迁移](../run/fix.md#028-核心-api-命名迁移)。
 
-真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
+真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type "quote $ Option …"` 或 `query type "quote $ Result …"` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
 
 `%ok/%err` 从 0.25.0 起标记弃用，在核心库完成迁移后于 0.31.0 与 `%some/%none` 一起删除，编译器生成的值改为 `Result :ok/:err` 与 `Option :some/:none`。旧项目先用 0.30.x 的 CLI 运行 `core-nominal-constructor-v1` 预览并应用，见[升级指南](../run/upgrade.md#0310-删除最后一批已弃用的核心名字)。String 旧 `.contains?` 检查索引而 `.includes?` 检查子串；该旧方法已在 0.29.0 删除，自动迁往 `.contains-index?` 需用 0.28.x 的 CLI 运行 `core-predicate-method-v1`，不能在跨容器调用上按词形全局替换。
 

@@ -33,12 +33,12 @@
               let
                   expected-value $ Person :name |Ada :age 42
                   invoke $ fn (callback)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Fn *callback $ -> Unit
                       -> Unit
                     callback expected-value
                 invoke $ fn (value)
-                  hint-fn $ quote $ Fn *callback (-> Unit)
+                  hint-fn $ Fn *callback $ -> Unit
                   assert= expected-value value
                   , &unit
             :tags $ #{} :type-slot :unit

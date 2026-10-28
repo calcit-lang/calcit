@@ -350,7 +350,7 @@
               :code $ quote $ let
                   *calls $ ref 0
                   broken-quote $ fn ()
-                    hint-fn $ quote $ Fn (-> CirruQuote)
+                    hint-fn $ Fn $ -> CirruQuote
                     reset! *calls $ inc @*calls
                     raise |quote-receiver-failed
                 assert= |quote-receiver-failed $ try
@@ -380,7 +380,7 @@
             %{} 'TestEntry (:name |count-has-one-dispatch-origin)
               :code $ quote $ let
                   count-of $ fn (v)
-                    hint-fn $ quote $ Fn Enum (-> Number)
+                    hint-fn $ Fn Enum $ -> Number
                     .count v
                 assert= 3 $ count-of $ %:: _ :point 1 2
                 assert= 2 $ count-of $ Option :some 1
@@ -389,7 +389,7 @@
             %{} 'TestEntry (:name |contains-has-one-dispatch-origin)
               :code $ quote $ let
                   has-index? $ fn (v i)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     .contains? v i
                   point $ %:: _ :point 1 2
                 assert= true $ has-index? point 2
@@ -400,7 +400,7 @@
             %{} 'TestEntry (:name |contains-preserves-number-range)
               :code $ quote $ let
                   has-index? $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     .contains? value index
                   present $ Option :some 1
                   absent $ Option :none
@@ -420,7 +420,7 @@
             %{} 'TestEntry (:name |contains-specializes-generic-number-keys)
               :code $ quote $ let
                   has-index? $ fn (value key)
-                    hint-fn $ quote $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
                     .contains? value key
                   present $ Option :some 1
                 assert= true $ has-index? present 0
@@ -433,7 +433,7 @@
           :code $ quote $ def &core-enum-methods
             &impl::new :&core-enum-methods (:: :nth nth) (:: :get get) (:: :assoc &enum:assoc) (:: :first first) (:: :last last)
               :: :empty? $ defn &enum:empty?-impl (x)
-                hint-fn $ quote $ Fn Enum (-> Bool)
+                hint-fn $ Fn Enum $ -> Bool
                 &= 0 $ &enum:count x
           :examples $ []
           :schema $ quote Dynamic
@@ -580,7 +580,7 @@
           :code $ quote $ def &core-struct-methods
             &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
               :: :empty? $ defn &struct:empty?-impl (x)
-                hint-fn $ quote $ Fn Struct (-> Bool)
+                hint-fn $ Fn Struct $ -> Bool
                 &= 0 $ &struct:count x
           :examples $ []
           :schema $ quote Dynamic
@@ -763,7 +763,7 @@
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote $ defn &fn:apply (f g)
             fn (x)
-              hint-fn $ quote $ Fn A (-> C)
+              hint-fn $ Fn A $ -> C
               g x $ f x
           :examples $ []
           :schema $ quote $ Fn
@@ -776,10 +776,10 @@
             %{} 'TestEntry (:name |preserves-unary-argument-order)
               :code $ quote $ let
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &* x 2
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     &- left right
                   direct $ &fn:apply producer consumer
                   method $ .apply producer consumer
@@ -791,10 +791,10 @@
             %{} 'TestEntry (:name |retains-string-input-and-nominal-result)
               :code $ quote $ let
                   producer $ fn (text)
-                    hint-fn $ quote $ Fn String (-> Number)
+                    hint-fn $ Fn String $ -> Number
                     .len text
                   consumer $ fn (text size)
-                    hint-fn $ quote $ Fn String Number (-> FsPath)
+                    hint-fn $ Fn String Number $ -> FsPath
                     FsPath :value $ str text |: size
                   direct $ &fn:apply producer consumer
                   method $ .apply producer consumer
@@ -822,11 +822,11 @@
                   trace $ ref $ [] 0
                   source-calls $ ref 0
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     &* x 2
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     &- left right
                   method $ .apply
@@ -848,11 +848,11 @@
               :code $ quote $ let
                   trace $ ref $ [] 0
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     raise |producer-failed
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     &- left right
                   method $ .apply producer consumer
@@ -862,11 +862,11 @@
                 reset! trace $ [] 0
                 let
                     safe-producer $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       reset! trace $ append (deref trace) 1
                       &* x 2
                     bad-consumer $ fn (left right)
-                      hint-fn $ quote $ Fn Number Number (-> Number)
+                      hint-fn $ Fn Number Number $ -> Number
                       reset! trace $ append (deref trace) 2
                       raise |consumer-failed
                     failed $ .apply safe-producer bad-consumer
@@ -877,7 +877,7 @@
         '&fn:bind $ %{} 'CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote $ defn &fn:bind (m f)
             fn (x)
-              hint-fn $ quote $ Fn A (-> C)
+              hint-fn $ Fn A $ -> C
               f (m x) x
           :examples $ []
           :schema $ quote $ Fn
@@ -890,10 +890,10 @@
             %{} 'TestEntry (:name |preserves-unary-argument-order)
               :code $ quote $ let
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &* x 2
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     &- left right
                   direct $ &fn:bind producer consumer
                   method $ .bind producer consumer
@@ -905,10 +905,10 @@
             %{} 'TestEntry (:name |retains-string-input-and-nominal-result)
               :code $ quote $ let
                   producer $ fn (text)
-                    hint-fn $ quote $ Fn String (-> Number)
+                    hint-fn $ Fn String $ -> Number
                     .len text
                   consumer $ fn (size text)
-                    hint-fn $ quote $ Fn Number String (-> FsPath)
+                    hint-fn $ Fn Number String $ -> FsPath
                     FsPath :value $ str size |: text
                   direct $ &fn:bind producer consumer
                   method $ .bind producer consumer
@@ -936,11 +936,11 @@
                   trace $ ref $ [] 0
                   source-calls $ ref 0
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     &* x 2
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     &- left right
                   method $ .bind
@@ -962,11 +962,11 @@
               :code $ quote $ let
                   trace $ ref $ [] 0
                   producer $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     raise |producer-failed
                   consumer $ fn (left right)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     &- left right
                   method $ .bind producer consumer
@@ -976,11 +976,11 @@
                 reset! trace $ [] 0
                 let
                     safe-producer $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       reset! trace $ append (deref trace) 1
                       &* x 2
                     bad-consumer $ fn (left right)
-                      hint-fn $ quote $ Fn Number Number (-> Number)
+                      hint-fn $ Fn Number Number $ -> Number
                       reset! trace $ append (deref trace) 2
                       raise |consumer-failed
                     failed $ .bind safe-producer bad-consumer
@@ -991,7 +991,7 @@
         '&fn:map $ %{} 'CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote $ defn &fn:map (f g)
             fn (x)
-              hint-fn $ quote $ Fn A (-> C)
+              hint-fn $ Fn A $ -> C
               f $ g x
           :examples $ []
           :schema $ quote $ Fn
@@ -1004,10 +1004,10 @@
             %{} 'TestEntry (:name |preserves-direct-and-method-composition-order)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &* x 2
                   g $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &+ x 1
                 assert= 8 $
                   &fn:map f g
@@ -1019,10 +1019,10 @@
             %{} 'TestEntry (:name |retains-string-input-and-result-signatures)
               :code $ quote $ let
                   f $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> String)
+                    hint-fn $ Fn Number $ -> String
                     str |len= value
                   g $ fn (text)
-                    hint-fn $ quote $ Fn String (-> Number)
+                    hint-fn $ Fn String $ -> Number
                     .len text
                   direct $ &fn:map f g
                   method $ .map f g
@@ -1037,10 +1037,10 @@
             %{} 'TestEntry (:name |retains-nominal-result-signature)
               :code $ quote $ let
                   f $ fn (text)
-                    hint-fn $ quote $ Fn String (-> FsPath)
+                    hint-fn $ Fn String $ -> FsPath
                     FsPath :value text
                   g $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> String)
+                    hint-fn $ Fn Number $ -> String
                     str value
                   method $ .map f g
                 assert-type method $ quote $ Fn Number (-> FsPath)
@@ -1051,11 +1051,11 @@
                   trace $ ref $ [] 0
                   source-calls $ ref 0
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     &* x 2
                   g $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     &+ x 1
                   method $ .map
@@ -1077,11 +1077,11 @@
               :code $ quote $ let
                   trace $ ref $ [] 0
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 1
                     &* x 2
                   bad-g $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     reset! trace $ append (deref trace) 2
                     raise |mapper-failed
                   mapper-failure $ .map f bad-g
@@ -1091,11 +1091,11 @@
                 reset! trace $ [] 0
                 let
                     bad-f $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       reset! trace $ append (deref trace) 1
                       raise |receiver-failed
                     g $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       reset! trace $ append (deref trace) 2
                       &+ x 1
                     receiver-failure $ .map bad-f g
@@ -1130,10 +1130,10 @@
             %{} 'TestEntry (:name |transports-explicit-open-results)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Dynamic)
+                    hint-fn $ Fn Number $ -> Dynamic
                     , x
                   g $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &+ x 1
                   method $ .map f g
                 assert-type method $ quote $ Fn Number (-> Dynamic)
@@ -1705,8 +1705,7 @@
           :code $ quote $ defn &list:filter (xs f)
             reduce xs ([])
               defn %&list:filter (acc x)
-                hint-fn $ quote $ Fn (List T) T
-                  -> $ List T
+                hint-fn $ Fn (List T) T $ -> (List T)
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ quote $ Fn (List T)
@@ -1722,7 +1721,7 @@
         '&list:filter-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:filter-pair (xs f)
             &list:filter xs $ defn %filter-pair (pair)
-              hint-fn $ quote $ Fn P (-> Bool)
+              hint-fn $ Fn P $ -> Bool
               if (list? pair)
                 if
                   &= 2 $ &list:count pair
@@ -1762,7 +1761,7 @@
           :code $ quote $ defn &list:find-last (xs f)
             foldr-shortcut xs (Option :none) (Option :none)
               fn (_acc x)
-                hint-fn $ quote $ Fn (Option T) T (-> Enum)
+                hint-fn $ Fn (Option T) T $ -> Enum
                 if (f x)
                   :: true $ Option :some x
                   :: false $ Option :none
@@ -1931,7 +1930,7 @@
             %{} 'TestEntry (:name |open-receiver-proven-bool)
               :code $ quote $ let
                   all-proven $ fn (xs predicate)
-                    hint-fn $ quote $ Fn Dynamic
+                    hint-fn $ Fn Dynamic
                       Fn Dynamic $ -> Bool
                       -> Bool
                     &list:foldl-shortcut xs true true $ fn (acc item)
@@ -1944,7 +1943,7 @@
             %{} 'TestEntry (:name |open-receiver-empty-default)
               :code $ quote $ let
                   reduce-open $ fn (xs)
-                    hint-fn $ quote $ Fn Dynamic (-> Number)
+                    hint-fn $ Fn Dynamic $ -> Number
                     &list:foldl-shortcut xs 0 7 $ fn (acc item) (:: false acc)
                   answer $ reduce-open $ []
                 assert-type answer 'Number
@@ -1953,7 +1952,7 @@
             %{} 'TestEntry (:name |open-receiver-ordinary-fold)
               :code $ quote $ let
                   reduce-open $ fn (xs)
-                    hint-fn $ quote $ Fn Dynamic (-> Number)
+                    hint-fn $ Fn Dynamic $ -> Number
                     foldl xs 0 $ fn (acc item) (&+ acc 1)
                   answer $ reduce-open $ [] 1 2
                 assert-type answer 'Number
@@ -2014,7 +2013,7 @@
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:last-index-of (xs item)
             &list:find-last-index xs $ defn %last-index-of (x)
-              hint-fn $ quote $ Fn T (-> Bool)
+              hint-fn $ Fn T $ -> Bool
               &= item x
           :examples $ []
           :schema $ quote $ Fn (List T) T
@@ -2025,8 +2024,7 @@
           :code $ quote $ defn &list:map (xs f)
             foldl xs ([])
               defn %&list:map (acc x)
-                hint-fn $ quote $ Fn (List U) T
-                  -> $ List U
+                hint-fn $ Fn (List U) T $ -> (List U)
                 append acc $ f x
           :examples $ []
           :schema $ quote $ Fn (List T)
@@ -2053,7 +2051,7 @@
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
             &list:map xs $ defn %map-pair (pair)
-              hint-fn $ quote $ Fn P (-> R)
+              hint-fn $ Fn P $ -> R
               if (list? pair)
                 if
                   &= 2 $ &list:count pair
@@ -2090,12 +2088,12 @@
             %{} 'TestEntry (:name |preserves-list-result-with-open-map-payload)
               :code $ quote $ let
                   consume $ fn (pairs)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       List $ List Dynamic
                       -> Number
                     count pairs
                   produce $ fn (tasks)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Map String $ Map Tag Dynamic
                       -> Number
                     consume $ &list:map-pair (&map:to-list tasks)
@@ -2106,7 +2104,7 @@
             %{} 'TestEntry (:name |preserves-scalar-result-and-empty-input)
               :code $ quote $ let
                   produce $ fn (tasks)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Map String $ Map Tag Dynamic
                       -> $ List Number
                     &list:map-pair (&map:to-list tasks)
@@ -2214,8 +2212,7 @@
           :code $ quote $ defn &list:numbers (xs)
             foldl xs ([])
               defn %&list:numbers (acc x)
-                hint-fn $ quote $ Fn (List Number) Dynamic
-                  -> $ List Number
+                hint-fn $ Fn (List Number) Dynamic $ -> (List Number)
                 if (number? x) (append acc x) (raise "|expected a Number item")
           :examples $ []
           :schema $ quote $ Fn (List Dynamic)
@@ -2497,8 +2494,7 @@
           :code $ quote $ defn &map:filter (xs f)
             &map:fold-kv xs (&map:empty xs)
               defn %&map:filter (acc key value)
-                hint-fn $ quote $ Fn (Map K V) K V
-                  -> $ Map K V
+                hint-fn $ Fn (Map K V) K V $ -> (Map K V)
                 if
                   f $ [] key value
                   &map:assoc acc key value
@@ -2540,8 +2536,7 @@
           :code $ quote $ defn &map:filter-kv (xs f)
             &map:fold-kv xs (&map:empty xs)
               fn (acc key value)
-                hint-fn $ quote $ Fn (Map K V) K V
-                  -> $ Map K V
+                hint-fn $ Fn (Map K V) K V $ -> (Map K V)
                 if (f key value) (&map:assoc acc key value) acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
@@ -2627,8 +2622,7 @@
           :code $ quote $ defn &map:map (xs f)
             &map:fold-kv xs ({})
               fn (acc key value)
-                hint-fn $ quote $ Fn (Map Dynamic Dynamic) K V
-                  -> $ Map Dynamic Dynamic
+                hint-fn $ Fn (Map Dynamic Dynamic) K V $ -> (Map Dynamic Dynamic)
                 &let
                   result $ f $ [] key value
                   assert "|expected pair returned when mapping hashmap" $ and (list? result)
@@ -2666,7 +2660,7 @@
             if (map? xs)
               foldl xs ([])
                 defn %&map:map-list (acc pair)
-                  hint-fn $ quote $ Fn (List U) (List Dynamic)
+                  hint-fn $ Fn (List U) (List Dynamic)
                     -> $ List U
                   append acc $ f pair
               raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
@@ -3024,8 +3018,7 @@
           :code $ quote $ defn &set:filter (xs f)
             reduce (&set:to-list xs) (#{})
               defn %&set:filter (acc x)
-                hint-fn $ quote $ Fn (Set T) T
-                  -> $ Set T
+                hint-fn $ Fn (Set T) T $ -> (Set T)
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ quote $ Fn (Set T)
@@ -3060,8 +3053,7 @@
           :code $ quote $ defn &set:map (xs f)
             reduce (&set:to-list xs) (#{})
               defn %&set:map (acc x)
-                hint-fn $ quote $ Fn (Set U) T
-                  -> $ Set U
+                hint-fn $ Fn (Set U) T $ -> (Set U)
                 &include acc $ f x
           :examples $ []
           :schema $ quote $ Fn (Set T)
@@ -4179,14 +4171,13 @@
             %{} 'TestEntry (:name |constructor-branch-evidence)
               :code $ quote $ let
                   project $ fn (input)
-                    hint-fn $ quote $ Fn (Result Number String)
+                    hint-fn $ Fn (Result Number String)
                       -> $ Result Number String
                     match input
                       (:ok value) (Result :ok value)
                       (:err reason) (Result :err reason)
                   choose $ fn (flag)
-                    hint-fn $ quote $ Fn Bool
-                      -> $ Result Number String
+                    hint-fn $ Fn Bool $ -> (Result Number String)
                     if flag (Result :ok 1) (Result :err |failed)
                 assert= (Result :ok 1)
                   project $ Result :ok 1
@@ -4233,7 +4224,7 @@
           :code $ quote $ defstruct RuntimeMapResponse (:code 'Number)
             :message $ quote $ Option String
             :body 'Dynamic
-            :meta $ :: 'Option RuntimeMapMeta
+            :meta $ quote $ Option RuntimeMapMeta
           :examples $ []
           :schema $ quote Struct
           :tags $ #{} :data :internal
@@ -4337,8 +4328,7 @@
             %{} 'TestEntry (:name |open-ref-keeps-checked-input-and-removal)
               :code $ quote $ let
                   make-source $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic
-                      -> $ Ref Dynamic
+                    hint-fn $ Fn Dynamic $ -> (Ref Dynamic)
                     ref value
                   source $ make-source nil
                   observed $ ref 0
@@ -4523,7 +4513,7 @@
                   result $ apply
                     do (reset! state 1)
                       fn (label values)
-                        hint-fn $ quote $ Fn String (List Number) (-> Number)
+                        hint-fn $ Fn String (List Number) (-> Number)
                         assert= 3 $ deref state
                         count values
                     []
@@ -4544,7 +4534,7 @@
                 apply
                   do (reset! state 1)
                     fn (label values)
-                      hint-fn $ quote $ Fn String (List Number) (-> Number)
+                      hint-fn $ Fn String (List Number) (-> Number)
                       assert= 3 $ deref state
                       count values
                   []
@@ -4645,7 +4635,7 @@
               :code $ quote $ assert= 3
                 let
                     keep-value $ fn (x)
-                      hint-fn $ quote $ Fn T (-> T) (:generics T)
+                      hint-fn $ Fn T (-> T) (:generics T)
                       assert-type x 'T
                   keep-value 3
               :tags $ #{} :assert-boundary :unit
@@ -4653,7 +4643,7 @@
               :code $ quote $ assert= |value
                 let
                     keep-value $ fn (x)
-                      hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                      hint-fn $ Fn Dynamic $ -> Dynamic
                       assert-type x 'Dynamic
                   keep-value |value
               :tags $ #{} :assert-boundary :unit
@@ -4684,7 +4674,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |wrapped-raise-unit)
             :code $ quote $ let
                 check $ fn ()
-                  hint-fn $ quote $ Fn (-> Unit)
+                  hint-fn $ Fn $ -> Unit
                   assert= 1 1
               assert-type (check) 'Unit
               check
@@ -4857,7 +4847,7 @@
             %{} 'TestEntry (:name |open-map-write-keeps-root-and-siblings)
               :code $ quote $ let
                   write $ fn (db)
-                    hint-fn $ quote $ Fn (Map Tag Dynamic)
+                    hint-fn $ Fn (Map Tag Dynamic)
                       -> $ Map Tag Dynamic
                     assoc-in db ([] :repo :current) |main
                 assert=
@@ -4874,7 +4864,7 @@
             %{} 'TestEntry (:name |open-map-write-keeps-nested-map-prefix)
               :code $ quote $ let
                   write $ fn (db)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Map Tag $ Map String Dynamic
                       -> $ Map Tag $ Map String Dynamic
                     assoc-in db ([] :repo |branch :current) |main
@@ -4890,7 +4880,7 @@
             %{} 'TestEntry (:name |open-map-write-keeps-generic-keys)
               :code $ quote $ let
                   write $ fn (db key)
-                    hint-fn $ quote $ Fn (Map K Dynamic) K
+                    hint-fn $ Fn (Map K Dynamic) K
                       -> $ Map K Dynamic
                       :generics K
                     assoc-in db ([] key) |main
@@ -4914,18 +4904,17 @@
               :code $ quote $ let
                   trace $ ref 0
                   make-root $ fn ()
-                    hint-fn $ quote $ Fn
-                      -> $ Map Tag Dynamic
+                    hint-fn $ Fn $ -> (Map Tag Dynamic)
                     assert= 0 @trace
                     reset! trace 1
                     {} $ :kept 7
                   make-key $ fn ()
-                    hint-fn $ quote $ Fn (-> Tag)
+                    hint-fn $ Fn $ -> Tag
                     assert= 1 @trace
                     reset! trace 2
                     , :current
                   make-value $ fn ()
-                    hint-fn $ quote $ Fn (-> String)
+                    hint-fn $ Fn $ -> String
                     assert= 2 @trace
                     reset! trace 3
                     , |main
@@ -5105,7 +5094,7 @@
               raise $ str-spaced "|case expects each pattern as pair, got:" patterns
             if
               every? patterns $ fn (pair)
-                hint-fn $ quote $ Fn List (-> Bool)
+                hint-fn $ Fn List $ -> Bool
                 &let
                   p $ &list:nth pair 0
                   or (tag? p) (string? p) (number? p) (bool? p)
@@ -5491,7 +5480,7 @@
         'contains-field? $ %{} 'CodeEntry
           :doc "|检查 Struct 是否声明给定 Tag 字段，返回 Bool；字段不存在返回 false。旧 .contains? 兼容更宽的动态字段名，不构成跨目标类型保证。"
           :code $ quote $ defn contains-field? (value field)
-            hint-fn $ quote $ Fn Struct Tag (-> Bool)
+            hint-fn $ Fn Struct Tag $ -> Bool
             &struct:contains? value field
           :examples $ []
           :schema $ quote $ Fn Struct Tag (-> Bool)
@@ -5568,7 +5557,7 @@
         'contains-index? $ %{} 'CodeEntry
           :doc "|检查 Enum 的有效位置（tag 为 0，payload 自 1 起）：仅非负、有限整数且小于 count 时返回 true；负数、小数、非有限或越界返回 false。旧 .contains? 的小数行为不同，不能无条件迁移。"
           :code $ quote $ defn contains-index? (value index)
-            hint-fn $ quote $ Fn Enum Number (-> Bool)
+            hint-fn $ Fn Enum Number $ -> Bool
             and (integer? index) (&>= index 0)
               &< index $ &enum:count value
           :examples $ []
@@ -5802,7 +5791,7 @@
               :code $ quote $ let
                   value $ Option :some 1
                   has-index $ fn (value key)
-                    hint-fn $ quote $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
                     .contains? value key
                 assert=
                   [] true true true true false false false false false
@@ -5831,56 +5820,56 @@
             %{} 'TestEntry (:name |public-enum-some-zero)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 0
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-one)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-fraction)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 1.5
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-end)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :some 1) 2
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-negative)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :some 1) -1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-none-zero)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :none) 0
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-none-one)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :none) 1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-generic-index-keeps-number-evidence)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
                     contains? value index
                   value $ Option :some 1
                 assert= ([] true false false false false)
@@ -5892,7 +5881,7 @@
             %{} 'TestEntry (:name |public-enum-evaluates-receiver-then-key-once)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ quote $ Fn Enum Number (-> Bool)
+                    hint-fn $ Fn Enum Number $ -> Bool
                     contains?
                       do (println |contains-receiver) value
                       do (println |contains-key) index
@@ -5902,14 +5891,14 @@
             %{} 'TestEntry (:name |public-enum-if-retains-nominal)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ quote $ Fn Enum Number Bool (-> Bool)
+                    hint-fn $ Fn Enum Number Bool $ -> Bool
                     contains? (if flag value value) index
                 assert= true $ has-index (Option :some 1) 1 true
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-let-retains-nominal)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ quote $ Fn Enum Number Bool (-> Bool)
+                    hint-fn $ Fn Enum Number Bool $ -> Bool
                     contains?
                       let
                           copied value
@@ -5920,7 +5909,7 @@
             %{} 'TestEntry (:name |public-enum-shadow-does-not-leak)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ quote $ Fn Enum Number Bool (-> Bool)
+                    hint-fn $ Fn Enum Number Bool $ -> Bool
                     do
                       assert= false $ contains?
                         let
@@ -6146,7 +6135,7 @@
             %{} 'TestEntry (:name |exhaustive-view)
               :code $ quote $ let
                   classify $ fn (x)
-                    hint-fn $ quote $ Fn Dynamic (-> Tag)
+                    hint-fn $ Fn Dynamic $ -> Tag
                     match (data-view x)
                       (:nil) :nil
                       (:bool _) :bool
@@ -6168,7 +6157,7 @@
             %{} 'TestEntry (:name |lowered-match-agrees-with-enum-path)
               :code $ quote $ let
                   lowered $ fn (x)
-                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic $ -> Dynamic
                     match (data-view x)
                       (:nil) (:: :nil)
                       (:bool v) (:: :bool v)
@@ -6185,7 +6174,7 @@
                       (:ref v) (:: :ref v)
                       (:other v) (:: :other v)
                   viewed $ fn (x)
-                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic $ -> Dynamic
                     let
                         view $ data-view x
                       match view
@@ -6271,7 +6260,7 @@
               :code $ quote $ assert= ([] &unit &unit)
                 map ([] |callback-a |callback-b)
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Unit)
+                    hint-fn $ Fn String $ -> Unit
                     println message
               :tags $ #{} :core :log :unit
             %{} 'TestEntry (:name |registered-stderr-returns-unit)
@@ -6290,7 +6279,7 @@
                 try
                   println |must-not-print $ raise |log-argument-failed
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
               :tags $ #{} :core :log :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
@@ -6375,12 +6364,12 @@
                 assert= "|decode-map-as failed at $: expected nil, got number" $ try
                   do (decode-map-as 1 'Nil) |unexpected-success
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
                 assert= "|decode-map-as failed at $: expected number, got string" $ try
                   do (decode-map-as |wrong 'Number) |unexpected-success
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
                 assert= "|decode-map-as failed at $[1]: expected number, got string" $ try
                   do
@@ -6388,7 +6377,7 @@
                       quote $ List Number
                     , |unexpected-success
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-validated-enum-identity)
@@ -6421,7 +6410,7 @@
                 let
                     original-meta $ RuntimeMapMeta :kind :nested
                     original-result $ Result :ok original-meta
-                    decoded-result $ decode-map-as original-result $ :: 'Result RuntimeMapMeta 'String
+                    decoded-result $ decode-map-as original-result $ quote (Result RuntimeMapMeta String)
                   assert= true $ identical? original-meta $ result:unwrap-or decoded-result (RuntimeMapMeta :kind :fallback)
               :tags $ #{} :core :types :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
@@ -6710,7 +6699,7 @@
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
               requires-entry? $ fn (entry)
-                hint-fn $ quote $ Fn (List T) (-> Bool) (:generics T)
+                hint-fn $ Fn (List T) (-> Bool) (:generics T)
                 and
                   not $ &list:empty? entry
                   &let
@@ -6728,7 +6717,7 @@
                 &let
                   normalized $ &list:map
                     &list:filter entries $ fn (entry)
-                      hint-fn $ quote $ Fn (List T) (-> Bool) (:generics T)
+                      hint-fn $ Fn (List T) (-> Bool) (:generics T)
                       not $ requires-entry? entry
                     fn (entry)
                       &let
@@ -6768,11 +6757,15 @@
           :tests $ [] $ %{} 'TestEntry (:name |requires-head-accepts-bare-and-quoted)
             :code $ quote $ do
               assert=
-                macroexpand $ quote $ deftrait Child (requires Parent) (.label :fn)
-                macroexpand $ quote $ deftrait Child ('requires Parent) (.label :fn)
+                macroexpand $ quote $ deftrait Child (requires Parent)
+                  .label $ quote $ Fn (-> String)
+                macroexpand $ quote $ deftrait Child ('requires Parent)
+                  .label $ quote $ Fn (-> String)
               assert "|requires clause changes the expansion" $ not=
-                macroexpand $ quote $ deftrait Child (requires Parent) (.label :fn)
-                macroexpand $ quote $ deftrait Child (.label :fn)
+                macroexpand $ quote $ deftrait Child (requires Parent)
+                  .label $ quote $ Fn (-> String)
+                macroexpand $ quote $ deftrait Child
+                  .label $ quote $ Fn (-> String)
             :tags $ #{} :core :unit
         'deftype-slot $ %{} 'CodeEntry
           :doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic."
@@ -6829,17 +6822,17 @@
             %{} 'TestEntry (:name |matches-bound-list-subject)
               :code $ quote $ let
                   head-or $ fn (fallback xs)
-                    hint-fn $ quote $ Fn Number (List Number) (-> Number)
+                    hint-fn $ Fn Number (List Number) (-> Number)
                     &+ 0 $ match (destruct-list xs)
                       (:some h _) h
                       (:none) fallback
                   tail-size $ fn (xs)
-                    hint-fn $ quote $ Fn (List Number) (-> Number)
+                    hint-fn $ Fn (List Number) (-> Number)
                     match (destruct-list xs)
                       (:some _ t) (&list:count t)
                       (:none) -1
                   head-and-count $ fn (xs)
-                    hint-fn $ quote $ Fn (List Number)
+                    hint-fn $ Fn (List Number)
                       -> $ List Number
                     match (destruct-list xs)
                       (:none) ([])
@@ -6861,7 +6854,7 @@
             %{} 'TestEntry (:name |matches-bound-list-subject-in-recur)
               :code $ quote $ let
                   sum-from $ fn (acc xs)
-                    hint-fn $ quote $ Fn Number (List Number) (-> Number)
+                    hint-fn $ Fn Number (List Number) (-> Number)
                     match (destruct-list xs)
                       (:none) acc
                       (:some h t)
@@ -6873,7 +6866,7 @@
             %{} 'TestEntry (:name |matches-bound-list-subject-as-statement)
               :code $ quote $ let
                   report $ fn (xs)
-                    hint-fn $ quote $ Fn (List Number) (-> Number)
+                    hint-fn $ Fn (List Number) (-> Number)
                     match (destruct-list xs)
                       (:none) (println |empty)
                       (:some h _) (println h)
@@ -7063,7 +7056,7 @@
                   let
                       *order $ ref |
                       f $ fn (a b)
-                        hint-fn $ quote $ Fn Number Number (-> Number)
+                        hint-fn $ Fn Number Number $ -> Number
                         + a b
                       result $ f & $ []
                         do
@@ -7113,7 +7106,7 @@
                 let
                     *order $ ref |
                     f $ fn (a b)
-                      hint-fn $ quote $ Fn Number Number (-> Number)
+                      hint-fn $ Fn Number Number $ -> Number
                       + a b
                     result $ f
                       do
@@ -7142,7 +7135,7 @@
                   m $ {} (|a 1) (|b 2) (|c 3)
                   expected $ {} $ |c 3
                   remove-tail $ fn (source key tail)
-                    hint-fn $ quote $ Fn (Map String Number) String (List String)
+                    hint-fn $ Fn (Map String Number) String (List String)
                       -> $ Map String Number
                     source .dissoc key & tail
                 assert= expected $ m .dissoc |a & $ [] |b
@@ -7439,7 +7432,7 @@
                   right $ defenum Right $ :item 'String
                   alias left
                   equal-definition? $ fn (a b)
-                    hint-fn $ quote $ Fn EnumDef EnumDef (-> Bool)
+                    hint-fn $ Fn EnumDef EnumDef $ -> Bool
                     = a b
                 assert= false $ equal-definition? left right
                 assert= true $ equal-definition? left alias
@@ -7483,7 +7476,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |keeps-generic-input-open-after-branch-join)
             :code $ quote $ let
                 classify $ fn (data)
-                  hint-fn $ quote $ Fn T (-> Tag) (:generics T)
+                  hint-fn $ Fn T (-> Tag) (:generics T)
                   let
                       op $ if (enum? data) data data
                     if (enum? op) :enum :other
@@ -7574,7 +7567,7 @@
                   .reject! (ffi:response nil) |value
                   , false
                 fn (message)
-                  hint-fn $ quote $ Fn String (-> Bool)
+                  hint-fn $ Fn String $ -> Bool
                   and (.includes? message |capability)
                     if
                       = :js $ &get-calcit-backend
@@ -7595,7 +7588,7 @@
                   .resolve! (ffi:response nil) |value
                   , false
                 fn (message)
-                  hint-fn $ quote $ Fn String (-> Bool)
+                  hint-fn $ Fn String $ -> Bool
                   and (.includes? message |capability)
                     if
                       = :js $ &get-calcit-backend
@@ -7620,7 +7613,7 @@
                 try
                   do (decode-map-as nil 'Unit) false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message "|decode-map-as failed at $: expected &unit, got nil"
               :tags $ #{} :cancel-proof :core :unit
             %{} 'TestEntry (:name |checked-unit-rejects-number)
@@ -7628,7 +7621,7 @@
                 try
                   do (decode-map-as 1 'Unit) false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message "|decode-map-as failed at $: expected &unit, got number"
               :tags $ #{} :cancel-proof :core :unit
             %{} 'TestEntry (:name |checked-unit-rejects-string)
@@ -7636,7 +7629,7 @@
                 try
                   do (decode-map-as |wrong 'Unit) false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message "|decode-map-as failed at $: expected &unit"
               :tags $ #{} :cancel-proof :core :unit
             %{} 'TestEntry (:name |default-method-preserves-capability-error)
@@ -7646,7 +7639,7 @@
                     .cancel! $ ffi:task nil
                     , false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message |capability
               :tags $ #{} :cancel-proof :core :unit
         'ffi-task:cancel-with $ %{} 'CodeEntry
@@ -7666,7 +7659,7 @@
                     .cancel-with! (ffi:task nil) :shutdown
                     , false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message |capability
               :tags $ #{} :cancel-proof :core :unit
             %{} 'TestEntry (:name |reason-evaluates-once-before-host-error)
@@ -7680,7 +7673,7 @@
                         , :shutdown
                     , false
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? message |capability
                 assert= 1 $ deref attempts
               :tags $ #{} :cancel-proof :core :unit
@@ -7689,7 +7682,7 @@
                 try
                   .cancel-with! (ffi:task nil) (raise |cancel-reason-failed)
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
               :tags $ #{} :cancel-proof :core :unit
         'ffi:response $ %{} 'CodeEntry
@@ -7781,8 +7774,7 @@
           :code $ quote $ defn filter-map-kv (xs f)
             &map:fold-kv xs ({})
               fn (acc key value)
-                hint-fn $ quote $ Fn (Map R S) K V
-                  -> $ Map R S
+                hint-fn $ Fn (Map R S) K V $ -> (Map R S)
                 match (f key value)
                   (:keep next-key next-value) (&map:assoc acc next-key next-value)
                   (:drop) acc
@@ -7828,7 +7820,7 @@
             %{} 'TestEntry (:name |preserves-captured-generic-relations)
               :code $ quote $ let
                   choose $ fn (xs f)
-                    hint-fn $ quote $ Fn (Map K V)
+                    hint-fn $ Fn (Map K V)
                       Fn K V $ -> $ MapEntryDecision R S
                       -> $ Map R S
                       :generics K V R S
@@ -8014,7 +8006,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |async-scope-keeps-local-callbacks-sync)
             :code $ quote $ let
                 explicit-sync $ fn (counter)
-                  hint-fn $ quote $ Fn (Ref Number) (-> Unit) (:async)
+                  hint-fn $ Fn (Ref Number) (-> Unit) (:async)
                   add-watch! counter :changes $ fn (current previous)
                     hint-fn $ {}
                       :args $ [] 'Number 'Number
@@ -8022,10 +8014,10 @@
                       :async false
                     , &unit
                 implicit-sync $ fn (counter)
-                  hint-fn $ quote $ Fn (Ref Number) (-> Unit) (:async)
+                  hint-fn $ Fn (Ref Number) (-> Unit) (:async)
                   add-watch! counter :changes $ fn (current previous) &unit
                 accept-async $ fn (callback)
-                  hint-fn $ quote $ Fn
+                  hint-fn $ Fn
                     Fn Number Number (-> Unit) (:async)
                     -> Unit
                   assert= true $ fn? callback
@@ -8033,7 +8025,7 @@
               assert= true $ fn? explicit-sync
               assert= true $ fn? implicit-sync
               assert= &unit $ accept-async $ fn (current previous)
-                hint-fn $ quote $ Fn Number Number (-> Unit) (:async)
+                hint-fn $ Fn Number Number (-> Unit) (:async)
                 , &unit
             :tags $ #{} :core :unit
         'fn? $ %{} 'CodeEntry (:doc "|Check if a value is a function")
@@ -8180,7 +8172,7 @@
             %{} 'TestEntry (:name |typed-number-exits)
               :code $ quote $ let
                   step $ fn (n)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     let
                         next $ &- n 1
                       if (&< n 1) 0 $ do (&+ n 0) (recur next)
@@ -8770,7 +8762,7 @@
             loop
                 acc $ {}
                 xs xs0
-              hint-fn $ quote $ Fn
+              hint-fn $ Fn
                 Map K $ List T
                 List T
                 -> $ Map K $ List T
@@ -8795,20 +8787,20 @@
                   fn (x) (.rem x 3)
               assert= (&{})
                 group-by ([])
-                  fn (x) :number x
+                  fn (x) 'Number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。schema 写作 `quote $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `quote Async`。旧的 Map 写法仍可读取，`calcit edit format` 会改写为精简写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留，项目源码中的用法在检查输出的 Notes 中以 W_LEGACY_HINT_FN_TARGET 列出，计划在 0.32.0 删除。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
+          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留，项目源码中的用法在检查输出的 Notes 中以 W_LEGACY_HINT_FN_TARGET 列出，计划在 0.32.0 删除。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
                 increment $ fn (n)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   &+ n 1
               assert= 4 $ increment 3
             quote $ let
                 same $ fn (value)
-                  hint-fn $ quote $ Fn T (-> T) (:generics T)
+                  hint-fn $ Fn T (-> T) (:generics T)
                   , value
               assert= |text $ same |text
               assert= (Option :some nil)
@@ -8819,10 +8811,10 @@
             %{} 'TestEntry (:name |callable-return-contract)
               :code $ quote $ let
                   pass-number $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     , x
                   keep $ fn (callback)
-                    hint-fn $ quote $ Fn Fn (-> Fn)
+                    hint-fn $ Fn Fn $ -> Fn
                     , callback
                 assert= 3 $
                   keep pass-number
@@ -8831,7 +8823,7 @@
             %{} 'TestEntry (:name |dynamic-storage-return-contract)
               :code $ quote $ let
                   keep $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic $ -> Dynamic
                     , value
                 assert= |hello $ keep |hello
                 assert= ([] 1 2)
@@ -8840,16 +8832,16 @@
             %{} 'TestEntry (:name |explicit-unit-return-contract)
               :code $ quote $ let
                   finish $ fn (callback)
-                    hint-fn $ quote $ Fn Fn (-> Unit)
+                    hint-fn $ Fn Fn $ -> Unit
                     , &unit
                 assert= &unit $ finish $ fn (x) x
               :tags $ #{} :return-boundary
             %{} 'TestEntry (:name |fixed-callback-call-contract)
               :code $ quote $ let
                   apply-one $ fn (callback value)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Fn Number $ -> Number
-                      , Number (-> Number)
+                      , Number $ -> Number
                     callback value
                 assert= 4 $ apply-one
                   fn (x) (+ x 1)
@@ -8858,14 +8850,14 @@
             %{} 'TestEntry (:name |empty-list-call-contract)
               :code $ quote $ let
                   count-values $ fn (xs)
-                    hint-fn $ quote $ Fn (List Number) (-> Number)
+                    hint-fn $ Fn (List Number) (-> Number)
                     .len xs
                 assert= 0 $ count-values $ []
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |dynamic-storage-call-contract)
               :code $ quote $ let
                   keep $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic $ -> Dynamic
                     , value
                 assert= |hello $ keep |hello
                 assert= ([] 1 2)
@@ -8874,40 +8866,38 @@
             %{} 'TestEntry (:name |generic-callback-call-contract)
               :code $ quote $ let
                   apply-generic $ fn (callback value)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Fn T $ -> T
                       , T (-> T) (:generics T)
                     callback value
                   identity-number $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     , x
                 assert= 3 $ apply-generic identity-number 3
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |async-tail-return-contract)
               :code $ quote $ let
                   load $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number) (:async)
+                    hint-fn $ Fn Number (-> Number) (:async)
                     , x
                   forward $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number) (:async)
+                    hint-fn $ Fn Number (-> Number) (:async)
                     load x
                 assert= true $ fn? forward
                 , forward
               :tags $ #{} :async-return-boundary
             %{} 'TestEntry (:name |metadata-is-nil)
               :code $ quote $ let
-                  metadata $ hint-fn $ quote
-                    Fn Number $ -> Number
+                  metadata $ hint-fn $ Fn Number (-> Number)
                 assert-type metadata 'Nil
                 assert= nil metadata
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |local-hint-is-nil)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     + x 1
-                  metadata $ hint-fn f $ quote
-                    Fn Number $ -> Number
+                  metadata $ hint-fn f $ Fn Number (-> Number)
                 assert-type metadata 'Nil
                 assert= nil metadata
                 assert= 4 $ f 3
@@ -8915,27 +8905,27 @@
             %{} 'TestEntry (:name |hinted-body-is-callable)
               :code $ quote $ let
                   invoke $ fn (callback)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Fn Number $ -> Number
                       -> Number
                     callback 3
                 assert= 4 $ invoke $ fn (x)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   + x 1
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |trailing-body-metadata)
               :code $ quote $ let
                   f $ fn () 3 $ hint-fn
-                    quote $ Fn $ -> Number
+                    Fn $ -> Number
                 assert= 3 $ f
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |targeted-body-hint-is-nil)
               :code $ quote $ let
                   f $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     + x 1
                   annotate $ fn () 3 $ hint-fn f
-                    quote $ Fn Number $ -> Number
+                    Fn Number $ -> Number
                 assert-type (annotate) 'Nil
                 assert= nil $ annotate
                 assert= 4 $ f 3
@@ -8943,20 +8933,20 @@
             %{} 'TestEntry (:name |typed-callable-to-open-storage)
               :code $ quote $ let
                   keep $ fn (callback)
-                    hint-fn $ quote $ Fn Fn (-> Fn)
+                    hint-fn $ Fn Fn $ -> Fn
                     , callback
                   identity-number $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     , x
                 assert= true $ fn? $ keep identity-number
               :tags $ #{} :call-boundary :concrete-call-proof
             %{} 'TestEntry (:name |checked-number-to-concrete-call)
               :code $ quote $ let
                   increment $ fn (n)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &+ n 1
                   decode-and-increment $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> Number)
+                    hint-fn $ Fn Dynamic $ -> Number
                     match (try-decode-map-as value 'Number)
                       (:ok n) (increment n)
                       (:err reason) (raise reason)
@@ -8965,7 +8955,7 @@
             %{} 'TestEntry (:name |concrete-call-after-cond-expansion)
               :code $ quote $ let
                   choose $ fn (flag)
-                    hint-fn $ quote $ Fn Bool (-> Number)
+                    hint-fn $ Fn Bool $ -> Number
                     cond (flag 1) (true 2)
                 assert= 1 $ choose true
                 assert= 2 $ choose false
@@ -8973,7 +8963,7 @@
             %{} 'TestEntry (:name |literal-spread-call-contract)
               :code $ quote $ let
                   sink $ fn (n)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     , n
                 assert= 3 $ sink & $ [] 3
                 assert= 4 $ &+ 1 & $ [] 3
@@ -9075,12 +9065,12 @@
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)
-                    hint-fn $ quote $ Fn (List T)
+                    hint-fn $ Fn (List T)
                       -> $ List T
                       :generics T
                     , xs
                   forward $ fn (xs)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       List $ Optional T
                       -> $ List $ Optional T
                       :generics T
@@ -9093,7 +9083,7 @@
             %{} 'TestEntry (:name |raise-only-return-contract)
               :code $ quote $ let
                   fail $ fn (flag)
-                    hint-fn $ quote $ Fn Bool (-> Number)
+                    hint-fn $ Fn Bool $ -> Number
                     if flag
                       let
                           value 1
@@ -9111,7 +9101,7 @@
                     value $ Option :none
                   let
                       echo-number $ fn (input) input $ hint-fn
-                        quote $ Fn Number $ -> Number
+                        Fn Number $ -> Number
                     if (&< n 1)
                       recur 1 $ Option :some 7
                       &+ (echo-number 7) 1
@@ -9119,10 +9109,10 @@
             %{} 'TestEntry (:name |open-element-narrowed-before-concrete-call)
               :code $ quote $ let
                   number-only $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     &+ value 1
                   from-open $ fn (items)
-                    hint-fn $ quote $ Fn (List Dynamic) (-> Number)
+                    hint-fn $ Fn (List Dynamic) (-> Number)
                     &let
                       v $ &list:nth items 0
                       if (number? v) (number-only v) 0
@@ -9132,7 +9122,7 @@
             %{} 'TestEntry (:name |open-element-classified-before-payload)
               :code $ quote $ let
                   classify $ fn (items)
-                    hint-fn $ quote $ Fn (List Dynamic) (-> Data)
+                    hint-fn $ Fn (List Dynamic) (-> Data)
                     &let
                       v $ &list:nth items 0
                       if (number? v) (Data :number v) (data-view v)
@@ -9144,10 +9134,10 @@
             %{} 'TestEntry (:name |open-element-generic-propagation)
               :code $ quote $ let
                   same $ fn (value)
-                    hint-fn $ quote $ Fn T (-> T) (:generics T)
+                    hint-fn $ Fn T (-> T) (:generics T)
                     , value
                   first-open $ fn (items)
-                    hint-fn $ quote $ Fn (List Dynamic) (-> Dynamic)
+                    hint-fn $ Fn (List Dynamic) (-> Dynamic)
                     same $ &list:nth items 0
                 assert= |wrong $ first-open $ [] |wrong
               :tags $ #{} :call-boundary :open-element-proof
@@ -9177,7 +9167,7 @@
             %{} 'TestEntry (:name |local-generic-hint-preserves-option-values)
               :code $ quote $ let
                   same $ fn (value)
-                    hint-fn $ quote $ Fn T (-> T) (:generics T)
+                    hint-fn $ Fn T (-> T) (:generics T)
                     , value
                 assert= 7 $ same 7
                 assert= |text $ same |text
@@ -9189,18 +9179,17 @@
             %{} 'TestEntry (:name |local-hint-keeps-proven-function-alias)
               :code $ quote $ let
                   invoke $ fn (callback)
-                    hint-fn $ quote $ Fn calcit.core/inc (-> Number)
-                    hint-fn callback $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn calcit.core/inc $ -> Number
+                    hint-fn callback $ Fn Number $ -> Number
                     callback 7
                 assert= 8 $ invoke inc
               :tags $ #{} :hint-syntax :unit
             %{} 'TestEntry (:name |local-hint-narrows-open-input)
               :code $ quote $ let
                   measure $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> Number)
+                    hint-fn $ Fn Dynamic $ -> Number
                     if (number? value) value 0
-                  metadata $ hint-fn measure $ quote
-                    Fn Number $ -> Number
+                  metadata $ hint-fn measure $ Fn Number (-> Number)
                 assert= nil metadata
                 assert= 8 $ &+ (measure 7) 1
               :tags $ #{} :hint-syntax :unit
@@ -9253,7 +9242,7 @@
             %{} 'TestEntry (:name |open-values-have-the-same-truthiness)
               :code $ quote $ let
                   choose $ fn (condition)
-                    hint-fn $ quote $ Fn Dynamic (-> String)
+                    hint-fn $ Fn Dynamic $ -> String
                     if condition |yes |no
                 assert= |no $ choose nil
                 assert= |no $ choose false
@@ -9274,7 +9263,7 @@
             %{} 'TestEntry (:name |typed-bool-conditions-preserve-both-branches)
               :code $ quote $ let
                   choose $ fn (condition)
-                    hint-fn $ quote $ Fn Bool (-> String)
+                    hint-fn $ Fn Bool $ -> String
                     if condition |yes |no
                 assert= |yes $ choose true
                 assert= |no $ choose false
@@ -9283,7 +9272,7 @@
             %{} 'TestEntry (:name |nested-expression-and-tail-conditions)
               :code $ quote $ let
                   tail $ fn (x)
-                    hint-fn $ quote $ Fn Dynamic (-> String)
+                    hint-fn $ Fn Dynamic $ -> String
                     if false |wrong $ if x |yes |no
                   expression $ if false |wrong $ if 0 |yes |no
                 assert= |yes expression
@@ -9321,7 +9310,7 @@
             %{} 'TestEntry (:name |direct-unsafe-bool-keeps-runtime-truthiness)
               :code $ quote $ let
                   choose $ fn (condition)
-                    hint-fn $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
+                    hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
                     if (unsafe-coerce condition 'Bool) |yes |no
                 assert= |no $ choose nil
                 assert= |no $ choose false
@@ -9332,29 +9321,29 @@
                 assert= |yes $ choose |
                 assert= |yes $ let
                     choose-expression $ fn (condition)
-                      hint-fn $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
+                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
                       let
                           result $ if (unsafe-coerce condition 'Bool) |yes |no
                         , result
                   choose-expression 0
                 let
                     choose-local $ fn (condition)
-                      hint-fn $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
+                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
                       let
                           flag $ unsafe-coerce condition 'Bool
                         if flag |yes |no
                     choose-nested $ fn (condition)
-                      hint-fn $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
+                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
                       if
                         let
                             flag $ unsafe-coerce condition 'Bool
                           , flag
                         , |yes |no
                     choose-producer $ fn (condition)
-                      hint-fn $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
+                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
                       let
                           as-bool $ fn (condition)
-                            hint-fn $ quote $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                            hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
                             unsafe-coerce condition 'Bool
                         if (as-bool condition) |yes |no
                   assert= |yes $ choose-local 0
@@ -9373,15 +9362,15 @@
             %{} 'TestEntry (:name |typed-number-conditions-are-truthy)
               :code $ quote $ let
                   choose-number $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> String)
+                    hint-fn $ Fn Number $ -> String
                     if value |yes |no
                   choose-alias $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> String)
+                    hint-fn $ Fn Number $ -> String
                     let
                         alias value
                       if alias |yes |no
                   erase-refinement $ fn (value)
-                    hint-fn $ quote $ Fn UInt32 (-> Number) (:features :js-ffi)
+                    hint-fn $ Fn UInt32 (-> Number) (:features :js-ffi)
                     unsafe-coerce value 'Number
                 assert= |yes $ choose-number 0
                 assert= |yes $ choose-alias 0
@@ -9413,10 +9402,10 @@
             %{} 'TestEntry (:name |nullable-bool-and-text-conditions)
               :code $ quote $ let
                   choose-bool $ fn (value)
-                    hint-fn $ quote $ Fn (Optional Bool) (-> String)
+                    hint-fn $ Fn (Optional Bool) (-> String)
                     if value |yes |no
                   choose-text $ fn (value)
-                    hint-fn $ quote $ Fn (Optional String) (-> String)
+                    hint-fn $ Fn (Optional String) (-> String)
                     if value |yes |no
                 assert= |no $ choose-bool nil
                 assert= |no $ choose-bool false
@@ -9674,7 +9663,7 @@
                 acc $ []
                 xs xs0
                 ys ys0
-              hint-fn $ quote $ Fn (List T) (List T) (List T)
+              hint-fn $ Fn (List T) (List T) (List T)
                 -> $ List T
                 :generics T
               if
@@ -9720,8 +9709,7 @@
                 acc $ []
                 xs xs0
                 beginning? true
-              hint-fn $ quote $ Fn (List T) (List T) Bool
-                -> $ List T
+              hint-fn $ Fn (List T) (List T) Bool $ -> (List T)
               &list-match-internal xs acc (x0 xss)
                 recur
                   append
@@ -9761,7 +9749,7 @@
                 acc |
                 xs xs0
                 beginning? true
-              hint-fn $ quote $ Fn String (List T) Bool (-> String)
+              hint-fn $ Fn String (List T) Bool $ -> String
               &list-match-internal xs acc (x0 xss)
                 recur
                   &str:concat
@@ -9882,7 +9870,7 @@
           :doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
           :code $ quote $ defn keys-non-nil (x)
             &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
-              hint-fn $ quote $ Fn K V (-> Bool)
+              hint-fn $ Fn K V $ -> Bool
               not $ nil? v
           :examples $ []
             quote $ assert= (#{} :a :b)
@@ -10045,7 +10033,7 @@
                 assert= 4 $ let[] (new other) ([] 4 5) new
                 assert= 6 $
                   fn (new)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     + new 1
                   , 5
                 assert= 7 $ match (Option :some 7)
@@ -10058,7 +10046,7 @@
                   value 3
                   text |outer
                   transform $ fn (x)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     + x value
                 assert= 4 $ let
                     value $ + value 1
@@ -10075,7 +10063,7 @@
                 assert= 13 $ transform 10
                 assert= 12 $ let
                     transform $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       + x 2
                   transform 10
                 assert= 13 $ transform 10
@@ -10226,11 +10214,10 @@
             %{} 'TestEntry (:name |preserves-open-payload-callback)
               :code $ quote $ let
                   consume $ fn (xs)
-                    hint-fn $ {}
-                      :args $ [] $ :: (quote List) (quote Dynamic)
-                      :return $ :: (quote List) (quote Dynamic)
+                    hint-fn $ Fn (List Dynamic)
+                      -> $ List Dynamic
                     map xs $ fn (value)
-                      hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                      hint-fn $ Fn Dynamic $ -> Dynamic
                       , value
                 assert= ([] 1 :ready)
                   consume $ [] 1 :ready
@@ -10286,8 +10273,7 @@
           :code $ quote $ defn map-indexed (xs f)
             foldl xs ([])
               defn %map-indexed (acc x)
-                hint-fn $ quote $ Fn (List U) T
-                  -> $ List U
+                hint-fn $ Fn (List U) T $ -> (List U)
                 append acc $ f (&list:count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
@@ -10332,7 +10318,7 @@
           :code $ quote $ defn map-kv (xs f)
             &map:fold-kv xs ({})
               defn %map-kv (acc key value)
-                hint-fn $ quote $ Fn Map K V (-> Map)
+                hint-fn $ Fn Map K V $ -> Map
                 &let
                   result $ f key value
                   if (list? result)
@@ -10461,8 +10447,7 @@
           :code $ quote $ defn map-list-kv (xs f)
             &map:fold-kv xs ([])
               fn (acc key value)
-                hint-fn $ quote $ Fn (List U) K V
-                  -> $ List U
+                hint-fn $ Fn (List U) K V $ -> (List U)
                 append acc $ f key value
           :examples $ []
           :schema $ quote $ Fn (Map K V)
@@ -10591,8 +10576,7 @@
                   merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
                 let
                     read-input $ fn ()
-                      hint-fn $ quote $ Fn
-                        -> $ Map Tag Dynamic
+                      hint-fn $ Fn $ -> (Map Tag Dynamic)
                       {} (:time 12) (:missing nil)
                     input $ read-input
                     defaults $ {} $ :done? false
@@ -10706,24 +10690,19 @@
             %{} 'TestEntry (:name |nil-joins-bridge-through-nil-option)
               :code $ quote $ let
                   explicit-option $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option String
+                    hint-fn $ Fn Number $ -> (Option String)
                     if (> x 0) (Option :some |pos) (Option :none)
                   from-nil-join $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option String
+                    hint-fn $ Fn Number $ -> (Option String)
                     nil->option $ if (> x 0) |pos nil
                   from-when $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option String
+                    hint-fn $ Fn Number $ -> (Option String)
                     nil->option $ when (> x 0) |pos
                   from-do-nil $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option String
+                    hint-fn $ Fn Number $ -> (Option String)
                     nil->option $ if (> x 0) |pos $ do nil
                   from-nil-local $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option String
+                    hint-fn $ Fn Number $ -> (Option String)
                     let
                         n nil
                       nil->option $ if (> x 0) |pos n
@@ -10742,16 +10721,14 @@
               :name |collapses-legacy-optional-values-under-declared-option
               :code $ quote $ let
                   from-if $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option Number
+                    hint-fn $ Fn Number $ -> (Option Number)
                     nil->option $ if (> x 0) x
                   from-optional $ fn (x)
-                    hint-fn $ quote $ Fn (Optional Number)
+                    hint-fn $ Fn (Optional Number)
                       -> $ Option Number
                     nil->option x
                   from-branches $ fn (x)
-                    hint-fn $ quote $ Fn Number
-                      -> $ Option Number
+                    hint-fn $ Fn Number $ -> (Option Number)
                     if (> x 0) (nil->option x) (nil->option nil)
                   numbers $ assert-type ([] 1 2)
                     quote $ List Number
@@ -10809,19 +10786,19 @@
               :code $ quote $ do
                 let
                     typed-bool $ fn (x)
-                      hint-fn $ quote $ Fn Bool (-> Bool)
+                      hint-fn $ Fn Bool $ -> Bool
                       non-nil? x
                     typed-number $ fn (x)
-                      hint-fn $ quote $ Fn Number (-> Bool)
+                      hint-fn $ Fn Number $ -> Bool
                       non-nil? x
                   assert= true $ typed-bool false
                   assert= true $ typed-number 0
                 let
                     generic $ fn (x)
-                      hint-fn $ quote $ Fn T (-> Bool) (:generics T)
+                      hint-fn $ Fn T (-> Bool) (:generics T)
                       non-nil? x
                     forward $ fn (x)
-                      hint-fn $ quote $ Fn T (-> Bool) (:generics T)
+                      hint-fn $ Fn T (-> Bool) (:generics T)
                       generic x
                   assert= true $ forward false
                   assert= true $ forward 0
@@ -11097,7 +11074,7 @@
             %{} 'TestEntry (:name |proven-bools-are-not-numbers)
               :code $ quote $ let
                   inspect $ fn (value)
-                    hint-fn $ quote $ Fn Bool (-> Bool)
+                    hint-fn $ Fn Bool $ -> Bool
                     and
                       not $ number? value
                       bool? value
@@ -11110,7 +11087,7 @@
             %{} 'TestEntry (:name |proven-zero-scalars-keep-distinct-kinds)
               :code $ quote $ let
                   inspect $ fn (none unit)
-                    hint-fn $ quote $ Fn Nil Unit (-> Bool)
+                    hint-fn $ Fn Nil Unit $ -> Bool
                     and
                       not $ number? none
                       not $ number? unit
@@ -11123,12 +11100,12 @@
             %{} 'TestEntry (:name |proven-numbers-keep-kind-and-refinements)
               :code $ quote $ let
                   inspect $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Bool)
+                    hint-fn $ Fn Number $ -> Bool
                     and (number? value)
                       not $ bool? value
                       = :number $ type-of value
                   inspect-int8 $ fn (value)
-                    hint-fn $ quote $ Fn Int8 (-> Bool)
+                    hint-fn $ Fn Int8 $ -> Bool
                     and (number? value)
                       not $ bool? value
                       = :number $ type-of value
@@ -11141,19 +11118,19 @@
             %{} 'TestEntry (:name |scalar-kind-predicates-evaluate-once)
               :code $ quote $ let
                   produce-bool $ fn (value)
-                    hint-fn $ quote $ Fn Bool (-> Bool)
+                    hint-fn $ Fn Bool $ -> Bool
                     println |scalar-kind-bool
                     , value
                   produce-nil $ fn ()
-                    hint-fn $ quote $ Fn (-> Nil)
+                    hint-fn $ Fn $ -> Nil
                     println |scalar-kind-nil
                     , nil
                   produce-unit $ fn ()
-                    hint-fn $ quote $ Fn (-> Unit)
+                    hint-fn $ Fn $ -> Unit
                     println |scalar-kind-unit
                     , &unit
                   produce-number $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     println |scalar-kind-number
                     , value
                 assert= false $ number? $ produce-bool false
@@ -11165,14 +11142,14 @@
             %{} 'TestEntry (:name |optional-number-input-remains-accepted)
               :code $ quote $ let
                   inspect $ fn (value)
-                    hint-fn $ quote $ Fn (Optional Number) (-> Bool)
+                    hint-fn $ Fn (Optional Number) (-> Bool)
                     number? value
                 assert= true $ inspect 1
               :tags $ #{} :scalar-kind-evidence :unit
             %{} 'TestEntry (:name |proven-tags-are-not-numbers)
               :code $ quote $ let
                   inspect $ fn (value)
-                    hint-fn $ quote $ Fn Tag (-> Bool)
+                    hint-fn $ Fn Tag $ -> Bool
                     and (tag? value)
                       not $ number? value
                       = :tag $ type-of value
@@ -11190,7 +11167,7 @@
             %{} 'TestEntry (:name |tag-kind-predicates-evaluate-once)
               :code $ quote $ let
                   produce $ fn (value)
-                    hint-fn $ quote $ Fn Tag (-> Tag)
+                    hint-fn $ Fn Tag $ -> Tag
                     println |proven-tag-value
                     , value
                 assert= false $ number? $ produce :ready
@@ -11291,11 +11268,10 @@
             %{} 'TestEntry (:name |preserves-open-payload-callback)
               :code $ quote $ let
                   consume $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] $ :: (quote Option) (quote Dynamic)
-                      :return $ :: (quote Option) (quote Dynamic)
+                    hint-fn $ Fn (Option Dynamic)
+                      -> $ Option Dynamic
                     value .map $ fn (item)
-                      hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                      hint-fn $ Fn Dynamic $ -> Dynamic
                       , item
                 assert= (Option :some :ready)
                   consume $ Option :some :ready
@@ -11308,7 +11284,7 @@
                   absent $
                     Option :none
                     , .map $ fn (value)
-                      hint-fn $ quote $ Fn Number (-> String)
+                      hint-fn $ Fn Number $ -> String
                       raise |unselected-map-callback
                 assert-type mapped $ quote $ Option String
                 assert-type absent $ quote $ Option String
@@ -11470,8 +11446,7 @@
           :code $ quote $ defn pairs-map (xs)
             reduce xs ({})
               defn %pairs-map (acc pair)
-                hint-fn $ quote $ Fn (Map Dynamic Dynamic) P
-                  -> $ Map Dynamic Dynamic
+                hint-fn $ Fn (Map Dynamic Dynamic) P $ -> (Map Dynamic Dynamic)
                 assert "|expects pair for pairs-map" $ if (list? pair)
                   &= 2 $ &list:count pair
                   , false
@@ -11514,21 +11489,21 @@
                     pairs-map $ [] 1
                     , false
                   fn (error)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? error "|expects pair for pairs-map"
                 assert= true $ try
                   do
                     pairs-map $ [] $ [] :a
                     , false
                   fn (error)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? error "|expects pair for pairs-map"
                 assert= true $ try
                   do
                     pairs-map $ [] $ [] :a 1 2
                     , false
                   fn (error)
-                    hint-fn $ quote $ Fn String (-> Bool)
+                    hint-fn $ Fn String $ -> Bool
                     .includes? error "|expects pair for pairs-map"
               :tags $ #{} :core :pairs-map-proof :unit
         'parse-cirru $ %{} 'CodeEntry
@@ -11922,8 +11897,7 @@
             loop
                 acc $ []
                 n n0
-              hint-fn $ quote $ Fn (List T) Number
-                -> $ List T
+              hint-fn $ Fn (List T) Number $ -> (List T)
               if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
           :schema $ quote $ Fn T Number
@@ -12239,8 +12213,7 @@
             assert "|expected map for selecting" $ map? m
             foldl xs (&{})
               defn %select-keys (acc k)
-                hint-fn $ quote $ Fn (Map K V) K
-                  -> $ Map K V
+                hint-fn $ Fn (Map K V) K $ -> (Map K V)
                 match (&map:get m k)
                   (:some value) (&map:assoc acc k value)
                   (:none) acc
@@ -12340,10 +12313,10 @@
             %{} 'TestEntry (:name |inline-option-omission-keeps-nominal-none)
               :code $ quote $ let
                   default-end $ fn (end)
-                    hint-fn $ quote $ Fn (Option Number) (-> Number)
+                    hint-fn $ Fn (Option Number) (-> Number)
                     end.unwrap-or 99
                   take-prefix $ fn (value end)
-                    hint-fn $ quote $ Fn String (Option Number) (-> String)
+                    hint-fn $ Fn String (Option Number) (-> String)
                     value.slice 0 end
                 assert= 99 $ default-end
                 assert= 2 $ default-end $ Option :some 2
@@ -12624,7 +12597,7 @@
               :name |checked-dynamic-input-preserves-nominal-identity
               :code $ quote $ let
                   read $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> calcit.core/FsPath)
+                    hint-fn $ Fn Dynamic $ -> calcit.core/FsPath
                     struct-match value
                       FsPath current
                         assert= |fixture $ :value current
@@ -12656,7 +12629,7 @@
               :name |rejects-invalid-input-with-original-failure-text
               :code $ quote $ let
                   read $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic (-> calcit.core/FsPath)
+                    hint-fn $ Fn Dynamic $ -> calcit.core/FsPath
                     struct-match value (FsPath current current)
                       _ other $ raise |Wrong-struct
                 assert= "|expected struct value to match (struct? value)" $ try (read |not-a-struct)
@@ -12878,7 +12851,7 @@
             %{} 'TestEntry (:name |supports-generic-bound)
               :code $ quote $ let
                   convert $ fn (x)
-                    hint-fn $ quote $ Fn T (-> String) (:generics T)
+                    hint-fn $ Fn T (-> String) (:generics T)
                       :where $ T ToString
                     to-string x
                 assert= |42 $ convert 42
@@ -12928,7 +12901,7 @@
                 &doseq
                   entry $ map-entries $ {}
                     :pointerdown $ fn ()
-                      hint-fn $ quote $ Fn (-> Unit)
+                      hint-fn $ Fn $ -> Unit
                       , &unit
                   let
                       typed $ assert-type entry $ quote
@@ -12940,7 +12913,7 @@
                       :value typed
                 let
                     name $ fn (key)
-                      hint-fn $ quote $ Fn Tag (-> String)
+                      hint-fn $ Fn Tag $ -> String
                       key .to-string
                   assert= |className $ name :className
               :tags $ #{} :core :unit
@@ -13360,8 +13333,7 @@
           :code $ quote $ defn unselect-keys (m xs)
             assert "|expected map for unselecting" $ map? m
             foldl xs m $ defn %unselect-keys (acc k)
-              hint-fn $ quote $ Fn (Map K V) K
-                -> $ Map K V
+              hint-fn $ Fn (Map K V) K $ -> (Map K V)
               &map:dissoc acc k
           :examples $ []
           :schema $ quote $ Fn (Map K V) (List K)
@@ -13562,9 +13534,9 @@
             %{} 'TestEntry (:name |checked-open-path-keeps-numeric-boundary)
               :code $ quote $ let
                   change $ fn (data path)
-                    hint-fn $ quote $ Fn Dynamic (List Tag) (-> Dynamic)
+                    hint-fn $ Fn Dynamic (List Tag) (-> Dynamic)
                     update-in data path $ fn (current)
-                      hint-fn $ quote $ Fn (Option Dynamic) (-> Number)
+                      hint-fn $ Fn (Option Dynamic) (-> Number)
                       if (current.none?) 1 $ inc $ decode-map-as (current.unwrap) 'Number
                 assert=
                   {} $ :count 2
@@ -13578,9 +13550,9 @@
             %{} 'TestEntry (:name |open-path-output-is-not-input-type)
               :code $ quote $ let
                   replace-leaf $ fn (data path)
-                    hint-fn $ quote $ Fn Dynamic (List Tag) (-> Dynamic)
+                    hint-fn $ Fn Dynamic (List Tag) (-> Dynamic)
                     update-in data path $ fn (current)
-                      hint-fn $ quote $ Fn (Option Dynamic) (-> String)
+                      hint-fn $ Fn (Option Dynamic) (-> String)
                       if (current.some?) |present |missing
                 assert=
                   {} $ :value |present
@@ -13594,7 +13566,7 @@
             %{} 'TestEntry (:name |literal-map-path-retains-callback-leaf-type)
               :code $ quote $ let
                   increment $ fn (data)
-                    hint-fn $ quote $ Fn
+                    hint-fn $ Fn
                       Map Tag $ Map Tag Number
                       -> $ Map Tag $ Map Tag Number
                     update-in data ([] :nested :count)
@@ -13609,7 +13581,7 @@
               :name |empty-path-retains-input-with-independent-output
               :code $ quote $ let
                   classify $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> String)
+                    hint-fn $ Fn Number $ -> String
                     update-in value ([])
                       fn (current)
                         if
@@ -13631,7 +13603,7 @@
                     do
                       reset! trace $ append @trace |updater
                       fn (current)
-                        hint-fn $ quote $ Fn (Option Number) (-> String)
+                        hint-fn $ Fn (Option Number) (-> String)
                         reset! trace $ append @trace |callback
                         to-string $ current.unwrap
                 assert= |9 result
@@ -13640,11 +13612,11 @@
             %{} 'TestEntry (:name |open-map-update-keeps-root-and-siblings)
               :code $ quote $ let
                   write $ fn (db)
-                    hint-fn $ quote $ Fn (Map Tag Dynamic)
+                    hint-fn $ Fn (Map Tag Dynamic)
                       -> $ Map Tag Dynamic
                     update-in db ([] :repo :current)
                       fn (value)
-                        hint-fn $ quote $ Fn (Option Dynamic) (-> String)
+                        hint-fn $ Fn (Option Dynamic) (-> String)
                         identity |main
                 assert=
                   {}
@@ -13807,7 +13779,7 @@
                 acc $ {}
                 xs xs0
                 ys ys0
-              hint-fn $ quote $ Fn (Map K V) (List K) (List V)
+              hint-fn $ Fn (Map K V) (List K) (List V)
                 -> $ Map K V
               if
                 if (&list:empty? xs) true $ &list:empty? ys
@@ -13922,7 +13894,7 @@
         '&core-contains-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-enum-impl
             &impl::new :&core-contains-enum-impl $ :: :contains? $ fn (x k)
-              hint-fn $ quote $ Fn Enum K (-> Bool) (:generics K)
+              hint-fn $ Fn Enum K (-> Bool) (:generics K)
               if (number? k)
                 if (&>= k 0)
                   &< k $ &enum:count x

@@ -41,7 +41,7 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 ### 字段类型的声明来源
 
 字段中的类型名按 `defstruct` 所在 namespace 及其显式 import 解析，而不是按调用者解析。
-例如 `Database` 声明 `:users $ :: 'Map 'String 'User` 时，其他 namespace 通过普通 import
+例如 `Database` 声明 `:users $ quote $ Map String User` 时，其他 namespace 通过普通 import
 构造、读取或更新该字段，仍使用声明处的 `User`；调用者自己也定义了 `User`，不代表两者可以互换。
 这个规则同样覆盖 `Option` 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
 不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
@@ -69,13 +69,13 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 
 ## Generic Structs
 
-`defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.
+`defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `quote $ TypeName …`.
 
 ```cirru
 let
     Box $ defstruct Box ([] 'T) (:value 'T)
     keep $ fn (box)
-      hint-fn $ quote $ Fn (Box T) (-> T) (:generics T)
+      hint-fn $ Fn (Box T) (-> T) (:generics T)
       :value box
     b $ Box :value 1
   assert-type b $ quote $ Box Number
@@ -177,7 +177,7 @@ defstruct Router $ :name 'String
 defstruct ClientStore $ :router 'Router
 
 defn router-name (store)
-  hint-fn $ quote $ Fn app.schema/ClientStore (-> String)
+  hint-fn $ Fn app.schema/ClientStore (-> String)
   :name $ :router store
 ```
 
@@ -339,7 +339,7 @@ Struct 不会相互匹配；别名、字段更新和附加 trait 实现仍保留
 ```cirru
 let
     read-path $ fn (value)
-      hint-fn $ quote $ Fn Struct (-> String)
+      hint-fn $ Fn Struct (-> String)
       if (&struct:matches? value FsPath) (:value value) (raise |expected-FsPath)
   assert= |data/config.cirru $ read-path $ FsPath :value |data/config.cirru
 ```
@@ -369,10 +369,7 @@ Define a trait with `deftrait`, implement it with `defimpl`, and attach it to a 
 ```cirru
 let
     BirdTrait $ deftrait BirdTrait
-      .show $ :: :fn
-        {}
-          :args $ [] 'T
-          :return :nil
+      .show $ quote $ Fn T (-> Nil)
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)
@@ -413,11 +410,9 @@ let
 
 ```cirru
 let
-    User $ defstruct User (:name :string) (:age :number) (:email :string)
+    User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
     get-user-name $ fn (user)
-      hint-fn $ {}
-        :args $ [] 'User
-        :return :string
+      hint-fn $ Fn User (-> String)
       :name user
   println $ get-user-name
     User :name |John :age 30 :email |john@example.com
@@ -430,11 +425,10 @@ let
 When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to struct construction (`%{}`). This keeps ergonomic literal syntax while retaining the nominal type.
 
 ```cirru.no-check
-defstruct Point (:x :number) (:y :number)
+defstruct Point (:x 'Number) (:y 'Number)
 
 defn sum-point (p)
-  hint-fn $ {} (:return :number)
-    :args $ [] 'app.main/Point
+  hint-fn $ Fn app.main/Point (-> Number)
   &+ (:x p) (:y p)
 
 ; The preprocessor rewrites this hashmap to the expected struct:
@@ -491,11 +485,10 @@ let
 When an anonymous struct is passed to a function whose parameter is a named struct, the preprocessor can rewrite it to the expected nominal definition:
 
 ```cirru.no-check
-defstruct Point (:x :number) (:y :number)
+defstruct Point (:x 'Number) (:y 'Number)
 
 defn sum-point (p)
-  hint-fn $ {} (:return :number)
-    :args $ [] 'app.main/Point
+  hint-fn $ Fn app.main/Point (-> Number)
   &+ (:x p) (:y p)
 
 ; Anonymous struct rewritten to the expected named struct:

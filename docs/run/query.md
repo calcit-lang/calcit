@@ -120,8 +120,7 @@ calcit query ns app.demo --format cirru
     'greet $ %{} 'CodeEntry (:doc "|Greets a person")
       :code $ quote $ defn greet (name) (str "|Hi " name)
       :examples $ []
-      :schema $ :: 'Fn $ {} (:return 'String)
-        :args $ [] 'String
+      :schema $ quote $ Fn String (-> String)
   :ns $ %{} 'NsEntry (:doc |)
     :code $ quote $ ns app.demo
       :require $ app.lib :refer $ helper
@@ -200,7 +199,7 @@ calcit query def 'calcit.core/&map:get' --format edn
 
 默认 Markdown 输出以一个方法列表展示数量、来源、证明状态及可用的参数和返回类型，不按首选、兼容或未归类分组。展示顺序不表示调用优先级，也不改变方法分派或结构化输出。
 
-例如 `query type ":: 'List 'Number" --format edn` 会列出 `.append` 与 `.len` 等方法及其类型契约。
+例如 `query type "quote $ List Number" --format edn` 会列出 `.append` 与 `.len` 等方法及其类型契约。
 
 命名整理的已实现入口与未来目标必须区分：用 `calcit docs read api-roles.md '逐族命名决策'`
 查看整组契约，或把章节改成 `谓词与成员查询`、`集合长度、组合与遍历` 缩小输出。
@@ -357,7 +356,7 @@ definition ordering and global `cursor_index` assignment.
 calcit query type "'Number"
 
 # Parameterized type; pass Cirru directly, without an extra outer parenthesis layer
-calcit query type ":: 'List 'Number"
+calcit query type "quote $ List Number"
 
 # A definition with an explicit static schema
 calcit query type calcit.core/ceil

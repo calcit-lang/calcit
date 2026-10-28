@@ -14,8 +14,7 @@
           :doc "|Reachable definition whose payload slot must be bound by the selected entry."
           :code $ quote $ defn accept-payload (payload) payload
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return '*payload)
-            :args $ [] '*payload
+          :schema $ quote $ Fn *payload (-> *payload)
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes accept-payload reachable.")
           :code $ quote $ defn main! () (accept-payload 1)
           :examples $ []

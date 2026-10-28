@@ -98,13 +98,11 @@ fn snapshot_source(entries: &str) -> String {
         'main! $ %{{}} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {{}} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{{}} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {{}} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{{}} 'NsEntry (:doc |)
         :code $ quote $ ns verify-fixture.main
 "#
@@ -167,7 +165,7 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)",
+      "quote $ Macro (-> $ Expr Unit) (:capabilities :log)",
     ],
     [
       "edit",

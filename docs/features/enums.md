@@ -59,7 +59,7 @@ let
 
 ## Generic Enums
 
-`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then use the applied named type syntax `(:: 'TypeName ...)` in schemas and assertions.
+`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type as `quote $ TypeName …` in schemas and assertions.
 
 ```cirru
 let
@@ -72,7 +72,7 @@ let
   assert= |oops $ &enum:nth err 1
 ```
 
-At the type level, `(:: 'ResultX 'Number 'String)` means the first slot is bound to `T` and the second slot is bound to `E`.
+At the type level, `quote $ ResultX Number String` means the first slot is bound to `T` and the second slot is bound to `E`.
 
 ### Generic Enums with `where` Bounds
 
@@ -254,7 +254,7 @@ When a variant has no payload, the pattern is just the tag wrapped in parenthese
 
 ```cirru
 let
-    MaybeInt $ defenum MaybeInt (:some :number) (:none)
+    MaybeInt $ defenum MaybeInt (:some 'Number) (:none)
     some-val $ MaybeInt :some 42
     none-val $ MaybeInt :none
     extracted $ match some-val
@@ -358,12 +358,12 @@ defenum Shape (:point :number :number) (:circle :number)
 defstruct Box ([] 'T) (:value 'T)
 
 defenum Wrapped ([] 'T)
-  :box $ :: 'Box 'T
+  :box $ quote $ Box T
   :empty
 
 ; (:none) means no payload
 
-defenum MaybeInt (:some :number) (:none)
+defenum MaybeInt (:some 'Number) (:none)
 ```
 
 Payloads may also reference named struct types (illustrative, cross-file type ref):
@@ -371,9 +371,9 @@ Payloads may also reference named struct types (illustrative, cross-file type re
 ```cirru.no-check
 ; defstruct and defenum from the same snippet context:
 
-defstruct Point (:x :number) (:y :number)
+defstruct Point (:x 'Number) (:y 'Number)
 
-defenum Shape2 (:point Point) (:circle :number)
+defenum Shape2 (:point Point) (:circle 'Number)
 ```
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
@@ -384,10 +384,9 @@ When a function parameter is typed as an enum, the preprocessor can rewrite an a
 
 ```cirru
 let
-    Result0 $ defenum Result0 (:err :string) (:ok)
+    Result0 $ defenum Result0 (:err 'String) (:ok)
     takes-result $ fn (r)
-      :: :fn $ {} (:return 'Tag)
-        :args $ [] 'app.main/Result0
+      hint-fn $ Fn Result0 (-> Tag)
       match r
         (:ok) :ok
         (:err msg) :err

@@ -91,20 +91,20 @@
               :code $ quote $ let
                   order $ ref |
                   callback $ fn (a b)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     swap! order $ fn (text)
-                      hint-fn $ quote $ Fn String (-> String)
+                      hint-fn $ Fn String $ -> String
                       str text |C
                     &+ a b
                   result $ call-value callback $ []
                     do
                       swap! order $ fn (text)
-                        hint-fn $ quote $ Fn String (-> String)
+                        hint-fn $ Fn String $ -> String
                         str text |L
                       , 3
                     do
                       swap! order $ fn (text)
-                        hint-fn $ quote $ Fn String (-> String)
+                        hint-fn $ Fn String $ -> String
                         str text |R
                       , 4
                 assert |expected-numeric-result $ number? result
@@ -120,12 +120,12 @@
                         do (reset! order |head) 7
                         do
                           swap! order $ fn (text)
-                            hint-fn $ quote $ Fn String (-> String)
+                            hint-fn $ Fn String $ -> String
                             str text |args
                           []
                       , |missing-error
                     fn (message)
-                      hint-fn $ quote $ Fn String (-> String)
+                      hint-fn $ Fn String $ -> String
                       , message
                 assert= |expected-function message
                 assert= |headargs $ deref order
@@ -135,7 +135,7 @@
                   present $ Option :some nil
                   absent $ Option :none
                   forward $ fn (value)
-                    hint-fn $ quote $ Fn (Option Nil)
+                    hint-fn $ Fn (Option Nil)
                       -> $ Option Nil
                     , value
                 assert= true $ identical? present $ call-value forward ([] present)
@@ -162,7 +162,7 @@
                 message $ try
                   do (check-loop-each-iteration! 1) |missing-error
                   fn (message)
-                    hint-fn $ quote $ Fn String (-> String)
+                    hint-fn $ Fn String $ -> String
                     , message
               assert= |expected-number message
             :tags $ #{} :guard-continuation :js :unit
@@ -208,7 +208,7 @@
             let
                 checked f
                 get-value $ fn ()
-                  hint-fn $ quote $ Fn (-> Fn)
+                  hint-fn $ Fn $ -> Fn
                   , checked
               set! f 1
               get-value
@@ -234,7 +234,7 @@
             %{} 'TestEntry (:name |guard-keeps-known-signature)
               :code $ quote $ let
                   callback $ keep-signature $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     .inc value
                 assert= 8 $ callback 7
               :tags $ #{} :guard-continuation :unit
@@ -243,7 +243,7 @@
               :code $ quote $ let
                   mark $ ref 0
                   callback $ keep-signature $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Number)
+                    hint-fn $ Fn Number $ -> Number
                     .inc value
                 assert-type callback 'Fn
                 reset! mark 1

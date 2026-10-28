@@ -196,14 +196,14 @@ Calcit keeps parameter lists structural and declares types in function schemas r
 let
     ; hint-fn only: declare arg and return types
     square $ fn (n)
-      hint-fn $ {} (:args ([] :number)) (:return :number)
+      hint-fn $ Fn Number (-> Number)
       &* n n
     ; trailing return type label
-    get-pi $ fn () :number
+    get-pi $ fn () 'Number
       , 3.14159
     ; mixed: hint-fn for args, trailing label for return
-    add $ fn (a b) :number
-      hint-fn $ {} (:args ([] :number :number))
+    add $ fn (a b) 'Number
+      hint-fn $ {} (:args ([] 'Number 'Number))
       + a b
   do
     assert= 25 $ square 5
@@ -217,7 +217,7 @@ For namespace-level definitions, attach schema separately, for example:
 defn square (n)
   &* n n
 
-:: :fn $ {} (:args $ [] :number) (:return :number)
+quote $ Fn Number (-> Number)
 ```
 
 ### 6. `$` and `,` Usage

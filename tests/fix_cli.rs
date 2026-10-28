@@ -163,13 +163,13 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
       "traversal-open-hop",
       "base",
       "nil? $ &get-in base ([] :box :value)",
-      ":: 'Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
     ),
     (
       "traversal-open-path",
       "path",
       "nil? $ &get-in (&{} :box (Box :value 1)) path",
-      ":: 'List 'Tag",
+      "List Tag",
     ),
   ] {
     let target = format!("app.review/{name}");
@@ -198,7 +198,7 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:return 'Bool)\n  :args $ [] ({argument_schema})"),
+          &format!("quote $ Fn ({argument_schema}) (-> Bool)"),
         ],
       ),
       "declare the traversal receiver/path evidence without specializing it",
@@ -299,7 +299,7 @@ fn structural_rewrite_fixture() -> (TestDirectory, PathBuf) {
           "--input-format",
           "cirru",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+          "quote $ Fn Number (-> Number)",
         ],
       ),
       "declare helper contract",
@@ -352,7 +352,7 @@ fn structural_rewrite_fixture() -> (TestDirectory, PathBuf) {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{returns})"),
+          &format!("quote $ Fn (-> {returns})"),
         ],
       ),
       "declare zero-argument source contract",
@@ -1431,11 +1431,8 @@ fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
     assert_success(&run_calcit(&snapshot, &args), "create core enum fixture");
   }
   for (target, schema) in [
-    (
-      "app.main/wrap",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Number)",
-    ),
-    ("app.main/count-down", "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"),
+    ("app.main/wrap", "quote $ Fn Number (-> $ Option Number)"),
+    ("app.main/count-down", "quote $ Fn Number (-> Number)"),
   ] {
     assert_success(
       &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
@@ -1648,7 +1645,7 @@ fn nominal_write_proof_checks_method_value_without_rewriting_source() {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ [] 'WriteState '{input}) (:return 'WriteState)"),
+          &format!("quote $ Fn WriteState {input} (-> WriteState)"),
         ],
       ),
       "declare method contract",
@@ -1794,64 +1791,59 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
-  let callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))";
-  let rest_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:rest 'Number) (:return 'Number))";
-  let feature_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi))";
-  let async_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:async true))";
+  let callback = "(Fn Number (-> Number))";
+  let rest_callback = "(Fn Number & Number (-> Number))";
+  let feature_callback = "(Fn Number (-> Number) (:features :js-ffi))";
+  let async_callback = "(Fn Number (-> Number) (:async))";
   for (name, argument, returns, body) in [
-    ("consume", callback, "'Number", "callback 1"),
-    ("erased", "'Fn", "'Number", "consume callback"),
-    ("open-input", "'Dynamic", "'Number", "consume callback"),
-    ("closed", callback, "'Number", "consume callback"),
-    ("generic-closed", callback, "'Number", "generic-consume 1 callback"),
-    ("generic-erased", "'Fn", "'Number", "generic-consume 1 callback"),
+    ("consume", callback, "Number", "callback 1"),
+    ("erased", "Fn", "Number", "consume callback"),
+    ("open-input", "Dynamic", "Number", "consume callback"),
+    ("closed", callback, "Number", "consume callback"),
+    ("generic-closed", callback, "Number", "generic-consume 1 callback"),
+    ("generic-erased", "Fn", "Number", "generic-consume 1 callback"),
     (
       "generic-nested",
-      "'Fn",
-      "'Number",
+      "Fn",
+      "Number",
       "(if true generic-consume generic-consume) 1 (fn (n) (&+ n 1))",
     ),
     (
       "generic-inline",
-      "'Fn",
-      "'Number",
+      "Fn",
+      "Number",
       "let ((apply-one generic-consume)) (apply-one 1 (fn (n) (&+ n 1)))",
     ),
-    ("storage", "'Fn", "'Fn", ", callback"),
+    ("storage", "Fn", "Fn", ", callback"),
     (
       "watch-context",
-      "'Fn",
-      "'Number",
+      "Fn",
+      "Number",
       "let ((watched (ref 1)) (observed (ref 0))) (add-watch! watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch! watched :proof) (deref observed)",
     ),
     (
       "owned-feature",
-      "'Fn",
-      "'Number",
-      "consume-feature (fn (n) (hint-fn ({} (:args ([] 'Number)) (:return 'Number) (:features (#{} :js-ffi)))) (unsafe-coerce n 'Number))",
+      "Fn",
+      "Number",
+      "consume-feature (fn (n) (hint-fn (Fn Number (-> Number) (:features :js-ffi))) (unsafe-coerce n 'Number))",
     ),
-    ("consume-async", async_callback, "'Number", ", 1"),
-    ("erased-async", "'Fn", "'Number", "consume-async callback"),
-    ("sync-for-async", "'Fn", "'Number", "consume-async (fn (n) (&+ n 1))"),
-    ("consume-rest", rest_callback, "'Number", "callback 1 2"),
-    ("erased-rest", "'Fn", "'Number", "consume-rest callback"),
-    ("closed-rest", rest_callback, "'Number", "consume-rest callback"),
-    ("consume-feature", feature_callback, "'Number", "callback 1"),
-    ("erased-feature", "'Fn", "'Number", "consume-feature callback"),
-    ("closed-feature", feature_callback, "'Number", "consume-feature callback"),
-    (
-      "wrong-signature",
-      "(:: 'Fn $ {} (:args $ [] 'String) (:return 'String))",
-      "'Number",
-      "consume callback",
-    ),
-    ("unknown-invocation", "'Fn", "'Number", "callback 1"),
-    ("foreign-owner", "'Fn", "'Number", "erased callback"),
-    ("unscoped", "'Fn", "'Number", "unsafe-coerce callback 'Number"),
+    ("consume-async", async_callback, "Number", ", 1"),
+    ("erased-async", "Fn", "Number", "consume-async callback"),
+    ("sync-for-async", "Fn", "Number", "consume-async (fn (n) (&+ n 1))"),
+    ("consume-rest", rest_callback, "Number", "callback 1 2"),
+    ("erased-rest", "Fn", "Number", "consume-rest callback"),
+    ("closed-rest", rest_callback, "Number", "consume-rest callback"),
+    ("consume-feature", feature_callback, "Number", "callback 1"),
+    ("erased-feature", "Fn", "Number", "consume-feature callback"),
+    ("closed-feature", feature_callback, "Number", "consume-feature callback"),
+    ("wrong-signature", "(Fn String (-> String))", "Number", "consume callback"),
+    ("unknown-invocation", "Fn", "Number", "callback 1"),
+    ("foreign-owner", "Fn", "Number", "erased callback"),
+    ("unscoped", "Fn", "Number", "unsafe-coerce callback 'Number"),
     (
       "borrowed-feature",
-      "'Fn",
-      "'Number",
+      "Fn",
+      "Number",
       "consume-feature (fn (n) (unsafe-coerce n 'Number))",
     ),
   ] {
@@ -1881,7 +1873,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ [] {argument}) (:return {returns})"),
+          &format!("quote $ Fn {argument} (-> {returns})"),
         ],
       ),
       "declare callable contract",
@@ -1912,7 +1904,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T (:: 'Fn $ {} (:args $ [] 'T) (:return 'T))) (:return 'T)",
+        "quote $ Fn T (Fn T (-> T)) (-> T) (:generics T)",
       ],
     ),
     "declare generic callable contract",
@@ -2059,13 +2051,13 @@ fn strict_workflow_reports_every_proof_error_in_a_definition() {
       "consume",
       "callback",
       "callback 1",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))) (:return 'Number)",
+      "quote $ Fn (Fn Number (-> Number)) (-> Number)",
     ),
     (
       "multi",
       "a b c",
       "&+ (consume a) (&+ (consume b) (consume c))",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Fn 'Fn 'Fn) (:return 'Number)",
+      "quote $ Fn Fn Fn Fn (-> Number)",
     ),
   ] {
     let target = format!("fix-command.main/{name}");
@@ -2162,7 +2154,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
     ),
     "declare closed sink",
@@ -2192,7 +2184,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:rest 'Number) (:return 'Number)",
+        "quote $ Fn Number & Number (-> Number)",
       ],
     ),
     "declare closed rest sink",
@@ -2201,17 +2193,17 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     (
       "identity-list",
       "quote $ defn identity-list (xs)\n  , xs",
-      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] $ :: 'List 'T) (:return $ :: 'List 'T)",
+      "quote $ Fn (List T) (-> $ List T) (:generics T)",
     ),
     (
       "choose-first",
       "quote $ defn choose-first (x y)\n  , x",
-      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T 'T) (:return 'T)",
+      "quote $ Fn T T (-> T) (:generics T)",
     ),
     (
       "choose-map",
       "quote $ defn choose-map (left right) right",
-      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] (:: 'Map 'Tag 'T) (:: 'Map 'Tag 'T)) (:return $ :: 'Map 'Tag 'T)",
+      "quote $ Fn (Map Tag T) (Map Tag T) (-> $ Map Tag T) (:generics T)",
     ),
   ] {
     let target = format!("fix-command.returns/{name}");
@@ -2229,50 +2221,50 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     // replayed by the shared Calcit definition tests rather than duplicated here.
     (
       "late-open-map-call",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
       "Bool",
       ".unwrap-or (get (merge ({} (:done? false)) x) :time) false",
       true,
     ),
     (
       "early-open-map-call",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
       "Bool",
       ".unwrap-or (get (merge x ({} (:done? false))) :time) false",
       true,
     ),
     (
       "late-open-map-helper",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
       "Bool",
       ".unwrap-or (get (choose-map ({} (:done? false)) x) :time) false",
       true,
     ),
     (
       "early-open-map-helper",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
       "Bool",
       ".unwrap-or (get (choose-map x ({} (:done? false))) :time) false",
       true,
     ),
     (
       "open-map-call-storage",
-      "Map 'Tag 'Dynamic",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
+      "Map Tag Dynamic",
       "merge ({} (:done? false)) x",
       false,
     ),
     (
       "open-map-helper-storage",
-      "Map 'Tag 'Dynamic",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
+      "Map Tag Dynamic",
       "choose-map ({} (:done? false)) x",
       false,
     ),
     (
       "open-map-method-storage",
-      "Map 'Tag 'Dynamic",
-      "Map 'Tag 'Dynamic",
+      "Map Tag Dynamic",
+      "Map Tag Dynamic",
       ".merge ({} (:done? false)) x",
       false,
     ),
@@ -2306,13 +2298,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("generic", "T", "T", ", x", false),
     ("generic-tail", "T", "T", "if (identical? x x) x (recur x)", false),
     ("changed-generic-tail", "T", "T", "if (identical? x x) x (recur |invalid)", true),
-    (
-      "nested-generic-call",
-      "List (:: 'List 'T)",
-      "List (:: 'List 'T)",
-      "identity-list x",
-      false,
-    ),
+    ("nested-generic-call", "List (List T)", "List (List T)", "identity-list x", false),
     ("rigid-generic-call", "T", "T", "choose-first x |invalid", true),
     ("late-open-generic-call", "Dynamic", "Number", "choose-first 1 x", true),
     ("early-open-generic-call", "Dynamic", "Number", "choose-first x 1", true),
@@ -2331,13 +2317,13 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("spread-call", "Dynamic", "Number", "sink & ([] x)", true),
     ("closed-spread-call", "Number", "Number", "sink & ([] x)", false),
     ("unknown-spread-call", "Dynamic", "Number", "sink & x", true),
-    ("typed-rest-spread", "List 'Number", "Number", "rest-sink 1 & x", false),
-    ("prefixed-rest-spread", "List 'Number", "Number", "rest-sink 1 2 3 & x", false),
-    ("wrong-rest-spread", "List 'String", "Number", "rest-sink 1 & x", true),
-    ("open-rest-spread", "List 'Dynamic", "Number", "rest-sink 1 & x", true),
+    ("typed-rest-spread", "List Number", "Number", "rest-sink 1 & x", false),
+    ("prefixed-rest-spread", "List Number", "Number", "rest-sink 1 2 3 & x", false),
+    ("wrong-rest-spread", "List String", "Number", "rest-sink 1 & x", true),
+    ("open-rest-spread", "List Dynamic", "Number", "rest-sink 1 & x", true),
     ("unknown-rest-spread", "Dynamic", "Number", "rest-sink 1 & x", true),
-    ("missing-fixed-rest-spread", "List 'Number", "Number", "rest-sink & x", true),
-    ("typed-fixed-spread", "List 'Number", "Number", "sink & x", true),
+    ("missing-fixed-rest-spread", "List Number", "Number", "rest-sink & x", true),
+    ("typed-fixed-spread", "List Number", "Number", "sink & x", true),
     ("local-spread-call", "Dynamic", "Number", "let ((f sink)) (f & ([] x))", true),
     ("proc-spread-call", "Dynamic", "Number", "&+ 1 & ([] x)", true),
     ("core-spread-call", "Dynamic", "Number", "&call-spread sink & ([] x)", true),
@@ -2377,19 +2363,19 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
           "cirru",
           "--code",
           &format!(
-            "quote $ :: 'Fn $ {{}} (:args $ [] {}) (:return {}){}",
+            "quote $ Fn {} (-> {}){}",
             if argument.contains(' ') {
-              format!("(:: '{argument})")
+              format!("({argument})")
             } else {
-              format!("'{argument}")
+              argument.to_owned()
             },
             if returns.contains(' ') {
-              format!("(:: '{returns})")
+              format!("({returns})")
             } else {
-              format!("'{returns}")
+              returns.to_owned()
             },
-            if argument == "T" || argument.split_whitespace().any(|item| item.trim_matches(['(', ')']) == "'T") {
-              " (:generics $ [] 'T)"
+            if argument == "T" || argument.split_whitespace().any(|item| item.trim_matches(['(', ')']) == "T") {
+              " (:generics T)"
             } else {
               ""
             }
@@ -2535,7 +2521,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Number)",
+        "quote $ Fn String (-> Number)",
       ],
     ),
     "create a definite call contradiction",
@@ -2626,7 +2612,7 @@ fn concrete_return_proof_rejects_a_known_spread_argument_contradiction() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
     ),
     "declare spread return",
@@ -2663,7 +2649,7 @@ fn assertion_proof_error_does_not_grant_ffi_to_the_next_definition() {
     (
       "fix-command.features/a-return",
       "quote $ defn a-return (x) , x",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number) (:features $ #{} :js-ffi)",
+      "quote $ Fn Dynamic (-> Number) (:features :js-ffi)",
     ),
     (
       "fix-command.features/b-unscoped",
@@ -2728,7 +2714,7 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
           "--input-format",
           "cirru",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+          "quote $ Fn Dynamic (-> Dynamic)",
         ],
       ),
       "declare open helper contract",
@@ -2776,7 +2762,7 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
     ),
   ] {
     let target = format!("fix-command.main/{name}");
-    let generics = if argument == "T" { " (:generics $ [] 'T)" } else { "" };
+    let generics = if argument == "T" { " (:generics T)" } else { "" };
     assert_success(
       &run_calcit(
         &snapshot,
@@ -2802,7 +2788,7 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ [] '{argument}) (:return 'Number){generics}"),
+          &format!("quote $ Fn {argument} (-> Number){generics}"),
         ],
       ),
       "add assertion contract",
@@ -2871,8 +2857,8 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
 #[test]
 fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
   for (producer_body, return_type, asserted_type, expected_path) in [
-    (", x", "'Number", "Number", "code@3"),
-    ("&{} :value x", "(:: 'Map 'Tag 'String)", "(:: Map Tag String)", "code"),
+    (", x", "Number", "Number", "code@3"),
+    ("&{} :value x", "(Map Tag String)", "(:: Map Tag String)", "code"),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
@@ -2911,7 +2897,7 @@ fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
             "--input-format",
             "cirru",
             "--code",
-            &format!("quote $ :: 'Fn $ {{}} (:args $ [] 'Dynamic) (:return {return_type})"),
+            &format!("quote $ Fn Dynamic (-> {return_type})"),
           ],
         ),
         "declare unproven producer and consumer",
@@ -3041,7 +3027,7 @@ fn assertion_proof_fix_accepts_independently_proven_values() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
     ),
     "add proven contract",
@@ -3085,7 +3071,7 @@ fn assertion_proof_fix_accepts_independently_proven_values() {
     "Calcit assertion semantics",
   );
   assert_eq!(fs::read(&snapshot).unwrap(), original);
-  for (name, annotation, generics) in [("generic-identity", "T", " (:generics $ [] 'T)"), ("open-identity", "Dynamic", "")] {
+  for (name, annotation, generics) in [("generic-identity", "T", " (:generics T)"), ("open-identity", "Dynamic", "")] {
     let target = format!("fix-command.main/{name}");
     let asserted_type = if annotation == "T" { "'T" } else { annotation };
     assert_success(
@@ -3113,7 +3099,7 @@ fn assertion_proof_fix_accepts_independently_proven_values() {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ [] '{annotation}) (:return '{annotation}){generics}"),
+          &format!("quote $ Fn {annotation} (-> {annotation}){generics}"),
         ],
       ),
       "add identity signature",
@@ -3255,7 +3241,7 @@ fn unsafe_boundary_fix_preserves_compiler_rejection_and_source_bytes() {
       &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
       "add boundary source",
     );
-    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] 'Number) (:return 'Number) {features}");
+    let schema = format!("quote $ Fn Number (-> Number) {features}");
     assert_success(
       &run_calcit(
         &snapshot,
@@ -3350,7 +3336,7 @@ fn unsafe_boundary_fix_accepts_explicit_adapters_and_rejects_unrelated_errors() 
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi)",
+        "quote $ Fn Number (-> Number) (:features :js-ffi)",
       ],
     ),
     "mark lexical adapter",
@@ -3433,7 +3419,7 @@ fn unsafe_boundary_fix_accepts_explicit_adapters_and_rejects_unrelated_errors() 
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
     ),
     "add independent schema",
@@ -3512,7 +3498,7 @@ fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
   let target = "fix-command.main/literal-spread";
-  let source = "quote $ defn literal-spread ()\n  let\n      *counter $ ref 0\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + (* a 10) b\n    f & $ []\n      do (reset! *counter $ + @*counter 1) @*counter\n      do (reset! *counter $ + @*counter 1) @*counter";
+  let source = "quote $ defn literal-spread () $ let\n    *counter $ ref 0\n    f $ fn (a b)\n      hint-fn $ Fn Number Number (-> Number)\n      + (* a 10) b\n  f & $ []\n    do\n      reset! *counter $ + @*counter 1\n      , @*counter\n    do\n      reset! *counter $ + @*counter 1\n      , @*counter";
   assert_success(
     &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
     "add spread source",
@@ -3527,7 +3513,7 @@ fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
     ),
     "add spread schema",
@@ -3597,22 +3583,22 @@ fn spread_fix_never_writes_unproved_calls() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
   let cases = [
-    ("unknown-length", "(xs)", "f & xs", "[] (:: 'List 'Number)"),
-    ("wrong-item", "()", "f & ([] 1 |two)", "[]"),
-    ("wrong-length", "()", "f & ([] 1)", "[]"),
-    ("multiple-spreads", "()", "f & ([] 1) & ([] 2)", "[]"),
-    ("open-item", "(x)", "f & ([] 1 x)", "[] 'Dynamic"),
+    ("unknown-length", "(xs)", "f & xs", "(List Number)"),
+    ("wrong-item", "()", "f & ([] 1 |two)", ""),
+    ("wrong-length", "()", "f & ([] 1)", ""),
+    ("multiple-spreads", "()", "f & ([] 1) & ([] 2)", ""),
+    ("open-item", "(x)", "f & ([] 1 x)", "Dynamic"),
   ];
   for (name, parameters, call, arguments) in cases {
     let target = format!("fix-command.main/{name}");
     let source = format!(
-      "quote $ defn {name} {parameters}\n  let\n      f $ fn (a b)\n        hint-fn $ {{}} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    {call}"
+      "quote $ defn {name} {parameters} $ let\n    f $ fn (a b)\n      hint-fn $ Fn Number Number (-> Number)\n      + a b\n  {call}"
     );
     assert_success(
       &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &source]),
       "add review case",
     );
-    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ {arguments}) (:return 'Number)");
+    let schema = format!("quote $ Fn {arguments} (-> Number)");
     assert_success(
       &run_calcit(
         &snapshot,
@@ -3683,7 +3669,7 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
   for (name, source) in [
     (
       "fixed-sum",
-      "quote $ defn fixed-sum (a b)\n  hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n  + a b",
+      "quote $ defn fixed-sum (a b)\n  hint-fn $ Fn Number Number (-> Number)\n  + a b",
     ),
     (
       "spread-syntax",
@@ -3709,15 +3695,15 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
   let cases = [
     (
       "rest-spread",
-      "quote $ defn rest-spread ()\n  let\n      f $ fn (& xs)\n        hint-fn $ {} (:args $ []) (:rest 'Number) (:return 'Number)\n        , 1\n    f & $ [] 1 2",
+      "quote $ defn rest-spread () $ let\n    f $ fn (& xs)\n      hint-fn $ Fn & Number (-> Number)\n      , 1\n  f & $ [] 1 2",
     ),
     (
       "optional-spread",
-      "quote $ defn optional-spread ()\n  let\n      f $ fn (x)\n        hint-fn $ {} (:args $ [] (:: 'Optional 'Number)) (:return 'Number)\n        , 1\n    f & $ [] 1",
+      "quote $ defn optional-spread () $ let\n    f $ fn (x)\n      hint-fn $ Fn (Optional Number) (-> Number)\n      , 1\n  f & $ [] 1",
     ),
     (
       "macro-spread",
-      "quote $ defn macro-spread ()\n  let\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    spread-wrapper $ f & $ [] 1 2",
+      "quote $ defn macro-spread () $ let\n    f $ fn (a b)\n      hint-fn $ Fn Number Number (-> Number)\n      + a b\n  spread-wrapper $ f & $ [] 1 2",
     ),
     (
       "macro-headed-spread",
@@ -3744,7 +3730,7 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
           "--input-format",
           "cirru",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+          "quote $ Fn (-> Number)",
         ],
       ),
       "add boundary schema",
@@ -3898,23 +3884,23 @@ fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
     "run attached rest semantics",
   );
   for (name, input, call) in [
-    ("wrong-rest", "(:: 'List 'String)", "sink |numbers & xs"),
-    ("wrong-fixed", "(:: 'List 'Number)", "sink 1 & xs"),
-    ("wrong-explicit-rest", "(:: 'List 'Number)", "sink |numbers |bad & xs"),
-    ("wrong-prefixed-rest", "(:: 'List 'String)", "sink |numbers 1 & xs"),
-    ("open-prefixed-rest", "(:: 'List 'Dynamic)", "sink |numbers 1 & xs"),
-    ("open-rest", "'Dynamic", "sink |numbers & xs"),
-    ("missing-fixed", "(:: 'List 'Number)", "sink & xs"),
+    ("wrong-rest", "(List String)", "sink |numbers & xs"),
+    ("wrong-fixed", "(List Number)", "sink 1 & xs"),
+    ("wrong-explicit-rest", "(List Number)", "sink |numbers |bad & xs"),
+    ("wrong-prefixed-rest", "(List String)", "sink |numbers 1 & xs"),
+    ("open-prefixed-rest", "(List Dynamic)", "sink |numbers 1 & xs"),
+    ("open-rest", "Dynamic", "sink |numbers & xs"),
+    ("missing-fixed", "(List Number)", "sink & xs"),
   ] {
     let target = format!("fix-command.main/{name}");
     let source = format!(
-      "quote $ defn {name} (xs)\n  let\n      sink $ fn (label & values)\n        hint-fn $ {{}} (:args $ [] 'String) (:rest 'Number) (:return 'Number)\n        values .len\n    {call}"
+      "quote $ defn {name} (xs)\n  let\n      sink $ fn (label & values)\n        hint-fn $ Fn String & Number (-> Number)\n        values .len\n    {call}"
     );
     assert_success(
       &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &source]),
       "add unproved rest boundary",
     );
-    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] {input}) (:return 'Number)");
+    let schema = format!("quote $ Fn {input} (-> Number)");
     assert_success(
       &run_calcit(
         &snapshot,
@@ -4042,7 +4028,7 @@ fn selected_trait_rest_contract_survives_explicit_spread() {
         "--input-format",
         "cirru",
         "--code",
-        format!("quote $ :: 'Fn $ {{}} (:args $ [] 'test-traits.main/RestBox $ :: 'List '{element}) (:return 'Number)")
+        format!("quote $ Fn test-traits.main/RestBox (List {element}) (-> Number)")
       ]
     ])
     .to_string();
@@ -4088,7 +4074,7 @@ fn registered_variadic_ffi_spread_is_already_valid_and_unproven_forms_remain_rev
       );
     }
   };
-  let rest_strings = "quote $ :: 'Fn $ {} (:args $ []) (:rest 'String) (:return 'Dynamic)";
+  let rest_strings = "quote $ Fn & String (-> Dynamic)";
   define("pass-through", "quote $ defmacro pass-through (raw)\n  quasiquote ~raw", None);
   define("twice", "quote $ defmacro twice (raw)\n  quasiquote $ [] ~raw ~raw", None);
   define(
@@ -4132,12 +4118,12 @@ fn registered_variadic_ffi_spread_is_already_valid_and_unproven_forms_remain_rev
     (
       "open-operand-native",
       "quote $ defn open-operand-native (x)\n  &call-dylib-edn |lib |join & x",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      "quote $ Fn Dynamic (-> Dynamic)",
     ),
     (
       "duplicated-native",
       "quote $ defn duplicated-native (& xs)\n  twice $ &call-dylib-edn |lib |join & xs",
-      "quote $ :: 'Fn $ {} (:args $ []) (:rest 'String) (:return $ :: 'List 'Dynamic)",
+      "quote $ Fn & String (-> $ List Dynamic)",
     ),
   ] {
     define(name, code, Some(schema));
@@ -4480,7 +4466,7 @@ fn optional_parameter_rule_reports_declared_type_candidate() {
         "schema",
         "fix-command.main/ambiguous",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Bool)",
+        "quote $ Fn Number (-> Bool)",
       ],
     ),
     "install typed optional schema",
@@ -4517,26 +4503,10 @@ fn optional_parameter_rule_reports_declared_type_candidate() {
 #[test]
 fn optional_parameter_rule_omits_open_fn_candidates() {
   for (case, schema, has_slot_candidate) in [
-    (
-      "bare List tail",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'List) (:return 'Unit)",
-      false,
-    ),
-    (
-      "bare Map tail",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Map) (:return 'Unit)",
-      false,
-    ),
-    (
-      "open required argument",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Number) (:return 'Unit)",
-      true,
-    ),
-    (
-      "open return",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Number) (:return 'Dynamic)",
-      true,
-    ),
+    ("bare List tail", "quote $ Fn Number List (-> Unit)", false),
+    ("bare Map tail", "quote $ Fn Number Map (-> Unit)", false),
+    ("open required argument", "quote $ Fn Dynamic Number (-> Unit)", true),
+    ("open return", "quote $ Fn Number Number (-> Dynamic)", true),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
@@ -4602,13 +4572,7 @@ fn optional_parameter_rule_does_not_call_a_schema_alias_complete() {
   assert_success(
     &run_calcit(
       &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/OpenAlias",
-        "--code",
-        "quote $ :: 'List 'Dynamic",
-      ],
+      &["edit", "schema", "fix-command.main/OpenAlias", "--code", "quote $ List Dynamic"],
     ),
     "install open alias schema",
   );
@@ -4634,7 +4598,7 @@ fn optional_parameter_rule_does_not_call_a_schema_alias_complete() {
         "schema",
         "fix-command.main/ambiguous",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/OpenAlias 'Number) (:return 'Unit)",
+        "quote $ Fn fix-command.main/OpenAlias Number (-> Unit)",
       ],
     ),
     "install function schema with alias",
@@ -4689,7 +4653,7 @@ fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
         "schema",
         "fix-command.main/ambiguous",
         "--code",
-        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'String 'T 'Number) (:return 'Unit) (:features $ #{} :js-ffi)",
+        "quote $ Fn String T Number (-> Unit) (:generics T) (:features :js-ffi)",
       ],
     ),
     "install complete declared function schema",
@@ -4761,7 +4725,7 @@ fn strict_workflow_verifies_typed_macro_without_compatibility_recompilation() {
   fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
   let mut operations = Vec::new();
   for (name, code) in [
-    ("Doc", "quote $ defstruct Doc (:queue $ :: 'Option $ :: 'List 'String)"),
+    ("Doc", "quote $ defstruct Doc (:queue $ quote $ Option $ List String)"),
     (
       "validate-docs",
       "quote $ defn validate-docs (documents)\n  mapcat documents $ fn (doc)\n    filter ((:queue doc) .unwrap-or $ []) $ fn (id) (= id |missing)",
@@ -4788,14 +4752,8 @@ fn strict_workflow_verifies_typed_macro_without_compatibility_recompilation() {
     operations.push(args);
   }
   for (name, schema) in [
-    (
-      "validate-docs",
-      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'app.main/Doc) (:return $ :: 'List 'String)",
-    ),
-    (
-      "load-docs",
-      "quote $ :: 'Macro $ {} (:required $ []) (:expansion $ :: 'Expr $ :: 'List 'String)",
-    ),
+    ("validate-docs", "quote $ Fn (List app.main/Doc) (-> $ List String)"),
+    ("load-docs", "quote $ Macro (-> $ Expr $ List String)"),
   ] {
     operations.push(vec![
       "edit".to_owned(),
@@ -4865,7 +4823,7 @@ fn strict_workflow_keeps_declared_macro_logs_out_of_structured_reports() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)",
+      "quote $ Macro (-> $ Expr Unit) (:capabilities :log)",
     ],
     vec![
       "edit",
@@ -4941,7 +4899,7 @@ fn strict_workflow_reports_a_spread_definition_that_fails_preprocessing() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+        "quote $ Fn Dynamic (-> Number)",
       ],
     ),
     "declare spread definition contract",
@@ -5029,7 +4987,7 @@ fn strict_workflow_preserves_generic_metadata_path_contracts() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:generics $ [] 'K 'V) (:args $ [] $ :: 'Map 'K 'V) (:return $ :: 'Result 'V 'PathError)",
+      "quote $ Fn (Map K V) (-> $ Result V PathError) (:generics K V)",
     ],
     vec![
       "edit",
@@ -5143,7 +5101,7 @@ fn strict_workflow_accepts_open_map_callbacks_through_generic_contracts() {
     "--input-format",
     "cirru",
     "--code",
-    "quote $ :: :fn $ {} (:return :dynamic) (:args $ [] :dynamic)",
+    "quote $ Fn Dynamic (-> Dynamic)",
   ]);
   edit(&[
     "edit",
@@ -5214,8 +5172,8 @@ fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
     "use a side-effect-free entry",
   );
   for (name, body, returns) in [
-    ("store-open", "([] value)", "(:: 'List 'Dynamic)"),
-    ("unproven", "(assert-type value Number) value", "'Number"),
+    ("store-open", "([] value)", "(List Dynamic)"),
+    ("unproven", "(assert-type value Number) value", "Number"),
   ] {
     let target = format!("app.main/{name}");
     assert_success(
@@ -5243,7 +5201,7 @@ fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
           "--input-format",
           "cirru",
           "--code",
-          &format!("quote $ :: 'Fn $ {{}} (:args $ [] 'Dynamic) (:return {returns})"),
+          &format!("quote $ Fn Dynamic (-> {returns})"),
         ],
       ),
       "declare fixture boundary",
@@ -5360,7 +5318,7 @@ fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'List 'Number)",
+        "quote $ Fn Dynamic (-> $ List Number)",
       ],
     ),
     "request a concrete storage contract",
@@ -5475,7 +5433,7 @@ fn fix_preview_reports_malformed_external_object_trait_without_macro_capability_
       "valid external-object trait creation",
     ),
     (
-      vec!["edit", "schema", "util.core/Host", "--code", "quote $ :: 'Trait"],
+      vec!["edit", "schema", "util.core/Host", "--code", "quote Trait"],
       "external-object trait schema",
     ),
     (
@@ -5591,7 +5549,7 @@ fn whole_project_fix_loads_modules_from_all_entries_and_reports_missing_dependen
         "schema",
         "app.main/use-prime-module",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Number)",
+        "quote $ Fn (-> $ Map Tag Number)",
       ],
       "project definition schema",
     ),
@@ -5653,7 +5611,7 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
   );
   let fixture = fixture.replace(
     "        'reload! $ %{} 'CodeEntry",
-    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ :: 'Fn $ {} (:args $ [] 'app.main/NodeClock) (:return 'Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ :: 'Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)\n        'reload! $ %{} 'CodeEntry",
+    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ quote $ Fn app.main/NodeClock (-> Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ quote Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ quote $ Fn (-> Number) (:features :js-ffi)\n        'reload! $ %{} 'CodeEntry",
   );
   fs::write(&snapshot, &fixture).expect("multi-target fixture should write");
 
@@ -5684,33 +5642,33 @@ fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
   let definitions = [
-    ("Op", "defenum Op (:clear)", ":: 'EnumDef"),
+    ("Op", "defenum Op (:clear)", "EnumDef"),
     (
       "Props",
-      "defstruct Props ([] 'T)\n  :callback $ :: 'Fn $ {} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)",
-      ":: 'StructDef",
+      "defstruct Props ([] 'T)\n  :callback $ quote $ Fn\n    Fn T $ -> Unit\n    -> Unit",
+      "StructDef",
     ),
     (
       "OtherProps",
-      "defstruct OtherProps\n  :callback $ :: 'Fn $ {} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {} (:return 'Unit) (:args $ [] 'Number)",
-      ":: 'StructDef",
+      "defstruct OtherProps $ :callback $ quote\n  Fn\n    Fn Number $ -> Unit\n    -> Unit",
+      "StructDef",
     ),
     (
       "Wrapper",
-      "defstruct Wrapper ([] 'T)\n  :props $ :: 'app.main/Props 'T",
-      ":: 'StructDef",
+      "defstruct Wrapper ([] 'T)\n  :props $ quote $ app.main/Props T",
+      "StructDef",
     ),
     (
       "notify-wrapper",
       "defn notify-wrapper (dispatch! wrapper)\n  notify dispatch! (:props wrapper)",
-      ":: 'Fn $ {} (:generics $ [] 'T) (:return 'Unit)\n  :args $ [] (:: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)) (:: 'app.main/Wrapper 'T)",
+      "Fn\n  Fn T $ -> Unit\n  app.main/Wrapper T\n  -> Unit\n  :generics T",
     ),
     (
       "notify",
       "defn notify (dispatch! props)\n  (:callback props) dispatch!",
-      ":: 'Fn $ {} (:generics $ [] 'T) (:return 'Unit)\n  :args $ [] (:: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)) (:: 'app.main/Props 'T)",
+      "Fn\n  Fn T $ -> Unit\n  app.main/Props T\n  -> Unit\n  :generics T",
     ),
-    ("reload!", "defn reload! () &unit", ":: 'Fn $ {} (:args $ []) (:return 'Unit)"),
+    ("reload!", "defn reload! () &unit", "Fn (-> Unit)"),
   ];
   for (name, code, schema) in definitions {
     let target = format!("app.main/{name}");
@@ -5720,7 +5678,11 @@ fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
       args.push("--overwrite");
     }
     assert_success(&run_calcit(&snapshot, &args), "install nominal callback fixture");
-    let schema = format!("quote $ {schema}");
+    let schema = if schema.contains(char::is_whitespace) {
+      format!("quote $ {schema}")
+    } else {
+      format!("quote {schema}")
+    };
     assert_success(
       &run_calcit(
         &snapshot,
@@ -5729,7 +5691,7 @@ fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
       "declare nominal callback fixture",
     );
   }
-  let positive = "quote $ defn main! ()\n  notify\n    fn (op)\n      hint-fn $ {} (:args $ [] 'app.main/Op) (:return 'Unit)\n      assert= (Op :clear) op\n      , &unit\n    Props :callback $ fn (d!)\n      d! $ Op :clear\n      , &unit\n  , &unit";
+  let positive = "quote $ defn main! ()\n  notify\n    fn (op)\n      hint-fn $ Fn app.main/Op (-> Unit)\n      assert= (Op :clear) op\n      , &unit\n    Props :callback $ fn (d!)\n      d! $ Op :clear\n      , &unit\n  , &unit";
   assert_success(
     &run_calcit(
       &snapshot,
@@ -5891,7 +5853,7 @@ fn strict_workflow_preserves_inline_map_callback_contracts() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:return 'Number)\n  :args $ [] $ :: 'Map 'Tag $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)",
+        "quote $ Fn\n  Map Tag $ Fn Number $ -> Number\n  -> Number",
       ],
     ),
     "declare map callback contract",
@@ -6046,7 +6008,7 @@ fn staged_fix_validation_preserves_the_selected_browser_entry() {
   );
   let fixture = fixture.replace(
     "        'main! $ %{} 'CodeEntry",
-    "        'BrowserElement $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait BrowserElement\n            .focus! $ :: 'Fn $ {} (:args $ [] 'fix-command.main/BrowserElement) (:return 'Unit)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)\n            :names $ {} (:focus! |focus)\n          :schema $ :: 'Trait\n        'browser-focus! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn browser-focus! (element)\n            do (element .focus!) &unit\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :browser)\n          :schema $ :: 'Fn $ {} (:return 'Unit)\n            :args $ [] 'fix-command.main/BrowserElement\n            :features $ #{} :js-ffi\n        'main! $ %{} 'CodeEntry",
+    "        'BrowserElement $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait BrowserElement\n            .focus! $ quote $ Fn fix-command.main/BrowserElement (-> Unit)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)\n            :names $ {} (:focus! |focus)\n          :schema $ quote Trait\n        'browser-focus! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn browser-focus! (element)\n            do (element .focus!) &unit\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :browser)\n          :schema $ quote $ Fn fix-command.main/BrowserElement (-> Unit) (:features :js-ffi)\n        'main! $ %{} 'CodeEntry",
   );
   fs::write(&snapshot, fixture).expect("entry fixture should write");
 
@@ -6095,7 +6057,7 @@ fn semantic_rename_updates_only_compiler_resolved_usages_atomically() {
         "schema",
         "fix-command.main/rename-old",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
       "type rename source",
     ),
@@ -6126,7 +6088,7 @@ fn semantic_rename_updates_only_compiler_resolved_usages_atomically() {
         "schema",
         "fix-command.other/caller",
         "--code",
-        "quote $ :: 'Fn $ {} (:return $ :: 'List 'Number)",
+        "quote $ Fn (-> $ List Number)",
       ],
       "type consumer",
     ),
@@ -6146,7 +6108,7 @@ fn semantic_rename_updates_only_compiler_resolved_usages_atomically() {
         "schema",
         "fix-command.main/rename-shadow",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        "quote $ Fn Dynamic (-> Dynamic)",
       ],
       "type shadowed local",
     ),
@@ -6243,7 +6205,7 @@ fn semantic_rename_updates_attached_tests_and_examples_atomically() {
         "schema",
         "fix-command.main/rename-old",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
       "type rename source",
     ),
@@ -6258,13 +6220,7 @@ fn semantic_rename_updates_attached_tests_and_examples_atomically() {
       "create caller",
     ),
     (
-      vec![
-        "edit",
-        "schema",
-        "fix-command.main/caller",
-        "--code",
-        "quote $ :: 'Fn $ {} (:return 'Number)",
-      ],
+      vec!["edit", "schema", "fix-command.main/caller", "--code", "quote $ Fn (-> Number)"],
       "type caller",
     ),
     (
@@ -6389,7 +6345,7 @@ fn semantic_rename_rejects_quoted_attached_source_without_partial_writes() {
         "schema",
         "fix-command.main/rename-old",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
       "type quoted-boundary rename source",
     ),
@@ -6464,7 +6420,7 @@ fn semantic_rename_updates_schema_type_refs_atomically() {
         "schema",
         "fix-command.main/typed-value",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'RenameType) (:return 'Number)",
+        "quote $ Fn RenameType (-> Number)",
       ],
       "reference rename type from schema",
     ),
@@ -6534,7 +6490,7 @@ fn semantic_rename_updates_schema_trait_bounds_atomically() {
         "def",
         "fix-command.main/RenameTrait",
         "--code",
-        "quote $ deftrait RenameTrait (.show :fn)",
+        "quote $ deftrait RenameTrait (.show 'Fn)",
       ],
       "create rename trait",
     ),
@@ -6554,7 +6510,7 @@ fn semantic_rename_updates_schema_trait_bounds_atomically() {
         "schema",
         "fix-command.main/trait-bound-value",
         "--code",
-        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:where $ {} ('T 'RenameTrait)) (:return 'T)",
+        "quote $ Fn T (-> T) (:generics T) (:where $ T RenameTrait)",
       ],
       "reference rename trait from schema bound",
     ),
@@ -6621,13 +6577,7 @@ fn value_to_zero_arg_fn_updates_resolved_reads_atomically() {
       "make the native and JavaScript entry read the value",
     ),
     (
-      vec![
-        "edit",
-        "schema",
-        "fix-command.main/main!",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
-      ],
+      vec!["edit", "schema", "fix-command.main/main!", "--code", "quote $ Fn (-> Number)"],
       "type the value-reading entry",
     ),
     (
@@ -6646,7 +6596,7 @@ fn value_to_zero_arg_fn_updates_resolved_reads_atomically() {
         "schema",
         "fix-command.main/read-deferred-number",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
       "type value reader",
     ),
@@ -6884,7 +6834,7 @@ fn value_to_zero_arg_fn_wraps_reads_used_as_callees() {
         "schema",
         "fix-command.main/stored-adder",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
       "type function-valued definition",
     ),
@@ -6904,7 +6854,7 @@ fn value_to_zero_arg_fn_wraps_reads_used_as_callees() {
         "schema",
         "fix-command.main/call-stored-adder",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
       "type stored function caller",
     ),
@@ -7015,35 +6965,35 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
     (
       "unproven-producer",
       "quote $ defn unproven-producer ()\n  parse-cirru-edn \"|do nil\"",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+      Some("quote $ Fn (-> Number)"),
     ),
     ("producer-consumer", "quote $ defn producer-consumer ()\n  unproven-producer", None),
     (
       "coerced-number",
       "quote $ defn coerced-number ()\n  unsafe-coerce (parse-cirru-edn \"|do nil\") 'Number",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)"),
+      Some("quote $ Fn (-> Dynamic) (:features :js-ffi)"),
     ),
     ("argument-proof", "quote $ defn argument-proof (value)\n  , 3", None),
     (
       "coerced-caller",
       "quote $ defn coerced-caller ()\n  argument-proof $ unsafe-coerce (parse-cirru-edn \"|do nil\") 'Number",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)"),
+      Some("quote $ Fn (-> Number) (:features :js-ffi)"),
     ),
     ("owner-proof", "quote $ defn owner-proof (value)\n  , 3", None),
     (
       "proven-owner",
       "quote $ defn proven-owner ()\n  owner-proof 3",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+      Some("quote $ Fn (-> Number)"),
     ),
     (
       "unproven-owner",
       "quote $ defn unproven-owner ()\n  owner-proof 3\n  let\n      value $ parse-cirru-edn \"|do nil\"\n    assert-type value 'Number\n    , value",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+      Some("quote $ Fn (-> Number)"),
     ),
     (
       "zz-proven-owner",
       "quote $ defn zz-proven-owner ()\n  owner-proof 3",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+      Some("quote $ Fn (-> Number)"),
     ),
   ] {
     let target = format!("fix-command.main/{name}");
@@ -7130,7 +7080,7 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
           "--input-format",
           "cirru",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+          "quote $ Fn Dynamic (-> Dynamic)",
         ],
       ),
       "expose the original open contract to bulk schema evidence",
@@ -7180,42 +7130,42 @@ fn schema_synthesis_audits_callbacks_with_the_strict_contextual_types() {
     (
       "trs",
       "quote $ def trs $ [] (Tr :name :a :v 1) (Tr :name :b :v 2)",
-      Some("quote $ :: 'List 'fix-command.main/Tr"),
+      Some("quote $ List fix-command.main/Tr"),
     ),
     (
       "pairs",
       "quote $ defn pairs (xs) $ -> xs (map-indexed $ fn (idx x) ([] idx x)) (pairs-map)",
-      Some("quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Dynamic) (:return 'Dynamic)"),
+      Some("quote $ Fn (List Dynamic) (-> Dynamic)"),
     ),
     (
       "lines",
       "quote $ defn lines (x) $ mapcat trs $ fn (info) $ [] (&+ x $ :v info)",
-      Some("quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'List 'Number)"),
+      Some("quote $ Fn Number (-> $ List Number)"),
     ),
     (
       "bump",
       "quote $ defn bump (xs) $ map xs $ fn (x) (+ x 1)",
-      Some("quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Dynamic) (:return $ :: 'List 'Number)"),
+      Some("quote $ Fn (List Dynamic) (-> $ List Number)"),
     ),
     (
       "typed-make",
       "quote $ defn typed-make (props & children) $ {} (:props props) (:pairs $ pairs children) (:lines $ lines 1)",
-      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:rest 'Dynamic) (:return 'Dynamic)"),
+      Some("quote $ Fn Dynamic & Dynamic (-> Dynamic)"),
     ),
     (
       "open-make",
       "quote $ defn open-make (props & children) $ {} (:props props) (:bumped $ bump children)",
-      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:rest 'Dynamic) (:return 'Dynamic)"),
+      Some("quote $ Fn Dynamic & Dynamic (-> Dynamic)"),
     ),
     (
       "use-typed-make",
       "quote $ defn use-typed-make () $ typed-make 1 2 3",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"),
+      Some("quote $ Fn (-> Dynamic)"),
     ),
     (
       "use-open-make",
       "quote $ defn use-open-make () $ open-make 1 2 3",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"),
+      Some("quote $ Fn (-> Dynamic)"),
     ),
   ] {
     let target = format!("fix-command.main/{name}");
@@ -7302,7 +7252,7 @@ fn schema_synthesis_keeps_proven_assertions_decoders_and_discarded_coercions() {
             "--input-format",
             "cirru",
             "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)",
+            "quote $ Fn (-> Dynamic) (:features :js-ffi)",
           ],
         ),
         "keep the explicitly reviewed boundary unchanged",
@@ -7427,7 +7377,7 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
           "schema",
           "fix-command.main/use-inferred-add-one",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+          "quote $ Fn (-> Number)",
         ],
       ),
       "type callsite owner",
@@ -7560,7 +7510,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/evidence-number",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+        "quote $ Fn (-> Dynamic)",
       ],
       "structure exact evidence schema",
     ),
@@ -7580,7 +7530,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/evidence-add-one",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        "quote $ Fn Dynamic (-> Dynamic)",
       ],
       "structure usage-derived evidence schema",
     ),
@@ -7600,7 +7550,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/use-evidence-add-one",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
       "type schema evidence callsite",
     ),
@@ -7620,7 +7570,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/conflicting-evidence",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        "quote $ Fn Dynamic (-> Dynamic)",
       ],
       "structure conflicting evidence schema",
     ),
@@ -7640,7 +7590,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/use-conflicting-number",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
       "type numeric conflicting callsite",
     ),
@@ -7660,7 +7610,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/use-conflicting-string",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
       "type string conflicting callsite",
     ),
@@ -7680,7 +7630,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/person-a",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Dynamic)",
+        "quote $ Fn (-> $ Map Tag Dynamic)",
       ],
       "type first repeated map shape",
     ),
@@ -7700,7 +7650,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/person-b",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Map 'Tag 'Dynamic)",
+        "quote $ Fn (-> $ Map Tag Dynamic)",
       ],
       "type second repeated map shape",
     ),
@@ -7720,7 +7670,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
         "schema",
         "fix-command.main/summarize-evidence",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        "quote $ Fn Dynamic (-> Dynamic)",
       ],
       "structure dispatch evidence schema",
     ),
@@ -7732,12 +7682,12 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
     (
       "fix-command.main/macro-observed",
       "quote $ defn macro-observed (x) 1",
-      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)"),
+      Some("quote $ Fn Dynamic (-> Dynamic)"),
     ),
     (
       "fix-command.main/use-macro-observed",
       "quote $ defn use-macro-observed () (macro-observed 2)",
-      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+      Some("quote $ Fn (-> Number)"),
     ),
     (
       "fix-command.main/expand-macro-observed",
@@ -8334,7 +8284,7 @@ fn staged_fix_rejects_a_new_compiler_warning_without_writing() {
       "schema",
       "fix-command.main/fixable",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Enum) (:return $ :: 'Option 'Tag)",
+      "quote $ Fn Enum (-> $ Option Tag)",
     ],
   );
   assert!(
@@ -8526,7 +8476,7 @@ fn core_option_method_rule_uses_proven_receiver_and_is_idempotent() {
         "schema",
         "fix-command.main/option-methods",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)",
+        "quote $ Fn (Option Number) (-> Number)",
       ],
     ),
     "declare Option receiver schema",
@@ -9072,7 +9022,7 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
           "--input-format",
           "cirru",
           "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)",
+          "quote $ Fn Dynamic (-> Bool)",
         ],
       ),
       "declare open predicate source",
@@ -9130,7 +9080,7 @@ fn strict_result_success_consumption_rejects_dynamic_payload() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+        "quote $ Fn Dynamic (-> Number)",
       ],
     ),
     "declare open Result consumer",
@@ -9154,12 +9104,12 @@ fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
     (
       "open-result",
       "quote $ defn open-result (value) (result:unwrap-or value 7)",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Result 'Dynamic 'Number)) (:return 'Dynamic)",
+      "quote $ Fn (Result Dynamic Number) (-> Dynamic)",
     ),
     (
       "open-ok-result",
       "quote $ defn open-ok-result (value) (result:unwrap-or (Result :ok value) 7)",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+      "quote $ Fn Dynamic (-> Dynamic)",
     ),
   ] {
     let snapshot = directory.path().join(format!("{name}.cirru"));
@@ -9207,10 +9157,7 @@ fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
     "install local Result enum",
   );
   assert_success(
-    &run_calcit(
-      &snapshot,
-      &["edit", "schema", "fix-command.main/Result", "--code", "quote $ :: 'EnumDef"],
-    ),
+    &run_calcit(&snapshot, &["edit", "schema", "fix-command.main/Result", "--code", "quote EnumDef"]),
     "declare local Result enum",
   );
   assert_success(
@@ -9234,7 +9181,7 @@ fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
         "schema",
         "fix-command.main/shadowed-result",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
     ),
     "declare shadowed helper schema",
@@ -9283,7 +9230,7 @@ fn core_option_method_rule_requires_review_without_proven_receiver() {
         "schema",
         "fix-command.main/open-option",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)",
+        "quote $ Fn (Option Dynamic) (-> Dynamic)",
       ],
     ),
     "declare open Option receiver schema",
@@ -9331,7 +9278,7 @@ fn core_option_method_rule_requires_review_without_proven_receiver() {
         "schema",
         "fix-command.main/option-helper-value",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+        "quote $ Fn (-> Dynamic)",
       ],
     ),
     "declare helper-value schema",
@@ -9379,13 +9326,7 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
   assert_success(
     &run_calcit(
       &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/env-or",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)",
-      ],
+      &["edit", "schema", "fix-command.main/env-or", "--code", "quote $ Fn (-> String)"],
     ),
     "declare env-or schema",
   );
@@ -9446,7 +9387,7 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) (:: 'Ref 'Number)) (:return 'Number)",
+      "quote $ Fn (List Number) (Ref Number) (-> Number)",
     ],
     vec![
       "edit",
@@ -9515,12 +9456,12 @@ fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
     (
       "asserted-option",
       "quote $ defn asserted-option (opt) $ assert= 2 $ do $ option:unwrap-or opt 0",
-      "'Unit",
+      "Unit",
     ),
     (
       "closure-option",
       "quote $ defn closure-option (opt) $ let ((f $ fn () $ option:unwrap-or opt 0)) (f)",
-      "'Number",
+      "Number",
     ),
   ] {
     let target = format!("fix-command.main/{definition}");
@@ -9528,7 +9469,7 @@ fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
       &run_calcit(&snapshot, &["edit", "def", &target, "--code", code]),
       "install macro-wrapped helper call",
     );
-    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] (:: 'Option 'Number)) (:return {return_type})");
+    let schema = format!("quote $ Fn (Option Number) (-> {return_type})");
     assert_success(
       &run_calcit(&snapshot, &["edit", "schema", &target, "--code", &schema]),
       "declare Option receiver schema",
@@ -9618,7 +9559,7 @@ fn core_option_method_rule_accepts_single_use_core_macro_wrappers() {
         "schema",
         "fix-command.main/gated-option",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)",
+        "quote $ Fn (Option Number) (-> Number)",
       ],
     ),
     "declare gated Option schema",
@@ -9743,7 +9684,7 @@ fn scoped_fix_preserves_unselected_short_schema_surface() {
         "schema",
         "test-types-inference.main/dynamic-last-compat",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'Option 'Dynamic)",
+        "quote $ Fn Dynamic (-> $ Option Dynamic)",
       ],
     ),
     "restore the unrelated short Option schema",
@@ -9812,10 +9753,7 @@ fn core_option_method_rule_does_not_assume_shadowed_short_option_is_core() {
     "install local Option enum",
   );
   assert_success(
-    &run_calcit(
-      &snapshot,
-      &["edit", "schema", "fix-command.main/Option", "--code", "quote $ :: 'EnumDef"],
-    ),
+    &run_calcit(&snapshot, &["edit", "schema", "fix-command.main/Option", "--code", "quote EnumDef"]),
     "declare local Option enum",
   );
   assert_success(
@@ -9839,7 +9777,7 @@ fn core_option_method_rule_does_not_assume_shadowed_short_option_is_core() {
         "schema",
         "fix-command.main/shadowed-option",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        "quote $ Fn (-> Number)",
       ],
     ),
     "declare helper schema",
@@ -9888,7 +9826,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   assert_success(
     &run_calcit(
       &snapshot,
-      &["edit", "schema", "fix-command.foreign/Option", "--code", "quote $ :: 'EnumDef"],
+      &["edit", "schema", "fix-command.foreign/Option", "--code", "quote EnumDef"],
     ),
     "declare foreign Option enum",
   );
@@ -9913,7 +9851,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "schema",
         "fix-command.foreign/make-option",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Number)",
+        "quote $ Fn (-> $ Option Number)",
       ],
     ),
     "declare short foreign Option return",
@@ -9939,7 +9877,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "schema",
         "fix-command.main/foreign-value",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'fix-command.foreign/Option 'Number)",
+        "quote $ Fn (-> $ fix-command.foreign/Option Number)",
       ],
     ),
     "declare qualified consumer return",
@@ -9977,7 +9915,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "def",
         "fix-command.foreign/make-option-hinted",
         "--code",
-        "quote $ defn make-option-hinted () (hint-fn $ {} (:args $ []) (:return $ :: 'Option 'Number)) (Option :some 3)",
+        "quote $ defn make-option-hinted () (hint-fn $ Fn (-> $ Option Number)) $ Option :some 3",
       ],
     ),
     "install hint-only foreign callable",
@@ -10035,7 +9973,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "schema",
         "fix-command.foreign/pass-through",
         "--code",
-        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T)",
+        "quote $ Fn T (-> T) (:generics T)",
       ],
     ),
     "declare generic identity contract",
@@ -10054,10 +9992,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
     "install caller-owned Option enum",
   );
   assert_success(
-    &run_calcit(
-      &snapshot,
-      &["edit", "schema", "fix-command.main/Option", "--code", "quote $ :: 'EnumDef"],
-    ),
+    &run_calcit(&snapshot, &["edit", "schema", "fix-command.main/Option", "--code", "quote EnumDef"]),
     "declare caller-owned Option enum",
   );
   let foreign_again = run_calcit(
@@ -10086,7 +10021,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "def",
         "fix-command.main/passed-option",
         "--code",
-        "quote $ defn passed-option () $ fix-command.foreign/pass-through $ assert-type (fix-command.main/Option :some 4) $ :: 'fix-command.main/Option 'Number",
+        "quote $ defn passed-option () $ fix-command.foreign/pass-through $ assert-type (fix-command.main/Option :some 4) $ quote $ fix-command.main/Option Number",
       ],
     ),
     "install generic caller",
@@ -10492,7 +10427,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)",
+      "quote $ Fn String (-> String)",
     ],
     vec![
       "edit",
@@ -10510,7 +10445,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+      "quote $ Fn (List Number) (-> String)",
     ],
     vec![
       "edit",
@@ -10628,7 +10563,7 @@ fn rename_module_definitions_to_public_file_names_preserves_attached_tests() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)",
+        "quote $ Fn String (-> String)",
       ],
       vec![
         "edit",
@@ -10724,19 +10659,15 @@ const FFI_BOUNDARY_FIXTURE: &str = r#"
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'raw-read! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn raw-read! (element) (.-length element)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'JsObject
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn JsObject (-> Dynamic) (:features :js-ffi)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi-boundary.main
 "#;
@@ -10877,9 +10808,9 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
           "cirru",
           "--code",
           if !target.ends_with("app.main/locals") {
-            "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+            "quote $ Fn Number (-> Number)"
           } else {
-            "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)"
+            "quote $ Fn Number Number (-> Number)"
           },
         ],
       ),
@@ -10995,7 +10926,7 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        "quote $ Fn Number (-> Number)",
       ],
     ),
     "type builtin-named local fixture",

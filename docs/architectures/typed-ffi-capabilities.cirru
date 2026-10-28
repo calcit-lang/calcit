@@ -8,7 +8,7 @@
       :mode :ensure
       :kind :data
       :doc "|Nominal wrapper for a cancellable native async task capability."
-      :schema $ :: 'StructDef
+      :schema $ quote StructDef
       :code $ quote
         def FfiTask $ impl-traits
           defstruct FfiTask $ :raw 'Dynamic
@@ -17,23 +17,16 @@
       :mode :ensure
       :kind :data
       :doc "|Internal method contract for native async task capabilities."
-      :schema $ :: 'Trait
+      :schema $ quote Trait
       :code $ quote
         deftrait FfiTaskOps
-          .cancel $ :: 'Fn
-            {}
-              :args $ [] 'FfiTask
-              :return 'Unit
-          .cancel-with $ :: 'Fn
-            {}
-              :generics $ [] 'T
-              :args $ [] 'FfiTask 'T
-              :return 'Unit
+          .cancel $ quote $ Fn FfiTask (-> Unit)
+          .cancel-with $ quote $ Fn FfiTask T (-> Unit) (:generics T)
     'calcit.core/FfiTaskOpsImpl $ {}
       :mode :ensure
       :kind :data
       :doc "|Internal implementation of native async task methods."
-      :schema $ :: 'Impl
+      :schema $ quote Impl
       :code $ quote
         defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel) (.cancel-with ffi-task:cancel-with)
     'calcit.core/ffi:task $ {}
@@ -41,10 +34,7 @@
       :kind :fn
       :doc "|Wrap a raw native async task capability at a module adapter boundary."
       :params $ [] 'raw
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'Dynamic
-          :return 'FfiTask
+      :schema $ quote $ Fn Dynamic $ -> FfiTask
       :code $ quote
         defn ffi:task (raw)
           %{} FfiTask $ :raw raw
@@ -53,10 +43,7 @@
       :kind :fn
       :doc "|Cancel a wrapped native async task with the default reason."
       :params $ [] 'self
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'FfiTask
-          :return 'Unit
+      :schema $ quote $ Fn FfiTask $ -> Unit
       :code $ quote
         defn ffi-task:cancel (self)
           &ffi-task-cancel $ :raw self
@@ -65,11 +52,7 @@
       :kind :fn
       :doc "|Cancel a wrapped native async task with an explicit EDN-compatible reason."
       :params $ [] 'self 'reason
-      :schema $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'FfiTask 'T
-          :return 'Unit
+      :schema $ quote $ Fn FfiTask T (-> Unit) (:generics T)
       :code $ quote
         defn ffi-task:cancel-with (self reason)
           &ffi-task-cancel (:raw self) reason
@@ -77,7 +60,7 @@
       :mode :ensure
       :kind :data
       :doc "|Nominal wrapper for an exactly-once native async response capability."
-      :schema $ :: 'StructDef
+      :schema $ quote StructDef
       :code $ quote
         def FfiResponse $ impl-traits
           defstruct FfiResponse $ :raw 'Dynamic
@@ -86,24 +69,16 @@
       :mode :ensure
       :kind :data
       :doc "|Internal method contract for native async response capabilities."
-      :schema $ :: 'Trait
+      :schema $ quote Trait
       :code $ quote
         deftrait FfiResponseOps
-          .resolve! $ :: 'Fn
-            {}
-              :generics $ [] 'T
-              :args $ [] 'FfiResponse 'T
-              :return 'Unit
-          .reject! $ :: 'Fn
-            {}
-              :generics $ [] 'T
-              :args $ [] 'FfiResponse 'T
-              :return 'Unit
+          .resolve! $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
+          .reject! $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
     'calcit.core/FfiResponseOpsImpl $ {}
       :mode :ensure
       :kind :data
       :doc "|Internal implementation of native async response methods."
-      :schema $ :: 'Impl
+      :schema $ quote Impl
       :code $ quote
         defimpl FfiResponseOpsImpl FfiResponseOps (.resolve! ffi-response:resolve) (.reject! ffi-response:reject)
     'calcit.core/ffi:response $ {}
@@ -111,10 +86,7 @@
       :kind :fn
       :doc "|Wrap a raw native async response capability at a module adapter boundary."
       :params $ [] 'raw
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'Dynamic
-          :return 'FfiResponse
+      :schema $ quote $ Fn Dynamic $ -> FfiResponse
       :code $ quote
         defn ffi:response (raw)
           %{} FfiResponse $ :raw raw
@@ -123,11 +95,7 @@
       :kind :fn
       :doc "|Resolve a wrapped native async response exactly once."
       :params $ [] 'self 'value
-      :schema $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'FfiResponse 'T
-          :return 'Unit
+      :schema $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
       :code $ quote
         defn ffi-response:resolve (self value)
           &ffi-response-resolve (:raw self) value
@@ -136,11 +104,7 @@
       :kind :fn
       :doc "|Reject a wrapped native async response exactly once."
       :params $ [] 'self 'value
-      :schema $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'FfiResponse 'T
-          :return 'Unit
+      :schema $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
       :code $ quote
         defn ffi-response:reject (self value)
           &ffi-response-reject (:raw self) value

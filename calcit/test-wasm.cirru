@@ -388,7 +388,7 @@
             let
                 offset 10
                 add-offset $ fn (x)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   + x offset
               let
                   offset 100
@@ -404,7 +404,7 @@
             let
                 values $ map-indexed ([] 4 5)
                   fn (idx x)
-                    hint-fn $ quote $ Fn Number Number (-> Number)
+                    hint-fn $ Fn Number Number $ -> Number
                     + x $ * 10 idx
               if (&list:includes? values 15) 1 0
           :examples $ []
@@ -1518,20 +1518,20 @@
                 option-value $ .unwrap-or
                   .map (Option :some 3)
                     fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       + x offset
                   , 0
                 result-value $ .unwrap-or
                   .map (Result :ok 5)
                     fn (x)
-                      hint-fn $ quote $ Fn Number (-> Number)
+                      hint-fn $ Fn Number $ -> Number
                       + x offset
                   , 0
                 alias-value $ wasm-apply-via-alias 2 $ fn (x)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   + x offset
                 shadow-value $ wasm-apply-after-shadow 2 $ fn (x)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   + x offset
               + option-value result-value alias-value shadow-value
           :examples $ []
@@ -2063,7 +2063,7 @@
           :schema $ quote $ Fn (-> Number)
         'wasm-add-four $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export wasm-add-four (x)
-            hint-fn $ quote $ Fn Number (-> Number)
+            hint-fn $ Fn Number $ -> Number
             + x 4
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)

@@ -5,7 +5,7 @@ use cirru_parser::Cirru;
 use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
-/// `hint-fn $ quote $ Fn …` is read as the schema map of its canonical `Fn`, so
+/// `hint-fn $ Fn …` (or the older quoted `hint-fn $ quote $ Fn …`) is read as the schema map of its canonical `Fn`, so
 /// every later reader of `hint-fn` sees one shape. Schema derivation reads the
 /// hint before preprocessing, so a malformed payload is reported here.
 /// Drop `(; …)` comment lists the way the reader does, so a commented compact
@@ -27,13 +27,16 @@ fn desugar_compact_hint_fn(ys: &[Cirru]) -> Option<Result<Cirru, String>> {
   if !matches!(ys.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "hint-fn") || !matches!(ys.len(), 2 | 3) {
     return None;
   }
-  let Some(Cirru::List(quoted)) = ys.last() else {
-    return None;
+  // `hint-fn $ Fn …` and `hint-fn Async` take only a type, so the payload is
+  // written bare; the transitional `quote $ Fn …` spelling reads the same.
+  let payload = &match ys.last()? {
+    Cirru::List(quoted) if quoted.len() == 2 && quoted[0] == Cirru::leaf("quote") => strip_comments(&quoted[1]),
+    bare @ Cirru::Leaf(name) if name.as_ref() == "Async" => bare.to_owned(),
+    bare @ Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "Fn" | "Async")) => {
+      strip_comments(bare)
+    }
+    _ => return None,
   };
-  if quoted.len() != 2 || quoted[0] != Cirru::leaf("quote") {
-    return None;
-  }
-  let payload = &strip_comments(&quoted[1]);
   if let Some(marker) = crate::calcit::type_expr::desugar_async_hint(payload) {
     return Some(marker.map_err(|message| format!("[E_TYPE_EXPR_SYNTAX] invalid compact type expression in hint-fn: {message}")));
   }
@@ -601,7 +604,7 @@ mod tests {
   #[test]
   fn compact_hint_fn_reads_as_schema_map() {
     let parse = |text: &str| cirru_parser::parse(text).expect("parse cirru").remove(0);
-    let compact = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (-> String) (:async)"), "app", "f", vec![]).expect("compact hint");
+    let compact = code_to_calcit(&parse("hint-fn $ Fn Number (-> String) (:async)"), "app", "f", vec![]).expect("compact hint");
     let canonical = code_to_calcit(
       &parse("hint-fn $ {} (:args $ [] 'Number) (:return 'String) (:async true)"),
       "app",
@@ -610,29 +613,26 @@ mod tests {
     )
     .expect("canonical hint");
     assert_eq!(compact.to_string(), canonical.to_string());
+    let quoted = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (-> String) (:async)"), "app", "f", vec![]).expect("quoted hint");
+    assert_eq!(quoted.to_string(), canonical.to_string());
 
-    let commented = code_to_calcit(
-      &parse("hint-fn $ quote $ Fn Number (; note) (-> String) (:async)"),
-      "app",
-      "f",
-      vec![],
-    )
-    .expect("commented compact hint");
+    let commented =
+      code_to_calcit(&parse("hint-fn $ Fn Number (; note) (-> String) (:async)"), "app", "f", vec![]).expect("commented compact hint");
     assert_eq!(commented.to_string(), canonical.to_string());
 
     // Quoted data keeps its written shape, even when it is not a valid signature.
-    let data = code_to_calcit(&parse("quote $ hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect("quoted hint data");
+    let data = code_to_calcit(&parse("quote $ hint-fn $ Fn Number (:bogus)"), "app", "f", vec![]).expect("quoted hint data");
     assert!(data.to_string().contains("Fn"), "{data}");
 
-    let marker = code_to_calcit(&parse("hint-fn $ quote $ Async"), "app", "f", vec![]).expect("async marker");
+    let marker = code_to_calcit(&parse("hint-fn Async"), "app", "f", vec![]).expect("async marker");
     let marker_map = code_to_calcit(&parse("hint-fn $ {} (:async true)"), "app", "f", vec![]).expect("async map");
     assert_eq!(marker.to_string(), marker_map.to_string());
-    let ffi = code_to_calcit(&parse("hint-fn $ quote $ Async (:features :js-ffi)"), "app", "f", vec![]).expect("async ffi marker");
+    let ffi = code_to_calcit(&parse("hint-fn $ Async (:features :js-ffi)"), "app", "f", vec![]).expect("async ffi marker");
     let ffi_map =
       code_to_calcit(&parse("hint-fn $ {} (:async true) (:features $ #{} :js-ffi)"), "app", "f", vec![]).expect("async ffi map");
     assert_eq!(ffi.to_string(), ffi_map.to_string());
 
-    let error = code_to_calcit(&parse("hint-fn $ quote $ Fn Number (:bogus)"), "app", "f", vec![]).expect_err("malformed hint");
+    let error = code_to_calcit(&parse("hint-fn $ Fn Number (:bogus)"), "app", "f", vec![]).expect_err("malformed hint");
     assert!(error.contains("E_TYPE_EXPR_SYNTAX"), "{error}");
   }
 }

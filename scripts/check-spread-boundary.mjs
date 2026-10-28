@@ -108,7 +108,7 @@ try {
   assert.equal(generated.run_tests(), 1);
 
   run("edit", "def", "calcit.spread-evidence/fixed-spread", "--input-format", "cirru", "--code",
-    "quote $ defwasm-export fixed-spread () $ let\n    f $ fn (a b)\n      hint-fn $ quote $ Fn Number Number (-> Number)\n      + a b\n  f & $ [] 1 2");
+    "quote $ defwasm-export fixed-spread () $ let\n    f $ fn (a b)\n      hint-fn $ Fn Number Number (-> Number)\n      + a b\n  f & $ [] 1 2");
   run("edit", "schema", "calcit.spread-evidence/fixed-spread", "--input-format", "cirru", "--code",
     "quote $ Fn (-> Number)");
   const selector = ["fix", "--rule", "spread-call-proof-v1", "--ns", "calcit.spread-evidence", "--def", "fixed-spread", "--format", "json"];

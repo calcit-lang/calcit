@@ -38,22 +38,38 @@ impl Drop for TestDirectory {
   }
 }
 
+/// The example keeps the type syntax of the published toolchain that checks
+/// it, so the current CLI receives a copy migrated by `edit format`.
+fn migrated_wasi_http_example(directory: &TestDirectory) -> PathBuf {
+  let path = directory.0.join("calcit.cirru");
+  fs::copy("examples/wasi-http-client/calcit.cirru", &path).expect("published WASI HTTP example should copy");
+  let format = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg(&path)
+    .args(["edit", "format"])
+    .output()
+    .expect("published WASI HTTP example should format");
+  assert!(
+    format.status.success(),
+    "edit format failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&format.stdout),
+    String::from_utf8_lossy(&format.stderr)
+  );
+  path
+}
+
 #[test]
 fn component_core_wasm_is_reproducible_across_processes() {
+  let source = TestDirectory::create();
+  let example = migrated_wasi_http_example(&source);
   let first = TestDirectory::create();
   let second = TestDirectory::create();
   for output in [&first.0, &second.0] {
     let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
       .env("NO_COLOR", "1")
-      .args([
-        "--tips-level",
-        "none",
-        "examples/wasi-http-client/calcit.cirru",
-        "wasm",
-        "--boundary",
-        "component",
-        "--emit-path",
-      ])
+      .args(["--tips-level", "none"])
+      .arg(&example)
+      .args(["wasm", "--boundary", "component", "--emit-path"])
       .arg(output)
       .output()
       .expect("published WASI HTTP example should compile");
@@ -1001,18 +1017,14 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
     }
   });
 
+  let source = TestDirectory::create();
+  let example = migrated_wasi_http_example(&source);
   let output = TestDirectory::create();
   let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
-    .args([
-      "--tips-level",
-      "none",
-      "examples/wasi-http-client/calcit.cirru",
-      "wasm",
-      "--boundary",
-      "component",
-      "--emit-path",
-    ])
+    .args(["--tips-level", "none"])
+    .arg(&example)
+    .args(["wasm", "--boundary", "component", "--emit-path"])
     .arg(&output.0)
     .output()
     .expect("buffered HTTP Component fixture should compile");
@@ -1024,15 +1036,9 @@ async fn packaged_http_component_executes_through_the_wasmtime_host_adapter() {
   );
   let contract = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
-    .args([
-      "--tips-level",
-      "none",
-      "examples/wasi-http-client/calcit.cirru",
-      "ffi",
-      "export",
-      "--boundary",
-      "component",
-    ])
+    .args(["--tips-level", "none"])
+    .arg(&example)
+    .args(["ffi", "export", "--boundary", "component"])
     .output()
     .expect("buffered HTTP Component contract should export");
   assert!(

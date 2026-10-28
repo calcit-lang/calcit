@@ -1752,9 +1752,8 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
 }
 
 fn parse_schema_input(raw: &str, input_format: SyntaxInputFormat) -> Result<Cirru, String> {
-  decode_mutation_syntax_input(raw, input_format).map_err(|error| {
-    format!("Failed to parse schema code input: {error}\nSchema examples: `quote :string` or `quote $ :: :ref :bool`.")
-  })
+  decode_mutation_syntax_input(raw, input_format)
+    .map_err(|error| format!("Failed to parse schema code input: {error}\nSchema examples: `quote String` or `quote $ Ref Bool`."))
 }
 
 fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
@@ -1911,6 +1910,14 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     let raw = read_code_input(&opts.file, &opts.code)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
     let schema_payload = strip_name_field_from_schema(parse_schema_input(&raw, opts.input_format)?);
 
+    // The retired spelling is still accepted as input and stored compactly;
+    // the note teaches the spelling a Snapshot keeps.
+    if let Err(note) = snapshot::reject_legacy_schema_input(&schema_payload) {
+      eprintln!(
+        "⚠️  {}",
+        note.replace(snapshot::LEGACY_TYPE_SYNTAX_CODE, snapshot::LEGACY_TYPE_SYNTAX_WARNING)
+      );
+    }
     snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?
   };
 
@@ -3865,7 +3872,7 @@ mod tests {
       leaf(":string")
     );
     let error = parse_schema_input(":: :ref :bool", SyntaxInputFormat::Auto).expect_err("bare schema should fail");
-    assert!(error.contains("Schema examples: `quote :string`"), "error: {error}");
+    assert!(error.contains("Schema examples: `quote String`"), "error: {error}");
   }
 
   #[test]
@@ -3875,7 +3882,7 @@ mod tests {
     let opts = EditSchemaCommand {
       target: "app.main/test-fn".to_owned(),
       file: None,
-      code: Some("quote $ :: 'Fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return (:: 'List 'Dynamic))".to_owned()),
+      code: Some("quote $ Fn (List Dynamic) (-> $ List Dynamic)".to_owned()),
       input_format: SyntaxInputFormat::Auto,
       clear: false,
       add_feature: None,
@@ -3893,6 +3900,25 @@ mod tests {
   }
 
   #[test]
+  fn schema_edit_stores_retired_input_in_the_compact_spelling() {
+    let fixture = TestSnapshot::from_fixture();
+    let path = fixture.snapshot_string();
+    let opts = EditSchemaCommand {
+      target: "app.main/test-fn".to_owned(),
+      file: None,
+      code: Some("quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)".to_owned()),
+      input_format: SyntaxInputFormat::Auto,
+      clear: false,
+      add_feature: None,
+    };
+
+    handle_schema(&opts, &path).expect("retired schema input is still accepted");
+    let written = fs::read_to_string(&fixture.path).expect("read snapshot");
+    assert!(written.contains(":schema $ quote $ Fn Number (-> Number)"), "snapshot:\n{written}");
+    assert!(!written.contains(":: 'Fn"), "snapshot:\n{written}");
+  }
+
+  #[test]
   fn schema_add_js_ffi_feature_preserves_signature_and_rejects_unstructured_schema() {
     let fixture = TestSnapshot::from_fixture();
     let path = fixture.snapshot_string();
@@ -3900,7 +3926,7 @@ mod tests {
     let declared = EditSchemaCommand {
       target: target.clone(),
       file: None,
-      code: Some("quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T) (:return 'T) (:features $ #{} :async)".to_owned()),
+      code: Some("quote $ Fn T (-> T) (:generics T) (:features :async)".to_owned()),
       input_format: SyntaxInputFormat::Auto,
       clear: false,
       add_feature: None,
@@ -4020,10 +4046,10 @@ mod tests {
       :defs $ {}
         |legacy $ %{} :CodeEntry
           :code $ quote $ defn legacy (x) x
-          :schema $ :: :fn $ {} (:args $ [] $ :: :optional :string) (:return :any) (:features $ #{})
+          :schema $ quote $ Fn (Optional String) (-> Dynamic)
         |target $ %{} :CodeEntry
           :code $ quote $ defn target () nil
-          :schema :dynamic
+          :schema $ quote Dynamic
       :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
 "#;
     fs::write(&fixture.path, source).expect("write snapshot");

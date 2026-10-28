@@ -42,7 +42,7 @@ pub(crate) fn is_compact_payload(payload: &Cirru) -> bool {
   }
 }
 
-/// `hint-fn $ quote $ Async` marks a function async without stating its
+/// `hint-fn Async` marks a function async without stating its
 /// signature; `(Async (:features …))` adds features. Returns the schema map, or
 /// `None` when `payload` is not an `Async` marker.
 pub(crate) fn desugar_async_hint(payload: &Cirru) -> Option<Result<Cirru, String>> {
@@ -131,6 +131,25 @@ pub(crate) fn desugar_quoted_form(form: &Calcit) -> Option<Result<Calcit, String
   Some(desugar_type_expr(&cirru).and_then(|canonical| crate::data::cirru::code_to_calcit(&canonical, &ns, &def, coord)))
 }
 
+/// A type application written without its `quote`, such as `(List Number)`
+/// in `assert-type xs (List Number)`. Code reads it as a call, so it would
+/// otherwise reach the checker as an unknown form and widen to `Dynamic`.
+/// Returns the compact payload text so the diagnostic can show the quoted form.
+pub(crate) fn unquoted_compact_form(form: &Calcit) -> Option<String> {
+  let Calcit::List(list) = form else {
+    return None;
+  };
+  let Some(Calcit::Symbol { sym, .. }) = list.first() else {
+    return None;
+  };
+  let name = sym.rsplit_once('/').map_or(sym.as_ref(), |(_, def)| def);
+  if !is_uppercase_name(name) {
+    return None;
+  }
+  let cirru = crate::data::cirru::calcit_to_cirru(form).ok()?;
+  Some(describe(&cirru))
+}
+
 /// Location of the first located node inside `form`; a quoted list carries
 /// no location of its own.
 pub(crate) fn first_location(form: &Calcit) -> Option<crate::calcit::NodeLocation> {
@@ -183,10 +202,12 @@ fn describe(node: &Cirru) -> String {
 }
 
 fn desugar_leaf(name: &str) -> Result<Cirru, String> {
+  // Type slots keep the `'*slot` spelling of the canonical form, which is
+  // also what the Cirru EDN reader accepts inside a Snapshot schema.
   if let Some(slot) = name.strip_prefix('*')
     && !slot.is_empty()
   {
-    return Ok(Cirru::Leaf(name.into()));
+    return Ok(quoted(name));
   }
   if is_type_name(name) {
     return Ok(quoted(name));
@@ -732,7 +753,7 @@ mod tests {
       desugar_text("Map String (List app.schema/Item)").unwrap(),
       "(:: 'Map 'String (:: 'List 'app.schema/Item))"
     );
-    assert_eq!(desugar_text("Option *item").unwrap(), "(:: 'Option *item)");
+    assert_eq!(desugar_text("Option *item").unwrap(), "(:: 'Option '*item)");
     assert_eq!(
       desugar_text("recollect.schema/change-op Number").unwrap(),
       "(:: 'recollect.schema/change-op 'Number)"

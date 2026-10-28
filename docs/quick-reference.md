@@ -129,13 +129,11 @@ let
 let
     ; Local function with type annotations
     add $ fn (a b)
-      hint-fn $ {}
-        :args $ [] 'Number 'Number
-        :return 'Number
+      hint-fn $ Fn Number Number (-> Number)
       + a b
     ; Local variadic function
     sum $ fn (& xs)
-      hint-fn $ {} (:rest 'Number) (:return 'Number)
+      hint-fn $ Fn & Number (-> Number)
       apply + xs
     ; Struct definition
     User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
@@ -164,16 +162,13 @@ quote $ Fn Number Number (-> Number)
 - `number->int8` 等同系列函数把 `'Number` 受检转换为 `Result<refinement,String>`；不会隐式截断或舍入
 - `'List`, `'Map`, `'Set`, `'Struct`, `'Enum`, `'StructDef`, `'EnumDef`, `'Fn`
 - `'Dynamic`：开放 Calcit 值类型，可由用户显式声明；部分推断路径缺少足够证据时也会保守回退到它。它不是表达泛型关系的默认写法：输入与返回需共享类型时声明 `:generics`/TypeVar，只约束能力时使用 trait `:where`
-- Generic types (Cirru style):
+- Generic types:
 
 ```cirru
 let
-    t1 $ :: 'List 'Number
-    t2 $ :: 'Map 'String
-    t3 $ :: 'Fn
-      {}
-        :args $ [] 'Number
-        :return 'String
+    t1 $ quote $ List Number
+    t2 $ quote $ Map String Number
+    t3 $ quote $ Fn Number (-> String)
   [] t1 t2 t3
 ```
 

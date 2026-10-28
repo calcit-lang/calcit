@@ -154,7 +154,7 @@ let
 
 ```cirru
 defn process-tags (tags)
-  hint-fn $ quote $ Fn Set (-> Set)
+  hint-fn $ Fn Set (-> Set)
   &set:filter tags $ fn (t) (not= t :draft)
 ```
 

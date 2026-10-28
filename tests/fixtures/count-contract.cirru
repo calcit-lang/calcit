@@ -55,7 +55,7 @@
           :code $ quote $ defn local-bound-counts ()
             let
                 counted $ fn (value)
-                  hint-fn $ quote $ Fn T (-> Number) (:generics T)
+                  hint-fn $ Fn T (-> Number) (:generics T)
                     :where $ T Countable
                   count value
               assert= 3 $ counted $ [] 1 2 3
@@ -107,7 +107,7 @@
           :code $ quote $ defn typed-rest-forward (xs)
             let
                 sink $ fn (label & values)
-                  hint-fn $ quote $ Fn String & Number (-> Number)
+                  hint-fn $ Fn String & Number $ -> Number
                   count values
               sink |numbers & xs
           :examples $ []

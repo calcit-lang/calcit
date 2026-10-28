@@ -96,7 +96,7 @@ Snapshot 是结构化数据。理解程序时先选与任务对应的视图，�
 签名概览示例（`calcit/test-types.cirru`）：
 
 ```text
-Definitions: 34
+Definitions: 35
   Person  'Struct - Struct definition for type checks
   add-numbers  :: 'Fn $ {} (:return 'Number) $ :args $ [] 'Number 'Number
   describe-typed  :: 'Fn $ {} (:return 'String) $ :args $ [] 'String 'Number - Combines typed label and number
@@ -571,15 +571,13 @@ div
 
 ```cirru.no-check
 defn request (url trace-id timeout-ms)
-  hint-fn $ {}
-    :args $ [] 'String (:: 'Option 'String) (:: 'Option 'Number)
-    :return 'Unit
+  hint-fn $ Fn String (Option String) (Option Number) (-> Unit)
   println url trace-id timeout-ms
 
 request |/health
 request |/health (Option :some |trace-1)
 
-defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
+defstruct Profile (:name 'String) (:bio (quote (Option String)))
 Profile :name |Ada
 ```
 

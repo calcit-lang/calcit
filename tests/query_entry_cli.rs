@@ -216,7 +216,7 @@ fn library_default_graph_is_independent_of_the_demo_entry() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+      "quote $ Fn Number (-> Number)"
     ],
     [
       "edit",
@@ -254,7 +254,7 @@ fn library_default_graph_is_independent_of_the_demo_entry() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"
+      "quote $ Fn (-> Unit)"
     ]
   ])
   .to_string();

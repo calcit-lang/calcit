@@ -27,7 +27,7 @@
             .show $ fn (self)
               println $ &struct:get self :name
             .rename $ fn (self name)
-              hint-fn $ quote $ Fn test-struct.main/Lagopus0 String (-> Dynamic)
+              hint-fn $ Fn test-struct.main/Lagopus0 String $ -> Dynamic
               .assoc self :name name
           :examples $ []
           :schema $ quote Impl
@@ -97,7 +97,7 @@
             %{} 'TestEntry (:name |typed-callback-members)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Unit)
+                    hint-fn $ Fn Number $ -> Unit
                     , &unit
                   handlers $ {} $ :click callback
                   stored $ NullableEventStore :handlers handlers
@@ -106,7 +106,7 @@
             %{} 'TestEntry (:name |wider-callback-input)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ quote $ Fn (JsNullish Number) (-> Unit)
+                    hint-fn $ Fn (JsNullish Number) (-> Unit)
                     , &unit
                   handlers $ {} $ :click callback
                   stored $ NullableEventStore :handlers handlers
@@ -115,7 +115,7 @@
             %{} 'TestEntry (:name |mixed-callback-members)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ quote $ Fn Number (-> Unit)
+                    hint-fn $ Fn Number $ -> Unit
                     , &unit
                   stored $ NullableEventStore :handlers $ {} (:click callback) (:focus nil)
                 assert=
@@ -305,13 +305,12 @@
                   source $ ref 1
                   order $ ref 0
                   target $ fn ()
-                    hint-fn $ quote $ Fn
-                      -> $ Ref Number
+                    hint-fn $ Fn $ -> (Ref Number)
                     assert= 0 $ deref order
                     reset! order 1
                     , source
                   value $ fn ()
-                    hint-fn $ quote $ Fn (-> Number)
+                    hint-fn $ Fn $ -> Number
                     assert= 1 $ deref order
                     reset! order 2
                     , 7
@@ -819,8 +818,8 @@
               assert= 20 $ :age p1
               let
                   read-open $ fn (value)
-                    hint-fn $ quote $ Fn Dynamic
-                      -> $ List $ Option Dynamic
+                    hint-fn $ Fn Dynamic $ ->
+                      List $ Option Dynamic
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
                   [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
@@ -834,7 +833,7 @@
                 complete $ %{} Point2D (:y 2) (:x 1)
                 alias $ %{} Shape (:x 1) (:y 2)
                 dynamic $ fn (prototype)
-                  hint-fn $ quote $ Fn StructDef (-> Dynamic)
+                  hint-fn $ Fn StructDef $ -> Dynamic
                   %{} prototype (:x 1) (:y 2)
               assert= complete alias
               assert= complete $ dynamic Point2D
@@ -957,7 +956,7 @@
             try
               if fail? (raise |fixture-failure) true
               fn (message)
-                hint-fn $ quote $ Fn String (-> Bool)
+                hint-fn $ Fn String $ -> Bool
                 , false
           :examples $ []
           :schema $ quote $ Fn Bool (-> Bool)
@@ -1023,7 +1022,7 @@
             try
               if fail? (raise |fixture-failure) |normal
               fn (message extra)
-                hint-fn $ quote $ Fn String (Option Number) (-> String)
+                hint-fn $ Fn String (Option Number) (-> String)
                 assert= (Option :none) extra
                 , message
           :examples $ []
@@ -1054,7 +1053,7 @@
             try
               if fail? (raise |fixture-failure) 7
               fn (& messages)
-                hint-fn $ quote $ Fn & String (-> Number)
+                hint-fn $ Fn & String $ -> Number
                 .len messages
           :examples $ []
           :schema $ quote $ Fn Bool (-> Number)

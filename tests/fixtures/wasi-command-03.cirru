@@ -89,7 +89,7 @@
             let
                 action main-unsupported!
                 invoke $ fn (callback)
-                  hint-fn $ quote $ Fn
+                  hint-fn $ Fn
                     Fn $ -> Unit
                     -> Unit
                   callback

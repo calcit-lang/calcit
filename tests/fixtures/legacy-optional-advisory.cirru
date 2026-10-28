@@ -77,7 +77,7 @@
           :code $ quote $ defn use-hint-fn (x)
             let
                 pick $ fn (value)
-                  hint-fn $ quote $ Fn (Optional Number) (-> Bool)
+                  hint-fn $ Fn (Optional Number) (-> Bool)
                   nil? value
               pick x
               , &unit
@@ -87,7 +87,7 @@
           :code $ quote $ defn use-option-hint (x)
             let
                 pick $ fn (value)
-                  hint-fn $ quote $ Fn (Option Number) (-> Bool)
+                  hint-fn $ Fn (Option Number) (-> Bool)
                   .some? value
               pick $ Option :some x
               , &unit

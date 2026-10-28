@@ -41,9 +41,7 @@ This document provides practical examples and patterns for common programming ta
 ```cirru
 let
     group-by-length $ fn (words)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'String
-        :return $ :: 'Map 'Number $ :: 'List 'String
+      hint-fn $ Fn (List String) $ -> $ Map Number (List String)
       group-by words count
   group-by-length ([] |apple |pear |banana |kiwi)
 ; => {}
@@ -77,12 +75,12 @@ let
 ```cirru
 let
     safe-divide $ fn (a b)
-      hint-fn $ quote $ Fn Number Number
+      hint-fn $ Fn Number Number
         -> $ Result Number String
       if (= b 0) (Result :err "|Division by zero")
         Result :ok $ / a b
     handle-result $ fn (result)
-      hint-fn $ quote $ Fn (Result Number String) (-> Unit)
+      hint-fn $ Fn (Result Number String) (-> Unit)
       match result
         (:ok v)
           println $ str "|Result: " v
@@ -97,7 +95,7 @@ let
 ```cirru
 let
     find-user $ fn (users id)
-      hint-fn $ quote $ Fn
+      hint-fn $ Fn
         List $ Map Tag String
         , String
           -> $ Option $ Map Tag String
@@ -272,23 +270,17 @@ let
 let
     ; stub implementations for demonstration
     validate-data $ fn (data)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return $ :: 'Option $ :: 'List 'Number
+      hint-fn $ Fn (List Number) $ -> $ Option (List Number)
       if
         and (> (count data) 0)
           every? data $ fn (x) (>= x 0)
         Option :some data
-        assert-type (Option :none) (:: 'Option $ :: 'List 'Number)
+        assert-type (Option :none) (quote $ Option (List Number))
     transform-data $ fn (validated)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return $ :: 'List 'Number
+      hint-fn $ Fn (List Number) (-> (List Number))
       map validated $ fn (x) (* x 2)
     process-data $ defn process-data (data)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return 'Enum
+      hint-fn $ Fn (List Number) (-> Enum)
       if (empty? data)
         :: :err |Empty-data
         if-let
@@ -299,7 +291,7 @@ let
           :: :err |Invalid-data
   assert= (:: :ok $ [] 2 4 6) (process-data $ [] 1 2 3)
   assert= (:: :err |Empty-data)
-    process-data $ assert-type ([]) (:: 'List 'Number)
+    process-data $ assert-type ([]) (quote $ List Number)
   assert= (:: :err |Invalid-data) (process-data $ [] 1 -2 3)
 ```
 
@@ -391,9 +383,7 @@ let
         &max min-val
         &min max-val
     average $ fn (numbers)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return 'Number
+      hint-fn $ Fn (List Number) (-> Number)
       / (apply + numbers) (count numbers)
   println $ round-to 3.14159 2
   ; => 3.14
@@ -437,9 +427,7 @@ let
 let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
     result1 $ .fold items 0 $ fn (acc item)
-      hint-fn $ {}
-        :args $ [] 'Number $ :: 'Map 'Tag 'Number
-        :return 'Number
+      hint-fn $ Fn Number (Map Tag Number) (-> Number)
       let
           value $ get item :value
         match value
@@ -447,9 +435,7 @@ let
           (:none) , acc
     result2 $ apply +
       map items $ fn (item)
-        hint-fn $ {}
-          :args $ [] $ :: 'Map 'Tag 'Number
-          :return 'Number
+        hint-fn $ Fn (Map Tag Number) (-> Number)
         let
             value $ get item :value
           match value

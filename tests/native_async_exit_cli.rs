@@ -53,7 +53,7 @@ fn native_async_failure_reaches_exit_status_after_cleanup() {
   let response_case = |method: &str| {
     format!(
       r#"let
-    task-ref $ ref $ assert-type (Option :none) $ :: 'Option 'FfiTask
+    task-ref $ ref $ assert-type (Option :none) $ quote $ Option FfiTask
     task $ ffi:task $ &call-dylib-edn-fn {library_literal} |server
       fn (raw-response)
         let
