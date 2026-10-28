@@ -28,8 +28,8 @@ use crate::calcit::{
 use crate::program;
 
 use super::{
-  ScopeTypes, check_enum_construction, gen_check_warning, gen_check_warning_code_at, gen_check_warning_code_at_with_types,
-  resolve_type_value, tag_annotation,
+  ScopeTypes, check_enum_construction, gen_check_warning_code_at, gen_check_warning_code_at_with_types, resolve_type_value,
+  tag_annotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -871,9 +871,21 @@ pub(crate) fn check_proc_arg_types(
     }
   }
 
-  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    return;
-  }
+  // Literal spread changes the call shape, not its argument contract. Keep
+  // ordinary checking (including eval) aligned with the proof traversal.
+  // Only inspect the expanded operands; leave the executable call unchanged.
+  let expanded_args;
+  let args = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    match super::type_inference::expand_literal_call_arguments(args) {
+      Ok(arguments) => {
+        expanded_args = arguments;
+        &expanded_args
+      }
+      Err(_) => return,
+    }
+  } else {
+    args
+  };
 
   // Check argument count
   let Some(arity) = proc.arity() else {
@@ -883,6 +895,11 @@ pub(crate) fn check_proc_arg_types(
   let max_count = arity.max.unwrap_or(usize::MAX);
   let has_variadic = arity.max.is_none();
   let actual_count = args.len();
+  let arity_location = || {
+    call_location
+      .clone()
+      .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(super::GENERATED_DEF), Arc::from(vec![])))
+  };
 
   if !has_variadic {
     if actual_count < min_count || actual_count > max_count {
@@ -891,7 +908,7 @@ pub(crate) fn check_proc_arg_types(
       } else {
         format!("{min_count}~{max_count}")
       };
-      gen_check_warning(
+      super::gen_check_warning_with_location(
         format!(
           "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
           proc.as_ref(),
@@ -900,12 +917,12 @@ pub(crate) fn check_proc_arg_types(
           proc.as_ref(),
           args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
         ),
-        file_ns,
+        arity_location(),
         check_warnings,
       );
     }
   } else if actual_count < min_count {
-    gen_check_warning(
+    super::gen_check_warning_with_location(
       format!(
         "[Warn] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
         proc.as_ref(),
@@ -914,7 +931,7 @@ pub(crate) fn check_proc_arg_types(
         proc.as_ref(),
         args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
       ),
-      file_ns,
+      arity_location(),
       check_warnings,
     );
   }

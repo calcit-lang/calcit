@@ -1765,7 +1765,9 @@ try {
           "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, name === "nested-wrong-member"
+          ? /W_PROC_ARG_TYPE_MISMATCH/
+          : /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/);
       }
       assert.deepEqual(await readFile(snapshot), nestedSpreadOriginal);
       // Empty constructors prove a generic collection family without binding its

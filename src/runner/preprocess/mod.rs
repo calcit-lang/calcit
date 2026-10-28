@@ -5559,7 +5559,7 @@ fn preprocess_list_call(
             scope_types,
             file_ns,
             &def_name,
-            call_location.clone(),
+            preferred_source_call_location(call_location.clone(), call_stack),
             check_warnings,
           );
           let requires_error = match proc {
