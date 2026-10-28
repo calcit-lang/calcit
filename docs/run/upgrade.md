@@ -37,9 +37,9 @@ related:
 ```cirru
 let
     invoke $ fn (callback)
-      hint-fn $ {}
-        :args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
-        :return 'Number
+      hint-fn $ quote $ Fn
+        Fn Number $ -> Number
+        -> Number
       callback 7
   assert= 8 $ invoke $ fn (value) (inc value)
 ```
@@ -301,7 +301,7 @@ Enum 定义。已知类型不符的接收者（例如声明为 `List<String>` �
 ```cirru
 let
     good $ fn (xs)
-      hint-fn $ {} (:args $ [] 'Enum) (:return 'Tag)
+      hint-fn $ quote $ Fn Enum (-> Tag)
       &enum:nth xs 0
   good $ :: :ns |demo
 ```
@@ -657,7 +657,7 @@ let
 ```cirru
 let
     double $ fn (n)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &* n 2
   assert= 6 $ double 3
 ```
@@ -859,7 +859,7 @@ WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&se
 
 ```cirru
 defn report-message (message)
-  hint-fn $ {} (:args $ [] 'String) (:return 'Unit)
+  hint-fn $ quote $ Fn String (-> Unit)
   println message
 ```
 
@@ -884,16 +884,13 @@ WASI 使用标准 stdout/stderr；core WASM 的单值宿主日志接口仍有通
 
 ```cirru
 defn update-counter (data path)
-  hint-fn $ {}
-    :args $ [] 'Dynamic $ :: 'List 'Tag
-    :return 'Dynamic
+  hint-fn $ quote $ Fn Dynamic (List Tag) (-> Dynamic)
   update-in data path $ fn (current)
-    hint-fn $ {}
-      :args $ [] $ :: 'Option 'Dynamic
-      :return 'Number
+    hint-fn $ quote $ Fn (Option Dynamic) (-> Number)
     match current
       (:none) 1
-      (:some value) $ inc $ decode-map-as value 'Number
+      (:some value)
+        inc $ decode-map-as value 'Number
 ```
 
 这里的缺失初值是示例业务规则，不是迁移工具代选的默认值。已有静态叶子无需为了
@@ -1142,8 +1139,10 @@ assert= "| b" $ str-spaced | |b
 ```cirru
 let
     seed $ Result :ok $ {}
-  assert-type seed $ :: 'Result (:: 'Map 'String 'Number) 'String
-  assert= (Result :ok $ {}) seed
+  assert-type seed $ quote $ Result (Map String Number) String
+  assert=
+    Result :ok $ {}
+    , seed
 ```
 
 可写绑定需要在初始化处声明未来值的合同。例如 `ref $ assert-type ({}) $ :: 'Map 'String 'Number` 可接收后续同类型 Map；裸 `ref ({})` 不会因写入而变宽。严格模式下，`:js-ffi` 内的 `set!` 也要求新值满足局部变量的类型合同，失败报告 `E_CALL_ARGUMENT_UNPROVEN`；为可重新赋值的空 Map 使用同样的初始化类型上下文。不要在写入或后续读取处追加断言掩盖错误。
@@ -1782,10 +1781,10 @@ calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
 ```cirru.no-check
 let
     number-only $ fn (value)
-      hint-fn $ {} (:args ([] 'Number)) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &+ value 1
     from-open $ fn (items)
-      hint-fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)
+      hint-fn $ quote $ Fn (List Dynamic) (-> Number)
       number-only $ &list:nth items 0
   from-open $ [] |wrong
 ```
@@ -1796,10 +1795,10 @@ let
 ```cirru
 let
     number-only $ fn (value)
-      hint-fn $ {} (:args ([] 'Number)) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &+ value 1
     from-open $ fn (items)
-      hint-fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)
+      hint-fn $ quote $ Fn (List Dynamic) (-> Number)
       &let
         v $ &list:nth items 0
         if (number? v) (number-only v) 0
@@ -1838,10 +1837,10 @@ let
 
 ```cirru.no-check
 sort entries $ fn (a b)
-  hint-fn $ {}
-    :args $ [] (:: 'MapEntry 'String 'app.schema/Task) (:: 'MapEntry 'String 'app.schema/Task)
-    :return 'Number
-  &compare (:sort-id $ :value a) (:sort-id $ :value b)
+  hint-fn $ quote $ Fn (MapEntry String app.schema/Task) (MapEntry String app.schema/Task) (-> Number)
+  &compare
+    :sort-id $ :value a
+    :sort-id $ :value b
 ```
 
 这是局部、显式的类型补充，不需要新增
@@ -2269,7 +2268,7 @@ FFI value 在 adapter 边界完成 validate/convert。显式声明的 `Dynamic` 
 let
     xs $ [] 1 2 3
     predicate $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Bool)
+      hint-fn $ quote $ Fn Number (-> Bool)
       > x 1
   let
       idx $ find-index xs predicate

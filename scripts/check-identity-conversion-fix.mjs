@@ -19,17 +19,17 @@ try {
   run(snapshot, "query", "config");
   run(snapshot, "edit", "add-ns", "test-wasm.conversion");
   for (const [name, code, schema] of [
-    ["safe-tag", "quote $ defn safe-tag () $ turn-tag |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
-    ["safe-symbol", "quote $ defn safe-symbol () $ turn-symbol |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Symbol)"],
-    ["dynamic-tag", "quote $ defn dynamic-tag (value) $ turn-tag value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Tag)"],
-    ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Symbol)"],
-    ["dynamic-string", "quote $ defn dynamic-string (value) $ to-string value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String)"],
-    ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
-    ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
-    ["name-value", "quote $ defn name-value () |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
-    ["from-fn", "quote $ defn from-fn () $ turn-tag $ name-value", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
-    ["from-macro", "quote $ defn from-macro () $ turn-tag $ macro-name", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
-    ["quoted", "quote $ defn quoted () $ quote $ turn-tag |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+    ["safe-tag", "quote $ defn safe-tag () $ turn-tag |ready", "quote $ Fn (-> Tag)"],
+    ["safe-symbol", "quote $ defn safe-symbol () $ turn-symbol |ready", "quote $ Fn (-> Symbol)"],
+    ["dynamic-tag", "quote $ defn dynamic-tag (value) $ turn-tag value", "quote $ Fn Dynamic (-> Tag)"],
+    ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ Fn Dynamic (-> Symbol)"],
+    ["dynamic-string", "quote $ defn dynamic-string (value) $ to-string value", "quote $ Fn Dynamic (-> String)"],
+    ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ Fn (-> Tag)"],
+    ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ Fn (-> Tag)"],
+    ["name-value", "quote $ defn name-value () |ready", "quote $ Fn (-> String)"],
+    ["from-fn", "quote $ defn from-fn () $ turn-tag $ name-value", "quote $ Fn (-> Tag)"],
+    ["from-macro", "quote $ defn from-macro () $ turn-tag $ macro-name", "quote $ Fn (-> Tag)"],
+    ["quoted", "quote $ defn quoted () $ quote $ turn-tag |ready", "quote $ Fn (-> Dynamic)"],
   ]) {
     run(snapshot, "edit", "def", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", code);
     run(snapshot, "edit", "schema", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", schema);

@@ -77,19 +77,17 @@ let
 ```cirru
 let
     safe-divide $ fn (a b)
-      hint-fn $ {}
-        :args $ [] 'Number 'Number
-        :return $ :: 'Result 'Number 'String
-      if (= b 0)
-        Result :err "|Division by zero"
-        Result :ok (/ a b)
+      hint-fn $ quote $ Fn Number Number
+        -> $ Result Number String
+      if (= b 0) (Result :err "|Division by zero")
+        Result :ok $ / a b
     handle-result $ fn (result)
-      hint-fn $ {}
-        :args $ [] $ :: 'Result 'Number 'String
-        :return 'Unit
+      hint-fn $ quote $ Fn (Result Number String) (-> Unit)
       match result
-        (:ok v) (println $ str "|Result: " v)
-        (:err msg) (println $ str "|Error: " msg)
+        (:ok v)
+          println $ str "|Result: " v
+        (:err msg)
+          println $ str "|Error: " msg
   handle-result $ safe-divide 10 2
   handle-result $ safe-divide 10 0
 ```
@@ -99,16 +97,17 @@ let
 ```cirru
 let
     find-user $ fn (users id)
-      hint-fn $ {}
-        :args $ [] (:: 'List (:: 'Map 'Tag 'String)) 'String
-        :return $ :: 'Option $ :: 'Map 'Tag 'String
+      hint-fn $ quote $ Fn
+        List $ Map Tag String
+        , String
+          -> $ Option $ Map Tag String
       find users $ fn (u)
         if-let
           user-id $ get u :id
           = user-id id
           , false
   println $ find-user
-    [] ({} (:id |001) (:name |Alice))
+    [] $ {} (:id |001) (:name |Alice)
     , |001
 ```
 

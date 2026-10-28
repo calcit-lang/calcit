@@ -45,11 +45,11 @@ try {
     ["edit", "def", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
       "quote $ defn logging-unit-main! () (assert= &unit $ println |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
     ["edit", "schema", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      "quote $ Fn (-> Unit)"],
     ["edit", "def", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
       "quote $ defn logging-failure-main! () (println |must-not-print $ raise |log-argument-failed)"],
     ["edit", "schema", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      "quote $ Fn (-> Unit)"],
   ];
   const loggingPreview = JSON.parse(calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--dry-run", "--format", "json"));
   calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--expect-revision", loggingPreview.scoped_revision, "--format", "json");
@@ -138,7 +138,7 @@ try {
   calcit(snapshot, "edit", "def", "app.main/shared-tests!", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "shared-tests!", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
   calcit(snapshot, "edit", "schema", "app.main/shared-tests!", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    "quote $ Fn (-> Unit)");
   const shared = [snapshot, "--init-fn", "app.main/shared-tests!"];
   calcit(...shared);
   const sharedJs = join(temp, "shared-js");

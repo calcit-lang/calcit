@@ -180,7 +180,8 @@ loop
 
 ```cirru
 let
-    cell $ ref $ assert-type (Option :none) $ :: 'Option 'Number
+    cell $ ref $ assert-type (Option :none)
+      quote $ Option Number
   reset! cell $ Option :some 7
   assert= 7 $ .unwrap-or (deref cell) 0
   reset! cell $ Option :none
@@ -402,7 +403,7 @@ Struct 也支持同样的类型化头部调用：
 
 ```cirru.no-check
 defstruct Profile (:name 'String)
-  :bio $ :: 'Option 'String
+  :bio $ quote $ Option String
 
 Profile :name |Ada
 ```

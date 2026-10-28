@@ -66,8 +66,8 @@ let
     ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
     ok $ ResultX :ok 1
     err $ ResultX :err |oops
-  assert-type ok $ :: 'ResultX 'Number 'String
-  assert-type err $ :: 'ResultX 'Number 'String
+  assert-type ok $ quote $ ResultX Number String
+  assert-type err $ quote $ ResultX Number String
   assert= 1 $ &enum:nth ok 1
   assert= |oops $ &enum:nth err 1
 ```
@@ -86,7 +86,7 @@ let
       :none
     some-val $ ShownMaybe :some 1
     none-val $ ShownMaybe :none
-  assert-type some-val $ :: 'ShownMaybe 'Number
+  assert-type some-val $ quote $ ShownMaybe Number
   assert= |1 $ match some-val
     (:some item) (&trait-call Debug :debug item)
     (:none) |none
@@ -117,11 +117,10 @@ Applied generic structs also work in enum payloads:
 let
     Box $ defstruct Box ([] 'T) (:value 'T)
     Wrapped $ defenum Wrapped ([] 'T)
-      :box $ :: 'Box 'T
+      :box $ quote $ Box T
       :empty
-    value $ Wrapped :box
-      %{} Box $ :value 1
-  assert-type value $ :: 'Wrapped :number
+    value $ Wrapped :box $ %{} Box (:value 1)
+  assert-type value $ quote $ Wrapped Number
   assert= 1 $ match value
     (:box boxed) (:value boxed)
     (:empty) 0

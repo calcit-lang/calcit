@@ -193,19 +193,19 @@ try {
   apply([
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () &unit"],
     ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      "quote $ Fn (-> Unit)"],
     ["config", "set", "reload-fn", "app.main/main!"],
     ["config", "set", "target", "native"],
     ["edit", "def", "app.main/guarded", "--input-format", "cirru", "--code", "quote $ defn guarded (f) f"],
     ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+      "quote $ Fn Dynamic (-> Fn) (:features :js-ffi)"],
     ["edit", "add-ns", "app.fake"],
     ["edit", "def", "app.fake/js-present?", "--input-format", "cirru", "--code", "quote $ defn js-present? (value) true"],
     ["edit", "schema", "app.fake/js-present?", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)"],
+      "quote $ Fn Dynamic (-> Bool)"],
     ["edit", "def", "app.fake/invoke", "--input-format", "cirru", "--code", "quote $ defn invoke (effect) (effect)"],
     ["edit", "schema", "app.fake/invoke", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
+      "quote $ Fn Fn (-> Dynamic)"],
     ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.fake :as fake"],
   ]);
   const guard = "when (not (fn? f)) (raise |expected-function)";
@@ -237,7 +237,7 @@ try {
     ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defn guarded (f)\n  ${guard}\n  , f`],
     ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))"],
+      "quote $ Fn Dynamic (-> $ Fn Number (-> Number))"],
   ]);
   const kindOnly = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
   expectStatus(kindOnly, 1, "fn? cannot manufacture a Number callback signature");
@@ -262,7 +262,7 @@ try {
         , &unit
     , &unit`],
       ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Unit) (:features $ #{} :js-ffi)"],
+        "quote $ Fn Dynamic (-> Unit) (:features :js-ffi)"],
     ]);
     const staleLoop = inFixture("fix", "--rule", "callable-contract-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
     expectStatus(staleLoop, 1, `${label}: a re-entrant body cannot borrow loop-entry evidence`);
@@ -276,7 +276,7 @@ try {
     ["edit", "def", "app.main/recheck-once", "--input-format", "cirru", "--code",
       "quote $ defmacro recheck-once () (println |guard-recheck-expansion-token) (quasiquote &unit)"],
     ["edit", "schema", "app.main/recheck-once", "--input-format", "cirru", "--code",
-      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)"],
+      "quote $ Macro (-> $ Expr Unit) (:capabilities :log)"],
     ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defn guarded (value)
   when (not (number? value)) (raise |expected-number)
@@ -330,7 +330,7 @@ try {
   ${guard}
   let ((get-value (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))) (clobber! f) (get-value)`],
     ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+      "quote $ Fn Dynamic (-> Fn) (:features :js-ffi)"],
   ]);
   const macroWrite = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
   expectStatus(macroWrite, 1, "a macro-generated set! revokes captured predicate evidence");
@@ -343,7 +343,7 @@ try {
     ["config", "set", "target", "node"],
     ["edit", "def", "app.fake/opaque!", "--input-format", "cirru", "--code", "quote $ defn opaque! () &unit"],
     ["edit", "schema", "app.fake/opaque!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+      "quote $ Fn (-> Unit) (:features :js-ffi)"],
     ["edit", "ffi", "app.fake/opaque!", "--code",
       '{} (:target :node) (:js $ {} $ :inline "|() => { globalThis.__guard_mutate?.(); }")'],
     ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
@@ -354,7 +354,7 @@ try {
     fake/opaque!
     , f`],
     ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+      "quote $ Fn Dynamic (-> Fn) (:features :js-ffi)"],
   ]);
   const opaque = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
   expectStatus(opaque, 1, "an opaque FFI implementation revokes captured predicate evidence");
@@ -538,7 +538,7 @@ try {
     ["edit", "def", "app.main/watch-counter", "--input-format", "cirru", "--code",
       "quote $ defn watch-counter (counter) (add-watch! counter :changes async-callback) &unit"],
     ["edit", "schema", "app.main/watch-counter", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)"],
+      "quote $ Fn (Ref Number) (-> Unit)"],
   ];
   const preview = run([invalid, "edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"]);
   expectStatus(preview, 0, "preview the synchronous callback consumer");
@@ -582,7 +582,7 @@ try {
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
       "quote $ defn main! () (let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)) &unit"],
     ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      "quote $ Fn (-> Unit)"],
   ];
   const conflictPreview = run([conflictingHintSnapshot, "edit", "transaction", "--code", JSON.stringify(conflictingHintOps), "--dry-run", "--format", "json"]);
   expectStatus(conflictPreview, 0, "preview contradictory local contract fixture");
@@ -614,7 +614,7 @@ try {
     "--code", JSON.stringify(["defn", "parameter-recheck-replay", [], ...hintTests.map(test => test.code), "1"])]), 0,
     "assemble source-hint recheck replay");
   expectStatus(run([snapshot, "edit", "schema", "calcit.core/parameter-recheck-replay", "--input-format", "cirru",
-    "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"]), 0,
+    "--code", "quote $ Fn (-> Number)"]), 0,
     "declare the replay entry contract without annotating inferred loop parameters");
   const hintSelection = ["--init-fn", "calcit.core/parameter-recheck-replay", "--reload-fn", "calcit.core/parameter-recheck-replay"];
   // Compatibility regressions belong here, not in ordinary project entrypoints.
@@ -715,7 +715,7 @@ try {
   inFixture("edit", "def", "calcit.spread-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ defwasm-export run-tests () 1");
   inFixture("edit", "schema", "calcit.spread-evidence/run-tests", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+    "quote $ Fn (-> Number)");
   inFixture("config", "set", "init-fn", "calcit.spread-evidence/run-tests");
   inFixture("config", "set", "reload-fn", "calcit.spread-evidence/run-tests");
   for (const expression of ["([] 1) .len &", ".len ([] 1) &", "({} (:a 1)) .dissoc :a & & ([] :b)"]) {
@@ -747,7 +747,7 @@ try {
       ["edit", "def", "calcit.spread-evidence/dynamic-spread-keys", ...(index === 0 ? [] : ["--overwrite"]), "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "dynamic-spread-keys", [], body])],
       ["edit", "schema", "calcit.spread-evidence/dynamic-spread-keys", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+        "quote $ Fn (-> Dynamic)"],
       ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code",
         JSON.stringify(["defwasm-export", "run-tests", [], result])],
     ];

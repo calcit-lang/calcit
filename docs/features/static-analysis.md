@@ -362,13 +362,9 @@ Runnable Example:
 ```cirru
 let
     calculate-total $ fn (items)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return :number
+      hint-fn $ quote $ Fn (List Number) (-> Number)
       .fold items 0 $ fn (acc item)
-        hint-fn $ {}
-          :args $ [] :number :number
-          :return :number
+        hint-fn $ quote $ Fn Number Number (-> Number)
         + acc item
   calculate-total $ [] 1 2 3
 ```
@@ -407,16 +403,10 @@ assert= ([] 2 3 4)
 ```cirru
 let
     choose $ fn (value)
-      hint-fn $ {}
-        :args $ [] 'T
-        :return 'Number
-        :generics $ [] 'T
+      hint-fn $ quote $ Fn T (-> Number) (:generics T)
       let
           callback $ fn (other)
-            hint-fn $ {}
-              :args $ [] 'T
-              :return 'T
-              :generics $ [] 'T
+            hint-fn $ quote $ Fn T (-> T) (:generics T)
             , other
         callback 1
   assert= 1 $ choose |outer
@@ -441,7 +431,7 @@ Use `hint-fn` with schema map at the start of a local function body:
 ```cirru
 let
     add-one $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       + x 1
   assert-type (add-one 1) 'Number
 ```
@@ -468,9 +458,7 @@ Generic trait bounds use the same schema map. Follow the Rust-style split: decla
 ```cirru
 let
     get-name $ fn (user)
-      hint-fn $ {}
-        :args $ [] 'String
-        :return 'String
+      hint-fn $ quote $ Fn String (-> String)
       str "|user " user
   get-name |Ada
 ```
@@ -505,13 +493,11 @@ For namespace-level `defn` / `defmacro`, parameter and return metadata should st
 
 ```cirru
 let
-    add $ fn (a b) :number
-      hint-fn $ {}
-        :args $ [] :number :number
-        :return :number
+    add $ fn (a b) 'Number
+      hint-fn $ quote $ Fn Number Number (-> Number)
       let
           total $ + a b
-        assert-type total :number
+        assert-type total 'Number
         , total
   assert= 3 $ add 1 2
 ```
@@ -568,9 +554,7 @@ Model absence with `Option<T>`; the caller handles both variants explicitly:
 ```cirru
 let
     greet $ fn (name)
-      hint-fn $ {}
-        :args $ [] $ :: 'Option 'String
-        :return 'String
+      hint-fn $ quote $ Fn (Option String) (-> String)
       str "|Hello " $ .unwrap-or name |Guest
   greet $ Option :none
 ```
@@ -584,7 +568,7 @@ Represent variable arguments in `&` parameters:
 ```cirru
 let
     sum $ fn (& xs)
-      hint-fn $ {} (:rest :number) (:return :number)
+      hint-fn $ {} (:rest 'Number) (:return 'Number)
       .fold xs 0 &+
   sum 1 2 3
 ```
@@ -638,11 +622,9 @@ Use the name defined by `defstruct` or `defenum`:
 
 ```cirru
 let
-    User $ defstruct User (:name :string)
+    User $ defstruct User $ :name 'String
     get-name $ fn (u)
-      hint-fn $ {}
-        :args $ [] 'User
-        :return :string
+      hint-fn $ quote $ Fn User (-> String)
       :name u
   get-name $ User :name |Alice
 ```
@@ -785,17 +767,14 @@ Use `assert-type` to explicitly check local values during preprocessing:
 ```cirru
 let
     transform-fn $ fn (x)
-      hint-fn $ {}
-        :args $ [] 'Number
-        :return 'Number
+      hint-fn $ quote $ Fn Number (-> Number)
       * x 2
     process-data $ fn (data)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return $ :: 'List 'Number
+      hint-fn $ quote $ Fn (List Number)
+        -> $ List Number
       let
           xs data
-        assert-type xs $ :: 'List 'Number
+        assert-type xs $ quote $ List Number
         &list:map xs transform-fn
   process-data $ [] 1 2 3
 ```
@@ -938,14 +917,12 @@ These rewrites are automatic. Provide type annotations (`hint-fn`, `:schema`, `a
 let
     process-input $ fn (input) (assoc input :processed true)
     public-api-function $ fn (input)
-      hint-fn $ {}
-        :args $ [] :map
-        :return :string
+      hint-fn $ quote $ Fn Map (-> String)
       let
           processed $ process-input input
-        assert-type processed :map
+        assert-type processed 'Map
         str processed
-  public-api-function $ {} (:data |hello)
+  public-api-function $ {} $ :data |hello
 ```
 
 ### 2. Leverage Type Inference

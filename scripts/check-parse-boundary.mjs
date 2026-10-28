@@ -170,7 +170,7 @@ try {
     ["edit", "def", exportName, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", "format-modes", [], ...formatTests.map(test => test.code), "&unit"])],
     ["edit", "schema", exportName, "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      "quote $ Fn (-> Unit)"],
     ["config", "set", "init-fn", exportName],
     ["config", "set", "reload-fn", exportName],
   ]);

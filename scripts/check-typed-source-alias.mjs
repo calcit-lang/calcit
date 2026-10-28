@@ -76,7 +76,7 @@ try {
 
   // Invalid programs cannot be attached tests: they must fail before execution.
   // Only mutate this private Snapshot, leaving the shared semantic fixture valid.
-  const schema = ["--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"];
+  const schema = ["--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"];
   apply([
     ["config", "set", "target", "node"],
     ["edit", "add-ns", "fix-command.import-partial"],
@@ -158,7 +158,7 @@ try {
   run("edit", "def", `${ns}/computed-alias`, "--input-format", "cirru", "--code",
     "quote $ def computed-alias $ do (println |alias-producer-must-not-execute) fix-command.alias-evidence/echo-string");
   run("edit", "schema", `${ns}/computed-alias`, "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)");
+    "quote $ Fn String (-> String)");
   run("edit", "def", "fix-command.reader/main!", "--overwrite", "--input-format", "cirru", "--code",
     "quote $ defn main! () (fix-command.alias-evidence/computed-alias |ok) &unit");
   const checked = run("--check-only");

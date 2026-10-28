@@ -53,9 +53,8 @@ aliases:
 ```cirru
 let
     read-path $ fn (value)
-      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'calcit.core/FsPath)
-      struct-match value
-        FsPath path path
+      hint-fn $ quote $ Fn Dynamic (-> calcit.core/FsPath)
+      struct-match value (FsPath path path)
         _ other $ raise |Expected-FsPath
     original $ fs:path |notes.cirru
     checked $ read-path original

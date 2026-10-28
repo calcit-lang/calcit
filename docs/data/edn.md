@@ -95,9 +95,7 @@ These Result-returning parser methods currently run on the native and JavaScript
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-person (raw)
-  hint-fn $ {}
-    :args $ [] 'String
-    :return 'Person
+  hint-fn $ quote $ Fn String (-> Person)
   parse-cirru-edn-as raw Person
 ```
 
@@ -124,9 +122,8 @@ The compatibility form raises the failure like `parse-cirru-edn`. New code that 
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-people (raw)
-  hint-fn $ {}
-    :args $ [] 'String
-    :return $ :: 'Result (:: 'List 'Person) 'String
+  hint-fn $ quote $ Fn String
+    -> $ Result (List Person) String
   try-parse-cirru-edn-as raw $ :: 'List Person
 ```
 
