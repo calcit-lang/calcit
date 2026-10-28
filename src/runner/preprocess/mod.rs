@@ -14532,17 +14532,6 @@ pub fn preprocess_hint_fn(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
-  if !matches!(args.len(), 1 | 2) {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!(
-        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got {} arguments",
-        args.len()
-      ),
-      ctx.call_stack,
-      args.first().and_then(Calcit::get_location),
-    ));
-  }
   let mut legacy_clauses: BTreeSet<&str> = BTreeSet::new();
   let mut error_location: Option<NodeLocation> = None;
 
@@ -14573,44 +14562,34 @@ pub fn preprocess_hint_fn(
       error_location,
     ));
   }
-
-  // Validate the first argument of the two-argument form before parsing the
-  // schema. This keeps diagnostics aligned with the public `(hint-fn f
-  // schema)` order when a schema-like expression is accidentally supplied as
-  // the target.
-  let target_form = if args.len() == 2 {
-    let target_raw = args.first().expect("two-argument hint has a target");
-    let target_form = preprocess_expr(
-      target_raw,
-      ctx.scope_defs,
-      ctx.scope_types,
-      ctx.file_ns,
-      ctx.check_warnings,
-      ctx.call_stack,
-    )?;
-    let Calcit::Local(local) = target_form else {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        "hint-fn target must be an existing local function; put `(hint-fn schema)` inside a new function body instead",
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
+  if args.len() == 2 {
+    // The two-argument `(hint-fn f schema)` form was removed in 0.32.0 (#2378).
+    let target = args.first().expect("two-argument hint has a target");
+    let message = match target {
+      Calcit::Symbol { sym, .. } => format!(
+        "two-argument `hint-fn {sym} schema` was removed in 0.32.0; move the type into the body of the function that defines `{sym}`, as `hint-fn $ Fn …`"
+      ),
+      _ => "two-argument `hint-fn target schema` was removed in 0.32.0; write `hint-fn $ Fn …` inside the body of the function it describes, and pass that function directly".to_owned(),
     };
-    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) && local.type_info.resolve_to_nonoptional_fn().is_none() {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!(
-          "hint-fn target must be an existing local function, got {}; a schema does not prove callability",
-          local.type_info
-        ),
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
-    }
-    Some(local)
-  } else {
-    None
-  };
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Syntax,
+      message,
+      "E_LEGACY_HINT_FN_TARGET",
+      ctx.call_stack,
+      target.get_location(),
+    ));
+  }
+  if args.len() != 1 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!(
+        "hint-fn expects one function type such as `hint-fn $ Fn Number (-> String)`; got {} arguments",
+        args.len()
+      ),
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
 
   // preserve hint-fn for JS codegen or other metadata needs
   let mut ys = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
@@ -14618,16 +14597,14 @@ pub fn preprocess_hint_fn(
     ys.push(a.to_owned());
   }
 
-  // The two-argument form annotates an existing local function value. Keep the annotation in
-  // lexical scope so later calls, callback checks, and `type-at` retain the complete signature.
-  // The one-argument form is metadata injected into a function body and has no target to refine.
+  // The hint is metadata injected into a function body and has no target to refine.
   let lexical_generics = ctx.scope_types.generic_names();
   let Some(type_entry) =
     CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
   else {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,
-      "hint-fn expects a function type: use `hint-fn $ Fn Number (-> String)` (or `hint-fn Async`) in a function body, or `hint-fn f $ Fn …` for a local function; do not use hint-fn as a callback wrapper",
+      "hint-fn expects a function type: use `hint-fn $ Fn Number (-> String)` (or `hint-fn Async`) in a function body; do not use hint-fn as a callback wrapper",
       ctx.call_stack,
       args.get(args.len() - 1).and_then(Calcit::get_location),
     ));
@@ -14642,35 +14619,6 @@ pub fn preprocess_hint_fn(
       .get(args.len() - 1)
       .and_then(|schema| source_location_in_namespace(schema, ctx.file_ns)),
   );
-  let type_entry = resolve_local_type_refs_for_body(type_entry, ctx.scope_types);
-  if args.len() == 2 {
-    let target_raw = args.first().expect("two-argument hint has a target");
-    let mut local = target_form.expect("two-argument hint target was preprocessed");
-    // A known local signature must prove the requested contract directionally;
-    // Dynamic results cannot be narrowed by restating them as a concrete type.
-    // An unsigned `fn` keeps the legacy compatibility relation while the
-    // two-argument form is migrated to body hints (#2172).
-    let proven = if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) {
-      local.type_info.is_compatible_with(type_entry.as_ref())
-    } else {
-      local.type_info.is_proven_for(type_entry.as_ref())
-    };
-    if !proven {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!(
-          "hint-fn schema conflicts with the existing local function signature: got {}, requested {}",
-          local.type_info, type_entry
-        ),
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
-    }
-    note_legacy_hint_fn_target(&local.sym, ctx.file_ns, source_location_in_namespace(target_raw, ctx.file_ns));
-    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
-    local.type_info = type_entry;
-    ys[1] = Calcit::Local(local);
-  }
   Ok(Calcit::from(ys))
 }
 
@@ -16662,33 +16610,6 @@ fn note_legacy_optional_type(position: &str, annotation: &CalcitTypeAnnotation, 
     message,
     location,
     Some("W_LEGACY_OPTIONAL_TYPE".to_owned()),
-    None,
-  ));
-}
-
-/// Advisory for the two-argument `(hint-fn f schema)` compatibility form in
-/// project source (#2172). It never fails a check: remaining uses migrate to a
-/// Map hint in the body of the function that defines `f` before the form is
-/// removed in 0.32.0. Core keeps its compatibility tests until that removal.
-fn note_legacy_hint_fn_target(target: &str, file_ns: &str, location: Option<NodeLocation>) {
-  let Some(location) = location else {
-    return;
-  };
-  if file_ns == calcit::CORE_NS
-    || !should_emit_project_source_lint(file_ns)
-    || location.ns.as_ref() != file_ns
-    || location.def.as_ref() == GENERATED_DEF
-  {
-    return;
-  }
-  let message = format!(
-    "[Warn] two-argument `hint-fn {target} schema` in {}/{} is a compatibility form that will be removed in 0.32.0; move the schema Map into the body of the function that defines `{target}` as `(hint-fn $ {{}} (:args ...) (:return ...))`",
-    location.ns, location.def
-  );
-  push_advisory(LocatedWarning::new_with_detail(
-    message,
-    location,
-    Some("W_LEGACY_HINT_FN_TARGET".to_owned()),
     None,
   ));
 }
@@ -24103,7 +24024,7 @@ mod tests {
   }
 
   #[test]
-  fn local_hint_fn_refines_later_function_references() {
+  fn two_argument_hint_fn_target_is_rejected() {
     use crate::data::cirru::code_to_calcit;
 
     let hint_form = Cirru::List(vec![
@@ -24127,25 +24048,13 @@ mod tests {
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
 
-    let resolved_hint =
-      preprocess_expr(&hint, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local hint-fn");
-    let annotation = scope_types.get("f").expect("hint-fn should refine the lexical binding");
-    let CalcitTypeAnnotation::Fn(fn_annotation) = annotation.as_ref() else {
-      panic!("expected complete function annotation, got {annotation:?}");
-    };
-    assert!(matches!(fn_annotation.arg_types.as_slice(), [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Number)));
-    assert!(matches!(fn_annotation.return_type.as_ref(), CalcitTypeAnnotation::Number));
-    assert!(
-      matches!(resolved_hint, Calcit::List(ref xs) if matches!(xs.get(1), Some(Calcit::Local(local)) if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn(_)))),
-      "the annotation target should carry the refined type"
-    );
-
-    let call = code_to_calcit(&Cirru::List(vec![Cirru::leaf("f"), Cirru::leaf("1")]), "tests.hint", "demo", vec![])
-      .expect("parse local function call");
-    let resolved_call =
-      preprocess_expr(&call, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack).expect("preprocess local function call");
-    let inferred = infer_type_from_expr(&resolved_call, &scope_types).expect("infer hinted local call return");
-    assert!(matches!(inferred.as_ref(), CalcitTypeAnnotation::Number));
+    let error = preprocess_expr(&hint, &scope_defs, &mut scope_types, "tests.hint", &warnings, &stack)
+      .expect_err("the two-argument form was removed in 0.32.0");
+    assert_eq!(error.code(), Some("E_LEGACY_HINT_FN_TARGET"), "{error}");
+    assert!(matches!(
+      scope_types.get("f").map(|t| t.as_ref()),
+      Some(CalcitTypeAnnotation::DynFn)
+    ));
   }
 
   #[test]

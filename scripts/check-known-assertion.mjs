@@ -3089,7 +3089,7 @@ try {
       assert.equal(genericTests.length, 1);
       run("test", "calcit.core/hint-fn", "--tag", "hint-value-boundary", "--require-match");
       const hintTests = returnResponse.data.tests.filter(test => test.tags.includes("hint-value-boundary"));
-      assert.equal(hintTests.length, 5);
+      assert.equal(hintTests.length, 3);
       run("test", "calcit.core/hint-fn", "--tag", "async-return-boundary", "--require-match");
       const asyncTests = returnResponse.data.tests.filter(test => test.tags.includes("async-return-boundary"));
       assert.equal(asyncTests.length, 1);
@@ -3694,7 +3694,6 @@ try {
       bad.push(...detailed.keys());
       const badReturns = [
         "let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Number)))))) (empty)",
-        "let ((f (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (+ x 1))) (wrong (fn () (hint-fn ({} (:args ([])) (:return 'Number))) 3 (hint-fn f ({} (:args ([] 'Number)) (:return 'Number)))))) (wrong)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
         "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) callback))) facade (fn (x) x)",
@@ -3715,7 +3714,6 @@ try {
         // Annotation expressions are Nil, including through bindings and helpers.
         "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number))) (callback 1)))) (consume (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))",
         "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))) (consume callback)",
-        "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (f (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) x))) (consume (hint-fn f ({} (:args ([] 'Number)) (:return 'Number))))",
         "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
       ];
       // Open values need their own proof before a concrete parameter or payload (#1767).
