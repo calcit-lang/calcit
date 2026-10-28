@@ -700,7 +700,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
 目标已有签名时，两参数形式只能收窄到该签名能证明的合同：可以把开放的 Dynamic 参数写成具体类型，但不能把 Dynamic 返回改写成 Number，也不能把已声明的 Number 参数放宽为 Dynamic。此类注解以“hint-fn schema conflicts with the existing local function signature”在预处理时报错；迁移方法是在函数体内收窄并声明真实返回类型，而不是在外部改写合同。
 
-两参数形式 `hint-fn f schema` 已在 0.32.0 删除（见上方 0.32.0 一节）。0.31.0 起，项目源码中的每处用法都会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；它只是提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
+两参数形式 `hint-fn f schema` 已在 0.32.0 删除：0.32.0 起写出时报 `E_LEGACY_HINT_FN_TARGET`，在运行和代码生成之前停止（见上方 0.32.0 一节）。在 0.31.x 中，项目源码中的每处用法会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；这只是 0.31.x 的提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
 
 ```cirru.no-check
 let
