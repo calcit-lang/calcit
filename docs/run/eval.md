@@ -23,7 +23,9 @@ entry_for:
 
 短代码可以直接作为 `calcit eval '<snippet>'` 的位置参数。带引号的多行位置参数仍受支持（见下方示例）；需要避免 Shell 转义或从管道读取时，推荐使用 `calcit eval --stdin`。两种输入方式不能同时使用。旧顶层 `calcit exec` 已移除。
 
-`eval` 会先检查整个片段，再执行其中的表达式。字面量 List 的 `&` 展开沿用普通参数合同：例如 `&list:concat ([] 1) & ([] ([] |wrong))` 会在执行前报告 Number/String 元素类型不匹配，和 Snapshot 中的同一调用一致。显式 `List<Dynamic>` 仍可用于保存和传递异构值，具体消费时再检查内容。
+`eval` 会先检查 `main!`、`reload!` 及预处理时引用到的定义，再执行 `main!`。表达式片段放入生成的 `main!` 函数体；仅含顶层定义的片段会注册这些定义，并为缺少的入口补空函数。显式定义的 `main!` 或 `reload!` 保留，其中 `reload!` 在初始单次执行中只检查、不执行。未被入口选中或引用的定义不会仅因出现在片段中而被检查。
+
+字面量 List 的 `&` 展开沿用普通参数合同：例如 `&list:concat ([] 1) & ([] ([] |wrong))` 会在执行前报告 Number/String 元素类型不匹配，和 Snapshot 中的同一调用一致。显式 `List<Dynamic>` 仍可用于保存和传递异构值，具体消费时再检查内容。`nil` 不再充当空 Map：`&merge map-value nil` 及其字面量展开形式都会被拒绝；按[升级指南](upgrade.md)改用原 Map、显式条件分支或 `Option<Map<K,V>>`，不要利用展开绕过已有合同。
 
 ```bash
 echo 'range 3' | calcit eval --stdin

@@ -31,12 +31,20 @@ try {
     assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
   }
   for (const audit of ["0", "1"]) {
-    const rejected = spawnSync(binary, ["eval", "println |spread-must-not-run\nformat-cirru-one-liner & ([] 1)"],
-      { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
-    assert.ifError(rejected.error);
-    assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
-    assert.match(rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
-    assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
+    // Nil-as-empty-Map was retired from the typed contract. Literal spread
+    // must not restore that runtime compatibility path.
+    for (const expression of [
+      "format-cirru-one-liner & ([] 1)",
+      "&merge (&{} :a 1) nil",
+      "&merge & ([] (&{} :a 1) nil)",
+    ]) {
+      const rejected = spawnSync(binary, ["eval", `println |spread-must-not-run\n${expression}`],
+        { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
+      assert.ifError(rejected.error);
+      assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+      assert.match(rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
+      assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
+    }
   }
   elementRun("query", "config", "--format", "edn");
   elementRun("query", "def", "app.main/main!", "--format", "edn");
