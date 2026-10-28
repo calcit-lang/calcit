@@ -18,7 +18,7 @@
           :code $ quote $ defn case-arg-defn ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ if flag |bad
               probe true
           :examples $ []
@@ -27,7 +27,7 @@
           :code $ quote $ defn case-arg-defn-nested ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ if flag (if flag |bad) 1
               probe true
           :examples $ []
@@ -36,7 +36,7 @@
           :code $ quote $ defn case-arg-defn-niljoin ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ if flag nil |bad
               probe true
           :examples $ []
@@ -45,7 +45,7 @@
           :code $ quote $ defn case-arg-defn-niljoin-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ if flag 1 nil
               probe true
           :examples $ []
@@ -54,7 +54,7 @@
           :code $ quote $ defn case-arg-defn-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ if flag 1
               probe true
           :examples $ []
@@ -63,7 +63,7 @@
           :code $ quote $ defn case-arg-defn-when ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   take-num $ when flag |bad
               probe true
           :examples $ []
@@ -72,10 +72,10 @@
           :code $ quote $ defn case-arg-local ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       take $ fn (v)
-                        hint-fn $ quote $ Fn Number (-> Unit)
+                        hint-fn $ Fn Number $ -> Unit
                         , &unit
                     take $ if flag |bad
               probe true
@@ -85,10 +85,10 @@
           :code $ quote $ defn case-arg-local-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       take $ fn (v)
-                        hint-fn $ quote $ Fn Number (-> Unit)
+                        hint-fn $ Fn Number $ -> Unit
                         , &unit
                     take $ if flag 1
               probe true
@@ -98,7 +98,7 @@
           :code $ quote $ defn case-arg-method-count ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   .count $ if flag 1
               probe true
           :examples $ []
@@ -107,7 +107,7 @@
           :code $ quote $ defn case-arg-method-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice |abcd (if flag 1) 2
               probe true
           :examples $ []
@@ -116,7 +116,7 @@
           :code $ quote $ defn case-arg-method-slice ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice |abcd (if flag |bad) 2
               probe true
           :examples $ []
@@ -125,7 +125,7 @@
           :code $ quote $ defn case-arg-method-slice-recv ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice (if flag 1) 0 2
               probe true
           :examples $ []
@@ -134,7 +134,7 @@
           :code $ quote $ defn case-arg-proc-add ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   &+ 1 $ if flag |bad
               probe true
           :examples $ []
@@ -143,7 +143,7 @@
           :code $ quote $ defn case-arg-proc-plus ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   + 1 $ if flag |bad
               probe true
           :examples $ []
@@ -152,7 +152,7 @@
           :code $ quote $ defn case-arg-proc-strcount ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   &str:count $ if flag 1
               probe true
           :examples $ []
@@ -161,7 +161,7 @@
           :code $ quote $ defn case-assert-type ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   do
                     assert-type (if flag |bad) 'Number
                     , &unit
@@ -172,7 +172,7 @@
           :code $ quote $ defn case-direct-cross-def ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   take-str $ g flag
               probe true
           :examples $ []
@@ -181,10 +181,10 @@
           :code $ quote $ defn case-hof-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       use $ fn (f)
-                        hint-fn $ quote $ Fn
+                        hint-fn $ Fn
                           Fn Number $ -> Number
                           -> Unit
                         , &unit
@@ -196,10 +196,10 @@
           :code $ quote $ defn case-hof-typed-fn-arg ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       use $ fn (f)
-                        hint-fn $ quote $ Fn
+                        hint-fn $ Fn
                           Fn Number $ -> Number
                           -> Unit
                         , &unit
@@ -211,7 +211,7 @@
           :code $ quote $ defn case-let-bound-arg-defn ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   let
                       y $ if flag |bad
                     take-num y
@@ -222,7 +222,7 @@
           :code $ quote $ defn case-let-bound-fn-literal ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   let
                       f $ fn () $ if flag 1
                     take-str $ f
@@ -233,7 +233,7 @@
           :code $ quote $ defn case-let-bound-list ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   let
                       xs $ [] $ if flag 1
                     take-str $ nth xs 0
@@ -244,7 +244,7 @@
           :code $ quote $ defn case-let-bound-nilq ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Bool)
+                  hint-fn $ Fn Bool $ -> Bool
                   let
                       y $ if flag 1
                     nil? y
@@ -255,7 +255,7 @@
           :code $ quote $ defn case-let-bound-ok-arg ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   let
                       y $ if flag 1
                     take-num y
@@ -266,7 +266,7 @@
           :code $ quote $ defn case-let-bound-plus ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   let
                       y $ if flag 1
                     + y 1
@@ -277,7 +277,7 @@
           :code $ quote $ defn case-let-bound-ret ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   let
                       y $ if flag |bad
                     , y
@@ -288,7 +288,7 @@
           :code $ quote $ defn case-let-cross-def ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   let
                       y $ g flag
                     take-str y
@@ -299,7 +299,7 @@
           :code $ quote $ defn case-let-cross-def2 ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   let
                       y $ g2 flag
                     take-str y
@@ -310,8 +310,7 @@
           :code $ quote $ defn case-list-literal ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ List Number
+                  hint-fn $ Fn Bool $ -> (List Number)
                   [] 1 $ if flag |bad
               probe true
           :examples $ []
@@ -320,8 +319,7 @@
           :code $ quote $ defn case-list-ret-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ List Number
+                  hint-fn $ Fn Bool $ -> (List Number)
                   [] 1 $ if flag 2
               probe true
           :examples $ []
@@ -330,10 +328,10 @@
           :code $ quote $ defn case-local-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       eat $ fn (v)
-                        hint-fn $ quote $ Fn Number (-> Unit)
+                        hint-fn $ Fn Number $ -> Unit
                         , &unit
                     eat $ if flag 1
               probe true
@@ -343,10 +341,10 @@
           :code $ quote $ defn case-local-ret-typed-fn-literal ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   let
                       h $ fn (y)
-                        hint-fn $ quote $ Fn Bool (-> Number)
+                        hint-fn $ Fn Bool $ -> Number
                         if y 1
                     do (h flag) &unit
               probe true
@@ -356,7 +354,7 @@
           :code $ quote $ defn case-m-slice-bad ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice |abcd $ if flag |x
               probe true
           :examples $ []
@@ -365,7 +363,7 @@
           :code $ quote $ defn case-m-slice-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice |abcd $ if flag 1
               probe true
           :examples $ []
@@ -374,7 +372,7 @@
           :code $ quote $ defn case-m-slice-ok2 ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   .slice |abcd (if flag 1) (Option :some 2)
               probe true
           :examples $ []
@@ -383,8 +381,7 @@
           :code $ quote $ defn case-map-callback ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ List Number
+                  hint-fn $ Fn Bool $ -> (List Number)
                   map ([] 1 2)
                     fn (x) (if flag |bad)
               probe true
@@ -394,8 +391,7 @@
           :code $ quote $ defn case-map-callback-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ List Number
+                  hint-fn $ Fn Bool $ -> (List Number)
                   map ([] 1 2)
                     fn (x) (if flag x)
               probe true
@@ -405,7 +401,7 @@
           :code $ quote $ defn case-n3-dynamic-ret ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   if flag 1
               probe true
           :examples $ []
@@ -414,7 +410,7 @@
           :code $ quote $ defn case-n3-jsnullish-arg ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Unit)
+                  hint-fn $ Fn Bool $ -> Unit
                   take-js $ if flag 1
               probe true
           :examples $ []
@@ -423,8 +419,7 @@
           :code $ quote $ defn case-n3-jsnullish-ret ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ JsNullish Number
+                  hint-fn $ Fn Bool $ -> (JsNullish Number)
                   if flag 1
               probe true
           :examples $ []
@@ -433,8 +428,7 @@
           :code $ quote $ defn case-n3-jsnullish-ret-join ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ JsNullish Number
+                  hint-fn $ Fn Bool $ -> (JsNullish Number)
                   if flag 1 nil
               probe true
           :examples $ []
@@ -443,7 +437,7 @@
           :code $ quote $ defn case-n3-let-value ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   let
                       y $ if flag 1
                     , y
@@ -454,8 +448,7 @@
           :code $ quote $ defn case-n3-nil-option ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ Option Number
+                  hint-fn $ Fn Bool $ -> (Option Number)
                   nil->option $ if flag 1
               probe true
           :examples $ []
@@ -464,7 +457,7 @@
           :code $ quote $ defn case-n3-statement ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   do
                     if flag $ take-num 1
                     , 1
@@ -511,8 +504,7 @@
           :code $ quote $ defn case-qfield-ret-opt ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ Optional String
+                  hint-fn $ Fn Bool $ -> (Optional String)
                   .?-name $ P :age 1 :name |a
               probe true
           :examples $ []
@@ -535,7 +527,7 @@
           :code $ quote $ defn case-ret-bool-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Bool)
+                  hint-fn $ Fn Bool $ -> Bool
                   if flag true
               probe true
           :examples $ []
@@ -544,7 +536,7 @@
           :code $ quote $ defn case-ret-case ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   case flag $ true |bad
               probe true
           :examples $ []
@@ -553,7 +545,7 @@
           :code $ quote $ defn case-ret-cond ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   cond $ flag |bad
               probe true
           :examples $ []
@@ -562,7 +554,7 @@
           :code $ quote $ defn case-ret-cond2 ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   cond (flag |bad)
                     (not flag) 2
               probe true
@@ -572,7 +564,7 @@
           :code $ quote $ defn case-ret-do-body ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   do (println 1) (if flag |bad)
               probe true
           :examples $ []
@@ -581,7 +573,7 @@
           :code $ quote $ defn case-ret-if-niljoin ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   if flag |bad nil
               probe true
           :examples $ []
@@ -590,7 +582,7 @@
           :code $ quote $ defn case-ret-if-noelse ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   if flag |bad
               probe true
           :examples $ []
@@ -599,7 +591,7 @@
           :code $ quote $ defn case-ret-let-body ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   let
                       y 1
                     if flag |bad
@@ -610,7 +602,7 @@
           :code $ quote $ defn case-ret-nested-if ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   if flag (if flag |bad) 1
               probe true
           :examples $ []
@@ -619,7 +611,7 @@
           :code $ quote $ defn case-ret-nested-if-else-nil ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   if flag 1 $ if flag |bad
               probe true
           :examples $ []
@@ -628,7 +620,7 @@
           :code $ quote $ defn case-ret-ok-match ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   if flag 1
               probe true
           :examples $ []
@@ -637,8 +629,7 @@
           :code $ quote $ defn case-ret-option ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ Option Number
+                  hint-fn $ Fn Bool $ -> (Option Number)
                   if flag 1
               probe true
           :examples $ []
@@ -647,8 +638,7 @@
           :code $ quote $ defn case-ret-option-bad ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool
-                    -> $ Option Number
+                  hint-fn $ Fn Bool $ -> (Option Number)
                   if flag |bad
               probe true
           :examples $ []
@@ -657,7 +647,7 @@
           :code $ quote $ defn case-ret-string-niljoin-ok ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> String)
+                  hint-fn $ Fn Bool $ -> String
                   if flag |a nil
               probe true
           :examples $ []
@@ -666,7 +656,7 @@
           :code $ quote $ defn case-ret-when ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Number)
+                  hint-fn $ Fn Bool $ -> Number
                   when flag |bad
               probe true
           :examples $ []
@@ -675,7 +665,7 @@
           :code $ quote $ defn case-struct-ctor-bad ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   P :age (if flag |bad) :name |a
               probe true
           :examples $ []
@@ -684,7 +674,7 @@
           :code $ quote $ defn case-struct-ctor-nil ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   P :age (if flag 1) :name |a
               probe true
           :examples $ []
@@ -693,7 +683,7 @@
           :code $ quote $ defn case-struct-field ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   P
                     :age $ if flag |bad
                     :name |a
@@ -704,7 +694,7 @@
           :code $ quote $ defn case-struct-field-pct ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   %{} P
                     :age $ if flag |bad
                     :name |a
@@ -715,7 +705,7 @@
           :code $ quote $ defn case-struct-pct-nil ()
             let
                 probe $ fn (flag)
-                  hint-fn $ quote $ Fn Bool (-> Dynamic)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   %{} P
                     :age $ if flag 1
                     :name |a

@@ -197,7 +197,7 @@ defn make-id (size)
 
 ```cirru.no-check
 defn register-language-adapter! ()
-  hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
+  hint-fn $ Fn (-> Unit) (:features :js-ffi)
   let
       language language-export
     if (fn? language) (register-language! |clojure language) (raise |Expected-language-function)
@@ -365,14 +365,8 @@ defexternal QueryHost
   :names $ {} (:query |querySelector)
   :writable $ #{} :text-content
   :length 'Number
-  .query $ :: 'Fn
-    {}
-      :args $ [] 'QueryHost 'String
-      :return 'QueryHost
-  .text $ :: 'Fn
-    {}
-      :args $ [] 'QueryHost
-      :return 'String
+  .query $ quote $ Fn QueryHost String (-> QueryHost)
+  .text $ quote $ Fn QueryHost (-> String)
 ```
 
 `defexternal` 在载入期展开为与下面等价的 `deftrait` 代码 + `CodeEntry :ffi` 元数据；
@@ -475,7 +469,7 @@ defn same-element? (a b)
 
 - 方法调用写成 `(receiver .method args...)`；`.method` 走 external-object trait 的静态派发，
   `.!method` 只用于裸 `JsObject` 上的原生调用，两者语义不同。
-- 返回另一个宿主对象的方法要在 trait 上声明返回类型（例如 `:return 'QueryHost`），这样就能继续链式调用。
+- 返回另一个宿主对象的方法要在 trait 上声明返回类型（函数类型里的 `(-> QueryHost)`），这样就能继续链式调用。
   Calcit 有意不引入 `Promise<T>`/`Iterator<T>` 这类泛型宿主 trait：请在适配器内部消费这类泛型宿主值，
   只把普通 `Option`/`Result`/`Struct`/`Enum` 数据返回给业务代码。
 - 构造器与静态方法使用 `new js/Name` / `js/Name.method`；结果仍是不透明宿主值，需要同一适配器内
@@ -508,7 +502,7 @@ calcit --warn-dyn-method calcit.cirru --check-only
 defexternal QueryHost
   :target :browser
   :length 'Dynamic
-  .query $ :: 'Fn $ {} (:args $ [] 'QueryHost) (:return 'Dynamic)
+  .query $ quote $ Fn QueryHost (-> Dynamic)
 ```
 
 骨架只包含能表达为 Calcit trait 成员的字段/方法名（索引、字符串 key 会被过滤）；字段与方法类型仍是
@@ -607,7 +601,7 @@ Calcit provides async interop syntax for JS codegen.
 
 ### Mark async functions
 
-Use `hint-fn $ {} (:async true)` in function body when using `js-await`:
+Use `hint-fn Async` in function body when using `js-await`:
 
 `js-await` should stay inside async-marked function bodies.
 
@@ -616,7 +610,7 @@ of its invocation contract. The schema's `:return T` describes the value after
 awaiting, not the Promise-like value returned by the JavaScript call:
 
 ```cirru.no-check
-hint-fn $ quote $ Fn (-> String) (:async)
+hint-fn $ Fn (-> String) (:async)
 ```
 
 Calling this function produces a pending async value in static checking. Pass
@@ -634,7 +628,7 @@ The checker does not insert `await`, retry calls, or model effects automatically
 let
     fetch-data $ fn () nil
   fn ()
-    hint-fn $ quote Async
+    hint-fn Async
     js-await $ fetch-data
 ```
 
@@ -644,7 +638,7 @@ Use `js-await` for Promise-like values:
 
 ```cirru.no-check
 fn ()
-  hint-fn $ quote Async
+  hint-fn Async
   let
       p $ new js/Promise $ fn (resolve _reject)
         js/setTimeout
@@ -671,7 +665,7 @@ let
     timeout $ fn (ms)
       new js/Promise $ fn (resolve _reject) (js/setTimeout resolve ms)
   fn ()
-    hint-fn $ quote Async
+    hint-fn Async
     js-await $ timeout 200
 ```
 
@@ -683,7 +677,7 @@ Use `js-for-await` with `js-await` for async iterables:
 let
     gen $ fn () nil
   fn ()
-    hint-fn $ quote Async
+    hint-fn Async
     js-await $ js-for-await (gen)
       fn (item)
         new js/Promise $ fn (resolve _reject)
@@ -778,8 +772,8 @@ Common diagnostics:
 指定 JS 实现后，Calcit 检查 `defn` 参数与 schema 的对应关系、调用参数、feature 和 target，并从该声明建立可调用接口；执行与输出采用 JS 实现。声明中的 Cirru body 不是备用实现，严格迁移检查不会借它证明 JS 的返回值，也不会要求修改这个未执行的 body 来满足返回证明。只有 `:js-ffi` feature、没有 `:ffi :js` 实现的普通 Calcit 函数仍完整检查函数体。用 `query context` 确认真正选中的 inline/file 来源，再用模块附带测试及真实宿主回放验证返回值和异常传播；native 调用与 WASM 生成仍明确拒绝 JS-only 定义。
 
 ```cirru.no-check
-:schema $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)
-  :features $ #{} :js-ffi
+:schema $ quote $ Fn Number (-> Number)
+  :features :js-ffi
 :ffi $ {} (:target :node)
   :js $ {} $ :inline "|(x) => x + 1"
 ```

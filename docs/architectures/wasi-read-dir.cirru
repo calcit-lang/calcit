@@ -9,20 +9,14 @@
       :kind :fn
       :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
       :params $ [] 'result-type 'path-type 'path 'host-error
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'EnumDef 'StructDef 'String 'String
-          :return $ :: 'Result (:: 'List 'FsPath) 'String
+      :schema $ quote $ Fn EnumDef StructDef String String $ -> $ Result (List FsPath) String
       :code $ quote &runtime-implementation
     'calcit.core/fs-path:read-dir $ {}
       :mode :ensure
       :kind :fn
       :doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。"
       :params $ [] 'self
-      :schema $ :: 'Fn
-        {}
-          :args $ [] 'FsPath
-          :return $ :: 'Result (:: 'List 'FsPath) 'String
+      :schema $ quote $ Fn FsPath $ -> $ Result (List FsPath) String
       :code $ quote
         defn fs-path:read-dir (self)
           &fs-read-dir Result FsPath (:value self) "|fs-path:read-dir failed"

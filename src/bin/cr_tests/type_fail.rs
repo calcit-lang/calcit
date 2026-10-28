@@ -242,7 +242,7 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    f $ fn (x) (hint-fn $ {} (:args $ [] $ :: 'JsNullish 'Number) (:return $ :: 'Option 'Dynamic)) $ nil->option x\n  f 1",
+      "let\n    f $ fn (x)\n      hint-fn $ Fn (JsNullish Number)\n        -> $ Option Dynamic\n      nil->option x\n  f 1",
     );
     let warnings = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
@@ -259,7 +259,7 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
     for source in [
       "nil->option nil",
       "let ((value (Option :some 1)))\n  nil->option value",
-      "let\n    f $ fn (x) (hint-fn $ {} (:args $ [] $ :: 'Optional 'Number) (:return $ :: 'Option 'Number)) $ nil->option x\n  f 1",
+      "let\n    f $ fn (x)\n      hint-fn $ Fn (Optional Number)\n        -> $ Option Number\n      nil->option x\n  f 1",
     ] {
       let accepted = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);
@@ -280,7 +280,7 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
 fn strict_type_fail_nil_to_option_as_map_callback_needs_typed_elements() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
-    let typed = load_snippet_entries("let ((xs (assert-type ([] 1 2) (:: 'List 'Number)))) (map xs nil->option)");
+    let typed = load_snippet_entries("let ((xs $ assert-type ([] 1 2) $ quote $ List Number)) $ map xs nil->option");
     let warnings = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&typed.init_ns, &typed.init_def, &warnings, &CallStackList::default())
       .expect("a typed list should accept nil->option as a callback");
@@ -394,7 +394,7 @@ fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
 fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
   run_with_large_stack(|| {
     let snippets = [
-      "let\n    output $ map-kv ({} (:a 1)) $ fn (k v) ([] k 1)\n  assert-type output $ :: 'Map 'Tag 'String\n  , output",
+      "let\n    output $ map-kv\n      {} $ :a 1\n      fn (k v) ([] k 1)\n  assert-type output $ quote $ Map Tag String\n  , output",
       "({} (:a 1)) .map-kv $ fn (k v) (:: :skip)",
     ];
 
@@ -455,13 +455,13 @@ fn strict_map_list_kv_preserves_key_value_and_result_types() {
     let _strict = StrictTypesReset::enabled();
 
     let entries = load_snippet_entries_with_main_schema(
-      "let\n    output $ map-list-kv ({} (:a |x)) $ fn (key value) (starts-with? value |x)\n  assert-type output $ :: 'List 'Bool\n  , &unit",
+      "let\n    output $ map-list-kv\n      {} $ :a |x\n      fn (key value) (starts-with? value |x)\n  assert-type output $ quote $ List Bool\n  , &unit",
       Some(main_schema.clone()),
     );
     run_check_only(&entries).expect("map-list-kv should preserve K, V, and callback result U in strict mode");
 
     let entries = load_snippet_entries_with_main_schema(
-      "let\n    output $ map-list-kv ({} (:a |x)) $ fn (key value) (+ value 1)\n  assert-type output $ :: 'List 'Number\n  , &unit",
+      "let\n    output $ map-list-kv\n      {} $ :a |x\n      fn (key value) (+ value 1)\n  assert-type output $ quote $ List Number\n  , &unit",
       Some(main_schema),
     );
     run_check_only(&entries).expect_err("map-list-kv callback values must keep the Map value type");
@@ -629,19 +629,19 @@ fn strict_public_dissoc_keeps_a_known_collection_contract() {
     // Removing an entry from a typed Map keeps the Map contract, while a key
     // of the wrong type is still rejected by the Map key check.
     for (key_type, value, passes) in [
-      ("'String", "dissoc (deref state) key", true),
-      ("'String", "dissoc (deref state) key key", true),
-      ("'Number", "dissoc (deref state) key", false),
+      ("String", "dissoc (deref state) key", true),
+      ("String", "dissoc (deref state) key key", true),
+      ("Number", "dissoc (deref state) key", false),
     ] {
       let snippet = format!(
-        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state key)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref $ :: 'Map 'String 'Number) {key_type}) (:return 'Unit)\n      reset! state $ {value}\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state key)\n      hint-fn $ Fn\n        Ref $ Map String Number\n        , {key_type} (-> Unit)\n      reset! state $ {value}\n      , &unit\n  , &unit"
       );
       assert_strict_snippet(&snippet, passes, &format!("key={key_type}, value={value}"));
     }
     // A List receiver keeps List<T> only when its single index is a proven Number.
-    for (index_type, passes) in [("'Number", true), ("'Dynamic", false)] {
+    for (index_type, passes) in [("Number", true), ("Dynamic", false)] {
       let snippet = format!(
-        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state index)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref $ :: 'List 'String) {index_type}) (:return 'Unit)\n      reset! state $ dissoc (deref state) index\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state index)\n      hint-fn $ Fn\n        Ref $ List String\n        , {index_type} (-> Unit)\n      reset! state $ dissoc (deref state) index\n      , &unit\n  , &unit"
       );
       assert_strict_snippet(&snippet, passes, &format!("list index={index_type}"));
     }
@@ -665,21 +665,21 @@ fn reset_rejects_incompatible_inferred_reference_payloads() {
       "let ((state $ ref 1)) (reset! state |wrong)",
       "let ((state $ ref $ {} $ :states $ {} $ :cursor $ [])) (reset! state $ {} $ :states $ {} $ :login $ {} (:data 1))",
       "reset! 1 2",
-      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state |wrong\n  , &unit",
-      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'Number) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
-      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref $ :: 'List 'T) (:: 'List 'U)) (:generics $ [] 'T 'U) (:return 'Unit)\n  reset! state value\n  , &unit",
-      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)\n  reset! state |wrong\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:generics T)\n  reset! state |wrong\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref Number) T (-> Unit) (:generics T)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List U\n    -> Unit\n    :generics T U\n  reset! state value\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit)\n  reset! state |wrong\n  , &unit",
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).expect_err("incompatible reset! must fail before typed reads can use stale evidence");
     }
     for snippet in [
       "let ((state $ ref 1)) (reset! state 2) (+ @state 1)",
-      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref 'T) 'T) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
-      "fn (state value)\n  hint-fn $ {} (:args $ [] (:: 'Ref $ :: 'List 'T) (:: 'List 'T)) (:generics $ [] 'T) (:return 'Unit)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:generics T)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List T\n    -> Unit\n    :generics T\n  reset! state value\n  , &unit",
       "let ((state $ ref $ {} (:count 1))) (reset! state $ {} (:count 2)) (get-in @state $ [] :count)",
-      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)\n  reset! state 2\n  , &unit",
-      "fn (state)\n  hint-fn $ {} (:args $ [] $ :: 'Ref 'Dynamic) (:return 'Unit)\n  reset! state |open-boundary\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit)\n  reset! state 2\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Dynamic) (-> Unit)\n  reset! state |open-boundary\n  , &unit",
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).expect("compatible reference writes should retain their payload types");
@@ -690,14 +690,9 @@ fn reset_rejects_incompatible_inferred_reference_payloads() {
 #[test]
 fn strict_reset_requires_known_outer_payload_or_explicit_open_reference() {
   run_with_large_stack(|| {
-    for (payload, passes) in [
-      ("'Number", false),
-      ("(:: 'List 'Dynamic)", false),
-      ("'T", false),
-      ("'Dynamic", true),
-    ] {
+    for (payload, passes) in [("Number", false), ("(List Dynamic)", false), ("T", false), ("Dynamic", true)] {
       let snippet = format!(
-        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state value)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref {payload}) 'Dynamic) (:generics $ [] 'T) (:return 'Unit)\n      reset! state value\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) Dynamic (-> Unit) (:generics T)\n      reset! state value\n      , &unit\n  , &unit"
       );
       let mut entries = load_snippet_entries(&snippet);
       // Both entries use the explicitly hinted function, so a missing schema
@@ -720,19 +715,19 @@ fn strict_reset_requires_known_outer_payload_or_explicit_open_reference() {
 fn strict_reset_checks_nested_unknowns_and_literal_empty_values() {
   run_with_large_stack(|| {
     for (payload, input, value, passes) in [
-      ("(:: 'List 'Number)", "(:: 'List 'Dynamic)", "value", false),
-      ("(:: 'Map 'Tag 'Number)", "(:: 'Map 'Tag 'Dynamic)", "value", false),
-      ("(:: 'Option 'Number)", "(:: 'Option 'Dynamic)", "value", false),
-      ("(:: 'List 'Dynamic)", "(:: 'List 'Dynamic)", "value", true),
-      ("(:: 'List 'Number)", "'Number", "([])", true),
-      ("(:: 'Set 'Number)", "'Number", "(#{})", true),
-      ("(:: 'Map 'Tag 'Number)", "'Number", "({})", true),
-      ("(:: 'List $ :: 'List 'Number)", "'Number", "([] $ [])", true),
-      ("(:: 'Option 'Number)", "'Number", "(Option :none)", true),
-      ("(:: 'List 'Number)", "'Dynamic", "([] value)", false),
+      ("(List Number)", "(List Dynamic)", "value", false),
+      ("(Map Tag Number)", "(Map Tag Dynamic)", "value", false),
+      ("(Option Number)", "(Option Dynamic)", "value", false),
+      ("(List Dynamic)", "(List Dynamic)", "value", true),
+      ("(List Number)", "Number", "([])", true),
+      ("(Set Number)", "Number", "(#{})", true),
+      ("(Map Tag Number)", "Number", "({})", true),
+      ("(List $ List Number)", "Number", "([] $ [])", true),
+      ("(Option Number)", "Number", "(Option :none)", true),
+      ("(List Number)", "Dynamic", "([] value)", false),
     ] {
       let snippet = format!(
-        "hint-fn $ {{}} (:args $ []) (:return 'Unit)\nlet\n    write $ fn (state value)\n      hint-fn $ {{}} (:args $ [] (:: 'Ref {payload}) {input}) (:return 'Unit)\n      reset! state {value}\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) {input} (-> Unit)\n      reset! state {value}\n      , &unit\n  , &unit"
       );
       let mut entries = load_snippet_entries(&snippet);
       entries.reload_fn = entries.init_fn.clone();
@@ -797,14 +792,14 @@ fn hint_fn_reports_invalid_target_before_invalid_schema() {
     assert_eq!(location.def.as_ref(), "main!", "{error}");
     assert_eq!(location.coord.as_ref().as_slice(), &[3, 1], "{error}");
     assert!(
-      !error.msg.contains("hint-fn expects a schema Map"),
+      !error.msg.contains("hint-fn expects a function type"),
       "diagnostic should not misidentify the second argument as the first schema, got: {error}"
     );
 
     let entries = load_snippet_entries("let ((f $ fn () 1)) (hint-fn f (:: fn () 1))");
     let error = run_check_only(&entries).expect_err("the second hint-fn argument must still be validated as a schema");
     assert!(
-      error.contains("hint-fn expects a schema Map"),
+      error.contains("hint-fn expects a function type"),
       "a local function target should leave schema validation to the second argument, got: {error}"
     );
   });
@@ -816,15 +811,15 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
     let cases = [
       (
         "hint-fn",
-        "hint-fn expects a schema Map, or a local function and a schema Map; got 0 arguments",
+        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got 0 arguments",
       ),
       (
         "let ((target $ fn () 1)) (hint-fn target ({} (:args ([])) (:return 'Number)) :extra)",
-        "hint-fn expects a schema Map, or a local function and a schema Map; got 3 arguments",
+        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got 3 arguments",
       ),
       (
         "fn (value)\n  hint-fn $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)\n  , value",
-        "hint-fn expects a schema Map",
+        "hint-fn expects a function type",
       ),
       (
         "let ((target 7))\n  hint-fn target $ {} (:args $ []) (:return 'Number)\n  , target",
@@ -863,11 +858,11 @@ fn two_argument_hint_fn_is_only_noted() {
     let entries = load_snippet_entries(
       "let
     signed $ fn (x)
-      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Number)
+      hint-fn $ Fn Dynamic (-> Number)
       , 1
     unsigned $ fn (x) x
     body $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ Fn Number (-> Number)
       , x
   hint-fn signed $ {} (:args $ [] 'Number) (:return 'Number)
   hint-fn unsigned $ {} (:args $ [] 'Number) (:return 'Number)
@@ -910,7 +905,7 @@ fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
     let _strict = StrictTypesReset::enabled();
     for (name, snippet) in [(
       "callback returning unrelated binder B must not satisfy A",
-      "let\n    accept $ fn (expected callback)\n      hint-fn $ {}\n        :generics $ [] 'A\n        :args $ [] 'A $ :: 'Fn $ {} (:args $ []) (:return 'A)\n        :return 'Unit\n      , &unit\n    caller $ fn (expected other)\n      hint-fn $ {}\n        :generics $ [] 'A 'B\n        :args $ [] 'A 'B\n        :return 'Unit\n      accept expected $ fn ()\n        , other\n      , &unit\n  caller 1 |wrong",
+      "let\n    accept $ fn (expected callback)\n      hint-fn $ Fn A\n        Fn $ -> A\n        -> Unit\n        :generics A\n      , &unit\n    caller $ fn (expected other)\n      hint-fn $ Fn A B (-> Unit) (:generics A B)\n      accept expected $ fn () other\n      , &unit\n  caller 1 |wrong",
     )] {
       let entries = load_snippet_entries(snippet);
       let warnings = RefCell::new(vec![]);
@@ -944,7 +939,7 @@ fn contextual_callback_output_does_not_bind_output_only_generic() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    consume $ fn (callback expected)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T)) 'T\n        :return 'T\n      callback\n  consume (fn () |wrong) 17",
+      "let\n    consume $ fn (callback expected)\n      hint-fn $ Fn (Fn (-> T)) T (-> T) (:generics T)\n      callback\n  consume (fn () |wrong) 17",
     );
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -1037,7 +1032,7 @@ fn contextual_callback_indirect_callable_keeps_output_slot_open() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    invoke $ fn (callback)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T))\n        :return 'T\n      callback\n  invoke $ fn () 1",
+      "let\n    invoke $ fn (callback)\n      hint-fn $ Fn (Fn (-> T)) (-> T) (:generics T)\n      callback\n  invoke $ fn () 1",
     );
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -1057,7 +1052,7 @@ fn contextual_callback_method_owned_output_generic_is_open() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    present $ Option :some 3\n    chained $ present .and-then $ fn (value) (Option :some $ str value)\n  assert-type chained $ :: 'Option 'String",
+      "let\n    present $ Option :some 3\n    chained $ present .and-then $ fn (value)\n      Option :some $ str value\n  assert-type chained $ quote $ Option String",
     );
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -1083,7 +1078,7 @@ fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    outer $ fn (value)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'Unit\n      let\n          invoke $ fn (callback)\n            hint-fn $ {}\n              :args $ [] (:: 'Fn $ {} (:return 'T))\n              :return 'Unit\n            , &unit\n        invoke $ fn () 1\n      , &unit\n  outer 2",
+      "let\n    outer $ fn (value)\n      hint-fn $ Fn T (-> Unit) (:generics T)\n      let\n          invoke $ fn (callback)\n            hint-fn $ Fn (Fn (-> T)) (-> Unit)\n            , &unit\n        invoke $ fn () 1\n      , &unit\n  outer 2",
     );
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -1114,7 +1109,7 @@ fn contextual_callback_preserves_proven_parts_of_composite_output() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries(
-      "let\n    check $ fn (key callback)\n      hint-fn $ {}\n        :generics $ [] 'K 'V\n        :args $ [] 'K (:: 'Fn $ {} (:return $ :: 'Map 'K 'V))\n        :return 'Unit\n      , &unit\n    bad $ fn ()\n      hint-fn $ {} (:args $ []) (:return $ :: 'Map 'String 'Bool)\n      {} $ |wrong true\n  check 1 bad",
+      "let\n    check $ fn (key callback)\n      hint-fn $ Fn K (Fn (-> $ Map K V)) (-> Unit) (:generics K V)\n      , &unit\n    bad $ fn ()\n      hint-fn $ Fn\n        -> $ Map String Bool\n      {} $ |wrong true\n  check 1 bad",
     );
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -2062,7 +2057,7 @@ fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload()
     })));
     let _strict = StrictTypesReset::enabled();
     let entries = load_snippet_entries_with_main_schema(
-      "let\n    consume $ fn (xs)\n      hint-fn $ {} (:args $ [] (:: 'List 'Dynamic)) (:return 'Dynamic)\n      map xs $ fn (value)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + value 1\n  consume $ [] 1",
+      "let\n    consume $ fn (xs)\n      hint-fn $ Fn (List Dynamic) (-> Dynamic)\n      map xs $ fn (value)\n        hint-fn $ Fn Number (-> Number)\n        + value 1\n  consume $ [] 1",
       Some(main_schema.clone()),
     );
     let error = run_check_only(&entries).expect_err("a Number-only callback must not narrow List<Dynamic> through core map");
@@ -2084,7 +2079,7 @@ fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload()
     );
 
     let option_entries = load_snippet_entries_with_main_schema(
-      "let\n    consume $ fn (value)\n      hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Dynamic)\n      value .map $ fn (item)\n        hint-fn $ {} (:args $ [] 'Number) (:return 'Number)\n        + item 1\n  consume $ Option :some 1",
+      "let\n    consume $ fn (value)\n      hint-fn $ Fn (Option Dynamic) (-> Dynamic)\n      value .map $ fn (item)\n        hint-fn $ Fn Number (-> Number)\n        + item 1\n  consume $ Option :some 1",
       Some(main_schema),
     );
     let option_error = run_check_only(&option_entries).expect_err("Option<Dynamic>.map must reject a Number-only callback");
@@ -2105,15 +2100,9 @@ fn type_fail_typed_rest_spread_checks_the_list_element_contract() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     for (parameters, fixed_types, call, expected, actual) in [
-      (
-        "label & values",
-        "'String",
-        "accept |prefix & items",
-        "list<string>",
-        "list<number>",
-      ),
-      ("label tail & values", "'String 'String", "accept 1 & items", ":string", ":number"),
-      ("label & values", "'String", "accept 1 & items & items", ":string", ":number"),
+      ("label & values", "String", "accept |prefix & items", "list<string>", "list<number>"),
+      ("label tail & values", "String String", "accept 1 & items", ":string", ":number"),
+      ("label & values", "String", "accept 1 & items & items", ":string", ":number"),
     ] {
       for named in [false, true] {
         for explicit in [false, true] {
@@ -2124,11 +2113,11 @@ fn type_fail_typed_rest_spread_checks_the_list_element_contract() {
           };
           let snippet = if named {
             format!(
-              "defn accept ({parameters})\n  hint-fn $ {{}} (:args $ [] {fixed_types}) (:rest 'String) (:return 'Unit)\n  , &unit\n\ndefn main! ()\n  hint-fn $ {{}} (:args $ []) (:return 'Unit)\n  let\n      items $ [] 1\n    {call}"
+              "defn accept ({parameters})\n  hint-fn $ Fn {fixed_types} & String (-> Unit)\n  , &unit\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      items $ [] 1\n    {call}"
             )
           } else {
             format!(
-              "let\n    accept $ fn ({parameters})\n      hint-fn $ {{}} (:args $ [] {fixed_types}) (:rest 'String) (:return 'Unit)\n      , &unit\n    items $ [] 1\n  {call}"
+              "let\n    accept $ fn ({parameters})\n      hint-fn $ Fn {fixed_types} & String (-> Unit)\n      , &unit\n    items $ [] 1\n  {call}"
             )
           };
           let entries = load_snippet_entries(&snippet);
@@ -2627,7 +2616,7 @@ fn required_struct_field_access_inside_local_fn_keeps_its_diagnostic() {
   run_with_large_stack(|| {
     // Expanding the `{}` receiver drops symbol locations; inside the `fn` macro body the
     // access must still count as source code, with or without a return hint (#1748).
-    for hint in ["", "\n        hint-fn $ {} (:args ([])) (:return 'String)"] {
+    for hint in ["", "\n        hint-fn $ Fn (-> String)"] {
       let entries = load_snippet_entries(&format!(
         "let\n    read $ fn (){hint}\n        decode-map-as (:file ({{}} (:file |a))) 'String\n  read"
       ));
@@ -3604,14 +3593,12 @@ fn struct_callback_unbound_slot_reports_the_binding_and_field_location() {
         builtins::effects::init_effects_states();
         let mut snapshot = snapshot::Snapshot::default();
         let mut file = snapshot::create_file_from_snippet(
-          "def slot $ deftype-slot :op\ndef Handler $ fn (d!) &unit\ndefenum Op (:inc)\ndefstruct Props\n  :on-click $ :: 'JsNullish 'app.main/Handler\ndefn main! ()\n  hint-fn $ {} (:args $ []) (:return 'Unit)\n  , slot\n  Props :on-click $ fn (d!)\n    d! $ :: :inc\n  , &unit",
+          "def slot $ deftype-slot :op\n\ndef Handler $ fn (d!) &unit\n\ndefenum Op $ :inc\n\ndefstruct Props $ :on-click $ quote (JsNullish app.main/Handler)\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , slot\n    Props :on-click $ fn (d!)\n      d! $ :: :inc\n    , &unit",
         )
         .expect("callback fixture should parse");
         // A named callback alias gets its contract from CodeEntry metadata,
         // exactly as the published Respo event-handler definitions do.
-        let schema = cirru_parser::parse(":: 'Fn $ {} (:return 'Unit)\n  :args $ [] $ :: 'Fn $ {} (:args $ [] '*op) (:return 'Unit)")
-          .unwrap()
-          .remove(0);
+        let schema = cirru_parser::parse("Fn\n  Fn *op $ -> Unit\n  -> Unit").unwrap().remove(0);
         file.defs.get_mut("Handler").unwrap().schema = snapshot::parse_schema_annotation_for_write(&schema).unwrap();
         snapshot.files.insert("app.main".to_owned(), file);
         if bound {
@@ -3660,19 +3647,19 @@ fn struct_callback_unbound_slot_location_respects_macro_source_origins() {
       builtins::effects::init_effects_states();
       let (macro_code, body, expected_coord) = if generated {
         (
-          "defmacro into-props ()\n  quasiquote $ let\n      handler $ fn (d!)\n        hint-fn $ {} (:return 'Unit)\n          :args $ [] $ :: 'Fn $ {} (:args $ [] *op) (:return 'Unit)\n        , &unit\n    Props :on-click handler",
+          "defmacro into-props () $ quasiquote $ let\n    handler $ fn (d!)\n      hint-fn $ Fn\n        Fn *op $ -> Unit\n        -> Unit\n      , &unit\n  Props :on-click handler",
           "  into-props",
           vec![5, 0],
         )
       } else {
         (
           "defmacro into-props (handler)\n  quasiquote $ Props :on-click ~handler",
-          "  let\n      handler $ fn (d!)\n        hint-fn $ {} (:return 'Unit)\n          :args $ [] $ :: 'Fn $ {} (:args $ [] *op) (:return 'Unit)\n        , &unit\n    into-props handler",
+          "  let\n      handler $ fn (d!)\n        hint-fn $ Fn (Fn *op (-> Unit)) (-> Unit)\n        , &unit\n    into-props handler",
           vec![5, 2, 1],
         )
       };
       let snippet = format!(
-        "def slot $ deftype-slot :op\ndefstruct Props\n  :on-click $ :: 'Fn $ {{}} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {{}} (:args $ [] *op) (:return 'Unit)\n{macro_code}\ndefn main! ()\n  hint-fn $ {{}} (:args $ []) (:return 'Unit)\n  , slot\n{body}\n  , &unit"
+        "def slot $ deftype-slot :op\ndefstruct Props\n  :on-click $ quote $ Fn (Fn *op (-> Unit)) (-> Unit)\n{macro_code}\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , slot\n{body}\n  , &unit"
       );
       let mut file = snapshot::create_file_from_snippet(&snippet).expect("macro callback fixture should parse");
       annotate_snippet_macros(&mut file);
@@ -3713,7 +3700,7 @@ fn run_check_only_surfaces_schema_error_code() {
 fn calling_a_dynamic_value_requires_fn_narrowing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    call-open $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (x 1)\n    call-narrowed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (if (fn? x) (x 1) nil)\n    call-typed $ fn (g) (hint-fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)) (:return 'Number)) (g 1)\n    call-computed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) ((identity x) 1)\n    call-threaded $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (-> 1 x)\n  [] call-open call-narrowed call-typed call-computed call-threaded",
+      "let\n    call-open $ fn (x)\n      hint-fn $ Fn Dynamic (-> Dynamic)\n      x 1\n    call-narrowed $ fn (x)\n      hint-fn $ Fn Dynamic (-> Dynamic)\n      if (fn? x) (x 1) nil\n    call-typed $ fn (g)\n      hint-fn $ Fn\n        Fn Number $ -> Number\n        -> Number\n      g 1\n    call-computed $ fn (x)\n      hint-fn $ Fn Dynamic (-> Dynamic)\n      (identity x) 1\n    call-threaded $ fn (x)\n      hint-fn $ Fn Dynamic (-> Dynamic)\n      -> 1 x\n  [] call-open call-narrowed call-typed call-computed call-threaded",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -3743,7 +3730,7 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
 #[test]
 fn value_position_nil_branch_is_a_strict_error() {
   run_with_large_stack(|| {
-    let number_fn = |body: &str, ret: &str| format!("fn (x) (hint-fn $ {{}} (:args $ [] 'Number) (:return '{ret})) {body}");
+    let number_fn = |body: &str, ret: &str| format!("fn (x) (hint-fn $ Fn Number (-> {ret})) {body}");
     let compile = |function: String| {
       let entries = load_snippet_entries(&format!("let\n    probe $ {function}\n  probe 1"));
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -3822,7 +3809,7 @@ fn library_macro_wrapping_caller_form_reports_implicit_nil_at_the_caller() {
     let library = "defmacro maybe (c x)\n  quasiquote $ if ~c ~x\n\ndefmacro quiet ()\n  quasiquote $ if (> 1 0) |a";
     let compile = |body: &str| {
       let snippet = format!(
-        "ns app.main $ :require (lib.core :refer $ maybe quiet)\n\nlet\n    probe $ fn (flag) (hint-fn $ {{}} (:args $ [] 'Bool) (:return 'String)) {body}\n  probe true"
+        "ns app.main $ :require $ lib.core :refer (maybe quiet)\n\nlet\n    probe $ fn (flag)\n      hint-fn $ Fn Bool (-> String)\n      , {body}\n  probe true"
       );
       let entries = load_snippet_entries_with_library("lib.core", library, &snippet);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -3858,8 +3845,7 @@ fn library_macro_wrapping_caller_form_reports_implicit_nil_at_the_caller() {
 #[test]
 fn nil_branch_live_payload_still_checks_against_the_contract() {
   run_with_large_stack(|| {
-    let nullable_return =
-      |body: &str| format!("fn (flag) (hint-fn $ {{}} (:args $ [] 'Bool) (:return $ :: 'JsNullish 'Number)) {body}");
+    let nullable_return = |body: &str| format!("fn (flag) (hint-fn $ Fn Bool (-> $ JsNullish Number)) {body}");
     let cases = [
       ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
       ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
@@ -3869,7 +3855,7 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
       ("let-bound-matching-payload", nullable_return("(let ((y (if flag 7 nil))) y)"), None),
       (
         "wrong-argument-payload",
-        "fn (flag) (hint-fn $ {} (:args $ [] 'Bool) (:return 'Unit)) (let ((take (fn (v) (hint-fn $ {} (:args $ [] $ :: 'JsNullish 'Number) (:return 'Unit)) &unit))) (take (if flag |bad nil)))".to_owned(),
+        "fn (flag) (hint-fn $ Fn Bool (-> Unit)) $ let ((take $ fn (v) (hint-fn $ Fn (JsNullish Number) (-> Unit)) &unit)) $ take $ if flag |bad nil".to_owned(),
         Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"),
       ),
     ];
@@ -4011,7 +3997,7 @@ fn nil_branch_contracts_keep_every_main_rejection() {
 fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    erase-method $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) nil)\n    erase-postfix $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (let ((a (get m :a))) (a .unwrap-or nil))\n    erase-call $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (option:unwrap-or (get m :a) nil)\n    erase-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    keep-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) 0\n    to-host $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (.unwrap-or (get m :a) nil)\n    keep-option $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (get m :a)\n    with-default $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) 0)\n  [] erase-method erase-postfix erase-call erase-match keep-match to-host keep-option with-default",
+      "let\n    erase-method $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      .unwrap-or (get m :a) nil\n    erase-postfix $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      let\n          a $ get m :a\n        a .unwrap-or nil\n    erase-call $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      option:unwrap-or (get m :a) nil\n    erase-match $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      match (get m :a)\n        (:some v) v\n        (:none) nil\n    keep-match $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      match (get m :a)\n        (:some v) v\n        (:none) 0\n    to-host $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic)\n        -> $ JsNullish Dynamic\n      .unwrap-or (get m :a) nil\n    keep-option $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      get m :a\n    with-default $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      .unwrap-or (get m :a) 0\n  [] erase-method erase-postfix erase-call erase-match keep-match to-host keep-option with-default",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     let _ = runner::preprocess::take_advisories();
@@ -4073,7 +4059,7 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
 fn option_erased_in_a_js_nullish_function_initializer_is_not_exempt() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    to-host-let $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (let ((x 1)) (.unwrap-or (get m :a) nil))\n    to-host-do $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (do 1 (.unwrap-or (get m :a) nil))\n    to-host-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    business-in-nullish $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (let ((ignored (.unwrap-or (get m :a) nil))) nil)\n  [] to-host-let to-host-do to-host-match business-in-nullish",
+      "let\n    to-host-let $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic)\n        -> $ JsNullish Dynamic\n      let\n          x 1\n        .unwrap-or (get m :a) nil\n    to-host-do $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic)\n        -> $ JsNullish Dynamic\n      do 1 $ .unwrap-or (get m :a) nil\n    to-host-match $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic)\n        -> $ JsNullish Dynamic\n      match (get m :a)\n        (:some v) v\n        (:none) nil\n    business-in-nullish $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic)\n        -> $ JsNullish Dynamic\n      let\n          ignored $ .unwrap-or (get m :a) nil\n        , nil\n  [] to-host-let to-host-do to-host-match business-in-nullish",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     let _ = runner::preprocess::take_advisories();
@@ -4206,7 +4192,7 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
     let _strict = StrictTypesReset::enabled();
     for (source, proc_name, expected, actual) in [
       (
-        "let\n    bad $ fn (xs)\n      hint-fn $ {} (:args $ [] $ :: 'List 'String) (:return 'Tag)\n      &enum:nth xs 0\n  bad $ [] |x",
+        "let\n    bad $ fn (xs)\n      hint-fn $ Fn (List String) (-> Tag)\n      &enum:nth xs 0\n  bad $ [] |x",
         "&enum:nth",
         "`:enum`",
         "`list<string>`",
@@ -4229,7 +4215,7 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
 
     // Enum receivers, including nominal enum values, stay warning-free.
     for source in [
-      "let\n    good $ fn (xs)\n      hint-fn $ {} (:args $ [] 'Enum) (:return 'Tag)\n      &enum:nth xs 0\n  good $ :: :ns |demo",
+      "let\n    good $ fn (xs)\n      hint-fn $ Fn Enum (-> Tag)\n      &enum:nth xs 0\n  good $ :: :ns |demo",
       "&enum:nth (Option :some 1) 1",
       "&enum:nth (%:: (defenum E (:a 'Number)) :a 1) 1",
     ] {
@@ -4252,7 +4238,7 @@ fn generic_return_kind_guard_cannot_forge_payload_type() {
     let _strict = StrictTypesReset::enabled();
     let forge = |branch: &str| {
       format!(
-        "let\n    forge $ fn (x)\n      hint-fn $ {{}}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'T\n      if (list? x) {branch} $ raise |expected-list\n  , &unit"
+        "let\n    forge $ fn (x)\n      hint-fn $ Fn T (-> T) (:generics T)\n      if (list? x) {branch} $ raise |expected-list\n  , &unit"
       )
     };
     // A kind guard on `x: T` says nothing about the members `T` was bound to.
@@ -4296,6 +4282,8 @@ fn type_fail_compact_type_expr_reports_syntax_errors() {
       ("assert-type ([] 1) $ quote $ List number", "`number` is not a type name"),
       ("assert-type ([] 1) $ quote $ list Number", "`list` is not a type name"),
       ("assert-type 1 $ quote $ Fn Number", "needs a return clause"),
+      // Without its quote a type application reads as a call; report it instead of widening to Dynamic.
+      ("assert-type ([] |a) (List String)", "write `quote $ List String`"),
     ] {
       let entries = load_snippet_entries(code);
       let warnings = RefCell::new(vec![]);

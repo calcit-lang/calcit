@@ -96,7 +96,7 @@ fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
       serde_json::json!(["edit", "add-ns", "app.check-probe"]),
       serde_json::json!(["edit", "add-ns", "app.other-probe"]),
     ];
-    let number_fn = "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)";
+    let number_fn = "quote $ Fn (-> Number)";
     for (id, code, schema) in [
       (
         format!("app.check-probe/{caller}"),
@@ -106,7 +106,7 @@ fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
       (
         bad_id.clone(),
         format!("quote $ defn {bad} (x) (inc x)"),
-        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Number)",
+        "quote $ Fn String (-> Number)",
       ),
       ("app.check-probe/good".to_owned(), "quote $ defn good () 1".to_owned(), number_fn),
       (format!("app.other-probe/{bad}"), format!("quote $ defn {bad} () 1"), number_fn),
@@ -224,13 +224,13 @@ fn method_on_impl_traits_alias_reports_the_failed_trait_load() {
 #[test]
 fn immutable_value_schemas_reject_contradictions_before_codegen() {
   for (target, schema) in [
-    ("app.values/initial-state", "quote $ :: 'Map 'Tag 'String"),
-    ("app.main/initial-state", "quote $ :: 'Map 'Tag 'String"),
-    ("app.main/state-alias", "quote $ :: 'Map 'Tag 'String"),
-    ("app.reader/state-alias", "quote $ :: 'Map 'Tag 'String"),
-    ("app.main/members", "quote $ :: 'Map 'String 'String"),
-    ("app.main/answer", "quote $ :: 'String"),
-    ("app.main/label", "quote $ :: 'Number"),
+    ("app.values/initial-state", "quote $ Map Tag String"),
+    ("app.main/initial-state", "quote $ Map Tag String"),
+    ("app.main/state-alias", "quote $ Map Tag String"),
+    ("app.reader/state-alias", "quote $ Map Tag String"),
+    ("app.main/members", "quote $ Map String String"),
+    ("app.main/answer", "quote String"),
+    ("app.main/label", "quote Number"),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.snapshot();
@@ -447,7 +447,7 @@ fn edit_definition(snapshot: &Path, name: &str, code: &str, overwrite: bool) {
 
 fn edit_schema(snapshot: &Path, name: &str, return_type: &str) {
   let target = format!("app.main/{name}");
-  let code = format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{return_type})");
+  let code = format!("quote $ Fn (-> {return_type})");
   assert_success(
     &run_calcit(snapshot, &["edit", "schema", target.as_str(), "--code", code.as_str()]),
     "edit schema",
@@ -499,7 +499,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
         "schema",
         "app.main/typed-recur",
         "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'String 'Number) (:return 'Number)",
+        "quote $ Fn String Number (-> Number)",
       ],
     ),
     "declare typed recur contract",
@@ -765,7 +765,7 @@ fn edit_def_at(snapshot: &Path, target: &str, code: &str) {
 }
 
 fn edit_schema_at(snapshot: &Path, target: &str, return_type: &str) {
-  let code = format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{return_type})");
+  let code = format!("quote $ Fn (-> {return_type})");
   assert_success(
     &run_calcit(snapshot, &["edit", "schema", target, "--code", code.as_str()]),
     "edit schema",

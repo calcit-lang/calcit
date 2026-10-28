@@ -48,13 +48,13 @@
           :schema $ quote $ Fn Dynamic (-> defprobe.macros/Effect) (:features :js-ffi)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            hint-fn $ quote $ Fn (-> Unit)
+            hint-fn $ Fn $ -> Unit
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! ()
-            hint-fn $ quote $ Fn (-> Unit)
+            hint-fn $ Fn $ -> Unit
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

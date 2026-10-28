@@ -96,10 +96,10 @@ Snapshot 是结构化数据。理解程序时先选与任务对应的视图，�
 签名概览示例（`calcit/test-types.cirru`）：
 
 ```text
-Definitions: 34
-  Person  'Struct - Struct definition for type checks
-  add-numbers  :: 'Fn $ {} (:return 'Number) $ :args $ [] 'Number 'Number
-  describe-typed  :: 'Fn $ {} (:return 'String) $ :args $ [] 'String 'Number - Combines typed label and number
+Definitions: 35
+  Person [schema] - Struct definition for type checks
+  add-numbers [schema]
+  describe-typed [schema] - Combines typed label and number
 ```
 
 没有 schema 的定义显示 `(untyped)` 与声明头（如 `(untyped) defn helper $ x`），值本身不进入概览。`scripts/check-agent-interface.mjs` 中的视图阅读任务记录每个视图的输出字节数，并要求答案出现在视图中、字节数少于对应 Snapshot。
@@ -571,15 +571,13 @@ div
 
 ```cirru.no-check
 defn request (url trace-id timeout-ms)
-  hint-fn $ {}
-    :args $ [] 'String (:: 'Option 'String) (:: 'Option 'Number)
-    :return 'Unit
+  hint-fn $ Fn String (Option String) (Option Number) (-> Unit)
   println url trace-id timeout-ms
 
 request |/health
 request |/health (Option :some |trace-1)
 
-defstruct Profile (:name 'String) (:bio (:: 'Option 'String))
+defstruct Profile (:name 'String) (:bio (quote (Option String)))
 Profile :name |Ada
 ```
 

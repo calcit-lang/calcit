@@ -82,7 +82,7 @@ try {
   // #2351: a known Bool result cannot erase the producer's failure. Keep
   // the shared Calcit assertion on its definition; this probes host traps.
   run(snapshot, "edit", "def", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
-    "quote $ defwasm-export fail-predicate () $ let\n    produce $ fn ()\n      hint-fn $ quote $ Fn (-> Bool)\n      raise |predicate-must-run\n  bool? $ produce");
+    "quote $ defwasm-export fail-predicate () $ let\n    produce $ fn ()\n      hint-fn $ Fn (-> Bool)\n      raise |predicate-must-run\n  bool? $ produce");
   run(snapshot, "edit", "schema", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
     "quote $ Fn (-> Bool)");
   const entry = [snapshot, "--init-fn", "calcit.nil-predicate/run-tests", "--reload-fn", "calcit.nil-predicate/run-tests"];

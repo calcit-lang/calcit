@@ -49,10 +49,10 @@
                   hint-fn $ {} $ :generics ([] 'T)
                   do x
                 id2 $ fn (x)
-                  hint-fn $ quote $ Fn T (-> T) (:generics T)
+                  hint-fn $ Fn T (-> T) (:generics T)
                   do x
                 debug-id $ fn (x)
-                  hint-fn $ quote $ Fn T (-> String) (:generics T)
+                  hint-fn $ Fn T (-> String) (:generics T)
                     :where $ T Debug
                   x .debug
                 n $ id2 1

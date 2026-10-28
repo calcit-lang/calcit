@@ -31,8 +31,7 @@
         'accept-op $ %{} 'CodeEntry (:doc "|Schema depends on the entry-bound type slot")
           :code $ quote $ defn accept-op (op) op
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return '*dispatch-op)
-            :args $ [] '*dispatch-op
+          :schema $ quote $ Fn *dispatch-op (-> *dispatch-op)
         'client-main! $ %{} 'CodeEntry (:doc "|Client entry binds dispatch-op for client enums")
           :code $ quote $ defn client-main! ()
             accept-op $ :: :client/ping

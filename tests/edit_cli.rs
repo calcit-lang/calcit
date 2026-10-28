@@ -235,7 +235,7 @@ fn schema_clear_and_structural_edits_preserve_missing_intent() {
   assert_success(
     &run_calcit(
       &snapshot,
-      &["edit", "schema", target, "--input-format", "cirru", "--code", "quote $ :: 'Dynamic"],
+      &["edit", "schema", target, "--input-format", "cirru", "--code", "quote Dynamic"],
     ),
     "explicit Dynamic remains a declaration",
   );
@@ -473,10 +473,7 @@ fn js_ffi_edits_validate_contracts_before_writing() {
   );
   assert_eq!(queried["data"]["js_ffi"]["source_kind"], "inline");
   assert!(queried["data"]["js_ffi"]["metadata_error"].is_null());
-  for schema in [
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)",
-  ] {
+  for schema in ["quote $ Fn (-> Number)", "quote $ Fn (-> Dynamic) (:features :js-ffi)"] {
     let output = run_calcit(&snapshot, &["edit", "schema", target, "--code", schema]);
     assert!(!output.status.success(), "an incompatible schema must not invalidate JS FFI");
     assert_eq!(
@@ -562,7 +559,7 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
       "write trait through the public editor",
     );
   };
-  write_trait("quote $ deftrait MobileInfo (:any $ :: 'Fn $ {} (:args $ []) (:return 'Bool))");
+  write_trait("quote $ deftrait MobileInfo (:any $ quote $ Fn (-> Bool))");
   assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "strict trait fixture");
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonicalize trait fixture");
   let original = fs::read(&snapshot).unwrap();
@@ -587,15 +584,14 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
     "analysis/format must preserve canonical source"
   );
 
-  write_trait("quote $ deftrait MobileInfo (:any :any)");
-  let debt = run_calcit(&snapshot, &weak_args);
-  assert_success(&debt, "report a real legacy annotation");
-  let report: serde_json::Value = serde_json::from_slice(&debt.stdout).unwrap();
-  let definitions = report["data"]["definitions"].as_array().unwrap();
-  assert_eq!(definitions.len(), 1, "{report}");
-  let occurrences = definitions[0]["occurrences"].as_array().unwrap();
-  assert_eq!(occurrences.len(), 1, "count the type, not the same-spelled member name: {report}");
-  assert_eq!(occurrences[0]["path"], "code@2.1");
+  // The editor rejects the retired `:any` tag, so plant it in the file the way
+  // an older Snapshot carries it; only `edit format` still reads it.
+  let source = fs::read_to_string(&snapshot).unwrap();
+  assert!(source.contains(":any $ quote $ Fn (-> Bool)"), "{source}");
+  fs::write(&snapshot, source.replacen(":any $ quote $ Fn (-> Bool)", ":any :any", 1)).unwrap();
+  let rejected = run_calcit(&snapshot, &weak_args);
+  assert!(!rejected.status.success(), "strict load must reject the retired tag");
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("E_LEGACY_TYPE_SYNTAX"));
   let formatted = run_calcit(&snapshot, &["edit", "format"]);
   assert_success(&formatted, "format preserves actual type-debt warnings");
   let messages = format!(
@@ -606,6 +602,10 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
   for code in ["W_LEGACY_ANY", "W_DYNAMIC_TYPE_DEBT"] {
     assert!(messages.contains(code), "real annotation must still trigger {code}: {messages}");
   }
+  // Only the type is rewritten; the same-spelled member name stays.
+  let source = fs::read_to_string(&snapshot).unwrap();
+  assert!(source.contains(":any 'Dynamic"), "{source}");
+  assert_success(&run_calcit(&snapshot, &weak_args), "the migrated Snapshot loads again");
 }
 
 #[test]
@@ -615,7 +615,7 @@ fn schema_metadata_validation_does_not_inspect_business_source_fields() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
   let target = "app.main/schema-probe";
-  let schema = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return $ :: 'Map 'Tag 'String)";
+  let schema = "quote $ Fn String (-> $ Map Tag String)";
   let semantic_check = "quote $ let\n    Entry $ defstruct Entry (:schema 'String)\n    entry $ Entry :schema |Ada\n  assert= |Ada $ :schema entry\n  assert= (Option :some |Ada) $ get (schema-probe |Ada) :schema";
   let operations = serde_json::json!([
     [
@@ -672,7 +672,7 @@ fn schema_metadata_validation_does_not_inspect_business_source_fields() {
   );
 
   let before_invalid = fs::read(&snapshot).unwrap();
-  let invalid_schema = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return $ str text)";
+  let invalid_schema = "quote $ Fn String (-> $ str text)";
   let direct = run_calcit(
     &snapshot,
     &["edit", "schema", target, "--input-format", "cirru", "--code", invalid_schema],
@@ -827,7 +827,7 @@ fn guarded_transaction_renames_then_recreates_the_old_name() {
     ),
     "create original definition",
   );
-  let schema = "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)";
+  let schema = "quote $ Fn (-> Number)";
   assert_success(
     &run_calcit(
       &snapshot,
@@ -1500,7 +1500,7 @@ fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
       "schema",
       "app.main/required-id",
       "--code",
-      "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr 'Dynamic) (:capabilities $ #{})",
+      "quote $ Macro Syntax (-> $ Expr Dynamic)",
     ],
   );
   assert_success(&schema_edit, "edit macro schema");
@@ -1616,13 +1616,7 @@ fn overwrite_converts_non_macro_schema_but_preserves_a_strict_macro_contract() {
   assert_success(&ordinary, "create ordinary definition");
   let ordinary_schema = run_calcit(
     &snapshot,
-    &[
-      "edit",
-      "schema",
-      "app.main/convert-me",
-      "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
-    ],
+    &["edit", "schema", "app.main/convert-me", "--code", "quote $ Fn Number (-> Number)"],
   );
   assert_success(&ordinary_schema, "set ordinary definition schema");
 
@@ -1648,7 +1642,7 @@ fn overwrite_converts_non_macro_schema_but_preserves_a_strict_macro_contract() {
       "schema",
       "app.main/convert-me",
       "--code",
-      "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr 'Number) (:capabilities $ #{})",
+      "quote $ Macro Syntax (-> $ Expr Number)",
     ],
   );
   assert_success(&refined, "refine macro schema");
@@ -1705,7 +1699,7 @@ fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
   create_macro(&snapshot, "echo-source", "quote $ defmacro echo-source (value) , value");
   let original = fs::read(&snapshot).expect("snapshot should read");
 
-  let invalid_expansion = "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion 'Syntax)";
+  let invalid_expansion = "quote $ Macro Syntax (-> Syntax)";
   let rejected = [
     vec![
       "edit",
@@ -1723,7 +1717,7 @@ fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Syntax) (:return 'Dynamic)",
+      "quote $ Fn Syntax (-> Dynamic)",
     ],
     vec!["edit", "schema", "app.main/echo-source", "--clear"],
   ];
@@ -1765,7 +1759,7 @@ fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+        "quote $ Macro Syntax (-> $ Expr Dynamic)",
       ],
     ),
     "valid macro schema edit",
@@ -1860,22 +1854,22 @@ fn diagnostic_ir_preserves_loaded_external_trait_declarations() {
     ["edit", "def", "app.host/LabelHost", "--input-format", "cirru", "--code",
       "quote $ defexternal LabelHost (:target :node) (:label 'String)"],
     ["edit", "def", "app.host/WidgetHost", "--input-format", "cirru", "--code",
-      "quote $ deftrait WidgetHost\n  requires LabelHost\n  :id 'String\n  .refresh! $ :: 'Fn $ {} (:args $ [] 'WidgetHost) (:return 'Unit)"],
-    ["edit", "schema", "app.host/WidgetHost", "--input-format", "cirru", "--code", "quote $ :: 'Trait"],
+      "quote $ deftrait WidgetHost (requires LabelHost) (:id 'String)\n  .refresh! $ quote $ Fn WidgetHost (-> Unit)"],
+    ["edit", "schema", "app.host/WidgetHost", "--input-format", "cirru", "--code", "quote Trait"],
     ["edit", "ffi", "app.host/WidgetHost", "--code",
       "{} (:backend :js) (:kind :external-object) (:target :node) (:names $ {} (:id |nodeId) (:refresh! |refresh)) (:writable $ #{} :id)"],
     ["edit", "def", "app.main/identity-host", "--input-format", "cirru", "--code",
       "quote $ defn identity-host (host) (, host)"],
     ["edit", "schema", "app.main/identity-host", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'app.host/WidgetHost) (:return 'app.host/WidgetHost)"],
+      "quote $ Fn app.host/WidgetHost (-> app.host/WidgetHost)"],
     ["edit", "def", "app.host/cast-host", "--input-format", "cirru", "--code",
       "quote $ defn cast-host (raw) (js-cast raw WidgetHost)"],
     ["edit", "schema", "app.host/cast-host", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.host/WidgetHost) (:features $ #{} :js-ffi)"],
+      "quote $ Fn JsObject (-> app.host/WidgetHost) (:features :js-ffi)"],
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
       "quote $ defn main! () (assert= identity-host identity-host) (assert= app.host/cast-host app.host/cast-host) &unit"],
     ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"]
+      "quote $ Fn (-> Unit)"]
   ]).to_string();
   let revision = transaction_scope(&snapshot, &operations);
   assert_success(
@@ -2455,7 +2449,7 @@ fn edit_ns_accepts_definition_heads_from_macros_in_the_same_data() {
   fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
   let namespace = "test-def-meta.things";
   assert_success(&run_calcit(&snapshot, &["edit", "add-ns", namespace]), "create empty namespace");
-  let entries = "    'defthing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defmacro defthing (name value) (quasiquote (def ~name ~value))\n      :examples $ []\n      :schema $ :: 'Macro $ {} (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic) (:required $ [] 'Syntax 'Syntax)\n    'my-thing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defthing my-thing 1\n      :examples $ []\n";
+  let entries = "    'defthing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defmacro defthing (name value) (quasiquote (def ~name ~value))\n      :examples $ []\n      :schema $ quote $ Macro Syntax Syntax (-> $ Expr Dynamic)\n    'my-thing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defthing my-thing 1\n      :examples $ []\n";
   let data = |extra: &str| {
     format!(
       "%{{}} 'FileEntry\n  :defs $ {{}}\n{entries}{extra}  :ns $ %{{}} 'NsEntry (:doc |)\n    :code $ quote $ ns test-def-meta.things\n"
@@ -2953,7 +2947,7 @@ fn package_metadata_preserves_legacy_file_forms_directly_and_in_transactions() {
       :defs $ {}
         |main! $ %{} :CodeEntry
           :code $ quote $ defn main! () nil
-          :schema $ :: :fn $ {} (:args $ []) (:return :any) (:features $ #{})
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
 "#;
   let parse = |content: &str| cirru_edn::parse(content.strip_prefix("#! /usr/bin/env calcit\n").unwrap()).unwrap();
@@ -3077,14 +3071,14 @@ fn legacy_macro_schema_repair_keeps_namespace_and_runtime_guards() {
       :defs $ {}
         |main! $ %{} :CodeEntry
           :code $ quote $ defn main! () (forty-two)
-          :schema $ :: :fn $ {} (:args $ []) (:return :number)
+          :schema $ quote $ Fn (-> Number)
         |forty-two $ %{} :CodeEntry
           :code $ quote $ defmacro forty-two () (quote 42)
-          :schema $ :: :fn $ {} (:args $ []) (:return :any)
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
 "#;
   fs::write(&snapshot, source).unwrap();
-  let contract = "quote $ :: 'Macro $ {} (:required $ []) (:expansion $ :: 'Expr 'Number) (:capabilities $ #{})";
+  let contract = "quote $ Macro (-> $ Expr Number)";
   let denied = run_calcit(&snapshot, &["edit", "schema", "app.main/forty-two", "--code", contract]);
   assert!(!denied.status.success());
   assert!(String::from_utf8_lossy(&denied.stderr).contains("only namespaces under package"));

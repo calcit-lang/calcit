@@ -47,7 +47,7 @@ function expectStatus(result, expected, label) {
 for (const [label, source, diagnostic] of [
   ["missing hint schema", "hint-fn", /hint-fn expects.*got 0 arguments/],
   ["extra hint argument", "let ((f (fn () 1))) (hint-fn f ({} (:args ([])) (:return 'Number)) :extra) (f)", /hint-fn expects.*got 3 arguments/],
-  ["wrapped body schema", "fn (value) (hint-fn (:: 'Fn ({} (:args ([] 'String)) (:return 'String)))) value", /hint-fn expects a schema Map/],
+  ["wrapped body schema", "fn (value) (hint-fn (:: 'Fn ({} (:args ([] 'String)) (:return 'String)))) value", /hint-fn expects a function type/],
   ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /hint-fn target must be an existing local function/],
   ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /hint-fn target must be an existing local function/],
   ["conflicting return", "let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)", /hint-fn schema conflicts with the existing local function signature/],

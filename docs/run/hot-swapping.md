@@ -47,7 +47,7 @@ But also notice that if you have effects like events listening, you have to disp
         |add $ %{} 'CodeEntry (:doc |Add two numbers.)
           :code $ quote $ defn add (a b) (&+ a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number 'Number)
+          :schema $ quote $ Fn Number Number (-> Number)
         ; 旧格式：只有代码
         |legacy $ quote $ defn legacy () 1
 ```

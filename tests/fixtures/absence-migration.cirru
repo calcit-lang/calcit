@@ -257,7 +257,7 @@
                 get-in base $ [] :value
                 , |unexpected-success
               fn (message)
-                hint-fn $ quote $ Fn String (-> String)
+                hint-fn $ Fn String $ -> String
                 , message
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> String)

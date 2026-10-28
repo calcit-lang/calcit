@@ -37,7 +37,7 @@ related:
 ```cirru
 let
     invoke $ fn (callback)
-      hint-fn $ quote $ Fn
+      hint-fn $ Fn
         Fn Number $ -> Number
         -> Number
       callback 7
@@ -301,7 +301,7 @@ Enum 定义。已知类型不符的接收者（例如声明为 `List<String>` �
 ```cirru
 let
     good $ fn (xs)
-      hint-fn $ quote $ Fn Enum (-> Tag)
+      hint-fn $ Fn Enum (-> Tag)
       &enum:nth xs 0
   good $ :: :ns |demo
 ```
@@ -657,7 +657,7 @@ let
 ```cirru
 let
     double $ fn (n)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &* n 2
   assert= 6 $ double 3
 ```
@@ -859,7 +859,7 @@ WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&se
 
 ```cirru
 defn report-message (message)
-  hint-fn $ quote $ Fn String (-> Unit)
+  hint-fn $ Fn String (-> Unit)
   println message
 ```
 
@@ -884,9 +884,9 @@ WASI 使用标准 stdout/stderr；core WASM 的单值宿主日志接口仍有通
 
 ```cirru
 defn update-counter (data path)
-  hint-fn $ quote $ Fn Dynamic (List Tag) (-> Dynamic)
+  hint-fn $ Fn Dynamic (List Tag) (-> Dynamic)
   update-in data path $ fn (current)
-    hint-fn $ quote $ Fn (Option Dynamic) (-> Number)
+    hint-fn $ Fn (Option Dynamic) (-> Number)
     match current
       (:none) 1
       (:some value)
@@ -1781,10 +1781,10 @@ calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
 ```cirru.no-check
 let
     number-only $ fn (value)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &+ value 1
     from-open $ fn (items)
-      hint-fn $ quote $ Fn (List Dynamic) (-> Number)
+      hint-fn $ Fn (List Dynamic) (-> Number)
       number-only $ &list:nth items 0
   from-open $ [] |wrong
 ```
@@ -1795,10 +1795,10 @@ let
 ```cirru
 let
     number-only $ fn (value)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &+ value 1
     from-open $ fn (items)
-      hint-fn $ quote $ Fn (List Dynamic) (-> Number)
+      hint-fn $ Fn (List Dynamic) (-> Number)
       &let
         v $ &list:nth items 0
         if (number? v) (number-only v) 0
@@ -1837,7 +1837,7 @@ let
 
 ```cirru.no-check
 sort entries $ fn (a b)
-  hint-fn $ quote $ Fn (MapEntry String app.schema/Task) (MapEntry String app.schema/Task) (-> Number)
+  hint-fn $ Fn (MapEntry String app.schema/Task) (MapEntry String app.schema/Task) (-> Number)
   &compare
     :sort-id $ :value a
     :sort-id $ :value b
@@ -2268,7 +2268,7 @@ FFI value 在 adapter 边界完成 validate/convert。显式声明的 `Dynamic` 
 let
     xs $ [] 1 2 3
     predicate $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Bool)
+      hint-fn $ Fn Number (-> Bool)
       > x 1
   let
       idx $ find-index xs predicate

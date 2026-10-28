@@ -1658,7 +1658,7 @@ const INC_FN_ENTRY: &str = r#"%{} :CodeEntry (:doc |fresh-doc)
   :examples $ [] (quote $ fresh 1)
   :tags $ #{} :effect
   :ffi $ {} (:target :node)
-  :schema $ :: :fn $ {} (:return :number) (:args $ [] :number)"#;
+  :schema $ quote $ Fn Number (-> Number)"#;
 
 #[test]
 fn incremental_code_entry_for_new_def_matches_cold_start() {

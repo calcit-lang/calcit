@@ -632,7 +632,7 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
       "schema",
       "ffi-evidence.main/query-host",
       "--code",
-      "quote $ :: 'Fn $ {} (:return 'Dynamic) (:args $ [] 'JsObject) (:features $ #{} :js-ffi)",
+      "quote $ Fn JsObject (-> Dynamic) (:features :js-ffi)",
     ],
   );
   assert_success(&schema_change, "change reachable schema");
@@ -721,7 +721,7 @@ fn incremental_dynamic_methods_invalidates_schema_import_and_type_slot_changes()
       "schema",
       "ffi-evidence.main/query-host",
       "--code",
-      "quote $ :: 'Fn $ {} (:return 'Dynamic) (:args $ [] 'JsObject) (:features $ #{} :js-ffi)",
+      "quote $ Fn JsObject (-> Dynamic) (:features :js-ffi)",
     ],
   );
   assert_success(&schema_change, "change a reachable definition schema");

@@ -1734,7 +1734,7 @@ fn plan_definition_rename(
         message: format!("Rewrite {replacement_count} compiler-loaded schema type reference(s) to `{target_ns}/{new_name}`."),
         target_path: vec![],
         operation: Some(FixOperation::ReplaceSchema {
-          code: format_quoted_nodes(std::slice::from_ref(&replacement_node))?,
+          code: format_schema_operation(&replacement_node)?,
         }),
       });
     }
@@ -2422,7 +2422,7 @@ fn plan_value_to_zero_arg_fn(
     message: "Wrap the existing value schema as the return type of a zero-argument function.".to_owned(),
     target_path: vec![],
     operation: Some(FixOperation::ReplaceSchema {
-      code: format_quoted_nodes(std::slice::from_ref(&rewritten_schema_node))?,
+      code: format_schema_operation(&rewritten_schema_node)?,
     }),
   });
 
@@ -2909,6 +2909,19 @@ fn format_quoted_nodes(nodes: &[Cirru]) -> Result<String, String> {
     .map(|node| Cirru::List(vec![Cirru::leaf("quote"), node.clone()]))
     .collect::<Vec<_>>();
   cirru_parser::format(&quoted, true.into()).map_err(|error| format!("Failed to encode attached source rewrite: {error}"))
+}
+
+/// `edit schema` only accepts the compact spelling, so a schema operation is
+/// written as `quote $ Fn …` / `quote Name` whenever the node has one.
+fn format_schema_operation(node: &Cirru) -> Result<String, String> {
+  let compact = match calcit::snapshot::parse_schema_annotation_for_write(node) {
+    Ok(annotation) => match calcit::snapshot::schema_annotation_to_storage_edn(annotation.as_ref()) {
+      cirru_edn::Edn::Quote(payload) => payload,
+      _ => node.clone(),
+    },
+    Err(_) => node.clone(),
+  };
+  format_quoted_nodes(std::slice::from_ref(&compact))
 }
 
 fn rewrite_loaded_schema_type_references(

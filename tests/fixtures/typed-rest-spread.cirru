@@ -22,7 +22,7 @@
           :code $ quote $ defn typed-rest-forward (xs)
             let
                 sink $ fn (label & values)
-                  hint-fn $ quote $ Fn String & Number (-> Number)
+                  hint-fn $ Fn String & Number $ -> Number
                   values .len
               sink |numbers & xs
           :examples $ []
@@ -37,11 +37,10 @@
               :code $ quote $ let
                   calls $ ref 0
                   sink $ fn (label & values)
-                    hint-fn $ quote $ Fn String & Number (-> Number)
+                    hint-fn $ Fn String & Number $ -> Number
                     values .len
                   source $ fn ()
-                    hint-fn $ quote $ Fn
-                      -> $ List Number
+                    hint-fn $ Fn $ -> (List Number)
                     reset! calls $ inc @calls
                     [] 30 40
                 assert= 4 $ sink |numbers 10 20 & $ source

@@ -29,7 +29,7 @@
         'AlgebraBoxApplyImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxApplyImpl AlgebraApply
             .apply $ fn (box fs)
-              hint-fn $ quote $ Fn test-algebra.main/AlgebraBox0 test-algebra.main/AlgebraBox0 (-> Dynamic)
+              hint-fn $ Fn test-algebra.main/AlgebraBox0 test-algebra.main/AlgebraBox0 $ -> Dynamic
               let
                   f $ &struct:get fs :value
                 if (fn? f)
@@ -46,7 +46,7 @@
         'AlgebraBoxMapImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMapImpl AlgebraMap
             .map $ fn (box f)
-              hint-fn $ quote $ Fn test-algebra.main/AlgebraBox0
+              hint-fn $ Fn test-algebra.main/AlgebraBox0
                 Fn Dynamic $ -> Dynamic
                 -> Dynamic
               .assoc box :value $ f $ &struct:get box :value
@@ -55,7 +55,7 @@
         'AlgebraBoxMappendImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMappendImpl AlgebraMappend
             .mappend $ fn (a b)
-              hint-fn $ quote $ Fn test-algebra.main/AlgebraBox0 test-algebra.main/AlgebraBox0 (-> Dynamic)
+              hint-fn $ Fn test-algebra.main/AlgebraBox0 test-algebra.main/AlgebraBox0 $ -> Dynamic
               .assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
           :schema $ quote Impl

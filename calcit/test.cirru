@@ -205,11 +205,11 @@
             ; "legacy-optional-contract: f1 pins `?` parameters hinted as Optional (E_LEGACY_OPTIONAL_PARAM era); f2 below is the Option form. Delete f1 when Optional is retired (0.32.0)."
             let
                 f1 $ fn (a ? b c)
-                  hint-fn $ quote $ Fn Tag (Optional Tag) (Optional Tag)
+                  hint-fn $ Fn Tag (Optional Tag) (Optional Tag)
                     -> $ List $ Optional Tag
                   [] a b c
                 f2 $ fn (a maybe-label maybe-count)
-                  hint-fn $ quote $ Fn Number (Option String) (Option Number)
+                  hint-fn $ Fn Number (Option String) (Option Number)
                     -> $ List Dynamic
                   [] a maybe-label maybe-count
               assert= (f1 :a) ([] :a nil nil)

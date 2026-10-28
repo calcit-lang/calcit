@@ -1489,8 +1489,14 @@ const stdinEval = spawnSync(binary, ["eval", "--stdin"], { encoding: "utf8", inp
 assert.ifError(stdinEval.error);
 assert.equal(stdinEval.status, 0, stdinEval.stderr);
 assert.match(stdinEval.stdout, /\(\[\] 0 1 2\)/);
+// The example keeps the published toolchain's type syntax; migrate a copy first.
+const exampleDir = mkdtempSync(join(tmpdir(), "calcit-wasi-http-example-"));
+const exampleSnapshot = join(exampleDir, "calcit.cirru");
+copyFileSync("examples/wasi-http-client/calcit.cirru", exampleSnapshot);
+const exampleFormat = spawnSync(binary, [exampleSnapshot, "edit", "format"], { encoding: "utf8" });
+assert.equal(exampleFormat.status, 0, exampleFormat.stderr);
 const dependencyEval = spawnSync(binary, [
-  "eval", "--stdin", "--dep", "./calcit/util.cirru", "--dep", "./examples/wasi-http-client/calcit.cirru",
+  "eval", "--stdin", "--dep", "./calcit/util.cirru", "--dep", exampleSnapshot,
 ], {
   encoding: "utf8",
   input: "util.core/log-title |dependency-ready\ncomponent-wasm-async-import.starter/main!\n",
@@ -1498,6 +1504,7 @@ const dependencyEval = spawnSync(binary, [
 assert.ifError(dependencyEval.error);
 assert.equal(dependencyEval.status, 0, dependencyEval.stderr);
 assert.match(dependencyEval.stdout, /dependency-ready/);
+rmSync(exampleDir, { recursive: true, force: true });
 assert.match(dependencyEval.stdout, /took .*: 0/);
 for (const [args, input, message] of [
   [["eval"], "", /No snippet provided/],

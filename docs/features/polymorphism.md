@@ -22,7 +22,7 @@ Historically, the idea was inspired by JavaScript, and also [borrowed from a tri
 
 ## Quick Recipes
 
-- **Define Trait**: `deftrait Show .show (:: :fn $ {} ...)`
+- **Define Trait**: `deftrait Show $ .show $ quote $ Fn …`
 - **Implement**: `defimpl ShowImpl Show .show (fn (x) ...)`
 - **Attach**: `impl-traits MyStruct ShowImpl`
 - **Call**: `instance .show` (receiver-first; `.show instance` remains compatible)
@@ -134,54 +134,44 @@ Top-level definitions use `:schema`:
 ```cirru.edn
 %{} :CodeEntry
   :code $ quote $ defn show-it (x) (x .show)
-  :schema $ :: 'Fn
-    {}
-      :generics $ [] 'T
-      :where $ {} ('T 'Show)
-      :args $ [] 'T
-      :return 'String
+  :schema $ quote $ Fn T (-> String)
+    :generics T
+    :where $ T Show
 ```
 
-Local functions use `hint-fn` with the same shape:
+Local functions use `hint-fn` with the same type expression, without the outer `quote`:
 
 ```cirru
 let
     show-it $ fn (x)
-      hint-fn $ {}
-        :generics $ [] 'T
-        :where $ {} ('T Show)
-        :args $ [] 'T
-        :return 'String
+      hint-fn $ Fn T (-> String)
+        :generics T
+        :where $ T Show
       x .show
   ; `show-it` requires an explicit Show implementation at its call site.
 ```
 
-For multiple constraints on the same variable, use a list value:
+For multiple constraints on the same variable, list every trait in its bound:
 
 ```cirru.edn
-{}
-  :where $ {}
-    'T $ [] 'Show 'Eq
+quote $ Fn T (-> String)
+  :generics T
+  :where $ T Show Eq
 ```
 
 Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
 
 ## Keep polymorphic relationships visible
 
-`:dynamic` means that static checking has stopped at that slot. Repeating it in an argument and return position does not say that both positions have the same type:
+`Dynamic` means that static checking has stopped at that slot. Repeating it in an argument and return position does not say that both positions have the same type:
 
 ```cirru.no-run
 do
-  :: :fn $ {}
-    :args $ [] :dynamic
-    :return :dynamic
-  :: :fn $ {}
-    :generics $ [] 'T
-    :args $ [] 'T
-    :return 'T
+  quote $ Fn Dynamic (-> Dynamic)
+  quote $ Fn T (-> T) (:generics T)
 ```
 
-Use a type variable for identity-like relationships, add `:where` when that variable only needs a capability, and keep type arguments on containers such as `:: :list 'T` and `:: :map 'K 'V`. Use a named enum for a finite set of alternatives. Reserve `:dynamic` for boundaries whose shape is genuinely open, such as unvalidated FFI input. `:any` is only a legacy spelling of `:dynamic`, not another polymorphism mechanism.
+Use a type variable for identity-like relationships, add `:where` when that variable only needs a capability, and keep type arguments on containers such as `List T` and `Map K V`. Use a named enum for a finite set of alternatives. Reserve `Dynamic` for boundaries whose shape is genuinely open, such as unvalidated FFI input.
 
 Agents can check how much information survives without running the program:
 
@@ -229,10 +219,10 @@ do
 ```cirru
 let
     double $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &* x 2
     increment $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &+ x 1
     composed $ double .map increment
   assert-type composed $ quote $ Fn Number (-> Number)
@@ -246,10 +236,10 @@ let
 ```cirru
 let
     producer $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       &* x 2
     consumer $ fn (left right)
-      hint-fn $ quote $ Fn Number Number (-> Number)
+      hint-fn $ Fn Number Number (-> Number)
       &- left right
     bound $ producer .bind consumer
     applied $ producer .apply consumer

@@ -33,14 +33,14 @@
           :schema $ quote $ Fn Number (-> Number)
         'loop-rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-direct (n acc)
-            hint-fn $ quote $ Fn Number Number (-> Number)
+            hint-fn $ Fn Number Number $ -> Number
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ &number:rem n 97
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
         'loop-rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-typed (n acc)
-            hint-fn $ quote $ Fn Number Number (-> Number)
+            hint-fn $ Fn Number Number $ -> Number
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ .rem n 97
           :examples $ []
@@ -56,13 +56,13 @@
           :schema $ quote $ Fn (-> Unit)
         'rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-direct (n divisor)
-            hint-fn $ quote $ Fn Number Number (-> Number)
+            hint-fn $ Fn Number Number $ -> Number
             &number:rem n divisor
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
         'rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-typed (n divisor)
-            hint-fn $ quote $ Fn Number Number (-> Number)
+            hint-fn $ Fn Number Number $ -> Number
             .rem n divisor
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)

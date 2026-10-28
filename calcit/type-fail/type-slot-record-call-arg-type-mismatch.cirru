@@ -28,8 +28,7 @@
           :doc "|Schema expects a value matching the bound type slot"
           :code $ quote $ defn takes-user (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] '*payload
+          :schema $ quote $ Fn *payload (-> Dynamic)
       :ns $ %{} 'NsEntry
         :doc "|Namespace for type-slot record call-site arg mismatch"
         :code $ quote $ ns type-fail-type-slot-record-call-arg.main

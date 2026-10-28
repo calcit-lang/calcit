@@ -30,7 +30,7 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 
 ## Quick Recipes
 
-- **Define Trait**: `deftrait MyTrait .method (:: 'Fn $ {} ...)`
+- **Define Trait**: `deftrait MyTrait $ .method $ quote $ Fn …`
 - **Implement Trait**: `defimpl MyImpl MyTrait .method (fn (x) ...)`
 - **Attach to Struct**: `impl-traits MyStruct MyImpl`
 - **Call Method**: `instance .method` (receiver-first; `.method instance` remains compatible)
@@ -178,11 +178,7 @@ let
 do (; struct example)
   let
       MyFoo $ deftrait MyFoo
-        .foo $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T
-            :return 'String
+        .foo $ quote $ Fn T (-> String) (:generics T)
       Person0 $ defstruct Person (:name 'String)
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p) (assert-type p Person0)
@@ -193,11 +189,7 @@ do (; struct example)
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
-        .describe $ :: 'Fn
-          {}
-            :generics $ [] 'T
-            :args $ [] 'T
-            :return 'String
+        .describe $ quote $ Fn T (-> String) (:generics T)
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
           match x
@@ -260,17 +252,9 @@ Example with two traits sharing the same method name:
 ```cirru.no-check
 let
     MyZapA $ deftrait MyZapA
-      .zap $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
+      .zap $ quote $ Fn T (-> String) (:generics T)
     MyZapB $ deftrait MyZapB
-      .zap $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
+      .zap $ quote $ Fn T (-> String) (:generics T)
     MyZapAImpl $ defimpl MyZapAImpl MyZapA
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB

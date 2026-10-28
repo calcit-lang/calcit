@@ -43,8 +43,8 @@ assert-type map-fn $ quote $ Fn C
 ```
 
 可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
-字段类型、`defenum` 载荷类型、`deftrait` 方法类型，`hint-fn` 的整个签名（`hint-fn $ quote $ Fn Number (-> String) (:async)`；
-只标记异步时写 `hint-fn $ quote Async`，或 `hint-fn $ quote $ Async (:features :js-ffi)`），
+字段类型、`defenum` 载荷类型、`deftrait` 方法类型，`hint-fn` 的整个签名（`hint-fn $ Fn Number (-> String) (:async)`；
+只标记异步时写 `hint-fn Async`，或 `hint-fn $ Async (:features :js-ffi)`），
 以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 的 `:schema` 也以这种写法保存，例如
 `:schema $ quote $ Fn String (-> Number)`，单个类型名保存为 `:schema $ quote Dynamic`。检查器和各后端读到的类型相同。
 
@@ -61,6 +61,19 @@ quote $ Macro (Expr T)
 
 `calcit <snapshot> edit format` 会把 `:schema`，以及上述代码位置里的 `:: 'List 'Number`、`{} (:args …) (:return …)` 等规范形式
 改写为精简写法；改写前后的类型逐一比对，无法等价表达的形式（值引用如 `:: 'List Person`、只写部分字段的 hint）保持原样。
+
+旧写法已关闭：Snapshot 加载遇到能用精简写法等价表达的 `::`/`{}` 类型或旧 tag schema
+（如 `:schema :number`、`:schema $ :: 'Fn $ {} …`、`assert-type xs $ :: 'List 'Number`）时报告
+`E_LEGACY_TYPE_SYNTAX`，并给出对应写法。`edit format` 本身仍能读取旧写法，旧项目或已发布的依赖先执行一次
+`calcit <snapshot> edit format` 再升级。`edit schema`、`edit def` 等编辑命令仍接受旧写法的输入，但一律以精简写法写入；
+`edit schema` 会给出 `W_LEGACY_TYPE_SYNTAX` 提示：
+
+```bash
+calcit app.cirru edit schema app.main/f --code "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+# ⚠️  [W_LEGACY_TYPE_SYNTAX] the `::`/`{}` schema syntax `:: 'Fn …` is retired; write `quote $ Fn Number (-> Number)` instead.
+```
+
+单个类型名（内建名或 `app.main/Person` 这样的具名类型）存为 `quote Name`，type slot 写作 `*name`。
 
 写法规则：
 
@@ -241,9 +254,9 @@ String 的 `.parse-cirru-edn` 返回 `Result<Dynamic,String>`：`:ok` 只说明�
 ```cirru
 assert=
   Result :ok $ [] $ [] 1 2
-  try-parse-cirru-edn-as "|[] ([] 1 2)" $ :: 'List $ :: 'List 'Number
+  try-parse-cirru-edn-as "|[] ([] 1 2)" $ quote $ List (List Number)
 match
-  try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ :: 'List $ :: 'List 'Number
+  try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ quote $ List (List Number)
   (:err message)
     assert= true $ message .includes? |[0][1]
   (:ok _) (raise "|无效的嵌套 Number 不应通过验证")
@@ -260,9 +273,9 @@ match
 
 ```bash
 calcit edit def app.schema/Items --code 'quote $ def Items $ []'
-calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
+calcit edit schema app.schema/Items --code "quote \$ List Number"
 calcit edit def app.schema/NamedCallback --code 'quote $ defn NamedCallback (text) (count text)'
-calcit edit schema app.schema/NamedCallback --code "quote \$ :: 'Fn \$ {} (:args \$ [] 'String) (:return 'Number)"
+calcit edit schema app.schema/NamedCallback --code "quote \$ Fn String (-> Number)"
 ```
 
 别名定义本身仍是一个普通的值，其他代码可以直接读取它，因此初始化表达式必须属于它发布的 schema：数据别名给出该类型的代表值（如上例的空 List），Fn 别名使用参数个数与 schema 一致的 `defn`，函数体按同一签名检查。`def Items &unit` 这类占位写法声明了 `List<Number>` 却求值为 Unit；只要该定义被预处理（作为值被引用，或 `--check-only --all-defs` / `--ns` 检查全部定义），就会报告 `E_SCHEMA_DEF_MISMATCH`，诊断会提示替换 `&unit` 占位。

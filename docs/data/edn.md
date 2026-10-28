@@ -95,14 +95,14 @@ These Result-returning parser methods currently run on the native and JavaScript
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-person (raw)
-  hint-fn $ quote $ Fn String (-> Person)
+  hint-fn $ Fn String (-> Person)
   parse-cirru-edn-as raw Person
 ```
 
 Container and generic targets use the existing type-expression syntax:
 
 ```cirru.no-check
-parse-cirru-edn-as "|[] 1 2 3" $ :: 'List 'Number
+parse-cirru-edn-as "|[] 1 2 3" $ quote $ List Number
 parse-cirru-edn-as "|%{} :Box (:value |hi)" $ :: Box 'String
 ```
 
@@ -122,7 +122,7 @@ The compatibility form raises the failure like `parse-cirru-edn`. New code that 
 def Person $ defstruct Person (:name 'String) (:age 'Number)
 
 defn decode-people (raw)
-  hint-fn $ quote $ Fn String
+  hint-fn $ Fn String
     -> $ Result (List Person) String
   try-parse-cirru-edn-as raw $ :: 'List Person
 ```
@@ -145,7 +145,7 @@ failing later with “expected map, got struct”.
 
 ```cirru.no-run
 defstruct Response (:code 'Number)
-  :message $ :: 'Option 'String
+  :message $ quote $ Option String
   :body 'Dynamic
 
 ; `raw` may be { :code 200, :message |ok, :body ... }

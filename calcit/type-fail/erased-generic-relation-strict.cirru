@@ -26,7 +26,7 @@
           :code $ quote $ defn main! ()
             compare-open (assert-type 1 'Dynamic)
               fn (value)
-                hint-fn $ quote $ Fn Number (-> Number)
+                hint-fn $ Fn Number $ -> Number
                 + value 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)

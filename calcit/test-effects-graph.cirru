@@ -22,9 +22,7 @@
           :code $ quote $ defref *store 0
           :examples $ []
         'async-hint-helper $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn async-hint-helper (x)
-            hint-fn $ quote Async
-            , x
+          :code $ quote $ defn async-hint-helper (x) (hint-fn Async) x
           :examples $ []
         'binding-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn binding-helper (x)
@@ -89,7 +87,7 @@
           :examples $ []
         'nested-async-hint-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested-async-hint-helper (callback)
-            hint-fn $ quote $ Fn
+            hint-fn $ Fn
               Fn Number (-> Unit) (:async)
               -> Unit
             , &unit

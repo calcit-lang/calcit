@@ -593,7 +593,7 @@ try {
         runRecursive("query", "def", "app.main/main!", "--format", "edn");
         const operations = [
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
-            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value 'Number\n    Other $ defstruct LocalPayload $ :value 'Number\n    read $ fn (record)\n      hint-fn $ quote $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
+            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value 'Number\n    Other $ defstruct LocalPayload $ :value 'Number\n    read $ fn (record)\n      hint-fn $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
             "quote $ Fn (-> Number)"],
         ];
@@ -1045,7 +1045,7 @@ try {
       // Retaining checked hint metadata must not replace the public return contract.
       await copyFile("calcit/add.cirru", binderSnapshot);
       runBinder("edit", "def", "app.main/public-return", "--input-format", "cirru", "--code",
-        "quote $ defn public-return (value)\n  hint-fn $ quote $ Fn Number (-> String)\n  str value");
+        "quote $ defn public-return (value)\n  hint-fn $ Fn Number (-> String)\n  str value");
       runBinder("edit", "schema", "app.main/public-return", "--input-format", "cirru", "--code",
         "quote $ Fn Number (-> Number)");
       const publicReturnSource = await readFile(binderSnapshot);
@@ -1416,7 +1416,7 @@ try {
         run("edit", "add-ns", "app.update-in-proof");
         if (name === "declared-body-hint-input") {
           run("edit", "def", "app.update-in-proof/consume", "--input-format", "cirru", "--code",
-            "quote $ defn consume (data callback) (hint-fn $ quote $ Fn Dynamic (Fn (Option Dynamic) (-> Number)) (-> Number)) $ callback $ Option :some data");
+            "quote $ defn consume (data callback) (hint-fn $ Fn Dynamic (Fn (Option Dynamic) (-> Number)) (-> Number)) $ callback $ Option :some data");
           run("edit", "schema", "app.update-in-proof/consume", "--input-format", "cirru", "--code", "quote 'Dynamic");
         }
         const call = name === "declared-body-hint-input" ? "consume data" : `update-in data ${path}`;
@@ -2851,7 +2851,7 @@ try {
       // Adopting a Promise as the whole async return does not await a stored member.
       const pendingTarget = "test-struct.main/collection-rejected";
       run("edit", "def", pendingTarget, "--overwrite", "--input-format", "cirru", "--code",
-        "quote $ defn collection-rejected () (hint-fn $ quote $ Fn (-> $ List Number) (:async)) $ let ((load $ fn (x) (hint-fn $ quote $ Fn Number (-> Number) (:async)) x)) $ [] $ load 1");
+        "quote $ defn collection-rejected () (hint-fn $ Fn (-> $ List Number) (:async)) $ let ((load $ fn (x) (hint-fn $ Fn Number (-> Number) (:async)) x)) $ [] $ load 1");
       run("edit", "schema", pendingTarget, "--input-format", "cirru", "--code",
         "quote $ Fn (-> $ List Number) (:async)");
       const pendingOriginal = await readFile(snapshot);
@@ -4435,21 +4435,21 @@ try {
       // A body hint describes the owning function, not a conversion of the
       // public contract or an independent source of caller trait capabilities.
       for (const [name, body, schema, call] of [
-        ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn String (-> String)) $ .slice value 0 $ Option :some 1",
+        ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ Fn String (-> String)) $ .slice value 0 $ Option :some 1",
           "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
-        ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn T (-> String) (:generics T) (:where $ T ToString)) $ to-string value",
+        ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ Fn T (-> String) (:generics T) (:where $ T ToString)) $ to-string value",
           "quote $ Fn T (-> String) (:generics T)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],
         ["return-only-concrete", "quote $ defn rejected-body-hint () (hint-fn $ {} (:return (:: 'List 'Number))) ([] 1)",
           "quote $ Fn (-> $ List T) (:generics T)", ["rejected-body-hint"]],
         ["return-only-introduced-bound", "quote $ defn rejected-body-hint () (hint-fn $ {} (:where ({} ('T 'ToString)))) ([])",
           "quote $ Fn (-> $ List T) (:generics T)", ["rejected-body-hint"]],
-        ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ quote $ Fn Number & String (-> String)) $ &list:nth tail 0",
+        ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ Fn Number & String (-> String)) $ &list:nth tail 0",
           "quote $ Fn Number String (-> String)", ["rejected-body-hint", "1", "|Ada"]],
-        ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn String (-> String)) $ to-string value",
+        ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ Fn Number (-> String)) (hint-fn $ Fn String (-> String)) $ to-string value",
           "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
-        ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn Number (-> String)) $ to-string value",
+        ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ Fn Number (-> String)) (hint-fn $ Fn Number (-> String)) $ to-string value",
           "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
-        ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) $ let ((render $ fn (item) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn String (-> String)) $ to-string item)) $ render value",
+        ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ Fn Number (-> String)) $ let ((render $ fn (item) (hint-fn $ Fn Number (-> String)) (hint-fn $ Fn String (-> String)) $ to-string item)) $ render value",
           "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
       ]) {
         await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);

@@ -100,13 +100,7 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
       "--code",
       "quote $ defn increment (value) $ inc value"
     ],
-    [
-      "edit",
-      "schema",
-      "app.main/increment",
-      "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
-    ]
+    ["edit", "schema", "app.main/increment", "--code", "quote $ Fn Number (-> Number)"]
   ]);
   migrate(&snapshot, initial_operations);
   let before = std::fs::read(&snapshot).expect("source before eval");

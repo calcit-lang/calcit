@@ -128,7 +128,7 @@
         'AliasFirstImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasFirstImpl AliasFirstOps
             .read-value $ fn (self)
-              hint-fn $ quote $ Fn test-traits.main/AliasSharedBase (-> Number)
+              hint-fn $ Fn test-traits.main/AliasSharedBase $ -> Number
               , 11
           :examples $ []
           :schema $ quote Impl
@@ -154,7 +154,7 @@
         'AliasGenericImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasGenericImpl AliasGenericOps
             .read-value $ fn (self dispatch!)
-              hint-fn $ quote $ Fn test-traits.main/AliasSharedBase
+              hint-fn $ Fn test-traits.main/AliasSharedBase
                 Fn Number $ -> R
                 -> R
                 :generics R
@@ -176,7 +176,7 @@
         'AliasSecondImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasSecondImpl AliasFirstOps
             .read-value $ fn (self)
-              hint-fn $ quote $ Fn test-traits.main/AliasSharedBase (-> Number)
+              hint-fn $ Fn test-traits.main/AliasSharedBase $ -> Number
               , 22
           :examples $ []
           :schema $ quote Impl
@@ -219,7 +219,7 @@
         'ExplicitContainsFalseImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl ExplicitContainsFalseImpl ExplicitContainsOps
             .contains? $ fn (self index)
-              hint-fn $ quote $ Fn Self Number (-> Bool) (:generics Self)
+              hint-fn $ Fn Self Number (-> Bool) (:generics Self)
               println |explicit-contains-false-body
               , false
           :examples $ []
@@ -232,7 +232,7 @@
         'ExplicitContainsTrueImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl ExplicitContainsTrueImpl ExplicitContainsOps
             .contains? $ fn (self index)
-              hint-fn $ quote $ Fn Self Number (-> Bool) (:generics Self)
+              hint-fn $ Fn Self Number (-> Bool) (:generics Self)
               println |explicit-contains-true-body
               , true
           :examples $ []
@@ -379,7 +379,7 @@
         'OpenContainsFalseImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl OpenContainsFalseImpl OpenContainsOps
             .contains? $ fn (self index)
-              hint-fn $ quote $ Fn Enum Number (-> Bool)
+              hint-fn $ Fn Enum Number $ -> Bool
               println |open-contains-false-body
               , false
           :examples $ []
@@ -456,8 +456,7 @@
               :code $ quote $ let
                   calls $ ref 0
                   supply $ fn ()
-                    hint-fn $ quote $ Fn
-                      -> $ List Number
+                    hint-fn $ Fn $ -> (List Number)
                     swap! calls inc
                     [] 1 2
                 assert= 13 $ &trait-call RestBoxOps :sum (RestBox :value 10) |numbers & $ supply
@@ -470,7 +469,7 @@
         'RestBoxImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl RestBoxImpl RestBoxOps
             .sum $ fn (self label & values)
-              hint-fn $ quote $ Fn test-traits.main/RestBox String & Number (-> Number)
+              hint-fn $ Fn test-traits.main/RestBox String & Number $ -> Number
               foldl values (:value self) &+
           :examples $ []
           :schema $ quote Impl
@@ -502,8 +501,7 @@
         'ResultBoxImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl ResultBoxImpl ResultBoxOps
             .find $ fn (self text)
-              hint-fn $ quote $ Fn test-traits.main/ResultBox String
-                -> $ Option Number
+              hint-fn $ Fn test-traits.main/ResultBox String $ -> (Option Number)
               Option :some $ :value self
           :examples $ []
           :schema $ quote Impl
@@ -533,13 +531,13 @@
               :tags $ #{} :trait :unit
         'alias-return-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn alias-return-number (value)
-            hint-fn $ quote $ Fn Number (-> Number)
+            hint-fn $ Fn Number $ -> Number
             + value 42
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)
         'alias-return-unit! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn alias-return-unit! (value)
-            hint-fn $ quote $ Fn Number (-> Unit)
+            hint-fn $ Fn Number $ -> Unit
             assert= 0 value
           :examples $ []
           :schema $ quote $ Fn Number (-> Unit)
@@ -638,7 +636,7 @@
                 wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
                 expected $ if flag 1 2
                 check-value $ fn (value)
-                  hint-fn $ quote $ Fn Enum (-> Bool)
+                  hint-fn $ Fn Enum $ -> Bool
                   let
                       item $ .unwrap $ get value 1
                     if (number? item) (= item expected) false
@@ -672,7 +670,7 @@
           :code $ quote $ defn closure-recur-same (index)
             let
                 check $ fn (value n)
-                  hint-fn $ quote $ Fn Enum Number (-> Bool)
+                  hint-fn $ Fn Enum Number $ -> Bool
                   if (> n 0)
                     recur value $ - n 1
                     contains? value 0
@@ -690,7 +688,7 @@
           :code $ quote $ defn closure-recur-switch (index)
             let
                 check $ fn (value n)
-                  hint-fn $ quote $ Fn Enum Number (-> Bool)
+                  hint-fn $ Fn Enum Number $ -> Bool
                   if (> n 0)
                     recur (ExplicitTraitTrue :item 1) (- n 1)
                     contains? value 0
@@ -807,7 +805,7 @@
                 initial-result $ &init-builtin-impls!
                 repeated-result $ &init-builtin-impls!
                 enum-empty? $ fn (value)
-                  hint-fn $ quote $ Fn Enum (-> Bool)
+                  hint-fn $ Fn Enum $ -> Bool
                   empty? value
               assert= &unit initial-result
               assert= &unit repeated-result
@@ -1032,7 +1030,7 @@
                 descriptors $ [] Greeting
                 descriptor $ &list:nth descriptors 0
                 forward-metadata $ fn (value)
-                  hint-fn $ quote $ Fn Trait (-> Trait)
+                  hint-fn $ Fn Trait $ -> Trait
                   , value
               forward-metadata $ identity descriptor
           :examples $ []
@@ -1198,7 +1196,7 @@
                     quote $ Fn Enum $ -> Number
                   EmptyProbeImpl $ defimpl EmptyProbeImpl EmptyProbeOps $ .empty?
                     fn (self)
-                      hint-fn $ quote $ Fn Enum (-> Number)
+                      hint-fn $ Fn Enum $ -> Number
                       , 1
                   EmptyProbe $ impl-traits
                     defenum EmptyProbe $ :item 'Number
@@ -1212,13 +1210,13 @@
                     quote $ Fn Enum Number $ -> Number
                   ContainsProbeImpl $ defimpl ContainsProbeImpl ContainsProbeOps $ .contains?
                     fn (self key)
-                      hint-fn $ quote $ Fn Enum Number (-> Number)
+                      hint-fn $ Fn Enum Number $ -> Number
                       , 1
                   ContainsProbe $ impl-traits
                     defenum ContainsProbe $ :item 'Number
                     , ContainsProbeImpl
                   has-open-index $ fn (value key)
-                    hint-fn $ quote $ Fn Enum Dynamic (-> Bool)
+                    hint-fn $ Fn Enum Dynamic $ -> Bool
                     contains? value key
                 assert= true $ throws? $ contains? (ContainsProbe :item 1) 0
                 assert= true $ throws? $ has-open-index (Option :some 1) |bad-key
@@ -1250,16 +1248,16 @@
                     quote $ Fn Enum Number $ -> Bool
                   ReviewContainsImpl $ defimpl ReviewContainsImpl ReviewContainsOps $ .contains?
                     fn (self key)
-                      hint-fn $ quote $ Fn Enum Number (-> Bool)
+                      hint-fn $ Fn Enum Number $ -> Bool
                       , false
                   ReviewContains $ impl-traits
                     defenum ReviewContains $ :item 'Number
                     , ReviewContainsImpl
                   via-method $ fn (value)
-                    hint-fn $ quote $ Fn Enum (-> Bool)
+                    hint-fn $ Fn Enum $ -> Bool
                     .contains? value 0
                   via-public $ fn (value)
-                    hint-fn $ quote $ Fn Enum (-> Bool)
+                    hint-fn $ Fn Enum $ -> Bool
                     contains? value 0
                 assert= false $ &trait-call ReviewContainsOps :contains? (ReviewContains :item 1) 0
                 assert= false $ via-method $ ReviewContains :item 1
@@ -1281,7 +1279,7 @@
             %{} 'TestEntry (:name |struct-empty-evaluates-receiver-once)
               :code $ quote $ let
                   check-empty $ fn (value)
-                    hint-fn $ quote $ Fn Struct (-> Bool)
+                    hint-fn $ Fn Struct $ -> Bool
                     empty? $ do (println |struct-empty-receiver) value
                 assert= true $ check-empty $ EmptyStructProbe
                 assert= false $ check-empty $ Person0 :name |Ada
@@ -1522,7 +1520,7 @@
             %{} 'TestEntry (:name |preserves-declared-generic-bound)
               :code $ quote $ let
                   count-items $ fn (x)
-                    hint-fn $ quote $ Fn T (-> Number) (:generics T)
+                    hint-fn $ Fn T (-> Number) (:generics T)
                       :where $ T Countable
                     &trait-call calcit.core/Countable :count x
                 assert= 2 $ count-items $ [] 1 2
@@ -1640,7 +1638,7 @@
                 res-err $ assert-type (Result :err |oops)
                   quote $ Result Number String
                 step $ fn (x)
-                  hint-fn $ quote $ Fn Number (-> Number)
+                  hint-fn $ Fn Number $ -> Number
                   inc x
               assert-type opt-some $ quote $ Option Number
               assert-type opt-none $ quote $ Option Number
@@ -1660,12 +1658,10 @@
                 res-err $ assert-type (Result :err |oops)
                   quote $ Result Number String
                 to-some $ fn (x)
-                  hint-fn $ quote $ Fn Number
-                    -> $ Option Number
+                  hint-fn $ Fn Number $ -> (Option Number)
                   Option :some $ inc x
                 to-ok $ fn (x)
-                  hint-fn $ quote $ Fn Number
-                    -> $ Result Number String
+                  hint-fn $ Fn Number $ -> (Result Number String)
                   Result :ok $ inc x
               assert= true $ opt-some .some?
               assert= true $ opt-none .none?
@@ -1837,7 +1833,7 @@
             %{} 'TestEntry (:name |preserves-canonical-field-type-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value 'Number
-                  right $ defstruct ComparedRecord $ :value :number
+                  right $ defstruct ComparedRecord $ :value 'Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1891,7 +1887,7 @@
                   left $ defstruct ComparedRecord $ :value
                     quote $ Map Tag $ List Number
                   right $ defstruct ComparedRecord $ :value
-                    :: :map :tag $ :: :list :number
+                    quote $ Map Tag $ List Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1909,9 +1905,7 @@
                   left $ defstruct ComparedRecord $ :callback
                     quote $ Fn Number $ -> String
                   right $ defstruct ComparedRecord $ :callback
-                    :: 'Fn $ {}
-                      :args $ [] :number
-                      :return :string
+                    quote $ Fn Number $ -> String
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -1976,7 +1970,7 @@
                     :: 'Fn $ {}
                       :args $ []
                       :return 'Bool
-                      :kind :fn
+                      :kind 'Fn
                       :features $ #{}
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -2040,7 +2034,8 @@
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
                     quote $ JsNullish Number
-                  right $ defstruct ComparedRecord $ :value (:: :js-nullish :number)
+                  right $ defstruct ComparedRecord $ :value
+                    quote $ JsNullish Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2049,7 +2044,8 @@
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
                     quote $ Variadic Number
-                  right $ defstruct ComparedRecord $ :value (:: :variadic :number)
+                  right $ defstruct ComparedRecord $ :value
+                    quote $ Variadic Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2187,10 +2183,10 @@
               :name |distinguishes-definition-and-value-target-parameters
               :code $ quote $ let
                   definition-match $ fn (value target)
-                    hint-fn $ quote $ Fn Struct StructDef (-> Bool)
+                    hint-fn $ Fn Struct StructDef $ -> Bool
                     &struct:matches? value target
                   value-match $ fn (value target)
-                    hint-fn $ quote $ Fn Struct Struct (-> Bool)
+                    hint-fn $ Fn Struct Struct $ -> Bool
                     &struct:matches? value target
                   point $ test-traits.struct-left/Point :x 2
                   alias test-traits.struct-left/PointAlias
@@ -2202,7 +2198,7 @@
             %{} 'TestEntry (:name |struct-match-keeps-qualified-origin)
               :code $ quote $ let
                   read $ fn (value)
-                    hint-fn $ quote $ Fn Struct (-> Number)
+                    hint-fn $ Fn Struct $ -> Number
                     struct-match value
                       test-traits.struct-left/Point current $ &+ (:x current) 1
                       _ other 0

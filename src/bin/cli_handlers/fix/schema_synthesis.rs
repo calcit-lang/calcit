@@ -790,7 +790,7 @@ pub(super) fn plan_schema_synthesis(
     },
     target_path: vec![],
     operation: machine_applicable.then(|| FixOperation::ReplaceSchema {
-      code: format_quoted_nodes(std::slice::from_ref(&replacement_node)).expect("formatted inferred schema"),
+      code: format_schema_operation(&replacement_node).expect("formatted inferred schema"),
     }),
   }])
 }

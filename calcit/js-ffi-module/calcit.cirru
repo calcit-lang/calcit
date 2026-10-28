@@ -233,8 +233,7 @@
                   calls $ ref 0
                   host $ checked-rest-host $ make-rest-host
                   supply $ fn ()
-                    hint-fn $ quote $ Fn
-                      -> $ List String
+                    hint-fn $ Fn $ -> (List String)
                     swap! calls inc
                     [] |one
                 assert= |one $ .emit host & $ supply

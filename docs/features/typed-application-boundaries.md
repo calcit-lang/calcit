@@ -53,7 +53,7 @@ aliases:
 ```cirru
 let
     read-path $ fn (value)
-      hint-fn $ quote $ Fn Dynamic (-> calcit.core/FsPath)
+      hint-fn $ Fn Dynamic (-> calcit.core/FsPath)
       struct-match value (FsPath path path)
         _ other $ raise |Expected-FsPath
     original $ fs:path |notes.cirru
@@ -69,13 +69,13 @@ let
 
 ## Ref decode 与原 alias
 
-`try-decode-map-as raw (:: 'Ref 'Number)` 检查当前 payload；成功结果中的
+`try-decode-map-as raw $ quote $ Ref Number` 检查当前 payload；成功结果中的
 `Ref<Number>` 是一个新 cell，不是原 Ref 的原地类型转换。修改原 cell 或其 alias
 不会改变受检结果，修改受检结果也不会改变原 cell。失败返回带 `.value` 路径的错误，
 原 cell 的值保持不变。
 
 原来的 `Ref<Dynamic>` 及其 alias 仍然开放。即使位于 decode 成功分支，
-`assert-type alias (:: 'Ref 'Number)` 也没有独立证明；Agent 不应添加断言、unsafe
+`assert-type alias $ quote $ Ref Number` 也没有独立证明；Agent 不应添加断言、unsafe
 或 schema 来假装原 alias 已安全。需要保留原 Ref 身份时，应人工确认受检写入与
 共享 alias 的业务契约，而不是自动把旧 cell 换成新 cell。
 

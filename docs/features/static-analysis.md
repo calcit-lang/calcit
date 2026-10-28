@@ -28,10 +28,10 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 ## Quick Recipes
 
 - **Assert Type**: `assert-type total 'Number`
-- **Local `fn` Hint**: `hint-fn $ {} (:args ([] 'Number)) (:return 'Number)`
-- **Top-level `defn` Schema**: `calcit edit schema app.main/add --code "quote $ :: 'Fn $ {} (:args ([] 'Number 'Number)) (:return 'Number)"`
-- **Top-level value Schema**: `calcit edit schema 'app.main/*enabled?' --code "quote $ :: 'Ref 'Bool"`
-- **Return Type**: `hint-fn $ {} (:return 'String)`
+- **Local `fn` Hint**: `hint-fn $ Fn Number (-> Number)`
+- **Top-level `defn` Schema**: `calcit edit schema app.main/add --code "quote $ Fn Number Number (-> Number)"`
+- **Top-level value Schema**: `calcit edit schema 'app.main/*enabled?' --code "quote $ Ref Bool"`
+- **Return Type**: the `(-> T)` clause, e.g. `hint-fn $ Fn Number (-> String)`
 - **Compact Hint**: `defn my-fn (x) 'String ...`
 - **Check Traits**: `assert-traits x MyTrait`
 - **Ignore Warning**: `&core:ignore-type-warning`
@@ -318,7 +318,7 @@ schema 候选即使没有剩余洞，仍需独立实现证明。返回声明、�
 
 ## Type Annotations
 
-Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `calcit edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, struct field keys, `:return` schema keys, or `:kind` values.
+Types are written as compact type expressions: `quote String`, `quote $ List Number`, `quote $ Fn Number (-> String)`; a single type name in code may also be written `'String`. Lowercase tags such as `:string` and the `:: 'List 'Number` / `{} (:args …)` forms are retired: loading a Snapshot that still uses them fails with `E_LEGACY_TYPE_SYNTAX`, and `calcit edit format` rewrites them. It does not rewrite ordinary tags such as enum variants, struct field keys, or `:kind` values.
 
 ### 顶层值的声明与实现
 
@@ -337,7 +337,7 @@ Function parameters should be annotated with function schema:
 
 For namespace-level definitions, `:schema` is stored on the definition entry and is typically edited with `calcit edit schema`, rather than written inline in the function body.
 
-`calcit edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote 'String` for a primitive leaf or `quote $ :: 'Ref 'Bool` for a parameterized type expression. A top-level value backed by `defstruct` or `defenum` uses its fully qualified nominal type, for example `calcit edit schema app.schema/store --code "quote 'app.schema/Store"`; the qualification lets the stored schema preserve identity without relying on the editing namespace. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use the canonical wrapped form `:: 'Fn $ {} ...` or `:: 'Macro $ {} ...`; raw `{} (:kind :fn)` maps and bare parameterized types such as `'Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `:: 'Ref 'Bool`, `:: 'List 'String`, or `:: 'Map 'Tag 'Number`.
+`calcit edit schema` accepts exactly one AST node and therefore requires the CLI code/data boundary: use `quote String` for a type name or `quote $ Ref Bool` for a parameterized type expression. A top-level value backed by `defstruct` or `defenum` uses its fully qualified nominal type, for example `calcit edit schema app.schema/store --code "quote app.schema/Store"`; the qualification lets the stored schema preserve identity without relying on the editing namespace. The `quote` belongs to CLI transport and is not stored inside `:schema`. Callable payloads use `quote $ Fn …` or `quote $ Macro …`; bare parameterized types such as `Ref` are rejected with a corrective error. Parameterized value schemas use the same type grammar as function arguments, for example `quote $ Ref Bool`, `quote $ List String`, or `quote $ Map Tag Number`. The retired `:: 'Fn $ {} …` spelling is still accepted as input, with a `W_LEGACY_TYPE_SYNTAX` note, and is stored in the compact form.
 
 The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback; every concrete rest argument is checked against that element type. Known collection receivers can also recover contracts hidden by a polymorphic compatibility facade: `filter`, `any?`, and `every?` require `T -> Bool` for List and Set, while `each` constrains the callback input to `T` and allows any return type. `map` requires `T -> U` for List and Set, and a Set receiver specializes to `&set:map`. `foldl` and `reduce` recover accumulator `U` from the initial value and require `U, T -> U`; a native `foldl` result preserves that initial accumulator type only when the reducer has a concrete compatible `Fn` signature, while `DynFn` leaves the result `Dynamic`. `apply` similarly recovers a concrete or generic callable return only when a non-Dynamic homogeneous `List<T>` member satisfies every fixed/rest callable input and the spread cardinality proves the callable arity; heterogeneous-position callables, unknown-length fixed calls, unknown functions, and trait-bounded generics deliberately keep the compatibility result `Dynamic`. Two-argument `sort` and `&list:sort` preserve `List<T>` and require a `T, T -> Number` comparator. The function form of `&list:sort-by` requires a `T -> K` selector, while its Tag field-selector compatibility path remains open. `interleave` requires both inputs and its result to share one `List<T>` member type; callers must normalize heterogeneous inputs or opt into `List<Dynamic>` explicitly at a reviewed boundary. One-argument natural sorting is unchanged. For Map, iteration, predicate, and fold callbacks receive the heterogeneous runtime `[key value]` pair as `List<Dynamic>` without inventing a homogeneous `K = V` relation; a Map mapper must also return a `List<Dynamic>` pair. Syntax-typed macro collections remain on their phase-aware open contracts, including sort specialization. Native proc typed-rest validation follows the runtime contract: `&map:dissoc` validates every key against the receiver's `K`, while `&list:concat` and `&merge` require every remaining collection to preserve the first collection's member types. By contrast, `[]` and `#{}` use `Variadic<T>` only as common-member inference evidence and intentionally fall back to `Dynamic` for heterogeneous literals.
 
@@ -362,9 +362,9 @@ Runnable Example:
 ```cirru
 let
     calculate-total $ fn (items)
-      hint-fn $ quote $ Fn (List Number) (-> Number)
+      hint-fn $ Fn (List Number) (-> Number)
       .fold items 0 $ fn (acc item)
-        hint-fn $ quote $ Fn Number Number (-> Number)
+        hint-fn $ Fn Number Number (-> Number)
         + acc item
   calculate-total $ [] 1 2 3
 ```
@@ -403,10 +403,10 @@ assert= ([] 2 3 4)
 ```cirru
 let
     choose $ fn (value)
-      hint-fn $ quote $ Fn T (-> Number) (:generics T)
+      hint-fn $ Fn T (-> Number) (:generics T)
       let
           callback $ fn (other)
-            hint-fn $ quote $ Fn T (-> T) (:generics T)
+            hint-fn $ Fn T (-> T) (:generics T)
             , other
         callback 1
   assert= 1 $ choose |outer
@@ -431,7 +431,7 @@ Use `hint-fn` with schema map at the start of a local function body:
 ```cirru
 let
     add-one $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       + x 1
   assert-type (add-one 1) 'Number
 ```
@@ -440,7 +440,7 @@ let
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 
-函数体内的 schema 直接使用 Map；`:: 'Fn` 是 CodeEntry schema 或嵌套函数类型的写法，不包在函数体 `hint-fn` 外面。
+函数体内直接写 `hint-fn $ Fn …`，与 CodeEntry `:schema $ quote $ Fn …` 是同一种类型表达式，只是不需要外层 quote。
 两参数形式的第一个参数必须已经是局部函数；声明 schema 不能把 Number、Dynamic 或任意表达式变成可调用值。
 已声明的 Fn 类型别名沿用同一合同；可能缺失的函数值不能仅靠元数据获得可调用性。
 错误的 schema、参数顺序、目标或参数数量，以及与已有签名矛盾的注解会在预处理时拒绝，不再静默忽略。合法注解仍返回 Nil，泛型、async 和实际函数调用行为不变。
@@ -458,7 +458,7 @@ Generic trait bounds use the same schema map. Follow the Rust-style split: decla
 ```cirru
 let
     get-name $ fn (user)
-      hint-fn $ quote $ Fn String (-> String)
+      hint-fn $ Fn String (-> String)
       str "|user " user
   get-name |Ada
 ```
@@ -466,16 +466,14 @@ let
 ```cirru
 let
     debug-it $ fn (x)
-      hint-fn $ {}
-        :generics $ [] 'T
-        :where $ {} ('T Debug)
-        :args $ [] 'T
-        :return 'String
+      hint-fn $ Fn T (-> String)
+        :generics T
+        :where $ T Debug
       x .debug
   debug-it 1
 ```
 
-Do not use the old tuple/list form such as `:where $ [] (:: 'Debug 'T)`.
+Do not use the old tuple/list form such as `:where $ [] (:: 'Debug 'T)`; write `(:where (T Debug))`.
 
 #### 2. Compact Hint (Trailing Label)
 
@@ -494,7 +492,7 @@ For namespace-level `defn` / `defmacro`, parameter and return metadata should st
 ```cirru
 let
     add $ fn (a b) 'Number
-      hint-fn $ quote $ Fn Number Number (-> Number)
+      hint-fn $ Fn Number Number (-> Number)
       let
           total $ + a b
         assert-type total 'Number
@@ -554,7 +552,7 @@ Model absence with `Option<T>`; the caller handles both variants explicitly:
 ```cirru
 let
     greet $ fn (name)
-      hint-fn $ quote $ Fn (Option String) (-> String)
+      hint-fn $ Fn (Option String) (-> String)
       str "|Hello " $ .unwrap-or name |Guest
   greet $ Option :none
 ```
@@ -568,47 +566,40 @@ Represent variable arguments in `&` parameters:
 ```cirru
 let
     sum $ fn (& xs)
-      hint-fn $ {} (:rest 'Number) (:return 'Number)
+      hint-fn $ Fn & Number (-> Number)
       .fold xs 0 &+
   sum 1 2 3
 ```
 
 A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant.
 
-`:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
+Write `Dynamic` for an open type. Schema serialization, generated metadata, type queries, and diagnostics all use `Dynamic`.
 
-Do not strengthen a schema beyond the runtime contract merely to silence a report. Instead, preserve the relationship that the code actually promises: use a declared type variable when input and output share a type, a trait plus `:where` when only capabilities matter, a parameterized collection/ref for homogeneous values, and a named enum for finite heterogeneous alternatives. Retain `:dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state or macro boundary, and keep that boundary explicit and narrow.
+Do not strengthen a schema beyond the runtime contract merely to silence a report. Instead, preserve the relationship that the code actually promises: use a declared type variable when input and output share a type, a trait plus `:where` when only capabilities matter, a parameterized collection/ref for homogeneous values, and a named enum for finite heterogeneous alternatives. Retain `Dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state or macro boundary, and keep that boundary explicit and narrow.
 
 ### Preserving Polymorphism Instead of Repeating Dynamic
 
 This schema loses the fact that the result has the same type as the input:
 
 ```cirru.no-run
-:: :fn $ {}
-  :args $ [] :dynamic
-  :return :dynamic
+quote $ Fn Dynamic (-> Dynamic)
 ```
 
 Use a declared type variable:
 
 ```cirru.no-run
-:: :fn $ {}
-  :generics $ [] 'T
-  :args $ [] 'T
-  :return 'T
+quote $ Fn T (-> T) (:generics T)
 ```
 
 If the body only needs a capability, add a trait bound rather than replacing `'T` with dynamic:
 
 ```cirru.no-run
-:: :fn $ {}
-  :generics $ [] 'T
-  :where $ {} ('T Debug)
-  :args $ [] 'T
-  :return :string
+quote $ Fn T (-> String)
+  :generics T
+  :where $ T Debug
 ```
 
-The same rule applies inside containers and callbacks: `:: :list 'T` preserves a homogeneous item relationship, while bare `:list` means `list<dynamic>`; a complete `:: :fn` callback schema preserves argument/return checking, while bare `:fn` does not.
+The same rule applies inside containers and callbacks: `List T` preserves a homogeneous item relationship, while bare `List` means `List<Dynamic>`; a complete `Fn T (-> U)` callback type preserves argument/return checking, while bare `Fn` does not.
 
 With the default strict diagnostics, the relationship must also survive each call site. A
 `Dynamic` value cannot be passed directly into one of these related generic
@@ -624,7 +615,7 @@ Use the name defined by `defstruct` or `defenum`:
 let
     User $ defstruct User $ :name 'String
     get-name $ fn (u)
-      hint-fn $ quote $ Fn User (-> String)
+      hint-fn $ Fn User (-> String)
       :name u
   get-name $ User :name |Alice
 ```
@@ -767,10 +758,10 @@ Use `assert-type` to explicitly check local values during preprocessing:
 ```cirru
 let
     transform-fn $ fn (x)
-      hint-fn $ quote $ Fn Number (-> Number)
+      hint-fn $ Fn Number (-> Number)
       * x 2
     process-data $ fn (data)
-      hint-fn $ quote $ Fn (List Number)
+      hint-fn $ Fn (List Number)
         -> $ List Number
       let
           xs data
@@ -788,7 +779,7 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 例如 `assert-type (+ 1 2) 'String` 会被拒绝。请修正目标类型；外部开放数据需要真正的 checked decoder，并处理失败，不能仅用断言或返回值声明冒充验证。这里不改变尚在迁移的 Dynamic 边界策略，也不声称断言能深层校验任意嵌套数据。已证明的局部断言可被消去；表达式断言的运行时处理仍取决于 backend，不保证所有断言都没有运行成本。
 
 已知空 List、Set、Map 构造器可以满足同类容器的具体元素合同：没有成员需要转换。
-例如 `assert-type (#{}) (:: 'Set 'String)` 可作为字符串 Set 的初始值，随后通过普通 `.union` 或 `fold` 累积。
+例如 `assert-type (#{}) $ quote $ Set String` 可作为字符串 Set 的初始值，随后通过普通 `.union` 或 `fold` 累积。
 
 泛型函数内部的断言保留外层词法类型变量。空 List、Map 或 Set 没有成员与同种集合的泛型契约冲突，
 可作为 fold 的初始值；非空输入和开放输入仍需独立证据。断言检查已有契约，不能把外层 `T`
@@ -846,7 +837,7 @@ defn sum (& numbers) (.fold numbers 0 +)
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {} (:rest :number) (:return :number)
+quote $ Fn & Number (-> Number)
 ```
 
 ## Function Types
@@ -863,9 +854,7 @@ defn apply-twice (f x)
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {}
-  :args $ [] :fn :number
-  :return :number
+quote $ Fn Fn Number (-> Number)
 ```
 
 ## Disabling Checks
@@ -917,7 +906,7 @@ These rewrites are automatic. Provide type annotations (`hint-fn`, `:schema`, `a
 let
     process-input $ fn (input) (assoc input :processed true)
     public-api-function $ fn (input)
-      hint-fn $ quote $ Fn Map (-> String)
+      hint-fn $ Fn Map (-> String)
       let
           processed $ process-input input
         assert-type processed 'Map
@@ -938,17 +927,13 @@ defn calculate-area (width height) (; Types inferred from arithmetic operations)
 ```cirru
 let
     dangerous-operation $ fn (data)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return $ :: 'List 'Number
+      hint-fn $ Fn (List Number) (-> (List Number))
       map data $ fn (x) (* x 2)
     critical-operation $ fn (data)
-      hint-fn $ {}
-        :args $ [] $ :: 'List 'Number
-        :return $ :: 'List 'Number
+      hint-fn $ Fn (List Number) (-> (List Number))
       let
           checked data
-        assert-type checked $ :: 'List 'Number
+        assert-type checked $ quote $ List Number
         ; Ensure the local value is still what we expect before processing
         dangerous-operation checked
   critical-operation $ [] 1 2 3
@@ -967,8 +952,7 @@ defn process-user (user-map) (; Expected keys: :name :email :age) (println "|dem
 Schema on the namespace definition:
 
 ```cirru
-:: :fn $ {}
-  :args $ [] :map
+quote $ Fn (Map Tag Dynamic) (-> Unit)
 ```
 
 ## Type Slots (Cross-Package Type Injection)
@@ -985,15 +969,13 @@ deftype-slot :dispatch-op
 
 Then reference the slot in type annotations with the `*name` syntax:
 
-下面是 `edit schema` / CodeEntry schema 的序列化写法，`'*dispatch-op` 表示 EDN Symbol。
-在程序源码的 `hint-fn` Map 或 `defstruct` 字段类型表达式中，使用裸 `*dispatch-op`；
-这些位置的 `'*dispatch-op` 是另一个带引号的类型名称，不能代替 slot。
+精简类型表达式里直接写 `*dispatch-op`，`edit schema`、CodeEntry `:schema`、`hint-fn` 和
+`defstruct` 字段使用同一种写法：
 
 ```cirru.no-check
 ;; EventHandler schema "—" dispatch callback accepts the slot type
 
-:: 'Fn $ {} (:return 'Unit)
-  :args $ [] '*dispatch-op
+quote $ Fn *dispatch-op (-> Unit)
 ```
 
 ### Binding a Type Slot (Application Side)
@@ -1042,7 +1024,7 @@ Struct 回调字段的类型关系已因未绑定 slot 而失败时，同样报�
 - Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.
 - 未绑定 slot 保留其符号身份，不自动回退为 `Dynamic`。严格预处理对可达函数或 macro 声明中的未绑定
   slot 报告 `E_UNBOUND_TYPE_SLOT` 及 schema 路径；compat 模式也不能凭未绑定 slot 通过已有字段类型关系。
-- `:dynamic` 是 entry 明确选择的开放边界，具体使用其中内容时仍需相应证明。
+- `Dynamic` 是 entry 明确选择的开放边界，具体使用其中内容时仍需相应证明。
 - The slot name is currently project-wide within one compilation. Libraries should choose stable, specific names to avoid accidental collisions.
 
 Inspect and remove bindings with:
@@ -1089,10 +1071,10 @@ Result :err message
 
 ### Cirru EDN Representation
 
-In serialized type annotations, type slots appear as `'*name` (EDN symbol with `*` prefix):
+A Snapshot stores the compact form as written, so the slot keeps its `*name` spelling:
 
 ```cirru.no-check
-:args $ [] '*dispatch-op
+:schema $ quote $ Fn *dispatch-op (-> Unit)
 ```
 
 ## Limitations

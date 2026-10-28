@@ -76,9 +76,9 @@
                     defstruct Item $ :n 'Number
                     , implementation
                   change $ fn (data)
-                    hint-fn $ quote $ Fn Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic $ -> Dynamic
                     update data :n $ fn (value)
-                      hint-fn $ quote $ Fn Dynamic (-> Number)
+                      hint-fn $ Fn Dynamic $ -> Number
                       assert= ([] |start) @trace
                       reset! trace $ append @trace |callback
                       , 1
@@ -93,14 +93,14 @@
                   trace $ ref $ assert-type ([])
                     quote $ List String
                   change $ fn (data key)
-                    hint-fn $ quote $ Fn Dynamic Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic Dynamic $ -> Dynamic
                     update-in data ([] key)
                       fn (current)
-                        hint-fn $ quote $ Fn (Option Dynamic) (-> Number)
+                        hint-fn $ Fn (Option Dynamic) (-> Number)
                         reset! trace $ append @trace |callback
                         , 4
                   write $ fn (data key)
-                    hint-fn $ quote $ Fn Dynamic Dynamic (-> Dynamic)
+                    hint-fn $ Fn Dynamic Dynamic $ -> Dynamic
                     assoc-in data ([] key) 4
                 assert= "|assoc on a list expected a Number index" $ try
                   change ([] 1) :bad
@@ -135,7 +135,7 @@
               :tags $ #{} :nested-write-contract :unit :update-method-contract
         'matching-body-contract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-body-contract (value)
-            hint-fn $ quote $ Fn T (-> String) (:generics T)
+            hint-fn $ Fn T (-> String) (:generics T)
               :where $ T ToString
             to-string value
           :examples $ []
@@ -148,7 +148,7 @@
             :tags $ #{} :body-hint-contract :unit
         'matching-empty-body-return $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-empty-body-return ()
-            hint-fn $ quote $ Fn
+            hint-fn $ Fn
               -> $ List T
               :generics T
             []
@@ -223,7 +223,7 @@
           :code $ quote $ defn typed-rest-forward (xs)
             let
                 sink $ fn (label & values)
-                  hint-fn $ quote $ Fn String & Number (-> Number)
+                  hint-fn $ Fn String & Number $ -> Number
                   checked-count values
               sink |numbers & xs
           :examples $ []

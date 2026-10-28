@@ -110,7 +110,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (record)
-                  hint-fn $ quote $ Fn Payload (-> String)
+                  hint-fn $ Fn Payload $ -> String
                   :value record
                 record $ Payload :value |Ada
               assert-type record 'Payload
@@ -125,7 +125,7 @@
             let
                 Payload $ defstruct LocalPayload $ :value 'Number
                 read $ fn (record)
-                  hint-fn $ quote $ Fn Payload (-> Number)
+                  hint-fn $ Fn Payload $ -> Number
                   :value record
               read $ Payload :value 7
           :examples $ []
@@ -138,7 +138,7 @@
             let
                 Payload recursive/Payload
                 read $ fn (Payload)
-                  hint-fn $ quote $ Fn String (-> Payload)
+                  hint-fn $ Fn String $ -> Payload
                   let
                       record $ recursive/Payload :value Payload
                     assert-type record 'Payload
@@ -248,13 +248,13 @@
           :code $ quote $ defn test-generic-enum-where-bounds ()
             let
                 render-maybe $ fn (v)
-                  hint-fn $ quote $ Fn (Maybe1 T) (-> String) (:generics T)
+                  hint-fn $ Fn (Maybe1 T) (-> String) (:generics T)
                     :where $ T Debug
                   match v
                     (:none) |none
                     (:some item) (item .debug)
                 render-duo $ fn (v)
-                  hint-fn $ quote $ Fn (Duo T U) (-> String) (:generics T U)
+                  hint-fn $ Fn (Duo T U) (-> String) (:generics T U)
                     :where (T Debug) (U Debug)
                   match v
                     (:pair left right)

@@ -361,8 +361,16 @@ fn parse_definition_spec(id: &str, value: &Edn) -> Result<DefinitionSpec, String
     .tag_get("schema")
     .ok_or_else(|| format!("Architecture definition '{id}' is missing :schema."))?
     .clone();
-  let schema_cirru =
-    snapshot::schema_edn_to_cirru(&schema).map_err(|error| format!("Architecture definition '{id}' has invalid :schema: {error}"))?;
+  let schema_cirru = match &schema {
+    // `quote $ Fn …` and `quote StructDef` are the compact spellings.
+    Edn::Quote(payload @ Cirru::List(_)) => payload.clone(),
+    Edn::Quote(Cirru::Leaf(name)) => Cirru::leaf(format!("'{name}")),
+    _ => {
+      snapshot::schema_edn_to_cirru(&schema).map_err(|error| format!("Architecture definition '{id}' has invalid :schema: {error}"))?
+    }
+  };
+  snapshot::reject_legacy_schema_input(&schema_cirru)
+    .map_err(|error| format!("Architecture definition '{id}' has invalid :schema: {error}"))?;
   let schema_annotation = snapshot::parse_schema_annotation_for_write(&schema_cirru)
     .map_err(|error| format!("Architecture definition '{id}' has invalid :schema: {error}"))?;
   let params = match map.tag_get("params") {
@@ -373,8 +381,11 @@ fn parse_definition_spec(id: &str, value: &Edn) -> Result<DefinitionSpec, String
     return Err(format!("Architecture function '{id}' with :mode :ensure is missing :params."));
   }
   if kind == DefinitionKind::Function && mode == DefinitionMode::Ensure {
-    let fn_schema = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema)
-      .ok_or_else(|| format!("Architecture function '{id}' :schema must use the canonical `:: :fn` form."))?;
+    let CalcitTypeAnnotation::Fn(fn_schema) = schema_annotation.as_ref() else {
+      return Err(format!(
+        "Architecture function '{id}' :schema must be a `quote $ Fn …` function type."
+      ));
+    };
     if fn_schema.rest_type.is_none() && fn_schema.arg_types.len() != params.len() {
       return Err(format!(
         "Architecture function '{id}' has {} :params entries but its schema declares {} fixed arguments.",
@@ -901,19 +912,13 @@ mod tests {
       :kind :fn
       :doc "|Run sample."
       :params $ [] 'value
-      :schema $ :: :fn
-        {}
-          :args $ [] :number
-          :return :number
+      :schema $ quote $ Fn Number (-> Number)
     'app.main/next-value $ {}
       :mode :ensure
       :kind :fn
       :doc "|Increment a value."
       :params $ [] 'value
-      :schema $ :: :fn
-        {}
-          :args $ [] :number
-          :return :number
+      :schema $ quote $ Fn Number (-> Number)
   :edges $ #{}
     :: :call 'app.main/run! 'app.main/next-value
 "#;
@@ -928,7 +933,7 @@ mod tests {
       :mode :ensure
       :kind :data
       :doc "|An answer created by the scaffold."
-      :schema $ :: 'Number
+      :schema $ quote Number
       :code $ quote (def scaffold-answer 42)
 "#;
 
@@ -942,13 +947,13 @@ mod tests {
       :mode :ensure
       :kind :data
       :doc "|Nominal box."
-      :schema $ :: 'StructDef
+      :schema $ quote StructDef
       :code $ quote (defstruct Box0 (:value 'String))
     'app.main/Choice0 $ {}
       :mode :ensure
       :kind :data
       :doc "|Nominal choice."
-      :schema $ :: 'EnumDef
+      :schema $ quote EnumDef
       :code $ quote (defenum Choice0 (:none))
   :edges $ #{}
 "#;
@@ -973,6 +978,20 @@ mod tests {
     );
     let error = parse_architecture_plan(&invalid).expect_err("list edge should be rejected");
     assert!(error.contains("anonymous enum"), "unexpected error: {error}");
+  }
+
+  #[test]
+  fn rejects_retired_schema_syntax_with_the_compact_spelling() {
+    let invalid = PLAN.replacen(
+      ":schema $ quote $ Fn Number (-> Number)",
+      ":schema $ :: :fn $ {} (:args $ [] :number) (:return :number)",
+      1,
+    );
+    let error = parse_architecture_plan(&invalid).expect_err("retired schema syntax should be rejected");
+    assert!(
+      error.contains("E_LEGACY_TYPE_SYNTAX") && error.contains("quote $ Fn Number (-> Number)"),
+      "unexpected error: {error}"
+    );
   }
 
   #[test]

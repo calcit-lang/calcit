@@ -30,8 +30,9 @@ one declaration or a `do` form containing declarations. Diagnostics identify
 whether the violation belongs to input syntax or the expansion result and keep
 the macro call stack and source location.
 
-Existing `(:: 'Macro ({} (:args ...) (:return ...)))` schemas remain readable
-and serialize without data loss. Current Calcit no longer accepts such runtime
+Existing `(:: 'Macro ({} (:args ...) (:return ...)))` schemas are read only by
+`calcit edit format`, which rewrites them to the compact form; loading such a
+Snapshot reports `E_LEGACY_TYPE_SYNTAX`. Current Calcit no longer accepts such runtime
 `Fn` schemas or an omitted/whole-`Dynamic` macro schema: Snapshot loading fails
 with the exact definition path. For an already structured `CodeEntry`, migrate
 the module using final-compatible Calcit 0.13.51, then publish its strict

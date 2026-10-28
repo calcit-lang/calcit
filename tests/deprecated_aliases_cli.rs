@@ -396,7 +396,7 @@ fn option_nil_view_keeps_unavailable_evidence_unknown_and_never_runs_the_entry()
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr $ :: 'Option 'Dynamic) (:capabilities $ #{} :log)"
+      "quote $ Macro Syntax (-> $ Expr $ Option Dynamic) (:capabilities :log)"
     ],
     [
       "edit",
@@ -414,7 +414,7 @@ fn option_nil_view_keeps_unavailable_evidence_unknown_and_never_runs_the_entry()
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)"
+      "quote $ Fn Dynamic (-> Dynamic)"
     ]
   ])
   .to_string();
