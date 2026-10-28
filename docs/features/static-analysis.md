@@ -436,14 +436,13 @@ let
   assert-type (add-one 1) 'Number
 ```
 
-两参数形式 `hint-fn f schema` 暂时保留兼容，计划在 0.32.0 删除；项目源码中的每处用法会在 `--check-only` 输出的 `Notes:` 中以 `W_LEGACY_HINT_FN_TARGET` 列出，带定义与源码坐标，不影响检查结果。目标已有完整签名时，该签名必须能够证明所请求的合同；例如 `Dynamic` 返回不能改写为 `Number`。无签名 `fn` 目标仍走旧的元数据补充路径，因此不能把这条兼容路径当作完整类型证明。新代码与迁移代码应把 Map 注解放进函数体，让参数和返回值在实现所在位置接受检查。
+两参数形式 `hint-fn f schema` 已在 0.32.0 删除，写出时在目标位置报 `E_LEGACY_HINT_FN_TARGET`。注解应放进函数体，让参数和返回值在实现所在位置接受检查。
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 
 函数体内直接写 `hint-fn $ Fn …`，与 CodeEntry `:schema $ quote $ Fn …` 是同一种类型表达式，只是不需要外层 quote。
-两参数形式的第一个参数必须已经是局部函数；声明 schema 不能把 Number、Dynamic 或任意表达式变成可调用值。
 已声明的 Fn 类型别名沿用同一合同；可能缺失的函数值不能仅靠元数据获得可调用性。
-错误的 schema、参数顺序、目标或参数数量，以及与已有签名矛盾的注解会在预处理时拒绝，不再静默忽略。合法注解仍返回 Nil，泛型、async 和实际函数调用行为不变。
+错误的 schema 或参数数量会在预处理时拒绝，不再静默忽略。合法注解仍返回 Nil，泛型、async 和实际函数调用行为不变。
 
 A body hint may declare only part of the signature. Omitted `:args` slots are aligned with the function's real parameters and remain `:dynamic`; they are not interpreted as a zero-argument function. This lets a return-only hint improve downstream inference without inventing parameter constraints.
 

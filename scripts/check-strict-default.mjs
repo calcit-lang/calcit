@@ -48,37 +48,9 @@ for (const [label, source, diagnostic] of [
   ["missing hint schema", "hint-fn", /hint-fn expects.*got 0 arguments/],
   ["extra hint argument", "let ((f (fn () 1))) (hint-fn f ({} (:args ([])) (:return 'Number)) :extra) (f)", /hint-fn expects.*got 3 arguments/],
   ["wrapped body schema", "fn (value) (hint-fn (:: 'Fn ({} (:args ([] 'String)) (:return 'String)))) value", /hint-fn expects a function type/],
-  ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /hint-fn target must be an existing local function/],
-  ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /hint-fn target must be an existing local function/],
-  ["conflicting return", "let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)", /hint-fn schema conflicts with the existing local function signature/],
-  ["conflicting input", `let
-    f $ fn (n)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
-      &+ n 1
-  hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
-  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
-  ["open result restated as concrete", `let
-    f $ fn (value)
-      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)
-      if (number? value) |wrong value
-  hint-fn f $ {} (:args $ [] 'Number) (:return 'Number)
-  &+ (f 7) 1`, /hint-fn schema conflicts with the existing local function signature: got fn\(dynamic\) -> dynamic/],
-  ["concrete input widened to open", `let
-    f $ fn (n)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
-      &+ n 1
-  hint-fn f $ {} (:args $ [] 'Dynamic) (:return 'Number)
-  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
-  ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
-  ["nullable function target", `fn (callback)
-  hint-fn $ {}
-    :args $ [] $ :: 'JsNullish $ :: 'Fn $ {}
-      :args $ [] 'Number
-      :return 'Number
-    :return 'Unit
-  hint-fn callback $ {} (:args $ [] 'Number) (:return 'Number)
-  , &unit`, /a schema does not prove callability/],
-  ["new function target", "hint-fn (fn () 1) ({} (:args ([])) (:return 'Number))", /put .*hint-fn schema.* inside a new function body/],
+  ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /E_LEGACY_HINT_FN_TARGET.*inside the body of the function it describes/],
+  ["local target", "let ((f (fn () 1))) (hint-fn f ({} (:args ([])) (:return 'Number))) (f)", /E_LEGACY_HINT_FN_TARGET.*`hint-fn f schema` was removed in 0\.32\.0/],
+  ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /E_LEGACY_HINT_FN_TARGET/],
 ]) {
   const invalid = run(["eval", source]);
   expectStatus(invalid, 1, label);
@@ -223,7 +195,6 @@ try {
     ["immediate mutation", `${guard}\n  ((fn () (set! f 1) f))`, /E_FN_RETURN_UNPROVEN/],
     ["escaping from an immediate function", `${guard}\n  let ((get-value ((fn () (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],
     ["assertion lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (assert-type f 'Fn) (replace) f`, /E_FN_RETURN_UNPROVEN/],
-    ["hint lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (hint-fn f ({} (:args ([])) (:return 'Number))) (replace) f`, /E_FN_RETURN_UNPROVEN/],
     ["mutated local condition cannot hide a captured writer", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((run? false)) (set! run? true) (when run? (replace))) f`, /E_FN_RETURN_UNPROVEN/],
     ["same-named user predicate", "when (not (fake/js-present? f)) (raise |expected-function)\n  , f", /E_FN_RETURN_UNPROVEN/],
   ]) {
@@ -591,8 +562,8 @@ try {
     "assemble contradictory local contract with a revision guard");
   for (const [label, mode] of [["check", ["--check-only"]], ["native", []], ["JS", ["js"]], ["WASM", ["wasm"]], ["WASI", ["wasi"]]]) {
     const invalid = run([conflictingHintSnapshot, "--emit-path", join(asyncFixture, `hint-conflict-${label}`), ...mode]);
-    expectStatus(invalid, 1, `${label} rejects the contradictory local contract before execution`);
-    assert.match(invalid.stderr, /hint-fn schema conflicts with the existing local function signature/);
+    expectStatus(invalid, 1, `${label} rejects the removed two-argument hint before execution`);
+    assert.match(invalid.stderr, /E_LEGACY_HINT_FN_TARGET/);
   }
   const snapshot = join(asyncFixture, "calcit.cirru");
   await copyFile("src/cirru/calcit-core.cirru", snapshot);

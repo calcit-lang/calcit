@@ -8790,7 +8790,7 @@
                   fn (x) 'Number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留，项目源码中的用法在检查输出的 Notes 中以 W_LEGACY_HINT_FN_TARGET 列出，计划在 0.32.0 删除。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
+          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n0.32.0 已删除两参数形式 (hint-fn f schema)，写出时报 E_LEGACY_HINT_FN_TARGET；把类型移到定义 f 的函数体内。\n限制：错误 wrapper、参数数量、旧子句写法会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
@@ -8892,16 +8892,6 @@
                 assert-type metadata 'Nil
                 assert= nil metadata
               :tags $ #{} :hint-value-boundary
-            %{} 'TestEntry (:name |local-hint-is-nil)
-              :code $ quote $ let
-                  f $ fn (x)
-                    hint-fn $ Fn Number $ -> Number
-                    + x 1
-                  metadata $ hint-fn f $ Fn Number (-> Number)
-                assert-type metadata 'Nil
-                assert= nil metadata
-                assert= 4 $ f 3
-              :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |hinted-body-is-callable)
               :code $ quote $ let
                   invoke $ fn (callback)
@@ -8918,17 +8908,6 @@
                   f $ fn () 3 $ hint-fn
                     Fn $ -> Number
                 assert= 3 $ f
-              :tags $ #{} :hint-value-boundary
-            %{} 'TestEntry (:name |targeted-body-hint-is-nil)
-              :code $ quote $ let
-                  f $ fn (x)
-                    hint-fn $ Fn Number $ -> Number
-                    + x 1
-                  annotate $ fn () 3 $ hint-fn f
-                    Fn Number $ -> Number
-                assert-type (annotate) 'Nil
-                assert= nil $ annotate
-                assert= 4 $ f 3
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |typed-callable-to-open-storage)
               :code $ quote $ let
@@ -9175,23 +9154,6 @@
                   same $ Option :none
                 assert= (Option :some nil)
                   same $ Option :some nil
-              :tags $ #{} :hint-syntax :unit
-            %{} 'TestEntry (:name |local-hint-keeps-proven-function-alias)
-              :code $ quote $ let
-                  invoke $ fn (callback)
-                    hint-fn $ Fn calcit.core/inc $ -> Number
-                    hint-fn callback $ Fn Number $ -> Number
-                    callback 7
-                assert= 8 $ invoke inc
-              :tags $ #{} :hint-syntax :unit
-            %{} 'TestEntry (:name |local-hint-narrows-open-input)
-              :code $ quote $ let
-                  measure $ fn (value)
-                    hint-fn $ Fn Dynamic $ -> Number
-                    if (number? value) value 0
-                  metadata $ hint-fn measure $ Fn Number (-> Number)
-                assert= nil metadata
-                assert= 8 $ &+ (measure 7) 1
               :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal. Nil, booleans, numbers, strings and tags compare by value (NaN is not identical to itself); lists, maps, sets, structs, enum values (including Option) and refs compare by reference, so separately constructed equal values are not identical"

@@ -88,6 +88,23 @@ let
 比较内容改用 `=`；保留元素身份比较时先解包 Option，再对元素调用 `identical?`。没有改变内容的
 `decode-map-as` 继续返回原值，`identical?` 保持成立。
 
+## 0.32.0 删除两参数 `hint-fn f schema`（#2378，未发布）
+
+0.31.0 在 `--check-only` 的 `Notes:` 中以 `W_LEGACY_HINT_FN_TARGET` 提示的两参数形式现已删除。写出
+`hint-fn f schema` 会在预处理时于目标 `f` 的源码位置报 `E_LEGACY_HINT_FN_TARGET`，不再运行或生成代码。
+迁移方式不变：把类型移到定义 `f` 的函数体内。
+
+```cirru
+let
+    double $ fn (n)
+      hint-fn $ Fn Number (-> Number)
+      &* n 2
+  assert= 6 $ double 3
+```
+
+升级前可以先用 0.31.x 运行 `calcit calcit.cirru --check-only`，确认 `Notes:` 中没有 `W_LEGACY_HINT_FN_TARGET`。
+函数体内的单参数 `hint-fn $ Fn …` 与 `hint-fn Async` 不受影响。
+
 ## 0.31.0 读取旧存档中的 CirruQuote
 
 旧存档中的 `CirruQuote` 直接通过公开接收者方法读取。`.to-list` 对列表根返回
@@ -683,7 +700,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
 目标已有签名时，两参数形式只能收窄到该签名能证明的合同：可以把开放的 Dynamic 参数写成具体类型，但不能把 Dynamic 返回改写成 Number，也不能把已声明的 Number 参数放宽为 Dynamic。此类注解以“hint-fn schema conflicts with the existing local function signature”在预处理时报错；迁移方法是在函数体内收窄并声明真实返回类型，而不是在外部改写合同。
 
-两参数形式 `hint-fn f schema` 计划在 0.32.0 删除。0.31.0 起，项目源码中的每处用法都会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；它只是提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
+两参数形式 `hint-fn f schema` 已在 0.32.0 删除（见上方 0.32.0 一节）。0.31.0 起，项目源码中的每处用法都会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；它只是提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
 
 ```cirru
 let

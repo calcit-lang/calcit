@@ -776,32 +776,25 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 }
 
 #[test]
-fn hint_fn_reports_invalid_target_before_invalid_schema() {
+fn hint_fn_rejects_two_arguments_before_reading_either() {
   run_with_large_stack(|| {
-    let entries = load_snippet_entries("type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)");
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect_err("the first hint-fn argument is a map, not a local function");
-
-    assert!(
-      error.msg.contains("hint-fn target must be an existing local function"),
-      "diagnostic should identify the misplaced target argument, got: {error}"
-    );
-    let location = error.location.as_ref().expect("target diagnostic has a source location");
-    assert_eq!(location.ns.as_ref(), "app.main", "{error}");
-    assert_eq!(location.def.as_ref(), "main!", "{error}");
-    assert_eq!(location.coord.as_ref().as_slice(), &[3, 1], "{error}");
-    assert!(
-      !error.msg.contains("hint-fn expects a function type"),
-      "diagnostic should not misidentify the second argument as the first schema, got: {error}"
-    );
-
-    let entries = load_snippet_entries("let ((f $ fn () 1)) (hint-fn f (:: fn () 1))");
-    let error = run_check_only(&entries).expect_err("the second hint-fn argument must still be validated as a schema");
-    assert!(
-      error.contains("hint-fn expects a function type"),
-      "a local function target should leave schema validation to the second argument, got: {error}"
-    );
+    for source in [
+      "type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)",
+      "let ((f $ fn () 1)) (hint-fn f (:: fn () 1))",
+    ] {
+      let entries = load_snippet_entries(source);
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("the two-argument form was removed in 0.32.0");
+      assert_eq!(error.code.as_deref(), Some("E_LEGACY_HINT_FN_TARGET"), "{error}");
+      let location = error.location.as_ref().expect("the removal diagnostic has a source location");
+      assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+      assert_eq!(location.def.as_ref(), "main!", "{error}");
+    }
   });
 }
 
@@ -811,11 +804,11 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
     let cases = [
       (
         "hint-fn",
-        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got 0 arguments",
+        "hint-fn expects one function type such as `hint-fn $ Fn Number (-> String)`; got 0 arguments",
       ),
       (
         "let ((target $ fn () 1)) (hint-fn target ({} (:args ([])) (:return 'Number)) :extra)",
-        "hint-fn expects a function type such as `hint-fn $ Fn Number (-> String)`, or a local function and a function type; got 3 arguments",
+        "hint-fn expects one function type such as `hint-fn $ Fn Number (-> String)`; got 3 arguments",
       ),
       (
         "fn (value)\n  hint-fn $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)\n  , value",
@@ -823,7 +816,7 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
       ),
       (
         "let ((target 7))\n  hint-fn target $ {} (:args $ []) (:return 'Number)\n  , target",
-        "hint-fn target must be an existing local function, got number",
+        "two-argument `hint-fn target schema` was removed in 0.32.0",
       ),
     ];
 
@@ -847,55 +840,58 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
   });
 }
 
-/// #2172: the two-argument `(hint-fn f schema)` compatibility form is only
-/// noted (`W_LEGACY_HINT_FN_TARGET`) before its removal in 0.32.0. A known
-/// signature and an unsigned `fn` target are each noted at the target; the
-/// strict check still passes and a body Map hint stays quiet.
+/// #2378: the two-argument `(hint-fn f schema)` form was removed in 0.32.0.
+/// Signed and unsigned targets are both rejected at the target with a
+/// migration hint, while a body hint keeps compiling.
 #[test]
-fn two_argument_hint_fn_is_only_noted() {
+fn two_argument_hint_fn_is_rejected() {
   run_with_large_stack(|| {
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_snippet_entries(
-      "let
+    for target in ["signed", "unsigned"] {
+      let entries = load_snippet_entries(&format!(
+        "let
     signed $ fn (x)
       hint-fn $ Fn Dynamic (-> Number)
       , 1
     unsigned $ fn (x) x
+  hint-fn {target} $ Fn Number (-> Number)
+  {target} 1"
+      ));
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("the two-argument form must fail preprocessing");
+      assert!(
+        error.msg.contains("E_LEGACY_HINT_FN_TARGET") || error.code.as_deref() == Some("E_LEGACY_HINT_FN_TARGET"),
+        "{error}"
+      );
+      assert!(
+        error.msg.contains(&format!("hint-fn {target} schema"))
+          && error.msg.contains("removed in 0.32.0")
+          && error.msg.contains("into the body of the function"),
+        "{error}"
+      );
+      let location = error.location.as_ref().expect("the diagnostic points at the target");
+      assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+      assert_eq!(location.def.as_ref(), "main!", "{error}");
+    }
+
+    let entries = load_snippet_entries(
+      "let
     body $ fn (x)
       hint-fn $ Fn Number (-> Number)
       , x
-  hint-fn signed $ {} (:args $ [] 'Number) (:return 'Number)
-  hint-fn unsigned $ {} (:args $ [] 'Number) (:return 'Number)
-  &+ (signed 1) $ &+ (unsigned 2) (body 3)",
+  body 3",
     );
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-    let _ = runner::preprocess::take_advisories();
-
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("the two-argument compatibility form must not fail the strict check");
-
-    let warnings = warnings.into_inner();
-    assert!(
-      warnings.iter().all(|warning| warning.code() != Some("W_LEGACY_HINT_FN_TARGET")),
-      "the advisory must never become a warning: {warnings:?}"
-    );
-    let advisories = runner::preprocess::take_advisories();
-    let noted = advisories
-      .iter()
-      .filter(|advisory| advisory.code() == Some("W_LEGACY_HINT_FN_TARGET"))
-      .collect::<Vec<_>>();
-    assert_eq!(noted.len(), 2, "{advisories:?}");
-    for (advisory, target) in noted.iter().zip(["signed", "unsigned"]) {
-      assert_eq!(advisory.location().ns.as_ref(), "app.main", "{advisory:?}");
-      assert_eq!(advisory.location().def.as_ref(), "main!", "{advisory:?}");
-      assert!(
-        advisory.message().contains(&format!("hint-fn {target} schema"))
-          && advisory.message().contains("removed in 0.32.0")
-          && advisory.message().contains("into the body of the function"),
-        "{}",
-        advisory.message()
-      );
-    }
+    runner::preprocess::ensure_ns_def_compiled(
+      &entries.init_ns,
+      &entries.init_def,
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect("a body hint keeps compiling");
   });
 }
 
