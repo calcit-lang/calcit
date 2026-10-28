@@ -4218,8 +4218,10 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
         changed += count;
       }
       entry.examples = rewritten_examples;
+      // Tests were never part of the legacy tag rewrite; only move their
+      // canonical types to the compact syntax.
       for test in entry.tests.iter_mut() {
-        let (code, count) = migrate_code_type_syntax(&test.code);
+        let (code, count) = compact_code_type_syntax(&test.code);
         test.code = code;
         changed += count;
       }

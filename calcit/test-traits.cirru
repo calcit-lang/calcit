@@ -1837,7 +1837,7 @@
             %{} 'TestEntry (:name |preserves-canonical-field-type-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value 'Number
-                  right $ defstruct ComparedRecord $ :value 'Number
+                  right $ defstruct ComparedRecord $ :value :number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1891,7 +1891,7 @@
                   left $ defstruct ComparedRecord $ :value
                     quote $ Map Tag $ List Number
                   right $ defstruct ComparedRecord $ :value
-                    quote $ Map Tag $ List Number
+                    :: :map :tag $ :: :list :number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1909,7 +1909,9 @@
                   left $ defstruct ComparedRecord $ :callback
                     quote $ Fn Number $ -> String
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> String
+                    :: 'Fn $ {}
+                      :args $ [] :number
+                      :return :string
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -1974,7 +1976,7 @@
                     :: 'Fn $ {}
                       :args $ []
                       :return 'Bool
-                      :kind 'Fn
+                      :kind :fn
                       :features $ #{}
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -2038,8 +2040,7 @@
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
                     quote $ JsNullish Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ JsNullish Number
+                  right $ defstruct ComparedRecord $ :value (:: :js-nullish :number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2048,8 +2049,7 @@
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
                     quote $ Variadic Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ Variadic Number
+                  right $ defstruct ComparedRecord $ :value (:: :variadic :number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right

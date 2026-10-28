@@ -6705,7 +6705,7 @@
               assert= (%:: Shape :dot) (Shape :dot)
             :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
-          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
+          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ quote $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
@@ -6768,11 +6768,11 @@
           :tests $ [] $ %{} 'TestEntry (:name |requires-head-accepts-bare-and-quoted)
             :code $ quote $ do
               assert=
-                macroexpand $ quote $ deftrait Child (requires Parent) (.label 'Fn)
-                macroexpand $ quote $ deftrait Child ('requires Parent) (.label 'Fn)
+                macroexpand $ quote $ deftrait Child (requires Parent) (.label :fn)
+                macroexpand $ quote $ deftrait Child ('requires Parent) (.label :fn)
               assert "|requires clause changes the expansion" $ not=
-                macroexpand $ quote $ deftrait Child (requires Parent) (.label 'Fn)
-                macroexpand $ quote $ deftrait Child (.label 'Fn)
+                macroexpand $ quote $ deftrait Child (requires Parent) (.label :fn)
+                macroexpand $ quote $ deftrait Child (.label :fn)
             :tags $ #{} :core :unit
         'deftype-slot $ %{} 'CodeEntry
           :doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic."
@@ -8795,10 +8795,10 @@
                   fn (x) (.rem x 3)
               assert= (&{})
                 group-by ([])
-                  fn (x) 'Number x
+                  fn (x) :number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。schema 是 Map，支持 :args、:return、:generics、:where 和 :async；函数体 Map 不包 :: 'Fn，CodeEntry 的 :schema 则使用完整的 :: 'Fn 类型注解。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留，项目源码中的用法在检查输出的 Notes 中以 W_LEGACY_HINT_FN_TARGET 列出，计划在 0.32.0 删除。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
+          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。schema 写作 `quote $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `quote Async`。旧的 Map 写法仍可读取，`calcit edit format` 会改写为精简写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n迁移兼容：(hint-fn f schema) 暂时保留，项目源码中的用法在检查输出的 Notes 中以 W_LEGACY_HINT_FN_TARGET 列出，计划在 0.32.0 删除。已有完整签名必须证明所请求的合同；无签名 DynFn 的兼容注解不代表未知实现已通过该合同的检查，应迁移到真实函数体或已有类型化来源。\n限制：错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let

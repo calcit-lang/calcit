@@ -116,6 +116,57 @@ export function collect(scope, query) {
   };
 }
 
+const legacyTypeTags = new Map(Object.entries({
+  ":fn": "'Fn", ":string": "'String", ":number": "'Number", ":bool": "'Bool", ":tag": "'Tag", ":symbol": "'Symbol",
+  ":list": "'List", ":map": "'Map", ":set": "'Set", ":dynamic": "'Dynamic", ":unit": "'Unit", ":nil": "'Nil", ":ref": "'Ref",
+}));
+
+// Canonical code for a compact `quote $ Fn …` payload, mirroring
+// src/calcit/type_expr.rs for the shapes frozen declarations use.
+function desugarCompact(node) {
+  if (!Array.isArray(node)) return node.startsWith("*") ? node : `'${node}`;
+  const [head, ...items] = node;
+  if (head !== "Fn" && head !== "Macro") return ["::", `'${head}`, ...items.map(desugarCompact)];
+  const args = [], map = [];
+  let rest = null, ret = null;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item === "&") { rest = desugarCompact(items[++i]); continue; }
+    if (Array.isArray(item) && item[0] === "->") { ret = desugarCompact(item[1]); continue; }
+    if (Array.isArray(item) && typeof item[0] === "string" && item[0].startsWith(":")) {
+      const [key, ...values] = item;
+      if (key === ":generics") map.push([key, ["[]", ...values.map(name => `'${name}`)]]);
+      else if (key === ":where") map.push([key, ["{}", ...values.map(([subject, ...traits]) =>
+        [`'${subject}`, traits.length === 1 ? `'${traits[0]}` : ["[]", ...traits.map(name => `'${name}`)]])]]);
+      else if (key === ":async") map.push([key, "true"]);
+      else if (key === ":features" || key === ":capabilities") map.push([key, ["#{}", ...values]]);
+      else if (key === ":optional") map.push([key, ["[]", ...values.map(desugarCompact)]]);
+      continue;
+    }
+    args.push(desugarCompact(item));
+  }
+  const entries = head === "Fn"
+    ? [[":args", ["[]", ...args]], [":return", ret]]
+    : [[":required", ["[]", ...args]], [":expansion", ret]];
+  if (rest) entries.push([":rest", rest]);
+  return ["::", `'${head}`, ["{}", ...entries, ...map]];
+}
+
+// Declarations keep their source spelling; compare their types in one canonical
+// form so that `edit format` rewrites (legacy tags, compact quotes) are not API changes.
+function canonicalTypeSyntax(node, inType = false) {
+  if (!Array.isArray(node)) return inType && legacyTypeTags.has(node) ? legacyTypeTags.get(node) : node;
+  if (node[0] === "quote" && node.length === 2 && Array.isArray(node[1]) && /^[A-Z]/.test(node[1][0])) return desugarCompact(node[1]);
+  if (node[0] === "::") return node.map(item => canonicalTypeSyntax(item, true));
+  if (node[0] === "{}" && inType) {
+    const entries = node.slice(1).map(([key, value]) => [key, canonicalTypeSyntax(value, true)]);
+    if (!entries.some(([key]) => key === ":args" || key === ":required")) entries.push([":args", ["[]"]]);
+    return ["{}", ...entries];
+  }
+  if (node[0] === "[]" && inType) return node.map(item => canonicalTypeSyntax(item, true));
+  return node.map(item => canonicalTypeSyntax(item, false));
+}
+
 // Implementation paths and display strings are not public signatures.
 function contract(row, family, nominalNames = new Map(), variables = new Set()) {
   const { provenance, ...publicContract } = row;
@@ -133,7 +184,8 @@ function contract(row, family, nominalNames = new Map(), variables = new Set()) 
     if (children[0] === "{}") return ["{}", ...children.slice(1).sort((a, b) => JSON.stringify(a[0]).localeCompare(JSON.stringify(b[0])))];
     return children;
   };
-  if (publicContract.schema) publicContract.schema = { quote: normalize(publicContract.schema.quote) };
+  if (publicContract.declaration) publicContract.declaration = { quote: normalize(canonicalTypeSyntax(publicContract.declaration.quote)) };
+  if (publicContract.schema) publicContract.schema = { quote: normalize(canonicalTypeSyntax(publicContract.schema.quote, true)) };
   if (publicContract.parameters) publicContract.parameters = publicContract.parameters.map(item => ({ quote: normalize(item.quote) }));
   if (publicContract.rest) publicContract.rest = { quote: normalize(publicContract.rest.quote) };
   if (publicContract.returns) publicContract.returns = { quote: normalize(publicContract.returns.quote) };
