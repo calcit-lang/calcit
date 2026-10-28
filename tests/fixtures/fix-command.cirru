@@ -13,7 +13,7 @@
         '*fix-person-calls $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *fix-person-calls 0
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Ref Number
         'FixPerson $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct FixPerson (:name 'String) (:age 'Number)
           :examples $ []
