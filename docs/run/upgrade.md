@@ -471,7 +471,7 @@ defn call-value (f args)
 | 旧写法 | 新写法 |
 | --- | --- |
 | `(f x)`，`f` 为 Dynamic | `if (fn? f) (f x) (raise …)` |
-| 参数 schema 写成 `'Dynamic` 的回调 | 改为 `:: 'Fn $ {} (:args …) (:return …)` |
+| 参数 schema 写成 `'Dynamic` 的回调 | 改为函数类型，如 `quote $ Fn Number (-> String)` |
 
 调用头由宏自己生成的调用、声明 `:js-ffi` feature 的定义里对宿主函数的调用不受影响。宏把调用方写的值放到调用头时（如 `-> 1 f` 展开为 `(f 1)`）仍会报告，因为被调用的值来自调用方。
 
