@@ -74,7 +74,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
         Struct(CalcitStructValue { struct_ref, .. }) => {
           let mut extra_values = vec![];
-          for item in extra {
+          for item in extra.iter() {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = struct_ref.name.arc_str();
@@ -85,7 +85,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
         Impl(CalcitImpl { name, .. }) => {
           let mut extra_values = vec![];
-          for item in extra {
+          for item in extra.iter() {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = name.arc_str();
@@ -96,7 +96,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
         Tag(tag) => {
           let mut extra_values = vec![];
-          for item in extra {
+          for item in extra.iter() {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = tag.arc_str();
@@ -368,7 +368,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       let sum_type = type_name.as_ref().and_then(|type_name| resolve_type_name(type_name, options));
       Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::new(variant.as_ref()))),
-        extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
+        extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect::<Vec<_>>().into(),
         sum_type,
       })
     }

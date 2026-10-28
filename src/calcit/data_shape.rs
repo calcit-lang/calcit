@@ -1174,7 +1174,7 @@ mod tests {
     let impostor = Arc::new(CalcitEnumDef::from_struct(enum_prototype()).expect("impostor outcome enum"));
     let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
-      extra: vec![],
+      extra: vec![].into(),
       sum_type: Some(impostor),
     });
 

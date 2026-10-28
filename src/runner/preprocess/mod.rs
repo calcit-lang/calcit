@@ -23046,7 +23046,7 @@ mod tests {
     let result_enum = CalcitEnumDef::from_struct(enum_struct).expect("valid enum");
     let enum_value = Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(Calcit::Tag(EdnTag::from("ok"))),
-      extra: vec![],
+      extra: vec![].into(),
       sum_type: Some(Arc::new(result_enum)),
     });
     let args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("name")), Calcit::Str(Arc::from("Bob"))].as_slice());

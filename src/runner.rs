@@ -787,7 +787,7 @@ fn option_none_value(expected_type: &crate::calcit::CalcitTypeAnnotation) -> Opt
   }
   Some(Calcit::Enum(CalcitEnumValue {
     tag: Arc::new(Calcit::Tag(EdnTag::new("none"))),
-    extra: vec![],
+    extra: vec![].into(),
     sum_type: Some(Arc::new(enum_def)),
   }))
 }
