@@ -173,7 +173,7 @@ defwasm-export consume (stream) (consume-readable-byte-stream stream 1048576 655
 ```
 
 ```cirru
-Fn ReadableByteStream
+quote $ Fn ReadableByteStream
   -> $ Result Unit StreamConsumeError
   :async
 ```
