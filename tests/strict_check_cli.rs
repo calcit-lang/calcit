@@ -148,7 +148,21 @@ fn enum_schema_and_inferred_aliases_prove_entry_slots_without_accepting_open_inp
     ),
     "add inferred wrong kind",
   );
-  for binding in ["app.main/Wrong", "app.main/UnannotatedWrong", ":dynamic"] {
+  for (kind, code) in [("def", "quote $ def ExplicitDynamic $ :: :sample"), ("schema", "quote Dynamic")] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", kind, "app.main/ExplicitDynamic", "--input-format", "cirru", "--code", code],
+      ),
+      "explicit Dynamic representative",
+    );
+  }
+  for binding in [
+    "app.main/Wrong",
+    "app.main/UnannotatedWrong",
+    "app.main/ExplicitDynamic",
+    ":dynamic",
+  ] {
     assert_success(
       &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", binding]),
       "select negative slot binding",
@@ -200,6 +214,110 @@ fn enum_schema_and_inferred_aliases_prove_entry_slots_without_accepting_open_inp
     "cycles must fail normally, not overflow or terminate by signal"
   );
   assert!(String::from_utf8_lossy(&result.stderr).contains("TYPE_MISMATCH"));
+}
+
+#[test]
+fn entry_slot_preparation_respects_scope_dependencies_and_snapshot_reuse() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
+  let edit = |target: &str, code: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      target,
+    );
+  };
+  edit("app.main/Broken", "quote $ def Broken $ missing-function 1");
+  edit("app.main/LocalOp", "quote $ defenum LocalOp (:sample)");
+  edit(
+    "app.main/main!",
+    "quote $ defn main! () $ with-type-slot (:dispatch-op LocalOp) $ forward (LocalOp :sample)",
+  );
+  // This callback uses the scoped slot but does not require anonymous Enum.
+  edit("app.main/forward", "quote $ defn forward (op) &unit");
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/Broken"]),
+    "bind unused broken representative",
+  );
+  for args in [vec!["--check-only"], vec![]] {
+    assert_success(
+      &run_calcit(&snapshot, &args),
+      "scoped override must precede entry evidence preparation",
+    );
+  }
+  // Restore the shared program to verify dependent representatives and JS
+  // inventory compilation through the same public entry points.
+  fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
+  edit(
+    "app.main/ARepresentative",
+    "quote $ def ARepresentative $ do (accept callback) (:: :sample)",
+  );
+  edit(
+    "app.main/ZRepresentative",
+    "quote $ def ZRepresentative $ do (deftype-slot :inventory-once) (:: :sample)",
+  );
+  for (slot, binding) in [
+    ("a-dependent", "app.main/ARepresentative"),
+    ("dispatch-op", "app.main/ZRepresentative"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["config", "set-type-slot", slot, binding]),
+      "bind representative dependency",
+    );
+  }
+  edit("app.main/SlotAlias", "quote $ defn SlotAlias (op) &unit");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/SlotAlias",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn *a-dependent (-> Unit)",
+      ],
+    ),
+    "slot inside a named schema alias",
+  );
+  edit(
+    "app.main/require-dependent",
+    "quote $ defn require-dependent (callback) $ callback (:: :sample)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/require-dependent",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn SlotAlias (-> Unit)",
+      ],
+    ),
+    "dependent slot schema",
+  );
+  edit("app.main/main!", "quote $ defn main! () $ require-dependent callback");
+  for args in [vec!["--check-only"], vec!["--check-only", "--all-defs"], vec![]] {
+    assert_success(
+      &run_calcit(&snapshot, &args),
+      "representative dependency compiles before callback validation",
+    );
+  }
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(directory.0.join("js-out"))
+    .arg(&snapshot)
+    .arg("js")
+    .output()
+    .unwrap();
+  assert_success(&output, "snapshot reuses representative without redeclaring its slot");
 }
 
 #[test]

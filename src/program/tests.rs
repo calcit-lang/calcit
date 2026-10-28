@@ -714,57 +714,84 @@ fn write_runtime_ready_attaches_struct_and_enum_definition_identity() {
 #[test]
 fn clear_runtime_caches_for_changes_clears_transitive_dependents() {
   let _guard = lock_program_test_state();
-  reset_program_test_state();
+  for entry_slot in [false, true] {
+    reset_program_test_state();
+    calcit::clear_type_slots();
+    struct ClearSlots;
+    impl Drop for ClearSlots {
+      fn drop(&mut self) {
+        calcit::clear_type_slots();
+      }
+    }
+    let _slots = ClearSlots;
+    if entry_slot {
+      calcit::install_entry_type_slots(HashMap::from([(Arc::from("test-slot"), Arc::new(CalcitTypeAnnotation::Number))]));
+      PROGRAM_CODE_DATA.write().unwrap().insert(
+        Arc::from("app.main"),
+        ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::new(),
+        },
+      );
+    }
 
-  let def_a = ensure_def_id("app.main", "a");
-  let def_b = ensure_def_id("app.main", "b");
-  let def_c = ensure_def_id("app.main", "c");
-  let def_d = ensure_def_id("app.main", "d");
+    let def_a = ensure_def_id("app.main", "a");
+    let def_b = ensure_def_id("app.main", "b");
+    let def_c = ensure_def_id("app.main", "c");
+    let def_d = ensure_def_id("app.main", "d");
 
-  {
-    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
-    compiled.insert(
+    {
+      let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+      compiled.insert(
+        Arc::from("app.main"),
+        CompiledFileData {
+          defs: HashMap::from([
+            (Arc::from("a"), compiled_def_for_test(def_a, vec![])),
+            (Arc::from("b"), compiled_def_for_test(def_b, vec![def_a])),
+            (Arc::from("c"), compiled_def_for_test(def_c, vec![def_b])),
+            (Arc::from("d"), compiled_def_for_test(def_d, vec![])),
+          ]),
+        },
+      );
+    }
+
+    write_runtime_ready("app.main", "a", Calcit::Number(1.0)).expect("seed runtime a");
+    write_runtime_ready("app.main", "b", Calcit::Number(2.0)).expect("seed runtime b");
+    write_runtime_ready("app.main", "c", Calcit::Number(3.0)).expect("seed runtime c");
+    write_runtime_ready("app.main", "d", Calcit::Number(4.0)).expect("seed runtime d");
+
+    let mut changes = snapshot::ChangesDict::default();
+    changes.changed.insert(
       Arc::from("app.main"),
-      CompiledFileData {
-        defs: HashMap::from([
-          (Arc::from("a"), compiled_def_for_test(def_a, vec![])),
-          (Arc::from("b"), compiled_def_for_test(def_b, vec![def_a])),
-          (Arc::from("c"), compiled_def_for_test(def_c, vec![def_b])),
-          (Arc::from("d"), compiled_def_for_test(def_d, vec![])),
-        ]),
+      snapshot::FileChangeInfo {
+        ns: None,
+        added_defs: HashMap::new(),
+        removed_defs: HashSet::new(),
+        changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")).into())]),
       },
     );
+
+    if entry_slot {
+      apply_code_changes(&changes).expect("apply changes with entry slots");
+    }
+    clear_runtime_caches_for_changes(&changes, false).expect("clear runtime caches for changes");
+
+    assert_eq!(lookup_runtime_cell("app.main", "a"), Some(RuntimeCell::Cold));
+    assert_eq!(lookup_runtime_cell("app.main", "b"), Some(RuntimeCell::Cold));
+    assert_eq!(lookup_runtime_cell("app.main", "c"), Some(RuntimeCell::Cold));
+    assert_eq!(lookup_runtime_ready("app.main", "d"), Some(Calcit::Number(4.0)));
+
+    let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled data");
+    if entry_slot {
+      assert!(compiled.is_empty(), "slot consumers require fresh type evidence");
+      continue;
+    }
+    let compiled_file = compiled.get("app.main").expect("compiled file should remain for unaffected defs");
+    assert!(!compiled_file.defs.contains_key("a"));
+    assert!(!compiled_file.defs.contains_key("b"));
+    assert!(!compiled_file.defs.contains_key("c"));
+    assert!(compiled_file.defs.contains_key("d"));
   }
-
-  write_runtime_ready("app.main", "a", Calcit::Number(1.0)).expect("seed runtime a");
-  write_runtime_ready("app.main", "b", Calcit::Number(2.0)).expect("seed runtime b");
-  write_runtime_ready("app.main", "c", Calcit::Number(3.0)).expect("seed runtime c");
-  write_runtime_ready("app.main", "d", Calcit::Number(4.0)).expect("seed runtime d");
-
-  let mut changes = snapshot::ChangesDict::default();
-  changes.changed.insert(
-    Arc::from("app.main"),
-    snapshot::FileChangeInfo {
-      ns: None,
-      added_defs: HashMap::new(),
-      removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")).into())]),
-    },
-  );
-
-  clear_runtime_caches_for_changes(&changes, false).expect("clear runtime caches for changes");
-
-  assert_eq!(lookup_runtime_cell("app.main", "a"), Some(RuntimeCell::Cold));
-  assert_eq!(lookup_runtime_cell("app.main", "b"), Some(RuntimeCell::Cold));
-  assert_eq!(lookup_runtime_cell("app.main", "c"), Some(RuntimeCell::Cold));
-  assert_eq!(lookup_runtime_ready("app.main", "d"), Some(Calcit::Number(4.0)));
-
-  let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled data");
-  let compiled_file = compiled.get("app.main").expect("compiled file should remain for unaffected defs");
-  assert!(!compiled_file.defs.contains_key("a"));
-  assert!(!compiled_file.defs.contains_key("b"));
-  assert!(!compiled_file.defs.contains_key("c"));
-  assert!(compiled_file.defs.contains_key("d"));
 }
 
 #[test]
@@ -969,8 +996,17 @@ fn entry_slot_inference_rechecks_consumers_after_transitive_source_changes() {
     vec![],
   )
   .expect("callback without CLI host logging");
+  // Inventory may request the representative itself before any entry code.
+  // Its compile-time declaration must be processed exactly once.
+  let representative = cirru_parser::parse("def Representative $ do (deftype-slot :inventory-once) (:: :sample)")
+    .expect("parse representative source")
+    .remove(0);
+  source.get_mut("app.ops").unwrap().defs.get_mut("Representative").unwrap().code =
+    code_to_calcit(&representative, "app.ops", "Representative", vec![]).expect("representative code");
   *PROGRAM_CODE_DATA.write().expect("install source") = source;
   let warnings = RefCell::new(vec![]);
+  runner::preprocess::compile_source_def_for_snapshot("app.ops", "Representative", &warnings, &CallStackList::default())
+    .expect("compile uncached representative once for inventory");
   runner::preprocess::ensure_ns_def_compiled("app.main", "main!", &warnings, &CallStackList::default()).expect("initial compile");
   assert!(warnings.borrow().is_empty(), "{:?}", warnings.borrow());
   assert!(matches!(

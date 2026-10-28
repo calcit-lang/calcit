@@ -1510,6 +1510,8 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   // Slot-only references are absent from runtime dependency edges. Rebuild
   // consumers when source changes, including transitive representative aliases.
   if !calcit::entry_type_slots().is_empty() {
+    // Invalidate ready values while the old dependency edges still exist.
+    clear_runtime_caches_for_changes(changes, false)?;
     PROGRAM_COMPILED_DATA_STATE.write().expect("invalidate slot consumers").clear();
   }
   invalidate_field_write_shapes();

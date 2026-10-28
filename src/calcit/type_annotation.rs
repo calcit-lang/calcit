@@ -176,7 +176,9 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
     if let CalcitTypeAnnotation::TypeRef(path, args) = binding.as_ref()
       && args.is_empty()
       && let Some((ns, def)) = path.rsplit_once('/')
-      && lookup_schema_registered(ns, def).is_none()
+      && LOOKUP_DEF_SCHEMA
+        .get()
+        .is_some_and(|lookup| crate::snapshot::schema_annotation_is_missing(&lookup(ns, def)))
       && binding.resolve_to_enum().is_none()
       && binding.resolve_to_struct().is_none()
       && let Some(inferred) = LOOKUP_INFERRED_DEF_TYPE.get().and_then(|lookup| lookup(ns, def))

@@ -1533,21 +1533,50 @@ fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit,
   );
 }
 
-/// Compile representative source through the ordinary guards without evaluating
-/// its initializer. Slot inference then reads the existing compiled metadata.
-fn ensure_entry_slot_representatives(
+/// Prepare only the slot evidence used by this annotation, in its lexical scope.
+/// Type relations remain read-only; source compilation happens at annotation
+/// consumption sites, before any compiled-program read lock is held.
+fn ensure_annotation_slot_representatives(
+  declaring_ns: &str,
+  annotation: &Arc<CalcitTypeAnnotation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  let mut bindings: Vec<_> = calcit::entry_type_slots().into_iter().collect();
-  bindings.sort_by(|a, b| a.0.cmp(&b.0));
-  for (name, binding) in bindings {
+  let bindings = calcit::entry_type_slots();
+  if bindings.is_empty() {
+    return Ok(());
+  }
+  let mut names = HashSet::new();
+  let mut pending = vec![(declaring_ns.to_owned(), annotation.clone())];
+  let mut visited_aliases = HashSet::new();
+  while let Some((ns, schema)) = pending.pop() {
+    find_schema_annotation::<()>(&schema, "schema", &mut |candidate, _| {
+      match candidate.as_ref() {
+        CalcitTypeAnnotation::TypeSlot(name) => {
+          names.insert(name.clone());
+        }
+        CalcitTypeAnnotation::TypeRef(name, _) => {
+          if let Some((alias_ns, alias_def)) = program::resolve_type_name_in_ns(&ns, name)
+            && visited_aliases.insert((alias_ns.clone(), alias_def.clone()))
+          {
+            pending.push((alias_ns.to_string(), program::lookup_def_schema(&alias_ns, &alias_def)));
+          }
+        }
+        _ => {}
+      }
+      None
+    });
+  }
+  let mut names: Vec<_> = names.into_iter().collect();
+  names.sort();
+  for name in names {
     if calcit::type_annotation::type_slot_is_overridden(&name) {
       continue;
     }
-    if let CalcitTypeAnnotation::TypeRef(path, _) = binding.as_ref()
+    if let Some(binding) = bindings.get(&name)
+      && let CalcitTypeAnnotation::TypeRef(path, _) = binding.as_ref()
       && let Some((ns, def)) = path.rsplit_once('/')
-      && matches!(program::lookup_def_schema(ns, def).as_ref(), CalcitTypeAnnotation::Dynamic)
+      && crate::snapshot::schema_annotation_is_missing(&program::lookup_def_schema(ns, def))
       && binding.resolve_to_enum().is_none()
       && binding.resolve_to_struct().is_none()
     {
@@ -1583,7 +1612,7 @@ fn ensure_ns_def_preprocessed(
 
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
-      ensure_entry_slot_representatives(check_warnings, call_stack)?;
+      ensure_annotation_slot_representatives(ns, &program::lookup_def_schema(ns, def), check_warnings, call_stack)?;
       // Only a computed root operator needs source-shape validation. Ordinary
       // declarations and all nested function bodies retain their existing path.
       if matches!(&code, Calcit::List(items) if matches!(items.first(), Some(Calcit::List(_)))) {
@@ -2447,7 +2476,10 @@ pub fn compile_source_def_for_snapshot(
     return Ok(());
   }
 
-  ensure_entry_slot_representatives(check_warnings, call_stack)?;
+  ensure_annotation_slot_representatives(ns, &program::lookup_def_schema(ns, def), check_warnings, call_stack)?;
+  if compiled_def_is_reusable(ns, def) {
+    return Ok(());
+  }
 
   let Some(code) = program::lookup_def_code(ns, def) else {
     let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
@@ -13453,6 +13485,14 @@ pub fn preprocess_defn(
       let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
       let body_fn_hint_location = hint_location(body_fn_hint_source.as_ref());
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
+      if let Some(signature) = &body_fn_hint {
+        ensure_annotation_slot_representatives(
+          ctx.file_ns,
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.check_warnings,
+          ctx.call_stack,
+        )?;
+      }
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
       let infer_helper_schema = source_top_level_definition
@@ -14742,6 +14782,7 @@ fn preprocess_assert_type_with_obligation(
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
   let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
+  ensure_annotation_slot_representatives(ctx.file_ns, &asserted_type, ctx.check_warnings, ctx.call_stack)?;
   note_legacy_optional_type(
     "an assert-type target",
     &asserted_type,
@@ -15102,6 +15143,7 @@ pub fn preprocess_parse_cirru_edn_as(
   let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated parse-cirru-edn-as type"), ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
   note_legacy_optional_type(
     &format!("a {head} target"),
     &target,
@@ -15167,6 +15209,7 @@ pub fn preprocess_decode_map_as(
   let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated decode-map-as type"), ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
   note_legacy_optional_type(
     &format!("a {head} target"),
     &target,
