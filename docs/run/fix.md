@@ -154,6 +154,9 @@ reader 展开的调用不会被误认成其中叶节点的类型。
 不带 `--ns` 的整项目预览覆盖所有 named entry 的源码，因此按 target 中立的方式规划改写；例如 browser 默认入口不会阻止扫描
 server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定义，也不能代替逐入口的 `--check-only` 或 `fix --workflow strict --verify`。
 限定 `--ns`/`--def` 时仍使用所选 `--entry` 的 target 检查；检查 Node-only 定义时应显式选择 Node entry。
+整项目预处理按定义所属入口提供 type slots：从某个 entry 的 `init-fn`/`reload-fn` 可达的定义使用该 entry 的绑定，
+多个入口都可达时依次取 `default` 和按名称排序的其他 entry，所有入口都不可达的定义使用 `default`。因此外层 `--entry` 不改变
+整项目诊断；逐入口 verification 仍各自使用自己的绑定。
 
 当前稳定规则包括：
 

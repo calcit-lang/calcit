@@ -534,12 +534,14 @@ fn schema_candidate_for_definition(
   // A closed candidate is not independent evidence. Preserve it for review,
   // but recheck the source and producers before granting automatic writeback.
   // Missing schemas remain valid migration inputs during this proof pass.
-  let proof_result = with_legacy_migration_mode(|| {
-    runner::preprocess::with_assertion_proof(|| {
-      runner::preprocess::ensure_ns_def_compiled(namespace, definition, &proof_warnings, &CallStackList::default())?;
-      Ok::<_, calcit::calcit::CalcitErr>(runner::preprocess::infer_compiled_definition_implementation_type(
-        namespace, definition,
-      ))
+  let proof_result = super::with_definition_entry_context(namespace, definition, || {
+    with_legacy_migration_mode(|| {
+      runner::preprocess::with_assertion_proof(|| {
+        runner::preprocess::ensure_ns_def_compiled(namespace, definition, &proof_warnings, &CallStackList::default())?;
+        Ok::<_, calcit::calcit::CalcitErr>(runner::preprocess::infer_compiled_definition_implementation_type(
+          namespace, definition,
+        ))
+      })
     })
   });
   let mut unproven = false;
