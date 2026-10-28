@@ -2,14 +2,21 @@
 {}
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
-  :entries $ {} $ :default
-    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!)
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!)
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {} $ :dispatch-op |app.main/Op
-  :files $ {} $ 'app.main
-    %{} 'FileEntry
+    :inferred $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :dispatch-op |app.main/InferredOp
+  :files $ {}
+    'app.main $ %{} 'FileEntry
       :defs $ {}
+        'InferredOp $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def InferredOp app.ops/Representative
+          :examples $ []
         'Op $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Op (:: :sample)
           :examples $ []
@@ -45,3 +52,10 @@
               :tags $ #{} :type-slot :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
+    'app.ops $ %{} 'FileEntry
+      :defs $ {} $ 'Representative
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ def Representative (:: :sample)
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.ops

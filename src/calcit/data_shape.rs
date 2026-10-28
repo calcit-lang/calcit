@@ -990,7 +990,12 @@ mod tests {
   #[test]
   fn field_write_cache_retries_unresolved_types_and_tracks_replaced_nominals() {
     let _guard = program::lock_program_test_state();
-    super::super::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+    super::super::register_program_lookups(
+      program::lookup_runtime_ready,
+      program::lookup_def_code,
+      program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
+    );
     let mut parent = CalcitStructDef::from_fields(EdnTag::new("CacheParent"), vec![EdnTag::new("item")]);
     parent.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from("tests.shape-cache/Child"),
