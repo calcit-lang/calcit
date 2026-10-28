@@ -40,7 +40,7 @@ use deps::{contains_symbol, find_js_unavailable_proc, js_unavailable_defs, sort_
 use helpers::{cirru_to_js, is_js_unavailable_procs, write_file_if_changed};
 use paths::{to_js_import_name, to_mjs_filename};
 use runtime::{get_proc_prefix, is_cirru_string};
-use symbols::{escape_cirru_str, escape_var};
+use symbols::{escape_cirru_str, escape_var, js_module_export_name};
 
 pub fn escape_symbol_for_js(name: &str) -> String {
   escape_var(name)
@@ -95,6 +95,16 @@ struct JsFfiExpression {
   original_start_line: usize,
   original_start_column: usize,
   source_name: String,
+}
+
+/// Member name used to read an imported definition through its namespace binding.
+/// External JS modules keep their export names; Calcit modules use the encoded names they export.
+fn import_member_name(import_ns: &str, def: &str) -> String {
+  if is_cirru_string(import_ns) {
+    js_module_export_name(def)
+  } else {
+    escape_var(def)
+  }
 }
 
 fn ffi_source_uri_part(value: &str, keep_slashes: bool) -> String {
@@ -589,7 +599,7 @@ fn to_js_code(
               } else {
                 file_imports.borrow_mut().insert(item.to_owned());
                 let binding = file_imports.borrow_mut().namespace_binding(&item.ns);
-                Ok(format!("{binding}.{}", escape_var(def)))
+                Ok(format!("{binding}.{}", import_member_name(&item.ns, def)))
               }
             }
             ImportInfo::NsReferDef { .. } => {
@@ -601,7 +611,7 @@ fn to_js_code(
                 file_imports.borrow_mut().insert(item.to_owned());
                 let binding = file_imports.borrow_mut().namespace_binding(&item.ns);
                 // A named import used to call functions without a receiver.
-                Ok(format!("(0, {binding}.{})", escape_var(def)))
+                Ok(format!("(0, {binding}.{})", import_member_name(&item.ns, def)))
               }
             }
             ImportInfo::JsDefault { alias, .. } => {
@@ -3839,6 +3849,45 @@ mod tests {
     )
     .expect("external function reference");
     assert_eq!(code, "(0, $external_module.probe)");
+  }
+
+  #[test]
+  fn external_module_members_keep_js_export_names() {
+    let emit = |ns: &str, def: &str, info: ImportInfo| {
+      let import = Calcit::Import(CalcitImport {
+        ns: Arc::from(ns),
+        def: Arc::from(def),
+        info: Arc::new(info),
+        def_id: None,
+      });
+      to_js_code(
+        &import,
+        "tests.consumer",
+        &HashSet::new(),
+        &RefCell::new(ImportsDict::new()),
+        &RefCell::new(HashSet::new()),
+        None,
+      )
+      .expect("import reference")
+    };
+    let ns_as = || ImportInfo::NsAs {
+      at_ns: Arc::from("tests.consumer"),
+      at_def: Arc::from("main"),
+      alias: Arc::from("M"),
+    };
+    let refer = || ImportInfo::NsReferDef {
+      at_ns: Arc::from("tests.consumer"),
+      at_def: Arc::from("main"),
+    };
+
+    // `M/default` reads the module's real default export, not an encoded `_DEFAULT_` member.
+    assert_eq!(emit("|fontfaceobserver-es", "default", ns_as()), "$fontfaceobserver_es.default");
+    assert_eq!(emit("|external-module", "new", ns_as()), "$external_module.new");
+    assert_eq!(emit("|external-module", "default", refer()), "(0, $external_module.default)");
+    // Names that are not JS identifiers keep the Calcit encoding.
+    assert_eq!(emit("|external-module", "make-thing", ns_as()), "$external_module.make_thing");
+    // Calcit modules export encoded names, so their members stay encoded.
+    assert_eq!(emit("app.lib", "default", ns_as()), "$app_DOT_lib._DEFAULT_");
   }
 
   #[test]
