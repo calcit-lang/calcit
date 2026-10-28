@@ -1782,14 +1782,12 @@
             %{} 'TestEntry (:name |literal-spread-preserves-element-contract)
               :code $ quote $ let
                   append-numbers $ fn (xs)
-                    hint-fn $ {}
-                      :args $ [] $ :: 'List 'Number
-                      :return $ :: 'List 'Number
+                    hint-fn $ Fn (List Number)
+                      -> $ List Number
                     xs .concat ([] 2) & $ [] $ [] 3
                   transport $ fn (xs)
-                    hint-fn $ {}
-                      :args $ [] $ :: 'List 'Dynamic
-                      :return $ :: 'List 'Dynamic
+                    hint-fn $ Fn (List Dynamic)
+                      -> $ List Dynamic
                     xs .concat & $ [] $ [] |value
                 assert= ([] 1 2 3)
                   append-numbers $ [] 1
