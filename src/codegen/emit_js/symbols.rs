@@ -87,6 +87,16 @@ pub(super) fn escape_var(name: &str) -> String {
   }
 }
 
+/// Property name for an export of an external JS module. External modules use
+/// their real export names (`default`, `new`, ...), so reserved words stay as
+/// written; names that are not JS identifiers keep the Calcit encoding.
+pub(super) fn js_module_export_name(name: &str) -> String {
+  let mut chars = name.chars();
+  let is_identifier = chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+    && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+  if is_identifier { name.to_owned() } else { escape_var(name) }
+}
+
 pub(super) fn escape_cirru_str(s: &str) -> String {
   let mut result = String::from('"');
   for c in s.chars() {
