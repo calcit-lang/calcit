@@ -166,7 +166,12 @@ impl MapDecoder<'_> {
             (Calcit::Tag(tag), [item]) if tag.ref_str() == "some" => {
               let decoded = self.decode_node(*inner, item, path, depth + 1)?;
               // Keep the validated value itself when decoding changed nothing, so `identical?` holds.
-              if &decoded == item {
+              // Only a value of the same declaration is kept; a name-only match is rebuilt with `nominal`.
+              let same_nominal = enum_value
+                .sum_type
+                .as_ref()
+                .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.same_nominal_definition(nominal));
+              if same_nominal && &decoded == item {
                 return Ok(input.to_owned());
               }
               Ok(Calcit::Enum(CalcitEnumValue {
