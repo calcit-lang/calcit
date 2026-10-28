@@ -702,7 +702,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 
 两参数形式 `hint-fn f schema` 已在 0.32.0 删除（见上方 0.32.0 一节）。0.31.0 起，项目源码中的每处用法都会在 `calcit calcit.cirru --check-only` 的 `Notes:` 中列出 `W_LEGACY_HINT_FN_TARGET`，带定义与源码坐标；它只是提示，检查、运行和代码生成照常通过，core 与宏生成代码不报告。Notes 只覆盖从 init / reload 入口可达的定义。迁移方式是把 schema Map 移到定义 `f` 的函数体开头。迁移前：
 
-```cirru
+```cirru.no-check
 let
     double $ fn (n) (&* n 2)
   hint-fn double $ {} (:args $ [] 'Number) (:return 'Number)
