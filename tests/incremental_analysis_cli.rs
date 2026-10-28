@@ -92,7 +92,7 @@ fn dynamic_methods_reports_findings_without_a_count_policy() {
   let snapshot = directory.snapshot();
   let source = fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").expect("analysis fixture should read");
   let source = source.replace(".?!matches host |.active", ".greet host");
-  fs::write(&snapshot, source.replace(":args $ [] 'JsObject", ":args $ [] 'Dynamic")).expect("analysis fixture should write");
+  fs::write(&snapshot, source.replace("Fn JsObject (-> String)", "Fn Dynamic (-> String)")).expect("analysis fixture should write");
 
   let report = dynamic_report(&snapshot, false);
   assert_eq!(report["command"], "analyze.dynamic-methods");

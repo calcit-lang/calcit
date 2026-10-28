@@ -16,28 +16,24 @@
         'AtomState $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum AtomState (:atom 'Number)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'HookAtomImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl HookAtomImpl HookAtomOps (.deref deref-atom)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'HookAtomOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait HookAtomOps
-            .deref $ :: 'Fn $ {}
-              :args $ [] 'app.core/AtomState
-              :return 'Dynamic
+            .deref $ quote $ Fn app.core/AtomState (-> Dynamic)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'deref-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn deref-atom (self) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'app.core/AtomState
+          :schema $ quote $ Fn app.core/AtomState (-> Number)
         'make-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-atom () (%:: %Atom :atom 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.core/%Atom)
-            :args $ []
+          :schema $ quote $ Fn (-> app.core/%Atom)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.core
     'app.probe $ %{} 'FileEntry
@@ -47,8 +43,7 @@
             println $ .deref $ make-atom
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.probe
           :require $ app.core :refer $ make-atom

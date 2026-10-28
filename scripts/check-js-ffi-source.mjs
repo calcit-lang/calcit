@@ -33,9 +33,9 @@ try {
   mutateFunction([
     ["edit", "add-import", "app.main", "--input-format", "json-ast", "--code", JSON.stringify(["|node:assert", ":default", "host-assert"])],
     ["edit", "def", "app.main/accept", "--input-format", "cirru", "--code", "quote $ defn accept (callback) (assert= true $ fn? callback) &unit"],
-    ["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Unit)"],
+    ["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code", "quote $ Fn Fn (-> Unit)"],
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () &unit"],
-    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :js-ffi)"],
     ["config", "set", "init-fn", "app.main/main!"],
     ["config", "set", "reload-fn", "app.main/main!"],
   ]);
@@ -73,7 +73,7 @@ try {
   functionModule["main_$x_"]();
   // The guard must not manufacture a concrete input/output signature.
   mutateFunction([["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Unit)) (:return 'Unit)"]]);
+    "quote $ Fn (Fn Number (-> Unit)) (-> Unit)"]]);
   const signatureCheck = spawnSync(binary, [functionSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"],
     { cwd: fixture, encoding: "utf8" });
   assert.ifError(signatureCheck.error);
@@ -97,7 +97,7 @@ try {
     ["edit", "def", "app.main/real-caller", "--input-format", "cirru", "--code",
       "quote $ defn real-caller (value) (plus-two value)"],
     ["edit", "schema", "app.main/real-caller", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"],
+      "quote $ Fn Number (-> Number)"],
   ];
   const shadowPreview = JSON.parse(run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--dry-run", "--format", "json"));
   run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--expect-revision", shadowPreview.scoped_revision, "--format", "json");
@@ -114,7 +114,7 @@ try {
   await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/browser-available.js"), '() => typeof document !== "undefined"\n');
   for (const args of [
     ["edit", "def", "app.main/browser-available?", "--code", "quote $ defn browser-available? () false"],
-    ["edit", "schema", "app.main/browser-available?", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool) (:features $ #{} :js-ffi)"],
+    ["edit", "schema", "app.main/browser-available?", "--code", "quote $ Fn (-> Bool) (:features :js-ffi)"],
     ["edit", "ffi", "app.main/browser-available?", "--code", "{} (:target :browser) (:js $ {} $ :file |js-ffi-assets/browser-available.js)"],
   ]) {
     execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, ...args], { cwd: fixture, stdio: "pipe" });
@@ -158,11 +158,11 @@ try {
     ["edit", "def", "test-nil.main/ordinary-body", "--input-format", "cirru", "--code",
       "quote $ defn ordinary-body (value) (&map:get value :not-a-map)"],
     ["edit", "schema", "test-nil.main/ordinary-body", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi)"],
+      "quote $ Fn Number (-> Number) (:features :js-ffi)"],
     ["edit", "def", "test-nil.main/wrong-ffi-call", "--input-format", "cirru", "--code",
       "quote $ defn wrong-ffi-call () (app.main/plus-one |not-a-number)"],
     ["edit", "schema", "test-nil.main/wrong-ffi-call", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+      "quote $ Fn (-> Number)"],
   ];
   const ordinaryPreview = JSON.parse(run(ordinarySnapshot, "edit", "transaction", "--code", JSON.stringify(ordinaryOperations), "--dry-run", "--format", "json"));
   run(ordinarySnapshot, "edit", "transaction", "--code", JSON.stringify(ordinaryOperations), "--expect-revision", ordinaryPreview.scoped_revision, "--format", "json");
@@ -200,7 +200,7 @@ try {
   assert.match(crossTarget.stderr, /E_JS_FFI_TARGET_MISMATCH/);
   for (const args of [
     ["edit", "def", "test-nil.main/reference-only", "--code", "quote $ defn reference-only () (println app.main/base-name)"],
-    ["edit", "schema", "test-nil.main/reference-only", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["edit", "schema", "test-nil.main/reference-only", "--code", "quote $ Fn (-> Unit)"],
   ]) {
     execFileSync(resolve(repository, "target/debug/calcit"), [browserInput, ...args], { cwd: fixture, stdio: "pipe" });
   }
@@ -259,7 +259,7 @@ try {
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
     "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "schema", "app.main/replay-host-tests!",
-    "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"], { cwd: fixture });
+    "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :js-ffi)"], { cwd: fixture });
   const hostOutput = join(fixture, "host-generated");
   execFileSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!",
     "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
@@ -281,7 +281,7 @@ try {
       ["edit", "def", "test-nil.main/rejected-rest", "--input-format", "cirru", "--code",
         `quote $ defn rejected-rest (host) (${expression})`],
       ["edit", "schema", "test-nil.main/rejected-rest", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/RestHost) (:return 'String) (:features $ #{} :js-ffi)"],
+        "quote $ Fn app.main/RestHost (-> String) (:features :js-ffi)"],
     ];
     const preview = JSON.parse(run(negativeSnapshot, "edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"));
     run(negativeSnapshot, "edit", "transaction", "--code", JSON.stringify(operations), "--expect-revision", preview.scoped_revision, "--format", "json");
@@ -362,7 +362,7 @@ try {
   assert.notEqual(castNative.status, 0);
   assert.match(castNative.stderr, /unavailable in the native runtime/);
 
-  const checkedSchema = "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.main/CounterHost) (:features $ #{} :js-ffi)";
+  const checkedSchema = "quote $ Fn JsObject (-> app.main/CounterHost) (:features :js-ffi)";
   const checkedBody = "quote $ defn checked-counter-host (value) (js-cast value 'CounterHost)";
   const mutateCast = (command, code) => execFileSync(resolve(repository, "target/debug/calcit"),
     [moduleSnapshot, "edit", command, "app.main/checked-counter-host", ...(command === "def" ? ["--overwrite"] : []),
@@ -373,7 +373,7 @@ try {
     assert.notEqual(checked.status, 0, "invalid cast contracts must fail before JS execution");
     assert.match(`${checked.stdout}\n${checked.stderr}`, pattern);
   };
-  mutateCast("schema", "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.main/CounterHost)");
+  mutateCast("schema", "quote $ Fn JsObject (-> app.main/CounterHost)");
   rejectCast(/E_JS_FFI_FEATURE_REQUIRED/);
   execFileSync(resolve(repository, "target/debug/calcit"), [input, "config", "set", "feature-policy.js-ffi", "allow"],
     { cwd: fixture, stdio: "pipe" });

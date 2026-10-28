@@ -18,63 +18,54 @@
           :code $ quote $ defn bench-rem-direct! ()
             println $ loop-rem-direct 500000 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'bench-rem-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-rem-typed! ()
             println $ loop-rem-typed 500000 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fibo (x)
             if (< x 2) 1 $ +
               fibo $ - x 1
               fibo $ - x 2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'loop-rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-direct (n acc)
             hint-fn $ quote $ Fn Number Number (-> Number)
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ &number:rem n 97
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'loop-rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-rem-typed (n acc)
             hint-fn $ quote $ Fn Number Number (-> Number)
             if (&< n 1) acc $ recur (&- n 1)
               &+ acc $ .rem n 97
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Loaded program!")
             do (test-rem-methods!) (try-fibo)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'rem-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-direct (n divisor)
             hint-fn $ quote $ Fn Number Number (-> Number)
             &number:rem n divisor
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'rem-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rem-typed (n divisor)
             hint-fn $ quote $ Fn Number Number (-> Number)
             .rem n divisor
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'sieve-primes $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sieve-primes (acc n limit)
             if (&> n limit) acc $ if
@@ -83,9 +74,8 @@
               recur (conj acc n) (inc n) limit
               recur acc (inc n) limit
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'Number) 'Number 'Number
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) Number Number
+            -> $ List Number
         'test-rem-methods! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-rem-methods! ()
             assert= 1 $ rem-direct 98 97
@@ -93,21 +83,18 @@
             assert= 47025 $ loop-rem-direct 1000 0
             assert= (loop-rem-direct 1000 0) (loop-rem-typed 1000 0)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'try-fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-fibo ()
             let
                 n 22
               println "|fibo result:" n $ fibo n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'try-prime $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-prime ()
             println $ sieve-primes ([] 2 3 5 7 11 13) 17 400
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

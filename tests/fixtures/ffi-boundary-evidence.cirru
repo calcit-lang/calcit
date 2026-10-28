@@ -13,8 +13,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn increment (n) (+ n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi-evidence.lib
     'ffi-evidence.main $ %{} 'FileEntry
@@ -23,23 +22,20 @@
           :code $ quote $ defn main! ()
             query-host $ js-object
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'mixed-imports $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mixed-imports () (lib/increment 1)
             quote $ fs/existsSync |quoted
             quasiquote $ ~ $ fs/existsSync |live
             quasiquote $ ~ $ existsSync |direct
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'quasiquoted-caller $ %{} 'CodeEntry
           :doc "|Executable unquote must remain visible to static caller evidence."
           :code $ quote $ defn quasiquoted-caller ()
             quasiquote $ do $ ~ (query-host js-object)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'query-host $ %{} 'CodeEntry
           :doc "|Mixed browser, npm, WebGPU, and host-member evidence."
           :code $ quote $ defn query-host (host)
@@ -48,19 +44,16 @@
               unsafe-coerce host 'String
           :examples $ []
           :ffi $ {} $ :backend :js
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'JsObject
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn JsObject (-> String) (:features :js-ffi)
         'quoted-caller $ %{} 'CodeEntry (:doc "|Quoted data must not become caller evidence.")
           :code $ quote $ defn quoted-caller ()
             quote $ query-host js-object
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi-evidence.main
           :require (|nanoid :default nanoid) (|node:fs :as fs) (ffi-evidence.lib :as lib)
@@ -71,13 +64,11 @@
           :code $ quote $ defn main! ()
             + (lib/increment 1) (increment 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi-evidence.pure
           :require (ffi-evidence.lib :as lib)
@@ -87,13 +78,10 @@
         'dependency-number $ %{} 'CodeEntry (:doc "|Dependency schema-evidence target.")
           :code $ quote $ defn dependency-number () (+ 1 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'typed-query $ %{} 'CodeEntry (:doc "|Exact-schema helper candidate.")
           :code $ quote $ defn typed-query (host) (unsafe-coerce host 'String)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'JsObject
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn JsObject (-> String) (:features :js-ffi)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi.helpers

@@ -17,10 +17,9 @@
               quasiquote $ do (println "|env: eval") ~@body
               quasiquote $ do $ println "|env: not eval. tests skipped"
           :examples $ []
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{} :platform-read
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ []
+          :schema $ quote $ Macro & Syntax
+            -> $ Expr Dynamic
+            :capabilities :platform-read
         'inside-js: $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro inside-js: (& body)
             if
@@ -28,31 +27,26 @@
               quasiquote $ do (println "|env: js") ~@body
               quasiquote $ do $ println "|env: not js. tests skipped"
           :examples $ []
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{} :platform-read
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ []
+          :schema $ quote $ Macro & Syntax
+            -> $ Expr Dynamic
+            :capabilities :platform-read
         'log-title $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'make-reel-for-tag-access $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-reel-for-tag-access ()
             {} $ :store 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            -> $ Map Tag Number
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns util.core (:require)

@@ -169,7 +169,7 @@ async function checkTraitBoundaries() {
     setRuntimeBody("&unit");
     run(snapshot, "config", "set", "target", "native");
     run(snapshot, "edit", "def", "test-traits.main/RejectedSignature", "--input-format", "cirru", "--code",
-      "quote $ deftrait RejectedSignature $ .value $ :: 'Fn $ {} (:args $ [] 'Number 'Dynamic) (:return 'Number)");
+      "quote $ deftrait RejectedSignature $ .value $ quote $ Fn Number Dynamic (-> Number)");
     for (const mode of [["--check-only", "--ns", "test-traits.main"], ["--check-only", "--all-defs"],
       ["fix", "--workflow", "strict", "--verify", "--format", "json"]]) {
       assert.throws(() => run(snapshot, ...selection, ...mode), error => {

@@ -14,18 +14,15 @@
           :doc "|Expect preprocess error: schema has 2 required args but code has 1"
           :code $ quote $ defn bad-arity (x) (do x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc "|Entry for type-fail schema arity mismatch")
           :code $ quote $ defn main! ()
             do (; calling to force preprocessing of bad-arity) (bad-arity 1) (println |unreachable)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Namespace for schema arity mismatch")
         :code $ quote $ ns type-fail-schema-required-arity.main

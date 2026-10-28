@@ -750,7 +750,10 @@ fn existing_entry_to_edn(entry: &CodeEntry) -> Edn {
       Edn::Set(EdnSetView(entry.tags.iter().map(|tag| Edn::Tag(tag.clone())).collect())),
     ),
     (Edn::tag("kind"), Edn::tag(code_entry_kind(entry).as_tag())),
-    (Edn::tag("schema"), snapshot::schema_annotation_to_edn(entry.schema.as_ref())),
+    (
+      Edn::tag("schema"),
+      snapshot::schema_annotation_to_storage_edn(entry.schema.as_ref()),
+    ),
     (
       Edn::tag("definition-revision"),
       Edn::str(definition_revision(entry).unwrap_or_else(|_| "unavailable".to_string())),

@@ -13,31 +13,29 @@
         'DocEnum0 $ %{} 'CodeEntry (:doc "|Doc smoke enum")
           :code $ quote $ defenum DocEnum (:ok 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'DocPerson0 $ %{} 'CodeEntry (:doc "|Doc smoke struct")
           :code $ quote $ defstruct DocPerson (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'DocTrait $ %{} 'CodeEntry (:doc "|Doc smoke trait")
-          :code $ quote $ deftrait DocTrait (.label :fn)
+          :code $ quote $ deftrait DocTrait (.label 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'DocTraitImpl $ %{} 'CodeEntry (:doc "|Doc smoke impl")
           :code $ quote $ defimpl DocTraitImpl DocTrait
             .label $ fn (x)
               str-spaced |doc $ &struct:get x :name
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'main! $ %{} 'CodeEntry (:doc "|Run docs smoke cases")
           :code $ quote $ defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-assert-traits-local $ %{} 'CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote $ defn test-assert-traits-local ()
             let
@@ -46,14 +44,12 @@
               assert= p $ assert-traits p DocTrait
               assert= "|doc Alice" $ p .label
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
             assert= (Option :some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-impl-traits-struct-enum-only $ %{} 'CodeEntry
           :doc "|impl-traits only accepts struct/enum definitions"
           :code $ quote $ defn test-impl-traits-struct-enum-only ()
@@ -74,8 +70,7 @@
                 assert= true $ includes? msg |Actual:
                 assert= true $ includes? msg |Fix:
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-native-impl-new-dot-method $ %{} 'CodeEntry (:doc "|&impl::new accepts .method field keys")
           :code $ quote $ defn test-native-impl-new-dot-method ()
             let
@@ -87,8 +82,7 @@
               assert= (Option :some DocTrait) (impl-origin DotImpl)
               assert= "|native-dot Bob" $ p .label
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-doc-smoke.main
           :require $ util.core :refer $ inside-eval:

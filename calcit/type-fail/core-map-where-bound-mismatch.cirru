@@ -13,12 +13,10 @@
         'main! $ %{} 'CodeEntry (:doc "|Entry for core map where-bound mismatch")
           :code $ quote $ defn main! () (map 1 inc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Namespace for core map where-bound mismatch")
         :code $ quote $ ns type-fail-map-where-bound.main

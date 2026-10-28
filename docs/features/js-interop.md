@@ -175,15 +175,11 @@ npm 包沿用普通 namespace 导入规则；原始宿主调用集中在小型�
 schema 使用它。`:refer` 引用实际的命名导出，`:default` 引用实际的默认导出：
 
 ```cirru.no-check
-ns app.npm.ids $ :require
-  |nanoid :refer $ nanoid
+ns app.npm.ids $ :require $ |nanoid :refer (nanoid)
 
 defn make-id (size)
   let
-      generate $ unsafe-coerce nanoid $ :: 'Fn
-        {}
-          :args $ [] 'Number
-          :return 'String
+      generate $ unsafe-coerce nanoid $ quote $ Fn Number $ -> String
     generate size
 ```
 
@@ -201,12 +197,10 @@ defn make-id (size)
 
 ```cirru.no-check
 defn register-language-adapter! ()
-  hint-fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)
+  hint-fn $ quote $ Fn (-> Unit) (:features :js-ffi)
   let
       language language-export
-    if (fn? language)
-      register-language! |clojure language
-      raise |Expected-language-function
+    if (fn? language) (register-language! |clojure language) (raise |Expected-language-function)
 ```
 
 此写法只读取一次导出并保留函数身份；局部值守卫建立开放 `Fn` 的证据。
@@ -259,15 +253,11 @@ stays visible to the type checker:
 
 ```cirru.no-check
 deftrait StorageHost (:length 'Number)
-  .get-item $ :: 'Fn
-    {}
-      :args $ [] 'StorageHost 'String
-      :return $ :: 'JsNullish 'String
+  .get-item $ quote $ Fn StorageHost String
+    -> $ JsNullish String
 
-:ffi $ {}
-  :backend :js
-  :kind :external-object
-  :names $ {} (:get-item |getItem)
+:ffi $ {} (:backend :js) (:kind :external-object)
+  :names $ {} $ :get-item |getItem
 ```
 
 Inspect the resulting contract with:
@@ -389,22 +379,12 @@ defexternal QueryHost
 `:backend :js` 与 `:kind :external-object` 由简写固定，不需要手写：
 
 ```cirru.no-check
-deftrait QueryHost
-  :length 'Number
-  .query $ :: 'Fn
-    {}
-      :args $ [] 'QueryHost 'String
-      :return 'QueryHost
-  .text $ :: 'Fn
-    {}
-      :args $ [] 'QueryHost
-      :return 'String
+deftrait QueryHost (:length 'Number)
+  .query $ quote $ Fn QueryHost String (-> QueryHost)
+  .text $ quote $ Fn QueryHost (-> String)
 
-:ffi $ {}
-  :backend :js
-  :kind :external-object
-  :target :browser
-  :names $ {} (:query |querySelector)
+:ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)
+  :names $ {} $ :query |querySelector
   :writable $ #{} :text-content
 ```
 
@@ -636,10 +616,7 @@ of its invocation contract. The schema's `:return T` describes the value after
 awaiting, not the Promise-like value returned by the JavaScript call:
 
 ```cirru.no-check
-hint-fn $ {}
-  :args $ []
-  :return String
-  :async true
+hint-fn $ quote $ Fn (-> String) (:async)
 ```
 
 Calling this function produces a pending async value in static checking. Pass
@@ -657,7 +634,7 @@ The checker does not insert `await`, retry calls, or model effects automatically
 let
     fetch-data $ fn () nil
   fn ()
-    hint-fn $ {} (:async true)
+    hint-fn $ quote Async
     js-await $ fetch-data
 ```
 
@@ -667,11 +644,11 @@ Use `js-await` for Promise-like values:
 
 ```cirru.no-check
 fn ()
-  hint-fn $ {} (:async true)
+  hint-fn $ quote Async
   let
       p $ new js/Promise $ fn (resolve _reject)
         js/setTimeout
-          fn () (resolve |done)
+          fn () $ resolve |done
           , 100
       result $ js-await p
     , result
@@ -691,10 +668,10 @@ Then consume it inside async function:
 
 ```cirru.no-check
 let
-    timeout $ fn (ms) $ new js/Promise $ fn (resolve _reject)
-      js/setTimeout resolve ms
+    timeout $ fn (ms)
+      new js/Promise $ fn (resolve _reject) (js/setTimeout resolve ms)
   fn ()
-    hint-fn $ {} (:async true)
+    hint-fn $ quote Async
     js-await $ timeout 200
 ```
 
@@ -706,13 +683,11 @@ Use `js-for-await` with `js-await` for async iterables:
 let
     gen $ fn () nil
   fn ()
-    hint-fn $ {} (:async true)
+    hint-fn $ quote Async
     js-await $ js-for-await (gen)
       fn (item)
         new js/Promise $ fn (resolve _reject)
-          js/setTimeout $ fn ()
-            resolve item
-
+          js/setTimeout $ fn () $ resolve item
 ```
 
 ## 6. Diagnostics and validation checklist

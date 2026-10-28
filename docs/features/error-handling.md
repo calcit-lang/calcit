@@ -43,9 +43,8 @@ let
 ```cirru
 let
     result $ try (Result :ok 7)
-      fn (message)
-        Result :err message
-  assert-type result $ :: 'Result 'Number 'String
+      fn (message) (Result :err message)
+  assert-type result $ quote $ Result Number String
 ```
 
 正常分支直接 `raise` 时只有处理器产生值；处理器直接 `raise` 时只保留正常值类型。处理器表达式仍然仅在错误发生后求值，类型推断不执行处理器，也不改写求值顺序。

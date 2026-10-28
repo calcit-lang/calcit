@@ -19,6 +19,7 @@
 //! Other lowercase leaves and symbol leaves are reserved for operators; `->`
 //! and `&` are in use, `.`, `=` and `forall` are reserved.
 
+use cirru_edn::{Edn, EdnMapView};
 use cirru_parser::Cirru;
 
 use crate::calcit::{CORE_NS, Calcit, CalcitImport, CalcitSyntax};
@@ -39,6 +40,49 @@ pub(crate) fn is_compact_payload(payload: &Cirru) -> bool {
     Some(Cirru::Leaf(head)) => !CANONICAL_HEADS.contains(&head.as_ref()) && is_type_name(head),
     _ => false,
   }
+}
+
+/// `hint-fn $ quote $ Async` marks a function async without stating its
+/// signature; `(Async (:features …))` adds features. Returns the schema map, or
+/// `None` when `payload` is not an `Async` marker.
+pub(crate) fn desugar_async_hint(payload: &Cirru) -> Option<Result<Cirru, String>> {
+  let clauses: &[Cirru] = match payload {
+    Cirru::Leaf(name) if name.as_ref() == "Async" => &[],
+    Cirru::List(items) if items.first() == Some(&Cirru::leaf("Async")) => &items[1..],
+    _ => return None,
+  };
+  let mut map = vec![Cirru::leaf("{}"), Cirru::List(vec![Cirru::leaf(":async"), Cirru::leaf("true")])];
+  let mut has_features = false;
+  for clause in clauses {
+    let Cirru::List(xs) = clause else {
+      return Some(Err(format!(
+        "`Async` clause `{}` must be written as a list such as `(:features :js-ffi)`",
+        describe(clause)
+      )));
+    };
+    if xs.first() != Some(&Cirru::leaf(":features")) {
+      return Some(Err(format!(
+        "unknown `Async` clause `{}`; only `(:features …)` is allowed",
+        describe(clause)
+      )));
+    }
+    if has_features {
+      return Some(Err(String::from("duplicate `:features` clause in `Async`")));
+    }
+    has_features = true;
+    if xs.len() < 2 {
+      return Some(Err(String::from("`:features` needs at least one tag")));
+    }
+    let mut set = vec![Cirru::leaf("#{}")];
+    for tag in &xs[1..] {
+      match tag {
+        Cirru::Leaf(name) if name.starts_with(':') && name.len() > 1 => set.push(tag.to_owned()),
+        _ => return Some(Err(format!("feature `{}` must be a tag such as `:js-ffi`", describe(tag)))),
+      }
+    }
+    map.push(Cirru::List(vec![Cirru::leaf(":features"), Cirru::List(set)]));
+  }
+  Some(Ok(Cirru::List(map)))
 }
 
 /// Desugar a compact payload (the item inside `quote`) into canonical Cirru.
@@ -185,10 +229,8 @@ fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
         return Err(format!("type application head must be a type name, got `{}`", describe(node)));
       };
       match head {
-        "Fn" => desugar_fn(&items[1..], scope),
-        "Macro" => Err(String::from(
-          "compact `Macro` contracts are not supported yet; keep the canonical `:: 'Macro $ {} …` form",
-        )),
+        "Fn" => desugar_fn(&items[1..], scope, Kind::Fn),
+        "Macro" => desugar_fn(&items[1..], scope, Kind::Macro),
         _ if is_type_name(head) => {
           if items.len() == 1 {
             return Err(format!(
@@ -211,8 +253,27 @@ fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
   }
 }
 
+/// `Fn` and `Macro` share one grammar: positional inputs, `& T`, one `(-> T)`
+/// and tag clauses. They differ in the clauses they allow and the map they build.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+  Fn,
+  Macro,
+}
+
+impl Kind {
+  fn name(self) -> &'static str {
+    match self {
+      Kind::Fn => "Fn",
+      Kind::Macro => "Macro",
+    }
+  }
+}
+
 #[derive(Default)]
 struct FnParts {
+  optional: Option<Vec<Cirru>>,
+  capabilities: Option<Vec<Cirru>>,
   args: Vec<Cirru>,
   rest: Option<Cirru>,
   ret: Option<Cirru>,
@@ -231,7 +292,8 @@ fn clause_head(node: &Cirru) -> Option<&str> {
   if head == "->" || head.starts_with(':') { Some(head) } else { None }
 }
 
-fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> {
+fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cirru, String> {
+  let kind_name = kind.name();
   // Generics are collected first so parameters and the return type can see them.
   let mut parts = FnParts::default();
   for item in items {
@@ -241,7 +303,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
     match head {
       ":generics" => {
         if parts.generics.is_some() {
-          return Err(String::from("duplicate `:generics` clause in `Fn`"));
+          return Err(format!("duplicate `:generics` clause in `{kind_name}`"));
         }
         if body.is_empty() {
           return Err(String::from("`:generics` needs at least one type variable"));
@@ -275,7 +337,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
       }
       ":where" => {
         if parts.where_bounds.is_some() {
-          return Err(String::from("duplicate `:where` clause in `Fn`"));
+          return Err(format!("duplicate `:where` clause in `{kind_name}`"));
         }
         if body.is_empty() {
           return Err(String::from("`:where` needs at least one `(Var Trait…)` bound"));
@@ -314,7 +376,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
         }
         parts.where_bounds = Some(bounds);
       }
-      ":async" => {
+      ":async" if kind == Kind::Fn => {
         if parts.is_async {
           return Err(String::from("duplicate `:async` clause in `Fn`"));
         }
@@ -325,7 +387,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
       }
       ":features" => {
         if parts.features.is_some() {
-          return Err(String::from("duplicate `:features` clause in `Fn`"));
+          return Err(format!("duplicate `:features` clause in `{kind_name}`"));
         }
         if body.is_empty() {
           return Err(String::from("`:features` needs at least one tag"));
@@ -339,11 +401,37 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
         }
         parts.features = Some(tags);
       }
+      ":optional" if kind == Kind::Macro => {
+        if parts.optional.is_some() {
+          return Err(String::from("duplicate `:optional` clause in `Macro`"));
+        }
+        if body.is_empty() {
+          return Err(String::from("`:optional` needs at least one input contract"));
+        }
+        // Resolved after generics are in scope, below.
+        parts.optional = Some(body.to_vec());
+      }
+      ":capabilities" if kind == Kind::Macro => {
+        if parts.capabilities.is_some() {
+          return Err(String::from("duplicate `:capabilities` clause in `Macro`"));
+        }
+        let mut tags = vec![];
+        for tag in body {
+          match tag {
+            Cirru::Leaf(name) if name.starts_with(':') && name.len() > 1 => tags.push(tag.to_owned()),
+            _ => return Err(format!("capability `{}` must be a tag such as `:platform-read`", describe(tag))),
+          }
+        }
+        parts.capabilities = Some(tags);
+      }
       "->" => {}
       _ => {
-        return Err(format!(
-          "unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async` or `:features`"
-        ));
+        return Err(match kind {
+          Kind::Fn => format!("unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async` or `:features`"),
+          Kind::Macro => format!(
+            "unknown `Macro` clause `{head}`; expected `(-> T)`, `:optional`, `:capabilities`, `:generics`, `:where` or `:features`"
+          ),
+        });
       }
     }
   }
@@ -357,7 +445,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
     for (subject, _) in bounds {
       if !declared.contains(subject) {
         return Err(format!(
-          "`:where` constrains `{subject}`, which is not declared in this `Fn`'s `:generics`"
+          "`:where` constrains `{subject}`, which is not declared in this `{kind_name}`'s `:generics`"
         ));
       }
     }
@@ -372,7 +460,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
       if head == "->" {
         let Cirru::List(clause) = item else { unreachable!() };
         if parts.ret.is_some() {
-          return Err(String::from("`Fn` has more than one `(-> T)` return clause"));
+          return Err(format!("`{kind_name}` has more than one `(-> T)` return clause"));
         }
         if clause.len() != 2 {
           return Err(format!("return clause `{}` must hold exactly one type", describe(item)));
@@ -384,17 +472,17 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
     }
     if let Some(tag) = leaf_text(item).filter(|name| name.starts_with(':')) {
       return Err(format!(
-        "`Fn` clause `{tag}` must be written as a list, such as `({tag})` on its own line"
+        "`{kind_name}` clause `{tag}` must be written as a list, such as `({tag})` on its own line"
       ));
     }
     if seen_clause {
       return Err(format!(
-        "`Fn` parameter `{}` appears after a clause; write parameters first, then `(-> T)` and other clauses",
+        "`{kind_name}` parameter `{}` appears after a clause; write parameters first, then `(-> T)` and other clauses",
         describe(item)
       ));
     }
     if parts.rest.is_some() {
-      return Err(format!("`Fn` parameter `{}` appears after the rest type", describe(item)));
+      return Err(format!("`{kind_name}` parameter `{}` appears after the rest type", describe(item)));
     }
     if leaf_text(item) == Some("&") {
       let Some(rest) = items.get(idx + 1).filter(|next| clause_head(next).is_none()) else {
@@ -414,18 +502,35 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
   }
 
   let Some(ret) = parts.ret else {
-    return Err(String::from(
-      "`Fn` needs a return clause `(-> T)`; write `(-> Dynamic)` when the result is intentionally dynamic",
-    ));
+    return Err(match kind {
+      Kind::Fn => String::from("`Fn` needs a return clause `(-> T)`; write `(-> Dynamic)` when the result is intentionally dynamic"),
+      Kind::Macro => String::from("`Macro` needs an expansion clause `(-> T)`, such as `(-> (Expr Dynamic))`"),
+    });
   };
 
   let mut args = vec![Cirru::leaf("[]")];
   args.extend(parts.args);
-  let mut map = vec![
-    Cirru::leaf("{}"),
-    Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(args)]),
-    Cirru::List(vec![Cirru::leaf(":return"), ret]),
-  ];
+  let mut map = vec![Cirru::leaf("{}")];
+  match kind {
+    Kind::Fn => {
+      map.push(Cirru::List(vec![Cirru::leaf(":args"), Cirru::List(args)]));
+      map.push(Cirru::List(vec![Cirru::leaf(":return"), ret]));
+    }
+    Kind::Macro => {
+      map.push(Cirru::List(vec![Cirru::leaf(":required"), Cirru::List(args)]));
+      if let Some(optional) = &parts.optional {
+        let mut list = vec![Cirru::leaf("[]")];
+        for item in optional {
+          list.push(desugar_type(item, &scope)?);
+        }
+        map.push(Cirru::List(vec![Cirru::leaf(":optional"), Cirru::List(list)]));
+      }
+      map.push(Cirru::List(vec![Cirru::leaf(":expansion"), ret]));
+      let mut set = vec![Cirru::leaf("#{}")];
+      set.extend(parts.capabilities.take().unwrap_or_default());
+      map.push(Cirru::List(vec![Cirru::leaf(":capabilities"), Cirru::List(set)]));
+    }
+  }
   if let Some(names) = parts.generics {
     let mut list = vec![Cirru::leaf("[]")];
     list.extend(names.iter().map(|name| quoted(name)));
@@ -456,13 +561,152 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String]) -> Result<Cirru, String> 
     set.extend(tags);
     map.push(Cirru::List(vec![Cirru::leaf(":features"), Cirru::List(set)]));
   }
-  Ok(Cirru::List(vec![Cirru::leaf("::"), quoted("Fn"), Cirru::List(map)]))
+  Ok(Cirru::List(vec![Cirru::leaf("::"), quoted(kind_name), Cirru::List(map)]))
+}
+
+/// Print canonical type EDN in the compact syntax, the inverse of
+/// `desugar_type_expr`. Shapes without a compact spelling return `Err`.
+pub(crate) fn print_type_compact(edn: &Edn) -> Result<Cirru, String> {
+  match edn {
+    Edn::Symbol(name) => {
+      let leaf = Cirru::Leaf(name.clone());
+      desugar_type_expr(&leaf)?;
+      Ok(leaf)
+    }
+    Edn::Enum(view) if view.type_name.is_none() && view.variant.as_ref() == "Fn" => match view.extra.as_slice() {
+      [Edn::Map(map)] => print_fn(map),
+      _ => Err(format!("unexpected Fn payload {edn}")),
+    },
+    Edn::Enum(view) if view.type_name.is_none() && view.variant.as_ref() == "Macro" => match view.extra.as_slice() {
+      [Edn::Map(map)] => print_macro(map),
+      _ => Err(format!("unexpected Macro payload {edn}")),
+    },
+    Edn::Enum(view) if view.type_name.is_none() => {
+      let mut out = vec![Cirru::Leaf(view.variant.clone())];
+      for arg in &view.extra {
+        out.push(print_type_compact(arg)?);
+      }
+      Ok(Cirru::List(out))
+    }
+    Edn::List(xs) if matches!(xs.0.first(), Some(Edn::Symbol(head)) if head.as_ref() == "::") => {
+      let mut out = vec![];
+      for item in xs.0.iter().skip(1) {
+        out.push(print_type_compact(item)?);
+      }
+      Ok(Cirru::List(out))
+    }
+    _ => Err(format!("no compact spelling for {edn}")),
+  }
+}
+
+fn print_macro(map: &EdnMapView) -> Result<Cirru, String> {
+  let get = |key: &str| map.0.get(&Edn::tag(key));
+  let mut out = vec![Cirru::leaf("Macro")];
+  if let Some(Edn::List(args)) = get("required") {
+    for arg in &args.0 {
+      out.push(print_type_compact(arg)?);
+    }
+  }
+  if let Some(rest) = get("rest") {
+    out.push(Cirru::leaf("&"));
+    out.push(print_type_compact(rest)?);
+  }
+  let expansion = get("expansion").ok_or_else(|| String::from("macro without expansion"))?;
+  out.push(Cirru::List(vec![Cirru::leaf("->"), print_type_compact(expansion)?]));
+  if let Some(Edn::List(optional)) = get("optional") {
+    let mut clause = vec![Cirru::leaf(":optional")];
+    for item in &optional.0 {
+      clause.push(print_type_compact(item)?);
+    }
+    out.push(Cirru::List(clause));
+  }
+  if let Some(Edn::Set(caps)) = get("capabilities")
+    && !caps.0.is_empty()
+  {
+    let mut clause = vec![Cirru::leaf(":capabilities")];
+    let mut tags: Vec<_> = caps.0.iter().map(|tag| Cirru::Leaf(tag.to_string().into())).collect();
+    tags.sort();
+    clause.extend(tags);
+    out.push(Cirru::List(clause));
+  }
+  print_shared_clauses(&get, &mut out)?;
+  Ok(Cirru::List(out))
+}
+
+fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
+  let get = |key: &str| map.0.get(&Edn::tag(key));
+  if get("kind").is_some() {
+    return Err(String::from("macro schema"));
+  }
+  let mut out = vec![Cirru::leaf("Fn")];
+  if let Some(Edn::List(args)) = get("args") {
+    for arg in &args.0 {
+      out.push(print_type_compact(arg)?);
+    }
+  }
+  if let Some(rest) = get("rest") {
+    out.push(Cirru::leaf("&"));
+    out.push(print_type_compact(rest)?);
+  }
+  let ret = get("return")
+    .map(print_type_compact)
+    .transpose()?
+    .unwrap_or_else(|| Cirru::leaf("Dynamic"));
+  out.push(Cirru::List(vec![Cirru::leaf("->"), ret]));
+  print_shared_clauses(&get, &mut out)?;
+  if matches!(get("async"), Some(Edn::Bool(true))) {
+    out.push(Cirru::List(vec![Cirru::leaf(":async")]));
+  }
+  Ok(Cirru::List(out))
+}
+
+fn print_shared_clauses<'a>(get: &dyn Fn(&str) -> Option<&'a Edn>, out: &mut Vec<Cirru>) -> Result<(), String> {
+  if let Some(Edn::List(generics)) = get("generics") {
+    let mut clause = vec![Cirru::leaf(":generics")];
+    clause.extend(generics.0.iter().map(|g| match g {
+      Edn::Symbol(name) => Cirru::Leaf(name.clone()),
+      other => Cirru::Leaf(other.to_string().into()),
+    }));
+    out.push(Cirru::List(clause));
+  }
+  if let Some(Edn::Map(bounds)) = get("where") {
+    let mut clause = vec![Cirru::leaf(":where")];
+    let mut pairs: Vec<_> = bounds.0.iter().collect();
+    pairs.sort_by(|a, b| a.0.cmp(b.0));
+    for (subject, traits) in pairs {
+      let Edn::Symbol(subject) = subject else {
+        return Err(String::from("where subject"));
+      };
+      let mut bound = vec![Cirru::Leaf(subject.clone())];
+      match traits {
+        Edn::Symbol(name) => bound.push(Cirru::Leaf(name.clone())),
+        Edn::List(names) => {
+          for name in &names.0 {
+            let Edn::Symbol(name) = name else {
+              return Err(String::from("where trait"));
+            };
+            bound.push(Cirru::Leaf(name.clone()));
+          }
+        }
+        _ => return Err(String::from("where traits")),
+      }
+      clause.push(Cirru::List(bound));
+    }
+    out.push(Cirru::List(clause));
+  }
+  if let Some(Edn::Set(features)) = get("features") {
+    let mut clause = vec![Cirru::leaf(":features")];
+    let mut tags: Vec<_> = features.0.iter().map(|tag| Cirru::Leaf(tag.to_string().into())).collect();
+    tags.sort();
+    clause.extend(tags);
+    out.push(Cirru::List(clause));
+  }
+  Ok(())
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use cirru_edn::Edn;
 
   fn parse_one(code: &str) -> Cirru {
     let mut nodes = cirru_parser::parse(code).expect("parse cirru");
@@ -514,6 +758,19 @@ mod tests {
   }
 
   #[test]
+  fn desugars_macro_contracts() {
+    assert_eq!(
+      desugar_text("Macro (Expr Dynamic) & SyntaxList (-> (Expr Struct))").unwrap(),
+      "(:: 'Macro ({} (:required ([] (:: 'Expr 'Dynamic))) (:expansion (:: 'Expr 'Struct)) (:capabilities (#{})) (:rest 'SyntaxList)))"
+    );
+    let code = "Macro (Expr T)\n  -> $ Expr T\n  :capabilities :platform-read\n  :optional (Expr Dynamic)\n  :generics T";
+    assert_eq!(
+      desugar_text(code).unwrap(),
+      "(:: 'Macro ({} (:required ([] (:: 'Expr 'T))) (:optional ([] (:: 'Expr 'Dynamic))) (:expansion (:: 'Expr 'T)) (:capabilities (#{} :platform-read)) (:generics ([] 'T))))"
+    );
+  }
+
+  #[test]
   fn rejects_invalid_shapes() {
     let cases = [
       ("Fn Number", "needs a return clause"),
@@ -533,7 +790,10 @@ mod tests {
       ("List :number", "tag `:number`"),
       ("List (. C Item)", "reserved"),
       ("List (Number)", "has no arguments"),
-      ("Macro Syntax (-> Unit)", "not supported yet"),
+      ("Macro Syntax", "expansion clause"),
+      ("Macro Syntax (-> Unit) (:async)", "unknown `Macro` clause `:async`"),
+      ("Fn Syntax (-> Unit) (:capabilities :fs)", "unknown `Fn` clause `:capabilities`"),
+      ("Macro (-> Unit) (:capabilities fs)", "must be a tag"),
     ];
     for (code, expected) in cases {
       let err = desugar_text(code).expect_err(code);
@@ -551,103 +811,6 @@ mod tests {
     assert!(!is_compact_payload(&parse_one("f x")));
   }
 
-  /// Print canonical type EDN in the compact syntax. Test-only: it proves the
-  /// grammar covers the shapes core schemas use.
-  fn print_compact(edn: &Edn) -> Result<Cirru, String> {
-    match edn {
-      Edn::Symbol(name) => {
-        let leaf = Cirru::Leaf(name.clone());
-        desugar_type_expr(&leaf)?;
-        Ok(leaf)
-      }
-      Edn::Enum(view) if view.type_name.is_none() && view.variant.as_ref() == "Fn" => match view.extra.as_slice() {
-        [Edn::Map(map)] => print_fn(map),
-        _ => Err(format!("unexpected Fn payload {edn}")),
-      },
-      Edn::Enum(view) if view.type_name.is_none() => {
-        let mut out = vec![Cirru::Leaf(view.variant.clone())];
-        for arg in &view.extra {
-          out.push(print_compact(arg)?);
-        }
-        Ok(Cirru::List(out))
-      }
-      Edn::List(xs) if matches!(xs.0.first(), Some(Edn::Symbol(head)) if head.as_ref() == "::") => {
-        let mut out = vec![];
-        for item in xs.0.iter().skip(1) {
-          out.push(print_compact(item)?);
-        }
-        Ok(Cirru::List(out))
-      }
-      _ => Err(format!("no compact spelling for {edn}")),
-    }
-  }
-
-  fn print_fn(map: &cirru_edn::EdnMapView) -> Result<Cirru, String> {
-    let get = |key: &str| map.0.get(&Edn::tag(key));
-    if get("kind").is_some() {
-      return Err(String::from("macro schema"));
-    }
-    let mut out = vec![Cirru::leaf("Fn")];
-    if let Some(Edn::List(args)) = get("args") {
-      for arg in &args.0 {
-        out.push(print_compact(arg)?);
-      }
-    }
-    if let Some(rest) = get("rest") {
-      out.push(Cirru::leaf("&"));
-      out.push(print_compact(rest)?);
-    }
-    let ret = get("return")
-      .map(print_compact)
-      .transpose()?
-      .unwrap_or_else(|| Cirru::leaf("Dynamic"));
-    out.push(Cirru::List(vec![Cirru::leaf("->"), ret]));
-    if let Some(Edn::List(generics)) = get("generics") {
-      let mut clause = vec![Cirru::leaf(":generics")];
-      clause.extend(generics.0.iter().map(|g| match g {
-        Edn::Symbol(name) => Cirru::Leaf(name.clone()),
-        other => Cirru::Leaf(other.to_string().into()),
-      }));
-      out.push(Cirru::List(clause));
-    }
-    if let Some(Edn::Map(bounds)) = get("where") {
-      let mut clause = vec![Cirru::leaf(":where")];
-      let mut pairs: Vec<_> = bounds.0.iter().collect();
-      pairs.sort_by(|a, b| a.0.cmp(b.0));
-      for (subject, traits) in pairs {
-        let Edn::Symbol(subject) = subject else {
-          return Err(String::from("where subject"));
-        };
-        let mut bound = vec![Cirru::Leaf(subject.clone())];
-        match traits {
-          Edn::Symbol(name) => bound.push(Cirru::Leaf(name.clone())),
-          Edn::List(names) => {
-            for name in &names.0 {
-              let Edn::Symbol(name) = name else {
-                return Err(String::from("where trait"));
-              };
-              bound.push(Cirru::Leaf(name.clone()));
-            }
-          }
-          _ => return Err(String::from("where traits")),
-        }
-        clause.push(Cirru::List(bound));
-      }
-      out.push(Cirru::List(clause));
-    }
-    if matches!(get("async"), Some(Edn::Bool(true))) {
-      out.push(Cirru::List(vec![Cirru::leaf(":async")]));
-    }
-    if let Some(Edn::Set(features)) = get("features") {
-      let mut clause = vec![Cirru::leaf(":features")];
-      let mut tags: Vec<_> = features.0.iter().map(|tag| Cirru::Leaf(tag.to_string().into())).collect();
-      tags.sort();
-      clause.extend(tags);
-      out.push(Cirru::List(clause));
-    }
-    Ok(Cirru::List(out))
-  }
-
   #[test]
   fn core_schemas_round_trip_through_compact_syntax() {
     let core = crate::load_core_snapshot().expect("embedded core");
@@ -660,7 +823,7 @@ mod tests {
           continue;
         }
         let edn = entry.schema.to_type_edn();
-        let compact = match print_compact(&edn) {
+        let compact = match print_type_compact(&edn) {
           Ok(compact) => compact,
           Err(reason) => {
             skipped.push(format!("{def}: {reason}"));
@@ -690,12 +853,9 @@ mod tests {
       failures.len(),
       failures.join("\n")
     );
-    // Only macro contracts and non-type leaves may lack a compact spelling.
+    // Only non-type leaves may lack a compact spelling.
     for reason in &skipped {
-      assert!(
-        reason.contains("macro") || reason.contains("Macro") || reason.contains("no compact spelling"),
-        "unexpected skip {reason}"
-      );
+      assert!(reason.contains("no compact spelling"), "unexpected skip {reason}");
     }
   }
 }

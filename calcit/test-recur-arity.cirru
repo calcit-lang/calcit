@@ -14,38 +14,33 @@
           :code $ quote $ defn add-until (acc target step)
             if (>= acc target) acc $ recur (+ acc step) target step
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
         'bad-recur-too-few $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bad-recur-too-few (x y z)
             if (< x 10)
               recur (+ x 1) y
               + x y z
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
         'bad-recur-too-many $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bad-recur-too-many (x y)
             if (< x 10)
               recur (+ x 1) y 999
               + x y
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic (-> Dynamic)
         'bad-recur-wrong-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bad-recur-wrong-count (a b c d)
             if (< a 10)
               recur $ + a 1
               + a b c d
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic Dynamic (-> Dynamic)
         'factorial $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn factorial (n acc)
             if (<= n 1) acc $ recur (dec n) (* n acc)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic (-> Dynamic)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (log-title "|Testing recur arity")
             assert= 10 $ sum-to-n 4
@@ -55,17 +50,16 @@
             assert= 120 $ factorial 5 1
             assert= 24 $ factorial 4 1
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println "|Code updated")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'sum-to-n $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-to-n (n)
             if (<= n 0) 0 $ + n $ sum-to-n (dec n)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-recur-arity.main
           :require $ util.core :refer $ log-title

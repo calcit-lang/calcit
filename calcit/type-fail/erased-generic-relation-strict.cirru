@@ -17,11 +17,10 @@
         'compare-open $ %{} 'CodeEntry (:doc "|验证开放 Dynamic 绑定不能被只接受 Number 的 callback 隐式收窄。")
           :code $ quote $ defn compare-open (value callback) (callback value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T $ :: 'Fn
-              {} (:return 'T)
-                :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T
+            Fn T $ -> T
+            -> T
+            :generics T
         'main! $ %{} 'CodeEntry
           :doc "|入口构造 Dynamic 输入与 Number-only callback，要求严格预处理报告开放泛型绑定收窄。"
           :code $ quote $ defn main! ()
@@ -30,12 +29,10 @@
                 hint-fn $ quote $ Fn Number (-> Number)
                 + value 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict erased-generic-relation fixture.")
         :code $ quote $ ns type-fail-erased-generic-relation-strict.main

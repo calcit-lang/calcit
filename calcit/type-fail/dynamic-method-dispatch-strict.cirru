@@ -17,18 +17,15 @@
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes run-open reachable.")
           :code $ quote $ defn main! () (run-open 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'run-open $ %{} 'CodeEntry
           :doc "|Dynamic input must be narrowed before ordinary method syntax."
           :code $ quote $ defn run-open (value) (value .custom)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|Strict dynamic-method-dispatch fixture.")
         :code $ quote $ ns type-fail-dynamic-method-dispatch-strict.main

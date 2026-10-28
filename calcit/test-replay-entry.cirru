@@ -17,8 +17,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn answer () 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |uses-the-selected-entry-target)
             :code $ quote $ assert= 3 (answer)
             :tags $ #{} :unit
@@ -31,9 +30,7 @@
           :examples $ []
           :ffi $ {} (:target :node)
             :js $ {} $ :inline "|() => 7"
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Number) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |uses-the-selected-entry-target)
             :code $ quote $ assert= 7 (answer)
             :tags $ #{} :js :node

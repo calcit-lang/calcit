@@ -75,13 +75,10 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 let
     Box $ defstruct Box ([] 'T) (:value 'T)
     keep $ fn (box)
-      hint-fn $ {}
-        :generics $ [] 'T
-        :args $ [] (:: 'Box 'T)
-        :return 'T
+      hint-fn $ quote $ Fn (Box T) (-> T) (:generics T)
       :value box
     b $ Box :value 1
-  assert-type b $ :: 'Box :number
+  assert-type b $ quote $ Box Number
   assert= 1 $ keep b
 ```
 
@@ -111,7 +108,7 @@ let
       :value 'T
     box $ ShownBox :value 1
     item $ :value box
-  assert-type box $ :: 'ShownBox 'Number
+  assert-type box $ quote $ ShownBox Number
   assert= |1 $ item .debug
 ```
 
@@ -175,13 +172,12 @@ This means a concise same-namespace field type such as `'Router` remains
 statically resolvable even when the outer Struct flows into another namespace:
 
 ```cirru.no-check
-defstruct Router (:name 'String)
-defstruct ClientStore (:router 'Router)
+defstruct Router $ :name 'String
+
+defstruct ClientStore $ :router 'Router
 
 defn router-name (store)
-  hint-fn $ {}
-    :args $ [] 'app.schema/ClientStore
-    :return 'String
+  hint-fn $ quote $ Fn app.schema/ClientStore (-> String)
   :name $ :router store
 ```
 
@@ -343,10 +339,8 @@ Struct 不会相互匹配；别名、字段更新和附加 trait 实现仍保留
 ```cirru
 let
     read-path $ fn (value)
-      hint-fn $ {} (:args $ [] 'Struct) (:return 'String)
-      if (&struct:matches? value FsPath)
-        :value value
-        raise |expected-FsPath
+      hint-fn $ quote $ Fn Struct (-> String)
+      if (&struct:matches? value FsPath) (:value value) (raise |expected-FsPath)
   assert= |data/config.cirru $ read-path $ FsPath :value |data/config.cirru
 ```
 

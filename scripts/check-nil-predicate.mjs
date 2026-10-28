@@ -55,15 +55,15 @@ try {
   run(snapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
     "quote $ defn typed-bool (x)\n  non-nil? x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Bool)");
+    "quote $ Fn Bool (-> Bool)");
   run(snapshot, "edit", "def", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
     "quote $ defn generic (x)\n  non-nil? x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:return 'Bool)");
+    "quote $ Fn T (-> Bool) (:generics T)");
   run(snapshot, "edit", "def", "calcit.nil-helper/generic-forward", "--input-format", "cirru", "--code",
     "quote $ defn generic-forward (x)\n  calcit.nil-helper/generic x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/generic-forward", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:return 'Bool)");
+    "quote $ Fn T (-> Bool) (:generics T)");
 
   const extraAssertions = [
     ["assert=", "true", ["calcit.nil-helper/typed-bool", "false"]],
@@ -78,13 +78,13 @@ try {
   run(snapshot, "edit", "def", "calcit.nil-predicate/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), ...extraAssertions, "&unit"]));
   run(snapshot, "edit", "schema", "calcit.nil-predicate/run-tests", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    "quote $ Fn (-> Unit)");
   // #2351: a known Bool result cannot erase the producer's failure. Keep
   // the shared Calcit assertion on its definition; this probes host traps.
   run(snapshot, "edit", "def", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
-    "quote $ defwasm-export fail-predicate ()\n  let\n      produce $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'Bool)\n        raise |predicate-must-run\n    bool? $ produce");
+    "quote $ defwasm-export fail-predicate () $ let\n    produce $ fn ()\n      hint-fn $ quote $ Fn (-> Bool)\n      raise |predicate-must-run\n  bool? $ produce");
   run(snapshot, "edit", "schema", "calcit.nil-predicate/fail-predicate", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)");
+    "quote $ Fn (-> Bool)");
   const entry = [snapshot, "--init-fn", "calcit.nil-predicate/run-tests", "--reload-fn", "calcit.nil-predicate/run-tests"];
   run(...entry);
   const failingEntry = [snapshot, "--init-fn", "calcit.nil-predicate/fail-predicate", "--reload-fn", "calcit.nil-predicate/fail-predicate"];
@@ -116,7 +116,7 @@ try {
   run(openSnapshot, "edit", "def", "calcit.nil-predicate/open-nil", "--input-format", "cirru", "--code",
     "quote $ defwasm-export open-nil (x)\n  non-nil? x");
   run(openSnapshot, "edit", "schema", "calcit.nil-predicate/open-nil", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:return 'Bool)");
+    "quote $ Fn T (-> Bool) (:generics T)");
   const rejected = spawnSync(binary, ["wasm", openSnapshot, ...entry.slice(1), "--emit-path", join(fixture, "open-output")], {
     encoding: "utf8", timeout: 60000,
   });
@@ -130,11 +130,11 @@ try {
   run(spreadSnapshot, "edit", "def", "calcit.nil-predicate/generic-rest", "--input-format", "cirru", "--code",
     "quote $ defn generic-rest (x & xs)\n  non-nil? x");
   run(spreadSnapshot, "edit", "schema", "calcit.nil-predicate/generic-rest", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:rest 'T) (:return 'Bool)");
+    "quote $ Fn T & T (-> Bool) (:generics T)");
   run(spreadSnapshot, "edit", "def", "calcit.nil-predicate/spread-nil", "--input-format", "cirru", "--code",
     "quote $ defwasm-export spread-nil ()\n  generic-rest 0 & $ []");
   run(spreadSnapshot, "edit", "schema", "calcit.nil-predicate/spread-nil", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)");
+    "quote $ Fn (-> Bool)");
   const spreadRejected = spawnSync(binary, [
     "wasm", spreadSnapshot, ...entry.slice(1), "--emit-path", join(fixture, "spread-output"),
   ], { encoding: "utf8", timeout: 60000 });
@@ -148,13 +148,13 @@ try {
   run(shadowSnapshot, "edit", "def", "calcit.nil-predicate/dynamic-number", "--input-format", "cirru", "--code",
     "quote $ defn dynamic-number () 0");
   run(shadowSnapshot, "edit", "schema", "calcit.nil-predicate/dynamic-number", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+    "quote $ Fn (-> Number)");
   run(shadowSnapshot, "edit", "def", "calcit.nil-predicate/shadow-value", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "shadow-value", ["x"], ["let", [
       ["f", ["fn", ["x"], ["non-nil?", "x"]]],
     ], ["f", ["dynamic-number"]]]]));
   run(shadowSnapshot, "edit", "schema", "calcit.nil-predicate/shadow-value", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Bool)");
+    "quote $ Fn String (-> Bool)");
   const shadowOutput = join(fixture, "shadow-output");
   run("wasm", shadowSnapshot, ...entry.slice(1), "--emit-path", shadowOutput);
   const shadowModule = new WebAssembly.Module(await readFile(join(shadowOutput, "program.wasm")));
@@ -184,7 +184,7 @@ try {
     run(snapshot, "edit", "def", "calcit.nil-predicate/fail-command", "--input-format", "cirru", "--code",
       "quote $ defn fail-command ()\n  fail-predicate\n  , &unit");
     run(snapshot, "edit", "schema", "calcit.nil-predicate/fail-command", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+      "quote $ Fn (-> Unit)");
     const failingCommand = [snapshot, "--init-fn", "calcit.nil-predicate/fail-command", "--reload-fn", "calcit.nil-predicate/fail-command"];
     const failureOutput = join(fixture, "failing-component");
     run("wasi", ...failingCommand, "--emit-path", failureOutput);

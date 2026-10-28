@@ -16,26 +16,24 @@
     %{} 'FileEntry
       :defs $ {}
         'Child $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Child (requires Parent) (.label :fn)
+          :code $ quote $ deftrait Child (requires Parent) (.label 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Parent $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Parent (.label :fn)
+          :code $ quote $ deftrait Parent (.label 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 refs $ [] Child
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry
         :doc "|Strict fixture for a child trait redeclaring a parent member."
         :code $ quote $ ns type-fail-trait-requires-member-conflict-strict.main

@@ -1886,7 +1886,7 @@ fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
     let ns = "type-fail-unsafe-coerce-erased-cache-strict.main";
     let content = fs::read_to_string(path).expect("read erased-cache fixture");
     let with_feature = |feature: &str| {
-      let edited = content.replace(":features $ #{} :erased-cache", feature);
+      let edited = content.replace(":features :erased-cache", feature);
       assert_ne!(edited, content, "fixture should declare the erased-cache feature");
       let data = cirru_edn::parse(&edited).expect("parse edited fixture");
       prepare_snapshot_entries(snapshot::load_snapshot_data(&data, path).expect("load edited fixture"))
@@ -1903,7 +1903,7 @@ fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
     run_check_only(&load_fixture_entries(path)).expect("an :erased-cache adapter may contain unsafe-coerce");
     audit_restore().expect("an :erased-cache adapter proves its generic return through the restore");
 
-    let err = run_check_only(&with_feature(":features $ #{}")).expect_err("an unmarked cache restore must fail strict check-only");
+    let err = run_check_only(&with_feature("")).expect_err("an unmarked cache restore must fail strict check-only");
     assert!(err.contains("E_UNSCOPED_UNSAFE_COERCE"), "unexpected unscoped error: {err}");
     assert!(err.contains("--add-feature erased-cache"), "missing erased-cache guidance: {err}");
 
@@ -1911,7 +1911,7 @@ fn strict_type_fail_erased_cache_feature_scopes_typed_cache_restore() {
     // evidence there, so a Calcit generic return keeps its proof obligation.
     // The default preflight carries the same proof (#2121), so check-only
     // rejects the js-ffi restore too.
-    let err = run_check_only(&with_feature(":features $ #{} :js-ffi")).expect_err("js-ffi scopes but does not prove the restore");
+    let err = run_check_only(&with_feature(":features :js-ffi")).expect_err("js-ffi scopes but does not prove the restore");
     assert!(err.contains("E_ERASED_GENERIC_RELATION"), "unexpected js-ffi check error: {err}");
     let err = audit_restore().expect_err("js-ffi must not prove a Calcit cache restore");
     assert_eq!(

@@ -13,15 +13,15 @@
         'A $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct A (:a 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'A0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct A0 (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'B $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct B (:b 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'BirdImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl BirdImpl BirdTrait
             .show $ fn (self)
@@ -30,49 +30,49 @@
               hint-fn $ quote $ Fn test-struct.main/Lagopus0 String (-> Dynamic)
               .assoc self :name name
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'BirdShape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct BirdShape (:show 'Fn) (:rename 'Fn)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'BirdTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait BirdTrait (.show :fn) (.rename :fn)
+          :code $ quote $ deftrait BirdTrait (.show 'Fn) (.rename 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'C $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct C (:c 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Cat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Cat (:name 'String) (:color 'Tag)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'City $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct City (:name 'String) (:province 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox ([] 'T) (:value 'T)
             :count $ quote $ Option Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Lagopus $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Lagopus (impl-traits Lagopus0 BirdImpl)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'Lagopus0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Lagopus0 (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'MapLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MapLiteralStore
             {} $ :text 'String
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |map-literal-fields)
             :code $ quote $ let
                 store $ MapLiteralStore :text |ok
@@ -81,13 +81,12 @@
           :code $ quote $ def NullableEvent
             fn (value) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Unit)
         'NullableEventStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableEventStore
             :handlers $ :: Map Tag $ :: JsNullish test-struct.main/NullableEvent
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ []
             %{} 'TestEntry (:name |named-callback-members)
               :code $ quote $ let
@@ -107,9 +106,7 @@
             %{} 'TestEntry (:name |wider-callback-input)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] $ :: JsNullish Number
-                      :return Unit
+                    hint-fn $ quote $ Fn (JsNullish Number) (-> Unit)
                     , &unit
                   handlers $ {} $ :click callback
                   stored $ NullableEventStore :handlers handlers
@@ -118,9 +115,7 @@
             %{} 'TestEntry (:name |mixed-callback-members)
               :code $ quote $ let
                   callback $ fn (value)
-                    hint-fn $ {}
-                      :args $ [] Number
-                      :return Unit
+                    hint-fn $ quote $ Fn Number (-> Unit)
                     , &unit
                   stored $ NullableEventStore :handlers $ {} (:click callback) (:focus nil)
                 assert=
@@ -136,12 +131,12 @@
               :tags $ #{} :collection-proof
         'NullableLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableLiteralStore
-            :items $ :: List $ :: JsNullish Number
-            :unique $ :: Set $ :: JsNullish Number
-            :nested $ :: Map Tag $ :: List
-              :: Map Tag $ :: JsNullish Number
+            :items $ quote $ List (JsNullish Number)
+            :unique $ quote $ Set (JsNullish Number)
+            :nested $ quote $ Map Tag
+              List $ Map Tag $ JsNullish Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |nested-literal-members)
             :code $ quote $ let
                 stored $ NullableLiteralStore :items ([] 7 nil) :unique (#{} nil 7) :nested $ {}
@@ -155,10 +150,11 @@
             :tags $ #{} :collection-proof
         'NullableNumberStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableNumberStore
-            :values $ :: Map Tag $ :: JsNullish Number
-            :nested $ :: List $ :: Map Tag (:: JsNullish Number)
+            :values $ quote $ Map Tag (JsNullish Number)
+            :nested $ quote $ List
+              Map Tag $ JsNullish Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ []
             %{} 'TestEntry (:name |concrete-members)
               :code $ quote $ let
@@ -192,7 +188,7 @@
             :count $ quote $ Option Number
             :label $ quote $ Option String
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
             :code $ quote $ do
               assert= (Option :some 0)
@@ -208,7 +204,7 @@
             :count $ quote $ Optional Number
             :label $ quote $ Optional String
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry
             :name |legacy-optional-direct-constructor-admits-concrete-and-nil
             :code $ quote $ do
@@ -220,19 +216,19 @@
           :code $ quote $ defstruct OptionalGeneric ([] 'T)
             :value $ quote $ Optional T
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Point2D $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point2D (:x 'Number) (:y 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'TagShorthandEvent $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct TagShorthandEvent (:type 'Tag) (:path 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
           :tests $ []
             %{} 'TestEntry (:name |struct-receiver)
               :code $ quote $ let
@@ -257,14 +253,11 @@
                 assigned value
               reset! receiver assigned
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] (:: 'Ref 'T) 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (Ref T) T (-> T) (:generics T)
         'assign-global $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-global (value) (reset! reset-proof-count value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |global-number-and-nested-return)
             :code $ quote $ assert= &unit
               do
@@ -276,8 +269,7 @@
         'assign-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-number (source value) (reset! source value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] (:: 'Ref 'Number) 'Number
+          :schema $ quote $ Fn (Ref Number) Number (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |assigned-value-retains-scalar-and-alias-types)
               :code $ quote $ let
@@ -313,16 +305,13 @@
                   source $ ref 1
                   order $ ref 0
                   target $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return $ :: Ref Number
+                    hint-fn $ quote $ Fn
+                      -> $ Ref Number
                     assert= 0 $ deref order
                     reset! order 1
                     , source
                   value $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return Number
+                    hint-fn $ quote $ Fn (-> Number)
                     assert= 1 $ deref order
                     reset! order 2
                     , 7
@@ -345,21 +334,18 @@
                 source $ ref value
               reset! source value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'assign-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-option (source value) (reset! source value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-              :: 'Ref $ :: 'Option 'String
-              :: 'Option 'String
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn
+            Ref $ Option String
+            Option String
+            -> $ Option String
         'check-point-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn check-point-type (p) (struct? p)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-struct.main/Point2D
+          :schema $ quote $ Fn test-struct.main/Point2D (-> Bool)
         'checked-literal-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-literal-alias ()
             let
@@ -369,8 +355,7 @@
                 alias values
               NullableNumberStore :values alias :nested $ [] alias
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'test-struct.main/NullableNumberStore)
-            :args $ []
+          :schema $ quote $ Fn (-> test-struct.main/NullableNumberStore)
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ let
                 stored $ checked-literal-alias
@@ -389,9 +374,8 @@
               fold names initial $ fn (days name)
                 .union days $ #{} name
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'String
-            :return $ :: 'Set 'String
+          :schema $ quote $ Fn (List String)
+            -> $ Set String
           :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
             :code $ quote $ do
               assert= (#{})
@@ -404,18 +388,16 @@
             assert-type ([])
               quote $ List String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'String
+          :schema $ quote $ Fn
+            -> $ List String
           :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
             :code $ quote $ assert= ([]) (empty-list-proof)
             :tags $ #{} :empty-container-proof
         'empty-map-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-map-proof () (&{})
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'Tag 'String
+          :schema $ quote $ Fn
+            -> $ Map Tag String
           :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
             :code $ quote $ assert= ({}) (empty-map-proof)
             :tags $ #{} :empty-container-proof
@@ -428,9 +410,8 @@
                 if flag alias $ #{}
               quote $ Set String
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'Set 'String
+          :schema $ quote $ Fn Bool
+            -> $ Set String
           :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
             :code $ quote $ do
               assert= (#{}) (empty-set-proof true)
@@ -439,14 +420,12 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'nullable-callback-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-callback-choice (present?) (if present? NullableEvent nil)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'JsNullish 'test-struct.main/NullableEvent
+          :schema $ quote $ Fn Bool
+            -> $ JsNullish test-struct.main/NullableEvent
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= NullableEvent $ nullable-callback-choice true
@@ -455,9 +434,8 @@
         'nullable-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-choice (present? value) (if present? value nil)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= 7 $ nullable-choice true 7
@@ -466,9 +444,8 @@
         'nullable-implicit-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-implicit-choice (present? value) (if present? value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= 7 $ nullable-implicit-choice true 7
@@ -481,9 +458,8 @@
                 alias selected
               , alias
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= 7 $ nullable-let-choice true 7
@@ -496,9 +472,8 @@
                 alias values
               if present? alias $ {} $ :absent nil
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'Map 'Tag $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool
+            -> $ Map Tag $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ let ()
               assert=
@@ -514,9 +489,8 @@
               (:some value) value
               (:none) nil
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Option 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn (Option Number)
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= 7 $ nullable-match $ Option :some 7
@@ -526,18 +500,16 @@
           :code $ quote $ defn nullable-raised-choice (present? value)
             if present? value $ raise |no-value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ assert= 7 (nullable-raised-choice true 7)
             :tags $ #{} :contextual-proof
         'nullable-reversed-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-reversed-choice (present? value) (if present? nil value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= nil $ nullable-reversed-choice true 7
@@ -551,9 +523,8 @@
                   selected selected
                 , selected
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'Number
-            :return $ :: 'JsNullish 'Number
+          :schema $ quote $ Fn Bool Number
+            -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= 7 $ nullable-shadow-choice true 7
@@ -562,9 +533,8 @@
         'nullish-literal-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullish-literal-list () ([] 7 nil)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'JsNullish $ :: 'List (:: 'JsNullish 'Number)
+          :schema $ quote $ Fn
+            -> $ JsNullish $ List (JsNullish Number)
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ assert= ([] 7 nil) (nullish-literal-list)
             :tags $ #{} :collection-proof
@@ -575,8 +545,7 @@
               assert-type store test-struct.main/MapLiteralStore
               :text store
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-statement-narrows-struct)
             :code $ quote $ assert= |ok
               read-asserted-map-literal-store $ MapLiteralStore :text |ok
@@ -584,9 +553,7 @@
           :code $ quote $ defn read-context-box (box)
             .unwrap-or (:count box) 160
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'test-struct.main/ContextBox 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (test-struct.main/ContextBox T) (-> Number) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |generic-contextual-constructors)
             :code $ quote $ let ()
               assert= 7 $ read-context-box $ ContextBox :value 1 :count (Option :some 7)
@@ -601,10 +568,9 @@
                 key name
               &get-env key
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :features $ #{} :env :io
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String
+            -> $ Option String
+            :features :env :io
           :tests $ []
             %{} 'TestEntry (:name |env-wrapper-retains-producer-evidence)
               :code $ quote $ let
@@ -628,8 +594,7 @@
                 store $ assert-type source test-struct.main/MapLiteralStore
               :text store
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-expression-narrows-struct)
             :code $ quote $ assert= |ok
               read-let-asserted-map-literal-store $ MapLiteralStore :text |ok
@@ -638,8 +603,7 @@
             + (:value box)
               .unwrap-or (:count box) 160
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'test-struct.main/ContextBox 'Number
+          :schema $ quote $ Fn (test-struct.main/ContextBox Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |concrete-contextual-constructors)
             :code $ quote $ let ()
               assert= 9 $ read-number-box $ ContextBox :value 1 :count (Option :some 8)
@@ -649,19 +613,17 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reset-proof-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref reset-proof-count 0
           :examples $ []
-          :schema $ :: 'Ref 'Number
+          :schema $ quote $ Ref Number
         'set-optional-fields $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture (Optional fields, optional-proof); retire with Optional (0.32.0)."
           :code $ quote $ defn set-optional-fields (amount label)
             struct-with (OptionalFields :count nil :label nil) (:count amount) (:label label)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'test-struct.main/OptionalFields)
-            :args $ [] 'Number 'String
+          :schema $ quote $ Fn Number String (-> test-struct.main/OptionalFields)
           :tests $ []
             %{} 'TestEntry (:name |legacy-optional-concrete-fields-enter-optional)
               :code $ quote $ assert= (OptionalFields :count 7 :label |saved) (set-optional-fields 7 |saved)
@@ -679,10 +641,9 @@
           :code $ quote $ defn set-optional-generic (record value)
             struct-with record $ :value value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'test-struct.main/OptionalGeneric 'T) 'T
-            :generics $ [] 'T
-            :return $ :: 'test-struct.main/OptionalGeneric 'T
+          :schema $ quote $ Fn (test-struct.main/OptionalGeneric T) T
+            -> $ test-struct.main/OptionalGeneric T
+            :generics T
           :tests $ [] $ %{} 'TestEntry
             :name |legacy-optional-preserves-generic-payload-evidence
             :code $ quote $ do
@@ -695,8 +656,7 @@
           :code $ quote $ defn sum-point (p)
             &+ (:x p) (:y p)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'test-struct.main/Point2D
+          :schema $ quote $ Fn test-struct.main/Point2D (-> Number)
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
@@ -717,22 +677,19 @@
                   :d 5
               assert= "|%{} 'Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim $ format-cirru-edn data
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-loose-struct-rewrite $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing loose-to-struct rewrite")
             assert= 30 $ sum-point $ ?{} :x 10 :y 20
             assert= true $ check-point-type $ ?{} :x 10 :y 20
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-map-to-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing map-to-struct rewrite")
             assert= 30 $ sum-point $ {} (:x 10) (:y 20)
             assert= true $ check-point-type $ {} (:x 10) (:y 20)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct match")
             let
@@ -752,8 +709,7 @@
                 B bb $ :b bb
                 _ o (println |others) :other
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct methods")
             &let
@@ -779,8 +735,7 @@
                 assert= 10 $ &struct:nth persian 0 :age
                 assert= :Persian $ &struct:get-name persian
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-polymorphism $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Test struct polymorphism") (println Lagopus)
             let
@@ -799,8 +754,7 @@
                 l2t .show
                 assert= (&struct:impls l1) (&struct:impls a1r)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")
           :code $ quote $ fn () (log-title "|Testing postfix syntax")
             let
@@ -815,8 +769,7 @@
                 assert-type l2 Lagopus
                 assert= |LagopusB $ :name l2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct")
             let
@@ -873,9 +826,7 @@
                   [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
                   read-open p1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-complete-construction ()
             let
@@ -889,8 +840,7 @@
               assert= complete $ dynamic Point2D
               , 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |complete-alias-dynamic)
               :code $ quote $ assert= 1 (test-struct-complete-construction)
@@ -931,16 +881,14 @@
               assert= :shanghai $ :position p2
               assert= |Chen $ :name p2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'try-bool $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-bool (fail?)
             try
               if fail? (raise |fixture-failure) true
               fn (message) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |normal-bool)
               :code $ quote $ assert= true (try-bool false)
@@ -963,9 +911,8 @@
                     , 0
               deref events
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'List 'String
+          :schema $ quote $ Fn Bool
+            -> $ List String
           :tests $ []
             %{} 'TestEntry (:name |normal-evaluation-order)
               :code $ quote $ assert= ([] |start |body) (try-effect-order false)
@@ -979,8 +926,7 @@
               if fail? (raise |fixture-failure) 7
               raise |handler-failure
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |normal-does-not-evaluate-raising-factory)
               :code $ quote $ assert= 7 (try-factory-never false)
@@ -996,8 +942,7 @@
               if fail? (raise |fixture-failure) 7
               fn (message) (raise message)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |raise-has-no-caught-value)
               :code $ quote $ assert= 7 (try-handler-never false)
@@ -1015,8 +960,7 @@
                 hint-fn $ quote $ Fn String (-> Bool)
                 , false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |normal)
               :code $ quote $ assert= true (try-hinted-handler false)
@@ -1030,8 +974,7 @@
               if fail? (raise |fixture-failure) |normal
               , identity
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> String)
           :tests $ []
             %{} 'TestEntry (:name |normal)
               :code $ quote $ assert= |normal (try-imported-handler false)
@@ -1047,8 +990,7 @@
                 fn (message) 0
               deref counter
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |handler-factory-is-lazy)
             :code $ quote $ assert= 0 (try-lazy!)
             :tags $ #{} :try-proof :unit
@@ -1057,8 +999,7 @@
             try (raise |fixture-failure)
               fn (message) message
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |raise-has-no-normal-value)
             :code $ quote $ assert= |fixture-failure (try-normal-never)
             :tags $ #{} :try-proof :unit
@@ -1068,9 +1009,8 @@
               if fail? (raise |fixture-failure) (Option :some 7)
               fn (message) (Option :none)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'Option 'Number
+          :schema $ quote $ Fn Bool
+            -> $ Option Number
           :tests $ []
             %{} 'TestEntry (:name |normal-option)
               :code $ quote $ assert= (Option :some 7) (try-option false)
@@ -1087,8 +1027,7 @@
                 assert= (Option :none) extra
                 , message
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> String)
           :tests $ []
             %{} 'TestEntry (:name |normal-value)
               :code $ quote $ assert= |normal (try-optional-handler false)
@@ -1102,8 +1041,7 @@
               if fail? (raise |fixture-failure) 7
               , &str:count
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |normal)
               :code $ quote $ assert= 7 (try-proc-handler false)
@@ -1119,8 +1057,7 @@
                 hint-fn $ quote $ Fn & String (-> Number)
                 .len messages
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |normal-value)
               :code $ quote $ assert= 7 (try-rest-handler false)
@@ -1134,8 +1071,7 @@
               if fail? (raise |fixture-failure) 7
               fn (& messages) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |normal)
               :code $ quote $ assert= 7 (try-rest-ignored false)
@@ -1149,8 +1085,7 @@
               if fail? (raise |fixture-failure) 7
               fn (message & others) (.len message)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |normal)
               :code $ quote $ assert= 7 (try-rest-prefix false)
@@ -1164,9 +1099,8 @@
               if fail? (raise |fixture-failure) (Result :ok 7)
               fn (message) (Result :err message)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool
-            :return $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn Bool
+            -> $ Result Number String
           :tests $ []
             %{} 'TestEntry (:name |normal-result)
               :code $ quote $ assert= (Result :ok 7) (try-result false)
@@ -1180,8 +1114,7 @@
               if fail? (raise |fixture-failure) |normal
               fn (message) message
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> String)
           :tests $ []
             %{} 'TestEntry (:name |normal-string)
               :code $ quote $ assert= |normal (try-string false)

@@ -11,19 +11,19 @@
     %{} 'FileEntry
       :defs $ {}
         'f $ %{} 'CodeEntry (:doc |)
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
           :code $ quote $ defn f (n)
-            if (= n 0) 0 $ + 1 $ f $ - n 1
+            if (= n 0) 0 $ + 1 $ f (- n 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
-          :schema $ :: 'Fn $ {} (:return 'Unit)
           :code $ quote $ defn main! ()
-            println "|shallow" $ f 300
-            println "|deep" $ f 1000000
+            println |shallow $ f 300
+            println |deep $ f 1000000
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

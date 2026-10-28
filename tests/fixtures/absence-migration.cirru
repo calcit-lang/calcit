@@ -14,18 +14,15 @@
           :code $ quote $ defn f (n)
             if (= n 0) 0 $ + 1 $ f (- n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
     'app.migration $ %{} 'FileEntry
@@ -33,7 +30,7 @@
         'TraversalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct TraversalBox (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'active-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn active-error ()
             let
@@ -46,8 +43,7 @@
               assert= 1 $ deref calls
               , result
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/active-error)
             :tags $ #{} :absence-migration
@@ -60,8 +56,7 @@
                   , fallback
               identical? fallback result
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/closure-identity)
             :tags $ #{} :absence-migration
@@ -69,8 +64,7 @@
           :code $ quote $ defn enum-probe ()
             nil? $ &enum:definition $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/enum-probe)
             :tags $ #{} :absence-migration
@@ -78,8 +72,7 @@
           :code $ quote $ defn env-probe ()
             nil? $ &get-env |CALCIT_ABSENCE_MIGRATION_UNSET_2080
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/env-probe)
             :tags $ #{} :absence-migration
@@ -99,8 +92,7 @@
               assert= 9 result
               , true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |lazy-once-only)
             :code $ quote $ assert= true (app.migration/fallback-either)
             :tags $ #{} :absence-migration
@@ -108,8 +100,7 @@
           :code $ quote $ defn impl-probe ()
             nil? $ &impl:origin $ &impl::new :PlainImpl
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/impl-probe)
             :tags $ #{} :absence-migration
@@ -117,8 +108,7 @@
           :code $ quote $ defn list-first ()
             nil? $ &list:first $ [] nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/list-first)
             :tags $ #{} :absence-migration
@@ -126,8 +116,7 @@
           :code $ quote $ defn list-last ()
             nil? $ &list:last $ [] 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/list-last)
             :tags $ #{} :absence-migration
@@ -135,8 +124,7 @@
           :code $ quote $ defn map-destruct ()
             nil? $ &map:destruct $ &{}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/map-destruct)
             :tags $ #{} :absence-migration
@@ -144,8 +132,7 @@
           :code $ quote $ defn map-destruct-present ()
             non-nil? $ &map:destruct $ &{} :k 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/map-destruct-present)
             :tags $ #{} :absence-migration
@@ -160,8 +147,7 @@
                 , result
               , true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-payload)
             :code $ quote $ assert= true (app.migration/map-destruct-values)
             :tags $ #{} :absence-migration
@@ -183,8 +169,7 @@
               assert= 2 $ deref counter
               , result
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |lazy-once-only)
             :code $ quote $ assert= 7 (app.migration/map-either)
             :tags $ #{} :absence-migration
@@ -192,8 +177,7 @@
           :code $ quote $ defn map-empty-text ()
             nil? $ &map:get (&{} :k |) :k
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/map-empty-text)
             :tags $ #{} :absence-migration
@@ -201,8 +185,7 @@
           :code $ quote $ defn map-false ()
             nil? $ &map:get (&{} :k false) :k
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/map-false)
             :tags $ #{} :absence-migration
@@ -210,8 +193,7 @@
           :code $ quote $ defn map-missing ()
             nil? $ &map:get (&{} :k 7) :missing
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/map-missing)
             :tags $ #{} :absence-migration
@@ -219,8 +201,7 @@
           :code $ quote $ defn map-nil ()
             nil? $ &map:get (&{} :k nil) :k
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |legacy-value)
               :code $ quote $ assert= true (app.migration/map-nil)
@@ -233,8 +214,7 @@
           :code $ quote $ defn map-zero ()
             nil? $ &map:get (&{} :k 0) :k
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/map-zero)
             :tags $ #{} :absence-migration
@@ -242,8 +222,7 @@
           :code $ quote $ defn nested-lookup ()
             nil? $ &get-in (&{} :k nil) ([] :k)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/nested-lookup)
             :tags $ #{} :absence-migration
@@ -251,8 +230,7 @@
           :code $ quote $ defn parse-either ()
             either (&parse-float |oops) 9
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |lazy-once-only)
             :code $ quote $ assert= 9 (app.migration/parse-either)
             :tags $ #{} :absence-migration
@@ -260,8 +238,7 @@
           :code $ quote $ defn parse-failed ()
             nil? $ &parse-float |oops
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/parse-failed)
             :tags $ #{} :absence-migration
@@ -269,8 +246,7 @@
           :code $ quote $ defn parse-number ()
             non-nil? $ &parse-float |1.5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/parse-number)
             :tags $ #{} :absence-migration
@@ -284,8 +260,7 @@
                 hint-fn $ quote $ Fn String (-> String)
                 , message
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |public-struct-error)
             :code $ quote $ assert= "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
               app.migration/public-struct-boundary $ TraversalBox :value 3
@@ -294,8 +269,7 @@
           :code $ quote $ defn set-destruct ()
             non-nil? $ &set:destruct $ #{} 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/set-destruct)
             :tags $ #{} :absence-migration
@@ -310,8 +284,7 @@
                 , result
               , true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-payload)
             :code $ quote $ assert= true (app.migration/set-destruct-values)
             :tags $ #{} :absence-migration
@@ -319,8 +292,7 @@
           :code $ quote $ defn set-empty ()
             nil? $ &set:destruct $ #{}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/set-empty)
             :tags $ #{} :absence-migration
@@ -328,8 +300,7 @@
           :code $ quote $ defn string-first ()
             nil? $ &str:first |
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/string-first)
             :tags $ #{} :absence-migration
@@ -337,8 +308,7 @@
           :code $ quote $ defn string-nth ()
             non-nil? $ &str:nth "|🌱树" 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/string-nth)
             :tags $ #{} :absence-migration
@@ -346,8 +316,7 @@
           :code $ quote $ defn string-outside ()
             nil? $ &str:nth |abc 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/string-outside)
             :tags $ #{} :absence-migration
@@ -357,8 +326,7 @@
                 Person $ defstruct Person $ :name 'String
               nil? $ &struct:definition $ Person :name |Ada
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/struct-probe)
             :tags $ #{} :absence-migration
@@ -366,8 +334,7 @@
           :code $ quote $ defn traversal-empty-scalar ()
             non-nil? $ &get-in false $ []
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-empty-scalar)
             :tags $ #{} :absence-migration
@@ -377,8 +344,7 @@
               [] $ &{} :k nil
               [] 0 :k
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-list-map)
             :tags $ #{} :absence-migration
@@ -388,8 +354,7 @@
               &{} :k $ [] $ &{} :value false
               [] :k 0 :value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-map-list)
             :tags $ #{} :absence-migration
@@ -397,8 +362,7 @@
           :code $ quote $ defn traversal-nil ()
             nil? $ &get-in nil $ [] :k :value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-nil)
             :tags $ #{} :absence-migration
@@ -406,8 +370,7 @@
           :code $ quote $ defn traversal-string ()
             non-nil? $ &get-in "|😀" $ [] 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-string)
             :tags $ #{} :absence-migration
@@ -415,8 +378,7 @@
           :code $ quote $ defn traversal-struct-empty ()
             non-nil? $ &get-in (TraversalBox :value 3) ([])
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-struct-empty)
             :tags $ #{} :absence-migration
@@ -426,8 +388,7 @@
               &{} :box $ TraversalBox :value 3
               [] :box
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/traversal-struct-terminal)
             :tags $ #{} :absence-migration

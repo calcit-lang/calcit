@@ -154,9 +154,7 @@ defn add (a b) (+ a b)
 `schema` can be attached separately:
 
 ```cirru
-:: 'Fn $ {}
-  :args $ [] 'Number 'Number
-  :return 'Number
+quote $ Fn Number Number (-> Number)
 ```
 
 ### Built-in Types

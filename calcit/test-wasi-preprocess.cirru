@@ -13,12 +13,10 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (+ 1 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

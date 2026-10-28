@@ -98,7 +98,7 @@ try {
   run("edit", "def", "calcit.spread-evidence/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "run-tests", [], ...tests.map(test => test.code), "1"]));
   run("edit", "schema", "calcit.spread-evidence/run-tests", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+    "quote $ Fn (-> Number)");
   run("config", "set", "init-fn", "calcit.spread-evidence/run-tests");
   run("config", "set", "reload-fn", "calcit.spread-evidence/run-tests");
   // The transplanted core tests are not project code the default proof audits.
@@ -108,9 +108,9 @@ try {
   assert.equal(generated.run_tests(), 1);
 
   run("edit", "def", "calcit.spread-evidence/fixed-spread", "--input-format", "cirru", "--code",
-    "quote $ defwasm-export fixed-spread ()\n  let\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    f & $ [] 1 2");
+    "quote $ defwasm-export fixed-spread () $ let\n    f $ fn (a b)\n      hint-fn $ quote $ Fn Number Number (-> Number)\n      + a b\n  f & $ [] 1 2");
   run("edit", "schema", "calcit.spread-evidence/fixed-spread", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+    "quote $ Fn (-> Number)");
   const selector = ["fix", "--rule", "spread-call-proof-v1", "--ns", "calcit.spread-evidence", "--def", "fixed-spread", "--format", "json"];
   const preview = JSON.parse(run(...selector));
   assert.equal(preview.data.suggestions.length, 1);
@@ -184,7 +184,7 @@ try {
   run("edit", "def", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
     "quote $ defn sink (n) n");
   run("edit", "schema", "calcit.spread-evidence/sink", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+    "quote $ Fn Number (-> Number)");
   for (const [index, expression] of [
     "sink & ([]) 6 7",
     "let ((call sink)) (call & ([]) 6 7)",

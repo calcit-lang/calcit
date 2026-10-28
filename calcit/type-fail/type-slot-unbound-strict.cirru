@@ -19,12 +19,10 @@
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes accept-payload reachable.")
           :code $ quote $ defn main! () (accept-payload 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict unbound type-slot fixture.")
         :code $ quote $ ns type-fail-type-slot-unbound-strict.main

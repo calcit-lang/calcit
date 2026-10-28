@@ -18,24 +18,20 @@
           :doc "|Unmarked top-level initialization must not inherit the caller's JS FFI capability."
           :code $ quote $ defref *unsafe (unsafe-coerce 1 'String)
           :examples $ []
-          :schema $ :: 'Ref 'String
+          :schema $ quote $ Ref String
         'coerce-host $ %{} 'CodeEntry
           :doc "|A marked adapter references the unmarked top-level atom."
           :code $ quote $ defn coerce-host (value) (deref *unsafe)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
         'main! $ %{} 'CodeEntry
           :doc "|The entry reaches the atom only through the marked adapter."
           :code $ quote $ defn main! () (coerce-host 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict scoped unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-scoped-strict.main

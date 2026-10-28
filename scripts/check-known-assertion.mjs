@@ -126,11 +126,11 @@ try {
           ["edit", "def", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
             `quote $ defn bad-${form} (xs seed)\n  ${call} $ fn (acc item)\n    , item`],
           ["edit", "schema", `app.main/bad-${form}`, "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:generics $ [] 'Elem 'Acc) (:args $ [] (:: 'List 'Elem) 'Acc) (:return 'Acc)"],
+            "quote $ Fn (List Elem) Acc (-> Acc) (:generics Elem Acc)"],
           ["edit", "def", `app.main/run-${form}`, "--input-format", "cirru", "--code",
             `quote $ defn run-${form} ()\n  bad-${form} ([] 1 2) |seed`],
           ["edit", "schema", `app.main/run-${form}`, "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
+            "quote $ Fn (-> String)"],
         ]);
         const rigidPreview = JSON.parse(runRigid("edit", "transaction", "--code", rigidTransaction, "--dry-run", "--format", "json"));
         runRigid("edit", "transaction", "--code", rigidTransaction,
@@ -172,7 +172,7 @@ try {
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! ()\n  assert= (Option :some 2) $ reverse-index ([] 1 2 3) $ fn (value) $ > value 1\n  , &unit"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       ];
       const reverseTransaction = JSON.stringify(reverseOperations);
@@ -217,7 +217,7 @@ try {
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
             JSON.stringify(["defn", "main!", [], "&unit"])],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+            "quote $ Fn (-> Unit)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
         const transaction = JSON.stringify(operations);
@@ -323,7 +323,7 @@ try {
       }
       mapperOperations.push(
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! ()\n  , &unit"],
-        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       );
       const mapperTransaction = JSON.stringify(mapperOperations);
@@ -385,7 +385,7 @@ try {
       // the wrong family or a concrete seed still cannot specialize the return.
       const boxOperations = JSON.stringify([
         ["edit", "def", "app.main/FieldBox", "--input-format", "cirru", "--code",
-          "quote $ defstruct FieldBox ([] 'T 'S) (:items $ :: 'List 'T) (:seed 'S)"],
+          "quote $ defstruct FieldBox ([] 'T 'S) (:items $ quote $ List T) (:seed 'S)"],
         ["edit", "schema", "app.main/FieldBox", "--input-format", "cirru", "--code", "quote $ :: 'StructDef"],
       ]);
       const boxPreview = JSON.parse(runMapper("edit", "transaction", "--code", boxOperations, "--dry-run", "--format", "json"));
@@ -400,7 +400,7 @@ try {
           ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code",
             `quote $ defn ${name} (seed)\n  FieldBox :items (${items}) :seed ${seed}`],
           ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:generics $ [] 'T 'S) (:args $ [] 'S) (:return $ :: 'app.main/FieldBox 'T 'S)"],
+            "quote $ Fn S (-> $ app.main/FieldBox T S) (:generics T S)"],
         ]);
         const preview = JSON.parse(runMapper("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
         runMapper("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "edn");
@@ -536,7 +536,7 @@ try {
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! ()\n  declared/Envelope :record $ Payload :value 7"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'app.declared/Envelope)"],
+          "quote $ Fn (-> app.declared/Envelope)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       ];
       const recursiveCode = JSON.stringify(recursiveOperations);
@@ -566,7 +566,7 @@ try {
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
             `quote $ defn main! ()\n  let\n      Payload declared/Payload\n      read $ fn (Payload)\n        hint-fn $ {} (:args $ [] 'String) (:return 'Unit)\n        let\n            record $ app.main/Payload :value 7\n          assert-type record ${typeName}\n          , &unit\n    read |caller`],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+            "quote $ Fn (-> Unit)"],
         ];
         const code = JSON.stringify(operations);
         const preview = JSON.parse(runRecursive("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
@@ -593,9 +593,9 @@ try {
         runRecursive("query", "def", "app.main/main!", "--format", "edn");
         const operations = [
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
-            "quote $ defn main! ()\n  let\n      Payload $ defstruct LocalPayload (:value 'Number)\n      Other $ defstruct LocalPayload (:value 'Number)\n      read $ fn (record)\n        hint-fn $ {} (:args $ [] 'Payload) (:return 'Number)\n        :value record\n    read $ Other :value 7"],
+            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value 'Number\n    Other $ defstruct LocalPayload $ :value 'Number\n    read $ fn (record)\n      hint-fn $ quote $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+            "quote $ Fn (-> Number)"],
         ];
         const code = JSON.stringify(operations);
         const preview = JSON.parse(runRecursive("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
@@ -639,7 +639,7 @@ try {
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
             `quote $ defn main! ()\n  ${expression}\n  , &unit`],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+            "quote $ Fn (-> Unit)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
         const code = JSON.stringify(operations);
@@ -701,7 +701,7 @@ try {
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
             "quote $ defn main! () (producer |outer)"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+            "quote $ Fn (-> Number)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
         if (!bodyHint || codeEntryGeneric) {
@@ -758,24 +758,24 @@ try {
         const source = nested
           ? `defn producer (input)\n  let\n      callback $ fn (value${extra ? " raw" : ""})\n        ${contract}\n        ${returned}\n    callback input${extra ? " 1" : ""}\n    , &unit`
           : `defn producer (value)\n  ${contract}\n  ${returned}`;
-        return { label, source, diagnostic, schema: nested ? "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)" : null };
+        return { label, source, diagnostic, schema: nested ? "quote $ Fn String (-> Unit)" : null };
       });
-      const sliceableUnit = "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T) (:where $ {} ('T 'Sliceable))";
-      const plainUnit = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)";
+      const sliceableUnit = "quote $ Fn T (-> Unit) (:generics T) (:where $ T Sliceable)";
+      const plainUnit = "quote $ Fn String (-> Unit)";
       const boundedCases = [
         {
           label: "empty-requires-caller-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> T) (:generics T)",
           source: "defn producer (value)\n  .empty value",
         },
         {
           label: "empty-cannot-manufacture-receiver-identity", diagnostic: /E_ERASED_GENERIC_RELATION/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T 'Emptyable))",
+          schema: "quote $ Fn T (-> T) (:generics T) (:where $ T Emptyable)",
           source: "defn producer (value)\n  empty $ [] 1",
         },
         {
           label: "shortcut-cannot-specialize-caller", diagnostic: /E_FN_RETURN_UNPROVEN/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return $ :: 'Option 'T) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> $ Option T) (:generics T)",
           source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'Enum)\n    :: true $ Option :some 1",
         },
         {
@@ -798,17 +798,17 @@ try {
         {
           label: "bound-hof-missing-caller-capability", diagnostic: /W_FN_ARG_TYPE_MISMATCH/,
           strictDiagnostic: /E_CALL_ARGUMENT_MISMATCH/, returnProof: false,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'C) (:return 'Unit) (:generics $ [] 'C)",
+          schema: "quote $ Fn C (-> Unit) (:generics C)",
           source: "defn producer (value)\n  map ([] value) $ fn (item)\n    hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n    , item\n  , &unit",
         },
         {
           label: "bound-missing-second-capability", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, returnProof: false,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T) (:where $ {} ('T 'Debug))",
+          schema: "quote $ Fn T (-> Unit) (:generics T) (:where $ T Debug)",
           source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'U) (:return 'U) (:generics $ [] 'U) (:where $ {} ('U $ [] Sliceable Debug))\n        , other\n    transform value\n    , &unit",
         },
         {
           label: "bound-explicit-call-needs-evidence", diagnostic: /E_UNPROVEN_TRAIT_CALL/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> Unit) (:generics T)",
           source: "defn producer (value)\n  &trait-call Sliceable :slice value 0 (Option :some 1)\n  , &unit",
         },
         // #2187: a kind guard on `x: T` narrows the input without instantiating
@@ -819,13 +819,13 @@ try {
           ["kind-guard-map-payload", "{} $ :a 1"],
         ].map(([label, payload]) => ({
           label, diagnostic: /E_ERASED_GENERIC_RELATION|E_FN_RETURN_UNPROVEN/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> T) (:generics T)",
           source: `defn producer (x)\n  if (${label.includes("map") ? "map?" : "list?"} x)\n    ${payload}\n    , x`,
         })),
         {
           // A guard on a captured outer value cannot prove an inner binder spelled the same.
           label: "kind-guard-captured-outer-binder", diagnostic: /E_ERASED_GENERIC_RELATION/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> Unit) (:generics T)",
           source: "defn producer (value)\n  let\n      callback $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:generics $ [] 'T)\n        if (list? value) value $ raise |no\n    callback\n    , &unit",
         },
         {
@@ -835,7 +835,7 @@ try {
         },
         {
           label: "bound-capture-cannot-invent-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
-          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
+          schema: "quote $ Fn T (-> Unit) (:generics T)",
           source: "defn producer (value)\n  let\n      transform $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:where $ {} ('T Sliceable))\n        .slice value 0 (Option :some 1)\n    transform\n    , &unit",
         },
       ];
@@ -846,7 +846,7 @@ try {
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
             "quote $ defn main! ()\n  producer |outer\n  , &unit"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+            "quote $ Fn (-> Unit)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
         if (schema) operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code", schema]);
@@ -915,7 +915,7 @@ try {
         ["edit", "def", `test-traits.main/unproven-${name}`, "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", `unproven-${name}`, ["value"], body])],
         ["edit", "schema", `test-traits.main/unproven-${name}`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Struct) (:return 'Number)"],
+          "quote $ Fn Struct (-> Number)"],
       ]);
       const originMutation = JSON.stringify(originOperations);
       const originPreview = JSON.parse(runOrigin("edit", "transaction", "--code", originMutation, "--dry-run", "--format", "json"));
@@ -965,7 +965,7 @@ try {
           ["edit", "schema", `${traitNamespace}/Greeting`, "--input-format", "cirru", "--code", "quote 'Trait"],
           ["edit", "def", "app.main/describe", "--input-format", "cirru", "--code", "quote $ defn describe (value)\n  value .greeting"],
           ["edit", "schema", "app.main/describe", "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T) (:where $ {} ('T 'Greeting))"],
+            "quote $ Fn T (-> String) (:generics T) (:where $ T Greeting)"],
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", `quote $ defn main! ()\n  ${expression}`],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", `quote $ :: 'Fn $ {} (:args $ []) (:return ${result})`],
           ["config", "set", "reload-fn", "app.main/main!"],
@@ -1031,7 +1031,7 @@ try {
       boundedOperations.push(
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! ()\n  bounded-map $ [] 1 2\n  , &unit"],
-        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       );
       const boundedCode = JSON.stringify(boundedOperations);
@@ -1045,9 +1045,9 @@ try {
       // Retaining checked hint metadata must not replace the public return contract.
       await copyFile("calcit/add.cirru", binderSnapshot);
       runBinder("edit", "def", "app.main/public-return", "--input-format", "cirru", "--code",
-        "quote $ defn public-return (value)\n  hint-fn $ {} (:args $ [] 'Number) (:return 'String)\n  str value");
+        "quote $ defn public-return (value)\n  hint-fn $ quote $ Fn Number (-> String)\n  str value");
       runBinder("edit", "schema", "app.main/public-return", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+        "quote $ Fn Number (-> Number)");
       const publicReturnSource = await readFile(binderSnapshot);
       const publicReturn = spawnSync(binary, [binderSnapshot, "--init-fn", "app.main/public-return", "--reload-fn", "app.main/public-return", "--check-only"], options);
       if (publicReturn.error) throw publicReturn.error;
@@ -1138,7 +1138,7 @@ try {
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (.read-dir $ fs:path |unused)"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Result (:: 'List 'FsPath) 'String)"],
+          "quote $ Fn (-> $ Result (List FsPath) String)"],
         ["edit", "def", "app.main/NumberPath", "--input-format", "cirru", "--code",
           "quote $ def NumberPath $ defstruct NumberPath (:value 'Number)"],
         ["edit", "schema", "app.main/NumberPath", "--input-format", "cirru", "--code", "quote 'StructDef"],
@@ -1201,11 +1201,11 @@ try {
         ["edit", "def", "app.main/read-guarded", "--input-format", "cirru", "--code",
           "quote $ defn read-guarded (value) (struct-match value (GuardedRecord current current) (_ other (raise |Wrong-struct)))"],
         ["edit", "schema", "app.main/read-guarded", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'app.main/GuardedRecord)"],
+          "quote $ Fn Dynamic (-> app.main/GuardedRecord)"],
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (let ((original (GuardedRecord :value 7))) (assert= true (identical? original (read-guarded original))) (assert= 7 (:value (read-guarded original))))"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
       ];
       const matchPreview = JSON.parse(runGuardedMatch("edit", "transaction", "--code", JSON.stringify(guardedMatchOps), "--dry-run", "--format", "json"));
       runGuardedMatch("edit", "transaction", "--code", JSON.stringify(guardedMatchOps), "--expect-revision", matchPreview.scoped_revision, "--format", "json");
@@ -1242,7 +1242,7 @@ try {
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (app.js-spread/make-arrays 3) &unit"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit) (:features (#{} :js-ffi))"],
+          "quote $ Fn (-> Unit) (:features :js-ffi)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       ];
       for (const [name, params, types, body] of [
@@ -1307,15 +1307,15 @@ try {
         ["edit", "def", "app.main/log-unit", "--input-format", "cirru", "--code",
           "quote $ defn log-unit (value) (println value)"],
         ["edit", "schema", "app.main/log-unit", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)"],
+          "quote $ Fn String (-> Unit)"],
         ["edit", "def", "app.main/failing-log", "--input-format", "cirru", "--code",
           "quote $ defn failing-log () (println |must-not-print $ raise |log-argument-failed)"],
         ["edit", "schema", "app.main/failing-log", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (assert= &unit $ log-unit |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       ];
       const loggingPreview = JSON.parse(run("edit", "transaction", "--code", JSON.stringify(loggingOps), "--dry-run", "--format", "json"));
@@ -1374,10 +1374,10 @@ try {
         const operations = JSON.stringify([
           ["edit", "add-ns", "app.open-ref-proof"],
           ["edit", "def", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ defref *wire nil"],
-          ["edit", "schema", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ :: 'Ref 'Dynamic"],
+          ["edit", "schema", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ Ref Dynamic"],
           ["edit", "def", "app.open-ref-proof/consume", "--input-format", "cirru", "--code",
             `quote $ defn consume () (add-watch! *wire :changes $ ${callback}) &unit`],
-          ["edit", "schema", "app.open-ref-proof/consume", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+          ["edit", "schema", "app.open-ref-proof/consume", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"],
         ]);
         const preview = JSON.parse(run("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
         run("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "json");
@@ -1416,7 +1416,7 @@ try {
         run("edit", "add-ns", "app.update-in-proof");
         if (name === "declared-body-hint-input") {
           run("edit", "def", "app.update-in-proof/consume", "--input-format", "cirru", "--code",
-            "quote $ defn consume (data callback) (hint-fn $ {} (:args $ [] 'Dynamic (:: 'Fn ({} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Number)))) (:return 'Number)) (callback $ Option :some data)");
+            "quote $ defn consume (data callback) (hint-fn $ quote $ Fn Dynamic (Fn (Option Dynamic) (-> Number)) (-> Number)) $ callback $ Option :some data");
           run("edit", "schema", "app.update-in-proof/consume", "--input-format", "cirru", "--code", "quote 'Dynamic");
         }
         const call = name === "declared-body-hint-input" ? "consume data" : `update-in data ${path}`;
@@ -1467,7 +1467,7 @@ try {
             run("edit", "def", "app.sort-selector/rejected-entry!", "--input-format", "cirru", "--code",
               "quote $ defn rejected-entry! () (rejected $ [] 1 2) &unit");
             run("edit", "schema", "app.sort-selector/rejected-entry!", "--input-format", "cirru", "--code",
-              "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+              "quote $ Fn (-> Unit)");
           }
           const before = await readFile(snapshot);
           const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
@@ -1496,7 +1496,7 @@ try {
         run("edit", "def", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
           `quote $ defn opaque-selector (rows selector) (${call})`);
         run("edit", "schema", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Fn) (:return $ :: 'List 'Number)");
+          "quote $ Fn (List Number) Fn (-> $ List Number)");
         const before = await readFile(snapshot);
         for (const args of [
           ["fix", "--rule", "callable-contract-proof-v1", "--ns", "app.sort-selector", "--def", "opaque-selector", "--format", "json"],
@@ -1511,7 +1511,7 @@ try {
         run("edit", "def", "app.sort-selector/opaque-selector", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn opaque-selector (rows) (let ((selector $ fn (row) (+ 1 row))) (${call}))`);
         run("edit", "schema", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Dynamic)) (:return $ :: 'List 'Dynamic)");
+          "quote $ Fn (List Dynamic) (-> $ List Dynamic)");
         const localCallback = spawnSync(binary, [snapshot, "--init-fn", "app.sort-selector/opaque-selector",
           "--reload-fn", "app.sort-selector/opaque-selector", "--check-only"], options);
         if (localCallback.error) throw localCallback.error;
@@ -1905,7 +1905,7 @@ try {
       guardedEdit([
         ["edit", "def", "app.short-circuit/pretend", "--input-format", "cirru", "--code", "quote $ defn pretend (k) true"],
         ["edit", "schema", "app.short-circuit/pretend", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Bool)"],
+          "quote $ Fn Dynamic (-> Bool)"],
         ["edit", "def", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote $ def lazy-flag $ do (println |lazy-flag) true"],
         ["edit", "schema", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote 'Bool"],
       ]);
@@ -1992,7 +1992,7 @@ try {
           JSON.stringify(["defn", "run-tests", [], ...truthinessTests.map(test => test.code),
             ["assert=", "|yes", ["choose-open", "0"]], ["assert=", "|no", ["choose-bool", "false"]], "&unit"])],
         ["edit", "schema", "calcit.core-truthiness/run-tests", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
       );
       const truthinessRevision = JSON.parse(replay("query", "config", "--format", "json")).revision;
       const truthinessTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessOperations),
@@ -2056,12 +2056,12 @@ try {
         ["edit", "def", "calcit.core-truthiness-wasm/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", "run-tests", [], ...truthinessWasmTests.map(test => test.code), "&unit"])],
         ["edit", "schema", "calcit.core-truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
         ...truthinessTraps.flatMap(({ name, expression }) => [
           ["edit", "def", `calcit.core-truthiness-wasm/${name}`, "--input-format", "json-ast", "--code",
             JSON.stringify(["defwasm-export", name, [], expression])],
           ["edit", "schema", `calcit.core-truthiness-wasm/${name}`, "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)"],
+            "quote $ Fn (-> String)"],
         ]),
       ];
       const truthinessWasmRevision = JSON.parse(truthinessWasmRun("query", "config", "--format", "json")).revision;
@@ -2105,11 +2105,11 @@ try {
           JSON.stringify(["defn", "truthiness-number-once", ["value"],
             ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],
         ["edit", "schema", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)"],
+          "quote $ Fn Number (-> Number)"],
         ["edit", "def", "calcit.core-truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", "run-tests", [], effectsTest, "&unit"])],
         ["edit", "schema", "calcit.core-truthiness-effects/run-tests", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
       ];
       const effectsRevision = JSON.parse(effectsRun("query", "config", "--format", "json")).revision;
       const effectsTransaction = ["edit", "transaction", "--code", JSON.stringify(effectsOperations),
@@ -2160,7 +2160,7 @@ try {
         ["edit", "add-ns", scalarNs],
         ["edit", "def", `${scalarNs}/main!`, "--input-format", "json-ast", "--code", JSON.stringify(["defn", "main!", [], "&unit"])],
         ["edit", "schema", `${scalarNs}/main!`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+          "quote $ Fn (-> Unit)"],
         ...scalarDefinition("choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"]),
         ...scalarDefinition("erase-refinement", ["value"], ["'UInt32"], ["unsafe-coerce", "value", "'Number"], "'Number", [":js-ffi"]),
         ...scalarDefinition("choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]]),
@@ -2386,7 +2386,7 @@ try {
           JSON.stringify(["defn", name, [], "&unit"])]),
         ["edit", "def", "app.main/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", "run-tests", [], ...resetWasmTests.map(test => test.code), "&unit"])],
-        ["edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+        ["edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"],
       );
       const resetWasmRevision = JSON.parse(resetWasmRun("query", "config", "--format", "json")).revision;
       const resetWasmTransaction = ["edit", "transaction", "--code", JSON.stringify(resetWasmOperations), "--expect-revision", resetWasmRevision, "--format", "json"];
@@ -2456,7 +2456,7 @@ try {
       run("edit", "def", "test-struct.main/try-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "try-replay", [], ...tryTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/try-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const tryEntry = ["--init-fn", "test-struct.main/try-replay", "--reload-fn", "test-struct.main/try-replay"];
       run(...tryEntry);
       const tryOutput = join(project, "try-js");
@@ -2595,7 +2595,7 @@ try {
       run("edit", "def", "test-struct.main/optional-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "optional-replay", [], ...optionalFieldTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/optional-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const optionalEntry = ["--init-fn", "test-struct.main/optional-replay", "--reload-fn", "test-struct.main/optional-replay"];
       run(...optionalEntry);
       const optionalFieldOutput = join(project, "optional-js");
@@ -2643,7 +2643,7 @@ try {
       workflowRun("test", "--tag", "optional-proof", "--require-match");
       assert.deepEqual(await readFile(workflowSnapshot), workflowOriginal);
       run("edit", "def", "test-struct.main/OptionalRefField", "--input-format", "cirru", "--code",
-        "quote $ defstruct OptionalRefField (:cell $ :: 'Ref $ :: 'Optional 'Number)");
+        "quote $ defstruct OptionalRefField (:cell $ quote $ Ref $ Optional Number)");
       run("edit", "schema", "test-struct.main/OptionalRefField", "--input-format", "cirru", "--code", "quote 'StructDef");
       for (const [label, argumentType, body, returnType, rule] of [
         ["wrong-payload", "'String", "struct-with (OptionalFields :count nil :label nil) (:count raw)", "'test-struct.main/OptionalFields", "nominal-write-proof-v1"],
@@ -2677,7 +2677,7 @@ try {
       run("edit", "def", "test-struct.main/nominal-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "nominal-replay", [], ...contextualNominalTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/nominal-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const contextualNominalEntry = ["--init-fn", "test-struct.main/nominal-replay", "--reload-fn", "test-struct.main/nominal-replay"];
       run(...contextualNominalEntry);
       const contextualNominalOutput = join(project, "nominal-js");
@@ -2696,7 +2696,7 @@ try {
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn nominal-rejected () $ ${body}`);
         run("edit", "schema", target, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Number)");
+          "quote $ Fn (-> Number)");
         const original = await readFile(snapshot);
         const diagnostic = /W_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|map-to-struct rewrite skipped/;
         for (const mode of [["--check-only"], [], ["js"]]) {
@@ -2731,7 +2731,7 @@ try {
       run("edit", "def", "test-struct.main/collection-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "collection-replay", [], ...collectionTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/collection-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const collectionEntry = ["--init-fn", "test-struct.main/collection-replay", "--reload-fn", "test-struct.main/collection-replay"];
       run(...collectionEntry);
       const collectionOutput = join(project, "collection-js");
@@ -2805,7 +2805,7 @@ try {
       run("edit", "def", "test-struct.main/empty-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "empty-replay", [], ...emptyTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/empty-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const emptyEntry = ["--init-fn", "test-struct.main/empty-replay", "--reload-fn", "test-struct.main/empty-replay"];
       run(...emptyEntry);
       const emptyOutput = join(project, "empty-js");
@@ -2839,7 +2839,7 @@ try {
         run("edit", "def", "test-struct.main/collection-rejected", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn collection-rejected () $ ${body}`);
         run("edit", "schema", "test-struct.main/collection-rejected", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Dynamic)");
+          "quote $ Fn (-> Dynamic)");
         const before = await readFile(snapshot);
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "test-struct.main",
           "--def", "collection-rejected", "--format", "edn"], options);
@@ -2851,9 +2851,9 @@ try {
       // Adopting a Promise as the whole async return does not await a stored member.
       const pendingTarget = "test-struct.main/collection-rejected";
       run("edit", "def", pendingTarget, "--overwrite", "--input-format", "cirru", "--code",
-        "quote $ defn collection-rejected () (hint-fn $ {} (:async true) (:args ([])) (:return $ :: List Number)) (let ((load (fn (x) (hint-fn $ {} (:async true) (:args ([] Number)) (:return Number)) x))) ([] (load 1)))");
+        "quote $ defn collection-rejected () (hint-fn $ quote $ Fn (-> $ List Number) (:async)) $ let ((load $ fn (x) (hint-fn $ quote $ Fn Number (-> Number) (:async)) x)) $ [] $ load 1");
       run("edit", "schema", pendingTarget, "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:async true) (:args ([])) (:return $ :: 'List 'Number)");
+        "quote $ Fn (-> $ List Number) (:async)");
       const pendingOriginal = await readFile(snapshot);
       const pendingAudit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
         "--def", "collection-rejected", "--format", "edn"], options);
@@ -2878,7 +2878,7 @@ try {
       run("edit", "def", "test-struct.main/contextual-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "contextual-replay", [], ...contextualTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/contextual-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const contextualEntry = ["--init-fn", "test-struct.main/contextual-replay", "--reload-fn", "test-struct.main/contextual-replay"];
       run(...contextualEntry);
       const contextualOutput = join(project, "contextual-js");
@@ -2937,7 +2937,7 @@ try {
       run("edit", "def", "test-struct.main/nullish-replay", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "nullish-replay", [], ...nullishTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "test-struct.main/nullish-replay", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const nullishEntry = ["--init-fn", "test-struct.main/nullish-replay", "--reload-fn", "test-struct.main/nullish-replay"];
       run(...nullishEntry);
       const nullishOutput = join(project, "nullish-js");
@@ -2993,7 +2993,7 @@ try {
       run("edit", "def", "calcit.data-view-replay/run!", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "run!", [], ...dataViewTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "calcit.data-view-replay/run!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       const dataViewEntry = ["--init-fn", "calcit.data-view-replay/run!", "--reload-fn", "calcit.data-view-replay/run!"];
       run(...dataViewEntry);
       const dataViewOutput = join(project, "data-view-js");
@@ -3003,7 +3003,7 @@ try {
       run("edit", "def", "calcit.data-view-replay/number-only", "--input-format", "cirru", "--code",
         "quote $ defn number-only (x) (&+ x 1)");
       run("edit", "schema", "calcit.data-view-replay/number-only", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)");
+        "quote $ Fn Number (-> Number)");
       run("edit", "def", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code",
         "quote $ defstruct RequiredNumber (:value 'Number)");
       run("edit", "schema", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code", "quote 'StructDef");
@@ -3015,7 +3015,7 @@ try {
         run("edit", "def", "calcit.data-view-replay/rejected", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn rejected () (${body})`);
         run("edit", "schema", "calcit.data-view-replay/rejected", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Number)");
+          "quote $ Fn (-> Number)");
         const before = await readFile(snapshot);
         for (const mode of [["--check-only"], ["js"]]) {
           const output = join(project, `data-view-${label}-${mode[0] === "js" ? "js" : "native"}`);
@@ -3040,7 +3040,7 @@ try {
         run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn rejected () (${body}) &unit`);
         run("edit", "schema", "calcit.update-proof/rejected", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+          "quote $ Fn (-> Unit)");
         const before = await readFile(snapshot);
         for (const mode of [["--check-only"], ["js"]]) {
           const output = join(project, `update-${label}-${mode[0] === "js" ? "js" : "native"}`);
@@ -3154,7 +3154,7 @@ try {
       assert.equal(applyTests.length, 1);
       setBody([...tailTests, ...recurTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests, ...applyTests].map(test => test.code));
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+        "quote $ Fn (-> Number)");
       run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
       run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
       run();
@@ -3229,7 +3229,7 @@ try {
       assert.equal(directShortcutTests.length, 3);
       setBody(directShortcutTests.map(test => test.code.slice(0, -1)));
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+        "quote $ Fn (-> Number)");
       run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
       run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
       run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn");
@@ -3273,7 +3273,7 @@ try {
         run("edit", "def", "calcit.assert-evidence/shadow-proof", "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "shadow-proof", ["payload"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", ["fn", ["acc", "item"], shadowBody]]]));
         run("edit", "schema", "calcit.assert-evidence/shadow-proof", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+          "quote $ Fn Number (-> Number)");
         const original = await readFile(snapshot);
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "shadow-proof", "--format", "edn"], options);
         if (rejected.error) throw rejected.error;
@@ -3320,7 +3320,7 @@ try {
       // that input without instantiating the variable (#2187): the guarded input and
       // its direct aliases keep `T`, while a new value of the guarded kind does not.
       // Unguarded exits and predicates on other values still owe the original contract (#1529).
-      const genericReturnSchema = "quote $ :: 'Fn $ {} (:args $ [] 'T 'Bool) (:generics $ [] 'T) (:return 'T)";
+      const genericReturnSchema = "quote $ Fn T Bool (-> T) (:generics T)";
       for (const [name, code, accepted, jsFfi] of [
         ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false],
         ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], false],
@@ -3348,7 +3348,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "open-shortcut", ["callback"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
       run("edit", "schema", "calcit.assert-evidence/open-shortcut", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Number)");
+        "quote $ Fn Fn (-> Number)");
       const openShortcutOriginal = await readFile(snapshot);
       const openShortcut = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-shortcut", "--format", "edn"], options);
       if (openShortcut.error) throw openShortcut.error;
@@ -3373,7 +3373,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/alias-proof", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "alias-proof", ["raw"], ["let", [["alias", "raw"]], ["match", ["try-decode-map-as", "raw", ["::", "'Ref", "'Number"]], [[":ok", "decoded"], ["assert-type", "alias", ["::", "'Ref", "'Number"]]], [[":err", "_"], "nil"]]]]));
       run("edit", "schema", "calcit.assert-evidence/alias-proof", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Ref 'Dynamic) (:return 'Nil)");
+        "quote $ Fn (Ref Dynamic) (-> Nil)");
       const aliasOriginal = await readFile(snapshot);
       const aliasProof = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "alias-proof", "--format", "edn"], options);
       if (aliasProof.error) throw aliasProof.error;
@@ -3400,7 +3400,7 @@ try {
         run("edit", "def", "calcit.assert-evidence/open-fold-bad", "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "open-fold-bad", ["xs"], [foldName, receiver, "0", ...(defaultValue === null ? [] : [defaultValue]), ["fn", ["acc", "item"], result]]]));
         run("edit", "schema", "calcit.assert-evidence/open-fold-bad", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)");
+          "quote $ Fn Dynamic (-> Number)");
         const original = await readFile(snapshot);
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-fold-bad", "--format", "edn"], options);
         if (rejected.error) throw rejected.error;
@@ -3411,7 +3411,7 @@ try {
       run("edit", "rm-def", "calcit.assert-evidence/open-fold-bad");
       setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+        "quote $ Fn (-> Number)");
       run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
       run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
       const concreteCalls = callTests.filter(test => test.tags.includes("concrete-call-proof"));
@@ -3434,7 +3434,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/make-async-tail", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "make-async-tail", [], asyncTests[0].code]));
       run("edit", "schema", "calcit.assert-evidence/make-async-tail", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Fn)");
+        "quote $ Fn (-> Fn)");
       const asyncOutput = join(project, "async-js-out");
       run("--emit-path", asyncOutput, "js");
       const asyncGenerated = await import(pathToFileURL(join(asyncOutput, "calcit.assert-evidence.mjs")).href);
@@ -3478,7 +3478,7 @@ try {
           ["edit", "def", `calcit.assert-evidence/enum-key-${name}`, "--input-format", "json-ast", "--code",
             JSON.stringify(["defwasm-export", `enum-key-${name}`, [], ["enum-key", ["Option", ":some", "1"], key]])],
           ["edit", "schema", `calcit.assert-evidence/enum-key-${name}`, "--input-format", "cirru", "--code",
-            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)"],
+            "quote $ Fn (-> Bool)"],
         );
       }
       const enumKeyTransaction = JSON.stringify(enumKeyOperations);
@@ -3544,7 +3544,7 @@ try {
       run("edit", "def", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
         "quote $ defn format-value () $ format-to-lisp 42");
       run("edit", "schema", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)");
+        "quote $ Fn (-> String)");
       run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
         "quote $ calcit.placeholder-helper :refer $ format-value");
       for (const [name, expression] of [
@@ -3572,7 +3572,7 @@ try {
       run("edit", "def", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
         "quote $ defn do () 42");
       run("edit", "schema", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+        "quote $ Fn (-> Number)");
       run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
         "quote $ calcit.placeholder-helper :as helper");
       run("edit", "add-test", "calcit.assert-evidence/run-tests", "keeps-imported-named-function-value", "--tags", "unit",
@@ -3602,7 +3602,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
         "quote $ defwasm-export run-tests (flag) $ if flag 0 7");
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Number)");
+        "quote $ Fn Bool (-> Number)");
       const parameterOutput = join(project, "runtime-parameter");
       run("wasm", "--emit-path", parameterOutput);
       const parameterModule = new WebAssembly.Module(await readFile(join(parameterOutput, "program.wasm")));
@@ -3613,7 +3613,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
         "quote $ defwasm-export run-tests (flag) $ if flag &unit &unit");
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Unit)");
+        "quote $ Fn Bool (-> Unit)");
       const unitOutput = join(project, "legitimate-unit");
       run("wasm", "--emit-path", unitOutput);
       const unitModule = new WebAssembly.Module(await readFile(join(unitOutput, "program.wasm")));
@@ -3624,7 +3624,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
         "quote $ defwasm-export run-tests (flag) $ if flag (format-to-lisp 42) |fallback");
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'String)");
+        "quote $ Fn Bool (-> String)");
       const branchRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", join(project, "parameter-format")], options);
       assert.equal(branchRejected.error, undefined);
       assert.notEqual(branchRejected.status, 0);
@@ -3632,17 +3632,17 @@ try {
       await assert.rejects(readFile(join(project, "parameter-format", "program.wasm")), { code: "ENOENT" });
       setBody(scalar.map(test => test.code));
       run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+        "quote $ Fn (-> Number)");
       // Source imports are values, not automatically callable namespace bindings.
       run("edit", "add-ns", "calcit.call-values");
       run("edit", "def", "calcit.call-values/site", "--input-format", "cirru", "--code",
         "quote $ def site $ {} (:storage-key |proto-shuangpin)");
       run("edit", "schema", "calcit.call-values/site", "--input-format", "cirru", "--code",
-        "quote $ :: 'Map 'Tag 'String");
+        "quote $ Map Tag String");
       run("edit", "def", "calcit.call-values/consume-callback", "--input-format", "cirru", "--code",
         "quote $ defn consume-callback (callback) (callback 1)");
       run("edit", "schema", "calcit.call-values/consume-callback", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number)");
+        "quote $ Fn (Fn Number (-> Number)) (-> Number)");
       run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
         "quote $ calcit.call-values :as config");
       run("edit", "add-test", "calcit.assert-evidence/run-tests", "reads-imported-map", "--tags", "unit",
@@ -3781,7 +3781,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
         "quote $ defn write-count (state incoming) (state .assoc :count incoming)");
       run("edit", "schema", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'WriteState 'Number) (:return 'WriteState)");
+        "quote $ Fn WriteState Number (-> WriteState)");
       run("edit", "add-test", "calcit.assert-evidence/write-count", "nominal-method-write", "--tags", "nominal-write",
         "--input-format", "cirru", "--code",
         "quote $ let ((original $ WriteState :count 1 :label |kept) (updated $ write-count original 2)) (assert= 1 $ :count original) (assert= 2 $ :count updated) (assert= |kept $ :label updated) (assert= (Option :some WriteState) $ &struct:definition updated)");
@@ -3811,7 +3811,7 @@ try {
         run("edit", "def", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
           `quote $ defn ${name} () $ ${expression}`);
         run("edit", "schema", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)");
+          "quote $ Fn (-> $ Option Dynamic)");
       }
       run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
         "quote $ calcit.constructor-wrappers :as wrappers");
@@ -4181,9 +4181,9 @@ try {
       // Raw WASM exports let the host supply malformed pointers despite source
       // schemas. Keep ordinary method calls and probe the allocation boundary.
       for (const [name, parameters, body, schema] of [
-        ["make-state", [], ["WriteState", ":count", "1", ":label", "|kept"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'WriteState)"],
-        ["make-list", ["layout"], ["[]", "layout", "9"], "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'List 'Number)"],
-        ["raw-write", ["receiver"], ["receiver", ".assoc", ":count", "2"], "quote $ :: 'Fn $ {} (:args $ [] 'WriteState) (:return 'WriteState)"],
+        ["make-state", [], ["WriteState", ":count", "1", ":label", "|kept"], "quote $ Fn (-> WriteState)"],
+        ["make-list", ["layout"], ["[]", "layout", "9"], "quote $ Fn Number (-> $ List Number)"],
+        ["raw-write", ["receiver"], ["receiver", ".assoc", ":count", "2"], "quote $ Fn WriteState (-> WriteState)"],
       ]) {
         run("edit", "def", `calcit.assert-evidence/${name}`, "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", name, parameters, body]));
@@ -4254,7 +4254,7 @@ try {
       run("edit", "def", "app.main/verify-diary-boundaries", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "verify-diary-boundaries", [], ...diaryTests.map(test => test.code), "&unit"]));
       run("edit", "schema", "app.main/verify-diary-boundaries", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       run("config", "set", "init-fn", "app.main/verify-diary-boundaries");
       run("--check-only");
       const defValueOutput = join(project, "def-value-js-out");
@@ -4263,11 +4263,11 @@ try {
       defValues.verify_values();
       defValues.verify_diary_boundaries();
       for (const [target, schema] of [
-        ["app.values/initial-state", "quote $ :: 'Map 'Tag 'String"],
-        ["app.main/initial-state", "quote $ :: 'Map 'Tag 'String"],
-        ["app.main/state-alias", "quote $ :: 'Map 'Tag 'String"],
-        ["app.reader/state-alias", "quote $ :: 'Map 'Tag 'String"],
-        ["app.main/members", "quote $ :: 'Map 'String 'String"],
+        ["app.values/initial-state", "quote $ Map Tag String"],
+        ["app.main/initial-state", "quote $ Map Tag String"],
+        ["app.main/state-alias", "quote $ Map Tag String"],
+        ["app.reader/state-alias", "quote $ Map Tag String"],
+        ["app.main/members", "quote $ Map String String"],
         ["app.main/answer", "quote $ :: 'String"],
       ]) {
         await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
@@ -4293,7 +4293,7 @@ try {
       run("edit", "def", "app.field-consumer/replay!", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "replay!", [], ...fieldTests, "&unit"]));
       run("edit", "schema", "app.field-consumer/replay!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       run("config", "set", "init-fn", "app.field-consumer/replay!");
       run("config", "set", "reload-fn", "app.field-consumer/replay!");
       run("--check-only");
@@ -4334,7 +4334,7 @@ try {
       run("edit", "def", "app.empty-fields/replay!", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "replay!", [], ...optionalTests, "&unit"]));
       run("edit", "schema", "app.empty-fields/replay!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       run("config", "set", "init-fn", "app.empty-fields/replay!");
       run("config", "set", "reload-fn", "app.empty-fields/replay!");
       run("--check-only");
@@ -4383,7 +4383,7 @@ try {
       run("edit", "def", "app.binding-proof/replay!", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "replay!", [], ...bindingTests, "&unit"]));
       run("edit", "schema", "app.binding-proof/replay!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+        "quote $ Fn (-> Unit)");
       run("config", "set", "init-fn", "app.binding-proof/replay!");
       run("config", "set", "reload-fn", "app.binding-proof/replay!");
       run("--check-only");
@@ -4395,7 +4395,7 @@ try {
         "quote $ defstruct RequiredValue (:value 'app.binding-proof/Value)");
       run("edit", "schema", "app.binding-proof/RequiredValue", "--input-format", "cirru", "--code", "quote 'StructDef");
       run("edit", "def", "app.binding-proof/RequiredOption", "--input-format", "cirru", "--code",
-        "quote $ defstruct RequiredOption (:value (:: 'Option 'String))");
+        "quote $ defstruct RequiredOption (:value $ quote $ Option String)");
       run("edit", "schema", "app.binding-proof/RequiredOption", "--input-format", "cirru", "--code", "quote 'StructDef");
       run("config", "set", "init-fn", "app.binding-proof/rejected");
       run("config", "set", "reload-fn", "app.binding-proof/rejected");
@@ -4435,22 +4435,22 @@ try {
       // A body hint describes the owning function, not a conversion of the
       // public contract or an independent source of caller trait capabilities.
       for (const [name, body, schema, call] of [
-        ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (.slice value 0 (Option :some 1))",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
-        ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:where ({} ('T 'ToString))) (:return 'String)) (to-string value)",
-          "quote $ :: 'Fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:return 'String)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],
+        ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn String (-> String)) $ .slice value 0 $ Option :some 1",
+          "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
+        ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn T (-> String) (:generics T) (:where $ T ToString)) $ to-string value",
+          "quote $ Fn T (-> String) (:generics T)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],
         ["return-only-concrete", "quote $ defn rejected-body-hint () (hint-fn $ {} (:return (:: 'List 'Number))) ([] 1)",
-          "quote $ :: 'Fn $ {} (:args ([])) (:generics ([] 'T)) (:return (:: 'List 'T))", ["rejected-body-hint"]],
+          "quote $ Fn (-> $ List T) (:generics T)", ["rejected-body-hint"]],
         ["return-only-introduced-bound", "quote $ defn rejected-body-hint () (hint-fn $ {} (:where ({} ('T 'ToString)))) ([])",
-          "quote $ :: 'Fn $ {} (:args ([])) (:generics ([] 'T)) (:return (:: 'List 'T))", ["rejected-body-hint"]],
-        ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ {} (:args ([] 'Number)) (:rest 'String) (:return 'String)) (&list:nth tail 0)",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number 'String)) (:return 'String)", ["rejected-body-hint", "1", "|Ada"]],
-        ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string value)",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
-        ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (to-string value)",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
-        ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (let ((render (fn (item) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string item)))) (render value))",
-          "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+          "quote $ Fn (-> $ List T) (:generics T)", ["rejected-body-hint"]],
+        ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ quote $ Fn Number & String (-> String)) $ &list:nth tail 0",
+          "quote $ Fn Number String (-> String)", ["rejected-body-hint", "1", "|Ada"]],
+        ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn String (-> String)) $ to-string value",
+          "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
+        ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn Number (-> String)) $ to-string value",
+          "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
+        ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ quote $ Fn Number (-> String)) $ let ((render $ fn (item) (hint-fn $ quote $ Fn Number (-> String)) (hint-fn $ quote $ Fn String (-> String)) $ to-string item)) $ render value",
+          "quote $ Fn Number (-> String)", ["rejected-body-hint", "1"]],
       ]) {
         await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
         run("edit", "def", "fix-command.main/Unrendered", "--input-format", "cirru", "--code",
@@ -4460,7 +4460,7 @@ try {
         run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "main!", [], call]));
         run("edit", "schema", "fix-command.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)");
+          "quote $ Fn (-> String)");
         const original = await readFile(snapshot);
         for (const [mode, args] of [
           ["ordinary", ["--check-only", "--all-defs", "--format", "edn"]],
@@ -4512,10 +4512,10 @@ try {
       const traitGenerated = await import(pathToFileURL(join(traitOutput, "fix-command.main.mjs")).href);
       traitGenerated.main_$x_();
       for (const [name, target, command, code] of [
-        ["wrong-result", "checked-count", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T) (:where $ {} $ 'T 'Countable)"],
-        ["open-generic-result", "identity-with-trait", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T 'U) (:return 'String) (:generics $ [] 'T 'U) (:where $ {} $ 'T 'fix-command.main/Renderable)"],
-        ["dynamic-argument", "render-with-trait", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T 'Dynamic) (:return 'String) (:generics $ [] 'T) (:where $ {} $ 'T 'fix-command.main/Renderable)"],
-        ["open-receiver", "checked-count", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)"],
+        ["wrong-result", "checked-count", "schema", "quote $ Fn T (-> String) (:generics T) (:where $ T Countable)"],
+        ["open-generic-result", "identity-with-trait", "schema", "quote $ Fn T U (-> String) (:generics T U) (:where $ T fix-command.main/Renderable)"],
+        ["dynamic-argument", "render-with-trait", "schema", "quote $ Fn T Dynamic (-> String) (:generics T) (:where $ T fix-command.main/Renderable)"],
+        ["open-receiver", "checked-count", "schema", "quote $ Fn T (-> Number) (:generics T)"],
         ["wrong-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value 1)"],
         ["missing-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value)"],
         ["extra-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value prefix prefix)"],
@@ -4550,7 +4550,7 @@ try {
         run("edit", "def", `${namespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "replay-count-tests", [], ...expressions, "&unit"]));
         run("edit", "schema", `${namespace}/replay-count-tests`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+          "quote $ Fn (-> Unit)");
         run("config", "set", "init-fn", `${namespace}/replay-count-tests`);
         run("config", "set", "reload-fn", `${namespace}/replay-count-tests`);
         run("--check-only");
@@ -4573,7 +4573,7 @@ try {
         run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "main!", [], ["rejected-assignment", ...arguments_], "&unit"]));
         run("edit", "schema", "fix-command.main/main!", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit) (:features (#{} :js-ffi))");
+          "quote $ Fn (-> Unit) (:features :js-ffi)");
         run("config", "set", "init-fn", "fix-command.main/main!");
         run("config", "set", "reload-fn", "fix-command.main/main!");
         const original = await readFile(snapshot);
@@ -4627,11 +4627,11 @@ try {
         run("edit", "def", "fix-command.main/bare-return", "--input-format", "cirru", "--code",
           `quote $ defn bare-return (xs) ${body}`);
         run("edit", "schema", "fix-command.main/bare-return", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)");
+          "quote $ Fn T (-> T) (:generics T)");
         run("edit", "def", "fix-command.main/bare-return-entry", "--input-format", "cirru", "--code",
           "quote $ defn bare-return-entry () (bare-return 1) &unit");
         run("edit", "schema", "fix-command.main/bare-return-entry", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+          "quote $ Fn (-> Unit)");
         run("config", "set", "init-fn", "fix-command.main/bare-return-entry");
         const result = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
         if (result.error) throw result.error;
@@ -4713,13 +4713,13 @@ try {
         }
       }
       for (const [name, body, schema] of [
-        ["nil", ["count", "nil"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
-        ["number", ["count", "1"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
-        ["function", ["count", ["fn", [], "1"]], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
-        ["dynamic", ["count", "value"], "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)"],
-        ["unbounded-generic", ["count", "value"], "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)"],
+        ["nil", ["count", "nil"], "quote $ Fn (-> Number)"],
+        ["number", ["count", "1"], "quote $ Fn (-> Number)"],
+        ["function", ["count", ["fn", [], "1"]], "quote $ Fn (-> Number)"],
+        ["dynamic", ["count", "value"], "quote $ Fn Dynamic (-> Number)"],
+        ["unbounded-generic", ["count", "value"], "quote $ Fn T (-> Number) (:generics T)"],
         ["explicit-open-inline", [["fn", ["value"], ["hint-fn", ["{}", [":args", ["[]", "'Dynamic"]], [":return", "'Number"]]], ["count", "value"]], ["[]", "1", "2"]],
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+          "quote $ Fn (-> Number)"],
       ]) {
         await copyFile("tests/fixtures/count-contract.cirru", snapshot);
         run("edit", "def", "fix-command.main/rejected-count", "--input-format", "json-ast", "--code",
@@ -4744,14 +4744,14 @@ try {
         run("edit", "add-ns", "fix-command.fake");
         run("edit", "def", `fix-command.fake/${name}`, "--input-format", "cirru", "--code", "quote $ fn (value) true");
         run("edit", "schema", `fix-command.fake/${name}`, "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)");
+          "quote $ Fn Dynamic (-> Bool)");
         // Calling the ordinary Bool-returning function remains legal. Only using
         // its short name as evidence for an open value must be rejected.
         run("eval", "--dep", `${project}/`, `assert= true $ fix-command.fake/${name} 1`);
         run("edit", "def", "fix-command.main/rejected-predicate", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "rejected-predicate", ["value"], ["if", [`fix-command.fake/${name}`, "value"], ["count", "value"], "0"]]));
         run("edit", "schema", "fix-command.main/rejected-predicate", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)");
+          "quote $ Fn Dynamic (-> Number)");
         run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (rejected-predicate 1) &unit");
         const original = await readFile(snapshot);
@@ -4774,14 +4774,14 @@ try {
         run("edit", "def", "calcit.predicate-origin/consume-present", "--input-format", "cirru", "--code",
           "quote $ defn consume-present (value) &unit");
         run("edit", "schema", "calcit.predicate-origin/consume-present", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'Unit)");
+          "quote $ Fn JsObject (-> Unit)");
         const branches = ["&unit", "&unit"];
         branches[guardedBranch - 1] = ["consume-present", "value"];
         const hint = ["hint-fn", ["{}", [":args", ["[]", ["::", "'JsNullish", "'JsObject"]]], [":return", "'Unit"], [":features", ["#{}", ":js-ffi"]]]];
         run("edit", "def", "calcit.predicate-origin/rejected-guard", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "rejected-guard", ["value"], hint, ["if", [name, "value"], ...branches]]));
         run("edit", "schema", "calcit.predicate-origin/rejected-guard", "--input-format", "cirru", "--code",
-          "quote $ :: 'Fn $ {} (:args $ [] $ :: 'JsNullish 'JsObject) (:return 'Unit) (:features $ #{} :js-ffi)");
+          "quote $ Fn (JsNullish JsObject) (-> Unit) (:features :js-ffi)");
         // Deliberately construct one host-nullability boundary for this rejection
         // fixture; do not rely on a mismatched Unit argument or lazy Fn reflection.
         run("edit", "def", "calcit.predicate-origin/main!", "--input-format", "json-ast", "--code",

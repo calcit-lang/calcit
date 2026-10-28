@@ -16,17 +16,15 @@
         'main! $ %{} 'CodeEntry (:doc "|Entry that makes open-identity reachable.")
           :code $ quote $ defn main! () (open-identity 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'open-identity $ %{} 'CodeEntry
           :doc "|Reachable function whose root Dynamic schema must become a structured Fn contract."
           :code $ quote $ defn open-identity (value) value
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict whole-Dynamic schema fixture.")
         :code $ quote $ ns type-fail-whole-dynamic-schema-strict.main

@@ -653,6 +653,17 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
   // than as a list context such as `[] 'String`) and parses back as `Quote`.
   // Treat that one-node quote as the canonical nominal type spelling while
   // keeping all older tag spellings accepted below.
+  // Compact storage `quote $ Fn Number (-> String)` goes through the same
+  // desugaring as `edit schema` input.
+  if let Edn::Quote(payload @ Cirru::List(_)) = value {
+    if !crate::calcit::type_expr::is_compact_payload(payload) {
+      return Err(format!(
+        "{owner} quotes a non-compact schema; write it as `quote $ Fn ...` or `quote $ Macro ...`"
+      ));
+    }
+    return parse_schema_annotation_for_write(payload).map_err(|e| format!("failed to parse {owner}: {e}"));
+  }
+
   if let Edn::Quote(Cirru::Leaf(symbol)) = value {
     let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(symbol.clone()));
     if CalcitTypeAnnotation::canonical_type_symbol_name(symbol).is_some() {
@@ -799,6 +810,36 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
   }
 }
 
+/// Snapshot spelling of a definition schema: the compact `quote $ Fn ...`
+/// form when it round-trips exactly, otherwise the canonical EDN.
+pub fn schema_annotation_to_storage_edn(schema: &CalcitTypeAnnotation) -> Edn {
+  let canonical = schema_annotation_to_edn(schema);
+  let compact = match &canonical {
+    Edn::Enum(view) if view.type_name.is_none() && (!view.extra.is_empty() || matches!(view.variant.as_ref(), "Fn" | "Macro")) => {
+      crate::calcit::type_expr::print_type_compact(&canonical).ok()
+    }
+    Edn::Enum(view) if view.type_name.is_none() && view.extra.is_empty() => Some(Cirru::Leaf(view.variant.clone())),
+    _ => None,
+  };
+  let Some(compact) = compact else { return canonical };
+  if let Cirru::Leaf(name) = &compact {
+    let reparsed = parse_loaded_schema_annotation(&Edn::Quote(compact.clone()), "schema");
+    return match reparsed {
+      Ok(reparsed)
+        if CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some()
+          && schema_annotation_to_edn(reparsed.as_ref()) == canonical =>
+      {
+        Edn::Quote(compact)
+      }
+      _ => canonical,
+    };
+  }
+  match parse_schema_annotation_for_write(&compact) {
+    Ok(reparsed) if schema_annotation_to_edn(reparsed.as_ref()) == canonical => Edn::Quote(compact),
+    _ => canonical,
+  }
+}
+
 fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
   let schema = normalize_schema_for_code(&data.code, &data.schema);
   let mut pairs = vec![
@@ -809,7 +850,7 @@ fn code_entry_edn_pairs(data: &CodeEntry) -> Vec<(EdnTag, Edn)> {
   // Absence is an inference hole, not an explicit open boundary. Preserve
   // that distinction through every structural edit and format round trip.
   if !schema_annotation_is_missing(&schema) {
-    pairs.push(("schema".into(), schema_annotation_to_edn(schema.as_ref())));
+    pairs.push(("schema".into(), schema_annotation_to_storage_edn(schema.as_ref())));
   }
   if !data.tests.is_empty() {
     pairs.insert(
@@ -1376,6 +1417,22 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
       if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
         return Ok(());
       }
+    }
+    if let Cirru::List(items) = schema
+      && let [Cirru::Leaf(head), payload] = items.as_slice()
+      && head.as_ref() == "quote"
+      && crate::calcit::type_expr::is_compact_payload(payload)
+    {
+      return parse_schema_annotation_for_write(payload).map(|_| ());
+    }
+    if let Cirru::List(items) = schema
+      && let [Cirru::Leaf(head), Cirru::Leaf(name)] = items.as_slice()
+      && head.as_ref() == "quote"
+    {
+      return match CalcitTypeAnnotation::canonical_type_symbol_name(name) {
+        Some(canonical) if canonical == name.as_ref() => Ok(()),
+        _ => Err(format!("unknown type name `{name}` in quoted schema")),
+      };
     }
     validate_schema_for_write(schema)
   }
@@ -3961,6 +4018,23 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
         rewritten[index] = Cirru::List(next_field);
       }
     }
+    Some("deftrait") if items.len() >= 3 => {
+      for index in 2..items.len() {
+        let Cirru::List(entry) = &items[index] else { continue };
+        let type_index = match entry.as_slice() {
+          [Cirru::Leaf(bracket), _, _] if bracket.as_ref() == "[]" => 2,
+          [_, _] => 1,
+          _ => continue,
+        };
+        let (next, count) = canonicalize_type_expression(&entry[type_index]);
+        if count > 0 {
+          let mut next_entry = entry.clone();
+          next_entry[type_index] = next;
+          rewritten[index] = Cirru::List(next_entry);
+          changed += count;
+        }
+      }
+    }
     Some("hint-fn") => {
       for index in 1..items.len() {
         let (next, count) = canonicalize_schema_map_types(&items[index]);
@@ -3985,6 +4059,145 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   (Cirru::List(rewritten), changed)
 }
 
+/// Leaves of a canonical type form that the compact syntax can spell. A bare
+/// leaf other than a built-in type name, such as `Person` in `:: 'List Person`,
+/// is a value reference,
+/// which only `assert-type` keeps in the canonical form.
+fn canonical_type_form_is_spellable(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(text) => {
+      matches!(text.as_ref(), "::" | "{}" | "[]" | "#{}" | "true")
+        || text.starts_with(['\'', ':', '*'])
+        || CalcitTypeAnnotation::canonical_type_symbol_name(text) == Some(text.as_ref())
+    }
+    Cirru::List(items) => items.iter().all(canonical_type_form_is_spellable),
+  }
+}
+
+/// `quote $ <compact>` for a canonical `:: ...` type form when the compact
+/// spelling desugars back to the same EDN.
+fn compact_type_form(node: &Cirru) -> Option<Cirru> {
+  let Cirru::List(items) = node else { return None };
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::") || items.len() < 3 {
+    return None;
+  }
+  if !canonical_type_form_is_spellable(node) {
+    return None;
+  }
+  let edn = schema_cirru_to_edn(node.clone());
+  let compact = crate::calcit::type_expr::print_type_compact(&edn).ok()?;
+  let back = crate::calcit::type_expr::desugar_type_expr(&compact).ok()?;
+  (schema_cirru_to_edn(back) == edn).then(|| Cirru::List(vec![Cirru::leaf("quote"), compact]))
+}
+
+/// `quote $ Fn ...` or `quote $ Async ...` for a `hint-fn` schema map.
+fn compact_hint_fn_map(node: &Cirru) -> Option<Cirru> {
+  let Cirru::List(items) = node else { return None };
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "{}") || !canonical_type_form_is_spellable(node) {
+    return None;
+  }
+  let edn = schema_cirru_to_edn(node.clone());
+  let Edn::Map(map) = &edn else { return None };
+  let keys: Vec<&str> = map
+    .0
+    .keys()
+    .filter_map(|key| match key {
+      Edn::Tag(tag) => Some(tag.ref_str()),
+      _ => None,
+    })
+    .collect();
+  let compact = if keys.iter().all(|key| matches!(*key, "async" | "features")) {
+    if map.0.get(&Edn::tag("async")) != Some(&Edn::Bool(true)) {
+      return None;
+    }
+    let mut marker = vec![Cirru::leaf("Async")];
+    if let Some(Edn::Set(features)) = map.0.get(&Edn::tag("features")) {
+      let mut clause = vec![Cirru::leaf(":features")];
+      let mut tags: Vec<_> = features.0.iter().map(|tag| Cirru::Leaf(tag.to_string().into())).collect();
+      tags.sort();
+      clause.extend(tags);
+      marker.push(Cirru::List(clause));
+    }
+    if marker.len() == 1 {
+      Cirru::leaf("Async")
+    } else {
+      Cirru::List(marker)
+    }
+  } else {
+    crate::calcit::type_expr::print_type_compact(&Edn::enum_value("Fn", vec![edn.clone()])).ok()?
+  };
+  let back = match crate::calcit::type_expr::desugar_async_hint(&compact) {
+    Some(result) => result.ok()?,
+    None => match crate::calcit::type_expr::desugar_type_expr(&compact).ok()? {
+      Cirru::List(mut parts) if parts.len() == 3 => parts.remove(2),
+      _ => return None,
+    },
+  };
+  (schema_cirru_to_edn(back) == edn).then(|| Cirru::List(vec![Cirru::leaf("quote"), compact]))
+}
+
+/// Rewrite canonical `::` / `{}` type forms in code type positions into the
+/// compact `quote $ ...` syntax. Run after `canonicalize_code_type_syntax`.
+fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  // Quoted data is not code; leave it as written.
+  if head == Some("quote") {
+    return (node.clone(), 0);
+  }
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = compact_code_type_syntax(item);
+    rewritten.push(next);
+    changed += count;
+  }
+  let single = match head {
+    Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => compact_type_form(&rewritten[2]).map(|compact| (2, compact)),
+    Some("hint-fn") if items.len() == 2 => compact_hint_fn_map(&rewritten[1]).map(|compact| (1, compact)),
+    _ => None,
+  };
+  if let Some((index, compact)) = single {
+    rewritten[index] = compact;
+    changed += 1;
+  }
+  match head {
+    Some(kind @ ("defstruct" | "defenum" | "deftrait")) if items.len() >= 3 => {
+      for slot in rewritten.iter_mut().skip(2) {
+        let Cirru::List(entry) = &*slot else { continue };
+        let type_indexes: Vec<usize> = match (kind, entry.as_slice()) {
+          ("defstruct", [_, _]) => vec![1],
+          ("deftrait", [Cirru::Leaf(bracket), _, _]) if bracket.as_ref() == "[]" => vec![2],
+          ("deftrait", [_, _]) => vec![1],
+          ("defenum", [Cirru::Leaf(tag), ..]) if tag.starts_with(':') => (1..entry.len()).collect(),
+          _ => vec![],
+        };
+        let mut next_entry = entry.clone();
+        for type_index in type_indexes {
+          if let Some(compact) = compact_type_form(&entry[type_index]) {
+            next_entry[type_index] = compact;
+            changed += 1;
+          }
+        }
+        *slot = Cirru::List(next_entry);
+      }
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
+}
+
+fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  let (canonical, legacy) = canonicalize_code_type_syntax(node);
+  let (compact, count) = compact_code_type_syntax(&canonical);
+  (compact, legacy + count)
+}
+
 /// Rewrite legacy tag-based type syntax in code type positions. This is intentionally
 /// called by `calcit edit format`, not by unrelated structural edits: old snapshots stay
 /// compatible until users explicitly request canonical formatting.
@@ -3995,16 +4208,23 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
     file.ns.code = ns_code;
     changed += count;
     for entry in file.defs.values_mut() {
-      let (code, count) = canonicalize_code_type_syntax(&entry.code);
+      let (code, count) = migrate_code_type_syntax(&entry.code);
       entry.code = code;
       changed += count;
       let mut rewritten_examples = Vec::with_capacity(entry.examples.len());
       for example in &entry.examples {
-        let (code, count) = canonicalize_code_type_syntax(example);
+        let (code, count) = migrate_code_type_syntax(example);
         rewritten_examples.push(code);
         changed += count;
       }
       entry.examples = rewritten_examples;
+      // Tests were never part of the legacy tag rewrite; only move their
+      // canonical types to the compact syntax.
+      for test in entry.tests.iter_mut() {
+        let (code, count) = compact_code_type_syntax(&test.code);
+        test.code = code;
+        changed += count;
+      }
     }
   }
   changed
@@ -5029,6 +5249,45 @@ mod tests {
   }
 
   #[test]
+  fn format_migrates_canonical_type_positions_to_compact_quotes() {
+    let cases = [
+      ("assert-type xs $ :: 'List 'Number", "assert-type xs $ quote $ List Number"),
+      (
+        "hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+        "hint-fn $ quote $ Fn T (-> T) (:generics T)",
+      ),
+      ("hint-fn $ {} (:async true)", "hint-fn $ quote Async"),
+      (
+        "defstruct Box (:items $ :: 'List 'Number)",
+        "defstruct Box $ :items $ quote $ List Number",
+      ),
+      (
+        "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
+        "defenum Shape (:some 'T $ quote $ List T) (:none)",
+      ),
+      (
+        "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
+        "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
+      ),
+    ];
+    for (source, expected) in cases {
+      let (migrated, count) = migrate_code_type_syntax(&parse_one(source));
+      assert_eq!(migrated, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+    }
+    // Value references, partial hints and quoted data keep their written shape.
+    for source in [
+      "assert-type xs $ :: 'List Person",
+      "hint-fn $ {} $ :args ([] 'A)",
+      "hint-fn $ {} (:async false)",
+      "quote $ assert-type xs $ :: 'List 'Number",
+    ] {
+      let node = parse_one(source);
+      assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
+    }
+  }
+
+  #[test]
   fn test_typevar_consistency_validation() {
     // Valid: 'T declared and used in both args and return
     let valid_generic = parse_one(":: :fn $ {} (:generics ([] 'T)) (:args ([] (:: :list 'T))) (:return 'T)");
@@ -5413,16 +5672,12 @@ mod tests {
       _ => panic!("expected struct edn"),
     };
 
-    let Edn::Enum(view) = schema else {
-      panic!("top-level schema should serialize as wrapped fn tuple");
+    let Edn::Quote(compact) = schema else {
+      panic!("top-level schema should serialize as a compact quote");
     };
-    assert_eq!(view.variant.as_ref(), "Fn");
-    let Some(Edn::Map(map)) = view.extra.first() else {
-      panic!("wrapped schema payload should be a map");
-    };
-    assert!(
-      map.tag_get("kind").is_none(),
-      "wrapped plain fn schema should omit redundant :kind :fn"
+    assert_eq!(
+      cirru_parser::format(&[compact], true.into()).expect("format compact").trim(),
+      "Fn $ -> Dynamic"
     );
   }
 
@@ -6161,11 +6416,11 @@ mod tests {
     let _ = fs::remove_file(&temp_path);
 
     assert!(
-      saved.contains("&+ $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Fn"),
+      saved.contains("&+ $ %{} 'CodeEntry") && saved.contains(":schema $ quote $ Fn"),
       "saved snapshot should retain wrapped fn schemas"
     );
     assert!(
-      saved.contains("%{} $ %{} 'CodeEntry") && saved.contains(":schema $ :: 'Macro"),
+      saved.contains("%{} $ %{} 'CodeEntry") && saved.contains(":schema $ quote $ Macro"),
       "saved snapshot should retain wrapped macro schemas"
     );
   }

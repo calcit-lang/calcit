@@ -44,7 +44,7 @@ try {
   run(snapshot, "edit", "add-ns", "calcit.unicode");
   run(snapshot, "edit", "def", "calcit.unicode/main!", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "main!", [], ...tests.map((test) => test.code.__edn_quote), "&unit"]));
-  run(snapshot, "edit", "schema", "calcit.unicode/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  run(snapshot, "edit", "schema", "calcit.unicode/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)");
   const entry = [snapshot, "--init-fn", "calcit.unicode/main!", "--reload-fn", "calcit.unicode/main!"];
   const nativeOutput = run(...entry);
   assert.deepEqual(nativeOutput.split(/\r?\n/).filter((line) => line.startsWith("unicode-")), expectedTrace);
@@ -71,7 +71,7 @@ try {
     const name = `wasm-case-${index}`;
     run(snapshot, "edit", "def", `calcit.unicode/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", name, [], assertion, "&unit"]));
-    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ Fn (-> Unit)");
   }
   const invalidAssertions = tests.filter((test) => failureNames.includes(test.name)).flatMap(testExpressions);
   for (const [index, assertion] of invalidAssertions.entries()) {
@@ -80,7 +80,7 @@ try {
     const name = `wasm-invalid-${index}`;
     run(snapshot, "edit", "def", `calcit.unicode/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", name, [], assertion[2][1], "&unit"]));
-    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ Fn (-> Unit)");
   }
   // Host f64 values include NaN/infinities that have no ordinary source literal.
   const hostOperations = [["&str:nth", "|😀", "index"], ["&str:contains?", "|😀", "index"], ["&str:slice", "|😀", "0", "index"]];
@@ -88,7 +88,7 @@ try {
     const name = `wasm-host-${index}`;
     run(snapshot, "edit", "def", `calcit.unicode/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", name, ["index"], operation, "&unit"]));
-    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Unit)");
+    run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ Fn Number (-> Unit)");
   }
   run("wasm", snapshot, "--init-fn", "calcit.unicode/wasm-case-0", "--reload-fn", "calcit.unicode/wasm-case-0", "--emit-path", fixture);
   const module = new WebAssembly.Module(await readFile(join(fixture, "program.wasm")));

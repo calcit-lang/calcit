@@ -1550,7 +1550,7 @@ try {
     ["edit", "add-ns", "calcit.query-conversion"],
     ["edit", "def", "calcit.query-conversion/verify-examples", "--input-format", "json-ast", "--code", JSON.stringify(conversionCode)],
     ["edit", "schema", "calcit.query-conversion/verify-examples", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+      "quote $ Fn (-> Unit) (:features :js-ffi)"],
     ["config", "set", "init-fn", "calcit.query-conversion/verify-examples"],
     ["config", "set", "reload-fn", "calcit.query-conversion/verify-examples"],
     ["config", "set", "mode", "js"],

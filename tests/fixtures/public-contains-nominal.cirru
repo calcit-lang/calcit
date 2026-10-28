@@ -15,8 +15,7 @@
             println $ nominal-contains-results
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'nominal-contains-results $ %{} 'CodeEntry
           :doc "|Public contains? on nominal Enum receivers in project code, checked by the default proof audit."
           :code $ quote $ defn nominal-contains-results ()
@@ -31,9 +30,8 @@
                 contains? (Result :ok 1) 0
                 contains? (Result :ok 1) 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'Bool
+          :schema $ quote $ Fn
+            -> $ List Bool
           :tests $ [] $ %{} 'TestEntry (:name |option-and-result-index-range)
             :code $ quote $ assert= ([] true true false false true true true) (nominal-contains-results)
             :tags $ #{} :public-contains-nominal :unit

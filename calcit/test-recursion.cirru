@@ -13,15 +13,14 @@
         '*count-effects $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *count-effects 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'consume-tail $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn consume-tail (xs)
             match (destruct-list xs)
               (:none) 0
               (:some _ rest-items) (consume-tail rest-items)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |walks-large-list-without-native-stack-growth)
             :code $ quote $ assert= 0
               consume-tail $ range 100000
@@ -46,8 +45,7 @@
                         &* 2 $ hole-series $ &+ unit 1
                         hole-series unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
             ; println $ hole-series 100
@@ -55,16 +53,14 @@
             test-loop
             do true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'test-hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-hole-series ()
             assert "|hole series numbers" $ =
               map (range 1 20) hole-series
               [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-loop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             assert= 55 $ apply
@@ -84,8 +80,7 @@
                   recur $ dec x
             assert= 6 @*count-effects
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-recursion.main
           :require $ util.core :refer $ log-title

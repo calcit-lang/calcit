@@ -13,34 +13,34 @@
         'A $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct A (:a 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'A-typed-person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def A-typed-person (parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'Box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Box ([] 'T) (:value 'T)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'DemoEnum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum DemoEnum (:ok) (:err 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Response $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Response (:code 'Number)
             :message $ quote $ Option String
             :body 'Dynamic
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Team $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Team
             :members $ :: 'List Person
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (log-title "|Testing edn") (test-edn) (test-edn-comment)
             inside-eval: $ test-symbol
@@ -51,13 +51,11 @@
             test-top-level-typed-edn
             test-runtime-map-decode
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-atom () (log-title "|Testing atom to edn")
             let
@@ -67,8 +65,7 @@
               assert= 1 $ deref a
               assert= "|atom 1" $ trim $ format-cirru-edn a
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn ()
             let
@@ -131,8 +128,7 @@
               assert= "|do \"|a b\"" $ trim $ format-cirru-edn "|a b"
               assert= "|do |hello" $ trim $ format-cirru-edn |hello
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-edn-comment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn-comment () (log-title "|Testing edn comment")
             assert=
@@ -143,8 +139,7 @@
               parse-cirru-edn "|{} (:a 1) (:b 2)"
             assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-imported-type-names $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-imported-type-names ()
             let
@@ -168,8 +163,7 @@
                 , schema/External
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |imported-type-names)
             :code $ quote $ test-imported-type-names
             :tags $ #{} :unit
@@ -179,8 +173,7 @@
               %{} External $ :label |linked
               parse-cirru-edn-as "|%{} :External (:label |linked)" External
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-runtime-map-decode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-runtime-map-decode ()
             let
@@ -227,8 +220,7 @@
                 , DemoEnum
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |nominal-enum-boundary)
             :code $ quote $ test-runtime-map-decode
             :tags $ #{} :unit
@@ -250,16 +242,14 @@
                 code $ quote $ + 1 2
               assert= code $ eval $ &data-to-code code
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-top-level-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-top-level-typed-edn ()
             assert=
               %{} Person (:name |Top) (:age 23)
               , A-typed-person
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-typed-edn ()
             let
@@ -303,8 +293,7 @@
                 {} $ :a |second
                 parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ quote $ Map Tag String
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-edn.main
           :require
@@ -316,10 +305,10 @@
         'External $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct External (:label 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:handle 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-edn.schema

@@ -17,14 +17,13 @@
         'main! $ %{} 'CodeEntry
           :doc "|assert= 比较字面 Option 与 get 返回的 Option；两侧都被显式擦除为 Dynamic，不是可空值的旧用法。"
           :code $ quote $ defn main! ()
-            assert= (Option :none) $ get ([] 1) 3
+            assert= (Option :none)
+              get ([] 1) 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns type-fail-assert-equal-option-proof.main

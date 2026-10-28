@@ -13,14 +13,13 @@
         'consume $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export consume (stream) (consume-readable-byte-stream stream 6 3 on-chunk)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:async true)
-            :args $ [] 'ReadableByteStream
-            :return $ :: 'Result 'Unit 'StreamConsumeError
+          :schema $ quote $ Fn ReadableByteStream
+            -> $ Result Unit StreamConsumeError
+            :async
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'on-chunk $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn on-chunk (chunk)
             or
@@ -29,8 +28,7 @@
                 &= chunk $ &buffer 2 3
                 &= chunk $ &buffer 4 5 6
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Buffer
+          :schema $ quote $ Fn Buffer (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |accepts-each-expected-buffer-chunk)
               :code $ quote $ do
@@ -45,19 +43,17 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'stop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export stop (stream) (consume-readable-byte-stream stream 5 3 stop-on-chunk)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:async true)
-            :args $ [] 'ReadableByteStream
-            :return $ :: 'Result 'Unit 'StreamConsumeError
+          :schema $ quote $ Fn ReadableByteStream
+            -> $ Result Unit StreamConsumeError
+            :async
         'stop-on-chunk $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn stop-on-chunk (chunk) false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Buffer
+          :schema $ quote $ Fn Buffer (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |requests-early-stop)
             :code $ quote $ assert= false
               stop-on-chunk $ &buffer 1

@@ -50,7 +50,7 @@ try {
     ["edit", "def", `app.dynamic-write/erased-static-${index}`, "--input-format", "cirru", "--code",
       `quote $ defn erased-static-${index} (box value)\n  ${call} box :apply value`],
     ["edit", "schema", `app.dynamic-write/erased-static-${index}`, "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args ([] 'app.dynamic-write/FunctionBox 'Dynamic)) (:return 'app.dynamic-write/FunctionBox)"],
+      "quote $ Fn app.dynamic-write/FunctionBox Dynamic (-> app.dynamic-write/FunctionBox)"],
   ]);
   const writeMutation = [writeNegative, "edit", "transaction", "--code", JSON.stringify(writeOperations), "--format", "json"];
   const writePreview = JSON.parse(execFileSync(binary, [...writeMutation, "--dry-run"], { encoding: "utf8", stdio: "pipe" }));
@@ -256,7 +256,7 @@ try {
       ["edit", "def", "app.applied-reader/main!", "--input-format", "cirru", "--code",
         `quote $ defn main! ()\n  invalid!${input ? ` $ ${argument}` : ""}\n  , &unit`],
       ["edit", "schema", "app.applied-reader/main!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        "quote $ Fn (-> Unit)"],
       ["config", "set", "init-fn", "app.applied-reader/main!"],
       ["config", "set", "reload-fn", "app.applied-reader/main!"],
     ];

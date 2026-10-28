@@ -15,8 +15,7 @@
             assert |expected-function $ fn? f
             f & args
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :schema $ quote $ Fn Dynamic (List Dynamic) (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |uses-expanded-core-not-macro-name)
             :code $ quote $ let
                 value $ call-after-assert
@@ -35,8 +34,7 @@
               count items
             f & args
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :schema $ quote $ Fn Dynamic (List Dynamic) (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |carries-common-normal-exit-evidence)
             :code $ quote $ let
                 value $ call-after-block
@@ -53,8 +51,7 @@
             count-items args
             f & args
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :schema $ quote $ Fn Dynamic (List Dynamic) (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |proven-readonly-call-keeps-guard)
             :code $ quote $ let
                 value $ call-after-read
@@ -72,8 +69,7 @@
                 raise |expected-function
               f & items
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :schema $ quote $ Fn Dynamic (List Dynamic) (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-guard-in-lexical-sequence)
             :code $ quote $ let
                 value $ call-in-let
@@ -89,8 +85,7 @@
               raise |expected-function
             f & args
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :schema $ quote $ Fn Dynamic (List Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |argument-order-and-call-count)
               :code $ quote $ let
@@ -161,9 +156,7 @@
                 , &unit
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Unit) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |guard-runs-again-after-capture-mutation)
             :code $ quote $ let
                 message $ try
@@ -187,8 +180,7 @@
                   recur $ .inc idx
                 , idx
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |immediate-loop-keeps-captured-list-evidence)
             :code $ quote $ assert= 2
               count-checked-loop $ [] nil false
@@ -196,8 +188,7 @@
         'count-items $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-items (items) (.len items)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Dynamic
+          :schema $ quote $ Fn (List Dynamic) (-> Number)
         'inc-checked $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn inc-checked (value)
             when
@@ -205,8 +196,7 @@
               raise |expected-number
             .inc value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |uses-number-guard-for-method-lowering)
             :code $ quote $ assert= 8 (inc-checked 7)
             :tags $ #{} :guard-continuation :unit
@@ -223,9 +213,7 @@
               set! f 1
               get-value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Fn)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Fn) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry
             :name |checked-value-is-independent-of-original-binding
             :code $ quote $ let
@@ -239,12 +227,9 @@
               raise |expected-function
             , f
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
-            :return $ :: 'Fn $ {} (:return 'Number)
-              :args $ [] 'Number
+          :schema $ quote $ Fn
+            Fn Number $ -> Number
+            -> $ Fn Number $ -> Number
           :tests $ []
             %{} 'TestEntry (:name |guard-keeps-known-signature)
               :code $ quote $ let
@@ -268,8 +253,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'read-checked $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-checked (value)
             when
@@ -279,8 +263,7 @@
                 entry $ .get value 0
               .len value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |option-construction-keeps-list-evidence)
             :code $ quote $ do
               assert= 0 $ read-checked $ []
@@ -293,9 +276,8 @@
               raise |expected-list
             if (.contains-index? value index) (.get value index) (Option :none)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic 'Number
-            :return $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn Dynamic Number
+            -> $ Option Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |readonly-index-query-preserves-list-guard)
             :code $ quote $ do
               assert= (Option :some nil)

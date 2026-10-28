@@ -14,18 +14,16 @@
         'User $ %{} 'CodeEntry (:doc "|Record type used for bind-type fixture")
           :code $ quote $ defstruct User (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'main! $ %{} 'CodeEntry
           :doc "|Entry for type-slot record bind call-site arg type mismatch"
           :code $ quote $ defn main! () (takes-user 1) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'takes-user $ %{} 'CodeEntry
           :doc "|Schema expects a value matching the bound type slot"
           :code $ quote $ defn takes-user (x) x

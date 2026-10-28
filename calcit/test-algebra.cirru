@@ -11,21 +11,21 @@
     %{} 'FileEntry
       :defs $ {}
         'AlgebraApply $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraApply (.apply :fn)
+          :code $ quote $ deftrait AlgebraApply (.apply 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'AlgebraBind $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraBind (.bind :fn)
+          :code $ quote $ deftrait AlgebraBind (.bind 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'AlgebraBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def AlgebraBox (impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'AlgebraBox0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AlgebraBox0 (:value 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'AlgebraBoxApplyImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxApplyImpl AlgebraApply
             .apply $ fn (box fs)
@@ -36,13 +36,13 @@
                   .assoc box :value $ f $ &struct:get box :value
                   raise "|AlgebraBox apply expects a function value"
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'AlgebraBoxBindImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxBindImpl AlgebraBind
             .bind $ fn (box f)
               f $ &struct:get box :value
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'AlgebraBoxMapImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMapImpl AlgebraMap
             .map $ fn (box f)
@@ -51,22 +51,22 @@
                 -> Dynamic
               .assoc box :value $ f $ &struct:get box :value
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'AlgebraBoxMappendImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AlgebraBoxMappendImpl AlgebraMappend
             .mappend $ fn (a b)
               hint-fn $ quote $ Fn test-algebra.main/AlgebraBox0 test-algebra.main/AlgebraBox0 (-> Dynamic)
               .assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'AlgebraMap $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraMap (.map :fn)
+          :code $ quote $ deftrait AlgebraMap (.map 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'AlgebraMappend $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraMappend (.mappend :fn)
+          :code $ quote $ deftrait AlgebraMappend (.mappend 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export main! () (log-title "|Testing algebra")
             ; "|Experimental code, to simulate usages like Monad"
@@ -75,13 +75,11 @@
             test-apply
             test-mappend
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-apply $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-apply ()
             let
@@ -95,8 +93,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-bind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-bind ()
             let
@@ -108,8 +105,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 25 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map ()
             let
@@ -120,8 +116,7 @@
                 do (assert-type b2 AlgebraBox)
                   assert= 12 $ :value b2
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-mappend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-mappend ()
             let
@@ -134,8 +129,7 @@
                 do (assert-type b3 AlgebraBox)
                   assert= 7 $ :value b3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-algebra
           :require $ util.core :refer $ log-title inside-eval:

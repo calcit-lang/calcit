@@ -18,18 +18,15 @@
           :code $ quote $ defn main! ()
             read-raw $ {} $ :x 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'read-raw $ %{} 'CodeEntry
           :doc "|Typed collection code must use an Option-returning public lookup."
           :code $ quote $ defn read-raw (value) (&get-raw value :x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn (Map Tag Number) (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict raw-primitive fixture.")
         :code $ quote $ ns type-fail-raw-primitive-strict.main

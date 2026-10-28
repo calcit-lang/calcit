@@ -69,7 +69,7 @@ try {
   edit("def", "calcit.conversion-contracts/main!", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "main!", [], ...methodTests.map(test => test.code.__edn_quote), "&unit"]));
   edit("schema", "calcit.conversion-contracts/main!", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    "quote $ Fn (-> Unit)");
   const methodEntry = [methodSnapshot, "--init-fn", "calcit.conversion-contracts/main!",
     "--reload-fn", "calcit.conversion-contracts/main!"];
   execFileSync(binary, methodEntry, { stdio: "pipe" });
@@ -86,7 +86,7 @@ try {
   edit("def", "calcit.conversion-contracts/scalar-methods", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "scalar-methods", [], methodTests[1].code.__edn_quote, "&unit"]));
   edit("schema", "calcit.conversion-contracts/scalar-methods", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    "quote $ Fn (-> Unit)");
   const methodWasmOutput = join(output, "methods-wasm");
   execFileSync(binary, ["wasm", methodSnapshot, "--init-fn", "calcit.conversion-contracts/scalar-methods",
     "--reload-fn", "calcit.conversion-contracts/scalar-methods", "--emit-path", methodWasmOutput], { stdio: "pipe" });
@@ -162,21 +162,21 @@ try {
   const wasmSnapshot = join(output, "unsupported-tag-conversion.cirru");
   await copyFile("calcit/test-wasm.cirru", wasmSnapshot);
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-tag", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-tag () (if (&= (to-tag |ready) :ready) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-tag", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-tag", "--input-format", "cirru", "--code", "quote $ Fn (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-frac () (if (&= (to-string 0.5) |0.5) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ Fn (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-value (x) (to-string x)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ Fn Number (-> String)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (to-string x) |42) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ Fn Number (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (to-string x) |0) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ Fn Number (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-safe-limit (x) (if (&= (to-string x) |9007199254740992) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ Fn Number (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (to-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ Fn Number (-> Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-value (x) (to-string x)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ Fn Number (-> String)"], { stdio: "pipe" });
   const wasmJsOutput = join(output, "wasm-js");
   execFileSync(binary, ["--emit-path", wasmJsOutput, wasmSnapshot, "js"], { stdio: "pipe" });
   const wasmJs = await import(pathToFileURL(join(wasmJsOutput, "test-wasm.main.mjs")).href);
@@ -244,7 +244,7 @@ try {
   const openTraitSnapshot = join(output, "open-trait.cirru");
   await copyFile("calcit/test-wasm.cirru", openTraitSnapshot);
   execFileSync(binary, [openTraitSnapshot, "edit", "def", "test-wasm.main/test-to-string-open", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-open (x) (to-string x)"], { stdio: "pipe" });
-  execFileSync(binary, [openTraitSnapshot, "edit", "schema", "test-wasm.main/test-to-string-open", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'T) (:generics $ [] 'T) (:where $ {} $ 'T 'ToString)"], { stdio: "pipe" });
+  execFileSync(binary, [openTraitSnapshot, "edit", "schema", "test-wasm.main/test-to-string-open", "--input-format", "cirru", "--code", "quote $ Fn T (-> String) (:generics T) (:where $ T ToString)"], { stdio: "pipe" });
   const openTrait = spawnSync(binary, ["wasm", openTraitSnapshot, "--emit-path", join(output, "open-trait-wasm")], { encoding: "utf8" });
   assert.notEqual(openTrait.status, 0, "a generic WASM export cannot choose a trait implementation without concrete type evidence");
   assert.match(openTrait.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*calcit\.core\/to-string/);
@@ -252,7 +252,7 @@ try {
   const firstClassSnapshot = join(output, "first-class-trait.cirru");
   await copyFile("calcit/test-wasm.cirru", firstClassSnapshot);
   execFileSync(binary, [firstClassSnapshot, "edit", "def", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-first-class () (let ((f to-string)) (if (&= (f 42) |42) 1 0))"], { stdio: "pipe" });
-  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ Fn (-> Number)"], { stdio: "pipe" });
   const firstClassOutput = join(output, "first-class-trait-wasm");
   const firstClass = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", firstClassOutput], { encoding: "utf8" });
   assert.equal(firstClass.status, 0, `a known generic alias must specialize from concrete call inputs\n${firstClass.stderr}`);
@@ -269,7 +269,7 @@ try {
 
   // A known alias supplies the callee, not the missing receiver evidence.
   execFileSync(binary, [firstClassSnapshot, "edit", "def", "test-wasm.main/test-to-string-first-class-open", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-first-class-open (x) (let ((f to-string)) (f x))"], { stdio: "pipe" });
-  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class-open", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'T) (:generics $ [] 'T) (:where $ {} $ 'T 'ToString)"], { stdio: "pipe" });
+  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class-open", "--input-format", "cirru", "--code", "quote $ Fn T (-> String) (:generics T) (:where $ T ToString)"], { stdio: "pipe" });
   const firstClassOpenOutput = join(output, "first-class-open-trait-wasm");
   const firstClassOpen = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", firstClassOpenOutput], { encoding: "utf8" });
   assert.notEqual(firstClassOpen.status, 0, "a generic alias cannot invent concrete receiver evidence");
@@ -279,7 +279,7 @@ try {
   const spreadSnapshot = join(output, "spread-trait.cirru");
   await copyFile("calcit/test-wasm.cirru", spreadSnapshot);
   execFileSync(binary, [spreadSnapshot, "edit", "def", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-spread () (if (&= (to-string 42 & $ []) |42) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [spreadSnapshot, "edit", "schema", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [spreadSnapshot, "edit", "schema", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ Fn (-> Number)"], { stdio: "pipe" });
   const spread = spawnSync(binary, ["wasm", spreadSnapshot, "--emit-path", join(output, "spread-trait-wasm")], { encoding: "utf8" });
   assert.notEqual(spread.status, 0, "a spread call cannot bypass generic trait specialization");
   // Fixed-arity spread uncertainty is rejected by the shared preprocessor,

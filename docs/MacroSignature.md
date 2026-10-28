@@ -5,16 +5,15 @@ their expansion is later preprocessed as an expression or declaration. A macro
 signature therefore uses a dedicated `MacroSignature`; it is not a function
 signature with a different `:kind`.
 
-The canonical snapshot/source form is:
+It is written in the compact quote syntax (`:schema $ quote $ Macro …` in a
+snapshot): positional items are required inputs, `& T` is the rest input and
+`(-> T)` is the expansion.
 
 ```cirru
-:: 'Macro
-  {} (:generics $ [] 'T)
-    :required $ [] 'SyntaxSymbol (:: 'Expr 'T)
-    :optional $ [] 'SyntaxList
-    :rest 'Syntax
-    :expansion $ :: 'Expr 'T
-    :capabilities $ #{}
+quote $ Macro SyntaxSymbol (Expr T) & Syntax
+  -> $ Expr T
+  :optional SyntaxList
+  :generics T
 ```
 
 Input contracts are `Syntax`, `SyntaxSymbol`, `SyntaxList`, and `Expr<T>`.
@@ -53,11 +52,7 @@ of the emitted form. For example, a binding macro with one list-shaped syntax
 argument and arbitrary body forms can use:
 
 ```cirru
-:: 'Macro
-  {} (:required $ [] 'SyntaxList)
-    :rest 'Syntax
-    :expansion $ :: 'Expr 'Dynamic
-    :capabilities $ #{}
+quote $ Macro SyntaxList & Syntax (-> (Expr Dynamic))
 ```
 
 `Expr<Dynamic>` here is an explicit semantic boundary: the expansion is known
@@ -116,10 +111,9 @@ A strict macro is pure by default. Effects performed while its body is being
 evaluated must be declared separately from runtime/backend `:features`:
 
 ```cirru
-:: 'Macro
-  {} (:required $ [])
-    :expansion $ :: 'Expr 'String
-    :capabilities $ #{} :env-read :fs-read
+quote $ Macro
+  -> $ Expr String
+  :capabilities :env-read :fs-read
 ```
 
 Allowed opt-in capabilities are `:env-read`, `:fs-read`, `:platform-read`,

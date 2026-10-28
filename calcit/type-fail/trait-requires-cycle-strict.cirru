@@ -16,26 +16,24 @@
     %{} 'FileEntry
       :defs $ {}
         'TraitA $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait TraitA (requires TraitB) (.a :fn)
+          :code $ quote $ deftrait TraitA (requires TraitB) (.a 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'TraitB $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait TraitB (requires TraitA) (.b :fn)
+          :code $ quote $ deftrait TraitB (requires TraitA) (.b 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 refs $ [] TraitA TraitB
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry
         :doc "|Strict fixture for a cycle between required traits."
         :code $ quote $ ns type-fail-trait-requires-cycle-strict.main

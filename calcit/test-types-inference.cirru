@@ -13,7 +13,7 @@
         '*dynamic-ref $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *dynamic-ref (make-dynamic-value)
           :examples $ []
-          :schema $ :: 'Ref 'Dynamic
+          :schema $ quote $ Ref Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-atom-deref)
             :code $ quote $ do
               assert-type *dynamic-ref $ quote $ Ref Dynamic
@@ -22,56 +22,56 @@
         'Address $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Address (:city 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackEnvelope ([] 'T)
             :holder $ quote $ test-types-inference.main/CallbackHolder T
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'CallbackHolder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackHolder ([] 'T)
             :callback $ quote $ Fn
               Fn T $ -> Number
               -> Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S)
             :items $ quote $ List T
             :seed 'S
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Job (:title 'String) (:status Status)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
             :number $ quote $ Option Number
             :text $ quote $ Option String
             :result $ quote $ Result Number String
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Outcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Outcome (:status Status) (:none)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
             :address $ :: Address
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'PersonWrap $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum PersonWrap
             :person $ :: Person
             :none
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'SliceReceiver $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct SliceReceiver (:n 'Number)
             :end $ quote $ Option Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl SliceReceiverImpl Sliceable
             .slice $ fn (self start end)
@@ -80,22 +80,20 @@
                 :n $ + (:n self) start
                 :end end
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'SliceReceiverWithMethods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def SliceReceiverWithMethods (impl-traits SliceReceiver SliceReceiverImpl)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Status $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'bounded-forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-forward (value) (bounded-identity value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Sliceable
           :tests $ [] $ %{} 'TestEntry (:name |forwards-the-same-variable)
             :code $ quote $ assert= ([] |a |b)
               bounded-forward $ [] |a |b
@@ -103,10 +101,8 @@
         'bounded-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-identity (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Sliceable
           :tests $ []
             %{} 'TestEntry (:name |preserves-list-payload)
               :code $ quote $ assert= ([] 1 2)
@@ -128,10 +124,8 @@
                   .slice item 0 $ Option :some 1
               shorten value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Sliceable
           :tests $ []
             %{} 'TestEntry (:name |local-map-keeps-list-payload)
               :code $ quote $ assert= ([] 1)
@@ -148,11 +142,10 @@
                   :where $ T Sliceable
                 , item
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'C
-            :generics $ [] 'C
-            :return $ :: 'List 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C
+            -> $ List C
+            :generics C
+            :where $ C Sliceable
           :tests $ []
             %{} 'TestEntry (:name |bounded-callback-keeps-list-payload)
               :code $ quote $ assert=
@@ -167,10 +160,8 @@
             assert-type (.debug value) 'String
             .slice value 0 $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C ([] 'Debug 'Sliceable)
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Debug Sliceable
           :tests $ [] $ %{} 'TestEntry (:name |both-capabilities-keep-one-identity)
             :code $ quote $ assert= ([] 1)
               bounded-multiple $ [] 1 2
@@ -184,10 +175,8 @@
               assert-type (describe 1) 'String
               , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Debug
+          :schema $ quote $ Fn T (-> T) (:generics T)
+            :where $ T Debug
           :tests $ []
             %{} 'TestEntry (:name |shadowing-retains-captured-number-bound)
               :code $ quote $ assert= 1 (bounded-shadow-capture 1)
@@ -199,10 +188,8 @@
           :code $ quote $ defn bounded-slice (value)
             value .slice 0 $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Sliceable
           :tests $ []
             %{} 'TestEntry (:name |method-keeps-list-payload)
               :code $ quote $ assert= ([] 1)
@@ -215,19 +202,17 @@
           :code $ quote $ defn branch-field-box (flag seed)
             if flag (empty-field-box seed) (empty-field-box seed)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Bool 'String
-            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
+          :schema $ quote $ Fn Bool String
+            -> $ test-types-inference.main/EmptyFieldBox Number String
         'call-callback-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-callback-envelope (dispatch! envelope)
             call-callback-holder dispatch! $ :holder envelope
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-              :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'T
-              :: 'test-types-inference.main/CallbackEnvelope 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn
+            Fn T $ -> Number
+            test-types-inference.main/CallbackEnvelope T
+            -> Number
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |nested-nominal-callback-keeps-number-input)
             :code $ quote $ assert= 8
               call-callback-envelope
@@ -240,12 +225,11 @@
           :code $ quote $ defn call-callback-holder (dispatch! holder)
             (:callback holder) dispatch!
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-              :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'T
-              :: 'test-types-inference.main/CallbackHolder 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn
+            Fn T $ -> Number
+            test-types-inference.main/CallbackHolder T
+            -> Number
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |inline-nominal-callback-keeps-number-input)
             :code $ quote $ assert= 8
               call-callback-holder
@@ -260,10 +244,9 @@
               (:none) 0
               (:some callback) (callback 7)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Tag
-              :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn
+            Map Tag $ Fn Number $ -> Number
+            -> Number
           :tests $ [] $ %{} 'TestEntry (:name |inline-map-callback-preserves-number-input)
             :code $ quote $ assert= 8
               consume-number-callback-map $ &{} :click $ fn (n) (&+ n 1)
@@ -273,8 +256,7 @@
             assert= 0 $ .len $ :items box
             assert= |seed $ :seed box
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
+          :schema $ quote $ Fn (test-types-inference.main/EmptyFieldBox Number String) (-> Unit)
         'crossed-binder-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn crossed-binder-first (head-value other-value)
             hint-fn $ quote $ Fn D C (-> D) (:generics C D)
@@ -284,9 +266,7 @@
                   , item
               pass-value head-value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C 'D
-            :generics $ [] 'C 'D
+          :schema $ quote $ Fn C D (-> C) (:generics C D)
           :tests $ []
             %{} 'TestEntry (:name |preserves-number-before-string)
               :code $ quote $ assert= 17 (crossed-binder-first 17 |other)
@@ -305,18 +285,16 @@
         'dynamic-last-compat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dynamic-last-compat (value) (.last value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
-            :return $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn Dynamic
+            -> $ Option Dynamic
         'empty-field-box $ %{} 'CodeEntry
           :doc "|空列表字段保留泛型工厂的元素合同；调用处由断言、实参或返回值的期望类型实例化本次调用，输入 seed 的类型和外围泛型身份仍须独立证明。"
           :code $ quote $ defn empty-field-box (seed)
             EmptyFieldBox :items ([]) :seed seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'S
-            :generics $ [] 'T 'S
-            :return $ :: 'test-types-inference.main/EmptyFieldBox 'T 'S
+          :schema $ quote $ Fn S
+            -> $ test-types-inference.main/EmptyFieldBox T S
+            :generics T S
           :tests $ []
             %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
               :code $ quote $ let
@@ -362,10 +340,9 @@
         'find-last-matching-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn find-last-matching-index (xs item) (.last-index-of xs item)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'T
-            :generics $ [] 'T
-            :return $ :: 'Option 'Number
+          :schema $ quote $ Fn (List T) T
+            -> $ Option Number
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-number-and-string-element-types)
             :code $ quote $ do
               assert= (Option :some 2)
@@ -379,9 +356,8 @@
           :code $ quote $ defn find-last-positive-index (xs)
             .find-last-index xs $ fn (value) (> value 0)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'Number
-            :return $ :: 'Option 'Number
+          :schema $ quote $ Fn (List Number)
+            -> $ Option Number
           :tests $ []
             %{} 'TestEntry (:name |typed-number-receiver)
               :code $ quote $ do
@@ -414,9 +390,8 @@
         'first-rest-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn first-rest-value (label & values) (first values)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'String)
-            :args $ [] 'String
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String & String
+            -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |no-rest)
               :code $ quote $ assert= (Option :none) (first-rest-value |prefix)
@@ -460,9 +435,7 @@
                 , y
               , x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> T) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-guarded-input-contract)
             :code $ quote $ let
                 items $ guarded-identity $ [] 1 2
@@ -475,8 +448,7 @@
         'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-second-is-returned)
             :code $ quote $ do
               assert= |hello $ infer-later-dynamic-generic |hello
@@ -491,8 +463,7 @@
                   (:err error) (raise error)
               value .unwrap
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-live-option-and-error)
             :code $ quote $ do
               assert= 1 $ infer-match-raise true
@@ -503,8 +474,7 @@
           :code $ quote $ defn infer-named-none-fallback ()
             option:unwrap-or (Option :none) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |named-none-fallback)
             :code $ quote $ assert= 7 (infer-named-none-fallback)
             :tags $ #{} :unit
@@ -512,8 +482,7 @@
           :code $ quote $ defn infer-named-result-err-fallback ()
             result:unwrap-or (Result :err 3) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |named-err-fallback-number)
             :code $ quote $ assert= 7 (infer-named-result-err-fallback)
             :tags $ #{} :unit
@@ -521,8 +490,7 @@
           :code $ quote $ defn infer-named-result-ok-concrete ()
             result:unwrap-or (Result :ok 9) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |retains-named-concrete-success)
             :code $ quote $ assert= 9 (infer-named-result-ok-concrete)
             :tags $ #{} :unit
@@ -530,8 +498,7 @@
           :code $ quote $ defn infer-named-result-ok-open (value)
             result:unwrap-or (Result :ok value) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-named-success-payload)
             :code $ quote $ do
               assert= |hello $ infer-named-result-ok-open |hello
@@ -541,8 +508,7 @@
           :code $ quote $ defn infer-none-fallback ()
             option:unwrap-or (Option :none) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |none-fallback-number)
             :code $ quote $ assert= 7 (infer-none-fallback)
             :tags $ #{} :unit
@@ -550,8 +516,7 @@
           :code $ quote $ defn infer-option-none-predicate ()
             option:none? $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= false (infer-option-none-predicate)
             :tags $ #{} :unit
@@ -564,8 +529,7 @@
                 (:some n) n
                 (:none) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |option-presence-without-nil)
             :code $ quote $ do
               assert= 1 $ infer-option-presence-without-nil true
@@ -579,8 +543,7 @@
           :code $ quote $ defn infer-option-some-predicate ()
             option:some? $ Option :some 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= true (infer-option-some-predicate)
             :tags $ #{} :unit
@@ -590,8 +553,7 @@
                 value $ if enabled (raise |missing-left) (Option :some 2)
               value .unwrap
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |retains-option-and-raise)
             :code $ quote $ do
               assert= 2 $ infer-raise-left false
@@ -604,8 +566,7 @@
                 value $ if enabled (Option :some 1) (raise |missing-right)
               value .unwrap
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |retains-option-and-raise)
             :code $ quote $ do
               assert= 1 $ infer-raise-right true
@@ -616,8 +577,7 @@
           :code $ quote $ defn infer-result-err-fallback ()
             result:unwrap-or (Result :err 3) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |err-fallback-number)
             :code $ quote $ assert= 7 (infer-result-err-fallback)
             :tags $ #{} :unit
@@ -625,8 +585,7 @@
           :code $ quote $ defn infer-result-err-predicate ()
             result:err? $ Result :ok 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= false (infer-result-err-predicate)
             :tags $ #{} :unit
@@ -634,8 +593,7 @@
           :code $ quote $ defn infer-result-ok-concrete ()
             result:unwrap-or (Result :ok 9) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |retains-concrete-success)
             :code $ quote $ assert= 9 (infer-result-ok-concrete)
             :tags $ #{} :unit
@@ -643,8 +601,7 @@
           :code $ quote $ defn infer-result-ok-open (value)
             result:unwrap-or (Result :ok value) 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-success-payload)
             :code $ quote $ do
               assert= |hello $ infer-result-ok-open |hello
@@ -654,8 +611,7 @@
           :code $ quote $ defn infer-result-ok-predicate ()
             result:ok? $ Result :ok 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= true (infer-result-ok-predicate)
             :tags $ #{} :unit
@@ -667,10 +623,9 @@
               :generics $ [] 'T 'U
             , others
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'D)
-            :args $ [] 'C
-            :generics $ [] 'D 'C
-            :return $ :: 'List 'D
+          :schema $ quote $ Fn C & D
+            -> $ List D
+            :generics D C
           :tests $ []
             %{} 'TestEntry (:name |inherits-string-rest)
               :code $ quote $ assert= ([] |a |b) (inherited-rest-binders 17 |a |b)
@@ -694,10 +649,9 @@
                   recur (inc i)
                     if (&= x excluded) acc $ &list:append acc x
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'T
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn (List T) T
+            -> $ List T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-element-binder-of-loop-accumulator)
             :code $ quote $ let
                 kept $ assert-type
@@ -712,25 +666,20 @@
           :doc "|Generates a callback capturing the caller's T without redeclaring it."
           :code $ quote $ defmacro lexical-capture-callback (captured)
             quasiquote $ fn ()
-              hint-fn $ {}
-                :args $ []
-                :return 'T
+              hint-fn $ quote $ Fn (-> T)
               , ~captured
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'Syntax
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
         'lexical-field-box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-field-box (seed)
             let
                 box $ empty-field-box seed
               , box
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'S
-            :generics $ [] 'S
-            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'S
+          :schema $ quote $ Fn S
+            -> $ test-types-inference.main/EmptyFieldBox Number S
+            :generics S
         'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-capture (value)
             let
@@ -739,9 +688,7 @@
                   , value
               callback
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> T) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |preserves-outer-number)
               :code $ quote $ assert= 1 (lexical-generic-capture 1)
@@ -775,10 +722,9 @@
               assert= (#{}) (empty-set value)
               empty-list value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn T
+            -> $ List T
+            :generics T
           :tests $ []
             %{} 'TestEntry (:name |empty-collections-number)
               :code $ quote $ assert= ([]) (lexical-generic-empty-collections 1)
@@ -797,12 +743,10 @@
                 -> (range y)
                   map $ fn (yi) (f xi yi)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number 'Number $ :: 'Fn
-              {} (:return 'T)
-                :args $ [] 'Number 'Number
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn Number Number
+            Fn Number Number $ -> T
+            -> $ List T
+            :generics T
           :tests $ []
             %{} 'TestEntry (:name |preserves-number-order)
               :code $ quote $ assert= ([] 0 1 10 11)
@@ -826,9 +770,7 @@
                   , other
               &+ (callback 1) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> Number) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |independent-string-capture)
               :code $ quote $ assert= 2 (lexical-generic-identity |outer)
@@ -845,9 +787,7 @@
                   , other
               &+ (callback 1) 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> Number) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |independent-renamed-binder)
             :code $ quote $ assert= 2 (lexical-generic-identity-renamed |outer)
             :tags $ #{} :generic :lexical-binder :unit
@@ -859,8 +799,7 @@
                   , item
               callback value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |generic-instantiation-preserves-open-number)
               :code $ quote $ assert= 1 (lexical-generic-open-identity 1)
@@ -889,9 +828,7 @@
               assert= 1 $ inner 1
               outer-capture
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> T) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |nearest-binder-and-restored-outer-string)
               :code $ quote $ assert= |outer (lexical-generic-shadow-capture |outer)
@@ -904,25 +841,18 @@
           :doc "|Generates a callback that owns its quantifier and returns its own argument."
           :code $ quote $ defmacro lexical-identity-callback ()
             quasiquote $ fn (other)
-              hint-fn $ {}
-                :args $ [] 'T
-                :return 'T
-                :generics $ [] 'T
+              hint-fn $ quote $ Fn T (-> T) (:generics T)
               , other
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ []
+          :schema $ quote $ Macro
+            -> $ Expr Dynamic
         'lexical-macro-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-macro-capture (value)
             let
                 capture $ lexical-capture-callback value
               capture
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> T) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |preserves-outer-number)
               :code $ quote $ assert= 1 (lexical-macro-capture 1)
@@ -937,9 +867,7 @@
               &+ (local-id 1)
                 count $ local-id $ [] value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T (-> Number) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |instantiates-generated-binder-per-call)
             :code $ quote $ assert= 2 (lexical-macro-identity |outer)
             :tags $ #{} :generic :lexical-binder :unit
@@ -949,23 +877,19 @@
               Person :name |Ada :age 3 :address $ Address :city |X
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'make-dynamic-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-dynamic-value () 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'map-through-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn map-through-callback (xs f)
             map xs $ fn (value) (f value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T)
-              :: 'Fn $ {} (:return 'U)
-                :args $ [] 'T
-            :generics $ [] 'T 'U
-            :return $ :: 'List 'U
+          :schema $ quote $ Fn (List T)
+            Fn T $ -> U
+            -> $ List U
+            :generics T U
           :tests $ []
             %{} 'TestEntry (:name |changes-element-type-without-losing-input)
               :code $ quote $ let
@@ -997,12 +921,10 @@
           :code $ quote $ defn map-through-method (xs f)
             .map xs $ fn (value) (f value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T)
-              :: 'Fn $ {} (:return 'MapOutput)
-                :args $ [] 'T
-            :generics $ [] 'T 'MapOutput
-            :return $ :: 'List 'MapOutput
+          :schema $ quote $ Fn (List T)
+            Fn T $ -> MapOutput
+            -> $ List MapOutput
+            :generics T MapOutput
           :tests $ []
             %{} 'TestEntry (:name |changes-element-type-without-losing-input)
               :code $ quote $ let
@@ -1023,17 +945,15 @@
         'number-field-box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn number-field-box (seed) (empty-field-box seed)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'test-types-inference.main/EmptyFieldBox 'Number 'String
+          :schema $ quote $ Fn String
+            -> $ test-types-inference.main/EmptyFieldBox Number String
         'option-recur-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-recur-sum (n acc)
             if (&<= n 0) (acc.unwrap-or 0)
               recur (dec n)
                 Option :some $ &+ (acc.unwrap-or 0) n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'Option 'Number
+          :schema $ quote $ Fn Number (Option Number) (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |omitted-option-preserves-recursion)
               :code $ quote $ do
@@ -1079,8 +999,7 @@
             if (&<= n 0) (acc.unwrap-or 7)
               &+ 1 $ option-recursive-count $ dec n
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number $ :: 'Option 'Number
+          :schema $ quote $ Fn Number (Option Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
             :code $ quote $ do
               assert= 9 $ option-recursive-count 2
@@ -1092,10 +1011,9 @@
           :code $ quote $ defn read-state-metadata (states)
             get-in states $ [] :data
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'K 'V
-            :generics $ [] 'K 'V
-            :return $ :: 'Result 'V 'PathError
+          :schema $ quote $ Fn (Map K V)
+            -> $ Result V PathError
+            :generics K V
           :tests $ []
             %{} 'TestEntry (:name |present-payloads-preserve-values)
               :code $ quote $ do
@@ -1156,8 +1074,7 @@
           :code $ quote $ defn recur-types-safe (person index)
             if (>= index 2) index $ recur person $ inc index
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Person 'Number
+          :schema $ quote $ Fn Person Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-typed-recur-parameters)
             :code $ quote $ assert= 2
               recur-types-safe
@@ -1167,8 +1084,7 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'renamed-captured-option-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn renamed-captured-option-payload (value)
             hint-fn $ {}
@@ -1181,10 +1097,9 @@
                   Option :some other
               wrap-value value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'C
-            :generics $ [] 'C
-            :return $ :: 'Option 'C
+          :schema $ quote $ Fn C
+            -> $ Option C
+            :generics C
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
               :code $ quote $ assert= (Option :some 17) (renamed-captured-option-payload 17)
@@ -1209,10 +1124,8 @@
               :generics $ [] 'T
             .count value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Countable
+          :schema $ quote $ Fn C (-> Number) (:generics C)
+            :where $ C Countable
           :tests $ []
             %{} 'TestEntry (:name |inherits-string-capability)
               :code $ quote $ assert= 5 (renamed-inherited-count "|中文abc")
@@ -1232,10 +1145,8 @@
               :generics $ [] 'T
             .empty value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Emptyable
+          :schema $ quote $ Fn C (-> C) (:generics C)
+            :where $ C Emptyable
           :tests $ []
             %{} 'TestEntry (:name |preserves-number-identity)
               :code $ quote $ assert= 0 (renamed-inherited-empty 17)
@@ -1266,10 +1177,9 @@
               :generics $ [] 'T
             Option :some value
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'C
-            :generics $ [] 'C
-            :return $ :: 'Option 'C
+          :schema $ quote $ Fn C
+            -> $ Option C
+            :generics C
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
               :code $ quote $ assert= (Option :some 17) (renamed-option-payload 17)
@@ -1294,10 +1204,8 @@
               :generics $ [] 'T
             .count value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'Countable
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Countable
           :tests $ []
             %{} 'TestEntry (:name |inherits-string-capability)
               :code $ quote $ assert= 5 (same-named-inherited-count "|中文abc")
@@ -1324,8 +1232,7 @@
                 = expected-text $ :text fields
                 = expected-result $ :result fields
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-types-inference.main/NominalAbsenceFields
+          :schema $ quote $ Fn test-types-inference.main/NominalAbsenceFields (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |same-typed-nominal-fields)
               :code $ quote $ assert= true
@@ -1350,9 +1257,7 @@
         'same-type-second $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-type-second (left right) right
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn T T (-> T) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |empty-option-before-payload)
               :code $ quote $ assert= |x
@@ -1403,10 +1308,8 @@
         'slice-with-contract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn slice-with-contract (value start end) (slice value start end)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C 'Number $ :: 'Option 'Number
-            :generics $ [] 'C
-            :where $ {} $ 'C 'Sliceable
+          :schema $ quote $ Fn C Number (Option Number) (-> C) (:generics C)
+            :where $ C Sliceable
           :tests $ []
             %{} 'TestEntry (:name |custom-omitted-end)
               :code $ quote $ let
@@ -1444,9 +1347,8 @@
         'spread-first-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn spread-first-rest (items) (first-rest-value |prefix & items)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'String
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn (List String)
+            -> $ Option String
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type
@@ -1454,8 +1356,7 @@
               , 'Number
             assert-type (count |abc) 'Number
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'test-filter-map-kv-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-filter-map-kv-inference ()
             let
@@ -1468,8 +1369,7 @@
               assert-type output $ quote $ Map String Number
               &inspect-type output
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-fn-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-inference ()
             let
@@ -1482,8 +1382,7 @@
                 , 'Number
               &inspect-type f
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
           :tests $ []
             %{} 'TestEntry (:name |type-predicates-evaluate-once-in-order)
               :code $ quote $ let
@@ -1541,71 +1440,47 @@
             %{} 'TestEntry (:name |known-callback-arity-ranges)
               :code $ quote $ let
                   one $ fn (x)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (-> Number)
                     + x 1
                   zero $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Number
+                    hint-fn $ quote $ Fn (-> Number)
                     , 8
                   optional $ fn (x delta)
-                    hint-fn $ {}
-                      :args $ [] 'Number $ :: 'Option 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number (Option Number) (-> Number)
                     + x $ match delta
                       (:some n) n
                       (:none) 0
                   rest-values $ fn (x & values)
-                    hint-fn $ {}
-                      :args $ [] 'Number
-                      :rest 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number & Number (-> Number)
                     foldl values x $ fn (acc n) (&+ acc n)
                   invoke-one $ fn (callback)
-                    hint-fn $ {}
-                      :args $ [] $ :: 'Fn
-                        {}
-                          :args $ [] 'Number
-                          :return 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn
+                      Fn Number $ -> Number
+                      -> Number
                     let
                         alias callback
                         captured $ fn ()
-                          hint-fn $ {}
-                            :args $ []
-                            :return 'Number
+                          hint-fn $ quote $ Fn (-> Number)
                           alias 7
                       captured
                   invoke-zero $ fn (callback)
-                    hint-fn $ {}
-                      :args $ [] $ :: 'Fn
-                        {}
-                          :args $ []
-                          :return 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn
+                      Fn $ -> Number
+                      -> Number
                     callback
                   invoke-optional $ fn (callback)
-                    hint-fn $ {}
-                      :args $ [] $ :: 'Fn
-                        {}
-                          :args $ [] 'Number $ :: 'Option 'Number
-                          :return 'Number
-                      :return 'Unit
+                    hint-fn $ quote $ Fn
+                      Fn Number (Option Number) (-> Number)
+                      -> Unit
                     assert= 7 $ callback 7
                     assert= 9 $ callback 7 $ Option :some 2
                     assert= 7 $ callback & $ [] 7
                     , &unit
                   invoke-rest $ fn (callback values)
-                    hint-fn $ {}
-                      :args $ []
-                        :: 'Fn $ {}
-                          :args $ [] 'Number
-                          :rest 'Number
-                          :return 'Number
-                        :: 'List 'Number
-                      :return 'Unit
+                    hint-fn $ quote $ Fn
+                      Fn Number & Number $ -> Number
+                      List Number
+                      -> Unit
                     assert= 7 $ callback 7
                     assert= 24 $ callback 7 8 9
                     assert= 24 $ callback 7 & values
@@ -1619,28 +1494,19 @@
               :code $ quote $ let
                   trace $ ref |
                   record $ fn (label value)
-                    hint-fn $ {}
-                      :args $ [] 'String 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn String Number (-> Number)
                     reset! trace $ str (deref trace) label
                     , value
                   add $ fn (left right)
-                    hint-fn $ {}
-                      :args $ [] 'Number 'Number
-                      :return 'Number
+                    hint-fn $ quote $ Fn Number Number (-> Number)
                     record |c $ + left right
                   produce $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return $ :: 'Fn $ {}
-                        :args $ [] 'Number 'Number
-                        :return 'Number
+                    hint-fn $ quote $ Fn
+                      -> $ Fn Number Number $ -> Number
                     reset! trace $ str (deref trace) |h
                     , add
                   keep-open $ fn (callback)
-                    hint-fn $ {}
-                      :args $ [] 'Fn
-                      :return 'Fn
+                    hint-fn $ quote $ Fn Fn (-> Fn)
                     , callback
                 assert= 15 $
                   produce
@@ -1678,8 +1544,7 @@
                 (:err error)
                   assert= true $ starts-with? error |b
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-legacy-optional-inference $ %{} 'CodeEntry
           :doc "|Legacy-contract test: pins assert-type against Optional; retire with Optional (0.32.0). The Option forms are asserted first."
           :code $ quote $ defn test-legacy-optional-inference ()
@@ -1846,8 +1711,7 @@
               &inspect-type nested-miss
               &inspect-type nil-nested
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-list-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-list-inference ()
             let
@@ -1868,8 +1732,7 @@
                 assert-type rest-xs $ quote $ List Number
                 &inspect-type rest-xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
           :tests $ []
             %{} 'TestEntry (:name |method-infers-list-accumulator-context)
               :code $ quote $ do
@@ -1954,8 +1817,7 @@
                 assert-type m5 $ quote $ Map String Number
                 &inspect-type m5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-ref-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-ref-inference ()
             let
@@ -1967,8 +1829,7 @@
                 &inspect-type r
                 &inspect-type x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-set-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-set-inference ()
             let
@@ -1979,8 +1840,7 @@
                 &inspect-type s
                 &inspect-type xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-struct-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-inference ()
             let
@@ -2000,8 +1860,7 @@
                 &inspect-type top-name-v
                 &inspect-type city-v
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'test-type-ref-combos $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-type-ref-combos ()
             let
@@ -2021,8 +1880,7 @@
                 &inspect-type wrapped
                 &inspect-type outcome
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'unit-value-as-annotation $ %{} 'CodeEntry
           :doc "||Calcit::Unit used as a type annotation resolves to Unit, not an opaque Custom value (#1553, #1554)."
           :code $ quote $ defn unit-value-as-annotation ()
@@ -2031,8 +1889,7 @@
               assert-type u &unit
               , u
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |unit-value-annotation-proves-unit)
             :code $ quote $ assert= &unit (unit-value-as-annotation)
             :tags $ #{} :unit
@@ -2043,8 +1900,7 @@
               .assoc :text $ Option :some text
               .assoc :result result
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'test-types-inference.main/NominalAbsenceFields)
-            :args $ [] 'test-types-inference.main/NominalAbsenceFields 'Number 'String $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn test-types-inference.main/NominalAbsenceFields Number String (Result Number String) (-> test-types-inference.main/NominalAbsenceFields)
           :tests $ []
             %{} 'TestEntry (:name |option-and-result-fields)
               :code $ quote $ let
@@ -2093,7 +1949,7 @@
         'Option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Option ([] 'T) (:none) (:some 'T)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-option)
             :code $ quote $ assert= false
               test-types-inference.shadow/foreign-option-is-nil $ test-types-inference.shadow/Option :none
@@ -2101,7 +1957,7 @@
         'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-result)
             :code $ quote $ assert= false
               test-types-inference.shadow/foreign-result-is-nil $ test-types-inference.shadow/Result :ok 1
@@ -2113,19 +1969,17 @@
             :result 'test-types-inference.shadow/Result
             :other-result 'test-types-inference.shadow/Result
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn foreign-option-is-nil (value)
             assert-type value $ quote $ Option Number
             nil? value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] $ :: 'test-types-inference.shadow/Option 'Number
+          :schema $ quote $ Fn (test-types-inference.shadow/Option Number) (-> Bool)
         'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-types-inference.shadow/Result
+          :schema $ quote $ Fn test-types-inference.shadow/Result (-> Bool)
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-shadow-fields (fields)
             let
@@ -2137,8 +1991,7 @@
                 = expected-option $ :option fields
                 = expected-result $ :result fields
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-types-inference.shadow/ShadowFields
+          :schema $ quote $ Fn test-types-inference.shadow/ShadowFields (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |same-shadow-nominal-fields)
               :code $ quote $ assert= true

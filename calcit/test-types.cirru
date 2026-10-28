@@ -14,24 +14,20 @@
           :code $ quote $ defimpl EnumImpl EnumMetadata
             .dummy $ fn $ self
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'EnumMetadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait EnumMetadata
-            .dummy $ :: :fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'T
-              :return 'Unit
+            .dummy $ quote $ Fn T (-> Unit) (:generics T)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'NamedCallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn NamedCallback (text) (count text)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Number)
         'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote $ defstruct Person (:name 'String) (:age nil)
           :examples $ []
-          :schema $ :: 'Struct
+          :schema $ quote Struct
           :tests $ [] $ %{} 'TestEntry (:name |same-slot-callback)
             :code $ quote $ with-type-slot (:callback Person)
               let
@@ -49,7 +45,7 @@
         'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'Enum
+          :schema $ quote Enum
         'ResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote $ defimpl ResultImpl ResultTrait
             .describe $ fn (self)
@@ -57,29 +53,25 @@
                 (:ok value) (str "|ok " value)
                 (:err msg) (str "|err " msg)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'ResultTrait $ %{} 'CodeEntry (:doc "|Trait definition for enum tuple tests")
-          :code $ quote $ deftrait ResultTrait (.describe :fn)
+          :code $ quote $ deftrait ResultTrait (.describe 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'StructImpl $ %{} 'CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote $ defimpl StructImpl StructMetadata
             .dummy $ fn $ self
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'StructMetadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait StructMetadata
-            .dummy $ :: :fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'T
-              :return 'Unit
+            .dummy $ quote $ Fn T (-> Unit) (:generics T)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'add-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn add-numbers (a b) (&+ a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'chained-return-type $ %{} 'CodeEntry (:doc "|Uses return-type hinting more than once")
           :code $ quote $ defn chained-return-type (base extra)
             let
@@ -88,8 +80,7 @@
               hint-fn $ {} $ :return 'Number
               add-numbers first-sum 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'compact-type-exprs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn compact-type-exprs (text)
             let
@@ -99,21 +90,18 @@
                 items $ parse-cirru-edn-as text $ quote (List Number)
               &+ (typed-pick 1) (count items)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |compact-type-expressions)
             :code $ quote $ assert= 4 (compact-type-exprs "|[] 1 2 3")
             :tags $ #{} :compact-type-expr
         'describe-typed $ %{} 'CodeEntry (:doc "|Combines typed label and number")
           :code $ quote $ defn describe-typed (label value) (str label "|: " value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String 'Number
+          :schema $ quote $ Fn String Number (-> String)
         'forward-named-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn forward-named-callback (callback) (invoke-named-callback callback |abcd)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'test-types.main/NamedCallback
+          :schema $ quote $ Fn test-types.main/NamedCallback (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |forwards-named-fn-contract)
             :code $ quote $ assert= 4
               forward-named-callback $ fn (text) (count text)
@@ -121,8 +109,7 @@
         'invoke-named-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn invoke-named-callback (callback text) (callback text)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'test-types.main/NamedCallback 'String
+          :schema $ quote $ Fn test-types.main/NamedCallback String (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |invokes-named-fn-contract)
             :code $ quote $ assert= 3
               invoke-named-callback
@@ -161,34 +148,28 @@
             test-numeric-refinements
             ; Currently not supported for runtime Struct literals.
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
         'process-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn process-string (s) (str s |!!!)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'show-type-info $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote $ defn slice-as-string (text)
             .slice text 1 $ Option :some 4
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'test-arg-type-hints $ %{} 'CodeEntry (:doc "|Checks arg hint path without emitting warning")
           :code $ quote $ defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-builtin-proc-types $ %{} 'CodeEntry
           :doc "|Tests that Proc (builtin) functions check argument types during preprocess"
           :code $ quote $ defn test-builtin-proc-types () (; Test math operations with typed arguments)
@@ -205,8 +186,7 @@
                 println |rounded: rounded
                 println |negated: negated
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-complex-threading $ %{} 'CodeEntry
           :doc "|Tests type preservation with multiple typed functions in -> chain"
           :code $ quote $ defn test-complex-threading (a b)
@@ -218,8 +198,7 @@
               assert-type final-result 'Number
               &+ final-result 5
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
         'test-defstruct-defenum $ %{} 'CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
           :code $ quote $ defn test-defstruct-defenum ()
             assert= :struct-def $ type-of Person
@@ -237,8 +216,7 @@
               assert= "|(%:: 'Result :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-dynamic-methods $ %{} 'CodeEntry (:doc "|Ensures .slice target type is validated")
           :code $ quote $ defn test-dynamic-methods ()
             let
@@ -252,17 +230,13 @@
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-fn-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-type (f x) (f x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ []
-              :: 'Fn $ {} (:return 'T)
-                :args $ [] 'Number
-              , 'Number
-            :generics $ [] 'T
+          :schema $ quote $ Fn
+            Fn Number $ -> T
+            , Number (-> T) (:generics T)
         'test-list-methods $ %{} 'CodeEntry (:doc "|Tests method calls on typed list objects")
           :code $ quote $ defn test-list-methods () (; Create a list and annotate its type)
             let
@@ -283,8 +257,7 @@
                 assert= 5 list-len
             , "|List method checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-numeric-refinements $ %{} 'CodeEntry
           :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
           :code $ quote $ defn test-numeric-refinements ()
@@ -301,8 +274,7 @@
               quote $ List Int8
             do true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ []
+          :schema $ quote $ Fn (-> Bool)
           :tags $ #{} :numeric :test
         'test-preprocess-method-validation $ %{} 'CodeEntry
           :doc "|Demonstrates that valid method calls pass preprocess validation"
@@ -333,16 +305,13 @@
                 println "|✓ Map methods validated at preprocess"
             , "|All valid method calls passed preprocess validation"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-proc-type $ %{} 'CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote $ defn test-proc-type (p x y) (p x y)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-              :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'Number 'Number
-              , 'Number 'Number
+          :schema $ quote $ Fn
+            Fn Number Number $ -> Number
+            , Number Number (-> Number)
         'test-string-methods $ %{} 'CodeEntry (:doc "|Tests method calls on typed string objects")
           :code $ quote $ defn test-string-methods ()
             let
@@ -366,13 +335,12 @@
                 assert= true starts
             , "|String method checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-struct-methods $ %{} 'CodeEntry
           :doc "|Tests method calls on Struct instances with impls"
           :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
             let
-                PersonGreeting $ deftrait PersonGreeting $ .greet :fn
+                PersonGreeting $ deftrait PersonGreeting $ .greet 'Fn
                 PersonImpl $ defimpl PersonImpl PersonGreeting $ .greet
                   fn (self)
                     str "|Hello, I'm " $ :name self
@@ -384,15 +352,13 @@
                 assert= "|Hello, I'm Alice" greeting
             , "|Struct method checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'test-threading-types $ %{} 'CodeEntry
           :doc "|Tests type preservation through -> threading macro"
           :code $ quote $ defn test-threading-types (text) (; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string) (; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）")
             -> text (str |prefix:) (process-string)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'test-typed-method-access $ %{} 'CodeEntry (:doc "|Demonstrates type-safe method access patterns")
           :code $ quote $ defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
             let
@@ -420,12 +386,10 @@
                 assert= (Option :some |t) str-first
             , "|Typed method access checks passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'typed-only $ %{} 'CodeEntry (:doc "|Used to verify arg type hints are collected")
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-types.main

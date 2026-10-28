@@ -21,7 +21,7 @@ try {
   run(snapshot, "edit", "def", "app.main/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
   run(snapshot, "edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    "quote $ Fn (-> Unit)");
   const entry = [snapshot, "--init-fn", "app.main/run-tests", "--reload-fn", "app.main/run-tests"];
   const output = join(fixture, "js-out");
   run(...entry, "--emit-path", output, "js");

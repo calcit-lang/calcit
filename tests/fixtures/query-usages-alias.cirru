@@ -17,13 +17,11 @@
         'alias-story $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn alias-story (s) s
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'schema/Story)
-            :args $ [] 'schema/Story
+          :schema $ quote $ Fn schema/Story (-> schema/Story)
         'reading-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reading-list (x) (schema/decode-story x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |alias-call-in-test)
             :code $ quote $ do
               assert= 1 $ schema/decode-story 1
@@ -32,8 +30,7 @@
         'unrelated-bare $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unrelated-bare (decode-story) decode-story
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.alias-caller
           :require $ app.schema :as schema
@@ -56,8 +53,7 @@
           :code $ quote $ defn main! ()
             println $ app.schema/decode-story 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
     'app.refer-caller $ %{} 'FileEntry
@@ -65,23 +61,19 @@
         'qualified-call $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn qualified-call (x) (app.schema/decode-story x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'qualified-story $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn qualified-story (s) s
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.schema/Story)
-            :args $ [] 'app.schema/Story
+          :schema $ quote $ Fn app.schema/Story (-> app.schema/Story)
         'refer-call $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn refer-call (x) (decode-story x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'refer-story $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn refer-story (s) s
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Story)
-            :args $ [] 'Story
+          :schema $ quote $ Fn Story (-> Story)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.refer-caller
           :require $ app.schema :refer $ decode-story Story
@@ -90,17 +82,15 @@
         'Story $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Story (:title 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'decode-story $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn decode-story (x) x
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'message-input $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn message-input (x) (decode-story x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.schema
     'app.shadow $ %{} 'FileEntry

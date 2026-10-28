@@ -2137,7 +2137,7 @@ fn save_schema_preserving_snapshot(
     return Err(format!("Definition '{namespace}/{definition}' must be a CodeEntry struct"));
   };
   if let Some(schema) = schema {
-    let schema_edn = snapshot::schema_annotation_to_edn(schema);
+    let schema_edn = snapshot::schema_annotation_to_storage_edn(schema);
     if let Some(value) = find_edn_struct_value_mut(entry, "schema") {
       *value = schema_edn;
     } else {

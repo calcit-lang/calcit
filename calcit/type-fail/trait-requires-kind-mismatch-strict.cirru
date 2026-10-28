@@ -19,24 +19,22 @@
           :code $ quote $ deftrait HostChild (requires Plain) (:size 'Number)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'Plain $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Plain (.label :fn)
+          :code $ quote $ deftrait Plain (.label 'Fn)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 refs $ [] HostChild
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry
         :doc "|Strict fixture for an external-object trait requiring an ordinary trait."
         :code $ quote $ ns type-fail-trait-requires-kind-mismatch-strict.main

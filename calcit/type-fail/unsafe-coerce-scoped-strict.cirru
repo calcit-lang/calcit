@@ -18,19 +18,15 @@
           :doc "|The same assertion is allowed only in this marked adapter body."
           :code $ quote $ defn coerce-host (value) (unsafe-coerce value 'String)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> String) (:features :js-ffi)
         'main! $ %{} 'CodeEntry
           :doc "|Typed callers do not inherit or need the adapter capability."
           :code $ quote $ defn main! () (coerce-host 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Strict scoped unsafe-coerce fixture.")
         :code $ quote $ ns type-fail-unsafe-coerce-scoped-strict.main

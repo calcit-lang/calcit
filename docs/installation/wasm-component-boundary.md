@@ -173,9 +173,9 @@ defwasm-export consume (stream) (consume-readable-byte-stream stream 1048576 655
 ```
 
 ```cirru
-:: 'Fn $ {} (:async true)
-  :args $ [] 'ReadableByteStream
-  :return $ :: 'Result 'Unit 'StreamConsumeError
+quote $ Fn ReadableByteStream
+  -> $ Result Unit StreamConsumeError
+  :async
 ```
 
 adapter 始终只保留一个 outstanding read，并把下一次请求限制为 chunk 上限与“剩余总量加一”中的较小值；多读一个字节

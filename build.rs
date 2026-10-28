@@ -337,6 +337,20 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
     }
     _ => {}
   }
+  // Compact `quote $ Fn ...` / `quote Dynamic` schemas are desugared by the
+  // runtime loader, so the binary snapshot keeps them as written.
+  if let Edn::Quote(cirru) = value {
+    let head = match cirru {
+      Cirru::Leaf(name) => Some(name),
+      Cirru::List(items) => match items.first() {
+        Some(Cirru::Leaf(name)) => Some(name),
+        _ => None,
+      },
+    };
+    if head.is_some_and(|name| name.starts_with(|c: char| c.is_ascii_uppercase())) {
+      return Ok(value.clone());
+    }
+  }
   // Old format: Edn::Quote wrapping Cirru — convert to direct map Edn
   if let Ok(cirru) = from_edn::<Cirru>(value.clone()) {
     let text = cirru_parser::format(&[cirru], true.into())

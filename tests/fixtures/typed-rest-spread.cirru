@@ -13,13 +13,11 @@
         'main! $ %{} 'CodeEntry (:doc |Entry.)
           :code $ quote $ defn main! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'typed-rest-forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-rest-forward (xs)
             let
@@ -28,8 +26,7 @@
                   values .len
               sink |numbers & xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |nonempty-and-empty)
               :code $ quote $ do

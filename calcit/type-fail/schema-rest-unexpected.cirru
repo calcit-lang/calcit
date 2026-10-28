@@ -14,18 +14,15 @@
           :doc "|Expect preprocess error: schema has :rest but code has no & param"
           :code $ quote $ defn bad-rest (x) (do x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number & Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc "|Entry for type-fail schema unexpected rest")
           :code $ quote $ defn main! ()
             do (; calling to force preprocessing of bad-rest) (bad-rest 1) (println |unreachable)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc "|Namespace for schema unexpected rest")
         :code $ quote $ ns type-fail-schema-rest-unexpected.main

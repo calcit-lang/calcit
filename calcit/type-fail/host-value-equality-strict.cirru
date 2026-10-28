@@ -19,49 +19,42 @@
           :code $ quote $ deftrait CounterHost (:total 'Number)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'counter-key $ %{} 'CodeEntry
           :doc "|An external-object trait value has no hash, so it cannot be a Map key."
           :code $ quote $ defn counter-key (counter)
             {} $ counter 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'type-fail-host-value-equality-strict.main/CounterHost
+          :schema $ quote $ Fn type-fail-host-value-equality-strict.main/CounterHost (-> Dynamic)
         'host-member $ %{} 'CodeEntry
           :doc "|An external-object trait value has no hash, so it cannot be a Set member."
           :code $ quote $ defn host-member (host) (#{} host)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'type-fail-host-value-equality-strict.main/CounterHost
+          :schema $ quote $ Fn type-fail-host-value-equality-strict.main/CounterHost (-> Dynamic)
         'identical-host? $ %{} 'CodeEntry
           :doc "|Reference identity remains the explicit host comparison."
           :code $ quote $ defn identical-host? (a b) (identical? a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'type-fail-host-value-equality-strict.main/CounterHost 'type-fail-host-value-equality-strict.main/CounterHost
+          :schema $ quote $ Fn type-fail-host-value-equality-strict.main/CounterHost type-fail-host-value-equality-strict.main/CounterHost (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 checks $ [] same-host? same-counter? host-member counter-key identical-host?
               , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'same-counter? $ %{} 'CodeEntry
           :doc "|Two external-object trait values compare only by reference."
           :code $ quote $ defn same-counter? (a b) (= a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'type-fail-host-value-equality-strict.main/CounterHost 'type-fail-host-value-equality-strict.main/CounterHost
+          :schema $ quote $ Fn type-fail-host-value-equality-strict.main/CounterHost type-fail-host-value-equality-strict.main/CounterHost (-> Bool)
         'same-host? $ %{} 'CodeEntry (:doc "|Two JsObject values compare only by reference.")
           :code $ quote $ defn same-host? (a b) (= a b)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'JsObject 'JsObject
+          :schema $ quote $ Fn JsObject JsObject (-> Bool)
       :ns $ %{} 'NsEntry (:doc "|Strict host value equality fixture.")
         :code $ quote $ ns type-fail-host-value-equality-strict.main

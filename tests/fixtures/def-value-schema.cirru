@@ -15,29 +15,28 @@
           :code $ quote $ defstruct Box
             :value $ quote $ Optional app.binding-proof/Value
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenBox (:value 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OptionBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionBox
             :value $ quote $ Optional (Option String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Value (:text 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'choose-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-nil (present)
             let
                 selected $ if present nil nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert= (Box :value nil) (choose-nil true)
@@ -49,8 +48,7 @@
                 selected $ if present (:value box) nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] 'Bool 'app.binding-proof/Box
+          :schema $ quote $ Fn Bool app.binding-proof/Box (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert= (Box :value nil)
@@ -67,8 +65,7 @@
                 selected $ if present value nil
               OptionBox :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/OptionBox)
-            :args $ [] 'Bool $ :: 'Option 'String
+          :schema $ quote $ Fn Bool (Option String) (-> app.binding-proof/OptionBox)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert= (OptionBox :value nil)
@@ -91,8 +88,7 @@
                   (:none) nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] $ :: 'Map 'String 'Dynamic
+          :schema $ quote $ Fn (Map String Dynamic) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
@@ -115,8 +111,7 @@
                   (:none) nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
@@ -138,8 +133,7 @@
                   (:err reason) nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] $ :: 'Result 'Dynamic 'String
+          :schema $ quote $ Fn (Result Dynamic String) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
@@ -157,8 +151,7 @@
                 alias selected
               Box :value alias
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert=
@@ -173,8 +166,7 @@
                 alias selected
               Box :value alias
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert=
@@ -188,8 +180,7 @@
               (:some value) value
               (:none) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] $ :: 'Map 'String 'app.binding-proof/Value
+          :schema $ quote $ Fn (Map String app.binding-proof/Value) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
             :code $ quote $ do
               assert= (Box :value nil)
@@ -206,8 +197,7 @@
                   (:none) nil
               Box :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
-            :args $ [] $ :: 'Map 'String 'app.binding-proof/Value
+          :schema $ quote $ Fn (Map String app.binding-proof/Value) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
             :code $ quote $ do
               assert= (Box :value nil)
@@ -224,8 +214,7 @@
                   (:none) nil
               OpenBox :value selected
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/OpenBox)
-            :args $ [] $ :: 'Option 'Dynamic
+          :schema $ quote $ Fn (Option Dynamic) (-> app.binding-proof/OpenBox)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert= (Result :ok 42)
@@ -246,20 +235,16 @@
         'count-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-rest (first-style & more) (count more)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
-            :rest $ :: 'Map 'Tag 'Dynamic
+          :schema $ quote $ Fn (Map Tag Dynamic) & (Map Tag Dynamic) (-> Number)
         'count-style $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-style (style) (count style)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Number)
         'open-style $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-style (raw)
             count-style $ if true raw $ {}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+          :schema $ quote $ Fn (Map Dynamic Dynamic) (-> Number)
         'rebound-style $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rebound-style (raw)
             count-style $ let
@@ -267,9 +252,7 @@
               set! style raw
               , style
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Number) (:features :js-ffi)
         'rest-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rest-count (flag)
             count-rest
@@ -278,8 +261,7 @@
                 {} $ :color |red
                 {}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-rest-exits)
             :code $ quote $ do
               assert= 1 $ rest-count true
@@ -291,8 +273,7 @@
               {} $ :color |red
               {}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-exits)
             :code $ quote $ do
               assert= 1 $ style-count true
@@ -304,8 +285,7 @@
               {} $ 1 |red
               {}
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.branch-call
     'app.callback-left $ %{} 'FileEntry
@@ -313,7 +293,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Item (:n 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-left
     'app.callback-origin $ %{} 'FileEntry
@@ -323,11 +303,11 @@
             :dispatch $ quote $ Ref
               Fn Op $ -> Unit
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'RepeatedPayload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum RepeatedPayload ([] 'T) (:pair 'T 'T)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'branch-empty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-empty-generic-list (anchor flag open)
             assert-type
@@ -335,9 +315,7 @@
               quote $ List T
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
-            :generics $ [] 'T
+          :schema $ quote $ Fn (List T) Bool (List Dynamic) (-> Unit) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |both-empty-exits)
             :code $ quote $ do
               assert= &unit $ branch-empty-generic-list ([] 1) true $ []
@@ -350,9 +328,7 @@
               quote $ List T
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
-            :generics $ [] 'T
+          :schema $ quote $ Fn (List T) Bool (List Dynamic) (-> Unit) (:generics T)
         'branch-open-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-generic-list (anchor flag open)
             assert-type
@@ -360,9 +336,7 @@
               quote $ List T
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
-            :generics $ [] 'T
+          :schema $ quote $ Fn (List T) Bool (List Dynamic) (-> Unit) (:generics T)
         'choose $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose (flag)
             let
@@ -372,8 +346,7 @@
                 struct-with original $ :n 2
                 struct-with original $ :n 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
-            :args $ [] 'Bool
+          :schema $ quote $ Fn Bool (-> app.callback-left/Item)
           :tests $ [] $ %{} 'TestEntry
             :name |preserves-nominal-origin-through-option-callbacks
             :code $ quote $ do
@@ -384,14 +357,12 @@
           :code $ quote $ defn closed-heterogeneous-pairs ()
             number-map-count $ pairs-map $ [] ([] :a 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'closed-homogeneous-pairs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn closed-homogeneous-pairs ()
             number-map-count $ pairs-map $ [] ([] 1 2) ([] 3 4)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |feeds-concrete-map-consumer)
             :code $ quote $ assert= 2 (closed-homogeneous-pairs)
             :tags $ #{} :pairs-map-proof
@@ -399,8 +370,7 @@
           :code $ quote $ defn closed-wrong-member-pairs ()
             number-map-count $ pairs-map $ [] ([] |key |value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'direct-controller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct-controller ()
             let
@@ -415,8 +385,7 @@
                 , 7
               deref received
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |infers-reference-callback)
               :code $ quote $ assert= 7 (direct-controller)
@@ -425,9 +394,7 @@
               :code $ quote $ let
                   controller $ Controller :dispatch $ ref
                     fn (items)
-                      hint-fn $ {}
-                        :args $ [] $ :: List 'app.callback-left/Item
-                        :return Unit
+                      hint-fn $ quote $ Fn (List app.callback-left/Item) (-> Unit)
                       assert= 0 $ count items
                       , &unit
                 assert= &unit $
@@ -440,9 +407,7 @@
               quote $ List T
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] $ :: 'List 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (List T) (-> Unit) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
             :code $ quote $ assert= &unit
               empty-generic-list $ [] 1
@@ -453,9 +418,7 @@
               quote $ Map K V
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] $ :: 'Map 'K 'V
-            :generics $ [] 'K 'V
+          :schema $ quote $ Fn (Map K V) (-> Unit) (:generics K V)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
             :code $ quote $ assert= &unit
               empty-generic-map $ {} $ 1 2
@@ -466,9 +429,7 @@
               quote $ Set T
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] $ :: 'Set 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (Set T) (-> Unit) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
             :code $ quote $ assert= &unit
               empty-generic-set $ #{}
@@ -480,9 +441,8 @@
               assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
-            :return $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn Dynamic
+            -> $ Result Number String
         'enum-claim-wrong $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-claim-wrong ()
             let
@@ -490,9 +450,8 @@
               assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn
+            -> $ Result Number String
         'enum-inconsistent-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-inconsistent-pair (value)
             let
@@ -500,10 +459,9 @@
               assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T
-            :generics $ [] 'T
-            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+          :schema $ quote $ Fn T
+            -> $ app.callback-origin/RepeatedPayload T
+            :generics T
         'enum-open-peer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-open-peer (value raw)
             let
@@ -511,10 +469,9 @@
               assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T 'Dynamic
-            :generics $ [] 'T
-            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+          :schema $ quote $ Fn T Dynamic
+            -> $ app.callback-origin/RepeatedPayload T
+            :generics T
         'enum-specialize-caller $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-specialize-caller (value)
             let
@@ -522,10 +479,9 @@
               assert-type seed $ quote $ Result Number String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T
-            :generics $ [] 'T
-            :return $ :: 'Result 'Number 'String
+          :schema $ quote $ Fn T
+            -> $ Result Number String
+            :generics T
         'fold-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fold-generic-list (xs)
             foldl xs
@@ -536,10 +492,9 @@
                   -> $ List T
                 append acc item
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'T
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn (List T)
+            -> $ List T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-callback-and-accumulator-generic)
             :code $ quote $ do
               assert= ([] 1 2)
@@ -555,12 +510,9 @@
               (deref (:dispatch controller))
                 , op
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
-              :: 'Fn $ {} (:return 'Unit)
-                :args $ [] 'T
-              , 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn
+            Fn T $ -> Unit
+            , T (-> Unit) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
             :code $ quote $ let
                 received $ ref |before
@@ -575,10 +527,10 @@
         'generic-pairs-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn generic-pairs-map (xs) (pairs-map xs)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'List 'T)
-            :generics $ [] 'T
-            :return $ :: 'Map 'T 'T
+          :schema $ quote $ Fn
+            List $ List T
+            -> $ Map T T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |preserves-caller-member-variable)
             :code $ quote $ assert=
               {} (1 2) (3 4)
@@ -590,14 +542,12 @@
               fn () $ left/Item :n 1
               fn (present?) (right/Item :n 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
-            :args $ []
+          :schema $ quote $ Fn (-> app.callback-left/Item)
         'nested-literal-spread $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested-literal-spread ()
             &+ & $ [] 2 & $ [] 3
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |preserves-order-through-nested-literal-spreads)
             :code $ quote $ let
                 sink $ fn (a b c)
@@ -612,35 +562,30 @@
           :code $ quote $ defn nested-open-spread (xs)
             &+ & $ [] 2 & xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (-> Number)
         'nested-wrong-member $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested-wrong-member ()
             &+ & $ [] 2 & $ [] |wrong
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'nonempty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nonempty-generic-list (anchor)
             assert-type ([] 1)
               quote $ List T
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'T
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn (List T)
+            -> $ List T
+            :generics T
         'number-map-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn number-map-count (xs) (count xs)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Number 'Number
+          :schema $ quote $ Fn (Map Number Number) (-> Number)
         'open-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-generic-list (anchor values)
             assert-type values $ quote $ List Number
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn (List Number) (List Dynamic)
+            -> $ List Number
         'wrap-generic-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrap-generic-error (error)
             let
@@ -648,10 +593,9 @@
               assert-type seed $ quote $ Result String (List E)
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'E
-            :generics $ [] 'E
-            :return $ :: 'Result 'String $ :: 'List 'E
+          :schema $ quote $ Fn (List E)
+            -> $ Result String $ List E
+            :generics E
           :tests $ [] $ %{} 'TestEntry (:name |preserves-error-slot-variable)
             :code $ quote $ assert=
               Result :err $ [] 1 2
@@ -664,10 +608,9 @@
               assert-type seed $ quote $ Result (Map String T) String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String 'T
-            :generics $ [] 'T
-            :return $ :: 'Result (:: 'Map 'String 'T) 'String
+          :schema $ quote $ Fn (Map String T)
+            -> $ Result (Map String T) String
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |preserves-nested-caller-variable)
             :code $ quote $ assert=
               Result :ok $ {} $ |a 1
@@ -680,10 +623,9 @@
               assert-type pair $ quote $ app.callback-origin/RepeatedPayload T
               , pair
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T 'T
-            :generics $ [] 'T
-            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+          :schema $ quote $ Fn T T
+            -> $ app.callback-origin/RepeatedPayload T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |repeated-payload-shares-caller-variable)
             :code $ quote $ assert= (RepeatedPayload :pair 1 2) (wrap-generic-pair 1 2)
             :tags $ #{} :enum-generic-payload
@@ -694,10 +636,9 @@
               assert-type seed $ quote $ Result T String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'T
-            :generics $ [] 'T
-            :return $ :: 'Result 'T 'String
+          :schema $ quote $ Fn T
+            -> $ Result T String
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |preserves-direct-caller-variable)
             :code $ quote $ assert= (Result :ok |value) (wrap-generic-value |value)
             :tags $ #{} :enum-generic-payload
@@ -708,10 +649,9 @@
               assert-type seed $ quote $ Result (Map String U) String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String 'U
-            :generics $ [] 'U
-            :return $ :: 'Result (:: 'Map 'String 'U) 'String
+          :schema $ quote $ Fn (Map String U)
+            -> $ Result (Map String U) String
+            :generics U
           :tests $ [] $ %{} 'TestEntry (:name |generic-renaming-is-equivalent)
             :code $ quote $ assert=
               Result :ok $ {} $ |a |value
@@ -721,9 +661,7 @@
           :code $ quote $ defn wrong-controller-call ()
             let
                 dispatch! $ fn (op)
-                  hint-fn $ {}
-                    :args $ [] Number
-                    :return Unit
+                  hint-fn $ quote $ Fn Number (-> Unit)
                   , &unit
                 controller $ Controller :dispatch $ ref dispatch!
               (deref (:dispatch controller))
@@ -734,16 +672,12 @@
           :code $ quote $ defn wrong-controller-write ()
             let
                 dispatch! $ fn (op)
-                  hint-fn $ {}
-                    :args $ [] Number
-                    :return Unit
+                  hint-fn $ quote $ Fn Number (-> Unit)
                   , &unit
                 controller $ Controller :dispatch $ ref dispatch!
               reset! (:dispatch controller)
                 fn (op)
-                  hint-fn $ {}
-                    :args $ [] String
-                    :return Unit
+                  hint-fn $ quote $ Fn String (-> Unit)
                   , &unit
               , &unit
           :examples $ []
@@ -755,7 +689,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Item (:n 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-right
     'app.callback-shape $ %{} 'FileEntry
@@ -766,9 +700,9 @@
               fn (row)
                 option:unwrap $ &map:get row :finished-time
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
-            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :schema $ quote $ Fn
+            Map String $ Map Tag Dynamic
+            -> $ Map Dynamic $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |known-map-open-members)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
@@ -784,9 +718,9 @@
                 fn (row)
                   option:unwrap $ &map:get row :finished-time
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
-            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :schema $ quote $ Fn
+            Map String $ Map Tag Dynamic
+            -> $ Map Dynamic $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |callable-alias-known-map)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
@@ -800,9 +734,9 @@
               group-by $ fn (row)
                 option:unwrap $ &map:get row :finished-time
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
-            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :schema $ quote $ Fn
+            Map String $ Map Tag Dynamic
+            -> $ Map Dynamic $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |threaded-known-map)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
@@ -815,9 +749,9 @@
             map rows $ fn (row)
               option:unwrap $ &map:get row :title
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Dynamic)
-            :return $ :: 'List 'Dynamic
+          :schema $ quote $ Fn
+            List $ Map Tag Dynamic
+            -> $ List Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |map-keeps-member-dynamic)
             :code $ quote $ assert= ([] |task 42)
               read-open-members $ []
@@ -831,19 +765,18 @@
         'EmptyBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EmptyBox
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'PairBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PairBox (:a 'Dynamic) (:b 'Dynamic)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'checked-create $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-create (prototype key value)
             try
               %{} prototype $ key value
               fn (_error) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'StructDef 'Dynamic 'Dynamic
+          :schema $ quote $ Fn StructDef Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |scalar)
               :code $ quote $ do
@@ -930,8 +863,7 @@
             try (%{} prototype)
               fn (_error) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'StructDef
+          :schema $ quote $ Fn StructDef (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |zero-field-and-missing)
             :code $ quote $ do
               assert=
@@ -946,8 +878,7 @@
             try (&struct:from-map prototype fields)
               fn (_error) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'StructDef $ :: 'Map 'Dynamic 'Dynamic
+          :schema $ quote $ Fn StructDef (Map Dynamic Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |complete-and-immutable)
               :code $ quote $ let
@@ -974,8 +905,7 @@
               &struct:from-map prototype $ {} $ key value
               fn (_error) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'StructDef 'Dynamic 'Dynamic
+          :schema $ quote $ Fn StructDef Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |scalar)
               :code $ quote $ do
@@ -1062,8 +992,7 @@
               %{} prototype (k1 v1) (k2 v2)
               fn (_error) nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'StructDef 'Dynamic 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn StructDef Dynamic Dynamic Dynamic Dynamic (-> Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |complete-order-and-duplicate)
             :code $ quote $ do
               assert= (PairBox :a nil :b |two) (checked-pairs PairBox :b |two :a nil)
@@ -1078,103 +1007,103 @@
         'AliasBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AliasBox (:user 'app.dynamic-write/UserAlias)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'AppliedBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct AppliedBox
             :item $ quote $ app.dynamic-write/GenericBox Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Box (:value 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'FunctionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct FunctionBox
             :apply $ quote $ Fn Number (-> Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'GenericBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct GenericBox ([] 'T)
             :items $ quote $ List T
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'HostScalarBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HostScalarBox
             :value $ quote $ JsNullish Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'ListBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ListBox
             :items $ quote $ List Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'MapBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct MapBox
             :items $ quote $ Map Tag
               List $ Optional Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NestedRefBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NestedRefBox (:item 'app.dynamic-write/RefBox)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NominalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NullableFunctionBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableFunctionBox
             :value $ quote $ Optional
               Fn Number $ -> Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NullableRefBox $ %{} 'CodeEntry
           :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableRefBox
             :value $ quote $ Optional (Ref Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'NullishFunctionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullishFunctionBox
             :value $ quote $ JsNullish
               Fn Number $ -> Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenBox
             :items $ quote $ List Dynamic
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OpenCallableBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenCallableBox (:apply 'Fn)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OpenRefBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenRefBox
             :cell $ quote $ Ref Dynamic
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'OptionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionBox
             :item $ quote $ Option Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'RefBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct RefBox
             :cell $ quote $ Ref Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'SetBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct SetBox
             :items $ quote $ Set Number
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'UserAlias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def UserAlias app.field-owner/User
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'checked-assoc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-assoc (base key value)
             if (struct? base)
@@ -1182,8 +1111,7 @@
                 fn (_error) nil
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |runtime-field-check)
               :code $ quote $ let
@@ -1372,8 +1300,7 @@
                 fn (_error) nil
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |runtime-field-check)
               :code $ quote $ let
@@ -1484,8 +1411,7 @@
                 fn (_error) nil
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |runtime-field-check)
               :code $ quote $ let
@@ -1674,8 +1600,7 @@
                 fn (_error) nil
               , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |runtime-field-check)
               :code $ quote $ let
@@ -1782,25 +1707,21 @@
         'number-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn number-id (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
         'open-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-value (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'string-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn string-id (value) value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> String)
         'write-function $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-function (box f) (.assoc box :apply f)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
-            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn app.dynamic-write/FunctionBox
+            Fn Number $ -> Number
+            -> app.dynamic-write/FunctionBox
           :tests $ [] $ %{} 'TestEntry (:name |static-callable-evidence)
             :code $ quote $ let
                 base $ FunctionBox :apply number-id
@@ -1812,10 +1733,9 @@
         'write-function-core $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-function-core (box value) (assoc box :apply value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
-            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn app.dynamic-write/FunctionBox
+            Fn Number $ -> Number
+            -> app.dynamic-write/FunctionBox
           :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
             :code $ quote $ let
                 base $ FunctionBox :apply number-id
@@ -1827,10 +1747,9 @@
         'write-function-core-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-function-core-string (box value) (assoc box |apply value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
-            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn app.dynamic-write/FunctionBox
+            Fn Number $ -> Number
+            -> app.dynamic-write/FunctionBox
           :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
             :code $ quote $ let
                 base $ FunctionBox :apply number-id
@@ -1842,10 +1761,9 @@
         'write-function-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-function-string (box f) (&struct:assoc box |apply f)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
-            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn app.dynamic-write/FunctionBox
+            Fn Number $ -> Number
+            -> app.dynamic-write/FunctionBox
           :tests $ [] $ %{} 'TestEntry (:name |static-string-callable)
             :code $ quote $ let
                 base $ FunctionBox :apply number-id
@@ -1857,10 +1775,9 @@
         'write-function-with $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-function-with (box f) (&struct:with box |apply f)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
-            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
-              {} (:return 'Number)
-                :args $ [] 'Number
+          :schema $ quote $ Fn app.dynamic-write/FunctionBox
+            Fn Number $ -> Number
+            -> app.dynamic-write/FunctionBox
           :tests $ [] $ %{} 'TestEntry (:name |static-string-callable)
             :code $ quote $ let
                 base $ FunctionBox :apply number-id
@@ -1872,10 +1789,9 @@
         'write-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-generic (box values) (.assoc box :items values)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
-            :generics $ [] 'T
-            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :schema $ quote $ Fn (app.dynamic-write/GenericBox T) (List T)
+            -> $ app.dynamic-write/GenericBox T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |static-method-evidence)
             :code $ quote $ let
                 base $ GenericBox :items $ [] 1
@@ -1886,10 +1802,9 @@
         'write-generic-core $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-generic-core (box value) (assoc box :items value)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
-            :generics $ [] 'T
-            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :schema $ quote $ Fn (app.dynamic-write/GenericBox T) (List T)
+            -> $ app.dynamic-write/GenericBox T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
             :code $ quote $ let
                 base $ GenericBox :items $ [] 1
@@ -1900,10 +1815,9 @@
         'write-generic-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-generic-string (box values) (&struct:assoc box |items values)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
-            :generics $ [] 'T
-            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :schema $ quote $ Fn (app.dynamic-write/GenericBox T) (List T)
+            -> $ app.dynamic-write/GenericBox T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |static-string-generic)
             :code $ quote $ let
                 base $ GenericBox :items $ [] 1
@@ -1914,8 +1828,7 @@
         'write-ref $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-ref (box value) (.assoc box :cell value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/RefBox)
-            :args $ [] 'app.dynamic-write/RefBox $ :: 'Ref 'Number
+          :schema $ quote $ Fn app.dynamic-write/RefBox (Ref Number) (-> app.dynamic-write/RefBox)
           :tests $ [] $ %{} 'TestEntry (:name |static-ref-evidence)
             :code $ quote $ let
                 base $ RefBox :cell $ ref 1
@@ -1933,9 +1846,8 @@
                 n limit
               if (= n 0) items $ recur (.assoc items n n) (- n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number
-            :return $ :: 'Map 'Number 'Number
+          :schema $ quote $ Fn Number
+            -> $ Map Number Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-loop-gains-members)
             :code $ quote $ do
               assert= ({}) (accumulate 0)
@@ -1950,9 +1862,8 @@
                 n limit
               if (= n 0) items $ recur (items .assoc n n) (- n 1)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number
-            :return $ :: 'Map 'Number 'Number
+          :schema $ quote $ Fn Number
+            -> $ Map Number Number
           :tests $ [] $ %{} 'TestEntry (:name |receiver-first-empty-loop-gains-members)
             :code $ quote $ do
               assert= ({}) (accumulate-receiver-first 0)
@@ -1970,9 +1881,7 @@
                   set! item |changed
               , item
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |local-alias-write-contract)
             :code $ quote $ do
               assert= |changed $ aliased-assignment 1
@@ -1986,9 +1895,7 @@
                 &+ value 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Number) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |dead-write-keeps-live-evidence)
             :code $ quote $ assert= 2 (dead-branch-assignment 1)
             :tags $ #{} :empty-collection-assignment
@@ -1998,9 +1905,8 @@
                 items $ {}
               get items :missing
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Option 'Number
+          :schema $ quote $ Fn
+            -> $ Option Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-map-accepts-lookup-key)
             :code $ quote $ assert= (Option :none) (empty-lookup)
             :tags $ #{} :empty-collection-evidence
@@ -2013,9 +1919,8 @@
                     n $ -> (get acc w) (.unwrap-or 0)
                   assoc acc w $ inc n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'Tag
-            :return $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn (List Tag)
+            -> $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |infers-empty-named-assoc-reducer)
             :code $ quote $ do
               assert=
@@ -2030,9 +1935,8 @@
                 items $ []
               &list:append items 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn
+            -> $ List Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-list-gains-member)
             :code $ quote $ assert= ([] 1) (grow-list)
             :tags $ #{} :empty-collection-evidence
@@ -2042,9 +1946,8 @@
                 items $ {}
               .assoc items |a 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ Map String Number
           :tests $ [] $ %{} 'TestEntry (:name |immutable-map-growth)
             :code $ quote $ assert=
               {} $ |a 1
@@ -2056,9 +1959,8 @@
                 items $ #{}
               .include items 1
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Set 'Number
+          :schema $ quote $ Fn
+            -> $ Set Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-set-gains-member)
             :code $ quote $ assert= (#{} 1) (grow-set)
             :tags $ #{} :empty-collection-evidence
@@ -2069,10 +1971,9 @@
               assert-type result $ quote $ List T
               , result
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) (:: 'List 'U) 'Bool
-            :generics $ [] 'T 'U
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn (List T) (List U) Bool
+            -> $ List T
+            :generics T U
         'list-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn list-alias ()
             let
@@ -2080,9 +1981,8 @@
               assert-type items $ quote $ List Number
               , items
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn
+            -> $ List Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-list-alias)
             :code $ quote $ assert= ([]) (list-alias)
             :tags $ #{} :empty-collection-evidence
@@ -2093,9 +1993,8 @@
               assert-type items $ quote $ Map String Number
               , items
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ Map String Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-map-alias)
             :code $ quote $ assert= ({}) (map-alias)
             :tags $ #{} :empty-collection-evidence
@@ -2108,9 +2007,7 @@
                 _ $ &+ value 1
               , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'Option 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (Option Number) (-> Dynamic) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |match-branches-use-independent-evidence)
             :code $ quote $ do
               assert= |changed $ match-peer-assignment 1 $ Option :some 2
@@ -2121,9 +2018,7 @@
             if (number? value) (set! value |changed)
             , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-binding-keeps-write-contract)
             :code $ quote $ do
               assert= |changed $ narrowed-assignment 1
@@ -2136,9 +2031,8 @@
               assert-type rows $ quote $ List (Map String Number)
               , rows
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'List $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ List $ Map String Number
           :tests $ [] $ %{} 'TestEntry (:name |nested-empty-map)
             :code $ quote $ assert=
               [] $ {}
@@ -2148,9 +2042,8 @@
           :code $ quote $ defn open-map (items)
             assert-type items $ quote $ Map String Number
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn (Map Dynamic Dynamic)
+            -> $ Map String Number
         'rebound-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rebound-map ()
             let
@@ -2158,20 +2051,18 @@
               set! items $ {} $ |a |wrong
               assert-type items $ quote $ Map String Number
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :features $ #{} :js-ffi
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ Map String Number
+            :features :js-ffi
         'recursive-nullish-exit $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-nullish-exit (depth)
             if (> depth 1)
               recur $ dec depth
               if (= depth 1) |found nil
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number
-            :features $ #{} :js-ffi
-            :return $ :: 'JsNullish 'String
+          :schema $ quote $ Fn Number
+            -> $ JsNullish String
+            :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |recur-keeps-base-exits)
             :code $ quote $ do
               assert= |found $ recursive-nullish-exit 3
@@ -2192,9 +2083,8 @@
               assert-type seed $ quote $ Result (Map String Number) String
               , seed
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Result (:: 'Map 'String 'Number) 'String
+          :schema $ quote $ Fn
+            -> $ Result (Map String Number) String
           :tests $ [] $ %{} 'TestEntry (:name |empty-result-payload)
             :code $ quote $ assert=
               Result :ok $ {}
@@ -2207,9 +2097,8 @@
               assert-type items $ quote $ Set Number
               , items
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Set 'Number
+          :schema $ quote $ Fn
+            -> $ Set Number
           :tests $ [] $ %{} 'TestEntry (:name |empty-set-alias)
             :code $ quote $ assert= (#{}) (set-alias)
             :tags $ #{} :empty-collection-evidence
@@ -2221,9 +2110,8 @@
                   items raw
                 assert-type items $ quote $ Map String Number
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn (Map Dynamic Dynamic)
+            -> $ Map String Number
         'shadowed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn shadowed-assignment (value)
             if (number? value)
@@ -2236,9 +2124,7 @@
                 set! value |changed
             , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |shadowing-restores-outer-contract)
             :code $ quote $ assert= |changed (shadowed-assignment 1)
             :tags $ #{} :empty-collection-assignment
@@ -2252,9 +2138,7 @@
                 &+ value 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic $ :: 'Option 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (Option Number) (-> Number) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry (:name |payload-binding-does-not-write-outer-local)
             :code $ quote $ do
               assert= 2 $ shadowed-match-assignment 1 $ Option :some 8
@@ -2266,9 +2150,7 @@
               do (set! value |changed) (&+ value 1)
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Number) (:features :js-ffi)
         'stale-branch-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn stale-branch-assignment (value flag)
             if (number? value)
@@ -2277,9 +2159,7 @@
                 &+ value 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic 'Bool
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic Bool (-> Number) (:features :js-ffi)
         'stale-let-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn stale-let-assignment (value)
             if (number? value)
@@ -2290,9 +2170,7 @@
                 &+ value 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (-> Number) (:features :js-ffi)
         'stale-match-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn stale-match-assignment (value choice)
             if (number? value)
@@ -2303,9 +2181,7 @@
                 &+ value 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic $ :: 'Option 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (Option Number) (-> Number) (:features :js-ffi)
         'typed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-assignment ()
             let
@@ -2314,10 +2190,9 @@
               set! items $ {} $ |a 1
               , items
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :features $ #{} :js-ffi
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ Map String Number
+            :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |assignment-preserves-explicit-contract)
             :code $ quote $ assert=
               {} $ |a 1
@@ -2331,9 +2206,8 @@
               reset! slot $ {} $ |a 1
               deref slot
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'String 'Number
+          :schema $ quote $ Fn
+            -> $ Map String Number
           :tests $ [] $ %{} 'TestEntry (:name |explicit-ref-initializer-contract)
             :code $ quote $ assert=
               {} $ |a 1
@@ -2373,9 +2247,7 @@
               (:none) &unit
             , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic $ :: 'Option 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Dynamic (Option Number) (-> Dynamic) (:features :js-ffi)
         'wrong-ref-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-ref-alias ()
             let
@@ -2395,9 +2267,7 @@
             if (number? value) (set! value |wrong)
             , value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Number (-> Number) (:features :js-ffi)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.empty-evidence
     'app.empty-fields $ %{} 'FileEntry
@@ -2409,13 +2279,12 @@
             :items $ quote $ Optional (List Number)
             :members $ quote $ Optional (Set String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'open-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-map () ({})
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :return $ :: 'Map 'Tag 'Dynamic
+          :schema $ quote $ Fn
+            -> $ Map Tag Dynamic
         'verify-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn verify-empty ()
             let
@@ -2424,8 +2293,7 @@
               assert= ([]) (:items value)
               assert= (#{}) (:members value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |optional-empty-container-literals)
             :code $ quote $ verify-empty
             :tags $ #{} :optional-empty-field
@@ -2437,8 +2305,7 @@
               assert= nil $ :items value
               assert= nil $ :members value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |optional-nil-container-fields)
             :code $ quote $ verify-nil
             :tags $ #{} :optional-empty-field
@@ -2449,12 +2316,11 @@
         'User $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct User (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'make-local-user $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-local-user () (User :name |Caller)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.field-consumer/User)
-            :args $ []
+          :schema $ quote $ Fn (-> app.field-consumer/User)
         'verify-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn verify-generic ()
             let
@@ -2464,8 +2330,7 @@
               assert= 42 $ :value value
               assert= |Ada $ :name $ :user value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-generic)
             :code $ quote $ verify-generic
             :tags $ #{} :struct-field-origin
@@ -2477,8 +2342,7 @@
               assert= |Caller $ :name $ :value value
               assert= |Ada $ :name $ :user value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |caller-owned-generic-argument)
             :code $ quote $ verify-generic-origin
             :tags $ #{} :struct-field-origin
@@ -2492,8 +2356,7 @@
                 found $ -> (:users db) (.get |one) (.unwrap)
               assert= |Ada $ :name found
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-map)
             :code $ quote $ verify-map
             :tags $ #{} :struct-field-origin
@@ -2506,8 +2369,7 @@
                   , :maybe user
               assert= user $ :maybe db
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-optional)
             :code $ quote $ verify-optional
             :tags $ #{} :struct-field-origin
@@ -2527,8 +2389,7 @@
               assert= (Option :some user)
                 get (:users changed) |two
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-update)
             :code $ quote $ verify-update
             :tags $ #{} :struct-field-origin
@@ -2543,20 +2404,19 @@
             :users $ quote $ Map String User
             :maybe $ quote $ Optional User
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Envelope ([] 'T) (:user 'User) (:value 'T)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'User $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct User (:name 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'make-user $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-user () (User :name |Ada)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'app.field-owner/User)
-            :args $ []
+          :schema $ quote $ Fn (-> app.field-owner/User)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.field-owner
     'app.js-spread $ %{} 'FileEntry
@@ -2569,9 +2429,7 @@
                 hint-fn $ quote $ Fn Number (-> JsObject) (:features :js-ffi)
                 js-array
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'JsObject)
-            :args $ [] 'Number
-            :features $ #{} :js-ffi
+          :schema $ quote $ Fn Number (-> JsObject) (:features :js-ffi)
           :tests $ []
             %{} 'TestEntry (:name |empty-and-independent-children)
               :code $ quote $ let
@@ -2629,7 +2487,7 @@
         'answer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def answer 42
           :examples $ []
-          :schema $ :: 'Number
+          :schema $ quote Number
         'initial-state $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def initial-state values/initial-state
           :examples $ []
@@ -2637,21 +2495,20 @@
         'label $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def label |Ada
           :examples $ []
-          :schema $ :: 'String
+          :schema $ quote String
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (verify-values) &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def members
             {} $ 1 |Ada
           :examples $ []
-          :schema $ :: 'Map 'Number 'String
+          :schema $ quote $ Map Number String
         'open-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def open-store members
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ quote Dynamic
         'prepare-client-patch $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn prepare-client-patch (next-raw)
             match (try-decode-map-as next-raw app.values/ClientProjection)
@@ -2659,14 +2516,12 @@
                 Result :ok $ app.values/PatchCandidate :raw next-raw :typed typed
               (:err reason) (Result :err reason)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
-            :return $ :: 'Result 'app.values/PatchCandidate 'String
+          :schema $ quote $ Fn (Map Tag Dynamic)
+            -> $ Result app.values/PatchCandidate String
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'state-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias initial-state
           :examples $ []
@@ -2682,8 +2537,7 @@
               (:err reason) (raise reason)
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |checked-login-projection)
               :code $ quote $ do (verify-login-decode)
@@ -2790,8 +2644,7 @@
             assert= members open-store
             , &unit
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |retains-typed-top-level-values)
               :code $ quote $ verify-values
@@ -2842,8 +2695,7 @@
               &+ k 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic 'Bool
+          :schema $ quote $ Fn Dynamic Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-or-paths)
             :code $ quote $ do
               assert= 2 $ common-or 1 false
@@ -2860,9 +2712,8 @@
               &list:assoc ([] 1 2) k 3
               [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn Dynamic
+            -> $ List Number
           :tests $ []
             %{} 'TestEntry (:name |checked-index)
               :code $ quote $ do
@@ -2892,8 +2743,7 @@
               if (number? k) false true
               , 0 $ &+ k 1
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |false-branch-proof)
             :code $ quote $ do
               assert= 2 $ false-path 1
@@ -2908,8 +2758,7 @@
               &+ k 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |bound-predicate)
             :code $ quote $ do
               assert= 2 $ lexical-guard 1
@@ -2927,9 +2776,8 @@
                 [] 1 2
               [] 1 2
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
-            :return $ :: 'List 'Number
+          :schema $ quote $ Fn Dynamic
+            -> $ List Number
           :tests $ [] $ %{} 'TestEntry (:name |checked-index)
             :code $ quote $ do
               assert= ([] 1 3) (nested 1)
@@ -2945,8 +2793,7 @@
               &+ k 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |known-body-preserves-number-proof)
             :code $ quote $ do
               assert= 2 $ readonly-call 1
@@ -2962,8 +2809,7 @@
               &+ k 1
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |known-body-preserves-number-proof)
             :code $ quote $ do
               assert= 2 $ readonly-call-alias 1
@@ -2972,8 +2818,7 @@
         'readonly-flag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn readonly-flag (value) true
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Bool)
         'two-values $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn two-values (x y)
             if
@@ -2981,8 +2826,7 @@
               &+ x y
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic 'Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-operands)
             :code $ quote $ do
               assert= 5 $ two-values 2 3
@@ -3000,9 +2844,9 @@
               order rows $ fn (row)
                 option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3020,9 +2864,9 @@
               copy-order rows $ fn (row)
                 option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3038,9 +2882,8 @@
               hint-fn $ quote $ Fn Dynamic (-> Number)
               decode-map-as row 'Number
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'Dynamic
-            :return $ :: 'List 'Dynamic
+          :schema $ quote $ Fn (List Dynamic)
+            -> $ List Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |decodes-sort-key)
             :code $ quote $ assert= ([] 1 2)
               checked-open-selector $ [] 2 1
@@ -3051,9 +2894,8 @@
                 selector $ fn (row) 0
               &list:sort-by rows selector
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'Dynamic
-            :return $ :: 'List 'Dynamic
+          :schema $ quote $ Fn (List Dynamic)
+            -> $ List Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |unused-open-input-is-safe)
             :code $ quote $ assert= (#{} |two 1 :three)
               .to-set $ constant-selector $ [] |two 1 :three
@@ -3067,10 +2909,10 @@
               copy-order rows $ fn (row)
                 option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :features $ #{} :js-ffi
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
+            :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3085,9 +2927,9 @@
             &list:sort-by rows $ fn (row)
               option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ []
             %{} 'TestEntry (:name |orders-typed-rows)
               :code $ quote $ assert=
@@ -3112,18 +2954,17 @@
         'ignore-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ignore-selector (rows selector) rows
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'Dynamic
-            :generics $ [] 'T
-            :return $ :: 'List 'T
+          :schema $ quote $ Fn (List T) Dynamic
+            -> $ List T
+            :generics T
         'method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn method (rows)
             rows .sort-by $ fn (row)
               option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ []
             %{} 'TestEntry (:name |orders-typed-rows)
               :code $ quote $ assert=
@@ -3159,10 +3000,10 @@
               set! order &list:sort-by
               order rows :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :features $ #{} :js-ffi
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
+            :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3177,9 +3018,9 @@
             &list:sort-by rows $ defn select-key (row)
               option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3194,9 +3035,9 @@
             .sort-by rows $ fn (row)
               option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3216,9 +3057,9 @@
               order rows $ fn (row)
                 option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3233,9 +3074,9 @@
             -> rows $ &list:sort-by $ fn (row)
               option:unwrap $ &map:get row :n
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
-            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :schema $ quote $ Fn
+            List $ Map Tag Number
+            -> $ List $ Map Tag Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
@@ -3252,9 +3093,8 @@
         'first-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn first-text (text) (first text)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String
+            -> $ Option String
           :tests $ [] $ %{} 'TestEntry (:name |empty-and-unicode)
             :code $ quote $ let ()
               assert= (Option :none) (first-text |)
@@ -3264,9 +3104,8 @@
         'get-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn get-text (text index) (get text index)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'Number
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String Number
+            -> $ Option String
           :tests $ [] $ %{} 'TestEntry (:name |bounds-and-unicode)
             :code $ quote $ let ()
               assert= (Option :none) (get-text | 0)
@@ -3278,9 +3117,8 @@
         'last-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn last-text (text) (last text)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String
+            -> $ Option String
           :tests $ [] $ %{} 'TestEntry (:name |empty-and-unicode)
             :code $ quote $ let ()
               assert= (Option :none) (last-text |)
@@ -3290,10 +3128,9 @@
         'list-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn list-first (items) (first items)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'T
-            :generics $ [] 'T
-            :return $ :: 'Option 'T
+          :schema $ quote $ Fn (List T)
+            -> $ Option T
+            :generics T
           :tests $ [] $ %{} 'TestEntry (:name |preserves-present-nil)
             :code $ quote $ let ()
               assert= (Option :some nil)
@@ -3304,9 +3141,8 @@
         'nth-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nth-text (text index) (nth text index)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'String 'Number
-            :return $ :: 'Option 'String
+          :schema $ quote $ Fn String Number
+            -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |bounds-and-unicode)
               :code $ quote $ let ()
@@ -3337,9 +3173,8 @@
                 option:unwrap-or (first y) |
                 option:unwrap-or (first x) |
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'List 'String
-            :return $ :: 'List 'String
+          :schema $ quote $ Fn (List String)
+            -> $ List String
           :tests $ []
             %{} 'TestEntry (:name |sorts-present-and-empty)
               :code $ quote $ assert= ([] |2026-10-12 |1999-01-01 |)
@@ -3372,17 +3207,17 @@
         'ClientProjection $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ClientProjection (:count 'Number) (:color 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'LoginState $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct LoginState (:username 'String) (:password 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'PatchCandidate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PatchCandidate
             :raw $ quote $ Map Tag Dynamic
             :typed 'app.values/ClientProjection
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'initial-state $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def initial-state (LoginState :username | :password |)
           :examples $ []
@@ -3394,8 +3229,7 @@
         'bump $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bump (value) (inc value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |lexical-alias-chain-shadow-and-capture)
               :code $ quote $ let
@@ -3450,8 +3284,7 @@
         'do $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn do () 42
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |imported-do-name-remains-an-ordinary-function)
             :code $ quote $ let
                 callback app.wasm-alias/do
@@ -3460,11 +3293,9 @@
         'invoke-number-key $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn invoke-number-key (key value) (key value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-              :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'Number
-              , 'Number
+          :schema $ quote $ Fn
+            Fn Number $ -> Number
+            , Number (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |known-callback-selects-specialization)
               :code $ quote $ assert= -3 (invoke-number-key reverse-key 3)
@@ -3501,8 +3332,7 @@
         'reverse-key $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reverse-key (value) (- 0 value)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |known-target-through-static-argument)
               :code $ quote $ assert= ([] 3 2 1)
@@ -3543,8 +3373,7 @@
         'sum-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-pair (left right) (+ left right)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number 'Number
+          :schema $ quote $ Fn Number Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |binary-alias-keeps-map-indexed-and-fold-arity)
             :code $ quote $ let
                 combine sum-pair
@@ -3555,8 +3384,7 @@
         'sum-tail $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-tail (first-value & values) (foldl values first-value +)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
-            :args $ [] 'Number
+          :schema $ quote $ Fn Number & Number (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |known-rest-alias-keeps-arity-spread-and-order)
             :code $ quote $ let
                 total sum-tail

@@ -23,11 +23,11 @@
         'ClientOp $ %{} 'CodeEntry (:doc "|Client entry enum")
           :code $ quote $ defenum ClientOp (:client/ping)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'ServerOp $ %{} 'CodeEntry (:doc "|Server entry enum")
           :code $ quote $ defenum ServerOp (:server/ping)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'accept-op $ %{} 'CodeEntry (:doc "|Schema depends on the entry-bound type slot")
           :code $ quote $ defn accept-op (op) op
           :examples $ []
@@ -38,21 +38,18 @@
             accept-op $ :: :client/ping
             , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'server-main! $ %{} 'CodeEntry
           :doc "|Server entry binds the same slot name independently"
           :code $ quote $ defn server-main! ()
             accept-op $ :: :server/ping
             , nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
+          :schema $ quote $ Fn (-> Dynamic)
       :ns $ %{} 'NsEntry
         :doc "|Fixture for entry-scoped with-type-slot preprocessing"
         :code $ quote $ ns type-fail-type-slot-entry-scope.main

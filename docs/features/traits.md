@@ -41,11 +41,7 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 Use `deftrait` to define a trait and its method signatures (including type annotations).
 
 ```cirru
-deftrait MyFoo $ .foo
-  :: 'Fn $ {}
-    :generics $ [] 'T
-    :args $ [] 'T
-    :return 'String
+deftrait MyFoo $ .foo $ quote $ Fn T (-> String) (:generics T)
 ```
 
 普通 trait 的完整方法签名使用具体类型或显式声明的泛型；方法参数、返回值、容器和嵌套回调中的 `Dynamic` 沿用现有的拒绝规则。`deftrait` 中静态声明的这些签名会在预处理阶段报告定义位置。未提供完整合同的 `'Fn` 仍保留既有动态方法语义；需要保留输入、存储与返回之间的类型关系时，优先使用泛型合同。
@@ -56,15 +52,11 @@ Use `defimpl` to create a nominal impl value for a trait.
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    Person0 $ defstruct Person (:name 'String)
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice
@@ -86,15 +78,11 @@ Examples:
 
 ```cirru
 let
-    PersonA0 $ defstruct PersonA (:name 'String)
-    MyFooA $ deftrait MyFooA
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    MyFooImplA $ defimpl MyFooImplA MyFooA
-      .foo $ fn (p) (assert-type p PersonA0)
+    PersonA0 $ defstruct PersonA $ :name 'String
+    MyFooA $ deftrait MyFooA $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    MyFooImplA $ defimpl MyFooImplA MyFooA $ .foo
+      fn (p) (assert-type p PersonA0)
         str-spaced |foo $ :name p
     PersonA $ impl-traits PersonA0 MyFooImplA
     p $ PersonA :name |Alice
@@ -107,15 +95,11 @@ let
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    Person0 $ defstruct Person (:name 'String)
-    ImplB $ defimpl ImplB MyFoo
-      :: .foo $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    ImplB $ defimpl ImplB MyFoo $ :: .foo
+      fn (p) (assert-type p Person0)
         str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
     pb $ PersonB :name |Bob
@@ -170,19 +154,15 @@ Syntax:
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    StructDef0 $ defstruct StructDef (:name 'String)
-    ImplA $ defimpl ImplA MyFoo
-      .foo $ fn (p) (assert-type p StructDef0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    StructDef0 $ defstruct StructDef $ :name 'String
+    ImplA $ defimpl ImplA MyFoo $ .foo
+      fn (p) (assert-type p StructDef0)
         str |A: $ :name p
-    MyBar $ deftrait MyBar (.bar 'Fn)
-    ImplB $ defimpl ImplB MyBar
-      .bar $ fn (p) (assert-type p StructDef0)
+    MyBar $ deftrait MyBar $ .bar 'Fn
+    ImplB $ defimpl ImplB MyBar $ .bar
+      fn (p) (assert-type p StructDef0)
         str |B: $ :name p
     StructDef $ impl-traits StructDef0 ImplA ImplB
     x $ StructDef :name |test
@@ -324,22 +304,18 @@ You can also inspect impl origins directly when validating trait dispatch:
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    Shape0 $ defenum Shape (:point 'Number 'Number)
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (t)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Shape0 $ defenum Shape $ :point 'Number 'Number
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (t)
         str |shape: $ &enum:nth t 0
     Shape $ impl-traits Shape0 MyFooImpl
     shape $ Shape :point 10 20
     impls $ &enum:impls shape
   any? impls $ fn (impl)
     match (impl-origin impl)
-      (:some origin) $ = origin MyFoo
+      (:some origin) (= origin MyFoo)
       (:none) false
 ```
 
@@ -349,14 +325,14 @@ let
 子句头是 Symbol `requires`，与 Tag 形式的成员键区分；旧写法 `('requires Parent)` 仍然接受。
 
 ```cirru.no-check
-deftrait Labeled
-  .label $ :: 'Fn $ {} (:args $ [] 'Labeled) (:return 'String)
+deftrait Labeled $ .label $ quote $ Fn Labeled $ -> String
 
-deftrait Greeting
-  requires Labeled
-  .greeting $ :: 'Fn $ {} (:args $ [] 'Greeting) (:return 'String)
+deftrait Greeting (requires Labeled)
+  .greeting $ quote $ Fn Greeting (-> String)
 
-def Greeter $ impl-traits (defstruct Greeter (:name 'String)) LabeledImpl GreetingImpl
+def Greeter $ impl-traits
+  defstruct Greeter $ :name 'String
+  , LabeledImpl GreetingImpl
 ```
 
 - `defimpl GreetingImpl Greeting` 只实现 `Greeting` 自己的方法；`impl-traits` 挂载时同一类型必须也挂载了全部父 trait 的实现，
@@ -376,15 +352,11 @@ Notes:
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: 'Fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return 'String
-    Person0 $ defstruct Person (:name 'String)
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice

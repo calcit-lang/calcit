@@ -13,7 +13,7 @@
         'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export main! () (log-title "|Testing anonymous enum")
             assert= 1 $ try-size $ :: :dyn
@@ -33,8 +33,7 @@
                 plain $ :: :plain 1
               assert= (Option :none) (enum-definition plain)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'try-size $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-size (x)
             match x
@@ -44,8 +43,7 @@
               (:dyn x y z) 4
               _ :many
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-anonymous-enum.main
           :require $ util.core :refer $ log-title

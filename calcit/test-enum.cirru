@@ -13,16 +13,16 @@
         'ContentNode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContentNode (:wrong 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Duo $ %{} 'CodeEntry (:doc "|Generic enum with 2 type variables")
           :code $ quote $ defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'MapLiteralChoice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum MapLiteralChoice
             {} (:some 'String) (:none)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |map-literal-variants)
             :code $ quote $ match (MapLiteralChoice :some |ok)
               (:some value) (assert= |ok value)
@@ -30,59 +30,53 @@
         'Maybe1 $ %{} 'CodeEntry (:doc "|Generic enum with 1 type variable")
           :code $ quote $ defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Payload (:wrong 'Number)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'Result0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result0 (:err 'String) (:ok)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'ResultImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl ResultImpl ResultTrait
             .dummy $ fn $ _x
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ quote Impl
         'ResultTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait ResultTrait
-            .dummy $ :: :fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'T
-              :return 'Unit
+            .dummy $ quote $ Fn T (-> Unit) (:generics T)
           :examples $ []
-          :schema $ :: 'Trait
+          :schema $ quote Trait
         'ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
           :code $ quote $ defstruct ShownBox ('T)
             {} $ 'T Debug
             :value 'T
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
           :code $ quote $ defenum ShownMaybe ('T)
             {} $ 'T Debug
             :some 'T
             :none
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'check-result-type $ %{} 'CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote $ defn check-result-type (r)
             option:some? $ enum-definition r
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'test-enum.main/Result0
+          :schema $ quote $ Fn test-enum.main/Result0 (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (println "|All tests passed!")
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'read-caller-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-caller-payload (value)
             :wrong $ unwrap-recursive-envelope value
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'test-enum.recursive/Envelope 'test-enum.main/Payload
+          :schema $ quote $ Fn (test-enum.recursive/Envelope test-enum.main/Payload) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |generic-argument-keeps-caller-namespace)
             :code $ quote $ assert= 7
               read-caller-payload $ recursive/Envelope :item $ Payload :wrong 7
@@ -93,8 +87,7 @@
               :record payload
               :value payload
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'test-enum.recursive/RecordEnvelope
+          :schema $ quote $ Fn test-enum.recursive/RecordEnvelope (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |declared-payload-does-not-bind-caller-shadow)
             :code $ quote $ assert= |Ada
               read-declared-payload $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
@@ -107,8 +100,7 @@
                 :record payload
                 :value payload
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'test-enum.recursive/RecordEnvelope
+          :schema $ quote $ Fn test-enum.recursive/RecordEnvelope (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |qualified-payload-ignores-local-shadow)
             :code $ quote $ assert= |Ada
               read-local-shadow $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
@@ -124,8 +116,7 @@
               assert-type record 'Payload
               read record
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |unqualified-local-type-remains-lexical)
             :code $ quote $ assert= |Ada (read-local-type)
             :tags $ #{} :enum :local-type-shadow :unit
@@ -138,8 +129,7 @@
                   :value record
               read $ Payload :value 7
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |function-local-struct-keeps-binding-identity)
             :code $ quote $ assert= 7 (read-runtime-local-type)
             :tags $ #{} :enum :local-type-shadow :unit
@@ -156,16 +146,14 @@
                     , record
               :value $ read |Ada
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
+          :schema $ quote $ Fn (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |parameter-does-not-rebind-outer-type-alias)
             :code $ quote $ assert= |Ada (read-shadowed-local-type)
             :tags $ #{} :enum :local-type-shadow :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'render-short-recursive $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn render-short-recursive (node)
             match node
@@ -176,8 +164,7 @@
                 foldl children | $ fn (acc child)
                   str acc $ render-short-recursive child
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'test-enum.recursive/ContentNode
+          :schema $ quote $ Fn test-enum.recursive/ContentNode (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |recursive-short-names-in-declaration-namespace)
             :code $ quote $ do
               assert= |ab $ render-short-recursive $ recursive/ContentNode :pair (recursive/ContentNode :text |a) (recursive/ContentNode :text |b)
@@ -192,8 +179,7 @@
               (:err msg) msg
               _ :unknown
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'test-enum.main/Result0
+          :schema $ quote $ Fn test-enum.main/Result0 (-> Dynamic)
         'test-anonymous-enum-to-named $ %{} 'CodeEntry (:doc "|Test automatic anonymous-enum-to-named rewrite")
           :code $ quote $ defn test-anonymous-enum-to-named ()
             do (println "|Testing anonymous-enum-to-named rewrite...")
@@ -205,8 +191,7 @@
               assert= true $ check-result-type $ :: :ok
               println "|✓ Tuple-to-enum rewrite passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-enum-creation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-enum-creation ()
             do (println "|Testing enum tuple creation...")
@@ -234,8 +219,7 @@
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-generic-enum-creation $ %{} 'CodeEntry
           :doc "|Exercise defenum generic variables in runtime creation and matching"
           :code $ quote $ defn test-generic-enum-creation ()
@@ -258,8 +242,7 @@
                 assert= |hi $ &enum:nth pair-value 2
               println "|✓ Generic enum creation passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-generic-enum-where-bounds $ %{} 'CodeEntry
           :doc "|Exercise where-bounds with generic enum payloads"
           :code $ quote $ defn test-generic-enum-where-bounds ()
@@ -288,8 +271,7 @@
                 render-duo $ %:: Duo :swapped |hi 1
               println "|✓ Generic enum where-bounds passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match ()
             let
@@ -323,8 +305,7 @@
               assert= (Option :some 2) picked
             println "|✓ match syntax passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-match-validation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match-validation ()
             do (println "|Testing match runtime validation...")
@@ -336,8 +317,7 @@
                 assert= :ok v
               println "|✓ Match validation passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-where-bound-definitions $ %{} 'CodeEntry
           :doc "|Exercise defstruct/defenum where-map syntax on generic data types"
           :code $ quote $ defn test-where-bound-definitions ()
@@ -358,27 +338,23 @@
                       (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ []
+          :schema $ quote $ Fn (-> Unit)
         'unwrap-maybe $ %{} 'CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote $ defn unwrap-maybe (v)
             match v
               (:none) (Option :none)
               (:some item) (Option :some item)
           :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'test-enum.main/Maybe1 'T
-            :generics $ [] 'T
-            :return $ :: 'calcit.core/Option 'T
+          :schema $ quote $ Fn (test-enum.main/Maybe1 T)
+            -> $ calcit.core/Option T
+            :generics T
         'unwrap-recursive-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unwrap-recursive-envelope (value)
             match value $
               :item payload
               , payload
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] $ :: 'test-enum.recursive/Envelope 'T
-            :generics $ [] 'T
+          :schema $ quote $ Fn (test-enum.recursive/Envelope T) (-> T) (:generics T)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-enum.main
           :require $ test-enum.recursive :as recursive
@@ -386,20 +362,20 @@
       :defs $ {}
         'ContentNode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum ContentNode (:text 'String) (:pair 'ContentNode 'ContentNode)
-            :list $ :: 'List 'ContentNode
+            :list $ quote $ List ContentNode
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Envelope ('T) (:item 'T)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Payload (:value 'String)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'RecordEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum RecordEnvelope (:record 'Payload)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-enum.recursive

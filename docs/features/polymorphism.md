@@ -52,18 +52,10 @@ Use `Debug` for polymorphic helpers that must work with ordinary values. Use
 
 ```cirru
 let
-    DemoShow $ deftrait DemoShow
-      .show $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    DemoEq $ deftrait DemoEq
-      .eq? $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T 'T
-          :return :bool
+    DemoShow $ deftrait DemoShow $ .show
+      quote $ Fn T (-> String) (:generics T)
+    DemoEq $ deftrait DemoEq $ .eq?
+      quote $ Fn T T (-> Bool) (:generics T)
   [] DemoShow DemoEq
 ```
 
@@ -73,15 +65,11 @@ Traits are values and can be referenced like normal symbols.
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (p) (assert-type p Person0)
         str "|foo " $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice
@@ -92,33 +80,21 @@ let
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    ShowTrait $ deftrait ShowTrait
-      .show $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    EqTrait $ deftrait EqTrait
-      .eq $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
-    ShowImpl $ defimpl ShowImpl ShowTrait
-      .show $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    ShowTrait $ deftrait ShowTrait $ .show
+      quote $ Fn T (-> String) (:generics T)
+    EqTrait $ deftrait EqTrait $ .eq
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    ShowImpl $ defimpl ShowImpl ShowTrait $ .show
+      fn (p) (assert-type p Person0)
         str |Person: $ :name p
-    EqImpl $ defimpl EqImpl EqTrait
-      .eq $ fn (p) (assert-type p Person0)
+    EqImpl $ defimpl EqImpl EqTrait $ .eq
+      fn (p) (assert-type p Person0)
         str |eq: $ :name p
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (assert-type p Person0)
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (p) (assert-type p Person0)
         str |foo: $ :name p
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
     p $ Person :name |Alice
@@ -131,15 +107,11 @@ let
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo
-      .foo $ :: :fn
-        {}
-          :generics $ [] 'T
-          :args $ [] 'T
-          :return :string
-    Person0 $ defstruct Person (:name :string)
-    MyFooImpl $ defimpl MyFooImpl MyFoo
-      .foo $ fn (p) (assert-type p Person0)
+    MyFoo $ deftrait MyFoo $ .foo
+      quote $ Fn T (-> String) (:generics T)
+    Person0 $ defstruct Person $ :name 'String
+    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+      fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice
@@ -161,8 +133,7 @@ Top-level definitions use `:schema`:
 
 ```cirru.edn
 %{} :CodeEntry
-  :code $ quote
-    defn show-it (x) (x .show)
+  :code $ quote $ defn show-it (x) (x .show)
   :schema $ :: 'Fn
     {}
       :generics $ [] 'T
@@ -258,13 +229,13 @@ do
 ```cirru
 let
     double $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &* x 2
     increment $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &+ x 1
     composed $ double .map increment
-  assert-type composed $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+  assert-type composed $ quote $ Fn Number (-> Number)
   assert= 8 $ composed 3
 ```
 
@@ -275,15 +246,15 @@ let
 ```cirru
 let
     producer $ fn (x)
-      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number (-> Number)
       &* x 2
     consumer $ fn (left right)
-      hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)
+      hint-fn $ quote $ Fn Number Number (-> Number)
       &- left right
     bound $ producer .bind consumer
     applied $ producer .apply consumer
-  assert-type bound $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
-  assert-type applied $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)
+  assert-type bound $ quote $ Fn Number (-> Number)
+  assert-type applied $ quote $ Fn Number (-> Number)
   assert= 3 $ bound 3
   assert= -3 $ applied 3
 ```

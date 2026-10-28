@@ -13,8 +13,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (+ 1 2)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |required-expands)
               :code $ quote $ assert= 1 (required-id 1)
@@ -28,29 +27,22 @@
         'optional-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro optional-id (value ? ignored) value
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :optional $ [] 'Syntax
-            :required $ [] 'Syntax
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
+            :optional Syntax
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () nil
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Nil)
-            :args $ []
+          :schema $ quote $ Fn (-> Nil)
         'required-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro required-id (value) value
           :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'Syntax
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
         'rest-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro rest-id (value & ignored) value
           :examples $ []
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'Syntax
+          :schema $ quote $ Macro Syntax & Syntax
+            -> $ Expr Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
