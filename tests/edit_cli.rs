@@ -1445,46 +1445,14 @@ fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
   create_macro(&snapshot, "rest-id", "quote $ defmacro rest-id (value & ignored) value");
 
   for (name, expected_schema) in [
-    (
-      "required-id",
-      serde_json::json!([
-        "::",
-        "'Macro",
-        [
-          "{}",
-          [":capabilities", ["#{}"]],
-          [":expansion", ["::", "'Expr", "'Dynamic"]],
-          [":required", ["[]", "'Syntax"]]
-        ]
-      ]),
-    ),
+    ("required-id", serde_json::json!(["Macro", "Syntax", ["->", ["Expr", "Dynamic"]]])),
     (
       "optional-id",
-      serde_json::json!([
-        "::",
-        "'Macro",
-        [
-          "{}",
-          [":capabilities", ["#{}"]],
-          [":expansion", ["::", "'Expr", "'Dynamic"]],
-          [":optional", ["[]", "'Syntax"]],
-          [":required", ["[]", "'Syntax"]]
-        ]
-      ]),
+      serde_json::json!(["Macro", "Syntax", ["->", ["Expr", "Dynamic"]], [":optional", "Syntax"]]),
     ),
     (
       "rest-id",
-      serde_json::json!([
-        "::",
-        "'Macro",
-        [
-          "{}",
-          [":rest", "'Syntax"],
-          [":capabilities", ["#{}"]],
-          [":expansion", ["::", "'Expr", "'Dynamic"]],
-          [":required", ["[]", "'Syntax"]]
-        ]
-      ]),
+      serde_json::json!(["Macro", "Syntax", "&", "Syntax", ["->", ["Expr", "Dynamic"]]]),
     ),
   ] {
     let definition = query_definition(&snapshot, &format!("app.main/{name}"));
@@ -1633,7 +1601,7 @@ fn overwrite_converts_non_macro_schema_but_preserves_a_strict_macro_contract() {
   );
   assert_success(&convert, "convert ordinary definition to macro");
   let generated = query_definition(&snapshot, "app.main/convert-me")["data"]["schema"].clone();
-  assert!(generated.to_string().contains("'Macro"));
+  assert_eq!(generated[0], "Macro", "{generated}");
 
   let refined = run_calcit(
     &snapshot,
@@ -1812,7 +1780,7 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "reload after shorthand overwrite");
 
   let report = query_definition(&snapshot, "app.main/Host");
-  assert_eq!(report["data"]["schema"], "'Trait");
+  assert_eq!(report["data"]["schema"], "Trait");
   assert_eq!(report["data"]["ffi"][":target"]["__edn_tag"], "browser");
   // The overwrite replaced the previous metadata, so the old `:names` override is gone.
   assert!(report["data"]["ffi"][":names"].is_null());

@@ -445,7 +445,7 @@ fn query_defs_enumerates_names_filters_and_signatures_without_snapshot_parsing()
     signatures["data"]["definitions"][2]["signature"]
       .as_str()
       .unwrap()
-      .contains("'Number")
+      .starts_with("Fn ")
   );
   let human = stdout(&call(&["query", "defs", "test-effects-graph.enumeration", "--signatures"]));
   for definition in signatures["data"]["definitions"].as_array().unwrap() {
@@ -637,7 +637,7 @@ fn program_diff_formats_preserve_value_schema_evidence_and_widening_gate() {
   ]]));
   let before_reports = fs::read(&snapshot).unwrap();
   let readback = assert_json_document(&call(&["query", "def", target, "--format", "json"]), "schema readback");
-  assert_eq!(readback["data"]["schema"], "'StructDef");
+  assert_eq!(readback["data"]["schema"], "StructDef");
   let json = assert_json_document(
     &call(&["analyze", "program-diff", "HEAD", "--format", "json", "--fail-on-widening"]),
     "incomparable kinds require review but are not widening",

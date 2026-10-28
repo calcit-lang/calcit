@@ -894,7 +894,7 @@ try {
       }
       const traitReceiver = JSON.parse(execFileSync(binary, [traitSnapshot, "query", "type-at",
         "test-traits.main/describe-greeting", "--path", "code@3.1.0", "--format", "json"], options)).data;
-      assert.equal(traitReceiver.inferred_type, "'T", "capabilities do not replace caller identity");
+      assert.equal(traitReceiver.inferred_type, "T", "capabilities do not replace caller identity");
       for (const name of [".greeting", ".label"]) {
         const method = traitReceiver.static_methods.find(method => method.name === name);
         assert.equal(method?.status, "proven", `${name}: retain the declared qualified capability`);
@@ -942,7 +942,7 @@ try {
       const descriptorType = JSON.parse(execFileSync(binary, [traitSnapshot, "query", "type-at",
         "test-traits.main/retain-trait-metadata", "--path", "code@3.2", "--format", "json"], options));
       assert.deepEqual(descriptorType.diagnostics, []);
-      assert.equal(descriptorType.data.inferred_type, "'Trait");
+      assert.equal(descriptorType.data.inferred_type, "Trait");
       assert.deepEqual(descriptorType.data.static_methods ?? [], [], "descriptors do not advertise instance methods");
       assert.deepEqual(await readFile(traitSnapshot), traitSource);
       const descriptorSnapshot = join(project, "trait-descriptor.cirru");
@@ -1265,7 +1265,7 @@ try {
       assert.deepEqual(arrayProof.diagnostics, []);
       assert.deepEqual(arrayProof.data.suggestions, []);
       const arrayType = JSON.parse(arrayRun("query", "type-at", "app.js-spread/make-arrays", "--path", "code@3", "--format", "json"));
-      assert.equal(arrayType.data.inferred_type, "'JsObject");
+      assert.equal(arrayType.data.inferred_type, "JsObject");
       const arrayVerification = spawnSync(binary, [arraySnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
       assert.ifError(arrayVerification.error);
       const arrayStrict = JSON.parse(arrayVerification.stdout);

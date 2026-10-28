@@ -20,7 +20,7 @@ const scenarios = [
       assert.deepEqual(filters, { tag: null, signatures: true });
       const names = definitions.map(item => item.name);
       assert.deepEqual(names, [...names].sort());
-      assert.match(definitions.find(item => item.name === "add-numbers").signature, /'Number/);
+      assert.match(definitions.find(item => item.name === "add-numbers").signature, /^Fn .*Number/);
     },
   },
   {
@@ -62,7 +62,7 @@ const scenarios = [
     check(result) {
       assert.deepEqual(result.data.runtime_arity, { min: 1, max: 2 });
       const schema = JSON.stringify(result.data.schema ?? result.data.canonical_schema);
-      assert.ok(schema.includes("'Dynamic") && schema.includes("'Bool"), schema);
+      assert.ok(schema.includes("Dynamic") && schema.includes("Bool"), schema);
       assert.doesNotMatch(schema, /Optional|JsNullish/, "omission must not widen the Bool value type");
       if (command !== "schema") {
         assert.match(result.data.doc, /defaults to false/);
@@ -89,8 +89,7 @@ const scenarios = [
         assert.equal(fields.get(":return"), "'Tag");
       } else {
         const schema = result.data.schema ?? result.data.canonical_schema;
-        assert.match(schema, /:args \$ \[\] 'Struct/);
-        assert.match(schema, /:return 'Tag/);
+        assert.match(schema, /^Fn Struct \$ -> Tag$/);
       }
     },
   })),
@@ -100,7 +99,7 @@ const scenarios = [
     check(result) {
       assert.equal(result.data.id, "calcit.core/non-nil?");
       assert.match(result.data.doc, /Option variant/);
-      assert.equal(result.data.schema, ":: 'Fn $ {} (:return 'Bool)\n  :args $ [] 'T\n  :generics $ [] 'T");
+      assert.equal(result.data.schema, "Fn T (-> Bool) (:generics T)");
       assert.equal(result.data.examples.items[0]?.cirru, "assert= true $ non-nil? 0");
     },
   },
@@ -200,8 +199,8 @@ const scenarios = [
       assert.equal(method.definition, "calcit.core/option:map");
       assert.equal(method.return_type, "type calcit.core/Option<'U>");
       if (payload === "Number") {
-        assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'U"]);
-        assert.equal(method.call_types.parameters[0][1], "'Fn");
+        assert.deepEqual(method.call_types.returns, ["calcit.core/Option", "U"]);
+        assert.equal(method.call_types.parameters[0][0], "Fn");
       } else {
         assert.equal(method.call_types, undefined);
       }
@@ -214,7 +213,7 @@ const scenarios = [
       const method = result.data.methods.find(method => method.name === ".map");
       assert.equal(method.status, "proven");
       assert.deepEqual(method.generics, ["ResultMapOutput"]);
-      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Result", "'ResultMapOutput", "'String"]);
+      assert.deepEqual(method.call_types.returns, ["calcit.core/Result", "ResultMapOutput", "String"]);
     },
   },
   {
@@ -282,9 +281,9 @@ const scenarios = [
       }
       assert.equal(fold?.status, "proven");
       assert.equal(fold?.definition, "calcit.core/fold");
-      assert.equal(fold.call_types.parameters[0], "'U");
-      assert.deepEqual(fold.call_types.parameters[1].slice(0, 2), ["::", "'Fn"]);
-      assert.equal(fold.call_types.returns, "'U");
+      assert.equal(fold.call_types.parameters[0], "U");
+      assert.equal(fold.call_types.parameters[1][0], "Fn");
+      assert.equal(fold.call_types.returns, "U");
       const intersperse = result.data.methods.find((method) => method.name === ".intersperse");
       assert.ok(!result.data.methods.some((method) => method.name === ".join"), ".join was retired from List");
       assert.equal(intersperse?.status, "proven");
@@ -307,9 +306,9 @@ const scenarios = [
       assert.deepEqual(get?.parameter_types, ["number"]);
       assert.equal(get?.return_type, "type calcit.core/Option<number>");
       assert.deepEqual(get.call_types, {
-        parameters: ["'Number"],
+        parameters: ["Number"],
         rest: null,
-        returns: ["::", "'calcit.core/Option", "'Number"],
+        returns: ["calcit.core/Option", "Number"],
       });
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
@@ -366,8 +365,8 @@ const scenarios = [
     name: "legacy any alias",
     args: ["calcit/test.cirru", "query", "type", ":any", "--format", "json"],
     check(result) {
-      if (result.command !== "query.type" || result.data.canonical_type !== "'Dynamic") {
-        throw new Error("query.type did not canonicalize legacy :any to 'Dynamic");
+      if (result.command !== "query.type" || result.data.canonical_type !== "Dynamic") {
+        throw new Error("query.type did not canonicalize legacy :any to Dynamic");
       }
       if (result.data.methods !== null || result.diagnostics[0]?.code !== "W_LEGACY_ANY_ALIAS") {
         throw new Error(":any did not preserve dynamic dispatch semantics and migration guidance");
@@ -392,7 +391,7 @@ const scenarios = [
       }
       const closed = result.data.methods.find(method => method.name === ".parse-float");
       assert.equal(closed?.status, "proven");
-      assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
+      assert.deepEqual(closed.call_types.returns, ["calcit.core/Result", "Number", "String"]);
       assert.ok(result.data.methods.some(method => method.name === ".len"), "String keeps .len");
       assert.ok(!result.data.methods.some(method => method.name === ".count"), ".count was retired from String");
     },
@@ -476,7 +475,7 @@ const scenarios = [
       if (result.schema_version !== 2 || result.command !== "query.type-at") {
         throw new Error("unexpected query.type-at envelope");
       }
-      if (result.data.inferred_type !== "'Number" || result.data.expected_type !== "'Number") {
+      if (result.data.inferred_type !== "Number" || result.data.expected_type !== "Number") {
         throw new Error("type-at lost inferred or expected type evidence");
       }
       if (!result.data.bindings.some((binding) => binding.name === "p")) {
@@ -492,10 +491,10 @@ const scenarios = [
     args: ["src/cirru/calcit-core.cirru", "query", "type-at", "calcit.core/interleave", "--path", "code@3.3.2", "--format", "json"],
     check(result) {
       assert.deepEqual(result.diagnostics, []);
-      assert.equal(result.data.inferred_type, ":: 'List 'T");
+      assert.equal(result.data.inferred_type, "List T");
       const method = result.data.static_methods.find(item => item.name === ".get");
       assert.deepEqual(method.generics, ["T"]);
-      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'T"]);
+      assert.deepEqual(method.call_types.returns, ["calcit.core/Option", "T"]);
       assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
     },
   },
@@ -507,12 +506,12 @@ const scenarios = [
     args: ["calcit/test-types-inference.cirru", "query", "type-at", `test-types-inference.main/${definition}`, "--path", path, "--format", "json"],
     check(result) {
       assert.deepEqual(result.diagnostics, []);
-      assert.equal(result.data.inferred_type, `'${variable}`);
+      assert.equal(result.data.inferred_type, variable);
       assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
       const method = result.data.static_methods[0];
       assert.equal(method.status, "proven");
       assert.equal(method.return_type, `'${variable}`);
-      assert.equal(method.call_types.returns, `'${variable}`);
+      assert.equal(method.call_types.returns, variable);
       assert.equal(method.definition, "calcit.core/Sliceable");
       assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
     },
@@ -849,10 +848,10 @@ const scenarios = [
       ) {
         throw new Error("query.schema JSON envelope is incorrect");
       }
-      if (result.data.canonical_schema !== ":: 'Ref 'Number") {
+      if (result.data.canonical_schema !== "Ref Number") {
         throw new Error("parameterized value schema was not preserved");
       }
-      if (JSON.stringify(result.data.tree) !== '["::","\'Ref","\'Number"]') {
+      if (JSON.stringify(result.data.tree) !== '["Ref","Number"]') {
         throw new Error("parameterized value schema tree is incorrect");
       }
     },
@@ -894,7 +893,7 @@ const scenarios = [
       assert.deepEqual(result.data.summary, { findings: 9, unknown: 0 });
       const finding = result.data.findings.find(item => item.definition === "app.roundtrip/read-field");
       assert.equal(finding.path, "code@3.1");
-      assert.equal(finding.input.inferred_type, ":: 'calcit.core/Option 'Dynamic");
+      assert.equal(finding.input.inferred_type, "calcit.core/Option Dynamic");
       assert.equal(finding.consumer.head, "either");
     },
   },
@@ -1257,7 +1256,7 @@ for (const { name, base, expectedStatus = 0, check } of [
   {
     name: "expression type EDN",
     base: ["calcit/test.cirru", "query", "type-at", "test-struct.main/sum-point", "--path", "code@3.1"],
-    check: (result) => assert.equal(result.data.inferred_type, "'Number"),
+    check: (result) => assert.equal(result.data.inferred_type, "Number"),
   },
   {
     name: "source search EDN",
@@ -1660,7 +1659,7 @@ try {
     assert.equal(json.status, 0, json.stderr);
     const result = JSON.parse(json.stdout);
     assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.data.inferred_type, "'T");
+    assert.equal(result.data.inferred_type, "T");
     assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
     assert.equal(result.data.static_methods[0].status, "proven");
     assert.equal(result.data.static_methods[0].return_type, "'T");
@@ -1770,7 +1769,7 @@ const viewTasks = [
     task: "JS text conversion: optional string-preserving argument",
     snapshot: "src/cirru/calcit-core.cirru",
     args: ["query", "schema", "calcit.core/to-calcit-data"],
-    answer: /Runtime Proc arity: `1\.\.=2`[\s\S]*'Dynamic 'Bool/,
+    answer: /Runtime Proc arity: `1\.\.=2`[\s\S]*Fn Dynamic Bool/,
   },
   {
     task: "JS text conversion: executable string-preserving example",
@@ -1782,13 +1781,13 @@ const viewTasks = [
     task: "module overview: add-numbers signature",
     snapshot: "calcit/test-types.cirru",
     args: ["query", "defs", "test-types.main", "--signatures"],
-    answer: /add-numbers\s+:: 'Fn \$ \{\} \(:return 'Number\) \$ :args \$ \[\] 'Number 'Number/,
+    answer: /add-numbers\s+Fn Number Number \$ -> Number/,
   },
   {
     task: "one definition: describe-typed contract",
     snapshot: "calcit/test-types.cirru",
     args: ["query", "schema", "test-types.main/describe-typed"],
-    answer: /:return 'String\) \$ :args \$ \[\] 'String 'Number/,
+    answer: /Fn String Number \$ -> String/,
   },
   {
     task: "one definition: option:some? usage example",
@@ -1806,7 +1805,7 @@ const viewTasks = [
     task: "type question: add-numbers body type",
     snapshot: "calcit/test-types.cirru",
     args: ["query", "type-at", "test-types.main/add-numbers", "--path", "code@3", "--format", "edn"],
-    answer: /:inferred-type \|'Number/,
+    answer: /:inferred-type \|Number/,
   },
   {
     task: "impact before edit: chained-return-type dependencies",

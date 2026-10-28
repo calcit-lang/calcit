@@ -48,7 +48,7 @@ fn parse_single_json(output: &Output) -> serde_json::Value {
 #[test]
 fn selected_entry_resolves_page_only_dependency_for_def_and_schema() {
   let schema = assert_success(&run_query(Some("page"), &["schema", PAGE_ONLY_TARGET]));
-  assert!(schema.contains(":: 'Fn"), "schema should be shown:\n{schema}");
+  assert!(schema.contains("Fn String"), "schema should be shown:\n{schema}");
 
   let def = assert_success(&run_query(Some("page"), &["def", PAGE_ONLY_TARGET, "--format", "cirru"]));
   assert!(def.contains("defn comp-icon"), "definition should be shown:\n{def}");
