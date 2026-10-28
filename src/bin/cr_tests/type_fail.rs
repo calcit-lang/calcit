@@ -778,9 +778,9 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 #[test]
 fn hint_fn_rejects_two_arguments_before_reading_either() {
   run_with_large_stack(|| {
-    for source in [
-      "type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)",
-      "let ((f $ fn () 1)) (hint-fn f (:: fn () 1))",
+    for (source, expected_coord) in [
+      ("type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)", None),
+      ("let ((f $ fn () 1)) (hint-fn f (:: fn () 1))", Some(vec![3, 2, 1])),
     ] {
       let entries = load_snippet_entries(source);
       let error = runner::preprocess::ensure_ns_def_compiled(
@@ -794,6 +794,9 @@ fn hint_fn_rejects_two_arguments_before_reading_either() {
       let location = error.location.as_ref().expect("the removal diagnostic has a source location");
       assert_eq!(location.ns.as_ref(), "app.main", "{error}");
       assert_eq!(location.def.as_ref(), "main!", "{error}");
+      if let Some(expected_coord) = expected_coord {
+        assert_eq!(*location.coord, expected_coord, "{error}");
+      }
     }
   });
 }
