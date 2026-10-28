@@ -30,7 +30,7 @@ try {
   const entry = [snapshot, "--init-fn", "app.main/manifest-stdin-main!"];
   calcit(...entry, "--check-only");
   const type = JSON.parse(calcit(snapshot, "query", "type-at", "calcit.core/read-stdin-text", "--path", "code", "--format", "json"));
-  assert.match(type.data.inferred_type, /'(?:calcit.core\/)?Result 'String 'String/);
+  assert.match(type.data.inferred_type, /(?:calcit.core\/)?Result String String$/);
   assert.doesNotMatch(type.data.inferred_type, /Dynamic/);
   const js = join(temp, "js");
   calcit(...entry, "--emit-path", js, "js");

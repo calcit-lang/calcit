@@ -40,7 +40,7 @@ try {
   const query = (...args) => JSON.parse(run(snapshot, "query", ...args, "--format", "json"));
   const type = query("type-at", "app.main/helper-count", "--path", "code");
   const context = query("context", "app.main/helper-count");
-  assert.match(type.data.inferred_type, /'Number/);
+  assert.match(type.data.inferred_type, /Number/);
   assert.equal(type.data.confidence, "exact");
   assert.equal(context.data.schema, null);
   assert.equal(context.data.inferred_schema, type.data.inferred_type);
@@ -48,7 +48,7 @@ try {
   assert.ok(!context.diagnostics.some((d) => d.code === "W_TYPE_COVERAGE_NONE" || d.code === "W_DYNAMIC_TYPE_UNRESOLVED"));
   const lengthsType = query("type-at", "app.main/helper-lengths", "--path", "code");
   const lengthsContext = query("context", "app.main/helper-lengths");
-  assert.match(lengthsType.data.inferred_type, /'List 'Number/);
+  assert.match(lengthsType.data.inferred_type, /List Number/);
   assert.equal(lengthsType.data.confidence, "exact");
   assert.equal(lengthsContext.data.schema, null);
   assert.equal(lengthsContext.data.inferred_schema, lengthsType.data.inferred_type);

@@ -2859,6 +2859,13 @@ pub(super) fn method_call_signature(
   } else {
     let impls = get_impls_from_type(receiver_type.as_ref())?;
     let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;
+    // A core method shares the receiver-bound contract of its direct call, so
+    // `.each xs f` relates elements and callback exactly like `each xs f`.
+    if let Calcit::Fn { info, .. } = method
+      && let Some(signature) = checked_method_signature(info, arguments, scope_types)
+    {
+      return Some(signature);
+    }
     if let Calcit::Proc(proc) = method {
       let (namespace, definition) = proc.get_ns_def();
       let schema = program::lookup_def_schema(namespace, definition);
@@ -2872,6 +2879,31 @@ pub(super) fn method_call_signature(
     }
   };
   method_type.resolve_to_nonoptional_fn()
+}
+
+pub(super) fn checked_method_signature(
+  info: &calcit::CalcitFn,
+  arguments: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  if info.def_ns.as_ref() != calcit::CORE_NS {
+    return None;
+  }
+  let contract = resolve_checked_call_contract(&info.def_ns, &info.name, arguments, scope_types)?;
+  let expected_types = contract.expected_types?;
+  if expected_types.len() != arguments.len() || info.rest_type.is_some() {
+    return None;
+  }
+  Some(Arc::new(CalcitFnTypeAnnotation {
+    runtime_arity: None,
+    generics: info.generics.clone(),
+    where_bounds: Arc::new(vec![]),
+    arg_types: expected_types,
+    return_type: contract.return_type,
+    fn_kind: SchemaKind::Fn,
+    rest_type: None,
+    features: Arc::new(HashSet::new()),
+  }))
 }
 
 /// Surface and lowered methods share argument proof and result substitution.

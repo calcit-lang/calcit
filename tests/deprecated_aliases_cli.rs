@@ -303,7 +303,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   );
   assert_eq!(at("app.roundtrip/threaded-value")["input"]["path"], "code@3.0");
   for finding in findings {
-    assert_eq!(finding["input"]["inferred_type"], ":: 'calcit.core/Option 'Dynamic");
+    assert_eq!(finding["input"]["inferred_type"], "calcit.core/Option Dynamic");
     assert_eq!(finding["input"]["confidence"], "partial");
     let query = run_calcit(
       snapshot,

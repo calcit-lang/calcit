@@ -37,6 +37,15 @@ use cirru_parser::Cirru;
 use finger_vec::FingerVec;
 use serde::Serialize;
 
+/// Syntax error of a `quote $ <compact type>` form, for entry points outside
+/// preprocessing (such as `query type`) that read a type from text.
+pub fn compact_type_syntax_error(form: &Calcit) -> Option<String> {
+  match type_expr::desugar_quoted_form(form) {
+    Some(Err(error)) => Some(error),
+    _ => None,
+  }
+}
+
 pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStructDef;
 pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};

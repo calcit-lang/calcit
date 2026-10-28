@@ -75,6 +75,7 @@ type PlannedConsumers = BTreeMap<Vec<usize>, (Option<ProvenConsumer>, String)>;
 pub(super) fn plan(snapshot: &Snapshot, snapshot_file: &str, definitions: &[(String, String)]) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in definitions {
+    super::select_definition_entry_context(namespace, definition);
     let source = &snapshot.files[namespace].defs[definition].code;
     suggestions.extend(plan_source(snapshot, snapshot_file, namespace, definition, source)?);
   }

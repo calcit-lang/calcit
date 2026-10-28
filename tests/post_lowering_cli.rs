@@ -194,12 +194,12 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
       assert_success(&queried, "selected Node target query");
       if format == "json" {
         let report: serde_json::Value = serde_json::from_slice(&queried.stdout).expect("one JSON query document");
-        assert_eq!(report["data"]["inferred_type"], "'String");
+        assert_eq!(report["data"]["inferred_type"], "String");
         assert_eq!(report["diagnostics"], serde_json::json!([]));
       } else {
         let text = String::from_utf8_lossy(&queried.stdout);
         cirru_edn::parse(&text).expect("one EDN query document");
-        assert!(text.contains(":inferred-type |'String"), "{text}");
+        assert!(text.contains(":inferred-type |String"), "{text}");
       }
     }
     let proven = run_calcit(

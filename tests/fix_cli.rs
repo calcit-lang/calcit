@@ -2506,7 +2506,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         let inferred = run_calcit(&snapshot, &["query", "type-at", &target, "--path", "@3", "--format", "json"]);
         assert_success(&inferred, "inspect the actual generic result, not its declared return");
         let inferred = parse_stdout(&inferred);
-        assert_eq!(inferred["data"]["inferred_type"], ":: 'Map 'Tag 'Dynamic", "{name}: {inferred}");
+        assert_eq!(inferred["data"]["inferred_type"], "Map Tag Dynamic", "{name}: {inferred}");
       }
     }
     assert_eq!(fs::read(&snapshot).unwrap(), original);
@@ -5951,6 +5951,98 @@ fn strict_workflow_replays_type_slot_declarations_without_hiding_duplicates() {
   }));
 }
 
+const ENTRY_TYPE_SLOTS_FIXTURE: &str = r#"
+{}
+  :package |app
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :dispatch-op |app.main/Op
+    :downloader $ {} (:description |) (:init-fn 'app.dl/main!) (:mode :native) (:reload-fn 'app.dl/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :job-op |app.dl.jobs/Job
+  :files $ {}
+    'app.dl $ %{} 'FileEntry
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            jobs/run-job! $ jobs/Job :fetch
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.dl
+          :require $ app.dl.jobs :as jobs
+    'app.dl.jobs $ %{} 'FileEntry
+      :defs $ {}
+        'Job $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Job (:fetch)
+          :examples $ []
+          :schema $ quote EnumDef
+        'job-slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :job-op
+          :examples $ []
+        'run-job! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn run-job! (job) &unit
+          :examples $ []
+          :schema $ quote $ Fn *job-op (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.dl.jobs
+    'app.main $ %{} 'FileEntry
+      :defs $ {}
+        'Op $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Op (:inc) (:dec)
+          :examples $ []
+          :schema $ quote EnumDef
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            send! $ Op :inc
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+        'send! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn send! (op) &unit
+          :examples $ []
+          :schema $ quote $ Fn *dispatch-op (-> Unit)
+        'slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :dispatch-op
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+"#;
+
+#[test]
+fn strict_workflow_checks_each_definition_with_its_entry_type_slots() {
+  // #2452: whole-project diagnostics must not depend on the outer `--entry`.
+  // Each entry binds a slot the other lacks; every definition must be checked
+  // with the slots of the entry that reaches it, including through `:as`.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::write(&snapshot, ENTRY_TYPE_SLOTS_FIXTURE).expect("entry type-slot fixture should write");
+
+  let args = ["--workflow", "strict", "--verify", "--format", "json"];
+  let reports = [
+    run_fix(&snapshot, &args),
+    run_fix_with_entry(&snapshot, "default", &args),
+    run_fix_with_entry(&snapshot, "downloader", &args),
+  ];
+  for output in &reports {
+    assert_success(output, "whole-project workflow under any outer entry");
+    let report = parse_stdout(output);
+    assert_eq!(report["diagnostics"], serde_json::json!([]));
+    assert_eq!(report["data"]["workflow"]["status"], "passed");
+    let results = report["data"]["workflow"]["verification"]["results"]
+      .as_array()
+      .expect("verification results should be an array");
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|result| result["status"] == "passed"));
+  }
+}
+
 #[test]
 fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   let directory = TestDirectory::create();
@@ -8689,7 +8781,7 @@ fn empty_option_helpers_infer_fallback_type_for_both_constructor_spellings() {
     );
     assert_success(&result, "empty Option fallback type query");
     let report = parse_stdout(&result);
-    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["inferred_type"], "Number", "{report}");
     assert_eq!(report["data"]["confidence"], "exact", "{report}");
   }
 }
@@ -8838,7 +8930,7 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
     );
     assert_success(&result, "Result fallback type query");
     let report = parse_stdout(&result);
-    assert_eq!(report["data"]["inferred_type"], "'Number", "{report}");
+    assert_eq!(report["data"]["inferred_type"], "Number", "{report}");
     assert_eq!(report["data"]["confidence"], "exact", "{report}");
   }
   let receiver = run_calcit(
@@ -8863,13 +8955,13 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
 #[test]
 fn result_success_with_dynamic_payload_stays_open_across_fallback() {
   for (definition, expected_type, expected_confidence) in [
-    ("infer-later-dynamic-generic", "'Dynamic", "unknown"),
-    ("infer-result-ok-open", "'Dynamic", "unknown"),
-    ("infer-named-result-ok-open", "'Dynamic", "unknown"),
-    ("infer-result-ok-concrete", "'Number", "exact"),
-    ("infer-named-result-ok-concrete", "'Number", "exact"),
-    ("infer-result-err-fallback", "'Number", "exact"),
-    ("infer-named-result-err-fallback", "'Number", "exact"),
+    ("infer-later-dynamic-generic", "Dynamic", "unknown"),
+    ("infer-result-ok-open", "Dynamic", "unknown"),
+    ("infer-named-result-ok-open", "Dynamic", "unknown"),
+    ("infer-result-ok-concrete", "Number", "exact"),
+    ("infer-named-result-ok-concrete", "Number", "exact"),
+    ("infer-result-err-fallback", "Number", "exact"),
+    ("infer-named-result-err-fallback", "Number", "exact"),
   ] {
     let target = format!("test-types-inference.main/{definition}");
     let result = run_calcit(
@@ -9412,7 +9504,7 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
   assert_success(&queried, "query original nth result");
   let evidence = parse_stdout(&queried);
   assert_eq!(evidence["data"]["confidence"], "exact", "{evidence}");
-  assert_eq!(evidence["data"]["inferred_type"], ":: 'calcit.core/Option 'Number", "{evidence}");
+  assert_eq!(evidence["data"]["inferred_type"], "calcit.core/Option Number", "{evidence}");
   let selector = [
     "--rule",
     "core-option-method-v1",
@@ -9896,10 +9988,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&query, "query imported callable return type");
   let report = parse_stdout(&query);
-  assert_eq!(
-    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
-    "{report}"
-  );
+  assert_eq!(report["data"]["inferred_type"], "fix-command.foreign/Option Number", "{report}");
   assert!(
     report["data"]["static_methods"].as_array().is_none_or(|methods| !methods
       .iter()
@@ -9947,10 +10036,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&hinted, "query hint-only imported return type");
   let report = parse_stdout(&hinted);
-  assert_eq!(
-    report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
-    "{report}"
-  );
+  assert_eq!(report["data"]["inferred_type"], "fix-command.foreign/Option Number", "{report}");
 
   assert_success(
     &run_calcit(
@@ -10010,7 +10096,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   assert_success(&foreign_again, "query foreign return after caller shadowing");
   let foreign_again_report = parse_stdout(&foreign_again);
   assert_eq!(
-    foreign_again_report["data"]["inferred_type"], ":: 'fix-command.foreign/Option 'Number",
+    foreign_again_report["data"]["inferred_type"], "fix-command.foreign/Option Number",
     "{foreign_again_report}"
   );
   assert_success(
@@ -10040,7 +10126,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
   );
   assert_success(&passed, "query generic caller-owned return type");
   let report = parse_stdout(&passed);
-  assert_eq!(report["data"]["inferred_type"], ":: 'fix-command.main/Option 'Number", "{report}");
+  assert_eq!(report["data"]["inferred_type"], "fix-command.main/Option Number", "{report}");
 }
 
 #[test]

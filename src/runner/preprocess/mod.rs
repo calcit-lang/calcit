@@ -8133,6 +8133,23 @@ fn check_struct_method_args(
   let Some(fn_info) = fn_info else {
     return; // Can't get function info, skip check
   };
+  // Core methods report against the same receiver-bound contract that
+  // `method_call_signature` proves, so the lowered direct call agrees.
+  if let Some(signature) = type_inference::checked_method_signature(fn_info, args, scope_types) {
+    type_checking::check_method_call_arg_types(
+      head,
+      &signature,
+      args,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
+    return;
+  }
 
   // Method args exclude receiver (first argument in args list)
   let Ok(method_args) = args.skip(1) else {

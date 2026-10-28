@@ -818,25 +818,49 @@ pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
 /// form when it round-trips exactly, otherwise the canonical EDN.
 pub fn schema_annotation_to_storage_edn(schema: &CalcitTypeAnnotation) -> Edn {
   let canonical = schema_annotation_to_edn(schema);
-  let compact = match &canonical {
+  match compact_type_spelling(&canonical) {
+    Some(compact) => Edn::Quote(compact),
+    None => canonical,
+  }
+}
+
+/// Compact spelling (the payload of `quote $ ...`) of a definition schema when
+/// it round-trips exactly.
+pub fn compact_type_spelling(canonical: &Edn) -> Option<Cirru> {
+  let compact = match canonical {
     Edn::Enum(view) if view.type_name.is_none() && (!view.extra.is_empty() || matches!(view.variant.as_ref(), "Fn" | "Macro")) => {
-      crate::calcit::type_expr::print_type_compact(&canonical).ok()
+      crate::calcit::type_expr::print_type_compact(canonical).ok()
     }
     Edn::Enum(view) if view.type_name.is_none() && view.extra.is_empty() => Some(Cirru::Leaf(view.variant.clone())),
     _ => None,
-  };
-  let Some(compact) = compact else { return canonical };
+  }?;
+  round_trip_compact(compact, canonical)
+}
+
+/// Compact spelling of any type EDN for display (`query type`, `query schema`),
+/// including bare names and `::` type lists; `None` when no exact spelling exists.
+pub fn compact_type_display(canonical: &Edn) -> Option<Cirru> {
+  match canonical {
+    Edn::Symbol(_) | Edn::List(_) => {
+      let compact = crate::calcit::type_expr::print_type_compact(canonical).ok()?;
+      round_trip_compact(compact, canonical)
+    }
+    _ => compact_type_spelling(canonical),
+  }
+}
+
+fn round_trip_compact(compact: Cirru, canonical: &Edn) -> Option<Cirru> {
   if let Cirru::Leaf(name) = &compact
     && CalcitTypeAnnotation::canonical_type_symbol_name(name) == Some(name.as_ref())
   {
-    return Edn::Quote(compact);
+    return Some(compact);
   }
   // Compare spellings structurally rather than by re-parsing: parsing resolves
   // nominal names against whatever the program registry holds at this moment,
   // which made the stored form depend on load order.
   match crate::calcit::type_expr::desugar_type_expr(&compact) {
-    Ok(back) if normalize_type_edn(&schema_cirru_to_edn(back.clone())) == normalize_type_edn(&canonical) => Edn::Quote(compact),
-    _ => canonical,
+    Ok(back) if normalize_type_edn(&schema_cirru_to_edn(back.clone())) == normalize_type_edn(canonical) => Some(compact),
+    _ => None,
   }
 }
 

@@ -110,7 +110,7 @@ pub(super) fn plan_spread_call_fixes(
     // A definition that fails preprocessing provides no call evidence. Its
     // error belongs to the compiler review; keep its spreads for review
     // rather than aborting the whole plan without a report.
-    let traced =
+    let traced = super::with_definition_entry_context(namespace, definition, || {
       runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
         .and_then(|usages| {
           runner::preprocess::trace_definition_source_expressions(
@@ -120,7 +120,8 @@ pub(super) fn plan_spread_call_fixes(
             &CallStackList::default(),
           )
           .map(|expressions| (usages, expressions))
-        });
+        })
+    });
     let (usages, expressions) = traced.unwrap_or_default();
     let source_head_is_macro = |path: &[usize]| {
       let mut head_path = path.to_vec();

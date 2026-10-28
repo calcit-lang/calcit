@@ -42,32 +42,35 @@ pub(super) fn compile_boundary_review(
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
     let warning_start = warnings.borrow().len();
-    let (result, recovered) = if workflow
-      || matches!(
-        rule,
-        ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
-      ) {
-      runner::preprocess::with_assertion_proof(|| {
-        // Reprocess the selected source even if another definition compiled it
-        // earlier. Cached local annotations are not pre-assertion evidence.
-        let trace = || {
-          runner::preprocess::trace_definition_source_expressions(namespace, definition, &warnings, &CallStackList::default())
-            .map(|_| ())
-        };
-        // The workflow collects proof-only errors so one pass reports all of
-        // them; a single-rule review keeps failing fast at the first one.
-        if workflow {
-          runner::preprocess::with_proof_error_collection(namespace, definition, trace)
-        } else {
-          (trace(), vec![])
-        }
-      })
-    } else {
-      (
-        runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ()),
-        vec![],
-      )
-    };
+    let (result, recovered) = super::with_definition_entry_context(namespace, definition, || {
+      if workflow
+        || matches!(
+          rule,
+          ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
+        )
+      {
+        runner::preprocess::with_assertion_proof(|| {
+          // Reprocess the selected source even if another definition compiled it
+          // earlier. Cached local annotations are not pre-assertion evidence.
+          let trace = || {
+            runner::preprocess::trace_definition_source_expressions(namespace, definition, &warnings, &CallStackList::default())
+              .map(|_| ())
+          };
+          // The workflow collects proof-only errors so one pass reports all of
+          // them; a single-rule review keeps failing fast at the first one.
+          if workflow {
+            runner::preprocess::with_proof_error_collection(namespace, definition, trace)
+          } else {
+            (trace(), vec![])
+          }
+        })
+      } else {
+        (
+          runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ()),
+          vec![],
+        )
+      }
+    });
     if workflow {
       for warning in warnings.borrow()[warning_start..]
         .iter()

@@ -501,7 +501,7 @@ const anonymousContracts = "tests/fixtures/anonymous-fn-contract.cirru";
 expectStatus(run([anonymousContracts, "--check-only", "--all-defs"]), 0, "check anonymous definition contracts");
 expectStatus(run([anonymousContracts, "fix", "--workflow", "strict", "--verify", "--format", "json"]), 0,
   "reuse owned function inputs and trait bounds in the complete strict workflow");
-for (const [definition, path, expected] of [["increment", "2.1", "'Number"], ["count-items", "2", "'Number"]]) {
+for (const [definition, path, expected] of [["increment", "2.1", "Number"], ["count-items", "2", "Number"]]) {
   const query = run([anonymousContracts, "query", "type-at", `app.main/${definition}`, "--path", path, "--format", "json"]);
   expectStatus(query, 0, "query the same owned argument and method evidence used by compilation");
   const report = JSON.parse(query.stdout);

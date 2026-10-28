@@ -659,6 +659,71 @@ pub fn analyze_call_graph(
   analyzer.analyze(entry_ns, entry_def)
 }
 
+/// Collect non-core definitions statically reachable from `roots`.
+/// Besides the call-tree references, this follows `alias/def` and `ns/def`
+/// symbols so `:as` imports keep their targets reachable.
+pub fn reachable_definitions(roots: &[(String, String)]) -> HashSet<(String, String)> {
+  let mut reachable = HashSet::new();
+  let mut pending: Vec<(String, String)> = roots.to_vec();
+  while let Some((ns, def)) = pending.pop() {
+    if crate::calcit::is_bundled_core_ns(&ns) || !reachable.insert((ns.clone(), def.clone())) {
+      continue;
+    }
+    let code = {
+      let Ok(program_code) = PROGRAM_CODE_DATA.read() else {
+        break;
+      };
+      match program_code.get(ns.as_str()).and_then(|file| file.defs.get(def.as_str())) {
+        Some(entry) => entry.code.to_owned(),
+        None => continue,
+      }
+    };
+    let mut calls = vec![];
+    CallTreeAnalyzer::extract_calls_recursive(&code, &ns, &mut calls);
+    collect_qualified_references(&code, &mut calls);
+    pending.extend(calls.into_iter().filter(|call| !reachable.contains(call)));
+  }
+  reachable
+}
+
+fn collect_qualified_references(code: &Calcit, calls: &mut Vec<(String, String)>) {
+  match code {
+    Calcit::Symbol { sym, info, .. } => {
+      let Some((prefix, def)) = sym.split_once('/') else {
+        return;
+      };
+      if prefix.is_empty() || def.is_empty() {
+        return;
+      }
+      let Ok(program_code) = PROGRAM_CODE_DATA.read() else {
+        return;
+      };
+      let target_ns = match program_code
+        .get(info.at_ns.as_ref())
+        .and_then(|file| file.import_map.get(prefix))
+        .map(|rule| &**rule)
+      {
+        Some(crate::program::ImportRule::NsAs(ns)) => Some(ns.to_string()),
+        _ => program_code.contains_key(prefix).then(|| prefix.to_owned()),
+      };
+      if let Some(target_ns) = target_ns
+        && program_code.get(target_ns.as_str()).is_some_and(|file| file.defs.contains_key(def))
+      {
+        calls.push((target_ns, def.to_owned()));
+      }
+    }
+    Calcit::List(list) => {
+      list
+        .traverse_result::<String>(&mut |item| {
+          collect_qualified_references(item, calls);
+          Ok(())
+        })
+        .ok();
+    }
+    _ => {}
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Call count analysis
 // ═══════════════════════════════════════════════════════════════════════════════
