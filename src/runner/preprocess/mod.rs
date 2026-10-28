@@ -1539,9 +1539,12 @@ fn ensure_entry_slot_representatives(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  let mut bindings: Vec<_> = calcit::entry_type_slots().into_values().collect();
-  bindings.sort_by_key(|binding| binding.to_brief_string());
-  for binding in bindings {
+  let mut bindings: Vec<_> = calcit::entry_type_slots().into_iter().collect();
+  bindings.sort_by(|a, b| a.0.cmp(&b.0));
+  for (name, binding) in bindings {
+    if calcit::type_annotation::type_slot_is_overridden(&name) {
+      continue;
+    }
     if let CalcitTypeAnnotation::TypeRef(path, _) = binding.as_ref()
       && let Some((ns, def)) = path.rsplit_once('/')
       && matches!(program::lookup_def_schema(ns, def).as_ref(), CalcitTypeAnnotation::Dynamic)

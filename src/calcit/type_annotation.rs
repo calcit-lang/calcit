@@ -157,6 +157,10 @@ pub fn install_entry_type_slots(bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnota
   super::data_shape::clear_local_field_write_shapes();
 }
 
+pub(crate) fn type_slot_is_overridden(name: &str) -> bool {
+  TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow().get(name).is_some_and(|stack| !stack.is_empty()))
+}
+
 /// Look up the type bound to a slot.
 /// Scoped `with-type-slot` overrides take priority, followed by the selected entry configuration.
 pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
