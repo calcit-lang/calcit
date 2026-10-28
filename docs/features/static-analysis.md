@@ -1026,7 +1026,7 @@ calcit --check-only --all-defs
 ```
 
 没有显式 schema 时，检查器复用普通定义的静态推断，沿定义引用取得代表值类型；
-已有显式 schema（包括 `Dynamic`）仍作为合同，名义 Enum/Struct 定义仍保留自己的类型身份。
+已有显式 schema（包括 `Dynamic`）仍作为合同；没有 schema 的别名也不能从显式 `Dynamic` 定义重新取得具体类型。名义 Enum/Struct 定义仍保留自己的类型身份。
 匿名代表值推断为开放 `Enum` 家族，不会证明某个 tag 的业务含义；该槽与
 `Fn Enum (-> Unit)` 按正常参数方差比较，两个方向的调用都保留检查。
 

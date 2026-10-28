@@ -157,10 +157,26 @@ fn enum_schema_and_inferred_aliases_prove_entry_slots_without_accepting_open_inp
       "explicit Dynamic representative",
     );
   }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/ThroughDynamic",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def ThroughDynamic ExplicitDynamic",
+      ],
+    ),
+    "alias of explicitly Dynamic value",
+  );
   for binding in [
     "app.main/Wrong",
     "app.main/UnannotatedWrong",
     "app.main/ExplicitDynamic",
+    "app.main/ThroughDynamic",
     ":dynamic",
   ] {
     assert_success(

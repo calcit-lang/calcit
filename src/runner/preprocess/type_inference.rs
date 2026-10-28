@@ -3501,6 +3501,13 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
     }
   }
 
+  // An explicitly open value contract stays open through imported aliases.
+  // Only a missing schema may borrow concrete evidence from its initializer;
+  // nominal/trait declarations above retain their definition metadata.
+  if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) && !crate::snapshot::schema_annotation_is_missing(&schema) {
+    return Some(schema);
+  }
+
   // Static data/trait/impl declarations carry richer metadata in their
   // preprocessed value than in the intentionally broad top-level schema.
   // Prefer that concrete metadata so definition values stay distinct from
