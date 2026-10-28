@@ -5371,7 +5371,7 @@ impl CalcitTypeAnnotation {
       // enum is safe wherever a builtin proc accepts a dynamic enum. Keep the
       // relation directional: a dynamic enum cannot satisfy a named enum.
       (Self::Enum(_, _), Self::AnonymousEnum) => true,
-      (type_ref @ Self::TypeRef(_, _), Self::AnonymousEnum) => type_ref.resolve_to_enum().is_some(),
+      (type_ref @ Self::TypeRef(_, _), Self::AnonymousEnum) if type_ref.resolve_to_enum().is_some() => true,
       (type_ref @ Self::TypeRef(_, _), Self::Custom(expected)) | (Self::Custom(expected), type_ref @ Self::TypeRef(_, _))
         if Self::custom_keyword_matches(expected, "record") || Self::custom_keyword_matches(expected, "struct") =>
       {
@@ -5527,13 +5527,9 @@ impl CalcitTypeAnnotation {
         NeedsBoundary(Boundary::UnresolvedNominalIdentity)
       }
       (Self::Enum(_, _) | Self::EnumValue(_) | Self::AnonymousEnum, Self::AnonymousEnum) => Proven,
-      (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) => {
-        if actual.resolve_to_enum().is_some() {
-          Proven
-        } else {
-          NeedsBoundary(Boundary::UnresolvedNominalIdentity)
-        }
-      }
+      // A schema alias may itself denote Enum. Only resolved nominal enum
+      // references use this shortcut; aliases continue through normal expansion.
+      (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) if actual.resolve_to_enum().is_some() => Proven,
       (Self::Struct(_, _) | Self::StructValue(_), Self::Custom(expected))
         if Self::custom_keyword_matches(expected, "struct") || Self::custom_keyword_matches(expected, "record") =>
       {
