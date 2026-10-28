@@ -9194,11 +9194,49 @@
                 assert= 8 $ &+ (measure 7) 1
               :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
-          :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
+          :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal. Nil, booleans, numbers, strings and tags compare by value (NaN is not identical to itself); lists, maps, sets, structs, enum values (including Option) and refs compare by reference, so separately constructed equal values are not identical"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn T U (-> Bool) (:generics T U)
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |compares-collections-by-reference)
+              :code $ quote $ let
+                  xs $ [] 1
+                  table $ {} (:a 1)
+                  items $ #{} 1
+                assert= true $ identical? xs xs
+                assert= false $ identical? xs $ [] 1
+                assert= true $ = xs $ [] 1
+                assert= true $ identical? table table
+                assert= false $ identical? table $ {} (:a 1)
+                assert= true $ identical? items items
+                assert= false $ identical? items $ #{} 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-enum-values-by-reference)
+              :code $ quote $ let
+                  xs $ [] 1
+                  item $ Option :some 1
+                  head $ first xs
+                assert= true $ identical? item item
+                assert= false $ identical? item $ Option :some 1
+                assert= true $ = item $ Option :some 1
+                assert= true $ identical? head head
+                assert= false $ identical? (first xs) (first xs)
+                assert= true $ = (first xs) (first xs)
+                assert= false $ identical? (Option :none) (Option :none)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-scalars-by-value)
+              :code $ quote $ do
+                assert= true $ identical? 1 1
+                assert= true $ identical? 0 -0
+                assert= false $ identical? (&/ 0 0) (&/ 0 0)
+                assert= true $ identical? |a |a
+                assert= true $ identical? :a :a
+                assert= true $ identical? nil nil
+                assert= true $ identical? true true
+                assert= false $ identical? 1 |1
+              :tags $ #{} :core :unit
         'identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn identity (x) x
           :examples $ []

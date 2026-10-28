@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind};
 
 pub fn binary_equal(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -9,6 +11,48 @@ pub fn binary_equal(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
       crate::builtins::err_arity_with_hint("&= requires exactly 2 arguments to compare, but received:", xs, hint)
     }
+  }
+}
+
+/// `identical?`: scalars (nil, bool, number, string, tag, ...) compare by value, matching JavaScript `===`
+/// on primitives and interned tags; heap values (lists, maps, sets, structs, enum values, buffers,
+/// functions, host refs) compare by reference, so separately constructed but equal values are not identical.
+pub fn identical(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
+    (Some(a), Some(b)) => Ok(Calcit::Bool(is_identical(a, b))),
+    (_, _) => {
+      let hint = String::from("💡 Usage: `identical? value1 value2`\n  Checks whether two values are the same reference");
+      crate::builtins::err_arity_with_hint("identical? requires exactly 2 arguments to compare, but received:", xs, hint)
+    }
+  }
+}
+
+pub fn is_identical(a: &Calcit, b: &Calcit) -> bool {
+  use Calcit::*;
+  match (a, b) {
+    // same as JavaScript `===`: NaN is not identical to itself, `0` and `-0` are identical
+    (Number(x), Number(y)) => x == y,
+    (List(x), List(y)) => Arc::ptr_eq(x, y),
+    (Map(x), Map(y)) => x.ptr_eq(y),
+    (Set(x), Set(y)) => x.ptr_eq(y),
+    (Struct(x), Struct(y)) => Arc::ptr_eq(&x.values, &y.values) && Arc::ptr_eq(&x.struct_ref, &y.struct_ref),
+    (Enum(x), Enum(y)) => {
+      Arc::ptr_eq(&x.extra, &y.extra)
+        && x.tag == y.tag
+        && match (&x.sum_type, &y.sum_type) {
+          (Some(p), Some(q)) => Arc::ptr_eq(p, q),
+          (None, None) => true,
+          _ => false,
+        }
+    }
+    (Ref(_, x), Ref(_, y)) => Arc::ptr_eq(x, y),
+    (Buffer(x), Buffer(y)) => Arc::ptr_eq(x, y),
+    (BufList(x), BufList(y)) => Arc::ptr_eq(x, y),
+    (Fn { info: x, .. }, Fn { info: y, .. }) => Arc::ptr_eq(x, y),
+    (Macro { info: x, .. }, Macro { info: y, .. }) => Arc::ptr_eq(x, y),
+    (AnyRef(x), AnyRef(y)) => Arc::ptr_eq(&x.0, &y.0),
+    // scalars, procs, syntax and definition values have no separate per-construction identity
+    _ => a == b,
   }
 }
 

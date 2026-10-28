@@ -359,7 +359,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
 fn dump_enum_value_code(enum_value: &CalcitEnumValue) -> Edn {
   let mut entries = enum_value_metadata_entries(enum_value);
   let mut values = EdnListView::default();
-  for value in &enum_value.extra {
+  for value in enum_value.extra.iter() {
     values.push(dump_code(value));
   }
   entries.push((Edn::tag("values"), values.into()));

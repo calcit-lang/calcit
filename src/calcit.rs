@@ -192,7 +192,7 @@ impl fmt::Display for Calcit {
         }
         f.write_char(' ')?;
         f.write_str(&value.tag.to_string())?;
-        for item in &value.extra {
+        for item in value.extra.iter() {
           f.write_char(' ')?;
           f.write_str(&item.to_string())?;
         }

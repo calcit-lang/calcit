@@ -63,6 +63,26 @@ let
 只保存或传递裸 `Fn` 不会被假定为零参数签名；无法确定长度的展开仍使用现有证明与运行时边界。
 本项属于 0.32.0 的新拒绝行为，0.31.1 发布版不含此收紧。
 
+## 0.32.0 native 的 `identical?` 按引用比较（#2448，未发布）
+
+native 解释器上的 `identical?` 此前退化为值相等，与 JS 的 `===` 不一致：分别构造、内容相同的值在 native
+返回 `true`，在 JS 返回 `false`。现在两端一致：nil、布尔、数字、字符串和 tag 按值比较；List、Map、Set、
+Struct、Enum 值（包括 `Option`、`Result`）、Ref、Buffer 和函数按引用比较，只有同一个值才 `identical?`。
+数字比较同 JS：`NaN` 与自身不 identical，`0` 与 `-0` identical。
+
+```cirru
+let
+    xs $ [] 1
+  assert= true $ identical? xs xs
+  assert= false $ identical? xs $ [] 1
+  assert= false $ identical? (first xs) (first xs)
+  assert= true $ = (first xs) (first xs)
+```
+
+`first`、`get` 等返回的 `Option` 每次调用都是新值，不能用 `identical?` 比较两次调用的结果。迁移时按原意选择：
+比较内容改用 `=`；保留元素身份比较时先解包 Option，再对元素调用 `identical?`。没有改变内容的
+`decode-map-as` 继续返回原值，`identical?` 保持成立。
+
 ## 0.31.0 读取旧存档中的 CirruQuote
 
 旧存档中的 `CirruQuote` 直接通过公开接收者方法读取。`.to-list` 对列表根返回

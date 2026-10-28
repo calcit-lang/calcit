@@ -163,18 +163,25 @@ impl MapDecoder<'_> {
         {
           return match (enum_value.tag.as_ref(), enum_value.extra.as_slice()) {
             (Calcit::Tag(tag), []) if tag.ref_str() == "none" => Ok(input.to_owned()),
-            (Calcit::Tag(tag), [item]) if tag.ref_str() == "some" => Ok(Calcit::Enum(CalcitEnumValue {
-              tag: enum_value.tag.clone(),
-              extra: vec![self.decode_node(*inner, item, path, depth + 1)?],
-              sum_type: Some(nominal.clone()),
-            })),
+            (Calcit::Tag(tag), [item]) if tag.ref_str() == "some" => {
+              let decoded = self.decode_node(*inner, item, path, depth + 1)?;
+              // Keep the validated value itself when decoding changed nothing, so `identical?` holds.
+              if &decoded == item {
+                return Ok(input.to_owned());
+              }
+              Ok(Calcit::Enum(CalcitEnumValue {
+                tag: enum_value.tag.clone(),
+                extra: vec![decoded].into(),
+                sum_type: Some(nominal.clone()),
+              }))
+            }
             _ => Err(EdnDecodeError::at(path, "invalid Option value")),
           };
         }
         let payload = self.decode_node(*inner, input, path, depth + 1)?;
         Ok(Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(Calcit::Tag(cirru_edn::EdnTag::new("some"))),
-          extra: vec![payload],
+          extra: vec![payload].into(),
           sum_type: Some(nominal.clone()),
         }))
       }
@@ -286,7 +293,7 @@ impl MapDecoder<'_> {
             (Some(value), _) => values.push(self.decode_node(*child, value, &format!("{path}.{}", field.ref_str()), depth + 1)?),
             (None, Some(DataShapeNode::MapOption { nominal, .. })) => values.push(Calcit::Enum(CalcitEnumValue {
               tag: Arc::new(Calcit::Tag(cirru_edn::EdnTag::new("none"))),
-              extra: vec![],
+              extra: vec![].into(),
               sum_type: Some(nominal.clone()),
             })),
             (None, _) => {
@@ -336,9 +343,13 @@ impl MapDecoder<'_> {
         for (idx, (payload_node, item)) in payload_nodes.iter().zip(enum_value.extra.iter()).enumerate() {
           values.push(self.decode_node(*payload_node, item, &format!("{path}.payload[{idx}]"), depth + 1)?);
         }
+        // Keep the validated value itself when decoding changed nothing, so `identical?` holds.
+        if values.as_slice() == enum_value.extra.as_slice() {
+          return Ok(input.to_owned());
+        }
         Ok(Calcit::Enum(CalcitEnumValue {
           tag: enum_value.tag.clone(),
-          extra: values,
+          extra: values.into(),
           sum_type: Some(nominal.clone()),
         }))
       }
@@ -576,7 +587,7 @@ impl Decoder<'_> {
           }
           Ok(Calcit::Enum(CalcitEnumValue {
             tag: Arc::new(Calcit::Tag(variant_tag.clone())),
-            extra: values,
+            extra: values.into(),
             sum_type: Some(nominal.clone()),
           }))
         }
@@ -799,7 +810,7 @@ mod tests {
           Calcit::Tag(EdnTag::new("message")),
           Calcit::Enum(CalcitEnumValue {
             tag: Arc::new(Calcit::Tag(EdnTag::new("some"))),
-            extra: vec![Calcit::Str(Arc::from("already"))],
+            extra: vec![Calcit::Str(Arc::from("already"))].into(),
             sum_type: Some(option.clone()),
           }),
         )
@@ -809,7 +820,7 @@ mod tests {
       panic!("expected response struct")
     };
     assert!(
-      matches!(&prewrapped_value.values[1], Calcit::Enum(value) if value.tag.as_ref() == &Calcit::Tag(EdnTag::new("some")) && value.extra == [Calcit::Str(Arc::from("already"))] && value.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, &option)))
+      matches!(&prewrapped_value.values[1], Calcit::Enum(value) if value.tag.as_ref() == &Calcit::Tag(EdnTag::new("some")) && value.extra[..] == [Calcit::Str(Arc::from("already"))] && value.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, &option)))
     );
     let missing = Calcit::Map(rpds::HashTrieMap::new_sync());
     assert!(
@@ -955,14 +966,14 @@ mod tests {
       .expect("derive named enum shape");
     let mut value = CalcitEnumValue {
       tag: Arc::new(Calcit::tag("none")),
-      extra: vec![],
+      extra: vec![].into(),
       sum_type: Some(Arc::new((*nominal).clone())),
     };
     assert!(!Arc::ptr_eq(value.sum_type.as_ref().unwrap(), &nominal));
     let Calcit::Enum(decoded) = decode_map(&shape, &Calcit::Enum(value.clone())).expect("decode declaration clone") else {
       panic!("expected enum");
     };
-    assert!(Arc::ptr_eq(decoded.sum_type.as_ref().unwrap(), &nominal));
+    assert!(Arc::ptr_eq(&decoded.extra, &value.extra), "an unchanged enum value is retained");
 
     value.sum_type = Some(Arc::new((*nominal).clone().with_definition_ref("tests.other", "Option")));
     assert!(decode_map(&shape, &Calcit::Enum(value.clone())).is_err());

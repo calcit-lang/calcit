@@ -473,7 +473,7 @@ pub fn new_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     };
     Ok(Calcit::Enum(CalcitEnumValue {
       tag: Arc::new(xs[0].to_owned()),
-      extra,
+      extra: extra.into(),
       sum_type: None,
     }))
   }
@@ -558,7 +558,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let extra: Vec<Calcit> = xs.iter().skip(2).cloned().collect();
         Ok(Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(xs[1].to_owned()),
-          extra,
+          extra: extra.into(),
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -627,7 +627,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let extra: Vec<Calcit> = xs.iter().skip(2).cloned().collect();
         Ok(Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(xs[1].to_owned()),
-          extra,
+          extra: extra.into(),
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -1440,11 +1440,11 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             sum_type: sum_type.to_owned(),
           }))
         } else if idx - 1 < extra.len() {
-          let mut new_extra = extra.to_owned();
+          let mut new_extra = extra.as_ref().to_owned();
           xs[2].clone_into(&mut new_extra[idx - 1]);
           Ok(Calcit::Enum(CalcitEnumValue {
             tag: tag.to_owned(),
-            extra: new_extra,
+            extra: Arc::new(new_extra),
             sum_type: sum_type.to_owned(),
           }))
         } else {
@@ -1516,7 +1516,7 @@ pub fn enum_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Enum(CalcitEnumValue { extra, .. }) => {
       // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
       let mut ys = vec![];
-      for x in extra {
+      for x in extra.iter() {
         ys.push(x.to_owned());
       }
       Ok(Calcit::from(ys))
@@ -2462,7 +2462,7 @@ mod tests {
         .expect("host enum definition");
         Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(Calcit::tag("card")),
-          extra: vec![],
+          extra: vec![].into(),
           sum_type: Some(Arc::new(definition)),
         })
       } else {

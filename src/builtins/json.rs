@@ -115,7 +115,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     Calcit::Enum(CalcitEnumValue { tag, extra, .. }) => {
       let mut items = Vec::with_capacity(extra.len() + 1);
       items.push(calcit_to_json(tag)?);
-      for item in extra {
+      for item in extra.iter() {
         items.push(calcit_to_json(item)?);
       }
       Ok(Value::Array(items))
