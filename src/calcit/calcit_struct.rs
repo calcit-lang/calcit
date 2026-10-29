@@ -163,6 +163,8 @@ impl CalcitStructDef {
 pub fn struct_field_default_from_code(form: &Calcit) -> Option<Calcit> {
   match form {
     Calcit::Number(_) | Calcit::Str(_) | Calcit::Tag(_) | Calcit::Bool(_) => Some(form.to_owned()),
+    // Static metadata normalization strips `[]` heads, leaving `([])` as `()`.
+    Calcit::List(xs) if xs.is_empty() => Some(Calcit::from(vec![])),
     Calcit::List(xs) if xs.len() == 2 && xs.first().is_some_and(|head| code_head_name(head) == Some("quote")) => {
       struct_field_default_from_code(xs.get(1)?)
     }

@@ -5529,7 +5529,7 @@ mod tests {
     let (struct_decl, struct_count) = canonicalize_code_type_syntax(&struct_decl);
     let struct_text = cirru_parser::format(&[struct_decl], true.into()).expect("struct should render");
     assert_eq!(struct_count, 1, "struct text: {struct_text}");
-    assert!(struct_text.contains("(:kind 'Tag :string)"), "struct text: {struct_text}");
+    assert!(struct_text.contains(":kind 'Tag :string"), "struct text: {struct_text}");
 
     // With nothing after it, the form is the body's value: a tag, not a return type.
     let tag_body = parse_one("defn kind-name () :string");

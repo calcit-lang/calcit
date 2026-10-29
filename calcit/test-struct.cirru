@@ -77,6 +77,21 @@
             :hint $ quote $ Option String
           :examples $ []
           :schema $ quote StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |local-definition-fills-empty-container-defaults)
+            :code $ quote $ let
+                Local $ defstruct Local
+                  :items
+                    quote $ List String
+                    []
+                  :table
+                    quote $ Map Tag Number
+                    {}
+                  :marks 'Set $ #{}
+                value $ Local
+              assert= ([]) (:items value)
+              assert= ({}) (:table value)
+              assert= (#{}) (:marks value)
+            :tags $ #{} :struct-defaults :unit
         'Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
           :examples $ []

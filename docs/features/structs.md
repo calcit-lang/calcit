@@ -142,8 +142,7 @@ declared as `Option<T>` may be omitted; the constructor inserts the nominal
 
 ```cirru
 let
-    Config $ defstruct Config (:host 'String) (:port 'Number 8080) (:debug? 'Bool false)
-      :tags (quote $ List String) ([])
+    Config $ defstruct Config (:host 'String) (:port 'Number 8080) (:debug? 'Bool false) (:tags (quote $ List String) ([]))
     config $ Config :host |localhost
   assert= 8080 $ :port config
   assert= false $ :debug? config

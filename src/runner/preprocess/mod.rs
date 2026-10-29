@@ -15184,8 +15184,9 @@ fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Res
   let mut changed = false;
   let mut ys: Vec<Calcit> = Vec::with_capacity(args.len());
   for arg in args.iter() {
+    // `([] :field (quote type) default?)`; a trailing default is kept as is.
     if let Calcit::List(entry) = arg
-      && entry.len() == 3
+      && (entry.len() == 3 || entry.len() == 4)
       && let Some(Calcit::List(quoted)) = entry.get(2)
       && quoted.len() == 2
       && match quoted.first() {
@@ -15198,6 +15199,7 @@ fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Res
     {
       let mut items: Vec<Calcit> = entry.iter().take(2).cloned().collect();
       items.push(Calcit::from(vec![quoted[0].to_owned(), desugar_compact_type_form(inner, ctx)?]));
+      items.extend(entry.iter().skip(3).cloned());
       ys.push(Calcit::from(items));
       changed = true;
     } else {
