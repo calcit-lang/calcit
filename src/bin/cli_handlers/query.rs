@@ -2306,7 +2306,7 @@ mod type_query_tests {
     assert!(
       type_at_expected_mismatch_diagnostic(
         &CalcitTypeAnnotation::Number,
-        &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), calcit::calcit::NullableOrigin::Calcit),
+        &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), calcit::calcit::NullableOrigin::Inferred),
         "return schema",
         "code@3",
       )

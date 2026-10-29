@@ -64,8 +64,8 @@ fn refine_schema_holes(
     (Type::List(current), Type::List(candidate)) => Type::List(refine_schema_holes(current, candidate)),
     (Type::Set(current), Type::Set(candidate)) => Type::Set(refine_schema_holes(current, candidate)),
     (Type::Ref(current), Type::Ref(candidate)) => Type::Ref(refine_schema_holes(current, candidate)),
-    (Type::Nullable(current, NullableOrigin::Calcit), Type::Nullable(candidate, NullableOrigin::Calcit)) => {
-      Type::Nullable(refine_schema_holes(current, candidate), NullableOrigin::Calcit)
+    (Type::Nullable(current, NullableOrigin::Inferred), Type::Nullable(candidate, NullableOrigin::Inferred)) => {
+      Type::Nullable(refine_schema_holes(current, candidate), NullableOrigin::Inferred)
     }
     (Type::Nullable(current, NullableOrigin::JsHost), Type::Nullable(candidate, NullableOrigin::JsHost)) => {
       Type::Nullable(refine_schema_holes(current, candidate), NullableOrigin::JsHost)
@@ -117,7 +117,8 @@ fn refine_schema_holes(
 fn collect_dynamic_schema_paths(annotation: &CalcitTypeAnnotation, path: &str, paths: &mut Vec<String>) {
   use CalcitTypeAnnotation as Type;
   match annotation {
-    Type::Dynamic | Type::DynFn => paths.push(path.to_owned()),
+    // No schema spells an inferred nil join; the author picks Option, JsNullish or Result.
+    Type::Dynamic | Type::DynFn | Type::Nullable(_, NullableOrigin::Inferred) => paths.push(path.to_owned()),
     Type::List(inner) | Type::Set(inner) | Type::Ref(inner) | Type::Nullable(inner, _) | Type::Variadic(inner) => {
       collect_dynamic_schema_paths(inner, &format!("{path}.item"), paths)
     }
@@ -224,7 +225,7 @@ fn collect_compiled_refinement_evidence(
     (Type::List(current), Type::List(candidate))
     | (Type::Set(current), Type::Set(candidate))
     | (Type::Ref(current), Type::Ref(candidate))
-    | (Type::Nullable(current, NullableOrigin::Calcit), Type::Nullable(candidate, NullableOrigin::Calcit))
+    | (Type::Nullable(current, NullableOrigin::Inferred), Type::Nullable(candidate, NullableOrigin::Inferred))
     | (Type::Nullable(current, NullableOrigin::JsHost), Type::Nullable(candidate, NullableOrigin::JsHost))
     | (Type::Variadic(current), Type::Variadic(candidate)) => {
       collect_compiled_refinement_evidence(current, candidate, &format!("{path}.item"), evidence);

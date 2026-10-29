@@ -27,14 +27,17 @@ pub struct QualityMetrics {
   pub code_dynamic: usize,
   pub code_nil: usize,
   pub unresolved: usize,
-  pub declared_optional: usize,
+  /// Budget for declared legacy `Optional<T>`, removed in 0.33.0. Older
+  /// baselines still load; the metric is never counted or written again.
+  #[serde(default, rename = "declaredOptional", skip_serializing)]
+  retired_declared_optional: usize,
   pub deprecated_calls: usize,
   #[serde(default)]
   pub unsafe_coerce: usize,
 }
 
 impl QualityMetrics {
-  fn values(&self) -> [(&'static str, usize); 9] {
+  fn values(&self) -> [(&'static str, usize); 8] {
     [
       ("typeNone", self.type_none),
       ("typeNotFull", self.type_not_full),
@@ -42,7 +45,6 @@ impl QualityMetrics {
       ("codeDynamic", self.code_dynamic),
       ("codeNil", self.code_nil),
       ("unresolved", self.unresolved),
-      ("declaredOptional", self.declared_optional),
       ("deprecatedCalls", self.deprecated_calls),
       ("unsafeCoerce", self.unsafe_coerce),
     ]
@@ -56,7 +58,6 @@ impl QualityMetrics {
       "codeDynamic" => self.code_dynamic,
       "codeNil" => self.code_nil,
       "unresolved" => self.unresolved,
-      "declaredOptional" => self.declared_optional,
       "deprecatedCalls" => self.deprecated_calls,
       "unsafeCoerce" => self.unsafe_coerce,
       _ => unreachable!("unknown quality metric: {metric}"),
@@ -70,7 +71,6 @@ impl QualityMetrics {
     self.code_dynamic += other.code_dynamic;
     self.code_nil += other.code_nil;
     self.unresolved += other.unresolved;
-    self.declared_optional += other.declared_optional;
     self.deprecated_calls += other.deprecated_calls;
     self.unsafe_coerce += other.unsafe_coerce;
   }
@@ -146,7 +146,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     ns_prefix: options.ns_prefix.clone(),
     only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce".to_owned()),
     coverage_level: None,
-    intent: Some("unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe".to_owned()),
+    intent: Some("unresolved,intentional-macro-syntax,declared-unit,explicit-unsafe".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
     ffi_evidence: false,
@@ -199,7 +199,6 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
-        WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
         // Splitting `:js-ffi` positions by host reach only changes reporting,
         // so existing baselines keep counting them the same way.
         WeakTypeIntent::IntentionalJsFfi

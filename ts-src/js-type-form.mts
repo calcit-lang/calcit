@@ -29,11 +29,8 @@ let matchTypeForm = (value: CalcitValue, form: CalcitValue, requireEvidence: boo
     }
     if (head instanceof CalcitSymbol && head.value === "::") {
       const name = typeFormName(items[1]);
-      // Nil is `null` here; `undefined` is Unit. Only the JS host boundary
-      // type also admits `undefined`.
-      if (name === "Optional") {
-        return value === null ? true : matchTypeForm(value, items[2], requireEvidence);
-      }
+      // Nil is `null` here; `undefined` is Unit. The JS host boundary type
+      // admits both.
       if (name === "JsNullish") {
         return value == null ? true : matchTypeForm(value, items[2], requireEvidence);
       }
@@ -73,7 +70,7 @@ for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"
 const containerTypeArity = new Map([["List", 1], ["Map", 2], ["Set", 1], ["Ref", 1]]);
 // These constructors require a payload; their bare names are not scalar aliases.
 const payloadTypeAliases = new Map([
-  ["Optional", "Optional"], ["optional", "Optional"], ["JsNullish", "JsNullish"], ["js-nullish", "JsNullish"],
+  ["JsNullish", "JsNullish"], ["js-nullish", "JsNullish"],
   ["Variadic", "Variadic"], ["variadic", "Variadic"], ["&", "Variadic"],
 ]);
 const containerTypeIdentity = (name: string, args: CalcitValue[], generics: readonly string[]): CalcitValue => {

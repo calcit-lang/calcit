@@ -45,7 +45,8 @@ conservatively inferred as `JsNullish<JsObject>`. The deliberate exception is
 `js/typeof`, whose JavaScript-language result is always inferred as `String`:
 
 - `JsNullish` is reserved for the actual JavaScript `null`/`undefined` boundary;
-  it is deliberately distinct from legacy `Optional` and nominal `Option`.
+  it is deliberately distinct from inferred nil joins and nominal `Option`
+  (legacy `Optional` was removed in 0.33.0).
 - `JsObject` is an opaque host value. A `js-present?`/`js-nullish?` check proves only that the
   value is present; it does not prove that the payload is a Calcit `String`,
   `Number`, struct, or collection.

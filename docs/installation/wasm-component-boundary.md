@@ -62,7 +62,7 @@ NaN 或越界数值时直接 trap，不把非规范值静默解释为真假。Bu
 Canonical ABI 使用元素区间 `(ptr,len)`，并按元素类型递归 lift/lower；空列表、嵌套空列表、非法 Bool
 元素、长度乘法溢出和越界区间都按同一套规则处理。
 
-`Option` 与 `Result` 直接使用类型推导保留的 `calcit.core` 名义类型，不会把旧 `Optional<T>`、用户自定义同名 Enum
+`Option` 与 `Result` 直接使用类型推导保留的 `calcit.core` 名义类型，不会把推导出的 nil 合并 `T?`、用户自定义同名 Enum
 或 Dynamic 值猜成这两个专用类型。它们与普通 Enum 共用 Canonical ABI variant layout：discriminant 后按 payload 的最大对齐
 放置 payload，flat shape 则按 Canonical ABI join 规则合并各分支。当前覆盖 `Option<Number>`、`Option<String>`、
 `Result<Number,String>`、`Result<Unit,String>` 与 `Result<List<Number>,String>`，import/export 两个方向都会验证

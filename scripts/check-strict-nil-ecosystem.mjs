@@ -80,7 +80,7 @@ const auditProject = ({ label, path }) => {
     "--only",
     "code-nil",
     "--intent",
-    "unresolved,declared-unit,declared-optional",
+    "unresolved,declared-unit",
     "--summary-only",
     "--format",
     "json",

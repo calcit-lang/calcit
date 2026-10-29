@@ -123,15 +123,11 @@ try {
   const rejects = (box, name, value) => assert.throws(() => writeField(box, name, value), /expects type/, `:${name} must reject ${procs.toString(value, true)}`);
 
   // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
-  const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  const nilBox = makeBox(boxes.NilBox, { none: null, host: null });
   // Host callers must obey the same prototype and Map input contract; Calcit
   // source rejects these wrong outer kinds before reaching the JS runtime.
-  assert.throws(() => makeBox(nilBox, { opt: null, none: null, host: null }), /StructDef/);
+  assert.throws(() => makeBox(nilBox, { none: null, host: null }), /StructDef/);
   assert.throws(() => procs._$n_struct_$o_from_map(boxes.NilBox, nilBox), /requires a Map/);
-  accepts(nilBox, "opt", null);
-  accepts(nilBox, "opt", 1);
-  rejects(nilBox, "opt", undefined);
-  rejects(nilBox, "opt", "1");
   accepts(nilBox, "none", null);
   rejects(nilBox, "none", undefined);
   accepts(nilBox, "host", null);
@@ -164,17 +160,13 @@ try {
   // unavailable. Present functions must not borrow evidence from nullability.
   const typeForm = (name, inner) => new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(name), inner]);
   const callableForm = typeForm("Fn", new CalcitSliceList([]));
-  for (const wrapper of ["Optional", "JsNullish"]) {
-    const form = typeForm(wrapper, callableForm);
-    const definition = new CalcitStructDef(procs.newTag(wrapper), [procs.newTag("value")], [form]);
+  {
+    const form = typeForm("JsNullish", callableForm);
+    const definition = new CalcitStructDef(procs.newTag("JsNullish"), [procs.newTag("value")], [form]);
     const value = makeBox(definition, { value: null });
     for (const update of [procs._$n_struct_$o_assoc, procs._$n_struct_$o_with]) {
       assert.equal(update(value, procs.newTag("value"), null).values[0], null);
-      if (wrapper === "JsNullish") {
-        assert.equal(update(value, procs.newTag("value"), undefined).values[0], undefined);
-      } else {
-        assert.throws(() => update(value, procs.newTag("value"), undefined), /expects type/);
-      }
+      assert.equal(update(value, procs.newTag("value"), undefined).values[0], undefined);
       assert.throws(() => update(value, procs.newTag("value"), x => x), /expects type/);
     }
   }

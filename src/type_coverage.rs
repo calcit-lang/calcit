@@ -248,7 +248,6 @@ pub enum WeakTypeIntent {
   IntentionalTypeSlotDynamic,
   ExplicitUnsafe,
   DeclaredUnit,
-  DeclaredOptional,
 }
 
 impl WeakTypeIntent {
@@ -261,7 +260,6 @@ impl WeakTypeIntent {
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
       Self::ExplicitUnsafe => "explicit-unsafe",
       Self::DeclaredUnit => "declared-unit",
-      Self::DeclaredOptional => "declared-optional",
     }
   }
 
@@ -274,7 +272,6 @@ impl WeakTypeIntent {
       Self::IntentionalTypeSlotDynamic,
       Self::ExplicitUnsafe,
       Self::DeclaredUnit,
-      Self::DeclaredOptional,
     ])
   }
 }
@@ -769,10 +766,14 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
       "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
-      "declared-optional" => WeakTypeIntent::DeclaredOptional,
+      "declared-optional" => {
+        return Err(
+          "Weak-type intent `declared-optional` was removed with legacy Optional<T> in 0.33.0; nil returns are now `unresolved` or `declared-unit`".to_owned(),
+        );
+      }
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit"
         ));
       }
     };
@@ -781,7 +782,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit"
         .to_owned(),
     );
   }
@@ -879,7 +880,7 @@ fn scan_schema_dynamic_annotation(
         CalcitTypeAnnotation::Set(_) => "set-item",
         CalcitTypeAnnotation::Ref(_) => "ref-item",
         CalcitTypeAnnotation::Variadic(_) => "variadic-item",
-        CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => "optional-item",
+        CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => "nil-join-item",
         CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => "js-nullish-item",
         _ => unreachable!("composite item annotation should be covered by the match arm"),
       };
@@ -971,9 +972,6 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
       }
       WeakTypeIntent::DeclaredUnit => {
         "The declared return is Unit, so replace this nil with `&unit`, or end the body with an effect that already returns Unit."
-      }
-      WeakTypeIntent::DeclaredOptional => {
-        "Keep Optional only at a compatibility/FFI boundary; migrate application-level absence to Option and failures with details to Result."
       }
       _ => {
         "Declare Unit for a no-value result and remove explicit nil/`;nil` when possible; use Option/Result for application absence or failure."
@@ -1106,7 +1104,6 @@ fn nil_return_intent(annotation: &CalcitTypeAnnotation) -> WeakTypeIntent {
   };
   match return_type {
     CalcitTypeAnnotation::Unit => WeakTypeIntent::DeclaredUnit,
-    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => WeakTypeIntent::DeclaredOptional,
     CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => WeakTypeIntent::IntentionalJsFfi,
     _ => WeakTypeIntent::Unresolved,
   }
@@ -2359,15 +2356,14 @@ pub(crate) fn run_weak_types_report_with_rows(
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
+    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
     intent_count.get("js-ffi-non-host").copied().unwrap_or(0),
     intent_count.get("intentional-macro-syntax").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
     intent_count.get("explicit-unsafe").copied().unwrap_or(0),
-    intent_count.get("declared-unit").copied().unwrap_or(0),
-    intent_count.get("declared-optional").copied().unwrap_or(0)
+    intent_count.get("declared-unit").copied().unwrap_or(0)
   );
   if options.ffi_evidence {
     let mut classifications = BTreeMap::<&str, usize>::new();
@@ -2427,21 +2423,17 @@ pub(crate) fn run_weak_types_report_with_rows(
     .iter()
     .flat_map(|row| row.occurrences.iter())
     .filter(|occurrence| {
-      occurrence.kind == WeakTypeKind::CodeNil
-        && matches!(
-          occurrence.intent,
-          WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit | WeakTypeIntent::DeclaredOptional
-        )
+      occurrence.kind == WeakTypeKind::CodeNil && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit)
     })
     .count();
   if nil_debt > 0 {
     let _ = writeln!(
       out,
-      "- agent-note: {nil_debt} nil occurrence(s) are unresolved, violate Unit returns, or are covered only by Optional compatibility contracts."
+      "- agent-note: {nil_debt} nil occurrence(s) are unresolved, or violate Unit returns."
     );
     let _ = writeln!(
       out,
-      "- next: filter `--only code-nil --intent unresolved,declared-unit,declared-optional`; use `&unit` for no-value returns, then prefer Option/Result for application absence or failure."
+      "- next: filter `--only code-nil --intent unresolved,declared-unit`; use `&unit` for no-value returns, then prefer Option/Result for application absence or failure."
     );
   }
   let unsafe_coercions = rows
@@ -3297,25 +3289,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
   }
 }
 
-fn unwrap_optional_schema(schema: &Cirru) -> &Cirru {
-  match schema {
-    Cirru::List(items) => {
-      if let Some(Cirru::Leaf(head)) = items.first() {
-        if &**head == ":optional" && items.len() == 2 {
-          return &items[1];
-        }
-        if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
-          return &items[2];
-        }
-      }
-      schema
-    }
-    _ => schema,
-  }
-}
-
 fn schema_to_map(schema: &Cirru) -> Option<BTreeMap<&str, &Cirru>> {
-  let schema = unwrap_optional_schema(schema);
   let Cirru::List(items) = schema else {
     return None;
   };
@@ -3814,7 +3788,6 @@ pub(crate) fn format_weak_types_json_with_rows(
     "intentional-type-slot-dynamic",
     "explicit-unsafe",
     "declared-unit",
-    "declared-optional",
   ] {
     intents.entry(intent).or_insert(0);
   }
@@ -3872,11 +3845,7 @@ pub(crate) fn format_weak_types_json_with_rows(
     .iter()
     .flat_map(|row| row.occurrences.iter())
     .filter(|occurrence| {
-      occurrence.kind == WeakTypeKind::CodeNil
-        && matches!(
-          occurrence.intent,
-          WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit | WeakTypeIntent::DeclaredOptional
-        )
+      occurrence.kind == WeakTypeKind::CodeNil && matches!(occurrence.intent, WeakTypeIntent::Unresolved | WeakTypeIntent::DeclaredUnit)
     })
     .count();
   let unsafe_coercions = rows
@@ -3908,8 +3877,8 @@ pub(crate) fn format_weak_types_json_with_rows(
       "code": "W_NIL_TYPE_DEBT",
       "phase": "analysis",
       "severity": "warning",
-      "message": format!("{nil_debt} nil occurrence(s) are unresolved, violate Unit returns, or are covered only by Optional compatibility contracts."),
-      "suggestion": "Use `&unit` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep Optional only at compatibility or FFI boundaries.",
+      "message": format!("{nil_debt} nil occurrence(s) are unresolved, or violate Unit returns."),
+      "suggestion": "Use `&unit` for no-value returns. Prefer Option for application absence and Result when failure details matter; keep JsNullish only at JavaScript FFI boundaries.",
     }));
   }
   if unsafe_coercions > 0 {

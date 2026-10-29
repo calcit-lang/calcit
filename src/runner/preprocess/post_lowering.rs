@@ -803,11 +803,11 @@ mod tests {
     let evidence = RewriteEvidence {
       origin: RewriteOrigin::TypedAccess,
       before_form: Calcit::from(vec![Calcit::new_str("get"), Calcit::new_str("m")]),
-      before_type: Arc::new(CalcitTypeAnnotation::Nullable(number(), crate::calcit::NullableOrigin::Calcit)),
+      before_type: Arc::new(CalcitTypeAnnotation::Nullable(number(), crate::calcit::NullableOrigin::Inferred)),
       after_form: node.clone(),
       after_type: Arc::new(CalcitTypeAnnotation::Nullable(
         calcit::DYNAMIC_TYPE.clone(),
-        crate::calcit::NullableOrigin::Calcit,
+        crate::calcit::NullableOrigin::Inferred,
       )),
       location: None,
     };

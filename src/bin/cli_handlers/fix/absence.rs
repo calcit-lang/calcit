@@ -408,7 +408,7 @@ fn traversal_proven(base: &CalcitTypeAnnotation, path: &Cirru) -> bool {
   let keys = &items[1..];
   let mut current = base;
   for (position, key) in keys.iter().enumerate() {
-    while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = current {
+    while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = current {
       current = inner;
     }
     let safe_index = || {

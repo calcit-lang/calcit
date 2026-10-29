@@ -273,7 +273,7 @@ fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name
   let trait_defs: Vec<Arc<calcit::CalcitTrait>> = match type_hint.as_ref() {
     calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
     calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
-    calcit::CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => match inner.as_ref() {
+    calcit::CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => match inner.as_ref() {
       calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
       calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
       _ => vec![],
@@ -1407,7 +1407,6 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
       DataShapeNode::Tag => String::from("{kind:\"tag\"}"),
       DataShapeNode::Buffer => String::from("{kind:\"buffer\"}"),
       DataShapeNode::CirruQuote => String::from("{kind:\"cirru-quote\"}"),
-      DataShapeNode::Optional(inner) => format!("{{kind:\"optional\",inner:{inner}}}"),
       DataShapeNode::MapOption { nominal_path, inner, .. } => {
         let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
         format!("{{kind:\"map-option\",nominal:{nominal},inner:{inner}}}")
@@ -1468,13 +1467,7 @@ fn struct_field_validators_to_js(ns: &str, def: &str, imports: &RefCell<ImportsD
     validators.push(match DataShapeGraph::for_field_write(field, owner_ns) {
       Some(graph) => format!(
         "(value, requireEvidence) => {}{}validate_data_shape(value, {})",
-        if graph.proves_dynamic_write() {
-          ""
-        } else if graph.has_optional_root() {
-          "(!requireEvidence || value === null) && "
-        } else {
-          "!requireEvidence && "
-        },
+        if graph.proves_dynamic_write() { "" } else { "!requireEvidence && " },
         get_proc_prefix(ns),
         data_shape_graph_to_js(&graph, ns, imports)?
       ),

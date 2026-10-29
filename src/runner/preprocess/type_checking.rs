@@ -246,6 +246,14 @@ pub(super) fn specialize_core_expected_types(
   if let Some(expected) = specialize_core_callback_expected_types(fn_info, args, scope_types, expected_types) {
     return Some(expected);
   }
+  if fn_info.name.as_ref() == "nil->option" {
+    // The public schema takes any `T`; at a call site the argument may also
+    // be an inferred nil join of `T`, but never a JavaScript `JsNullish<T>`,
+    // which needs `js-present?` or `js-nullish->option` instead.
+    return expected_types
+      .first()
+      .map(|item| vec![Arc::new(CalcitTypeAnnotation::Nullable(item.clone(), NullableOrigin::Inferred))]);
+  }
   let required_arity = match fn_info.name.as_ref() {
     "&list:apply" | "contains?" | "includes?" => 2,
     "assoc" | "update" => 3,
@@ -973,8 +981,8 @@ pub(crate) fn check_proc_arg_types(
     _ => signature.arg_types.clone(),
   };
 
-  // Parameter omission is represented by Proc arity metadata. Optional<T>
-  // remains a value type here and must accept either T or nil.
+  // Parameter omission is represented by Proc arity metadata. A nil-joined
+  // T? remains a value type here and must accept either T or nil.
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   for (idx, (arg, expected_type)) in args.iter().zip(expected_types.iter()).enumerate() {
@@ -1126,7 +1134,7 @@ fn reset_type_erases_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTy
     (T::List(a), T::List(e))
     | (T::Set(a), T::Set(e))
     | (T::Ref(a), T::Ref(e))
-    | (T::Nullable(a, NullableOrigin::Calcit), T::Nullable(e, NullableOrigin::Calcit))
+    | (T::Nullable(a, NullableOrigin::Inferred), T::Nullable(e, NullableOrigin::Inferred))
     | (T::Nullable(a, NullableOrigin::JsHost), T::Nullable(e, NullableOrigin::JsHost))
     | (T::Variadic(a), T::Variadic(e)) => reset_type_erases_contract(a, e),
     (T::Map(ak, av), T::Map(ek, ev)) => reset_type_erases_contract(ak, ek) || reset_type_erases_contract(av, ev),
@@ -1729,7 +1737,7 @@ pub(super) fn expression_is_proven_for(
       }
       if let Calcit::List(items) = expr {
         // A nullish wrapper admits an independently proved container, not a
-        // conversion from Optional. Promise adoption belongs to the whole
+        // conversion from an inferred nil join. Promise adoption belongs to the whole
         // async return only; collection members are ordinary stored values.
         let mut literal_expected = expected;
         while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = literal_expected {
@@ -2991,7 +2999,7 @@ mod tests {
         "maybe-task",
         Arc::new(CalcitTypeAnnotation::Nullable(
           Arc::new(CalcitTypeAnnotation::StructValue(task_struct)),
-          NullableOrigin::Calcit,
+          NullableOrigin::Inferred,
         )),
       ),
       Calcit::Tag(EdnTag::new("done?")),

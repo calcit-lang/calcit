@@ -144,13 +144,6 @@ impl MapDecoder<'_> {
           Err(map_kind_mismatch(path, "cirru-quote", input))
         }
       }
-      DataShapeNode::Optional(inner) => {
-        if matches!(input, Calcit::Nil) {
-          Ok(Calcit::Nil)
-        } else {
-          self.decode_node(*inner, input, path, depth + 1)
-        }
-      }
       DataShapeNode::MapOption { nominal, inner, .. } => {
         if let Calcit::Enum(enum_value) = input
           // Runtime values reconstructed from snapshots may carry a distinct Arc for the
@@ -451,13 +444,6 @@ impl Decoder<'_> {
         Edn::Quote(value) => Ok(Calcit::CirruQuote(value.clone())),
         _ => Err(kind_mismatch(path, "cirru-quote", input)),
       },
-      DataShapeNode::Optional(inner) => {
-        if matches!(input, Edn::Nil) {
-          Ok(Calcit::Nil)
-        } else {
-          self.decode_node(*inner, input, path, depth + 1)
-        }
-      }
       DataShapeNode::List(inner) => match input {
         Edn::List(items) => {
           let mut values = Vec::with_capacity(items.0.len());

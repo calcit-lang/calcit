@@ -1314,7 +1314,7 @@ fn format_schema_annotation(schema: &std::sync::Arc<CalcitTypeAnnotation>, conte
       Some(format!("map<{k},{v}>"))
     }
     CalcitTypeAnnotation::List(inner) => format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("list<{t}>")),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
       format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("{t}?"))
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => {

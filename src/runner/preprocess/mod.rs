@@ -1304,7 +1304,6 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "add-watch" => Some(("0.29.0", "use `add-watch!`")),
     "cpu-time" => Some(("0.29.0", "use `monotonic-time-ms`")),
     "foldl'" => Some(("0.29.0", "use `fold` with the same argument order")),
-    "optionally" => Some(("0.31.0", "use `nil->option`")),
     "join" => Some((
       "0.31.0",
       "use `intersperse` (it returns a List); use `join-string` to build a String",
@@ -1658,7 +1657,6 @@ fn ensure_ns_def_preprocessed(
         })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
-      note_legacy_optional_in_definition(ns, def, &code);
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
       mark_audit_proven(ns, def);
 
@@ -6595,7 +6593,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
     for (idx, field) in struct_def.fields.iter().enumerate() {
       if !provided_fields.contains_key(field)
         && !struct_def.field_types.get(idx).is_some_and(|field_type| {
-          matches!(field_type.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)) || field_type.is_option_type()
+          matches!(field_type.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred)) || field_type.is_option_type()
         })
       {
         gen_check_warning(
@@ -6635,7 +6633,6 @@ fn try_rewrite_struct_enum_constructor_head_call(
         .is_some_and(|field_type| field_type.is_option_type())
       {
         // Nominal Option fields use the typed `Option :none` variant when omitted.
-        // Keep legacy Optional<T> fields on their historical nil representation.
         // The caller preprocesses the rewritten constructor, which lowers this call.
         struct_items.push(generated_core_call("Option", vec![Calcit::tag("none")], file_ns));
       } else {
@@ -9799,7 +9796,7 @@ fn nominal_callable_scope_name(receiver_type: &CalcitTypeAnnotation, target_ns: 
     },
     CalcitTypeAnnotation::Struct(definition, _) | CalcitTypeAnnotation::StructValue(definition) => definition.name.ref_str().to_owned(),
     CalcitTypeAnnotation::Enum(definition, _) | CalcitTypeAnnotation::EnumValue(definition) => definition.name().ref_str().to_owned(),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => return nominal_callable_scope_name(inner.as_ref(), target_ns),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => return nominal_callable_scope_name(inner.as_ref(), target_ns),
     _ => return None,
   };
 
@@ -9908,7 +9905,7 @@ fn nominal_callable_owner_deps(
 
   let type_ref = match receiver_type {
     CalcitTypeAnnotation::TypeRef(path, _) => Some(path.as_ref()),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
       return nominal_callable_owner_deps(target_ns, impl_value, inner.as_ref());
     }
     _ => None,
@@ -10439,7 +10436,7 @@ fn validate_method_call(
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
     CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => false,
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => false,
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::TypeRef(_, _) | CalcitTypeAnnotation::TypeSlot(_) => type_ann.resolve_to_nonoptional_fn().is_some(),
     _ => false,
@@ -10862,7 +10859,7 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
   match type_value {
     CalcitTypeAnnotation::Trait(trait_def) => Some(vec![trait_def.to_owned()]),
     CalcitTypeAnnotation::TraitSet(traits) => Some(traits.as_ref().to_owned()),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => trait_list_from_type(inner.as_ref()),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => trait_list_from_type(inner.as_ref()),
     _ => None,
   }
 }
@@ -10874,17 +10871,17 @@ fn trait_list_for_receiver(type_value: &CalcitTypeAnnotation, scope: &ScopeTypes
 
 fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
-    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_trait_annotation(inner.as_ref()))
+    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_trait_annotation(inner.as_ref()))
 }
 
 fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
-    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_dynamic_annotation(inner.as_ref()))
+    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_dynamic_annotation(inner.as_ref()))
 }
 
-fn is_legacy_optional_dynamic_payload(type_value: &CalcitTypeAnnotation) -> bool {
+fn is_nil_joined_dynamic_payload(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Dynamic)
-    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_legacy_optional_dynamic_payload(inner.as_ref()))
+    || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_nil_joined_dynamic_payload(inner.as_ref()))
 }
 
 #[derive(Debug, PartialEq)]
@@ -10892,7 +10889,7 @@ enum DynamicDispatchReceiverCause {
   MissingSchema,
   DynamicSchema,
   DynamicCallable,
-  LegacyOptional,
+  NilJoinedDynamic,
   UnboundGeneric(Arc<str>),
   UnboundTypeSlot(Arc<str>),
   ExplicitJsFfiBoundary,
@@ -10904,7 +10901,7 @@ impl DynamicDispatchReceiverCause {
       Self::MissingSchema => "a missing static receiver schema".to_owned(),
       Self::DynamicSchema => "a receiver schema that resolves to Dynamic".to_owned(),
       Self::DynamicCallable => "a receiver schema that resolves to a dynamic callable".to_owned(),
-      Self::LegacyOptional => "a legacy Optional receiver whose payload is Dynamic".to_owned(),
+      Self::NilJoinedDynamic => "an inferred nil join whose payload is Dynamic".to_owned(),
       Self::UnboundGeneric(name) => format!(
         "unbound generic `'{}` without a trait constraint",
         crate::calcit::type_annotation::source_type_variable(name)
@@ -10917,7 +10914,7 @@ impl DynamicDispatchReceiverCause {
   fn migration(&self) -> &'static str {
     match self {
       Self::MissingSchema => "add a structured receiver schema or infer a concrete nominal type before method syntax",
-      Self::DynamicSchema | Self::DynamicCallable | Self::LegacyOptional => {
+      Self::DynamicSchema | Self::DynamicCallable | Self::NilJoinedDynamic => {
         "narrow or validate the receiver before method syntax, or isolate runtime lookup in a typed adapter"
       }
       Self::UnboundGeneric(_) => "add a trait `:where` bound or replace the erased generic with a concrete nominal type",
@@ -10940,10 +10937,10 @@ fn classify_dynamic_dispatch_receiver(
     CalcitTypeAnnotation::Dynamic if inside_js_ffi_boundary => Some(DynamicDispatchReceiverCause::ExplicitJsFfiBoundary),
     CalcitTypeAnnotation::Dynamic => Some(DynamicDispatchReceiverCause::DynamicSchema),
     CalcitTypeAnnotation::DynFn => Some(DynamicDispatchReceiverCause::DynamicCallable),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_legacy_optional_dynamic_payload(inner) => {
-      Some(DynamicDispatchReceiverCause::LegacyOptional)
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_nil_joined_dynamic_payload(inner) => {
+      Some(DynamicDispatchReceiverCause::NilJoinedDynamic)
     }
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
       classify_dynamic_dispatch_receiver(Some(inner), inside_js_ffi_boundary)
     }
     CalcitTypeAnnotation::TypeVar(name) => Some(DynamicDispatchReceiverCause::UnboundGeneric(name.clone())),
@@ -10974,7 +10971,7 @@ fn annotation_dynamic_weight(type_value: &CalcitTypeAnnotation) -> usize {
     CalcitTypeAnnotation::List(inner)
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
-    | CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)
+    | CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred)
     | CalcitTypeAnnotation::Variadic(inner) => annotation_dynamic_weight(inner),
     CalcitTypeAnnotation::Map(key, value) => annotation_dynamic_weight(key) + annotation_dynamic_weight(value),
     CalcitTypeAnnotation::Fn(signature) => {
@@ -11196,7 +11193,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Number => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }
 }
@@ -11643,7 +11640,7 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
     | CalcitTypeAnnotation::Custom(_)
     | CalcitTypeAnnotation::TypeRef(_, _)
     | CalcitTypeAnnotation::TypeSlot(_) => None,
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => static_method_descriptors(inner.as_ref()),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => static_method_descriptors(inner.as_ref()),
     _ => Some(vec![]),
   }
 }
@@ -11961,12 +11958,12 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     };
   }
 
-  // Nil predicates narrow only legacy Optional values. JavaScript host
+  // Nil predicates narrow only inferred nil joins. JavaScript host
   // nullability uses dedicated predicates so the FFI boundary stays visible.
   match pred_name {
     "nil?" => {
       let false_binding = scope_types.get(&sym).and_then(|current| {
-        if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = current.as_ref() {
+        if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = current.as_ref() {
           Some((sym.clone(), inner.clone()))
         } else {
           None
@@ -11979,7 +11976,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     }
     "non-nil?" => {
       let true_binding = scope_types.get(&sym).and_then(|current| {
-        if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = current.as_ref() {
+        if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = current.as_ref() {
           Some((sym.clone(), inner.clone()))
         } else {
           None
@@ -12797,7 +12794,7 @@ fn strict_macro_body_parameter_types(signature: &MacroSignature) -> Vec<Arc<Calc
   let optional_types = signature.optional_inputs.iter().map(|contract| {
     Arc::new(CalcitTypeAnnotation::Nullable(
       macro_contract_body_type(contract),
-      NullableOrigin::Calcit,
+      NullableOrigin::Inferred,
     ))
   });
   let rest_type = signature
@@ -13581,14 +13578,6 @@ pub fn preprocess_defn(
           ctx.call_stack,
           Some(definition_location.clone()),
         )?;
-        reject_strict_legacy_optional_public_schema(
-          ctx.file_ns,
-          def_name.as_ref(),
-          &def_schema,
-          ctx.call_stack,
-          Some(definition_location.clone()),
-        )?;
-        warn_on_legacy_optional_public_schema(ctx.file_ns, def_name.as_ref(), &def_schema, ctx.check_warnings);
         let schema_issues = validate_def_schema_during_preprocess(head, ctx.file_ns, def_name.as_ref(), ys, &def_schema);
         if !schema_issues.is_empty() {
           let details = schema_issues.join("\n  - ");
@@ -14652,26 +14641,14 @@ pub fn preprocess_hint_fn(
 
   // The hint is metadata injected into a function body and has no target to refine.
   let lexical_generics = ctx.scope_types.generic_names();
-  let Some(type_entry) =
-    CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
-  else {
+  if CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics).is_none() {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,
       "hint-fn expects a function type: use `hint-fn $ Fn Number (-> String)` (or `hint-fn Async`) in a function body; do not use hint-fn as a callback wrapper",
       ctx.call_stack,
       args.get(args.len() - 1).and_then(Calcit::get_location),
     ));
-  };
-  // Schemas the compiler injects from a definition carry no source location,
-  // so only a `hint-fn` written in project source is noted here.
-  note_legacy_optional_type(
-    "a hint-fn schema",
-    &type_entry,
-    ctx.file_ns,
-    args
-      .get(args.len() - 1)
-      .and_then(|schema| source_location_in_namespace(schema, ctx.file_ns)),
-  );
+  }
   Ok(Calcit::from(ys))
 }
 
@@ -14784,12 +14761,6 @@ fn preprocess_assert_type_with_obligation(
   });
   let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
   ensure_annotation_slot_representatives(ctx.file_ns, &asserted_type, ctx.check_warnings, ctx.call_stack)?;
-  note_legacy_optional_type(
-    "an assert-type target",
-    &asserted_type,
-    ctx.file_ns,
-    source_location_in_namespace(type_form, ctx.file_ns),
-  );
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
@@ -15145,12 +15116,6 @@ pub fn preprocess_parse_cirru_edn_as(
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
-  note_legacy_optional_type(
-    &format!("a {head} target"),
-    &target,
-    ctx.file_ns,
-    source_location_in_namespace(source_type_form, ctx.file_ns),
-  );
   let decoder = crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -15211,12 +15176,6 @@ pub fn preprocess_decode_map_as(
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
-  note_legacy_optional_type(
-    &format!("a {head} target"),
-    &target,
-    ctx.file_ns,
-    source_location_in_namespace(source_type_form, ctx.file_ns),
-  );
   let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -15388,44 +15347,6 @@ fn analyze_def_schema_param_shape(args: &CalcitList) -> ParamShape {
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => ParamShapeToken::RestMark,
     _ => ParamShapeToken::Binding,
   }))
-}
-
-fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
-  match annotation {
-    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => true,
-    CalcitTypeAnnotation::List(inner)
-    | CalcitTypeAnnotation::Set(inner)
-    | CalcitTypeAnnotation::Ref(inner)
-    | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => contains_legacy_optional(inner),
-    CalcitTypeAnnotation::Map(key, value) => contains_legacy_optional(key) || contains_legacy_optional(value),
-    CalcitTypeAnnotation::Fn(info) => {
-      info.arg_types.iter().any(|item| contains_legacy_optional(item))
-        || info.rest_type.as_ref().is_some_and(|item| contains_legacy_optional(item))
-        || contains_legacy_optional(info.return_type.as_ref())
-    }
-    CalcitTypeAnnotation::Macro(signature) => {
-      let contract_contains = |contract: &MacroSyntaxType| match contract {
-        MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
-        MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
-      };
-      signature.required_inputs.iter().any(contract_contains)
-        || signature.optional_inputs.iter().any(contract_contains)
-        || signature.rest_input.as_ref().is_some_and(contract_contains)
-        || match &signature.expansion {
-          MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => contains_legacy_optional(semantic),
-          MacroExpansionType::Dynamic | MacroExpansionType::Declarations => false,
-        }
-    }
-    CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
-      MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
-      MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
-    },
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
-      args.iter().any(|item| contains_legacy_optional(item))
-    }
-    _ => false,
-  }
 }
 
 fn find_schema_annotation<T>(
@@ -15618,7 +15539,7 @@ fn reject_strict_unproven_specialized_contract(
 }
 
 fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
-  if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = expected {
+  if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = expected {
     return empty_container_has_no_type_evidence(arg, inner);
   }
   let expects_generic = matches!(expected, CalcitTypeAnnotation::TypeVar(_));
@@ -15953,7 +15874,7 @@ pub fn typed_rest_spread_call_is_proven(processed: &Calcit) -> bool {
     || signature
       .arg_types
       .iter()
-      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)))
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred)))
   {
     return false;
   }
@@ -16251,8 +16172,8 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
     | (CalcitTypeAnnotation::Set(actual), CalcitTypeAnnotation::Set(expected))
     | (CalcitTypeAnnotation::Ref(actual), CalcitTypeAnnotation::Ref(expected))
     | (
-      CalcitTypeAnnotation::Nullable(actual, NullableOrigin::Calcit),
-      CalcitTypeAnnotation::Nullable(expected, NullableOrigin::Calcit),
+      CalcitTypeAnnotation::Nullable(actual, NullableOrigin::Inferred),
+      CalcitTypeAnnotation::Nullable(expected, NullableOrigin::Inferred),
     )
     | (
       CalcitTypeAnnotation::Nullable(actual, NullableOrigin::JsHost),
@@ -16620,149 +16541,6 @@ fn reject_strict_bare_container_public_schema(
     call_stack,
     find_preferred_macro_location(call_stack).or(definition_location),
   ))
-}
-
-fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, schema: &CalcitTypeAnnotation) -> bool {
-  if !contains_legacy_optional(schema) {
-    return false;
-  }
-  // Core `&` definitions are semver-private primitives and may still model
-  // nullable host/runtime values. Public core wrappers must obey the same
-  // nominal absence rule as application code. `nil->option` is the explicit
-  // bridge from an internal Optional<T> value to Option<T>.
-  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "nil->option"))
-}
-
-/// Whether a legacy `Optional<T>` outside a public function schema is reported
-/// as an advisory. Only project source written at `location` qualifies; raw
-/// core `&` primitives and the `nil->option` bridge keep their internal
-/// exception, matching `legacy_optional_public_schema_requires_migration`.
-fn legacy_optional_note_applies(file_ns: &str, location: &NodeLocation) -> bool {
-  should_emit_project_source_lint(file_ns)
-    && location.ns.as_ref() == file_ns
-    && location.def.as_ref() != GENERATED_DEF
-    && !(file_ns == calcit::CORE_NS && (location.def.starts_with('&') || location.def.as_ref() == "nil->option"))
-}
-
-/// Advisory for a legacy `Optional<T>` that `W_LEGACY_OPTIONAL_SCHEMA` does not
-/// cover (data definitions, value schemas, `hint-fn`, `assert-type`, decoder
-/// targets). It never fails a check: these positions only need to migrate
-/// before `Optional<T>` is removed in 0.32.0.
-fn note_legacy_optional_type(position: &str, annotation: &CalcitTypeAnnotation, file_ns: &str, location: Option<NodeLocation>) {
-  let Some(location) = location else {
-    return;
-  };
-  if !contains_legacy_optional(annotation) || !legacy_optional_note_applies(file_ns, &location) {
-    return;
-  }
-  let message = format!(
-    "[Warn] {position} in {}/{} uses legacy Optional<T>, which will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects",
-    location.ns, location.def
-  );
-  push_advisory(LocatedWarning::new_with_detail(
-    message,
-    location,
-    Some("W_LEGACY_OPTIONAL_TYPE".to_owned()),
-    None,
-  ));
-}
-
-/// Finds the source form `(:tag ...)` of a struct field or enum variant so the
-/// advisory points at the declaration rather than the whole definition.
-fn find_tagged_declaration_location(code: &Calcit, tag: &EdnTag, file_ns: &str) -> Option<NodeLocation> {
-  let Calcit::List(items) = code else {
-    return None;
-  };
-  if matches!(items.first(), Some(Calcit::Tag(head)) if head == tag) {
-    return source_location_in_namespace(code, file_ns);
-  }
-  items.iter().find_map(|item| find_tagged_declaration_location(item, tag, file_ns))
-}
-
-/// Reports legacy `Optional<T>` in struct fields, enum payloads and the schema
-/// of a `def` value. Function schemas of `defn` / `defmacro` are reported by
-/// `W_LEGACY_OPTIONAL_SCHEMA` instead.
-fn note_legacy_optional_in_definition(ns: &str, def: &str, code: &Calcit) {
-  let Calcit::List(items) = code else {
-    return;
-  };
-  let head = match items.first() {
-    Some(Calcit::Symbol { sym, .. }) => sym.clone(),
-    _ => return,
-  };
-  let definition_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
-  if !legacy_optional_note_applies(ns, &definition_location) {
-    return;
-  }
-  match head.as_ref() {
-    "def" => {
-      let schema = program::lookup_def_schema(ns, def);
-      note_legacy_optional_type("the value schema", &schema, ns, Some(definition_location));
-    }
-    "defstruct" | "defenum" | "impl-traits" => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
-      Some(Calcit::StructDef(struct_def)) => {
-        for (field, field_type) in struct_def.fields.iter().zip(struct_def.field_types.iter()) {
-          let location = find_tagged_declaration_location(code, field, ns).unwrap_or_else(|| definition_location.clone());
-          note_legacy_optional_type(&format!("struct field `{field}`"), field_type, ns, Some(location));
-        }
-      }
-      Some(Calcit::EnumDef(enum_def)) => {
-        for variant in enum_def.variants() {
-          // One advisory per variant, however many payload slots it affects.
-          let Some(payload) = variant.payload_types().iter().find(|item| contains_legacy_optional(item)) else {
-            continue;
-          };
-          let location = find_tagged_declaration_location(code, &variant.tag, ns).unwrap_or_else(|| definition_location.clone());
-          note_legacy_optional_type(&format!("enum variant `{}` payload", variant.tag), payload, ns, Some(location));
-        }
-      }
-      _ => {}
-    },
-    _ => {}
-  }
-}
-
-fn reject_strict_legacy_optional_public_schema(
-  ns: &str,
-  def_name: &str,
-  schema: &CalcitTypeAnnotation,
-  call_stack: &CallStackList,
-  definition_location: Option<NodeLocation>,
-) -> Result<(), CalcitErr> {
-  if !strict_types_enabled()
-    || !should_emit_project_source_lint(ns)
-    || !legacy_optional_public_schema_requires_migration(ns, def_name, schema)
-  {
-    return Ok(());
-  }
-  Err(CalcitErr::use_msg_stack_location_with_code(
-    CalcitErrKind::Type,
-    format!(
-      "{ns}/{def_name} exposes legacy Optional<T> in its public schema, and Optional<T> will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
-    ),
-    "E_LEGACY_OPTIONAL_SCHEMA",
-    call_stack,
-    find_preferred_macro_location(call_stack).or(definition_location),
-  ))
-}
-
-fn warn_on_legacy_optional_public_schema(
-  ns: &str,
-  def_name: &str,
-  schema: &CalcitTypeAnnotation,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
-  if !legacy_optional_public_schema_requires_migration(ns, def_name, schema) {
-    return;
-  }
-  gen_check_warning_code(
-    format!(
-      "[Warn] {ns}/{def_name} exposes legacy Optional<T> in its function schema, and Optional<T> will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
-    ),
-    "W_LEGACY_OPTIONAL_SCHEMA",
-    ns,
-    check_warnings,
-  );
 }
 
 fn validate_def_schema_during_preprocess(
@@ -17206,7 +16984,7 @@ mod tests {
     assert!(is_callable_type(signature.as_ref()));
     assert!(!is_callable_type(&CalcitTypeAnnotation::Nullable(
       signature,
-      NullableOrigin::Calcit
+      NullableOrigin::Inferred
     )));
   }
 
@@ -20452,14 +20230,14 @@ mod tests {
       Some(DynamicDispatchReceiverCause::DynamicCallable)
     );
     assert_eq!(
-      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Nullable(dynamic, NullableOrigin::Calcit)), false),
-      Some(DynamicDispatchReceiverCause::LegacyOptional)
+      classify_dynamic_dispatch_receiver(Some(&CalcitTypeAnnotation::Nullable(dynamic, NullableOrigin::Inferred)), false),
+      Some(DynamicDispatchReceiverCause::NilJoinedDynamic)
     );
     assert_eq!(
       classify_dynamic_dispatch_receiver(
         Some(&CalcitTypeAnnotation::Nullable(
           Arc::new(CalcitTypeAnnotation::DynFn),
-          NullableOrigin::Calcit
+          NullableOrigin::Inferred
         )),
         false,
       ),
@@ -20628,38 +20406,6 @@ mod tests {
   }
 
   #[test]
-  fn parses_optional_type_annotation() {
-    let expr = Cirru::List(vec![
-      Cirru::leaf("assert-type"),
-      Cirru::leaf("x"),
-      Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":string")]),
-    ]);
-    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
-    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
-    scope_defs.insert(Arc::from("x"));
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    let warnings = RefCell::new(vec![]);
-    let stack = CallStackList::default();
-
-    let resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
-
-    assert!(matches!(resolved, Calcit::Local(_)), "local assert-type should return typed local");
-
-    if let Some(type_val) = scope_types.get("x") {
-      match type_val.as_ref() {
-        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
-          assert!(
-            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
-            "optional inner type should be :string"
-          );
-        }
-        other => panic!("expected optional type annotation, got {other:?}"),
-      }
-    }
-  }
-
-  #[test]
   fn parses_js_nullish_type_annotation_without_treating_it_as_optional() {
     let expr = Cirru::List(vec![
       Cirru::leaf("assert-type"),
@@ -20679,77 +20425,6 @@ mod tests {
       scope_types.get("x").map(AsRef::as_ref),
       Some(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
-  }
-
-  #[test]
-  fn warns_on_invalid_optional_arity() {
-    let expr = Cirru::List(vec![
-      Cirru::leaf("assert-type"),
-      Cirru::leaf("x"),
-      Cirru::List(vec![
-        Cirru::leaf("::"),
-        Cirru::leaf(":optional"),
-        Cirru::leaf(":string"),
-        Cirru::leaf(":extra"),
-      ]),
-    ]);
-    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
-    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
-    scope_defs.insert(Arc::from("x"));
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    let warnings = RefCell::new(vec![]);
-    let stack = CallStackList::default();
-
-    let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
-
-    if let Some(type_val) = scope_types.get("x") {
-      match type_val.as_ref() {
-        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
-          assert!(
-            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
-            "should still parse the first argument as inner type even if arity is wrong"
-          );
-        }
-        other => panic!("expected optional type annotation, got {other:?}"),
-      }
-    }
-  }
-
-  #[test]
-  fn warns_on_optional_type_mismatch() {
-    let expr = Cirru::List(vec![
-      Cirru::leaf("&let"),
-      Cirru::List(vec![Cirru::leaf("x"), Cirru::leaf("nil")]),
-      Cirru::List(vec![
-        Cirru::leaf("assert-type"),
-        Cirru::leaf("x"),
-        Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":number")]),
-      ]),
-      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("x"), Cirru::leaf("1")]),
-    ]);
-
-    let code = code_to_calcit(&expr, "tests.optional", "demo", vec![]).expect("parse cirru");
-    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
-    scope_defs.insert(Arc::from("x"));
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    let warnings = RefCell::new(vec![]);
-    let stack = CallStackList::default();
-
-    let _resolved =
-      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.optional", &warnings, &stack).expect("preprocess optional");
-
-    let warnings_vec = warnings.borrow();
-    assert!(!warnings_vec.is_empty(), "should warn on optional mismatch");
-    let warning_msg = warnings_vec[0].to_string();
-    assert!(
-      warning_msg.contains("Proc `&+` arg 1 expects type `:number`"),
-      "warning should mention proc arg mismatch: {warning_msg}"
-    );
-    assert!(
-      warning_msg.contains(":number?"),
-      "warning should mention optional actual type: {warning_msg}"
-    );
   }
 
   #[test]
@@ -25354,110 +25029,6 @@ mod tests {
       issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),
       "strict macro schema must constrain parameters: {issues:?}"
     );
-  }
-
-  #[test]
-  fn legacy_optional_notes_keep_the_core_internal_exceptions() {
-    let at = |ns: &str, def: &str| NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
-    assert!(legacy_optional_note_applies("tests.schema", &at("tests.schema", "Box")));
-    assert!(legacy_optional_note_applies(
-      calcit::CORE_NS,
-      &at(calcit::CORE_NS, "future-public-api")
-    ));
-    assert!(!legacy_optional_note_applies(calcit::CORE_NS, &at(calcit::CORE_NS, "&raw-lookup")));
-    assert!(!legacy_optional_note_applies(calcit::CORE_NS, &at(calcit::CORE_NS, "nil->option")));
-    // Macro output located in another namespace, or with no source definition, is skipped.
-    assert!(!legacy_optional_note_applies("tests.schema", &at(calcit::CORE_NS, "when")));
-    assert!(!legacy_optional_note_applies("tests.schema", &at("tests.schema", GENERATED_DEF)));
-  }
-
-  #[test]
-  fn warns_on_legacy_optional_in_public_function_schemas() {
-    let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      runtime_arity: None,
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
-      return_type: Arc::new(CalcitTypeAnnotation::Nullable(
-        Arc::new(CalcitTypeAnnotation::Number),
-        NullableOrigin::Calcit,
-      )),
-      fn_kind: SchemaKind::Fn,
-      rest_type: None,
-      features: Arc::new(HashSet::new()),
-    }));
-    let warnings = RefCell::new(vec![]);
-
-    warn_on_legacy_optional_public_schema("tests.schema", "demo", &schema, &warnings);
-
-    assert_eq!(warnings.borrow().len(), 1);
-    assert_eq!(warnings.borrow()[0].code(), Some("W_LEGACY_OPTIONAL_SCHEMA"));
-    assert!(
-      warnings.borrow()[0].message().contains("removed in 0.32.0"),
-      "the deletion version must be discoverable: {}",
-      warnings.borrow()[0].message()
-    );
-
-    let core_public_warnings = RefCell::new(vec![]);
-    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "future-public-api", &schema, &core_public_warnings);
-    assert_eq!(
-      core_public_warnings.borrow().len(),
-      1,
-      "public core APIs must not expose Optional<T>"
-    );
-
-    let core_raw_warnings = RefCell::new(vec![]);
-    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &core_raw_warnings);
-    assert!(core_raw_warnings.borrow().is_empty(), "raw core primitives are semver-private");
-
-    let bridge_warnings = RefCell::new(vec![]);
-    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &bridge_warnings);
-    assert!(
-      bridge_warnings.borrow().is_empty(),
-      "nil->option is the explicit nullable-to-nominal bridge"
-    );
-  }
-
-  #[test]
-  fn strict_types_reject_legacy_optional_public_schemas_but_keep_internal_bridges() {
-    let _state = lock_preprocess_test_state();
-    let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      runtime_arity: None,
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
-      return_type: Arc::new(CalcitTypeAnnotation::Nullable(
-        Arc::new(CalcitTypeAnnotation::Number),
-        NullableOrigin::Calcit,
-      )),
-      fn_kind: SchemaKind::Fn,
-      rest_type: None,
-      features: Arc::new(HashSet::new()),
-    }));
-    let location = NodeLocation::new("tests.schema".into(), "demo".into(), Arc::new(vec![4]));
-
-    {
-      let _compat = StrictTypesGuard::new(false);
-      reject_strict_legacy_optional_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location.clone()))
-        .expect("compatibility mode should preserve the warning-only migration path");
-    }
-
-    let _strict = StrictTypesGuard::new(true);
-    let error = reject_strict_legacy_optional_public_schema("tests.schema", "demo", &schema, &CallStackList::default(), Some(location))
-      .expect_err("strict mode should reject public Optional<T> schemas");
-    assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_SCHEMA"));
-    assert!(error.msg.contains("Option<T>"));
-    assert!(
-      error.msg.contains("removed in 0.32.0"),
-      "the deletion version must be discoverable: {}",
-      error.msg
-    );
-    assert!(error.location.is_some());
-
-    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &CallStackList::default(), None)
-      .expect("raw core primitives remain explicit nullable implementation boundaries");
-    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &CallStackList::default(), None)
-      .expect("the explicit Optional-to-Option bridge remains available");
   }
 
   #[test]

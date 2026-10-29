@@ -192,13 +192,13 @@ or `E_DYNAMIC_POSTFIX_METHOD` for postfix calls. Give the receiver a concrete
 
 Strict mode also promotes every remaining unspecialized project method to the
 same stable prefix/postfix errors. The diagnostic classifies the receiver as a
-missing schema, Dynamic value/callable, legacy Optional, unbound generic or
+missing schema, Dynamic value/callable, nil-joined Dynamic, unbound generic or
 type slot, or explicit `:js-ffi` Dynamic boundary. Add static nominal or trait
 evidence before method syntax. A JS boundary must convert the host value or
 attach an external-object trait inside its narrow adapter; `:js-ffi` alone does
-not authorize runtime method lookup. Legacy Optional means an Optional chain
-whose payload is an open Dynamic value; `Optional<DynFn>` is classified as a
-dynamic callable instead.
+not authorize runtime method lookup. Nil-joined Dynamic means an inferred nil join
+(`T?`) whose payload is an open Dynamic value; a nil join over `DynFn` is
+classified as a dynamic callable instead.
 
 默认严格诊断进一步要求 `unsafe-coerce` 位于当前函数声明了 `:features $ #{} :js-ffi`（或类型擦除缓存恢复点用的 `:erased-cache`）的结构化 `Fn` schema 内，
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。

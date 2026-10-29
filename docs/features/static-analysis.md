@@ -213,15 +213,15 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 Under the default strict diagnostics, every unspecialized project method is rejected with
 `E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
-the receiver loss as a missing schema, Dynamic value/callable, legacy Optional,
+the receiver loss as a missing schema, Dynamic value/callable, nil-joined Dynamic,
 unbound generic/type slot, or explicit `:js-ffi` Dynamic boundary. The
 Option/Result nominal family additionally names the expected receiver family
 and its visible `option:*` / `result:*` helper. Compatibility mode retains the
 `P_DYNAMIC_*` inventory and `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` while projects
 migrate. A concrete inferred type, trait constraint, or external-object trait
-remains statically dispatchable and does not trigger this rule. An Optional
-chain over Dynamic is the legacy-optional cause, while `Optional<DynFn>` keeps
-the dynamic-callable cause.
+remains statically dispatchable and does not trigger this rule. An inferred
+nil join (`T?`, from an else-less `if` or a `nil` branch) over Dynamic is the
+nil-joined cause, while a nil join over `DynFn` keeps the dynamic-callable cause.
 
 Calling a value whose static type is Dynamic, such as `(x 1)` when `x` has a
 Dynamic schema or `((.unwrap-or ...))` from an extra indentation level, reports
@@ -556,7 +556,7 @@ let
   greet $ Option :none
 ```
 
-Failures use `Result<T,E>`, effects use `Unit`, and JavaScript `null`/`undefined` uses the distinct `JsNullish<T>` boundary. Public schemas reject the old `Optional<T>`; see [升级手册](../run/upgrade.md) for the migration.
+Failures use `Result<T,E>`, effects use `Unit`, and JavaScript `null`/`undefined` uses the distinct `JsNullish<T>` boundary. The old `Optional<T>` was removed in 0.33.0 and a Snapshot that still spells it fails to load with `E_LEGACY_OPTIONAL_TYPE`; see [升级手册](../run/upgrade.md) for the migration.
 
 #### Variadic Types
 

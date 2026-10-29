@@ -605,7 +605,7 @@ revision/fingerprint 前置条件的建议才进入可 apply 的 preset。
 当前 preset 只收录能证明保持表层语义的一对一规则。以下项目继续由严格诊断定位，不能自动加入 preset：
 
 - 已知 Struct 字段访问后的 `.unwrap`：必须先证明 receiver 与调用链，不能全局删除；
-- `?` 参数、`Optional`、裸 `nil` 与 `%{}?`：需要选择 Option、Result、Unit 以及新的调用契约；
+- `?` 参数、0.33.0 前遗留的 `Optional`、裸 `nil` 与 `%{}?`：需要选择 Option、Result、Unit 以及新的调用契约；
 - Dynamic 收窄、raw primitive 与 `unsafe-coerce`：需要设计 schema 和 capability 边界；
 - `get-or`、`first-or` 等到 `.unwrap-or`：需要 fallback 类型和缺失语义证据，后续按独立规则评估；
 - Snapshot schema 与 canonical serialization：继续由 `calcit edit format` 负责；

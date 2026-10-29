@@ -1315,7 +1315,7 @@ fn validate_struct_field_write(
   // name-based writes require an actual proof and cannot use that fallback.
   if let Some(expected) = struct_ref.field_types.get(pos)
     && let Some(shape) = field_write_shape(struct_ref, pos)
-    && (!require_evidence || shape.proves_dynamic_write() || (matches!(value, Calcit::Nil) && shape.has_optional_root()))
+    && (!require_evidence || shape.proves_dynamic_write())
   {
     return shape.validate_value(value).map_err(|error| {
       CalcitErr::use_str(

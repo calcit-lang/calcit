@@ -3367,7 +3367,9 @@ mod tests {
   fn parse_weak_type_intents_rejects_unknown_values() {
     let err = type_coverage::parse_weak_type_intents("unresolved,guessed").expect_err("unknown intents should fail");
     assert!(err.contains("guessed"), "err: {err}");
-    assert!(type_coverage::parse_weak_type_intents("declared-unit,declared-optional").is_ok());
+    assert!(type_coverage::parse_weak_type_intents("declared-unit").is_ok());
+    let retired = type_coverage::parse_weak_type_intents("declared-optional").expect_err("retired intent should fail");
+    assert!(retired.contains("0.33.0"), "err: {retired}");
     assert!(type_coverage::parse_weak_type_intents("explicit-unsafe").is_ok());
   }
 
@@ -3935,42 +3937,6 @@ mod tests {
       .is_none(),
       "an empty Unit function should not need an explicit nil form"
     );
-
-    let optional_entry = snapshot::CodeEntry {
-      doc: "".to_owned(),
-      examples: vec![],
-      tests: vec![],
-      tags: HashSet::new(),
-      code: list(vec![
-        leaf("defn"),
-        leaf("lookup"),
-        list(vec![]),
-        list(vec![leaf("if"), leaf("found?"), leaf("1"), leaf("nil")]),
-      ]),
-      schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
-        runtime_arity: None,
-        generics: Arc::new(vec![]),
-        where_bounds: Arc::new(vec![]),
-        arg_types: vec![],
-        return_type: Arc::new(CalcitTypeAnnotation::Nullable(
-          Arc::new(CalcitTypeAnnotation::Number),
-          calcit::calcit::NullableOrigin::Calcit,
-        )),
-        fn_kind: SchemaKind::Fn,
-        rest_type: None,
-        features: Arc::new(HashSet::new()),
-      }))
-      .into(),
-      ffi: None,
-    };
-    let optional_row = type_coverage::analyze_weak_types_entry(
-      "app.main",
-      "lookup",
-      &optional_entry,
-      &BTreeSet::from([type_coverage::WeakTypeKind::CodeNil]),
-    )
-    .expect("optional nil occurrence");
-    assert_eq!(optional_row.occurrences[0].intent, type_coverage::WeakTypeIntent::DeclaredOptional);
   }
 
   #[test]

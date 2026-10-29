@@ -1,6 +1,15 @@
 # 系统性减少 nil：类型驱动迁移 RFC
 
-状态：Implemented（公开 nil 契约已冻结；下文的“下一版本”指当时的迁移目标）
+状态：Implemented。公开 nil 契约已冻结，遗留 `Optional<T>` 已在 0.33.0 删除（#2233）。下文的“下一版本”指当时的迁移目标，提到 `Optional<T>`、`optionally` 与 `E_LEGACY_OPTIONAL_SCHEMA` 的段落是迁移记录，不再描述当前行为。
+
+0.33.0 删除后的现状：
+
+- Snapshot 中任何位置写出 `Optional`（schema、struct 字段、enum payload、`hint-fn`、`assert-type`、解码目标）都在加载时报 `E_LEGACY_OPTIONAL_TYPE`，并列出全部命中位置；没有新增自动改写规则；
+- 无 else 的 `if` / `when` 与 `nil` 分支合并仍在推导中得到可空类型 `T?`，但它只是内部推导结果，schema 写不出来，也不能作为 struct 字段或解码目标的数据合同；
+- `nil->option` 的 schema 改为 `Fn T (-> $ Option T) (:generics T)`，推导出的 `T?` 折叠为 `Option<T>`，字面 `nil` 得到 `Option<Never>`，`JsNullish<T>` 仍被拒绝；
+- `optionally` 的退场提示、`declared-optional` 弱类型分类与质量基线的 `declaredOptional` 计数一并删除。
+
+迁移步骤见 [升级手册 0.33.0 一节](../docs/run/upgrade.md#033-删除-optional-公共-schema-与旧-optional-类型)。
 日期：2026-08-05
 
 当前写法与检查入口以 [类型使用指南](../docs/type-guidance.md) 和
@@ -69,7 +78,9 @@
 
 `Unit` 只用于副作用操作或明确没有有意义返回值的表达式，例如写文件、注册 watcher。新代码显式返回 `&unit`；它与 `nil` 不相等、不会通过 `nil?`，JavaScript 后端生成 `void 0`（而 `nil` 仍生成 `null`）。`Unit` 标注不再接受 nil；`nil` 具有独立的 `Nil` 静态类型，并且只有 Nil 可以进入遗留 `Optional<T>`。`;nil` 保留为返回 Nil 的兼容宏，不能用作 Unit 标记；副作用函数应以 `&unit` 或最终得到 Unit 的 `do` 收尾。
 
-### Optional<T>（遗留内部表示）
+### Optional<T>（遗留内部表示，0.33.0 已删除）
+
+> 0.33.0 起 `Optional<T>` 不再能被解析，本节保留为删除前的记录。推导中剩下的可空合并是 schema 写不出的内部 `T?`。
 
 `Optional<T>` 只用于识别旧 schema 和尚未完成自举迁移的 core 内部契约。非 core 的公开函数 schema 不再允许声明 Optional；普通缺失必须使用 Option，失败使用 Result，无业务返回使用 Unit。
 
