@@ -1419,3 +1419,58 @@ fn keep_going_and_all_defs_report_advisories_without_failing() {
   let reachable_report: serde_json::Value = serde_json::from_slice(&reachable.stdout).unwrap();
   assert_eq!(reachable_report["data"]["advisories"], serde_json::json!([]));
 }
+
+#[test]
+fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, false);
+  edit_def_at(
+    &snapshot,
+    "app.main/read-field",
+    "quote $ defmacro read-field (value field) $ quasiquote $ match (get ~value ~field) ((:some v) v) ((:none) nil)",
+  );
+  edit_def_at(&snapshot, "app.main/wrap", "quote $ defmacro wrap (body) $ quasiquote ~body");
+  for (name, code) in [
+    ("use-a", "quote $ defn use-a (m) $ read-field m :a"),
+    ("use-b", "quote $ defn use-b (m) $ read-field m :b"),
+    (
+      "use-wrapped",
+      "quote $ defn use-wrapped (m) $ wrap $ match (get m :c) ((:some v) v) ((:none) nil)",
+    ),
+  ] {
+    let target = format!("app.main/{name}");
+    edit_def_at(&snapshot, &target, code);
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--code", "quote $ Fn (Map Tag Dynamic) (-> Dynamic)"],
+      ),
+      "edit caller schema",
+    );
+  }
+
+  let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
+  let erased = report["data"]["advisories"]
+    .as_array()
+    .expect("advisories should be an array")
+    .iter()
+    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
+    .collect::<Vec<_>>();
+  let definitions = erased
+    .iter()
+    .map(|item| item["definition"].as_str().unwrap())
+    .collect::<std::collections::BTreeSet<_>>();
+  // Both expansions share one note on the macro body; the branch the caller
+  // passed through `wrap` stays on the caller.
+  assert_eq!(erased.len(), 2, "{erased:?}");
+  assert_eq!(
+    definitions,
+    std::collections::BTreeSet::from(["app.main/read-field", "app.main/use-wrapped"])
+  );
+  let on_macro = erased.iter().find(|item| item["definition"] == "app.main/read-field").unwrap();
+  // `defmacro read-field (value field) $ quasiquote $ match … ((:none) nil)`
+  assert_eq!(on_macro["path"], serde_json::json!([3, 1, 3]));
+  let message = on_macro["message"].as_str().unwrap();
+  assert!(message.contains("in the body of macro `app.main/read-field`"), "{message}");
+  assert!(message.contains("expanded at 2 call sites, first at app.main/use-"), "{message}");
+}
