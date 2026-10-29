@@ -3681,9 +3681,9 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       .get(2)
       .and_then(|initializer| resolve_type_value(initializer, &ScopeTypes::new()))
       .map(|inner| Arc::new(CalcitTypeAnnotation::Ref(inner))),
-    _ => items
-      .get(items.len().checked_sub(1)?)
-      .and_then(|value| resolve_type_value(value, &ScopeTypes::new())),
+    // `def` expands to its value, so any other list is the value expression
+    // itself, e.g. a map literal, not a form whose last item is the value.
+    _ => resolve_type_value(&compiled.preprocessed_code, &ScopeTypes::new()),
   }
 }
 
