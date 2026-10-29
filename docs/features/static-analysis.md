@@ -238,8 +238,10 @@ or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
 is explicit while the value is again nil-or-T. Keep the Option, choose a
 concrete default, or handle both variants with `match`. An erasure written in
 the body of a project macro is reported once at that form in the macro
-definition, with the number of call sites that expanded it and the first of
-them; one written by the caller and passed through a macro stays on the caller.
+definition. The note names the call site that expanded it, or the number of
+call sites and the first of them; when the body has several such forms, it
+gives their number and points at the first. A form written by the caller and
+passed through a macro stays on the caller.
 Core and dependency macros, direct JavaScript host arguments, `JsNullish` parameters,
 and tail-return expressions in functions that declare a `JsNullish` return are
 not reported. A `JsNullish` return does not exempt business erasures in local

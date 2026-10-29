@@ -9103,8 +9103,8 @@ struct MacroErasureOrigin {
   forms_in_body: usize,
 }
 
-/// Finds the innermost project macro whose body, not its call arguments,
-/// produced the erasing form. Forms the caller passed in stay attributed to the
+/// Finds the innermost macro whose body, not its call arguments, produced the
+/// erasing form, and reports it only when that macro belongs to the project. Forms the caller passed in stay attributed to the
 /// call site, so a `match` written inside `defcomp` is not blamed on Respo.
 fn macro_erasure_origin(
   call_stack: &CallStackList,
@@ -9115,8 +9115,10 @@ fn macro_erasure_origin(
     if frame.ns.starts_with(calcit::CORE_NS) {
       continue;
     }
+    // Passed in as an argument: an outer macro may have written it, otherwise
+    // the scan ends without an origin and the caller keeps the report.
     if frame.args.iter().any(|arg| contains_form(arg, is_erasure)) {
-      return None;
+      continue;
     }
     // A dependency's macro is reported when that library itself is checked.
     if !should_emit_project_source_lint(&frame.ns) {

@@ -1429,6 +1429,12 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
     "quote $ defmacro read-field (value field) $ quasiquote $ match (get ~value ~field) ((:some v) v) ((:none) nil)",
   );
   edit_def_at(&snapshot, "app.main/wrap", "quote $ defmacro wrap (body) $ quasiquote ~body");
+  // The branch is written in `outer` and only passed through `wrap`.
+  edit_def_at(
+    &snapshot,
+    "app.main/outer",
+    "quote $ defmacro outer (m) $ quasiquote $ wrap $ match (get ~m :d) ((:some v) v) ((:none) nil)",
+  );
   for (name, code) in [
     ("use-a", "quote $ defn use-a (m) $ read-field m :a"),
     ("use-b", "quote $ defn use-b (m) $ read-field m :b"),
@@ -1436,6 +1442,7 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
       "use-wrapped",
       "quote $ defn use-wrapped (m) $ wrap $ match (get m :c) ((:some v) v) ((:none) nil)",
     ),
+    ("use-outer", "quote $ defn use-outer (m) $ outer m"),
   ] {
     let target = format!("app.main/{name}");
     edit_def_at(&snapshot, &target, code);
@@ -1461,11 +1468,12 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
     .map(|item| item["definition"].as_str().unwrap())
     .collect::<std::collections::BTreeSet<_>>();
   // Both expansions share one note on the macro body; the branch the caller
-  // passed through `wrap` stays on the caller.
-  assert_eq!(erased.len(), 2, "{erased:?}");
+  // passed through `wrap` stays on the caller, and the one `outer` passes
+  // through `wrap` stays on `outer`.
+  assert_eq!(erased.len(), 3, "{erased:?}");
   assert_eq!(
     definitions,
-    std::collections::BTreeSet::from(["app.main/read-field", "app.main/use-wrapped"])
+    std::collections::BTreeSet::from(["app.main/outer", "app.main/read-field", "app.main/use-wrapped"])
   );
   let on_macro = erased.iter().find(|item| item["definition"] == "app.main/read-field").unwrap();
   // `defmacro read-field (value field) $ quasiquote $ match … ((:none) nil)`
