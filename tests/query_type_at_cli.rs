@@ -127,9 +127,18 @@ fn open_and_quoted_references_stay_unproven() {
 /// reported type belongs to the whole call, not to the bound receiver.
 #[test]
 fn field_calls_report_the_field_type_not_the_receiver_type() {
-  for (target, inferred) in [("app.main/point-x", "Number"), ("app.main/map-a", "calcit.core/Option Number")] {
+  // A map field call still warns that the field may be missing.
+  for (target, inferred, codes) in [
+    ("app.main/point-x", "Number", vec![]),
+    (
+      "app.main/map-a",
+      "calcit.core/Option Number",
+      vec!["W_REQUIRED_STRUCT_FIELD_TYPE".to_owned()],
+    ),
+  ] {
     let (_, report) = type_at_in("tests/fixtures/type-at-field-call.cirru", target, "@3");
     assert_eq!(report["data"]["inferred_type"], inferred, "{target}");
     assert_eq!(report["data"]["confidence"], "exact", "{target}");
+    assert_eq!(diagnostic_codes(&report), codes, "{target}");
   }
 }
