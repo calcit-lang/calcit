@@ -240,6 +240,10 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   且没有剩余洞时才标记为 `machine-applicable`；缺少证明或局部参数、嵌套泛型等位置仍缺少约束时保留现有证据和精确路径，
   并标记为 `needs-review`，即使传入 `--apply`
   也不写回。该规则不进入升级 preset，不处理 macro、data/trait/impl 声明，也不通过执行程序猜运行时类型。
+  函数返回取函数体最后一个表达式的类型：以 `println` 或 `&unit` 结尾时候选为 `-> Unit`；以 `reset!`/`swap!`
+  结尾时是写入值的类型（例如 `-> Number`），因为 Ref 写入返回写入值。`def` 的值是标量、元素同类型的 List
+  或值同类型的 Map 字面量时，候选分别是 `Number`/`String`、`List Number`、`Map Tag String` 等；值类型不同的
+  Map 字面量得到 `Map Tag Dynamic`，因为仍有 `Dynamic` 洞而保持 `needs-review`。
 - `spread-call-proof-v1` 将有完整证明的 `f & ([] 1 2)` 改为 `f 1 2`，也支持 spread 前已有固定实参。
   它读取唯一的编译器 source-expression、真实 List 构造器和固定 callable 契约，按通用类型关系逐项证明，
   保留 head、实参的单次求值与顺序。预览先运行
