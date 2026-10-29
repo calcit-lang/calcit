@@ -1343,11 +1343,6 @@ export let _$n_list_$o_reverse = (xs: CalcitList): CalcitList => {
   return xs.reverse();
 };
 
-export let format_ternary_tree = (): null => {
-  console.warn("No such function for js");
-  return null;
-};
-
 export let _$n__GT_ = (a: number, b: number): boolean => {
   return a > b;
 };

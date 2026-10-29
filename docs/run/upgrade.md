@@ -59,6 +59,27 @@ let
 
 只处理列表根的调用（例如整个文件的解析结果、顶层表达式）结果不变。
 
+<a id="format-ternary-tree-removal"></a>
+
+## 0.33.0 删除 `&format-ternary-tree`（#2193，未发布）
+
+0.31.0 弃用的 `&format-ternary-tree` 原计划在 0.32.0 删除，因 0.32.0 只做语法收口而顺延到 0.33.0。
+它返回的是 native List 当前 FingerVec 表示的调试文本，不是三叉树，也不是稳定的数据格式。
+删除前对 46 个生态仓库的默认分支重新普查，源码、附带测试与宏都不再调用它；
+Explain Ternary Tree 已改为在项目内自己构造教学用的树。
+
+残留调用在检查时报告未知名字，告警给出删除版本和改写方式：
+
+```text
+[Warn] unknown `&format-ternary-tree` in app.main/show, locals {}; `&format-ternary-tree` was removed from calcit.core in 0.33.0, use `format-cirru-edn` to show a List; it returned FingerVec debug text, so build an explicit tree model to teach tree structure
+```
+
+迁移方式与 [弃用说明](#format-ternary-tree-deprecation) 中的表格相同：显示 List 的值用 `format-cirru-edn`
+或 `to-lispy-string`；演示树结构时在项目里显式构造叶子与分支。没有替代名字，也没有对应的 `calcit fix` 规则。
+
+JS 发射原先专门为这个 native-only helper 做的可达性检查（拒绝从入口可达的调用、跳过未被引用的定义）一并删除，
+其他 native-only 内建的处理方式不变。
+
 ## 0.32.0 类型签名只用 quote 精简写法（#2450）
 
 Snapshot 里的 `:schema` 和代码类型位置不再接受 `:: 'Fn $ {} (:args …) (:return …)`、`:: 'List 'Number`、
@@ -670,26 +691,26 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 
 <a id="format-ternary-tree-deprecation"></a>
 
-## 0.31.0 弃用 `&format-ternary-tree`，0.32.0 删除
+## 0.31.0 弃用 `&format-ternary-tree`，0.33.0 删除
 
 List 已改用 FingerVec 存储，`&format-ternary-tree` 只是沿用了旧名字：它返回 native List 当前 FingerVec 表示的调试文本，例如 `&format-ternary-tree $ distinct $ range 2` 得到 `{} _ {0 1}`，而不是旧的三叉树结构。这段文本随运行时实现变化，不是数据格式，解析它得到的“树节点”是错的。
 
 0.31.0 起该定义带 `:deprecated` 标记，`calcit query def calcit.core/&format-ternary-tree` 的文档说明它是 FingerVec 诊断与删除版本，`calcit analyze weak-types --only deprecated-call` 会列出调用点。运行行为不变：native 照常返回字符串，JS 发射与 WASM 仍然拒绝，JS 的报错末尾注明它已弃用、将在 0.32.0 删除。
 
-0.32.0 删除这个 helper，不提供替代名字，也不在编译器里恢复旧格式或解析兼容层。按用途迁移：
+这个 helper 在 0.33.0 删除（原计划 0.32.0，见 [删除说明](#format-ternary-tree-removal)），不提供替代名字，也不在编译器里恢复旧格式或解析兼容层。按用途迁移：
 
 | 旧用法 | 改写为 |
 |---|---|
 | 演示或教学三叉树结构 | 在项目里显式构造树的数据模型（叶子与分支），不依赖 Calcit 内部表示 |
 | 显示 List 的值 | `format-cirru-edn` 或 `to-lispy-string` |
-| 有意查看当前内部表示 | 0.31.x 内临时使用，0.32.0 前移除调用 |
+| 有意查看当前内部表示 | 0.32.x 及更早版本内临时使用，升级到 0.33.0 前移除调用 |
 
 删除前提与 [兼容入口的退场节奏](#兼容入口的退场节奏) 相同：已知活跃下游默认分支的源码、附带测试/示例与宏生成代码不再调用，删除前重新普查。
 
 ### 限制
 
 - 这次只增加弃用标记与文档，`calcit fix` 没有对应规则。
-- 宏仍可在 native 编译阶段调用它，到 0.32.0 一并删除。
+- 宏仍可在 native 编译阶段调用它，到 0.33.0 一并删除。
 
 <a id="032-select-keys-跳过缺失键"></a>
 
@@ -2506,12 +2527,12 @@ calcit calcit.cirru analyze weak-types --only deprecated-call --summary-only
 兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询：
 
 ```bash
-calcit calcit.cirru query context calcit.core/&format-ternary-tree --format edn
+calcit calcit.cirru query context app.compat/old-text --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 ```
 
-仍带弃用标签的 `&format-ternary-tree` 由其定义文档说明删除版本；`vals`、`optionally`、`join`、`turn-str`、`turn-string`、`remove-watch` 已在 0.31.0 删除，见上方删除表，不需要另一份迁移名称表。
+`calcit.core` 已没有带弃用标签的定义，最后一个 `&format-ternary-tree` 在 0.33.0 删除；`vals`、`optionally`、`join`、`turn-str`、`turn-string`、`remove-watch` 已在 0.31.0 删除，见上方删除表，不需要另一份迁移名称表。
 普通函数成功预处理时，弃用报告用编译器解析目标排除局部同名参数并识别 namespace alias；
 quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧函数调用。
 无法预处理的定义保留保守 source 报告，仍需修正原编译问题后重新检查。

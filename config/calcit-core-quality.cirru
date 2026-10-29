@@ -271,15 +271,6 @@
       :typeNotFull 0
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/&format-ternary-tree $ {} (:codeDynamic 0)
-      :codeNil 0
-      :declaredOptional 0
-      :deprecatedCalls 0
-      :schemaDynamic 1
-      :typeNone 0
-      :typeNotFull 0
-      :unresolved 1
-      :unsafeCoerce 0
     |calcit.core/&get-def-doc $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
