@@ -69,9 +69,11 @@ fn append_js_ffi_type_hint(mut message: String, expected_type: &CalcitTypeAnnota
 
 fn diagnostic_type_string(annotation: &CalcitTypeAnnotation) -> String {
   match annotation {
-    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_) | CalcitTypeAnnotation::Ref(_) => {
-      annotation.describe()
-    }
+    CalcitTypeAnnotation::List(_)
+    | CalcitTypeAnnotation::Tuple(_)
+    | CalcitTypeAnnotation::Map(_, _)
+    | CalcitTypeAnnotation::Set(_)
+    | CalcitTypeAnnotation::Ref(_) => annotation.describe(),
     _ => annotation.to_brief_string(),
   }
 }
@@ -890,7 +892,10 @@ pub(crate) fn check_proc_arg_types(
   {
     // A computed index on a homogeneous tuple reads it as `List T`, as the
     // generated `get` / `last` lowering does.
-    let computed_list_read = !matches!(index, Calcit::Number(_)) && CalcitTypeAnnotation::homogeneous_tuple_item(slots).is_some();
+    let computed_list_read = !matches!(index, Calcit::Number(_))
+      && CalcitTypeAnnotation::homogeneous_tuple_item(slots).is_some()
+      && resolve_type_value(index, scope_types)
+        .is_some_and(|index_type| matches!(index_type.as_ref(), CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Dynamic));
     if let Err(reason) = super::type_inference::tuple_literal_index(index, slots.len())
       && !computed_list_read
     {

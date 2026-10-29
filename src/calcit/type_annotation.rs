@@ -5280,7 +5280,9 @@ impl CalcitTypeAnnotation {
             .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
       (Self::List(a), Self::List(b)) => a.compatible_with_bindings(b, bindings),
-      (Self::Tuple(a), Self::Tuple(b)) => a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.compatible_with_bindings(y, bindings)),
+      (Self::Tuple(a), Self::Tuple(b)) => {
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.compatible_with_bindings(y, bindings))
+      }
       (Self::Tuple(a), Self::List(b)) => Self::homogeneous_tuple_item(a).is_some_and(|item| item.compatible_with_bindings(b, bindings)),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.compatible_with_bindings(bk, bindings) && av.compatible_with_bindings(bv, bindings),
       (Self::Set(a), Self::Set(b)) => a.compatible_with_bindings(b, bindings),
@@ -11208,11 +11210,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::List(_) => matches!(value, Calcit::List(_)),
     CalcitTypeAnnotation::Tuple(items) => match value {
       Calcit::List(xs) => {
-        xs.len() == items.len()
-          && xs
-            .iter()
-            .zip(items.iter())
-            .all(|(x, item)| value_matches_type_annotation(x, item))
+        xs.len() == items.len() && xs.iter().zip(items.iter()).all(|(x, item)| value_matches_type_annotation(x, item))
       }
       _ => false,
     },

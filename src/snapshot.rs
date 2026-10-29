@@ -5461,11 +5461,7 @@ mod tests {
     let parsed_serialized_tag = parse_schema_annotation_for_write(&serialized_tag).expect("serialized Tag schema should parse");
     assert!(matches!(parsed_serialized_tag.as_ref(), CalcitTypeAnnotation::Tag));
 
-    for (legacy, replacement) in [
-      ("'Record", "'Struct"),
-      (":record", "'Struct"),
-      (":tuple", "'Enum"),
-    ] {
+    for (legacy, replacement) in [("'Record", "'Struct"), (":record", "'Struct"), (":tuple", "'Enum")] {
       let error =
         validate_schema_for_write(&Cirru::Leaf(Arc::from(legacy))).expect_err("legacy data type names must be rejected on write");
       assert!(error.contains(replacement), "error should point to {replacement}: {error}");
@@ -5481,10 +5477,7 @@ mod tests {
       CalcitTypeAnnotation::Tuple(items) if items.len() == 2
     ));
     // Loading rejects a bare `Tuple` too, instead of reading it as an unresolved name.
-    for loaded in [
-      Edn::Quote(Cirru::Leaf(Arc::from("Tuple"))),
-      Edn::enum_value("Tuple", vec![]),
-    ] {
+    for loaded in [Edn::Quote(Cirru::Leaf(Arc::from("Tuple"))), Edn::enum_value("Tuple", vec![])] {
       let error = parse_loaded_schema_annotation(&loaded, "tests/pair").expect_err("bare Tuple must not load");
       assert!(error.contains("element types"), "error: {error}");
     }

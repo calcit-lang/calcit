@@ -44,11 +44,11 @@ calcit query search 'tuple?'
 calcit query search 'tuple-enum'
 ```
 
-再按结果中的定义和路径逐处替换，用 `--expect` 确认改的是原来那个节点，最后跑一遍 `calcit --check-only --all-defs`：
+搜索结果的 `Path` 指向那个名字本身。按结果中的定义和路径逐处替换这个名字，用 `--expect` 确认改的是原来那个节点；判断定义时把 `enum?` 换成 `enum-def?`。最后跑一遍 `calcit --check-only --all-defs`：
 
 ```bash
-calcit tree replace app.main/kind-label --path 3 \
-  --expect 'quote $ tuple? x' --code 'quote $ enum? x'
+calcit tree replace app.main/kind-label --path @3.1.0 \
+  --expect 'quote tuple?' --code 'quote enum?'
 ```
 
 ## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435，未发布）

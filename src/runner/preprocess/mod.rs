@@ -3108,7 +3108,9 @@ fn try_expand_typed_optional_access_call(
   let receiver_type = resolve_bound_type_slot_chain(receiver_type);
   // Other indexed reads see a homogeneous tuple as the List it also is.
   let receiver_type = match receiver_type.as_ref() {
-    T::Tuple(slots) if fn_def != "nth" => T::homogeneous_tuple_item(slots).map_or(receiver_type.clone(), |item| Arc::new(T::List(item.clone()))),
+    T::Tuple(slots) if fn_def != "nth" => {
+      T::homogeneous_tuple_item(slots).map_or(receiver_type.clone(), |item| Arc::new(T::List(item.clone())))
+    }
     _ => receiver_type,
   };
 
@@ -3137,7 +3139,11 @@ fn try_expand_typed_optional_access_call(
       ]))),
       Err(reason) => Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
-        format!("`nth` cannot read tuple `{}` at `{}`: {reason}", receiver_type.to_brief_string(), args[1]),
+        format!(
+          "`nth` cannot read tuple `{}` at `{}`: {reason}",
+          receiver_type.to_brief_string(),
+          args[1]
+        ),
         "E_TUPLE_INDEX",
         call_stack,
         args[1].get_location().or_else(|| receiver_expr.get_location()),
@@ -11215,9 +11221,7 @@ fn annotation_dynamic_weight(type_value: &CalcitTypeAnnotation) -> usize {
     CalcitTypeAnnotation::Struct(_, args)
     | CalcitTypeAnnotation::Enum(_, args)
     | CalcitTypeAnnotation::TypeRef(_, args)
-    | CalcitTypeAnnotation::Tuple(args) => {
-      args.iter().map(|arg| annotation_dynamic_weight(arg)).sum()
-    }
+    | CalcitTypeAnnotation::Tuple(args) => args.iter().map(|arg| annotation_dynamic_weight(arg)).sum(),
     _ => 0,
   }
 }
@@ -15659,9 +15663,7 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
     CalcitTypeAnnotation::Struct(_, args)
     | CalcitTypeAnnotation::Enum(_, args)
     | CalcitTypeAnnotation::TypeRef(_, args)
-    | CalcitTypeAnnotation::Tuple(args) => {
-      args.iter().any(|item| contains_legacy_optional(item))
-    }
+    | CalcitTypeAnnotation::Tuple(args) => args.iter().any(|item| contains_legacy_optional(item)),
     _ => false,
   }
 }
@@ -16575,9 +16577,7 @@ fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
     CalcitTypeAnnotation::Struct(_, args)
     | CalcitTypeAnnotation::Enum(_, args)
     | CalcitTypeAnnotation::TypeRef(_, args)
-    | CalcitTypeAnnotation::Tuple(args) => {
-      args.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
-    }
+    | CalcitTypeAnnotation::Tuple(args) => args.iter().any(|arg| contains_dynamic_type(arg.as_ref())),
     CalcitTypeAnnotation::Fn(signature) => {
       signature.arg_types.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
         || signature

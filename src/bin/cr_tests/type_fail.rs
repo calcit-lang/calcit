@@ -4359,6 +4359,11 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
       ("rest t", "W_GENERIC_WHERE_BOUND_MISMATCH"),
       // A tuple read still goes through the ordinary proc arity check.
       ("&list:nth t 0 1", "W_PROC_ARG_TYPE_MISMATCH"),
+      // Only a Number index reads a homogeneous tuple as `List T`.
+      (
+        "let ((h (assert-type ([] 1 2) (quote $ Tuple Number Number)))) (&list:nth h :bad)",
+        "W_TUPLE_INDEX",
+      ),
     ] {
       let entries = load_snippet_entries(&format!("let ((t ({tuple}))) ({body})"));
       let warnings = RefCell::new(vec![]);
