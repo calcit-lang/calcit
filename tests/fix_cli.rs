@@ -7684,6 +7684,120 @@ fn schema_evidence_types_a_map_literal_definition_as_the_whole_map() {
 }
 
 #[test]
+fn schema_synthesis_types_side_effect_returns_and_literal_definitions() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (target, source, schema) in [
+    (
+      "fix-command.main/evidence-log!",
+      "quote $ defn evidence-log! () (println |log)",
+      "quote $ Fn (-> Dynamic)",
+    ),
+    (
+      "fix-command.main/evidence-done!",
+      "quote $ defn evidence-done! () (println |done) &unit",
+      "quote $ Fn (-> Dynamic)",
+    ),
+    (
+      "fix-command.main/evidence-reset!",
+      "quote $ defn evidence-reset! () (reset! *fix-person-calls 1)",
+      "quote $ Fn (-> Dynamic)",
+    ),
+    (
+      "fix-command.main/evidence-swap!",
+      "quote $ defn evidence-swap! () (swap! *fix-person-calls inc)",
+      "quote $ Fn (-> Dynamic)",
+    ),
+    (
+      "fix-command.main/evidence-ratio",
+      "quote $ def evidence-ratio 0.0174",
+      "quote Dynamic",
+    ),
+    (
+      "fix-command.main/evidence-label",
+      "quote $ def evidence-label |label",
+      "quote Dynamic",
+    ),
+    (
+      "fix-command.main/evidence-steps",
+      "quote $ def evidence-steps $ [] 1 2 3",
+      "quote Dynamic",
+    ),
+    (
+      "fix-command.main/evidence-names",
+      "quote $ def evidence-names $ {} (:a |x) (:b |y)",
+      "quote Dynamic",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "create evidence target",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare an open schema",
+    );
+  }
+
+  let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
+  assert_success(&output, "schema evidence report");
+  let report = parse_stdout(&output);
+  let candidates = report["data"]["evidence"]["schema_candidates"]
+    .as_array()
+    .expect("schema candidates should be an array");
+  let candidate = |name: &str| {
+    candidates
+      .iter()
+      .find(|candidate| candidate["definition"] == format!("fix-command.main/{name}"))
+      .unwrap_or_else(|| panic!("{name} should have schema evidence: {report}"))
+  };
+  let zero_arg_fn = |ret: &str| serde_json::json!(["::", "'Fn", ["{}", [":return", ret], [":args", ["[]"]]]]);
+  // `println` and `&unit` end in Unit. Ref writes return the written value,
+  // so `reset!`/`swap!` tails are typed by that value rather than Unit.
+  for (name, expected) in [
+    ("evidence-log!", zero_arg_fn("'Unit")),
+    ("evidence-done!", zero_arg_fn("'Unit")),
+    ("evidence-reset!", zero_arg_fn("'Number")),
+    ("evidence-swap!", zero_arg_fn("'Number")),
+    ("evidence-ratio", serde_json::json!(["::", "'Number"])),
+    ("evidence-label", serde_json::json!(["::", "'String"])),
+    ("evidence-steps", serde_json::json!(["::", "'List", "'Number"])),
+    ("evidence-names", serde_json::json!(["::", "'Map", "'Tag", "'String"])),
+  ] {
+    let found = candidate(name);
+    assert_eq!(found["confidence"], "exact", "{name}: {found}");
+    assert_eq!(found["candidate"]["value"], expected, "{name}: {found}");
+  }
+
+  for name in ["evidence-log!", "evidence-reset!", "evidence-names"] {
+    let applied = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "synthesize-schema-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--apply",
+        "--allow-no-vcs",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&applied, "apply synthesized schema");
+  }
+  let updated = fs::read_to_string(&snapshot).expect("updated snapshot should read");
+  assert!(
+    updated.contains("Fn (-> Unit)") && updated.contains("Fn (-> Number)") && updated.contains("Map Tag String"),
+    "snapshot:\n{updated}"
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after schema synthesis");
+}
+
+#[test]
 fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
