@@ -37,6 +37,20 @@ related:
 
 没有元组 schema 的代码行为不变：元素类型不同的 `[]` 字面量仍推断为 `List Dynamic`。
 
+迁移方式：这两个名字没有 `calcit fix` 规则，因为 `tuple?` 需要按场景选 `enum?` 或 `enum-def?`。先找到残留调用，
+
+```bash
+calcit query search 'tuple?'
+calcit query search 'tuple-enum'
+```
+
+再按结果中的定义和路径逐处替换，用 `--expect` 确认改的是原来那个节点，最后跑一遍 `calcit --check-only --all-defs`：
+
+```bash
+calcit tree replace app.main/kind-label --path 3 \
+  --expect 'quote $ tuple? x' --code 'quote $ enum? x'
+```
+
 ## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435，未发布）
 
 旧的内部入口 `&cirru-quote:to-list` 签名声明返回 List，但在 0.32.x 及更早版本中，叶根会返回 token

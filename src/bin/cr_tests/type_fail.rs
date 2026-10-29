@@ -4357,6 +4357,8 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
       ("conj t 1", "W_FN_ARG_TYPE_MISMATCH"),
       // Shape-rebuilding traits need the value used as `List T` first.
       ("rest t", "W_GENERIC_WHERE_BOUND_MISMATCH"),
+      // A tuple read still goes through the ordinary proc arity check.
+      ("&list:nth t 0 1", "W_PROC_ARG_TYPE_MISMATCH"),
     ] {
       let entries = load_snippet_entries(&format!("let ((t ({tuple}))) ({body})"));
       let warnings = RefCell::new(vec![]);

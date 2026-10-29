@@ -3110,12 +3110,17 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     }
   }
   // A literal tuple index reads that slot's type, as `let[]` does after expansion.
+  // A computed index, as in generated `get` / `last` reads, can only see a
+  // homogeneous tuple's shared element type.
   if matches!(proc, CalcitProc::NativeListNth)
     && let (Some(receiver), Some(index)) = (xs.get(1), xs.get(2))
     && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
     && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
   {
-    return tuple_literal_index(index, slots.len()).ok().map(|index| slots[index].clone());
+    return match tuple_literal_index(index, slots.len()) {
+      Ok(index) => Some(slots[index].clone()),
+      Err(_) => CalcitTypeAnnotation::homogeneous_tuple_item(slots).cloned(),
+    };
   }
   // `&list:nth` retains its unchecked payload type for guarded core macro
   // expansion. Unlike it, `&list:first` / `&list:last` return nominal

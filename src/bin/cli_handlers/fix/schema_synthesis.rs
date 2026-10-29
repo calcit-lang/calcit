@@ -62,6 +62,13 @@ fn refine_schema_holes(
   }
   let refined = match (declared.as_ref(), inferred.as_ref()) {
     (Type::List(current), Type::List(candidate)) => Type::List(refine_schema_holes(current, candidate)),
+    (Type::Tuple(current), Type::Tuple(candidate)) if current.len() == candidate.len() => Type::Tuple(std::sync::Arc::new(
+      current
+        .iter()
+        .zip(candidate.iter())
+        .map(|(declared, inferred)| refine_schema_holes(declared, inferred))
+        .collect(),
+    )),
     (Type::Set(current), Type::Set(candidate)) => Type::Set(refine_schema_holes(current, candidate)),
     (Type::Ref(current), Type::Ref(candidate)) => Type::Ref(refine_schema_holes(current, candidate)),
     (Type::Nullable(current, NullableOrigin::Calcit), Type::Nullable(candidate, NullableOrigin::Calcit)) => {

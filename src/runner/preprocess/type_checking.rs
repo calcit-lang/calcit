@@ -69,7 +69,7 @@ fn append_js_ffi_type_hint(mut message: String, expected_type: &CalcitTypeAnnota
 
 fn diagnostic_type_string(annotation: &CalcitTypeAnnotation) -> String {
   match annotation {
-    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_) | CalcitTypeAnnotation::Ref(_) => {
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_) | CalcitTypeAnnotation::Ref(_) => {
       annotation.describe()
     }
     _ => annotation.to_brief_string(),
@@ -871,13 +871,29 @@ pub(crate) fn check_proc_arg_types(
     }
   }
 
+  // Every tuple is `Countable`, so `.count` on a heterogeneous tuple is not a `List T` read.
+  if matches!(proc, CalcitProc::NativeListCount)
+    && args.len() == 1
+    && let Some(receiver_type) = args.first().and_then(|receiver| resolve_type_value(receiver, scope_types))
+    && matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Tuple(_))
+  {
+    return;
+  }
+
   // A tuple slot read is checked by its literal index instead of as `List T`.
+  // Other arities fall through to the ordinary proc check.
   if matches!(proc, CalcitProc::NativeListNth)
+    && args.len() == 2
     && let (Some(receiver), Some(index)) = (args.first(), args.get(1))
     && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
     && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
   {
-    if let Err(reason) = super::type_inference::tuple_literal_index(index, slots.len()) {
+    // A computed index on a homogeneous tuple reads it as `List T`, as the
+    // generated `get` / `last` lowering does.
+    let computed_list_read = !matches!(index, Calcit::Number(_)) && CalcitTypeAnnotation::homogeneous_tuple_item(slots).is_some();
+    if let Err(reason) = super::type_inference::tuple_literal_index(index, slots.len())
+      && !computed_list_read
+    {
       gen_check_warning_code_at(
         format!(
           "[Warn] tuple `{}` cannot be read at `{index}`: {reason}, in call at {file_ns}/{def_name}",
@@ -2133,6 +2149,22 @@ pub(crate) fn check_function_return_type(
     async_invocation_result(actual_type.as_ref()).unwrap_or(actual_type)
   } else {
     actual_type
+  };
+  // A heterogeneous literal infers as a List; against a declared tuple return,
+  // its positions are the evidence, so generic slots keep their binders.
+  let actual_type = match (declared_return_type.as_ref(), last_expr) {
+    (CalcitTypeAnnotation::Tuple(slots), Calcit::List(items))
+      if matches!(items.first(), Some(Calcit::Proc(CalcitProc::List))) && items.len() - 1 == slots.len() =>
+    {
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+        items
+          .iter()
+          .skip(1)
+          .map(|item| resolve_type_value(item, scope_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()))
+          .collect(),
+      )))
+    }
+    _ => actual_type,
   };
 
   // Keep unproven boundaries on the existing migration path, but never let

@@ -644,6 +644,9 @@ mod tags_serde {
   }
 }
 
+/// `Tuple` used to name Enum; it is now the positional type and needs element types.
+const BARE_TUPLE_SCHEMA_ERROR: &str = "`Tuple` needs its element types, such as `Tuple Number String`.";
+
 fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
   if matches!(value, Edn::Nil) {
     return Ok(DYNAMIC_TYPE.clone());
@@ -665,6 +668,9 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
   }
 
   if let Edn::Quote(leaf @ Cirru::Leaf(symbol)) = value {
+    if symbol.as_ref() == "Tuple" {
+      return Err(format!("{owner}: {BARE_TUPLE_SCHEMA_ERROR}"));
+    }
     let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(symbol.clone()));
     if CalcitTypeAnnotation::canonical_type_symbol_name(symbol).is_some() {
       return Ok(annotation);
@@ -680,6 +686,12 @@ fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<Calcit
   // the canonical symbol parser. Otherwise a second unrelated Snapshot write
   // would interpret definition-kind markers as anonymous Enum values and
   // silently serialize `StructDef`/`EnumDef` as `Enum`.
+  if let Edn::Enum(view) = value
+    && view.extra.is_empty()
+    && view.variant.as_ref() == "Tuple"
+  {
+    return Err(format!("{owner}: {BARE_TUPLE_SCHEMA_ERROR}"));
+  }
   if let Some(annotation) = parse_zero_payload_schema_wrapper(value) {
     return Ok(annotation);
   }
@@ -1503,6 +1515,9 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
       && let [Cirru::Leaf(head), Cirru::Leaf(name)] = items.as_slice()
       && head.as_ref() == "quote"
     {
+      if name.as_ref() == "Tuple" {
+        return Err(BARE_TUPLE_SCHEMA_ERROR.to_owned());
+      }
       return match CalcitTypeAnnotation::canonical_type_symbol_name(name) {
         Some(canonical) if canonical == name.as_ref() => Ok(()),
         _ if let Ok(quoted) = crate::calcit::type_expr::desugar_type_expr(&items[1]) => {
@@ -1740,7 +1755,7 @@ fn check_no_legacy_data_type_names(schema: &Cirru) -> Result<(), String> {
         ));
       }
       if value.trim_start_matches('\'') == "Tuple" {
-        return Err("`Tuple` needs its element types, such as `Tuple Number String`.".to_owned());
+        return Err(BARE_TUPLE_SCHEMA_ERROR.to_owned());
       }
       Ok(())
     }
@@ -5465,6 +5480,14 @@ mod tests {
       parse_schema_annotation_for_write(&tuple).expect("Tuple schema should parse").as_ref(),
       CalcitTypeAnnotation::Tuple(items) if items.len() == 2
     ));
+    // Loading rejects a bare `Tuple` too, instead of reading it as an unresolved name.
+    for loaded in [
+      Edn::Quote(Cirru::Leaf(Arc::from("Tuple"))),
+      Edn::enum_value("Tuple", vec![]),
+    ] {
+      let error = parse_loaded_schema_annotation(&loaded, "tests/pair").expect_err("bare Tuple must not load");
+      assert!(error.contains("element types"), "error: {error}");
+    }
 
     let nested_legacy = parse_one(":: 'List 'Record");
     let error = validate_schema_for_write(&nested_legacy).expect_err("nested legacy data type names must be rejected on write");

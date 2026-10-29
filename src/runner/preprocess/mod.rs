@@ -2270,6 +2270,12 @@ where
       resolve_type_ref,
       resolve_trait_bound,
     ))),
+    CalcitTypeAnnotation::Tuple(slots) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+      slots
+        .iter()
+        .map(|slot| map_type_and_trait_references(slot.clone(), resolve_type_ref, resolve_trait_bound))
+        .collect(),
+    ))),
     CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
       map_type_and_trait_references(key.clone(), resolve_type_ref, resolve_trait_bound),
       map_type_and_trait_references(value.clone(), resolve_type_ref, resolve_trait_bound),
@@ -11415,7 +11421,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Symbol => {
       Some("&core-text-scalar-impls")
     }
-    CalcitTypeAnnotation::List(_) => Some("&core-list-impls"),
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("&core-list-impls"),
     CalcitTypeAnnotation::String => Some("&core-string-impls"),
     CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
     CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
@@ -16300,8 +16306,14 @@ fn reject_strict_unproven_generic_relation(
   if !audit && (!strict_types_enabled() || !should_emit_project_source_lint(file_ns)) {
     return Ok(());
   }
-  // A tuple slot read is proved by its literal index (see `check_proc_arg_types`).
-  if matches!(head, Calcit::Proc(CalcitProc::NativeListNth))
+  // A tuple slot read is proved by its literal index, and every tuple is
+  // countable (see `check_proc_arg_types`).
+  let tuple_operation = match head {
+    Calcit::Proc(CalcitProc::NativeListNth | CalcitProc::NativeListCount) => true,
+    Calcit::Method(name, calcit::MethodKind::Invoke(_)) => name.as_ref() == "count",
+    _ => false,
+  };
+  if tuple_operation
     && args
       .first()
       .and_then(|receiver| resolve_type_value(receiver, scope_types))
