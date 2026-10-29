@@ -20,7 +20,7 @@ use crate::calcit::{
   ImportInfo, LocatedWarning,
 };
 
-use super::gen_check_warning;
+use super::{core_import, gen_check_warning};
 
 // ---------------------------------------------------------------------------
 // Unified argument rewriting loop
@@ -134,6 +134,25 @@ pub(crate) fn try_rewrite_enum_args_to_named_enums(
 // Single-argument rewrite implementations
 // ---------------------------------------------------------------------------
 
+/// Value for a struct field the literal leaves out, matching the direct
+/// constructor: nominal Option fields get the lowered `Option :none`, other
+/// fields keep nil. Arguments are already preprocessed, so emit the lowered form.
+fn omitted_struct_field_value(struct_def: &CalcitStructDef, field_idx: usize, file_ns: &str) -> Calcit {
+  if struct_def
+    .field_types
+    .get(field_idx)
+    .is_some_and(|field_type| field_type.is_option_type())
+  {
+    Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+      core_import("Option", file_ns),
+      Calcit::tag("none"),
+    ])
+  } else {
+    Calcit::Nil
+  }
+}
+
 /// Try to rewrite a single hashmap literal to a struct literal if the expected type is a struct.
 fn try_rewrite_single_map_to_struct(
   arg: &Calcit,
@@ -192,16 +211,15 @@ fn try_rewrite_single_map_to_struct(
   let struct_ref_node = build_struct_ref_node(&struct_def, ns_def_path, file_ns, def_name);
 
   // Build the rewritten struct literal with ALL struct fields in order.
-  // Fields not provided in the map get nil.
   let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
   struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
   struct_items.push(struct_ref_node);
-  for field in struct_def.fields.iter() {
+  for (field_idx, field) in struct_def.fields.iter().enumerate() {
     struct_items.push(Calcit::Tag(field.to_owned()));
     if let Some(value) = provided_fields.get(field) {
       struct_items.push((*value).to_owned());
     } else {
-      struct_items.push(Calcit::Nil);
+      struct_items.push(omitted_struct_field_value(&struct_def, field_idx, file_ns));
     }
   }
 
@@ -270,12 +288,12 @@ fn try_rewrite_single_loose_struct_to_struct(
   let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
   struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
   struct_items.push(struct_ref_node);
-  for field in struct_def.fields.iter() {
+  for (field_idx, field) in struct_def.fields.iter().enumerate() {
     struct_items.push(Calcit::Tag(field.to_owned()));
     if let Some(value) = provided_fields.get(field) {
       struct_items.push((*value).to_owned());
     } else {
-      struct_items.push(Calcit::Nil);
+      struct_items.push(omitted_struct_field_value(&struct_def, field_idx, file_ns));
     }
   }
 

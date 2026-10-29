@@ -537,6 +537,24 @@
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ assert= ([] 7 nil) (nullish-literal-list)
             :tags $ #{} :collection-proof
+        'option-fields-from-literal $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-fields-from-literal (fields) fields
+          :examples $ []
+          :schema $ quote $ Fn OptionFields (-> OptionFields)
+          :tests $ [] $ %{} 'TestEntry
+            :name |literal-rewrite-fills-omitted-option-fields-with-none
+            :code $ quote $ do
+              assert=
+                OptionFields :count $ Option :some 1
+                option-fields-from-literal $ {} $ :count (Option :some 1)
+              assert= (Option :none)
+                :label $ option-fields-from-literal $ {}
+                  :count $ Option :some 1
+              assert= (Option :none)
+                :count $ option-fields-from-literal $ ?{} :label (Option :some |saved)
+              assert= (OptionFields)
+                option-fields-from-literal $ {}
+            :tags $ #{} :option-fields :unit
         'read-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-asserted-map-literal-store (source)
             let
@@ -560,6 +578,7 @@
                 :count $ Option :some 8
               assert= 160 $ read-context-box $ {} (:value 1)
                 :count $ Option :none
+              assert= 160 $ read-context-box $ {} (:value 1)
             :tags $ #{} :nominal-contextual
         'read-env-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-env-option (name)
