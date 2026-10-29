@@ -103,7 +103,7 @@ Container and generic targets use the existing type-expression syntax:
 
 ```cirru.no-check
 parse-cirru-edn-as "|[] 1 2 3" $ quote $ List Number
-parse-cirru-edn-as "|%{} :Box (:value |hi)" $ :: Box 'String
+parse-cirru-edn-as "|%{} :Box (:value |hi)" $ quote $ Box String
 ```
 
 Successful decoding guarantees the recursive container elements, struct fields, enum variant and payloads, generic arguments, and nominal struct/enum identity all match the target type. It does not coerce strings to numbers, maps to structs, or ordinary lists to enums.
@@ -124,7 +124,7 @@ def Person $ defstruct Person (:name 'String) (:age 'Number)
 defn decode-people (raw)
   hint-fn $ Fn String
     -> $ Result (List Person) String
-  try-parse-cirru-edn-as raw $ :: 'List Person
+  try-parse-cirru-edn-as raw $ quote $ List Person
 ```
 
 Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,String>`. Runtime parse and recursive shape failures become `:err` with the same structural context. An invalid `TypeExpr` remains a compile-time error because it is a program definition problem rather than recoverable input.
