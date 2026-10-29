@@ -251,7 +251,7 @@ let
     entry $ assert-type ([] :title |Calcit) (quote $ Tuple Tag String)
   let[] (key title) entry
     assert= :title key
-    assert= 8 $ &+ (nth point 0) (&str:count title)
+    assert= 9 $ &+ (nth point 0) (&str:count title)
 ```
 
 - **写法**：`quote $ Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
