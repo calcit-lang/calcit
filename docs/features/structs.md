@@ -136,6 +136,28 @@ Arguments must be tag/value pairs. Required fields must be present, while a fiel
 declared as `Option<T>` may be omitted; the constructor inserts the nominal
 `Option :none` 值；非 `Option` 字段绝不会被静默填成 `nil`。
 
+### 字段默认值
+
+字段可以写第三项作为默认值。构造时省略该字段，就得到声明的默认值；读取时字段类型仍是声明的类型，不需要 unwrap：
+
+```cirru
+let
+    Config $ defstruct Config (:host 'String) (:port 'Number 8080) (:debug? 'Bool false) (:tags (quote $ List String) ([]))
+    config $ Config :host |localhost
+  assert= 8080 $ :port config
+  assert= false $ :debug? config
+  assert= ([]) $ :tags config
+  assert= 3000 $ :port $ Config :host |localhost :port 3000
+```
+
+默认值只能是字面量：数字、字符串、tag、布尔值，以及空的 `([])`、`({})`、`(#{})`。定义时按字段类型检查，类型不符或不是字面量时 `defstruct` 报错。需要计算的初始值写成普通的构造函数。
+
+所有字段都有默认值或是 `Option` 时，不带参数调用构造器就得到全部默认值，例如 `Config` 去掉 `:host` 后可以写 `(Config)`。
+
+选择默认值还是 `Option`：值可能不存在、并且“不存在”要和任何具体值区分时用 `Option`，读取得到 `Option T`；值总是存在、只是多数调用者用同一个值时用默认值，读取直接得到 `T`。
+
+默认值由构造器和下文的 map 字面量改写在编译期补齐，生成的构造调用与手写全部字段相同；低层 `%{}` 不补默认值。
+
 低层 `%{}` 宏只用于动态 prototype；类型能静态解析时使用上面的直接构造器。它的写法如下：
 
 ```cirru
@@ -498,7 +520,7 @@ assert= 30 $ sum-point
   Point :x 10 :y 20
 ```
 
-该改写与 map 字面量（`{}`、`?{}`）改写成 Struct 的规则相同。目标 Struct 中声明为 `Option<T>` 而字面量未提供的字段，和直接构造器一样填入 `Option :none`；其他未提供的字段填入 `nil`，因此它们的声明类型必须允许 `nil`，否则类型检查会报错。
+该改写与 map 字面量（`{}`、`?{}`）改写成 Struct 的规则相同。字面量未提供的字段和直接构造器一样补齐：有默认值的字段填入默认值，声明为 `Option<T>` 的字段填入 `Option :none`；其他未提供的字段填入 `nil`，因此它们的声明类型必须允许 `nil`，否则类型检查会报错。
 
 ### Design Symmetry
 

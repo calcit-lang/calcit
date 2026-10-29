@@ -12103,6 +12103,7 @@ mod tests {
       .collect::<Vec<_>>();
     let prototype = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: Some(Arc::from(format!("app.main/{name}"))),
         name: EdnTag::new(name),
         fields: Arc::new(fields),
@@ -12127,6 +12128,7 @@ mod tests {
   #[test]
   fn typed_edn_shape_registers_nominal_struct_tags() {
     let nominal = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.main/Job")),
       name: EdnTag::new("Job"),
       fields: Arc::new(vec![EdnTag::new("count")]),
@@ -13465,6 +13467,7 @@ mod tests {
   #[test]
   fn component_struct_shape_uses_normalized_fields_and_monomorphized_types() {
     let stats = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.main/ProfileStats")),
       name: cirru_edn::EdnTag::new("ProfileStats"),
       fields: Arc::new(vec![cirru_edn::EdnTag::new("score")]),
@@ -13474,6 +13477,7 @@ mod tests {
       impls: vec![],
     });
     let profile = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.main/Profile")),
       name: cirru_edn::EdnTag::new("Profile"),
       fields: Arc::new(vec![
@@ -13504,6 +13508,7 @@ mod tests {
     assert_eq!(component_memory_layout(&profile_type).alignment, 8);
 
     let generic_box = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.main/Box")),
       name: cirru_edn::EdnTag::new("Box"),
       fields: Arc::new(vec![cirru_edn::EdnTag::new("value")]),

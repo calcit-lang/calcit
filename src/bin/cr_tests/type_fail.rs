@@ -1397,6 +1397,7 @@ fn strict_type_fail_dynamic_nominal_argument_reports_decoder_migration() {
     ))
     .expect("dynamic nominal boundary snippet should parse");
     let person = Arc::new(calcit::calcit::CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: cirru_edn::EdnTag::new("Person"),
       fields: Arc::new(vec![cirru_edn::EdnTag::new("name")]),

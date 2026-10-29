@@ -6599,7 +6599,7 @@
             :generics T
           :tags $ #{} :builtin :state :syntax
         'defstruct $ %{} 'CodeEntry
-          :doc "|Define a StructDef with fixed fields and field types."
+          :doc "|Define a StructDef with fixed fields and field types. A field may take a literal default as a third item, as in `(:port 'Number 8080)`; constructors and struct literal rewrites fill an omitted field with it."
           :code $ quote $ defmacro defstruct (name & pairs)
             assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
@@ -6636,11 +6636,13 @@
                             {}
                           &let
                             field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
-                            assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
+                            assert "|defstruct expects each field as (:field type) or (:field type default); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
                               &let
                                 items $ data-definition-form pair
                                 and (list? items)
-                                  &= 2 $ count items
+                                  or
+                                    &= 2 $ count items
+                                    &= 3 $ count items
                                   tag? $ &list:nth items 0
                             assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs $ fn (pair)
                               &let
@@ -6654,18 +6656,24 @@
                                     field-name $ &list:nth items 0
                                     &let
                                       type-form $ &list:nth items 1
-                                      if (list? type-form)
-                                        if
-                                          and
-                                            &= 2 $ count type-form
-                                            syntax? $ &list:nth type-form 0
-                                          if (includes? generics type-form)
+                                      &let
+                                        field-form $ if (list? type-form)
+                                          if
+                                            and
+                                              &= 2 $ count type-form
+                                              syntax? $ &list:nth type-form 0
+                                            if (includes? generics type-form)
+                                              quasiquote $ [] (~ field-name)
+                                                quote $ ~ type-form
+                                              quasiquote $ [] (~ field-name) (~ type-form)
                                             quasiquote $ [] (~ field-name)
                                               quote $ ~ type-form
-                                            quasiquote $ [] (~ field-name) (~ type-form)
-                                          quasiquote $ [] (~ field-name)
-                                            quote $ ~ type-form
-                                        quasiquote $ [] (~ field-name) (~ type-form)
+                                          quasiquote $ [] (~ field-name) (~ type-form)
+                                        if
+                                          &= 3 $ &list:count items
+                                          &list:append field-form $ quasiquote $ quote
+                                            ~ $ &list:nth items 2
+                                          , field-form
                               if (empty? generics)
                                 if has-where-form?
                                   quasiquote $ &struct-def:new
@@ -9186,7 +9194,7 @@
             %{} 'TestEntry (:name |compares-collections-by-reference)
               :code $ quote $ let
                   xs $ [] 1
-                  table $ {} (:a 1)
+                  table $ {} $ :a 1
                   items $ #{} 1
                 assert= true $ identical? xs xs
                 assert= false $ identical? xs $ [] 1

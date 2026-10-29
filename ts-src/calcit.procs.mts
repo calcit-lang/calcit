@@ -355,17 +355,17 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
 
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStructDef => {
   const structName = castTag(name);
-  const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
+  const fields: Array<{ tag: CalcitTag; type: CalcitValue; default: CalcitValue }> = [];
   const { fields: fieldEntries, generics, whereBounds } = dataDefinitionEntries(entries);
 
   for (let entry of fieldEntries) {
     const items = list_items(entry);
-    if (items.length !== 2) {
-      throw new Error(`defstruct expects (field type) pairs, got: ${toString(entry, true)}`);
+    if (items.length !== 2 && items.length !== 3) {
+      throw new Error(`defstruct expects (field type) or (field type default) entries, got: ${toString(entry, true)}`);
     }
     const fieldTag = castTag(items[0]);
     const fieldType = items[1];
-    fields.push({ tag: fieldTag, type: fieldType });
+    fields.push({ tag: fieldTag, type: fieldType, default: items.length === 3 ? items[2] : null });
   }
 
   fields.sort((a, b) => compareTagNames(a.tag, b.tag));
@@ -377,7 +377,8 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
 
   const fieldTags = fields.map((entry) => entry.tag);
   const fieldTypes = fields.map((entry) => entry.type);
-  return new CalcitStructDef(structName, fieldTags, fieldTypes, [], null, null, generics, whereBounds);
+  const fieldDefaults = fields.some((entry) => entry.default != null) ? fields.map((entry) => entry.default) : [];
+  return new CalcitStructDef(structName, fieldTags, fieldTypes, [], null, null, generics, whereBounds, fieldDefaults);
 };
 
 export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {

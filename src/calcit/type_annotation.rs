@@ -6722,20 +6722,24 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
     where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
     start_idx += 1;
   }
-  let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = Vec::new();
+  let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>, Option<Calcit>)> = Vec::new();
 
   for item in forms.iter().skip(start_idx) {
     let Calcit::List(pair) = item else {
       return None;
     };
-    let (field_name_form, field_type_form) = match pair.len() {
-      2 => (pair.get(0)?, pair.get(1)?),
-      3 if pair.first().is_some_and(is_list_literal_head) => (pair.get(1)?, pair.get(2)?),
+    // Source fields are `(:field type default?)`; macro-expanded ones carry a
+    // leading `[]` head: `([] :field type default?)`.
+    let offset = usize::from(pair.first().is_some_and(is_list_literal_head));
+    let (field_name_form, field_type_form, default_form) = match pair.len() - offset {
+      2 => (pair.get(offset)?, pair.get(offset + 1)?, None),
+      3 => (pair.get(offset)?, pair.get(offset + 1)?, pair.get(offset + 2)),
       _ => return None,
     };
     let field_name = parse_type_name(field_name_form)?;
     let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(field_type_form, generics.as_slice());
-    fields.push((field_name, field_type));
+    let default_value = default_form.and_then(crate::calcit::struct_field_default_from_code);
+    fields.push((field_name, field_type, default_value));
   }
 
   fields.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
@@ -6747,10 +6751,16 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
 
   dedup_generic_names(&mut generics);
 
-  let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
-  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
+  let field_names: Vec<EdnTag> = fields.iter().map(|(name, _, _)| name.to_owned()).collect();
+  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t, _)| t.to_owned()).collect();
+  let field_defaults: Vec<Option<Calcit>> = if fields.iter().any(|(_, _, d)| d.is_some()) {
+    fields.into_iter().map(|(_, _, d)| d).collect()
+  } else {
+    vec![]
+  };
 
   Some(CalcitStructDef {
+    field_defaults: Arc::new(field_defaults),
     definition_ref,
     name,
     fields: Arc::new(field_names),
@@ -7109,6 +7119,7 @@ mod tests {
       Arc::new(vec![type_var.clone()]),
     ));
     let tree = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("tests.recursive/Tree")),
       name: EdnTag::new("Tree"),
       fields: Arc::new(vec![EdnTag::new("children")]),
@@ -7118,6 +7129,7 @@ mod tests {
       impls: vec![],
     };
     let node = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("tests.recursive/Node")),
       name: EdnTag::new("Node"),
       fields: Arc::new(vec![EdnTag::new("value"), EdnTag::new("tree")]),
@@ -7373,6 +7385,7 @@ mod tests {
     ));
 
     let widget = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from(format!("{namespace}/Widget"))),
       name: EdnTag::new("Widget"),
       fields: Arc::new(vec![]),
@@ -8012,6 +8025,7 @@ mod tests {
     Arc::new(
       CalcitEnumDef::from_struct(CalcitStructValue {
         struct_ref: Arc::new(CalcitStructDef {
+          field_defaults: Default::default(),
           definition_ref: None,
           name: EdnTag::new("Result"),
           fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
@@ -8063,6 +8077,7 @@ mod tests {
 
     let user_option = CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("Option"),
         fields: Arc::new(vec![EdnTag::new("some"), EdnTag::new("none")]),
@@ -9539,6 +9554,7 @@ mod tests {
   #[test]
   fn rejects_type_args_on_non_generic_struct_annotation() {
     let pair = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
@@ -9561,6 +9577,7 @@ mod tests {
   #[test]
   fn rejects_wrong_arity_on_generic_struct_annotation() {
     let pair = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
@@ -9583,6 +9600,7 @@ mod tests {
   #[test]
   fn matching_named_struct_ref_binds_generic_args_from_struct_annotation() {
     let pair = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
@@ -9606,6 +9624,7 @@ mod tests {
   #[test]
   fn matching_bare_struct_annotation_binds_generic_args_from_named_struct_ref() {
     let pair = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Pair"),
       fields: Arc::new(vec![]),
@@ -9865,6 +9884,7 @@ mod tests {
   fn nominal_proof_uses_qualified_definition_and_schema_identity() {
     let user = |namespace: &str, field_type: Arc<CalcitTypeAnnotation>| {
       Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: Some(Arc::from(format!("{namespace}/User"))),
         name: EdnTag::new("User"),
         fields: Arc::new(vec![EdnTag::new("id")]),
@@ -9932,6 +9952,7 @@ mod tests {
       parsed.return_type.to_type_edn()
     };
     let definition = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.models/Item")),
       name: EdnTag::new("Item"),
       fields: Arc::new(vec![EdnTag::new("value")]),
@@ -9972,6 +9993,7 @@ mod tests {
   #[test]
   fn nominal_proof_preserves_applied_arguments_and_rejects_bare_wildcards() {
     let box_def = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.models/Box")),
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
@@ -10001,6 +10023,7 @@ mod tests {
     let parameter = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Op")));
     for namespace in ["app.models", "admin.models"] {
       let definition = Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: Some(Arc::from(format!("{namespace}/Record"))),
         name: EdnTag::new("Record"),
         fields: Arc::new(vec![EdnTag::new("op")]),

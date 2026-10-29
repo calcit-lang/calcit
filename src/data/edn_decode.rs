@@ -655,6 +655,7 @@ mod tests {
 
   fn person_struct() -> Arc<CalcitStructDef> {
     Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age"), EdnTag::new("name")]),
@@ -668,6 +669,7 @@ mod tests {
   fn option_enum() -> Arc<CalcitEnumDef> {
     let prototype = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("Option"),
         fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),
@@ -690,6 +692,7 @@ mod tests {
   #[test]
   fn runtime_map_decode_validates_and_preserves_matching_struct_values() {
     let person = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age"), EdnTag::new("name")]),
@@ -750,6 +753,7 @@ mod tests {
   #[test]
   fn runtime_map_decode_requires_fields_lifts_option_and_rejects_unknown_keys() {
     let response = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Response"),
       fields: Arc::new(vec![EdnTag::new("code"), EdnTag::new("message"), EdnTag::new("body")]),
@@ -934,6 +938,7 @@ mod tests {
   fn decodes_enum_and_checks_payload_arity() {
     let prototype = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("ResultText"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
