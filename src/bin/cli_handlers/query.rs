@@ -3207,7 +3207,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
   // A different call head is not proof that this child is the source call.
   let changed_call_head = matches!(
     type_at_call_head(&source_target),
-    Some(Calcit::Symbol { .. } | Calcit::Import(_) | Calcit::Proc(_) | Calcit::Syntax(..))
+    Some(Calcit::Symbol { .. } | Calcit::Import(_) | Calcit::Proc(_) | Calcit::Syntax(..) | Calcit::Tag(_))
   ) && matches!(target_node, Cirru::List(_))
     && located_target.is_some_and(|target| {
       type_at_call_head(&source_target).and_then(type_at_head_label) != type_at_call_head(target).and_then(type_at_head_label)
