@@ -1392,8 +1392,9 @@ fn scan_cirru_weak_types(
 /// This reads source only. A parameter reaches the host when it appears inside
 /// a host operation, directly or through `let` bindings; the return reaches the
 /// host when a tail expression contains a host operation or a binding derived
-/// from one. Calls into other adapters and external-object methods written as
-/// `.method` are not followed, so those positions count as non-host.
+/// from one. Calls into other adapters, imported JS module functions and
+/// external-object methods written as `.method` are not followed, so those
+/// positions count as non-host.
 struct JsFfiHostReach {
   params: Vec<bool>,
   rest: Option<bool>,
@@ -1427,6 +1428,7 @@ fn is_js_host_head(head: &str) -> bool {
     || head.starts_with(".?-")
     || head.starts_with(".?!")
     || head.starts_with("js/")
+    || ffi_postfix_operation(head).is_some()
     || matches!(
       head,
       "aget"
@@ -1462,6 +1464,12 @@ fn collect_cirru_leaves<'a>(code: &'a Cirru, leaves: &mut BTreeSet<&'a str>) {
 /// Collects leaves used by host operations and `let` bindings as `(name, value)`.
 fn collect_js_host_uses<'a>(code: &'a Cirru, host_leaves: &mut BTreeSet<&'a str>, bindings: &mut Vec<(&'a str, &'a Cirru)>) {
   let Cirru::List(items) = code else {
+    // A postfix access such as `node.!focus` names its receiver inside the leaf.
+    if let Cirru::Leaf(leaf) = code
+      && let Some((receiver, ..)) = ffi_postfix_operation(leaf)
+    {
+      host_leaves.insert(&leaf[..receiver.len()]);
+    }
     return;
   };
   match items.first() {
@@ -1491,7 +1499,7 @@ fn collect_js_host_uses<'a>(code: &'a Cirru, host_leaves: &mut BTreeSet<&'a str>
 
 fn cirru_contains_host_value(code: &Cirru, host_values: &BTreeSet<&str>) -> bool {
   match code {
-    Cirru::Leaf(leaf) => leaf.starts_with("js/") || host_values.contains(leaf.as_ref()),
+    Cirru::Leaf(leaf) => leaf.starts_with("js/") || ffi_postfix_operation(leaf).is_some() || host_values.contains(leaf.as_ref()),
     Cirru::List(items) => {
       matches!(items.first(), Some(Cirru::Leaf(head)) if is_js_host_head(head))
         || items.iter().any(|item| cirru_contains_host_value(item, host_values))
@@ -1574,7 +1582,7 @@ fn js_ffi_host_reach(code: &Cirru) -> Option<JsFfiHostReach> {
     };
     match name.as_ref() {
       "&" => after_rest_marker = true,
-      "?" => {}
+      "?" | "[]" | "," => {}
       name if after_rest_marker => rest = Some(host_leaves.contains(name)),
       name => params.push(host_leaves.contains(name)),
     }
@@ -4181,6 +4189,14 @@ mod tests {
     assert!(reach.schema_path_reaches_host("schema.args.1.value"));
     assert!(!reach.schema_path_reaches_host("schema.args.2"));
     assert!(!reach.schema_path_reaches_host("schema.rest.item"));
+
+    // Postfix access names the receiver inside one leaf; `[]` is a legacy list marker.
+    let postfix = cirru_parser::parse("defn adapter ([] node label) (node.!focus) (println label) node.-value")
+      .expect("parse adapter")
+      .remove(0);
+    let postfix_reach = super::js_ffi_host_reach(&postfix).expect("defn reach");
+    assert_eq!(postfix_reach.params, vec![true, false]);
+    assert!(postfix_reach.ret);
 
     let plain = cirru_parser::parse("defn adapter (node) (.!focus node) nil")
       .expect("parse adapter")
