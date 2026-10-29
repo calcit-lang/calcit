@@ -3792,15 +3792,16 @@ fn value_position_nil_branch_is_a_strict_error() {
       assert!(!err.msg.contains("`case`"), "{label}: {err:?}");
     }
 
+    // Since `Optional<T>` was removed (#2233) a nil join has no Calcit type,
+    // so binding one is a value use like any other.
     for (label, function) in [
       ("let-binding", number_fn("(let ((y (if (> x 0) x))) y)", "Dynamic")),
       ("let-nil-join", number_fn("(let ((y (if (> x 0) x nil))) y)", "Dynamic")),
     ] {
-      let (result, warnings, advisories) = compile(function);
-      assert!(result.is_ok(), "{label}: a `let` binding is only noted: {result:?}");
-      assert!(warnings.iter().all(|w| !is_implicit(w.code())), "{label}: {warnings:?}");
-      let noted = advisories.iter().filter(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")).count();
-      assert_eq!(noted, 1, "{label}: {advisories:?}");
+      let (result, _, _) = compile(function);
+      let err = result.expect_err(&format!("{label}: a `let` nil branch is a strict error"));
+      assert_eq!(err.code.as_deref(), Some("E_IMPLICIT_NIL_BRANCH"), "{label}: {err:?}");
+      assert!(err.msg.contains("let binding"), "{label}: {err:?}");
     }
 
     for (label, function) in [
@@ -3826,6 +3827,19 @@ fn value_position_nil_branch_is_a_strict_error() {
     assert!(
       advisories.iter().any(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")),
       "compat mode keeps the warning: {advisories:?}"
+    );
+    // Compatibility mode binds a nil join as an open value, not a nullable `T`.
+    let (result, warnings, advisories) = compile(number_fn("(let ((y (if (> x 0) x))) (&+ y 1))", "Dynamic"));
+    assert!(result.is_ok(), "compat mode does not block a let nil branch: {result:?}");
+    assert!(
+      warnings
+        .iter()
+        .all(|w| !w.code().is_some_and(|code| code.ends_with("TYPE_MISMATCH"))),
+      "an open binding is not checked as a nullable Number: {warnings:?}"
+    );
+    assert!(
+      advisories.iter().any(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")),
+      "compat mode notes the let nil branch: {advisories:?}"
     );
   });
 }
@@ -3881,8 +3895,6 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
       ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
       ("missing-else-payload", nullable_return("(if flag |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
       ("matching-payload", nullable_return("(if flag 7 nil)"), None),
-      ("let-bound-wrong-payload", nullable_return("(let ((y (if flag |bad nil))) y)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
-      ("let-bound-matching-payload", nullable_return("(let ((y (if flag 7 nil))) y)"), None),
       (
         "wrong-argument-payload",
         "fn (flag) (hint-fn $ Fn Bool (-> Unit)) $ let ((take $ fn (v) (hint-fn $ Fn (JsNullish Number) (-> Unit)) &unit)) $ take $ if flag |bad nil".to_owned(),
@@ -3946,16 +3958,16 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("map-callback", true, true, None),
   ("hof-typed-fn-arg", true, true, None),
   ("assert-type", true, true, None),
-  ("let-bound-ret", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-arg-defn", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-ok-arg", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-ret", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-arg-defn", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-ok-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-fn-literal", true, true, None),
   ("let-bound-list", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-cross-def", false, false, None),
   ("let-cross-def2", false, false, None),
   ("direct-cross-def", false, false, None),
-  ("let-bound-nilq", false, false, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-plus", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-nilq", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-plus", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-bool-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-string-niljoin-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-cond2", true, true, None),
@@ -3985,7 +3997,7 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("n3-jsnullish-ret-join", false, false, None),
   ("n3-jsnullish-arg", false, false, None),
   ("n3-dynamic-ret", false, false, None),
-  ("n3-let-value", false, false, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("n3-let-value", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("n3-statement", false, false, None),
   ("n3-nil-option", false, false, None),
 ];

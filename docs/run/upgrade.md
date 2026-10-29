@@ -64,7 +64,8 @@ related:
 
 ### 限制
 
-- 无 else 的 `if` / `when`，以及 `nil` 与具体值的分支合并，仍在内部推出一个可空类型 `T?`。它只存在于推导结果中，schema 写不出来，也没有数据合同：用它声明 struct 字段或解码目标会报错，要求改写成 `Option<T>`。值位置的用法仍由 `E_IMPLICIT_NIL_BRANCH` 拒绝，见 [值位置的无 else 分支与 nil 合并改为严格错误](#031-值位置的无-else-分支与-nil-合并改为严格错误)。
+- 无 else 的 `if` / `when`，以及 `nil` 与具体值的分支合并，不再有可书写的类型。严格模式（默认）下，凡是用到它的值都报 `E_IMPLICIT_NIL_BRANCH`：调用和方法实参、声明了具体返回类型的函数结尾，以及 0.33.0 新增的 `let` 初始化。`let ((v (if c x))) ...` 这类写法要改成 `nil->option`、`Option :some` / `Option :none`，或补上 else。`--compat-types` 下只给 `W_IMPLICIT_NIL_BRANCH` 提示，`let` 绑定按 Dynamic 处理。见 [值位置的无 else 分支与 nil 合并改为严格错误](#031-值位置的无-else-分支与-nil-合并改为严格错误)。
+- 仍然允许的位置：结果被丢弃的语句位置、`nil->option` 的实参（得到 `Option<T>`）、声明为 `JsNullish<T>` 的参数与返回值（逐个分支检查 payload）、`Dynamic` 返回。编译器在这些位置内部保留分支的 payload 作为检查证据，但它不是类型，schema 写不出来，也不能作为 struct 字段或解码目标的数据合同。
 - 删除前已对已知下游（Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer、TopixIM/diary 等）完成迁移；未列出的仓库、私有仓库与非默认分支不在普查范围内，升级前请先按上面的步骤自查。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
@@ -575,10 +576,10 @@ defn call-value (f args)
 
 - 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值、`Dynamic` 返回、`calcit.core` 的分支不报告。
 - 完全由宏写出的分支（`if` 及其操作数都来自宏定义）不报告；库宏把调用者的表达式包进无 else 的 `if` 时，在调用处报告，例如 `defmacro maybe (c x) (quasiquote (if ~c ~x))` 用作 `str |x (maybe flag |b)`，修改方式是用 `nil->option (maybe flag |b)` 得到 Option 再处理（例如 `.unwrap-or`），或让宏带上 else 值。
-- `let` 初始化只给提示，但直接写在实参里的 `nil? (if flag 1)` 仍是严格错误；先绑定到 `let` 再判断，或改用 Option。
+- `let` 初始化在 0.31–0.32 只给提示，但直接写在实参里的 `nil? (if flag 1)` 仍是严格错误；0.33.0 起 `let` 初始化同样是严格错误，见 [0.33.0 删除 `'Optional`](#033-删除-optional-公共-schema-与旧-optional-类型)，改用 Option 或补 else。
 - 直接作为 JS FFI 调用实参（如 `js/console.log (if flag 1)`）的无 else 分支同样被拒绝，`W_OPTION_ERASED_TO_NIL` 对宿主实参的豁免不适用于这里；需要补 else 值，或交给形参声明为 `JsNullish<T>` 的适配函数。
 - 只识别直接写在上述位置的分支；回调或函数字面量中没有声明具体返回类型的结尾、`assert-type` 的操作数、`and` / `or` 的结果与通过 `set!` 写入的值不报告。
-- `let` 初始化的提示只在检查通过时显示在 Notes 中。
+- `let` 初始化的提示只在检查通过时显示在 Notes 中（0.33.0 起只在 `--compat-types` 下出现）。
 - `nil->option` 的参数类型与 `.?-field` 的结果类型不在本节改动范围。0.33.0 删除 Optional 时，前者改为泛型 `T`，后者是 schema 写不出的内部 `T?`，见 [0.33.0 删除 `'Optional` 公共 schema 与旧 Optional 类型](#033-删除-optional-公共-schema-与旧-optional-类型)。
 
 <a id="032-调用-dynamic-值须先收窄"></a>

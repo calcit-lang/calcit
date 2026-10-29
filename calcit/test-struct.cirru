@@ -434,9 +434,9 @@
         'nullable-let-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-let-choice (present? value)
             let
-                selected $ if present? value nil
+                selected value
                 alias selected
-              , alias
+              if present? alias nil
           :examples $ []
           :schema $ quote $ Fn Bool Number
             -> $ JsNullish Number
@@ -498,10 +498,10 @@
         'nullable-shadow-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-shadow-choice (present? value)
             let
-                selected $ if present? value nil
+                selected value
               let
                   selected selected
-                , selected
+                if present? selected nil
           :examples $ []
           :schema $ quote $ Fn Bool Number
             -> $ JsNullish Number

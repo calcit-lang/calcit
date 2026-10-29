@@ -3647,7 +3647,7 @@ fn spread_fix_never_writes_unproved_calls() {
 }
 
 #[test]
-fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
+fn spread_fix_preserves_rest_and_unknown_macro_boundaries() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
@@ -3696,10 +3696,6 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     (
       "rest-spread",
       "quote $ defn rest-spread () $ let\n    f $ fn (& xs)\n      hint-fn $ Fn & Number (-> Number)\n      , 1\n  f & $ [] 1 2",
-    ),
-    (
-      "optional-spread",
-      "quote $ defn optional-spread () $ let\n    f $ fn (x)\n      hint-fn $ Fn (Optional Number) (-> Number)\n      , 1\n  f & $ [] 1",
     ),
     (
       "macro-spread",

@@ -12927,15 +12927,27 @@ fn is_dynamic_branch(expr: &Calcit, scope_types: &ScopeTypes) -> bool {
   resolve_type_value(expr, scope_types).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
 }
 
+/// A nil branch in project source that the caller can edit, as reported by
+/// `check_value_position_nil_branch`.
+fn reported_implicit_nil_branch(value: &Calcit, scope_types: &ScopeTypes, file_ns: &str) -> Option<(ImplicitNilBranch, NodeLocation)> {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+    return None;
+  }
+  let (kind, location) = find_implicit_nil_branch(value, scope_types)?;
+  location
+    .filter(|location| location.ns.as_ref() == file_ns)
+    .map(|location| (kind, location))
+}
+
 /// Reject a branch that silently yields nil where its value is consumed (#1554):
 /// a call or method argument, or a function return declared with a concrete type.
 /// The migration is an explicit `Option :some` / `Option :none`, an explicit else
 /// value, or `nil->option` around an existing nil. Statement-position branches,
 /// `nil->option` arguments and declared nullable slots are never passed here.
 /// Strict checking reports `E_IMPLICIT_NIL_BRANCH`; compatibility mode, and a
-/// `let` initializer (`strict_site == false`), only note `W_IMPLICIT_NIL_BRANCH`.
-/// Until `Optional<T>` is removed (0.32.0) the branch also keeps its legacy
-/// nullable evidence, so every contract check still sees it.
+/// site passed with `strict_site == false`, only note `W_IMPLICIT_NIL_BRANCH`.
+/// The branch itself infers an open Dynamic value, so compatibility mode keeps
+/// no nullable evidence for it.
 fn check_value_position_nil_branch(
   value: &Calcit,
   context: &str,
@@ -12944,15 +12956,9 @@ fn check_value_position_nil_branch(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
-    return Ok(());
-  }
-  let Some((kind, Some(location))) = find_implicit_nil_branch(value, scope_types) else {
+  let Some((kind, location)) = reported_implicit_nil_branch(value, scope_types, file_ns) else {
     return Ok(());
   };
-  if location.ns.as_ref() != file_ns {
-    return Ok(());
-  }
   let reason = match kind {
     ImplicitNilBranch::MissingElse => "an `if` / `when` without an else yields nil when its condition is false",
     ImplicitNilBranch::NilJoin => "one branch is `nil` while another carries a value",
@@ -14393,12 +14399,19 @@ pub fn preprocess_core_let(
       propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
       if existing_type.is_none() {
-        // A `let` binding can still be narrowed (`nil?`, a nullable parameter), and every
-        // non-nullable use of it is rejected at that use, so the binding itself is only noted.
-        check_value_position_nil_branch(&form, "let binding", false, &body_types, ctx.file_ns, ctx.call_stack)?;
+        // A nil join has no Calcit type since `Optional<T>` was removed (#2233), so
+        // binding one is rejected like any other value use.
+        check_value_position_nil_branch(&form, "let binding", true, &body_types, ctx.file_ns, ctx.call_stack)?;
       }
-      let inferred_type = existing_type
-        .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
+      // Only compatibility mode reaches here with a reported nil branch; the
+      // binding is an open value there rather than a nullable `T`.
+      let compat_nil_join = existing_type.is_none() && reported_implicit_nil_branch(&form, &body_types, ctx.file_ns).is_some();
+      let inferred_type = existing_type.unwrap_or_else(|| {
+        if compat_nil_join {
+          return crate::calcit::DYNAMIC_TYPE.clone();
+        }
+        infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
+      });
 
       let name = Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(sym),

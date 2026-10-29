@@ -2801,8 +2801,8 @@ try {
         ["wrong-live-payload", [], "[]", "if flag |bad nil", nullableNumber, true],
         ["wrong-reversed-payload", [], "[]", "if flag nil |bad", nullableNumber, true],
         ["open-live-payload", ["raw"], "[] 'Dynamic", "if flag raw nil", nullableNumber, false],
-        ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (if flag 7 nil))) (let ((selected raw)) selected)", nullableNumber, false],
-        ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (if flag 7 nil))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
+        ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (let ((selected raw)) selected)", nullableNumber, false],
+        ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
         ["nullish-elimination", ["raw"], `[] $ ${nullableNumber}`, "if flag raw 7", "'Number", true],
         ["stored-optional", [], "[]", "&parse-float |1", nullableNumber, true],
         ["wrong-callback-input", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'String)) (:return 'Unit)) &unit) nil", nullableCallback, true],
@@ -4277,7 +4277,7 @@ try {
         }
       }
 
-      // Nullable branch evidence must survive local bindings without proving open values.
+      // Option evidence from a nil join must survive local bindings without proving open values.
       await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
       run("test", "--tag", "nullable-branch-binding", "--require-match");
       run("test", "--tag", "open-match-payload", "--require-match");
@@ -4334,7 +4334,8 @@ try {
           const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
-          const diagnostic = /W_FN_ARG_TYPE_MISMATCH/;
+          // Since #2233 a let-bound `if` nil join is itself a strict error.
+          const diagnostic = expression.startsWith("if ") ? /W_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/ : /W_FN_ARG_TYPE_MISMATCH/;
           assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
           assert.deepEqual(await readFile(snapshot), original);
           if (mode[0] === "js") await assertRejectedArtifacts(output, name, diagnostic, true);

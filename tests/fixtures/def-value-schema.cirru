@@ -33,8 +33,8 @@
         'choose-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-nil (present)
             let
-                selected $ if present nil nil
-              Box :value $ nil->option selected
+                selected $ nil->option $ if present nil nil
+              Box :value selected
           :examples $ []
           :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
@@ -68,8 +68,8 @@
         'choose-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-option (present value)
             let
-                selected $ if present value nil
-              OptionBox :value $ nil->option selected
+                selected $ nil->option $ if present value nil
+              OptionBox :value selected
           :examples $ []
           :schema $ quote $ Fn Bool (Option String) (-> app.binding-proof/OptionBox)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
@@ -160,9 +160,9 @@
         'if-nil-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-nil-first (present)
             let
-                selected $ if present nil $ Value :text |ok
+                selected $ nil->option $ if present nil (Value :text |ok)
                 alias selected
-              Box :value $ nil->option alias
+              Box :value alias
           :examples $ []
           :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
@@ -177,9 +177,9 @@
         'if-value-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-value-first (present)
             let
-                selected $ if present (Value :text |ok) nil
+                selected $ nil->option $ if present (Value :text |ok) nil
                 alias selected
-              Box :value $ nil->option alias
+              Box :value alias
           :examples $ []
           :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
