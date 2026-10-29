@@ -65,8 +65,7 @@ impl CalcitProc {
       | NativeGetCalcitBackend
       | RegisterCalcitBuiltinImpls
       | WithTypeSlot
-      | IsSpreadingMark
-      | NativeCirruQuoteToList => Total,
+      | IsSpreadingMark => Total,
       FormatToCirru => Raises("the value is not a list of expressions"),
       GenerateId => Raises("the size is not a non-negative integer"),
       TurnTag => Raises("the value is not a string, tag or symbol"),
@@ -76,6 +75,8 @@ impl CalcitProc {
       NativeExtractCodeIntoEdn => Raises("the value contains a ref, buffer, buf-list, recur or trait"),
       NativeDataToCode => Raises("the data contains a value with no code form, such as a function"),
       NativeCirruNth => Raises(INDEX),
+      NativeCirruQuoteToList => Raises("the root is a leaf"),
+      NativeCirruQuoteLeafText => Raises("the root is a list"),
       DeftypeSlot => Raises("the name is neither a tag nor a string"),
 
       // enums, structs, traits and impls as values

@@ -3342,8 +3342,28 @@ export let _$n_hash = (x: CalcitValue): number => {
   return hashFunction(x);
 };
 
-export let _$n_cirru_quote_$o_to_list = (x: CalcitCirruQuote): CalcitValue => {
+export let _$n_cirru_quote_$o_to_list = function (x: CalcitCirruQuote): CalcitValue {
+  if (arguments.length !== 1) throw new Error("&cirru-quote:to-list takes 1 argument");
+  if (!(x instanceof CalcitCirruQuote)) {
+    throw new Error(`&cirru-quote:to-list requires a Cirru quote, but received: ${toString(x, true)}`);
+  }
+  if (!Array.isArray(x.value)) {
+    throw new Error(
+      `&cirru-quote:to-list requires a list root, but received the leaf \`${x.value}\`; use .to-list for Option<List> or .leaf-text for the token`,
+    );
+  }
   return x.toList();
+};
+
+export let _$n_cirru_quote_$o_leaf_text = function (x: CalcitCirruQuote): string {
+  if (arguments.length !== 1) throw new Error("&cirru-quote:leaf-text takes 1 argument");
+  if (!(x instanceof CalcitCirruQuote)) {
+    throw new Error(`&cirru-quote:leaf-text requires a Cirru quote, but received: ${toString(x, true)}`);
+  }
+  if (Array.isArray(x.value)) {
+    throw new Error("&cirru-quote:leaf-text requires a leaf root, but received a list; use .leaf-text for Option<String>");
+  }
+  return x.value;
 };
 
 // special procs have to be defined manually

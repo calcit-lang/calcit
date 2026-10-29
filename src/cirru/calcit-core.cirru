@@ -252,8 +252,14 @@
           :examples $ []
           :schema $ quote $ Fn CirruQuote Number (-> CirruQuote)
           :tags $ #{} :builtin :internal
+        '&cirru-quote:leaf-text $ %{} 'CodeEntry
+          :doc "|internal function for reading the token of a leaf Cirru quote; not a public entry, use the CirruQuote .leaf-text method (Option<String>) instead.\nSyntax: (&cirru-quote:leaf-text quote)\nParams: quote (cirru-quote)\nReturns: the original token text of a leaf root, without interpreting a leading colon or bar\nRaises a type error for a list root"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn CirruQuote (-> String)
+          :tags $ #{} :builtin :internal
         '&cirru-quote:to-list $ %{} 'CodeEntry
-          :doc "|internal function for converting Cirru quote to list; not a public entry, use the CirruQuote .to-list method (Option<List>) or .leaf-text (Option<String>) instead.\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list for list roots; a leaf root currently returns its token String although the schema says List\nConverts Cirru quote structure to regular list"
+          :doc "|internal function for converting Cirru quote to list; not a public entry, use the CirruQuote .to-list method (Option<List>) or .leaf-text (Option<String>) instead.\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list for list roots, converting the tree recursively and keeping leaves as token strings\nRaises a type error for a leaf root since 0.33.0; earlier versions returned the token String although the schema says List"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn CirruQuote (-> List)
@@ -5225,9 +5231,7 @@
           :code $ quote $ defn cirru-quote:leaf-text (x)
             if
               &= :leaf $ &cirru-type x
-              let
-                  text $ &cirru-quote:to-list x
-                if (string? text) (Option :some text) (Option :none)
+              Option :some $ &cirru-quote:leaf-text x
               Option :none
           :examples $ []
           :schema $ quote $ Fn CirruQuote
@@ -5265,6 +5269,15 @@
                     reset! *calls $ inc @*calls
                     cirru-quote $ a b
                 assert= 2 @*calls
+                assert= true $ try
+                  &let ()
+                    .leaf-text $ do
+                      reset! *calls $ inc @*calls
+                      raise |boom
+                      cirru-quote x
+                    , false
+                  fn (error) true
+                assert= 3 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote:leaf? $ %{} 'CodeEntry
           :doc "|CirruQuote 的内部方法实现；公开代码使用 .leaf?。根节点为 leaf 时返回 true。"
@@ -5367,6 +5380,15 @@
                   reset! *calls $ inc @*calls
                   cirru-quote token
                 assert= 4 @*calls
+                assert= true $ try
+                  &let ()
+                    .to-list $ do
+                      reset! *calls $ inc @*calls
+                      raise |boom
+                      cirru-quote $ a b
+                    , false
+                  fn (error) true
+                assert= 5 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)

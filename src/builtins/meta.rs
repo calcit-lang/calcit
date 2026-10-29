@@ -394,7 +394,13 @@ pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&cirru-quote:to-list expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
+    Calcit::CirruQuote(ys @ Cirru::List(_)) => Ok(cirru_to_calcit(ys)),
+    Calcit::CirruQuote(Cirru::Leaf(token)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&cirru-quote:to-list requires a list root, but received the leaf `{token}`; use .to-list for Option<List> or .leaf-text for the token"
+      ),
+    ),
     a => {
       let msg = format!(
         "&cirru-quote:to-list requires a Cirru quote, but received: {}",
@@ -403,6 +409,30 @@ pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = format_proc_examples_hint(&CalcitProc::NativeCirruQuoteToList).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
+  }
+}
+
+pub fn cirru_quote_leaf_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&cirru-quote:leaf-text expected 1 argument, but received:",
+      xs,
+    );
+  }
+  match &xs[0] {
+    Calcit::CirruQuote(Cirru::Leaf(token)) => Ok(Calcit::Str(token.to_owned())),
+    Calcit::CirruQuote(Cirru::List(_)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      "&cirru-quote:leaf-text requires a leaf root, but received a list; use .leaf-text for Option<String>".to_owned(),
+    ),
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&cirru-quote:leaf-text requires a Cirru quote, but received: {}",
+        type_of(std::slice::from_ref(a))?.lisp_str()
+      ),
+    ),
   }
 }
 

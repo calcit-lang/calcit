@@ -19,17 +19,18 @@
                 CodeEntry $ defstruct CodeEntry (:code 'Dynamic) (:doc 'String) (:examples 'List)
                 NsEntry $ defstruct NsEntry (:code 'Dynamic) (:doc 'String)
                 FileEntry $ defstruct FileEntry (:defs 'Map) (:ns 'Dynamic)
+                quote->data $ fn (node)
+                  if (.leaf? node) (&cirru-quote:leaf-text node) (&cirru-quote:to-list node)
                 code->detail $ fn (node now recur-fn)
-                  let
-                      data $ &cirru-quote:to-list node
-                    if (string? data)
-                      %{} Leaf (:at now) (:by |sync) (:text data)
-                      %{} Expr (:at now) (:by |sync)
-                        :data $ foldl
-                          range $ count data
-                          {}
-                          fn (acc idx)
-                            bisection-key.util/assoc-append acc $ recur-fn (&cirru-nth node idx) now recur-fn
+                  if (.leaf? node)
+                    %{} Leaf (:at now) (:by |sync)
+                      :text $ &cirru-quote:leaf-text node
+                    %{} Expr (:at now) (:by |sync)
+                      :data $ foldl
+                        range $ count $ &cirru-quote:to-list node
+                        {}
+                        fn (acc idx)
+                          bisection-key.util/assoc-append acc $ recur-fn (&cirru-nth node idx) now recur-fn
                 detail->data $ fn (node recur-fn)
                   let
                       text $ get node :text
@@ -51,7 +52,7 @@
                     if (non-nil? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
+                          code-changed? $ not= (detail->data old-code detail->data) (quote->data next-code)
                           base $ assoc old :doc next-doc
                           base-with-examples $ if (contains? old :examples) (assoc base :examples next-examples) base
                         assoc base-with-examples :code $ if code-changed? (code->detail next-code now code->detail) old-code
@@ -66,7 +67,7 @@
                     if (non-nil? old)
                       let
                           old-code $ get old :code
-                          code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
+                          code-changed? $ not= (detail->data old-code detail->data) (quote->data next-code)
                         assoc (assoc old :doc next-doc) :code $ if code-changed? (code->detail next-code now code->detail) old-code
                       %{} NsEntry
                         :code $ code->detail next-code now code->detail

@@ -441,6 +441,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     ParseCirruEdn => meta::parse_cirru_edn(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),
+    NativeCirruQuoteLeafText => meta::cirru_quote_leaf_text(args),
     JsonParse => json::parse(args),
     JsonStringify => json::stringify(args),
     JsonPretty => json::pretty(args),
