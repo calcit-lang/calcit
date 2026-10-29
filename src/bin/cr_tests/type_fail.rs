@@ -3721,6 +3721,32 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
   });
 }
 
+#[test]
+fn literal_equality_narrows_only_the_true_branch() {
+  run_with_large_stack(|| {
+    let probe = |params: &str, schema: &str, body: &str| {
+      format!("let\n    probe $ fn ({params})\n      hint-fn $ {schema}\n      {body}\n  , probe")
+    };
+    for (label, snippet, passes) in [
+      ("tag", probe("x", "Fn Dynamic (-> Tag)", "if (= x :a) x :b"), true),
+      ("tag-literal-first", probe("x", "Fn Dynamic (-> Tag)", "if (= :a x) x :b"), true),
+      ("string", probe("x", "Fn Dynamic (-> Number)", "if (= x |a) (&str:count x) 0"), true),
+      (
+        "number-native",
+        probe("x", "Fn Dynamic (-> Number)", "if (&= x 1) (&+ x 1) 0"),
+        true,
+      ),
+      ("bool", probe("x", "Fn Dynamic (-> Bool)", "if (= x true) x false"), true),
+      ("cond", probe("x", "Fn Dynamic (-> Tag)", "cond ((= x :a) x) (true :b)"), true),
+      ("false-branch", probe("x", "Fn Dynamic (-> Tag)", "if (= x :a) :b x"), false),
+      ("two-locals", probe("x y", "Fn Dynamic Dynamic (-> Tag)", "if (= x y) x :b"), false),
+      ("nil-literal", probe("x", "Fn Dynamic (-> Tag)", "if (= x nil) x :b"), false),
+    ] {
+      assert_strict_snippet(&snippet, passes, label);
+    }
+  });
+}
+
 /// #1554: a value-position use of a branch without an else (or an explicit nil
 /// join) is a strict `E_IMPLICIT_NIL_BRANCH` at a call argument or a concrete
 /// return, an advisory at a `let` binding, and a `W_IMPLICIT_NIL_BRANCH` warning

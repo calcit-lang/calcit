@@ -11835,6 +11835,50 @@ fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) ->
   Some((sym, Arc::new(nominal)))
 }
 
+/// `(= x :a)` holds only when `x` has the literal's kind on every backend, so the
+/// true branch narrows `x` to Tag, String, Number or Bool. The false branch
+/// learns nothing, and only core equality counts, in either operand order.
+fn literal_equality_binding(
+  head: Option<&Calcit>,
+  left: Option<&Calcit>,
+  right: Option<&Calcit>,
+  scope_types: &ScopeTypes,
+) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let core_equality = match head? {
+    Calcit::Proc(CalcitProc::NativeEquals) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == calcit::CORE_NS && def.as_ref() == "=" && program::has_bundled_core_source()
+    }
+    _ => false,
+  };
+  if !core_equality {
+    return None;
+  }
+  let local_name = |value: &Calcit| match value {
+    Calcit::Local(local) => Some(local.sym.to_owned()),
+    Calcit::Symbol { sym, .. } => Some(sym.to_owned()),
+    _ => None,
+  };
+  let literal_kind = |value: &Calcit| match value {
+    Calcit::Tag(_) => Some(tag_annotation("tag")),
+    Calcit::Str(_) => Some(tag_annotation("string")),
+    Calcit::Number(_) => Some(tag_annotation("number")),
+    Calcit::Bool(_) => Some(tag_annotation("bool")),
+    _ => None,
+  };
+  let (left, right) = (left?, right?);
+  let (sym, kind) = match (local_name(left), local_name(right)) {
+    (Some(sym), None) => (sym, literal_kind(right)?),
+    (None, Some(sym)) => (sym, literal_kind(left)?),
+    _ => return None,
+  };
+  // Keep a binding that is already at least as precise, such as a numeric refinement.
+  if scope_types.get(&sym).is_some_and(|current| current.is_proven_for(&kind)) {
+    return None;
+  }
+  Some((sym, kind))
+}
+
 /// The value kind a type predicate establishes for its target in the true
 /// branch. Nullability predicates are not kind refinements and return `None`.
 fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
@@ -11856,6 +11900,14 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   if items.len() == 3
     && matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructMatches)))
     && let Some(binding) = struct_origin_binding(items.get(1), items.get(2))
+  {
+    return PredicateNarrowing {
+      true_binding: Some(binding),
+      false_binding: None,
+    };
+  }
+  if items.len() == 3
+    && let Some(binding) = literal_equality_binding(items.first(), items.get(1), items.get(2), scope_types)
   {
     return PredicateNarrowing {
       true_binding: Some(binding),
