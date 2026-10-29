@@ -24,6 +24,19 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.33.0 `Tuple` 改为定长元组类型，删除 `tuple?` / `tuple-enum`（#2479，未发布）
+
+`Tuple` 现在是定长、按位置异构的 List 类型，例如 `quote $ Tuple Number String`，用法见
+[类型使用指南](../type-guidance.md#定长元组-tuple)。它和旧的 tuple 值模型（现在的 Enum）无关：
+
+- core 里抛出“已删除”错误的占位定义 `tuple?` 和 `tuple-enum` 已删除。残留调用在检查时报告未知名字，告警给出替代写法：
+  `tuple?` 改为 `enum?`（值）或 `enum-def?`（定义），`tuple-enum` 改为 `enum-definition`。
+- 小写 `:tuple` 仍是 Enum 的旧拼写并会被拒绝；旧 `&tuple:*` API 的 `W_REMOVED_DATA_API` 提示和 `calcit fix` 规则不变。
+- 以前 schema 里写 `'Tuple` 会被当作 `Enum`；现在单独的 `Tuple` 会报错，要求写出元素类型。表示 Enum 的地方改写为 `Enum`。
+- 在声明为元组的位置，`nth t 0` 返回该位置的值本身，不再包 `Option`；下标必须是范围内的字面量。
+
+没有元组 schema 的代码行为不变：元素类型不同的 `[]` 字面量仍推断为 `List Dynamic`。
+
 ## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435，未发布）
 
 旧的内部入口 `&cirru-quote:to-list` 签名声明返回 List，但在 0.32.x 及更早版本中，叶根会返回 token

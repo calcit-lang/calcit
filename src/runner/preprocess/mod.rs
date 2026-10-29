@@ -1284,8 +1284,6 @@ pub struct RemovedDataApiMigration {
 
 pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration> {
   let replacement = match name {
-    "tuple?" => None,
-    "tuple-enum" => Some("enum-definition".to_owned()),
     "&record:struct" => Some("&struct:definition".to_owned()),
     "&tuple:enum" => Some("&enum:definition".to_owned()),
     "&tuple:enum-has-variant?" => Some("&enum-def:has-variant?".to_owned()),
@@ -1295,9 +1293,7 @@ pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration>
     _ if name.starts_with("&tuple:") => Some(name.replacen("&tuple:", "&enum:", 1)),
     _ => return None,
   };
-  let guidance = replacement
-    .clone()
-    .unwrap_or_else(|| "enum? (values) or enum-def? (definitions)".to_owned());
+  let guidance = replacement.clone().unwrap_or_default();
   Some(RemovedDataApiMigration { replacement, guidance })
 }
 
@@ -1306,6 +1302,8 @@ pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration>
 fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static str)> {
   match name {
     "some?" => Some(("0.29.0", "use `non-nil?`; Option variants use `.some?`")),
+    "tuple?" => Some(("0.33.0", "use `enum?` for enum values or `enum-def?` for definitions")),
+    "tuple-enum" => Some(("0.33.0", "use `enum-definition`, which returns Option<EnumDef>")),
     "join-str" => Some(("0.29.0", "use `join-string`")),
     "add-watch" => Some(("0.29.0", "use `add-watch!`")),
     "cpu-time" => Some(("0.29.0", "use `monotonic-time-ms`")),
@@ -1712,6 +1710,10 @@ fn check_top_level_value_schema(
   let proof =
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || actual.prove_with_bindings(&expected, &mut HashMap::new()));
   if !matches!(proof, TypeProof::Mismatch) {
+    return Ok(());
+  }
+  // A literal is checked against the declared shape, e.g. `[] 1 2` as `Tuple Number Number`.
+  if type_checking::expression_is_proven_for(resolved, &expected, scope_types, false) {
     return Ok(());
   }
   let location = forms
@@ -3098,6 +3100,11 @@ fn try_expand_typed_optional_access_call(
     return Ok(None);
   };
   let receiver_type = resolve_bound_type_slot_chain(receiver_type);
+  // Other indexed reads see a homogeneous tuple as the List it also is.
+  let receiver_type = match receiver_type.as_ref() {
+    T::Tuple(slots) if fn_def != "nth" => T::homogeneous_tuple_item(slots).map_or(receiver_type.clone(), |item| Arc::new(T::List(item.clone()))),
+    _ => receiver_type,
+  };
 
   let indexed_procs = match receiver_type.as_ref() {
     T::List(_) => Some((CalcitProc::NativeListCount, CalcitProc::NativeListNth)),
@@ -3114,6 +3121,22 @@ fn try_expand_typed_optional_access_call(
   };
 
   match (fn_def, args.len(), receiver_type.as_ref()) {
+    // A tuple slot is always present, so `nth` reads it directly instead of
+    // wrapping it in Option. `&list:nth` checks the literal index.
+    ("nth", 2, T::Tuple(slots)) => match type_inference::tuple_literal_index(&args[1], slots.len()) {
+      Ok(_) => Ok(Some(generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeListNth),
+        receiver_expr.to_owned(),
+        args[1].to_owned(),
+      ]))),
+      Err(reason) => Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!("`nth` cannot read tuple `{}` at `{}`: {reason}", receiver_type.to_brief_string(), args[1]),
+        "E_TUPLE_INDEX",
+        call_stack,
+        args[1].get_location().or_else(|| receiver_expr.get_location()),
+      )),
+    },
     ("get", 2, T::Map(_, _)) if matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
       let key = generated_path_symbol("typed_get_key", file_ns, call_stack)?;
@@ -9307,6 +9330,7 @@ fn constant_truthy_type_label(value_type: &CalcitTypeAnnotation) -> Option<&'sta
     CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("Number"),
     CalcitTypeAnnotation::String => Some("String"),
     CalcitTypeAnnotation::List(_) => Some("List"),
+    CalcitTypeAnnotation::Tuple(_) => Some("Tuple"),
     CalcitTypeAnnotation::Map(..) => Some("Map"),
     CalcitTypeAnnotation::Set(_) => Some("Set"),
     CalcitTypeAnnotation::StructValue(_) | CalcitTypeAnnotation::Struct(..) => Some("Struct"),
@@ -11182,7 +11206,10 @@ fn annotation_dynamic_weight(type_value: &CalcitTypeAnnotation) -> usize {
         + signature.rest_type.as_ref().map_or(0, |rest| annotation_dynamic_weight(rest))
         + annotation_dynamic_weight(signature.return_type.as_ref())
     }
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+    CalcitTypeAnnotation::Struct(_, args)
+    | CalcitTypeAnnotation::Enum(_, args)
+    | CalcitTypeAnnotation::TypeRef(_, args)
+    | CalcitTypeAnnotation::Tuple(args) => {
       args.iter().map(|arg| annotation_dynamic_weight(arg)).sum()
     }
     _ => 0,
@@ -15623,7 +15650,10 @@ fn contains_legacy_optional(annotation: &CalcitTypeAnnotation) -> bool {
       MacroSyntaxType::Expr(semantic) => contains_legacy_optional(semantic),
       MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => false,
     },
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+    CalcitTypeAnnotation::Struct(_, args)
+    | CalcitTypeAnnotation::Enum(_, args)
+    | CalcitTypeAnnotation::TypeRef(_, args)
+    | CalcitTypeAnnotation::Tuple(args) => {
       args.iter().any(|item| contains_legacy_optional(item))
     }
     _ => false,
@@ -15695,6 +15725,10 @@ fn find_schema_annotation<T>(
       .iter()
       .enumerate()
       .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.type-arg.{idx}"), predicate)),
+    CalcitTypeAnnotation::Tuple(items) => items
+      .iter()
+      .enumerate()
+      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.item.{idx}"), predicate)),
     _ => None,
   }
 }
@@ -16266,6 +16300,15 @@ fn reject_strict_unproven_generic_relation(
   if !audit && (!strict_types_enabled() || !should_emit_project_source_lint(file_ns)) {
     return Ok(());
   }
+  // A tuple slot read is proved by its literal index (see `check_proc_arg_types`).
+  if matches!(head, Calcit::Proc(CalcitProc::NativeListNth))
+    && args
+      .first()
+      .and_then(|receiver| resolve_type_value(receiver, scope_types))
+      .is_some_and(|receiver| matches!(receiver.as_ref(), CalcitTypeAnnotation::Tuple(_)))
+  {
+    return Ok(());
+  }
   let expanded_contract = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
     match expanded_call_contract(signature, args) {
       Ok(contract) => Some(contract),
@@ -16300,6 +16343,7 @@ fn reject_strict_unproven_generic_relation(
     resolve_type_value(&form, scope_types).and_then(|inferred| {
       let types = match inferred.as_ref() {
         CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) => vec![inner.clone(); args.len()],
+        CalcitTypeAnnotation::Tuple(slots) if slots.len() == args.len() => slots.to_vec(),
         CalcitTypeAnnotation::Map(key, value) => (0..args.len())
           .map(|index| if index % 2 == 0 { key.clone() } else { value.clone() })
           .collect(),
@@ -16516,7 +16560,10 @@ fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
     | CalcitTypeAnnotation::Nullable(inner, _)
     | CalcitTypeAnnotation::Variadic(inner) => contains_dynamic_type(inner.as_ref()),
     CalcitTypeAnnotation::Map(key, value) => contains_dynamic_type(key.as_ref()) || contains_dynamic_type(value.as_ref()),
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+    CalcitTypeAnnotation::Struct(_, args)
+    | CalcitTypeAnnotation::Enum(_, args)
+    | CalcitTypeAnnotation::TypeRef(_, args)
+    | CalcitTypeAnnotation::Tuple(args) => {
       args.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
     }
     CalcitTypeAnnotation::Fn(signature) => {
@@ -18610,7 +18657,6 @@ mod tests {
   #[test]
   fn removed_data_apis_point_to_their_struct_enum_replacements() {
     let cases = [
-      ("tuple-enum", "enum-definition"),
       ("&record:get", "&struct:get"),
       ("&record:struct", "&struct:definition"),
       ("&tuple:nth", "&enum:nth"),
@@ -18626,13 +18672,10 @@ mod tests {
         Some(replacement.to_owned())
       );
     }
-    assert_eq!(
-      removed_data_api_migration("tuple?"),
-      Some(RemovedDataApiMigration {
-        replacement: None,
-        guidance: "enum? (values) or enum-def? (definitions)".to_owned(),
-      })
-    );
+    // The old enum predicates are plain retired core names now, so `Tuple`
+    // is never redirected to Enum outside the removed `&tuple:*` APIs.
+    assert_eq!(removed_data_api_migration("tuple?"), None);
+    assert_eq!(removed_data_api_migration("tuple-enum"), None);
     assert_eq!(removed_data_api_migration("&map:get"), None);
   }
 

@@ -871,6 +871,27 @@ pub(crate) fn check_proc_arg_types(
     }
   }
 
+  // A tuple slot read is checked by its literal index instead of as `List T`.
+  if matches!(proc, CalcitProc::NativeListNth)
+    && let (Some(receiver), Some(index)) = (args.first(), args.get(1))
+    && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
+  {
+    if let Err(reason) = super::type_inference::tuple_literal_index(index, slots.len()) {
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] tuple `{}` cannot be read at `{index}`: {reason}, in call at {file_ns}/{def_name}",
+          receiver_type.to_brief_string()
+        ),
+        "W_TUPLE_INDEX",
+        file_ns,
+        index.get_location().or_else(|| call_location.clone()),
+        check_warnings,
+      );
+    }
+    return;
+  }
+
   // Literal spread changes the call shape, not its argument contract. Keep
   // ordinary checking (including eval) aligned with the proof traversal.
   // Only inspect the expanded operands; leave the executable call unchanged.
@@ -1744,6 +1765,15 @@ pub(super) fn expression_is_proven_for(
               .iter()
               .skip(1)
               .all(|value| self.check(value, member, scope, aliases, false, depth + 1));
+          }
+          // A literal proves a tuple position by position; its length is the arity.
+          (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::Tuple(slots)) => {
+            return items.len() - 1 == slots.len()
+              && items
+                .iter()
+                .skip(1)
+                .zip(slots.iter())
+                .all(|(value, slot)| self.check(value, slot, scope, aliases, false, depth + 1));
           }
           // A fresh Ref has no other aliases yet, so its initial value decides it.
           (Some(Calcit::Proc(CalcitProc::Ref)), CalcitTypeAnnotation::Ref(inner)) if items.len() == 2 => {

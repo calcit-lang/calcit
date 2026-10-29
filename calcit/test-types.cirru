@@ -387,6 +387,28 @@
             , "|Typed method access checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)
+        'tuple-label $ %{} 'CodeEntry (:doc "|Reads a fixed-length tuple by position")
+          :code $ quote $ defn tuple-label (entry)
+            let[] (key title) entry
+              str key |= title (nth entry 0)
+          :examples $ []
+          :schema $ quote $ Fn (Tuple Tag String) (-> String)
+          :tests $ []
+            %{} 'TestEntry (:name |reads-tuple-positions)
+              :code $ quote $ assert= "|:title=Calcit:title"
+                tuple-label $ [] :title |Calcit
+              :tags $ #{} :tuple
+            %{} 'TestEntry (:name |homogeneous-tuple-is-a-list)
+              :code $ quote $ let
+                  point $ assert-type ([] 3 4) (quote $ Tuple Number Number)
+                assert= ([] 4 5)
+                  map point $ fn (x) (&+ x 1)
+              :tags $ #{} :tuple
+            %{} 'TestEntry (:name |tuple-count-and-equality)
+              :code $ quote $ let
+                  pair $ assert-type ([] 1 |a) (quote $ Tuple Number String)
+                assert= 3 $ &+ (nth pair 0) (count pair)
+              :tags $ #{} :tuple
         'typed-only $ %{} 'CodeEntry (:doc "|Used to verify arg type hints are collected")
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []

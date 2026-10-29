@@ -139,6 +139,11 @@ fn collect_dynamic_schema_paths(annotation: &CalcitTypeAnnotation, path: &str, p
         collect_dynamic_schema_paths(arg, &format!("{path}.type-args.{index}"), paths);
       }
     }
+    Type::Tuple(items) => {
+      for (index, item) in items.iter().enumerate() {
+        collect_dynamic_schema_paths(item, &format!("{path}.item.{index}"), paths);
+      }
+    }
     _ => {}
   }
 }
@@ -174,6 +179,11 @@ fn collect_unbound_schema_paths(
     Type::Struct(_, args) | Type::Enum(_, args) | Type::TypeRef(_, args) => {
       for (index, arg) in args.iter().enumerate() {
         collect_unbound_schema_paths(arg, &format!("{path}.type-args.{index}"), bound_generics, paths);
+      }
+    }
+    Type::Tuple(items) => {
+      for (index, item) in items.iter().enumerate() {
+        collect_unbound_schema_paths(item, &format!("{path}.item.{index}"), bound_generics, paths);
       }
     }
     _ => {}

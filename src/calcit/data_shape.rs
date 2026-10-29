@@ -590,6 +590,9 @@ impl GraphBuilder {
         let inner = self.build_type(inner, default_ns)?;
         Ok(self.push(DataShapeNode::Set(inner)))
       }
+      CalcitTypeAnnotation::Tuple(_) => Err(unsupported_type(
+        "Tuple is not a decode target yet; decode a List and read its positions with `let[]`",
+      )),
       CalcitTypeAnnotation::Map(key, value) => {
         let key = self.build_type(key, default_ns)?;
         let value = self.build_type(value, default_ns)?;

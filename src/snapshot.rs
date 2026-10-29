@@ -1731,7 +1731,7 @@ fn check_no_legacy_data_type_names(schema: &Cirru) -> Result<(), String> {
       let name = value.trim_start_matches(['\'', ':']);
       let replacement = match name {
         "record" | "Record" => Some("Struct"),
-        "tuple" | "Tuple" => Some("Enum"),
+        "tuple" => Some("Enum"),
         _ => None,
       };
       if let Some(replacement) = replacement {
@@ -1739,10 +1739,22 @@ fn check_no_legacy_data_type_names(schema: &Cirru) -> Result<(), String> {
           "Legacy type name `{name}` was removed by the struct/enum data-model migration; use `'{replacement}`."
         ));
       }
+      if value.trim_start_matches('\'') == "Tuple" {
+        return Err("`Tuple` needs its element types, such as `Tuple Number String`.".to_owned());
+      }
       Ok(())
     }
     Cirru::List(items) => {
-      for item in items {
+      // `:: 'Tuple A B` is the applied positional type; only its head may name it.
+      let applied_tuple = matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::")
+        && matches!(items.get(1), Some(Cirru::Leaf(name)) if name.trim_start_matches('\'') == "Tuple");
+      for (idx, item) in items.iter().enumerate() {
+        if applied_tuple && idx == 1 {
+          if items.len() < 3 {
+            return Err("`Tuple` needs at least one element type, such as `Tuple Number String`.".to_owned());
+          }
+          continue;
+        }
         check_no_legacy_data_type_names(item)?;
       }
       Ok(())
@@ -5436,7 +5448,6 @@ mod tests {
 
     for (legacy, replacement) in [
       ("'Record", "'Struct"),
-      ("'Tuple", "'Enum"),
       (":record", "'Struct"),
       (":tuple", "'Enum"),
     ] {
@@ -5444,6 +5455,16 @@ mod tests {
         validate_schema_for_write(&Cirru::Leaf(Arc::from(legacy))).expect_err("legacy data type names must be rejected on write");
       assert!(error.contains(replacement), "error should point to {replacement}: {error}");
     }
+
+    // `Tuple` is the positional type now; it needs its element types.
+    let bare_tuple = validate_schema_for_write(&Cirru::Leaf(Arc::from("'Tuple"))).expect_err("bare Tuple must be rejected");
+    assert!(bare_tuple.contains("element types"), "error: {bare_tuple}");
+    let tuple = parse_one(":: 'Tuple 'Number 'String");
+    validate_schema_for_write(&tuple).expect("applied Tuple should validate");
+    assert!(matches!(
+      parse_schema_annotation_for_write(&tuple).expect("Tuple schema should parse").as_ref(),
+      CalcitTypeAnnotation::Tuple(items) if items.len() == 2
+    ));
 
     let nested_legacy = parse_one(":: 'List 'Record");
     let error = validate_schema_for_write(&nested_legacy).expect_err("nested legacy data type names must be rejected on write");

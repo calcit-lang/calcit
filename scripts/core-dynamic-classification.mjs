@@ -401,14 +401,6 @@ const reviewedPublicBoundaryPositions = new Map([
     "str-spaced|schema.rest",
     "Variadic spaced string conversion deliberately accepts every runtime value; Dynamic is the honest universal presentation input rather than a relation between arguments.",
   ],
-  [
-    "tuple-enum|schema.args.0",
-    "This runtime inspection helper accepts arbitrary values and returns Option<Tag>; callers gain evidence only by handling the Option result, so its input is intentionally universal.",
-  ],
-  [
-    "tuple?|schema.args.0",
-    "A runtime shape predicate must accept arbitrary values in order to narrow them; its Dynamic input is intentional and its Bool output is concrete.",
-  ],
 ]);
 const reviewedTestPositions = new Map([
   [

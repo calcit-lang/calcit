@@ -241,6 +241,31 @@ calcit analyze weak-types --only coverage --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
+## 定长元组 `Tuple`
+
+`Tuple` 描述长度固定、每个位置类型各自固定的 List，例如二维点 `Tuple Number Number`、属性对 `Tuple Tag String`。运行时它仍是普通 List，native、JS 和 WASM 的表示不变；元组只存在于类型检查中。
+
+```cirru
+let
+    point $ assert-type ([] 3 4) (quote $ Tuple Number Number)
+    entry $ assert-type ([] :title |Calcit) (quote $ Tuple Tag String)
+  let[] (key title) entry
+    assert= :title key
+    assert= 8 $ &+ (nth point 0) (&str:count title)
+```
+
+- **写法**：`quote $ Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
+- **字面量**：在期望类型是元组的位置（参数、返回值、带 schema 的 `def`、`assert-type`），`[]` 字面量按位置检查，长度不同或某个位置类型不符都会报错。
+- **读取**：`let[] (x y) t` 让每个变量得到对应位置的类型。`nth t 0` 的下标必须是字面量，返回该位置的值本身，不包 `Option`（位置总是存在）；越界或非字面量下标报 `E_TUPLE_INDEX`。`let[]` 绑定的变量多于元组长度时报 `W_TUPLE_INDEX`。
+- **与 List 的关系**：元素同类型的元组（如 `Tuple Number Number`）可以当作 `List Number` 使用，`first`、`map`、`conj` 等按 List 处理，结果是 `List T`。元素类型不同的元组不能传给任何 List，包括 `List Dynamic`；`List T` 也不能隐式当作元组，长度需要先用 `let[]` 或字面量证明。
+- **能力**：`count`、`=`、`str` 对所有元组可用，同构元组还可以 `map`。`rest`、`reverse`、`sort` 这类返回同一类型的 trait 泛型操作不接受元组，因为结果的长度已经变了；需要时先把同构元组作为 `List T` 传入再调用。
+
+### 限制
+
+- 元素类型不同的 `[]` 字面量在没有期望类型时仍推断为 `List Dynamic`，需要元组时写出 schema 或 `assert-type`。
+- `decode-as` 等解码函数暂不支持 `Tuple` 目标。
+- core 中 `&map:to-list`、`&map:map` 等 key/value pair 仍是 `List Dynamic`，改为元组另行处理。
+
 ## 解析成功不等于数据类型验证成功
 
 String 的 `.parse-cirru-edn` 返回 `Result<Dynamic,String>`：`:ok` 只说明文本符合 Cirru EDN 语法，
