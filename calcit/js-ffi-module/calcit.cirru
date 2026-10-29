@@ -62,22 +62,37 @@
           :tests $ []
             %{} 'TestEntry (:name |mapped-field)
               :code $ quote $ let
-                  host $ checked-counter-host $ make-counter-host 3
-                assert= 3 $ host :total
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-counter-host $ make-counter-host 3
+                      assert= 3 $ host :total
+                    , &unit
+                check-host!
               :tags $ #{} :unit
             %{} 'TestEntry (:name |method-receiver)
               :code $ quote $ let
-                  host $ checked-counter-host $ make-counter-host 3
-                assert= 7 $ host .add! 4
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-counter-host $ make-counter-host 3
+                      assert= 7 $ host .add! 4
+                    , &unit
+                check-host!
               :tags $ #{} :unit
             %{} 'TestEntry (:name |single-evaluation)
               :code $ quote $ let
-                  calls $ ref 0
-                  host $ js-cast
-                    do (swap! calls inc) (make-counter-host 3)
-                    , 'CounterHost
-                assert= 1 $ deref calls
-                assert= 3 $ host :total
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        calls $ ref 0
+                        host $ js-cast
+                          do (swap! calls inc) (make-counter-host 3)
+                          , 'CounterHost
+                      assert= 1 $ deref calls
+                      assert= 3 $ host :total
+                    , &unit
+                check-host!
               :tags $ #{} :unit
             %{} 'TestEntry (:name |explicit-identity)
               :code $ quote $ let
@@ -88,16 +103,26 @@
               :tags $ #{} :unit
             %{} 'TestEntry (:name |inherited-members)
               :code $ quote $ let
-                  tally $ js-cast (make-counter-host 3) 'TallyHost
-                assert= 3 $ counter-total tally
-                assert= 3 $ tally :total
-                assert= 7 $ tally .add! 4
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        tally $ js-cast (make-counter-host 3) 'TallyHost
+                      assert= 3 $ counter-total tally
+                      assert= 3 $ tally :total
+                      assert= 7 $ tally .add! 4
+                    , &unit
+                check-host!
               :tags $ #{} :unit
             %{} 'TestEntry (:name |callable-host)
               :code $ quote $ let
-                  host $ checked-counter-host $ make-callable-counter-host 3
-                assert= 3 $ host :total
-                assert= 7 $ host .add! 4
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-counter-host $ make-callable-counter-host 3
+                      assert= 3 $ host :total
+                      assert= 7 $ host .add! 4
+                    , &unit
+                check-host!
               :tags $ #{} :unit
         'checked-rest-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-rest-host (value) (js-cast value 'RestHost)
@@ -130,10 +155,15 @@
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |inherited-receiver-and-prefix-result)
               :code $ quote $ let
-                  tally $ js-cast (make-counter-host 3) 'TallyHost
-                assert= 8 $ counter-add tally 5
-                assert= 5 $ counter-add-prefix tally 2
-                assert= 3 $ counter-total tally
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        tally $ js-cast (make-counter-host 3) 'TallyHost
+                      assert= 8 $ counter-add tally 5
+                      assert= 5 $ counter-add-prefix tally 2
+                      assert= 3 $ counter-total tally
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
         'counter-add-prefix $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn counter-add-prefix (host amount) (.add! host amount)
@@ -193,13 +223,23 @@
           :tests $ []
             %{} 'TestEntry (:name |no-rest)
               :code $ quote $ let
-                  host $ checked-rest-host $ make-rest-host
-                assert= | $ .emit host
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-rest-host $ make-rest-host
+                      assert= | $ .emit host
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |direct-rest)
               :code $ quote $ let
-                  host $ checked-rest-host $ make-rest-host
-                assert= |one:two $ .emit host |one |two
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-rest-host $ make-rest-host
+                      assert= |one:two $ .emit host |one |two
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |list-rest)
               :code $ quote $ let
@@ -213,31 +253,51 @@
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |explicit-before-list)
               :code $ quote $ let
-                  host $ checked-rest-host $ make-rest-host
-                  items $ [] |two
-                assert= |one:two $ .emit host |one & items
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-rest-host $ make-rest-host
+                        items $ [] |two
+                      assert= |one:two $ .emit host |one & items
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |required-prefix)
               :code $ quote $ let
-                  host $ checked-rest-host $ make-rest-host
-                  items $ [] |one |two
-                assert= |prefix:one:two $ .prefix host |prefix & items
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-rest-host $ make-rest-host
+                        items $ [] |one |two
+                      assert= |prefix:one:two $ .prefix host |prefix & items
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |prefix-no-rest)
               :code $ quote $ let
-                  host $ checked-rest-host $ make-rest-host
-                assert= |prefix $ .prefix host |prefix
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        host $ checked-rest-host $ make-rest-host
+                      assert= |prefix $ .prefix host |prefix
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
             %{} 'TestEntry (:name |single-evaluation)
               :code $ quote $ let
-                  calls $ ref 0
-                  host $ checked-rest-host $ make-rest-host
-                  supply $ fn ()
-                    hint-fn $ Fn $ -> (List String)
-                    swap! calls inc
-                    [] |one
-                assert= |one $ .emit host & $ supply
-                assert= 1 $ deref calls
+                  check-host! $ fn ()
+                    hint-fn $ Fn (-> Unit) (:features :js-ffi)
+                    let
+                        calls $ ref 0
+                        host $ checked-rest-host $ make-rest-host
+                        supply $ fn ()
+                          hint-fn $ Fn $ -> (List String)
+                          swap! calls inc
+                          [] |one
+                      assert= |one $ .emit host & $ supply
+                      assert= 1 $ deref calls
+                    , &unit
+                check-host!
               :tags $ #{} :js-ffi :unit
         'unit-adapter $ %{} 'CodeEntry
           :doc "|The JS implementation returns Unit; the incompatible shadow body is intentionally never selected."
