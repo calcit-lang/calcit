@@ -241,6 +241,9 @@ impl WeakTypeKind {
 pub enum WeakTypeIntent {
   Unresolved,
   IntentionalJsFfi,
+  /// Dynamic in a `:js-ffi` function at a position that never reaches a host
+  /// operation, such as Calcit props, states or callbacks passed through.
+  JsFfiNonHost,
   IntentionalMacroSyntax,
   IntentionalTypeSlotDynamic,
   ExplicitUnsafe,
@@ -253,6 +256,7 @@ impl WeakTypeIntent {
     match self {
       Self::Unresolved => "unresolved",
       Self::IntentionalJsFfi => "intentional-js-ffi",
+      Self::JsFfiNonHost => "js-ffi-non-host",
       Self::IntentionalMacroSyntax => "intentional-macro-syntax",
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
       Self::ExplicitUnsafe => "explicit-unsafe",
@@ -265,6 +269,7 @@ impl WeakTypeIntent {
     BTreeSet::from([
       Self::Unresolved,
       Self::IntentionalJsFfi,
+      Self::JsFfiNonHost,
       Self::IntentionalMacroSyntax,
       Self::IntentionalTypeSlotDynamic,
       Self::ExplicitUnsafe,
@@ -759,6 +764,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
     let intent = match item {
       "unresolved" => WeakTypeIntent::Unresolved,
       "intentional-js-ffi" => WeakTypeIntent::IntentionalJsFfi,
+      "js-ffi-non-host" => WeakTypeIntent::JsFfiNonHost,
       "intentional-macro-syntax" => WeakTypeIntent::IntentionalMacroSyntax,
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
       "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
@@ -766,7 +772,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       "declared-optional" => WeakTypeIntent::DeclaredOptional,
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         ));
       }
     };
@@ -775,7 +781,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit, declared-optional"
         .to_owned(),
     );
   }
@@ -947,6 +953,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
   if occurrence.intent == WeakTypeIntent::IntentionalJsFfi {
     return "Keep the dynamic value isolated at the declared FFI boundary (JS or native) and validate or convert it before typed code consumes it.";
+  }
+  if occurrence.intent == WeakTypeIntent::JsFfiNonHost {
+    return "This position is inside a `:js-ffi` function but does not reach a host operation. Give it a concrete Calcit type, or a named external-object type if it is passed to another adapter.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
     return "This Dynamic is an explicit open expression boundary inside a strict MacroSignature. Narrow the Expr semantic type when the macro contract guarantees more, but do not replace the phase-aware signature with whole-Dynamic.";
@@ -1378,6 +1387,212 @@ fn scan_cirru_weak_types(
   }
 }
 
+/// Which schema positions of a `:js-ffi` function touch host operations.
+///
+/// This reads source only. A parameter reaches the host when it appears inside
+/// a host operation, directly or through `let` bindings; the return reaches the
+/// host when a tail expression contains a host operation or a binding derived
+/// from one. Calls into other adapters, imported JS module functions and
+/// external-object methods written as `.method` are not followed, so those
+/// positions count as non-host.
+struct JsFfiHostReach {
+  params: Vec<bool>,
+  rest: Option<bool>,
+  ret: bool,
+}
+
+impl JsFfiHostReach {
+  fn schema_path_reaches_host(&self, path: &str) -> bool {
+    let position = |prefix: &str| {
+      path
+        .strip_prefix(prefix)
+        .is_some_and(|tail| tail.is_empty() || tail.starts_with('.'))
+    };
+    if let Some(tail) = path.strip_prefix("schema.args.") {
+      let index = tail.split('.').next().and_then(|idx| idx.parse::<usize>().ok());
+      return index.and_then(|idx| self.params.get(idx).copied()).unwrap_or(true);
+    }
+    if position("schema.rest") {
+      return self.rest.unwrap_or(true);
+    }
+    if position("schema.return") {
+      return self.ret;
+    }
+    true
+  }
+}
+
+fn is_js_host_head(head: &str) -> bool {
+  head.starts_with(".-")
+    || head.starts_with(".!")
+    || head.starts_with(".?-")
+    || head.starts_with(".?!")
+    || head.starts_with("js/")
+    || ffi_postfix_operation(head).is_some()
+    || matches!(
+      head,
+      "aget"
+        | "aset"
+        | "js-get"
+        | "js-set"
+        | "js-delete"
+        | "exists?"
+        | "instance?"
+        | "&js-object"
+        | "js-array"
+        | "js-await"
+        | "js-for-await"
+        | "new"
+        | "set!"
+        | "to-calcit-data"
+        | "to-js-data"
+        | "&raw-code"
+        | "js-cast"
+        | "unsafe-coerce"
+    )
+}
+
+fn collect_cirru_leaves<'a>(code: &'a Cirru, leaves: &mut BTreeSet<&'a str>) {
+  match code {
+    Cirru::Leaf(leaf) => {
+      leaves.insert(leaf.as_ref());
+    }
+    Cirru::List(items) => items.iter().for_each(|item| collect_cirru_leaves(item, leaves)),
+  }
+}
+
+/// Collects leaves used by host operations and `let` bindings as `(name, value)`.
+fn collect_js_host_uses<'a>(code: &'a Cirru, host_leaves: &mut BTreeSet<&'a str>, bindings: &mut Vec<(&'a str, &'a Cirru)>) {
+  let Cirru::List(items) = code else {
+    // A postfix access such as `node.!focus` names its receiver inside the leaf.
+    if let Cirru::Leaf(leaf) = code
+      && let Some((receiver, ..)) = ffi_postfix_operation(leaf)
+    {
+      host_leaves.insert(&leaf[..receiver.len()]);
+    }
+    return;
+  };
+  match items.first() {
+    Some(Cirru::Leaf(head)) if is_js_host_head(head) => collect_cirru_leaves(code, host_leaves),
+    Some(Cirru::Leaf(head)) if head.as_ref() == "let" => {
+      if let Some(Cirru::List(pairs)) = items.get(1) {
+        for pair in pairs {
+          if let Cirru::List(pair) = pair
+            && let [Cirru::Leaf(name), value] = pair.as_slice()
+          {
+            bindings.push((name.as_ref(), value));
+          }
+        }
+      }
+    }
+    Some(Cirru::Leaf(head)) if head.as_ref() == "&let" => {
+      if let Some(Cirru::List(pair)) = items.get(1)
+        && let [Cirru::Leaf(name), value] = pair.as_slice()
+      {
+        bindings.push((name.as_ref(), value));
+      }
+    }
+    _ => {}
+  }
+  items.iter().for_each(|item| collect_js_host_uses(item, host_leaves, bindings));
+}
+
+fn cirru_contains_host_value(code: &Cirru, host_values: &BTreeSet<&str>) -> bool {
+  match code {
+    Cirru::Leaf(leaf) => leaf.starts_with("js/") || ffi_postfix_operation(leaf).is_some() || host_values.contains(leaf.as_ref()),
+    Cirru::List(items) => {
+      matches!(items.first(), Some(Cirru::Leaf(head)) if is_js_host_head(head))
+        || items.iter().any(|item| cirru_contains_host_value(item, host_values))
+    }
+  }
+}
+
+fn collect_tail_expressions<'a>(code: &'a Cirru, is_code_root: bool, tails: &mut Vec<&'a Cirru>) {
+  let Cirru::List(items) = code else {
+    if !is_code_root {
+      tails.push(code);
+    }
+    return;
+  };
+  let head = match items.first() {
+    Some(Cirru::Leaf(head)) => Some(head.as_ref()),
+    _ => None,
+  };
+  let mut descended = false;
+  for (idx, item) in items.iter().enumerate() {
+    if child_is_return_position(is_code_root, true, head, idx, items.len()) {
+      descended = true;
+      collect_tail_expressions(item, false, tails);
+    }
+  }
+  if !descended && !is_code_root {
+    tails.push(code);
+  }
+}
+
+fn js_ffi_host_reach(code: &Cirru) -> Option<JsFfiHostReach> {
+  let Cirru::List(items) = code else {
+    return None;
+  };
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn") {
+    return None;
+  }
+  let Some(Cirru::List(raw_params)) = items.get(2) else {
+    return None;
+  };
+  let body = &items[3..];
+  let mut host_leaves = BTreeSet::new();
+  let mut bindings = vec![];
+  body
+    .iter()
+    .for_each(|form| collect_js_host_uses(form, &mut host_leaves, &mut bindings));
+
+  // A binding that feeds a host operation makes its inputs host-facing too.
+  loop {
+    let before = host_leaves.len();
+    for (name, value) in &bindings {
+      if host_leaves.contains(name) {
+        collect_cirru_leaves(value, &mut host_leaves);
+      }
+    }
+    if host_leaves.len() == before {
+      break;
+    }
+  }
+  // A binding computed from a host operation carries a host value forward.
+  let mut host_values = BTreeSet::new();
+  loop {
+    let before = host_values.len();
+    for (name, value) in &bindings {
+      if cirru_contains_host_value(value, &host_values) {
+        host_values.insert(*name);
+      }
+    }
+    if host_values.len() == before {
+      break;
+    }
+  }
+
+  let mut params = vec![];
+  let mut rest = None;
+  let mut after_rest_marker = false;
+  for param in raw_params {
+    let Cirru::Leaf(name) = param else {
+      return None;
+    };
+    match name.as_ref() {
+      "&" => after_rest_marker = true,
+      "?" | "[]" | "," => {}
+      name if after_rest_marker => rest = Some(host_leaves.contains(name)),
+      name => params.push(host_leaves.contains(name)),
+    }
+  }
+  let mut tails = vec![];
+  collect_tail_expressions(code, true, &mut tails);
+  let ret = tails.iter().any(|tail| cirru_contains_host_value(tail, &host_values));
+  Some(JsFfiHostReach { params, rest, ret })
+}
+
 pub fn analyze_weak_types_entry(
   ns: &str,
   def_name: &str,
@@ -1451,9 +1666,16 @@ pub fn analyze_weak_types_entry(
     _ => false,
   };
   if has_js_ffi_feature {
+    let reach = js_ffi_host_reach(&entry.code);
     for occurrence in &mut occurrences {
       if matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::CodeDynamic) {
-        occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
+        let reaches_host = occurrence.kind != WeakTypeKind::SchemaDynamic
+          || reach.as_ref().is_none_or(|reach| reach.schema_path_reaches_host(&occurrence.path));
+        occurrence.intent = if reaches_host {
+          WeakTypeIntent::IntentionalJsFfi
+        } else {
+          WeakTypeIntent::JsFfiNonHost
+        };
       }
     }
   }
@@ -2137,9 +2359,10 @@ pub(crate) fn run_weak_types_report_with_rows(
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
+    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={} declared-optional={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
+    intent_count.get("js-ffi-non-host").copied().unwrap_or(0),
     intent_count.get("intentional-macro-syntax").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
     intent_count.get("explicit-unsafe").copied().unwrap_or(0),
@@ -3586,6 +3809,7 @@ pub(crate) fn format_weak_types_json_with_rows(
   for intent in [
     "unresolved",
     "intentional-js-ffi",
+    "js-ffi-non-host",
     "intentional-macro-syntax",
     "intentional-type-slot-dynamic",
     "explicit-unsafe",
@@ -3947,6 +4171,37 @@ mod tests {
     assert_eq!(occurrences[0].kind, WeakTypeKind::UnresolvedTypeSlot);
     assert_eq!(occurrences[0].intent, WeakTypeIntent::Unresolved);
     clear_type_slots();
+  }
+
+  #[test]
+  fn js_ffi_host_reach_follows_let_bindings_and_tail_positions() {
+    let code = cirru_parser::parse(
+      "defn adapter (node props ? extra & items)\n  let\n      el $ .-el node\n      label $ get props :label\n    if (some? extra) (.!append el label) (to-calcit-data el)",
+    )
+    .expect("parse adapter")
+    .remove(0);
+    let reach = super::js_ffi_host_reach(&code).expect("defn reach");
+
+    // `label` feeds `.!append`, so `props` reaches the host through it.
+    assert_eq!(reach.params, vec![true, true, false]);
+    assert_eq!(reach.rest, Some(false));
+    assert!(reach.ret);
+    assert!(reach.schema_path_reaches_host("schema.args.1.value"));
+    assert!(!reach.schema_path_reaches_host("schema.args.2"));
+    assert!(!reach.schema_path_reaches_host("schema.rest.item"));
+
+    // Postfix access names the receiver inside one leaf; `[]` is a legacy list marker.
+    let postfix = cirru_parser::parse("defn adapter ([] node label) (node.!focus) (println label) node.-value")
+      .expect("parse adapter")
+      .remove(0);
+    let postfix_reach = super::js_ffi_host_reach(&postfix).expect("defn reach");
+    assert_eq!(postfix_reach.params, vec![true, false]);
+    assert!(postfix_reach.ret);
+
+    let plain = cirru_parser::parse("defn adapter (node) (.!focus node) nil")
+      .expect("parse adapter")
+      .remove(0);
+    assert!(!super::js_ffi_host_reach(&plain).expect("defn reach").ret);
   }
 
   #[test]
