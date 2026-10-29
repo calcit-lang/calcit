@@ -490,7 +490,7 @@ fn schema_candidate_for_definition(
     .ok_or_else(|| format!("Schema evidence target `{namespace}/{definition}` does not exist."))?;
   if matches!(
     list_head(&entry.code),
-    Some("defmacro" | "defstruct" | "defenum" | "deftrait" | "defimpl")
+    Some("defmacro" | "defstruct" | "defenum" | "deftrait" | "defimpl" | "deftype-slot")
   ) {
     return Ok(None);
   }
@@ -582,6 +582,20 @@ fn schema_candidate_for_definition(
   let mut unresolved_slots = Vec::new();
   collect_dynamic_schema_paths(candidate.as_ref(), "schema", &mut unresolved_slots);
   collect_unbound_schema_paths(candidate.as_ref(), "schema", &HashSet::new(), &mut unresolved_slots);
+  // `def x nil` and `defref *x nil` start from a placeholder that is replaced
+  // later, so Nil there says nothing about the value the definition holds.
+  let nil_placeholder = match candidate.as_ref() {
+    CalcitTypeAnnotation::Nil => Some("schema"),
+    CalcitTypeAnnotation::Ref(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Nil) => Some("schema.item"),
+    _ => None,
+  };
+  if let Some(slot) = nil_placeholder {
+    unresolved_slots.push(slot.to_owned());
+    callsite_evidence.push(serde_json::json!({
+      "kind": "nil-placeholder",
+      "slot": slot,
+    }));
+  }
   unresolved_slots.sort();
   unresolved_slots.dedup();
   callsite_evidence.insert(
