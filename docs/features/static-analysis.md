@@ -750,6 +750,17 @@ let
   assert= x-val 10
 ```
 
+### 与字面量比较的收窄
+
+`if` / `cond` 的条件是 core `=` 或 `&=`，且一侧是局部变量、另一侧是 Tag、String、Number 或 Bool 字面量时，真分支里该变量收窄为字面量的类型。两侧顺序不限。下面的定义 schema 为 `Fn Dynamic (-> Tag)`：
+
+```cirru
+defn pick-mode (x)
+  if (= x :dark) x :light
+```
+
+真分支里的 `x` 是 `Tag`，所以返回声明可以被证明。假分支不收窄，`x` 仍是原来的类型；两个变量相互比较、与 `nil` 比较都不产生收窄，缺失值继续用 `nil?` 或 Option 的 `match` 判断。
+
 ## Type Assertions
 
 Use `assert-type` to explicitly check local values during preprocessing:

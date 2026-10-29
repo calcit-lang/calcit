@@ -870,6 +870,40 @@
           :tests $ [] $ %{} 'TestEntry (:name |instantiates-generated-binder-per-call)
             :code $ quote $ assert= 2 (lexical-macro-identity |outer)
             :tags $ #{} :generic :lexical-binder :unit
+        'literal-equality-number $ %{} 'CodeEntry
+          :doc "|Native `&=` against a Number literal narrows the open value to Number."
+          :code $ quote $ defn literal-equality-number (x)
+            if (&= x 1) (&+ x 1) 0
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |narrows-number-native-equality)
+            :code $ quote $ do
+              assert= 2 $ literal-equality-number 1
+              assert= 0 $ literal-equality-number |1
+            :tags $ #{} :literal-equality :unit
+        'literal-equality-string $ %{} 'CodeEntry
+          :doc "|Equality narrows in either operand order; the String branch uses string operations."
+          :code $ quote $ defn literal-equality-string (x)
+            if (= |a x) (&str:concat x |!) |none
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> String)
+          :tests $ [] $ %{} 'TestEntry (:name |narrows-string-equality-either-order)
+            :code $ quote $ do
+              assert= |a! $ literal-equality-string |a
+              assert= |none $ literal-equality-string :a
+            :tags $ #{} :literal-equality :unit
+        'literal-equality-tag $ %{} 'CodeEntry
+          :doc "|Equality with a Tag literal narrows the open value to Tag in the true branch."
+          :code $ quote $ defn literal-equality-tag (x)
+            if (= x :a) x :b
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Tag)
+          :tests $ [] $ %{} 'TestEntry (:name |narrows-tag-equality)
+            :code $ quote $ do
+              assert= :a $ literal-equality-tag :a
+              assert= :b $ literal-equality-tag |a
+              assert= :b $ literal-equality-tag 1
+            :tags $ #{} :literal-equality :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
