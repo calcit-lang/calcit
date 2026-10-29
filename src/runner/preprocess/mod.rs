@@ -9111,7 +9111,14 @@ fn macro_erasure_origin(
   is_erasure: fn(&Calcit) -> bool,
   known_location: Option<NodeLocation>,
 ) -> Option<MacroErasureOrigin> {
-  for frame in call_stack.0.iter().filter(|frame| matches!(frame.kind, StackKind::Macro)) {
+  for frame in call_stack.0.iter() {
+    match frame.kind {
+      // Another definition compiled on demand starts here; macros further out
+      // belong to the definition that referenced it.
+      StackKind::Fn => return None,
+      StackKind::Macro => {}
+      _ => continue,
+    }
     if frame.ns.starts_with(calcit::CORE_NS) {
       continue;
     }
@@ -9134,10 +9141,10 @@ fn macro_erasure_origin(
           .then(|| NodeLocation::new(frame.ns.clone(), frame.def.clone(), Arc::new(path)))
       })
       .unwrap_or_else(|| NodeLocation::new(frame.ns.clone(), frame.def.clone(), Arc::new(vec![])));
-    let call_site = frame
-      .args
-      .iter()
-      .find_map(|arg| find_calcit_location_matching(arg, |location| location.def.as_ref() != GENERATED_DEF));
+    // The call form's own coordinate first, so calls without arguments stay distinct.
+    let is_source = |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF;
+    let call_site = find_calcit_location_matching(&frame.code, is_source)
+      .or_else(|| frame.args.iter().find_map(|arg| find_calcit_location_matching(arg, is_source)));
     return Some(MacroErasureOrigin {
       macro_name: format!("{}/{}", frame.ns, frame.def),
       location,
