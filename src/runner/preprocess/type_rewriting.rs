@@ -135,10 +135,13 @@ pub(crate) fn try_rewrite_enum_args_to_named_enums(
 // ---------------------------------------------------------------------------
 
 /// Value for a struct field the literal leaves out, matching the direct
-/// constructor: nominal Option fields get the lowered `Option :none`, other
-/// fields keep nil. Arguments are already preprocessed, so emit the lowered form.
+/// constructor: a declared default comes first, nominal Option fields get the
+/// lowered `Option :none`, other fields keep nil. Arguments are already
+/// preprocessed, so emit the lowered form.
 fn omitted_struct_field_value(struct_def: &CalcitStructDef, field_idx: usize, file_ns: &str) -> Calcit {
-  if struct_def
+  if let Some(default_value) = struct_def.field_default(field_idx) {
+    crate::calcit::struct_field_default_code(default_value)
+  } else if struct_def
     .field_types
     .get(field_idx)
     .is_some_and(|field_type| field_type.is_option_type())

@@ -47,7 +47,7 @@ pub fn compact_type_syntax_error(form: &Calcit) -> Option<String> {
 }
 
 pub use calcit_impl::CalcitImpl;
-pub use calcit_struct::CalcitStructDef;
+pub use calcit_struct::{CalcitStructDef, struct_field_default_code, struct_field_default_from_code};
 pub use calcit_trait::{CalcitTrait, CalcitTraitMemberKind};
 pub use enum_value::CalcitEnumValue;
 pub(crate) use fns::trailing_option_arg_count;
@@ -555,6 +555,7 @@ impl Hash for Calcit {
         field_types,
         generics,
         where_bounds,
+        field_defaults,
         impls,
         ..
       }) => {
@@ -565,6 +566,7 @@ impl Hash for Calcit {
         field_types.hash(_state);
         generics.hash(_state);
         where_bounds.hash(_state);
+        field_defaults.hash(_state);
         for imp in impls {
           imp.name().hash(_state);
           imp.origin().hash(_state);
@@ -1704,6 +1706,7 @@ mod tests {
     assert_ne!(impl_left.cmp(&impl_right), Equal);
 
     let struct_left = Calcit::StructDef(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age")]),
@@ -1713,6 +1716,7 @@ mod tests {
       impls: vec![],
     });
     let struct_right = Calcit::StructDef(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("age")]),
@@ -1804,6 +1808,7 @@ mod tests {
       }]),
     });
     let struct_value = Calcit::StructDef(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("S"),
       fields: Arc::new(vec![EdnTag::new("v")]),

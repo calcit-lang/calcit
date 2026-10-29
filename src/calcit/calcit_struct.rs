@@ -5,7 +5,7 @@ use std::sync::{Arc, Weak};
 
 use cirru_edn::EdnTag;
 
-use super::{CalcitGenericBound, CalcitImpl, CalcitTypeAnnotation, type_annotation::same_data_schema_annotation};
+use super::{Calcit, CalcitGenericBound, CalcitImpl, CalcitProc, CalcitTypeAnnotation, type_annotation::same_data_schema_annotation};
 
 const STRUCT_FIELD_INDEX_CACHE_THRESHOLD: usize = 32;
 const STRUCT_FIELD_INDEX_CACHE_LIMIT: usize = 256;
@@ -47,6 +47,9 @@ pub struct CalcitStructDef {
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
   pub generics: Arc<Vec<Arc<str>>>,
   pub where_bounds: Arc<Vec<CalcitGenericBound>>,
+  /// Declared literal defaults aligned with `fields`; empty when no field has one.
+  /// Preprocess fills omitted fields from here, so runtimes never read it.
+  pub field_defaults: Arc<Vec<Option<Calcit>>>,
   /// Trait implementations attached to this struct (multiple allowed for composition)
   pub impls: Vec<Arc<CalcitImpl>>,
 }
@@ -56,6 +59,7 @@ impl CalcitStructDef {
     let field_types = vec![super::DYNAMIC_TYPE.clone(); fields.len()];
     let generics = Arc::new(vec![]);
     CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name,
       fields: Arc::new(fields),
@@ -64,6 +68,11 @@ impl CalcitStructDef {
       where_bounds: Arc::new(vec![]),
       impls: vec![],
     }
+  }
+
+  /// Declared default of the field at `idx`, if any.
+  pub fn field_default(&self, idx: usize) -> Option<&Calcit> {
+    self.field_defaults.get(idx).and_then(Option::as_ref)
   }
 
   pub fn with_definition_ref(mut self, ns: &str, def: &str) -> Self {
@@ -147,6 +156,48 @@ impl CalcitStructDef {
   }
 }
 
+/// Read a field default from its source form. `defstruct` passes the form
+/// quoted, so `&struct-def:new` receives code rather than an evaluated value
+/// and the static parser can read the same form; `None` means it is not a
+/// literal default.
+pub fn struct_field_default_from_code(form: &Calcit) -> Option<Calcit> {
+  match form {
+    Calcit::Number(_) | Calcit::Str(_) | Calcit::Tag(_) | Calcit::Bool(_) => Some(form.to_owned()),
+    Calcit::List(xs) if xs.len() == 2 && xs.first().is_some_and(|head| code_head_name(head) == Some("quote")) => {
+      struct_field_default_from_code(xs.get(1)?)
+    }
+    Calcit::List(xs) if xs.len() == 1 => match code_head_name(xs.first()?)? {
+      "[]" => Some(Calcit::from(vec![])),
+      "{}" | "&{}" => Some(Calcit::Map(Default::default())),
+      "#{}" => Some(Calcit::Set(Default::default())),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn code_head_name(head: &Calcit) -> Option<&str> {
+  match head {
+    Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
+    Calcit::Import(import) if &*import.ns == super::CORE_NS => Some(import.def.as_ref()),
+    Calcit::Proc(proc) => Some(proc.as_ref()),
+    Calcit::Syntax(syntax, _) => Some(syntax.as_ref()),
+    _ => None,
+  }
+}
+
+/// Code that rebuilds a field default at a call site. Empty containers become
+/// already-resolved constructor calls, so the form is valid both before and
+/// after preprocessing.
+pub fn struct_field_default_code(value: &Calcit) -> Calcit {
+  match value {
+    Calcit::List(_) => Calcit::from(vec![Calcit::Proc(CalcitProc::List)]),
+    Calcit::Map(_) => Calcit::from(vec![Calcit::Proc(CalcitProc::NativeMap)]),
+    Calcit::Set(_) => Calcit::from(vec![Calcit::Proc(CalcitProc::Set)]),
+    other => other.to_owned(),
+  }
+}
+
 impl Hash for CalcitStructDef {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.definition_ref.hash(state);
@@ -155,6 +206,7 @@ impl Hash for CalcitStructDef {
     self.field_types.hash(state);
     self.generics.hash(state);
     self.where_bounds.hash(state);
+    self.field_defaults.hash(state);
     for imp in &self.impls {
       imp.name().hash(state);
       imp.fields().hash(state);
@@ -169,6 +221,7 @@ mod tests {
   fn nested_struct(namespace: &str) -> Arc<CalcitTypeAnnotation> {
     Arc::new(CalcitTypeAnnotation::Struct(
       Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: Some(Arc::from(format!("{namespace}/Item"))),
         name: EdnTag::new("Item"),
         fields: Arc::new(vec![]),
@@ -183,6 +236,7 @@ mod tests {
 
   fn wrapper(field_type: Arc<CalcitTypeAnnotation>) -> CalcitStructDef {
     CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app/Wrapper")),
       name: EdnTag::new("Wrapper"),
       fields: Arc::new(vec![EdnTag::new("item")]),

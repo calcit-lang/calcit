@@ -5808,6 +5808,7 @@ mod tests {
   fn enum_constructor_keeps_nominal_type_without_payload_evidence() {
     let generic: Arc<str> = Arc::from("T");
     let struct_def = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::from("MaybeX"),
       fields: Arc::new(vec![EdnTag::from("none"), EdnTag::from("some")]),
@@ -5961,6 +5962,7 @@ mod tests {
     let box_def = Arc::new(box_def);
 
     let enum_struct = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::from("MaybeBox"),
       fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("box")]),

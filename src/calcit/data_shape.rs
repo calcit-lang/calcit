@@ -1091,6 +1091,7 @@ mod tests {
 
   fn phantom_box() -> Arc<CalcitStructDef> {
     Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("PhantomBox"),
       fields: Arc::new(vec![]),
@@ -1130,6 +1131,7 @@ mod tests {
     assert!(dynamic.to_string().contains("Dynamic is forbidden"));
 
     let generic = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
@@ -1217,6 +1219,7 @@ mod tests {
   fn enforces_generic_where_bounds_while_deriving() {
     let marker = Arc::new(CalcitTrait::new(EdnTag::new("DataMarker"), vec![], vec![]));
     let bounded = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("MarkedBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),

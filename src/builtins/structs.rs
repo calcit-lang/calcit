@@ -317,11 +317,11 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     start_idx += 1;
   }
 
-  let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = vec![];
+  let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>, Option<Calcit>)> = vec![];
   for item in xs.iter().skip(start_idx) {
     match item {
-      Calcit::List(xs) => match (xs.first(), xs.get(1), xs.get(2)) {
-        (Some(name), Some(type_expr), None) => {
+      Calcit::List(xs) if xs.len() <= 3 => match (xs.first(), xs.get(1), xs.get(2)) {
+        (Some(name), Some(type_expr), default_value) => {
           let field_name = match name {
             Calcit::Symbol { sym, .. } | Calcit::Str(sym) => EdnTag(sym.to_owned()),
             Calcit::Tag(tag) => tag.to_owned(),
@@ -352,7 +352,18 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               hint,
             );
           }
-          fields.push((field_name, field_type));
+          let default_value = match default_value.map(|form| check_struct_field_default(form, &field_type)).transpose() {
+            Ok(value) => value,
+            Err(message) => {
+              let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
+              return CalcitErr::err_str_with_hint(
+                CalcitErrKind::Type,
+                format!("&struct-def:new field `{field_name}` has an invalid default: {message}"),
+                hint,
+              );
+            }
+          };
+          fields.push((field_name, field_type, default_value));
         }
         (Some(_), None, _) => {
           let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
@@ -388,10 +399,16 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
   dedup_generic_names(&mut generics);
 
-  let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
-  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
+  let field_names: Vec<EdnTag> = fields.iter().map(|(name, _, _)| name.to_owned()).collect();
+  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t, _)| t.to_owned()).collect();
+  let field_defaults: Vec<Option<Calcit>> = if fields.iter().any(|(_, _, d)| d.is_some()) {
+    fields.into_iter().map(|(_, _, d)| d).collect()
+  } else {
+    vec![]
+  };
 
   Ok(Calcit::StructDef(CalcitStructDef {
+    field_defaults: Arc::new(field_defaults),
     definition_ref: None,
     name: name_id,
     fields: Arc::new(field_names),
@@ -400,6 +417,29 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     where_bounds: Arc::new(where_bounds),
     impls: vec![],
   }))
+}
+
+/// Field defaults are literal constants, so preprocess can place them at any
+/// call site without evaluating code in the declaring namespace. `form` is the
+/// quoted source form from `defstruct`.
+fn check_struct_field_default(form: &Calcit, field_type: &CalcitTypeAnnotation) -> Result<Calcit, String> {
+  let Some(value) = crate::calcit::struct_field_default_from_code(form) else {
+    return Err(format!(
+      "expected a literal Number, String, Tag, Bool, or an empty `[]`, `{{}}` or `#{{}}`, but received: {form}"
+    ));
+  };
+  if field_type.is_option_type() {
+    return Err(
+      "an Option field already defaults to `Option :none`; declare the field as its inner type to give it a value".to_owned(),
+    );
+  }
+  if matches!(field_type, CalcitTypeAnnotation::TypeVar(_)) {
+    return Err("a field typed by a generic parameter cannot have a literal default".to_owned());
+  }
+  if !crate::calcit::value_matches_type_annotation(&value, field_type) {
+    return Err(format!("{value} does not match the field type {}", field_type.to_brief_string()));
+  }
+  Ok(value)
 }
 
 pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -1510,6 +1550,37 @@ mod tests {
     );
   }
 
+  #[test]
+  fn struct_field_defaults_accept_only_matching_literals() {
+    let code =
+      |text: &str| crate::data::cirru::code_to_calcit(&cirru_parser::parse(text).unwrap()[0], "app.main", "main!", vec![]).unwrap();
+    let field = |type_code: &str, default_code: &str| {
+      Calcit::from(vec![
+        Calcit::tag("x"),
+        code(type_code),
+        // `defstruct` passes the default form quoted.
+        code(&format!("quote {default_code}")),
+      ])
+    };
+    for (type_code, default_code, expected) in [
+      ("quote Number", "8080", Calcit::Number(8080.0)),
+      ("quote String", "|guest", Calcit::Str("guest".into())),
+      ("quote Tag", ":read", Calcit::tag("read")),
+      ("quote Bool", "false", Calcit::Bool(false)),
+      ("quote $ List String", "([])", Calcit::from(vec![])),
+      ("quote Dynamic", "({})", Calcit::Map(Default::default())),
+    ] {
+      let Calcit::StructDef(def) = new_struct(&[Calcit::tag("Foo"), field(type_code, default_code)]).expect(default_code) else {
+        panic!("expected a struct definition");
+      };
+      assert_eq!(def.field_default(0), Some(&expected), "{default_code}");
+    }
+    for (type_code, default_code) in [("quote Number", "|x"), ("quote Number", "(+ 1 2)"), ("quote $ Option Number", "1")] {
+      let error = new_struct(&[Calcit::tag("Foo"), field(type_code, default_code)]).expect_err(default_code);
+      assert!(error.to_string().contains("invalid default"), "unexpected error: {error}");
+    }
+  }
+
   fn indexed_struct_fixture() -> Calcit {
     Calcit::Struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef::from_fields(
@@ -1566,6 +1637,7 @@ mod tests {
   #[test]
   fn required_recursive_field_returns_a_type_error_without_recursing() {
     let struct_def = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("RequiredNode"),
       fields: Arc::new(vec![EdnTag::new("next")]),
@@ -1613,6 +1685,7 @@ mod tests {
       },
     );
     let box_def = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: Some(Arc::from("tests.struct-alias/Box")),
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("items")]),
@@ -1746,6 +1819,7 @@ mod tests {
 
   fn shown_box_struct(show_trait: Arc<CalcitTrait>) -> CalcitStructDef {
     CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("ShownBox"),
       fields: Arc::new(vec![EdnTag::new("value")]),

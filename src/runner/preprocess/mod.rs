@@ -6604,6 +6604,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
 
     for (idx, field) in struct_def.fields.iter().enumerate() {
       if !provided_fields.contains_key(field)
+        && struct_def.field_default(idx).is_none()
         && !struct_def.field_types.get(idx).is_some_and(|field_type| {
           matches!(field_type.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)) || field_type.is_option_type()
         })
@@ -6639,7 +6640,10 @@ fn try_rewrite_struct_enum_constructor_head_call(
         continue;
       }
       struct_items.push(Calcit::Tag(field.to_owned()));
-      if struct_def
+      if let Some(default_value) = struct_def.field_default(field_idx) {
+        // Declared defaults are literal constants, valid in any namespace.
+        struct_items.push(calcit::struct_field_default_code(default_value));
+      } else if struct_def
         .field_types
         .get(field_idx)
         .is_some_and(|field_type| field_type.is_option_type())
@@ -18307,6 +18311,7 @@ mod tests {
     }
 
     let struct_def = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Task"),
       fields: Arc::new(vec![EdnTag::new("done?")]),
@@ -19742,6 +19747,7 @@ mod tests {
     });
     let type_value = CalcitTypeAnnotation::Struct(
       Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("Demo"),
         fields: Arc::new(vec![]),
@@ -22512,6 +22518,7 @@ mod tests {
 
     let generic: Arc<str> = Arc::from("T");
     let enum_struct = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::from("Wrapped"),
       fields: Arc::new(vec![EdnTag::from("empty"), EdnTag::from("some")]),
@@ -24086,6 +24093,7 @@ mod tests {
 
     let class_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::from("Greeter"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
@@ -25204,6 +25212,7 @@ mod tests {
 
     let class_struct = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::from("Person"),
         fields: Arc::new(vec![EdnTag::from("greet")]),
@@ -26037,6 +26046,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let _slots = TypeSlotsGuard::cleared();
     let person_def = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
       fields: Arc::new(vec![EdnTag::new("name")]),
@@ -26134,6 +26144,7 @@ mod tests {
     assert!(related_error.msg.contains("struct Person"));
 
     let box_def = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),
@@ -26217,6 +26228,7 @@ mod tests {
   fn type_slot_struct_annotations_preserve_open_generic_arguments() {
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let box_def = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Box"),
       fields: Arc::new(vec![EdnTag::new("value")]),

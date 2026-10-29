@@ -56,6 +56,27 @@
             :count $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
+        'DefaultFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct DefaultFields (:host 'String) (:port 'Number 8080) (:label 'String |guest) (:mode 'Tag :read) (:secure? 'Bool false)
+            :tags
+              quote $ List String
+              []
+            :proxy $ quote $ Option String
+          :examples $ []
+          :schema $ quote StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |omitted-fields-take-declared-defaults)
+            :code $ quote $ do
+              assert=
+                DefaultFields :host |a :port 8080 :label |guest :mode :read :secure? false :tags ([]) :proxy $ Option :none
+                DefaultFields :host |a
+              assert= 1 $ :port $ DefaultFields :host |a :port 1
+              assert= (DefaultOnly :size 12) (DefaultOnly)
+            :tags $ #{} :struct-defaults :unit
+        'DefaultOnly $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct DefaultOnly (:size 'Number 12)
+            :hint $ quote $ Option String
+          :examples $ []
+          :schema $ quote StructDef
         'Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
           :examples $ []
@@ -382,6 +403,20 @@
               assert= (#{} |a |b)
                 collect-unique-proof $ [] |a |b |a
             :tags $ #{} :empty-container-proof
+        'default-fields-from-literal $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn default-fields-from-literal (fields) fields
+          :examples $ []
+          :schema $ quote $ Fn DefaultFields (-> DefaultFields)
+          :tests $ [] $ %{} 'TestEntry (:name |literal-rewrite-fills-declared-defaults)
+            :code $ quote $ do
+              assert= (DefaultFields :host |a)
+                default-fields-from-literal $ {} $ :host |a
+              assert=
+                DefaultFields :host |b :port 1 :proxy $ Option :some |p
+                default-fields-from-literal $ ?{} :host |b :port 1 :proxy $ Option :some |p
+              assert= |guest $ :label $ default-fields-from-literal
+                {} $ :host |c
+            :tags $ #{} :struct-defaults :unit
         'empty-list-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-list-proof ()
             assert-type ([])

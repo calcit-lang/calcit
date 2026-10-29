@@ -100,7 +100,10 @@ pub(super) fn compare_calcit_struct_values(a: &CalcitStructDef, b: &CalcitStruct
       Equal => match a.field_types.cmp(&b.field_types) {
         Equal => match a.generics.cmp(&b.generics) {
           Equal => match a.where_bounds.cmp(&b.where_bounds) {
-            Equal => compare_struct_impls(&a.impls, &b.impls),
+            Equal => match a.field_defaults.cmp(&b.field_defaults) {
+              Equal => compare_struct_impls(&a.impls, &b.impls),
+              ord => ord,
+            },
             ord => ord,
           },
           ord => ord,

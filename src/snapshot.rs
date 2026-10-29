@@ -4262,7 +4262,9 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
           continue;
         }
         let mut next_field = field.clone();
-        for type_index in 1..field.len() {
+        // A struct field's third item is a literal default, not a type.
+        let type_end = if head == Some("defstruct") { 2 } else { field.len() };
+        for type_index in 1..type_end {
           let (next, count) = canonicalize_type_expression(&field[type_index]);
           next_field[type_index] = next;
           changed += count;
@@ -4451,7 +4453,7 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
       for slot in rewritten.iter_mut().skip(2) {
         let Cirru::List(entry) = &*slot else { continue };
         let type_indexes: Vec<usize> = match (kind, entry.as_slice()) {
-          ("defstruct", [_, _]) => vec![1],
+          ("defstruct", [_, _] | [_, _, _]) => vec![1],
           ("deftrait", [Cirru::Leaf(bracket), _, _]) if bracket.as_ref() == "[]" => vec![2],
           ("deftrait", [_, _]) => vec![1],
           ("defenum", [Cirru::Leaf(tag), ..]) if tag.starts_with(':') => (1..entry.len()).collect(),
@@ -5521,6 +5523,13 @@ mod tests {
       data_text.contains(":kind :string"),
       "ordinary tag data must not be rewritten: {data_text}"
     );
+
+    // A struct field's third item is a literal default, so a tag there is data.
+    let struct_decl = parse_one("defstruct Mode (:kind :tag :string)");
+    let (struct_decl, struct_count) = canonicalize_code_type_syntax(&struct_decl);
+    let struct_text = cirru_parser::format(&[struct_decl], true.into()).expect("struct should render");
+    assert_eq!(struct_count, 1, "struct text: {struct_text}");
+    assert!(struct_text.contains("(:kind 'Tag :string)"), "struct text: {struct_text}");
 
     // With nothing after it, the form is the body's value: a tag, not a return type.
     let tag_body = parse_one("defn kind-name () :string");
