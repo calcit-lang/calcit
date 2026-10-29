@@ -28,7 +28,7 @@
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
 
-`&format-ternary-tree` 已在 0.33.0 删除：它沿用旧的三叉树名字，实际返回的是 FingerVec 的调试文本，不是稳定的数据格式。显示 List 的值使用 `format-cirru-edn`，见 [升级手册](../run/upgrade.md#format-ternary-tree-removal)。
+`&format-ternary-tree` 已在 0.33.0 删除：它沿用旧的三叉树名字，实际返回的是 FingerVec 的调试文本，不是稳定的数据格式。调试显示 List 的值使用 `to-lispy-string`（`format-cirru-edn` 只接受能转成 EDN 的数据），见 [升级手册](../run/upgrade.md#format-ternary-tree-removal)。
 
 ## 显式转换边界
 

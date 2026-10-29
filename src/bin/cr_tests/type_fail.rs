@@ -1794,7 +1794,7 @@ fn retired_core_functions_report_preferred_spelling() {
       ),
       ("let-sugar ((a 1)) a", "let-sugar", "let[]", "0.31.0"),
       ("apply-args (1) (fn (x) x)", "apply-args", "loop ((param value) ...) body", "0.31.0"),
-      ("&format-ternary-tree $ [] 1", "&format-ternary-tree", "format-cirru-edn", "0.33.0"),
+      ("&format-ternary-tree $ [] 1", "&format-ternary-tree", "to-lispy-string", "0.33.0"),
     ] {
       for source in [
         snippet.to_owned(),

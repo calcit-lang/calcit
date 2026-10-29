@@ -71,11 +71,11 @@ Explain Ternary Tree 已改为在项目内自己构造教学用的树。
 残留调用在检查时报告未知名字，告警给出删除版本和改写方式：
 
 ```text
-[Warn] unknown `&format-ternary-tree` in app.main/show, locals {}; `&format-ternary-tree` was removed from calcit.core in 0.33.0, use `format-cirru-edn` to show a List; it returned FingerVec debug text, so build an explicit tree model to teach tree structure
+[Warn] unknown `&format-ternary-tree` in app.main/show, locals {}; `&format-ternary-tree` was removed from calcit.core in 0.33.0, use `to-lispy-string` to show a List (`format-cirru-edn` for EDN data); it returned FingerVec debug text, so build an explicit tree model to teach tree structure
 ```
 
-迁移方式与 [弃用说明](#format-ternary-tree-deprecation) 中的表格相同：显示 List 的值用 `format-cirru-edn`
-或 `to-lispy-string`；演示树结构时在项目里显式构造叶子与分支。没有替代名字，也没有对应的 `calcit fix` 规则。
+迁移方式与 [弃用说明](#format-ternary-tree-deprecation) 中的表格相同：调试显示 List 的值用 `to-lispy-string`，
+它接受任意值；`format-cirru-edn` 只接受能转成 EDN 的数据（例如含 `&unit` 的 List 会报错）。演示树结构时在项目里显式构造叶子与分支。没有替代名字，也没有对应的 `calcit fix` 规则。
 
 JS 发射原先专门为这个 native-only helper 做的可达性检查（拒绝从入口可达的调用、跳过未被引用的定义）一并删除，
 其他 native-only 内建的处理方式不变。
@@ -702,7 +702,7 @@ List 已改用 FingerVec 存储，`&format-ternary-tree` 只是沿用了旧名�
 | 旧用法 | 改写为 |
 |---|---|
 | 演示或教学三叉树结构 | 在项目里显式构造树的数据模型（叶子与分支），不依赖 Calcit 内部表示 |
-| 显示 List 的值 | `format-cirru-edn` 或 `to-lispy-string` |
+| 显示 List 的值 | `to-lispy-string`；数据能转成 EDN 时也可用 `format-cirru-edn` |
 | 有意查看当前内部表示 | 0.32.x 及更早版本内临时使用，升级到 0.33.0 前移除调用 |
 
 删除前提与 [兼容入口的退场节奏](#兼容入口的退场节奏) 相同：已知活跃下游默认分支的源码、附带测试/示例与宏生成代码不再调用，删除前重新普查。
@@ -2524,7 +2524,7 @@ calcit calcit.cirru analyze weak-types \
 calcit calcit.cirru analyze weak-types --only deprecated-call --summary-only
 ```
 
-兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询：
+兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询（`app.compat/old-text` 只是示例，换成弃用报告列出的你项目里的定义）：
 
 ```bash
 calcit calcit.cirru query context app.compat/old-text --format edn

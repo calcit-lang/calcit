@@ -1350,7 +1350,7 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "defatom" => Some(("0.31.0", "use `defref`")),
     "&format-ternary-tree" => Some((
       "0.33.0",
-      "use `format-cirru-edn` to show a List; it returned FingerVec debug text, so build an explicit tree model to teach tree structure",
+      "use `to-lispy-string` to show a List (`format-cirru-edn` for EDN data); it returned FingerVec debug text, so build an explicit tree model to teach tree structure",
     )),
     _ => None,
   }

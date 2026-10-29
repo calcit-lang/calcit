@@ -7,7 +7,7 @@
 ## 实现要点
 
 - 删除 `NativeFormatTernaryTree` proc、签名、失败描述、native 实现、core 定义与附带测试，以及各后端排除清单与质量基线中的对应行。
-- 残留调用由 `retired_core_function_migration` 报告未知名字，给出删除版本 0.33.0 与改写方式（显示值用 `format-cirru-edn`，教学树在项目里显式构造）。
+- 残留调用由 `retired_core_function_migration` 报告未知名字，给出删除版本 0.33.0 与改写方式（显示值用 `to-lispy-string`，EDN 数据可用 `format-cirru-edn`，教学树在项目里显式构造）。
 - JS 发射中专为这个 helper 做的可达性检查（`find_js_unavailable_proc`、`js_unavailable_defs`、入口依赖遍历）没有别的对象，一并删除；入口存在性检查保留为 `validate_js_entries`。`@calcit/procs` 的 `format_ternary_tree` 警告桩删除。
 - 弃用报告的 CLI 测试改用项目内自定义的弃用定义。
 
