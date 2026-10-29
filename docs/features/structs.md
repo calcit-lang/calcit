@@ -498,7 +498,7 @@ assert= 30 $ sum-point
   Point :x 10 :y 20
 ```
 
-The rewrite uses the same requirements as the map-to-struct rewrite. Fields not present in the anonymous struct but defined in the target struct are filled with `nil`; their declared field types must therefore permit `nil`.
+该改写与 map 字面量（`{}`、`?{}`）改写成 Struct 的规则相同。目标 Struct 中声明为 `Option<T>` 而字面量未提供的字段，和直接构造器一样填入 `Option :none`；其他未提供的字段填入 `nil`，因此它们的声明类型必须允许 `nil`，否则类型检查会报错。
 
 ### Design Symmetry
 
