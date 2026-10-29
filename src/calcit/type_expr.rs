@@ -849,6 +849,8 @@ mod tests {
 
   #[test]
   fn core_schemas_round_trip_through_compact_syntax() {
+    // Nominal schema parsing reads program registries that other tests replace.
+    let _guard = crate::program::lock_program_test_state();
     let core = crate::load_core_snapshot().expect("embedded core");
     let mut checked = 0;
     let mut skipped = vec![];
