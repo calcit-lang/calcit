@@ -70,7 +70,6 @@ impl CalcitProc {
       GenerateId => Raises("the size is not a non-negative integer"),
       TurnTag => Raises("the value is not a string, tag or symbol"),
       NativeGetDefSchema => Raises("the definition is not found"),
-      NativeFormatTernaryTree => Raises("the value is not a native FingerVec-backed List"),
       NativeBuffer => Raises("a byte is neither a number nor a two-digit hex string"),
       NativeExtractCodeIntoEdn => Raises("the value contains a ref, buffer, buf-list, recur or trait"),
       NativeDataToCode => Raises("the data contains a value with no code form, such as a function"),

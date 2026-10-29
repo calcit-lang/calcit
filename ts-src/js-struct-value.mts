@@ -334,7 +334,7 @@ export let _$n_struct_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
     if (x.name !== targetStruct.name || !fieldsEqual(x.fields, targetStruct.fields)) {
       return false;
     }
-    return targetStruct.definitionRef == null || x.structRef.sameDataSchema(targetStruct);
+    return targetStruct.definitionRef == null || x.structRef.sameNominalDefinition(targetStruct);
   } else {
     throw new Error("Expected first argument to be a struct value");
   }

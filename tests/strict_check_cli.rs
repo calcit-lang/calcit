@@ -1370,3 +1370,115 @@ fn each_method_keeps_the_element_callback_relation() {
     assert!(stderr.contains(code) && stderr.contains("`.each`"), "{label}:\n{stderr}");
   }
 }
+
+#[test]
+fn keep_going_and_all_defs_report_advisories_without_failing() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, false);
+  edit_def_at(
+    &snapshot,
+    "app.main/erase-field",
+    "quote $ defn erase-field (m) (hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)) (.unwrap-or (get m :a) nil)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/erase-field",
+        "--code",
+        "quote $ Fn (Map Tag Dynamic) (-> Dynamic)",
+      ],
+    ),
+    "edit erase-field schema",
+  );
+  // zeta-bad still fails, so the report must carry the note next to a failing status.
+  let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
+  let advisories = report["data"]["advisories"].as_array().expect("advisories should be an array");
+  let erased = advisories
+    .iter()
+    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
+    .collect::<Vec<_>>();
+  assert_eq!(erased.len(), 1, "advisories: {advisories:?}");
+  assert_eq!(erased[0]["severity"], "note");
+  assert_eq!(erased[0]["definition"], "app.main/erase-field");
+  assert!(!erased[0]["path"].as_array().unwrap().is_empty());
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["app.main/erase-field"], "passed", "a note never fails its definition");
+
+  // The human report lists the same note on stderr, like plain check-only.
+  let human = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  let stderr = String::from_utf8_lossy(&human.stderr);
+  assert!(stderr.contains("Notes: (1 notes"), "stderr:\n{stderr}");
+  assert!(stderr.contains("W_OPTION_ERASED_TO_NIL"), "stderr:\n{stderr}");
+
+  // The entry-reachable keep-going report never reaches erase-field, so it has no notes.
+  let reachable = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert_success(&reachable, "keep-going check stays entry-reachable");
+  let reachable_report: serde_json::Value = serde_json::from_slice(&reachable.stdout).unwrap();
+  assert_eq!(reachable_report["data"]["advisories"], serde_json::json!([]));
+}
+
+#[test]
+fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, false);
+  edit_def_at(
+    &snapshot,
+    "app.main/read-field",
+    "quote $ defmacro read-field (value field) $ quasiquote $ match (get ~value ~field) ((:some v) v) ((:none) nil)",
+  );
+  edit_def_at(&snapshot, "app.main/wrap", "quote $ defmacro wrap (body) $ quasiquote ~body");
+  // The branch is written in `outer` and only passed through `wrap`.
+  edit_def_at(
+    &snapshot,
+    "app.main/outer",
+    "quote $ defmacro outer (m) $ quasiquote $ wrap $ match (get ~m :d) ((:some v) v) ((:none) nil)",
+  );
+  for (name, code) in [
+    ("use-a", "quote $ defn use-a (m) $ read-field m :a"),
+    ("use-b", "quote $ defn use-b (m) $ read-field m :b"),
+    (
+      "use-wrapped",
+      "quote $ defn use-wrapped (m) $ wrap $ match (get m :c) ((:some v) v) ((:none) nil)",
+    ),
+    ("use-outer", "quote $ defn use-outer (m) $ outer m"),
+  ] {
+    let target = format!("app.main/{name}");
+    edit_def_at(&snapshot, &target, code);
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--code", "quote $ Fn (Map Tag Dynamic) (-> Dynamic)"],
+      ),
+      "edit caller schema",
+    );
+  }
+
+  let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
+  let erased = report["data"]["advisories"]
+    .as_array()
+    .expect("advisories should be an array")
+    .iter()
+    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
+    .collect::<Vec<_>>();
+  let definitions = erased
+    .iter()
+    .map(|item| item["definition"].as_str().unwrap())
+    .collect::<std::collections::BTreeSet<_>>();
+  // Both expansions share one note on the macro body; the branch the caller
+  // passed through `wrap` stays on the caller, and the one `outer` passes
+  // through `wrap` stays on `outer`.
+  assert_eq!(erased.len(), 3, "{erased:?}");
+  assert_eq!(
+    definitions,
+    std::collections::BTreeSet::from(["app.main/outer", "app.main/read-field", "app.main/use-wrapped"])
+  );
+  let on_macro = erased.iter().find(|item| item["definition"] == "app.main/read-field").unwrap();
+  // `defmacro read-field (value field) $ quasiquote $ match … ((:none) nil)`
+  assert_eq!(on_macro["path"], serde_json::json!([3, 1, 3]));
+  let message = on_macro["message"].as_str().unwrap();
+  assert!(message.contains("in the body of macro `app.main/read-field`"), "{message}");
+  assert!(message.contains("expanded at 2 call sites, first at app.main/use-"), "{message}");
+}

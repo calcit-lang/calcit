@@ -122,6 +122,7 @@ impl CalcitEnumDef {
       })
       .collect();
     let struct_def = CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: self.definition_ref.clone(),
       name: self.name.clone(),
       fields: Arc::new(fields),
@@ -272,6 +273,7 @@ mod tests {
   fn parses_generic_enum_prototype() {
     let struct_value = CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("Result"),
         fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
@@ -319,6 +321,7 @@ mod tests {
   fn nested_struct(namespace: &str) -> Arc<CalcitTypeAnnotation> {
     Arc::new(CalcitTypeAnnotation::Struct(
       Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: Some(Arc::from(format!("{namespace}/Item"))),
         name: EdnTag::new("Item"),
         fields: Arc::new(vec![]),

@@ -275,8 +275,16 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   );
   let strict_report: serde_json::Value = serde_json::from_slice(&strict_before.stdout).expect("one JSON document");
   let mut codes = Vec::new();
-  collect_codes(&strict_report, &mut codes);
+  collect_codes(&strict_report["data"]["definitions"], &mut codes);
   assert!(codes.is_empty(), "{codes:?}");
+  let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
+  assert!(!notes.is_empty(), "the kept erasures should be reported as notes");
+  assert!(
+    notes
+      .iter()
+      .all(|note| note["severity"] == "note" && note["code"] == "W_OPTION_ERASED_TO_NIL"),
+    "{notes:?}"
+  );
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
   assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];

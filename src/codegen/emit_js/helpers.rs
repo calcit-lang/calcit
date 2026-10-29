@@ -17,7 +17,6 @@ pub(super) fn is_js_unavailable_procs(name: &str) -> bool {
   matches!(
     name,
     "&reset-gensym-index!"
-      | "&format-ternary-tree"
       | "&get-def-doc"
       | "&get-def-schema"
       | "gensym"
@@ -53,7 +52,7 @@ mod tests {
   #[test]
   fn unavailable_proc_list_contains_known_entries() {
     assert!(is_js_unavailable_procs("macroexpand"));
-    assert!(is_js_unavailable_procs("&format-ternary-tree"));
+    assert!(is_js_unavailable_procs("gensym"));
     assert!(!is_js_unavailable_procs("println"));
   }
 

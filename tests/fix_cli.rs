@@ -591,11 +591,30 @@ fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
       &[
         "edit",
         "def",
+        "test-hygienic.main/old-count",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn old-count (xs) (count xs)",
+      ],
+    ),
+    "create deprecated definition",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "tags", "test-hygienic.main/old-count", "deprecated"]),
+    "tag deprecated definition",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
         "test-hygienic.main/legacy-with-macro",
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-with-macro () $ &format-ternary-tree $ [] $ test-hygienic.lib/add-11 1 2",
+        "quote $ defn legacy-with-macro () $ old-count $ [] $ test-hygienic.lib/add-11 1 2",
       ],
     ),
     "create legacy call with a declared logging macro",
@@ -696,7 +715,7 @@ fn deprecation_report_shares_definition_metadata_and_excludes_local_and_quoted_c
   for (target, code) in [
     (
       "app.main/legacy",
-      "quote $ defn legacy ()\n  compat/old-text 3\n  &format-ternary-tree $ [] 1\n  old-text 2\n  old-text 1\n  old-watch",
+      "quote $ defn legacy ()\n  compat/old-text 3\n  old-text 2\n  old-text 1\n  old-watch",
     ),
     ("app.main/local", "quote $ defn local (old-text)\n  old-text 1"),
     ("app.main/quoted", "quote $ defn quoted ()\n  quote $ old-text 1"),
@@ -734,13 +753,9 @@ fn deprecation_report_shares_definition_metadata_and_excludes_local_and_quoted_c
   let rows = report["data"]["definitions"].as_array().unwrap();
   assert_eq!(rows.len(), 2, "{report}");
   let legacy = rows.iter().find(|row| row["name"] == "legacy").unwrap();
-  assert_eq!(report["data"]["summary"]["calls"], 6, "{report}");
+  assert_eq!(report["data"]["summary"]["calls"], 5, "{report}");
   assert!(!String::from_utf8_lossy(&output.stdout).contains("metadata-query-must-not-expand-unrelated-macro"));
-  for (target, preferred) in [
-    ("app.compat/old-text", "to-string"),
-    ("app.compat/old-watch", "remove-watch!"),
-    ("calcit.core/&format-ternary-tree", "0.32.0"),
-  ] {
+  for (target, preferred) in [("app.compat/old-text", "to-string"), ("app.compat/old-watch", "remove-watch!")] {
     let usage = legacy["uses"]
       .as_array()
       .unwrap()

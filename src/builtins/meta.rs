@@ -1999,28 +1999,6 @@ pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit
   Ok(Calcit::Unit)
 }
 
-/// Deprecated FingerVec diagnostic kept under its historical name until 0.32.0.
-/// The output is the FingerVec debug layout, not a ternary tree.
-pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&format-ternary-tree expected 1 argument, but received:", xs);
-  }
-
-  match &xs[0] {
-    Calcit::List(ys) => match &**ys {
-      CalcitList::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
-      a => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&format-ternary-tree expected a list, but received a vector: {a}"),
-      ),
-    },
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&format-ternary-tree expected a list, but received: {a}"),
-    ),
-  }
-}
-
 pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&buffer expected hex values, but received none:", xs);
@@ -2320,6 +2298,7 @@ mod tests {
   fn shown_maybe_enum(show_trait: Arc<CalcitTrait>) -> CalcitEnumDef {
     CalcitEnumDef::from_struct(CalcitStructValue {
       struct_ref: Arc::new(CalcitStructDef {
+        field_defaults: Default::default(),
         definition_ref: None,
         name: EdnTag::new("ShownMaybe"),
         fields: Arc::new(vec![EdnTag::new("none"), EdnTag::new("some")]),

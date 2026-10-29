@@ -1403,6 +1403,7 @@ fn strict_type_fail_dynamic_nominal_argument_reports_decoder_migration() {
     ))
     .expect("dynamic nominal boundary snippet should parse");
     let person = Arc::new(calcit::calcit::CalcitStructDef {
+      field_defaults: Default::default(),
       definition_ref: None,
       name: cirru_edn::EdnTag::new("Person"),
       fields: Arc::new(vec![cirru_edn::EdnTag::new("name")]),
@@ -1799,6 +1800,7 @@ fn retired_core_functions_report_preferred_spelling() {
       ),
       ("let-sugar ((a 1)) a", "let-sugar", "let[]", "0.31.0"),
       ("apply-args (1) (fn (x) x)", "apply-args", "loop ((param value) ...) body", "0.31.0"),
+      ("&format-ternary-tree $ [] 1", "&format-ternary-tree", "to-lispy-string", "0.33.0"),
     ] {
       for source in [
         snippet.to_owned(),

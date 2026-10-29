@@ -19,9 +19,11 @@ export class CalcitStructDef {
   readonly fieldValidators: FieldValidator[] | null;
   readonly generics: CalcitValue[];
   readonly whereBounds: CalcitValue;
+  /** Declared literal defaults aligned with `fields`, empty when no field has one. Preprocess fills them in. */
+  readonly fieldDefaults: CalcitValue[];
 
   constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = [], definitionRef: string | null = null,
-    fieldValidators: FieldValidator[] | null = null, generics: CalcitValue[] = [], whereBounds: CalcitValue = null) {
+    fieldValidators: FieldValidator[] | null = null, generics: CalcitValue[] = [], whereBounds: CalcitValue = null, fieldDefaults: CalcitValue[] = []) {
     const [canonicalFields, canonicalTypes] = canonicalizeTagPairs(fields, fieldTypes, "CalcitStructDef");
     this.name = name;
     this.fields = canonicalFields;
@@ -34,24 +36,32 @@ export class CalcitStructDef {
     this.fieldValidators = fieldValidators == null ? null : canonicalizeTagPairs(fields, fieldValidators, "CalcitStructDef validators")[1];
     this.generics = generics;
     this.whereBounds = whereBounds;
+    this.fieldDefaults = fieldDefaults.length === 0 ? [] : canonicalizeTagPairs(fields, fieldDefaults, "CalcitStructDef defaults")[1];
   }
 
   withImpls(impls: CalcitImpl | CalcitImpl[]): CalcitStructDef {
     if (impls instanceof CalcitImpl) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef, this.fieldValidators, this.generics, this.whereBounds);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef, this.fieldValidators, this.generics, this.whereBounds, this.fieldDefaults);
     } else if (Array.isArray(impls)) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators, this.generics, this.whereBounds);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators, this.generics, this.whereBounds, this.fieldDefaults);
     }
     throw new Error("Expected an impl as implementation");
   }
 
-  /** Data-schema identity excludes attached method implementations. */
-  sameDataSchema(other: CalcitStructDef): boolean {
+  /** Nominal identity for value matching; declared defaults only affect construction, so they are excluded. */
+  sameNominalDefinition(other: CalcitStructDef): boolean {
     return this.name === other.name && this.definitionRef === other.definitionRef && fieldsEqual(this.fields, other.fields)
       && this.fieldTypeIdentities.length === other.fieldTypeIdentities.length
       && this.fieldTypeIdentities.every((type, index) => _$n__$e_(type, other.fieldTypeIdentities[index]))
       && this.generics.length === other.generics.length && this.generics.every((generic, index) => _$n__$e_(generic, other.generics[index]))
       && _$n__$e_(this.whereBounds, other.whereBounds);
+  }
+
+  /** Data-schema identity excludes attached method implementations. */
+  sameDataSchema(other: CalcitStructDef): boolean {
+    return this.sameNominalDefinition(other)
+      && this.fieldDefaults.length === other.fieldDefaults.length
+      && this.fieldDefaults.every((value, index) => _$n__$e_(value, other.fieldDefaults[index]));
   }
 
   toString(disableJsDataWarning: boolean = false): string {
@@ -72,7 +82,7 @@ export class CalcitStructDef {
 /** Bind nominal definitions like native, preserving an alias's existing identity. */
 export function bind_struct_definition(value: CalcitValue, definitionRef: string, fieldValidators: FieldValidator[] | null = null): CalcitValue {
   if (value instanceof CalcitStructDef && value.definitionRef == null) {
-    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators, value.generics, value.whereBounds);
+    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators, value.generics, value.whereBounds, value.fieldDefaults);
   }
   if (value instanceof CalcitEnumDef && value.prototype.structRef.definitionRef == null) {
     const prototype = value.prototype;

@@ -20,4 +20,4 @@ Calcit 的 List、Map 与 Set 都是持久化不可变结构：每次修改返�
 | Map | [rpds](https://github.com/orium/rpds) `HashTrieMap` | [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) 的 `TernaryTreeMap` |
 | Set | rpds `HashTrieSet` | 基于 `TernaryTreeMap` 的实现 |
 
-`&format-ternary-tree` 已弃用：它沿用了旧的三叉树名字，实际输出 FingerVec 的调试表示，0.32.0 删除，见 [升级手册](../run/upgrade.md#format-ternary-tree-deprecation)。
+`&format-ternary-tree` 已在 0.33.0 删除：它沿用了旧的三叉树名字，实际输出 FingerVec 的调试表示，见 [升级手册](../run/upgrade.md#format-ternary-tree-removal)。

@@ -4371,6 +4371,22 @@ fn canonicalize_schema_map_types(node: &Cirru) -> (Cirru, usize) {
   (Cirru::List(rewritten), changed)
 }
 
+fn is_tag_leaf(node: Option<&Cirru>) -> bool {
+  matches!(node, Some(Cirru::Leaf(leaf)) if leaf.starts_with(':'))
+}
+
+/// Canonicalize the type of a `(:field type default?)` entry, leaving the default as data.
+fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
+  let mut next = entry.to_vec();
+  let mut changed = 0;
+  if let Some(type_form) = entry.get(1) {
+    let (type_form, count) = canonicalize_type_expression(type_form);
+    next[1] = type_form;
+    changed += count;
+  }
+  (Cirru::List(next), changed)
+}
+
 fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
@@ -4402,8 +4418,22 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
           continue;
         }
         let mut next_field = field.clone();
+        let map_headed = matches!(field.first(), Some(Cirru::Leaf(brace)) if brace.as_ref() == "{}");
         for type_index in 1..field.len() {
-          let (next, count) = canonicalize_type_expression(&field[type_index]);
+          // A struct field's third item is a literal default, not a type; this
+          // also holds for fields wrapped in a `{}` form.
+          let (next, count) = match (&field[type_index], head) {
+            (Cirru::List(entry), Some("defstruct")) if map_headed && is_tag_leaf(entry.first()) => {
+              canonicalize_struct_field_type(entry)
+            }
+            (_, Some("defstruct")) if !map_headed && is_tag_leaf(field.first()) => {
+              if type_index > 1 {
+                continue;
+              }
+              canonicalize_type_expression(&field[type_index])
+            }
+            (item, _) => canonicalize_type_expression(item),
+          };
           next_field[type_index] = next;
           changed += count;
         }
@@ -4591,7 +4621,7 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
       for slot in rewritten.iter_mut().skip(2) {
         let Cirru::List(entry) = &*slot else { continue };
         let type_indexes: Vec<usize> = match (kind, entry.as_slice()) {
-          ("defstruct", [_, _]) => vec![1],
+          ("defstruct", [_, _] | [_, _, _]) => vec![1],
           ("deftrait", [Cirru::Leaf(bracket), _, _]) if bracket.as_ref() == "[]" => vec![2],
           ("deftrait", [_, _]) => vec![1],
           ("defenum", [Cirru::Leaf(tag), ..]) if tag.starts_with(':') => (1..entry.len()).collect(),
@@ -5696,6 +5726,21 @@ mod tests {
     assert!(
       data_text.contains(":kind :string"),
       "ordinary tag data must not be rewritten: {data_text}"
+    );
+
+    // A struct field's third item is a literal default, so a tag there is data.
+    let struct_decl = parse_one("defstruct Mode (:kind :tag :string)");
+    let (struct_decl, struct_count) = canonicalize_code_type_syntax(&struct_decl);
+    let struct_text = cirru_parser::format(&[struct_decl], true.into()).expect("struct should render");
+    assert_eq!(struct_count, 1, "struct text: {struct_text}");
+    assert!(struct_text.contains(":kind 'Tag :string"), "struct text: {struct_text}");
+    let wrapped_struct = parse_one("defstruct Mode $ {} (:kind :tag :string) (:size :number)");
+    let (wrapped_struct, wrapped_count) = canonicalize_code_type_syntax(&wrapped_struct);
+    let wrapped_text = cirru_parser::format(&[wrapped_struct], true.into()).expect("struct should render");
+    assert_eq!(wrapped_count, 2, "wrapped struct text: {wrapped_text}");
+    assert!(
+      wrapped_text.contains(":kind 'Tag :string") && wrapped_text.contains(":size 'Number"),
+      "wrapped struct text: {wrapped_text}"
     );
 
     // With nothing after it, the form is the body's value: a tag, not a return type.

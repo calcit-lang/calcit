@@ -36,7 +36,7 @@ use crate::js_ffi_source::{JsFfiSource, validate_js_source};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 use args::{gen_args_code, gen_call_args_with_temps};
-use deps::{contains_symbol, find_js_unavailable_proc, js_unavailable_defs, sort_compiled_defs_by_deps};
+use deps::{contains_symbol, sort_compiled_defs_by_deps};
 use helpers::{cirru_to_js, is_js_unavailable_procs, write_file_if_changed};
 use paths::{to_js_import_name, to_mjs_filename};
 use runtime::{get_proc_prefix, is_cirru_string};
@@ -642,11 +642,6 @@ fn to_js_code(
         Ok(format!("{proc_prefix}{}()", escape_var(CalcitProc::NativeMap.as_ref())))
       }
       Calcit::Proc(s) => {
-        if matches!(s, CalcitProc::NativeFormatTernaryTree) {
-          return Err(format!(
-            "`{s}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation. It is a deprecated FingerVec diagnostic scheduled for removal in 0.32.0"
-          ));
-        }
         let proc_prefix = get_proc_prefix(ns);
         let runtime_proc = match s {
           // These internal list primitives share the public runtime
@@ -2572,39 +2567,13 @@ fn write_cached_js_artifact(ns: &str, path: &Path, content: &str, defs: HashSet<
   Ok(wrote_new)
 }
 
-/// Validate both entry roots before writing modules, preserving the failing source owner.
-fn validate_js_runtime_dependencies(program: &program::CompiledProgram, entries: &[&str]) -> Result<(), String> {
-  let definitions: HashMap<_, _> = program
-    .iter()
-    .flat_map(|(ns, file)| file.defs.iter().map(move |(def, compiled)| (compiled.def_id, (ns, def, compiled))))
-    .collect();
-  let mut pending = Vec::new();
+/// Validate both entry roots before writing modules.
+fn validate_js_entries(program: &program::CompiledProgram, entries: &[&str]) -> Result<(), String> {
   for entry in entries {
     let (ns, def) = entry.split_once('/').ok_or_else(|| format!("invalid JavaScript entry: {entry}"))?;
-    let compiled = program
-      .get(ns)
-      .and_then(|file| file.get(def))
-      .ok_or_else(|| format!("missing compiled JavaScript entry: {entry}"))?;
-    pending.push(compiled.def_id);
-  }
-  let mut visited = HashSet::new();
-  while let Some(def_id) = pending.pop() {
-    if !visited.insert(def_id) {
-      continue;
+    if program.get(ns).and_then(|file| file.get(def)).is_none() {
+      return Err(format!("missing compiled JavaScript entry: {entry}"));
     }
-    let Some((ns, def, compiled)) = definitions.get(&def_id) else {
-      continue;
-    };
-    if compiled.kind == program::CompiledDefKind::Macro {
-      continue;
-    }
-    if let Some(proc) = find_js_unavailable_proc(&compiled.codegen_form) {
-      gen_stack::push_call_stack(ns, def, StackKind::Codegen, compiled.preprocessed_code.clone(), &[]);
-      return Err(format!(
-        "`{proc}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation. It is a deprecated FingerVec diagnostic scheduled for removal in 0.32.0"
-      ));
-    }
-    pending.extend(compiled.deps.iter().rev().copied());
   }
   Ok(())
 }
@@ -2621,8 +2590,7 @@ pub fn emit_js(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   let mut written_paths: Vec<PathBuf> = Vec::new();
 
   let program = program::clone_compiled_program_snapshot()?;
-  validate_js_runtime_dependencies(&program, &[init_fn, reload_fn])?;
-  let unavailable = js_unavailable_defs(&program);
+  validate_js_entries(&program, &[init_fn, reload_fn])?;
   for (ns, file) in program.iter() {
     // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
@@ -2639,12 +2607,7 @@ pub fn emit_js(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
     let file_imports: RefCell<ImportsDict> = RefCell::new(imports);
     let collected_tags: RefCell<HashSet<EdnTag>> = RefCell::new(HashSet::new());
 
-    let mut defs_in_current: HashSet<Arc<str>> = HashSet::new();
-    for (def, compiled) in &file.defs {
-      if !unavailable.contains(&compiled.def_id) {
-        defs_in_current.insert(def.to_owned());
-      }
-    }
+    let defs_in_current: HashSet<Arc<str>> = file.defs.keys().cloned().collect();
 
     if !internal_states::is_first_compilation() {
       let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
@@ -2693,10 +2656,6 @@ pub fn emit_js(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
 
     for def in deps_in_order {
       let compiled_def = file.get(&def).expect("compiled def for codegen");
-      if unavailable.contains(&compiled_def.def_id) {
-        continue;
-      }
-
       if &**ns == calcit::CORE_NS {
         if should_skip_core_def_codegen(&def, compiled_def) {
           continue;

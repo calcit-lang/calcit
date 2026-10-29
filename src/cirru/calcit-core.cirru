@@ -1253,16 +1253,6 @@
                       , 1
                     fn (message) message
               :tags $ #{} :core :unit
-        '&format-ternary-tree $ %{} 'CodeEntry
-          :doc "|Deprecated FingerVec diagnostic; the ternary-tree name is historical. Returns the debug layout String of a native List's current FingerVec representation (for example `{} _ {0 1}`), not a ternary tree; the text follows the runtime implementation and is not a data contract, so do not parse it into tree nodes. Build an explicit data model for teaching trees, and use format-cirru-edn for portable value display. Scheduled for removal in 0.32.0 with no replacement (docs/run/upgrade.md).\nSyntax: (&format-ternary-tree list)\nParams: list (a native List)\nReturns: String; rejects vectors and other values.\nJavaScript emission and WASM reject this native-only helper. Compile-time macros execute natively and may still call it before returning portable expressions."
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn List (-> String)
-          :tags $ #{} :builtin :deprecated :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-finger-vec-debug-string)
-            :code $ quote $ assert= true
-              string? $ &format-ternary-tree $ distinct (range 2)
-            :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
           :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
           :code $ quote &runtime-implementation
@@ -6609,7 +6599,7 @@
             :generics T
           :tags $ #{} :builtin :state :syntax
         'defstruct $ %{} 'CodeEntry
-          :doc "|Define a StructDef with fixed fields and field types."
+          :doc "|Define a StructDef with fixed fields and field types. A field may take a literal default as a third item, as in `(:port 'Number 8080)`; constructors and struct literal rewrites fill an omitted field with it."
           :code $ quote $ defmacro defstruct (name & pairs)
             assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
@@ -6646,11 +6636,13 @@
                             {}
                           &let
                             field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
-                            assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
+                            assert "|defstruct expects each field as (:field type) or (:field type default); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
                               &let
                                 items $ data-definition-form pair
                                 and (list? items)
-                                  &= 2 $ count items
+                                  or
+                                    &= 2 $ count items
+                                    &= 3 $ count items
                                   tag? $ &list:nth items 0
                             assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs $ fn (pair)
                               &let
@@ -6664,18 +6656,24 @@
                                     field-name $ &list:nth items 0
                                     &let
                                       type-form $ &list:nth items 1
-                                      if (list? type-form)
-                                        if
-                                          and
-                                            &= 2 $ count type-form
-                                            syntax? $ &list:nth type-form 0
-                                          if (includes? generics type-form)
+                                      &let
+                                        field-form $ if (list? type-form)
+                                          if
+                                            and
+                                              &= 2 $ count type-form
+                                              syntax? $ &list:nth type-form 0
+                                            if (includes? generics type-form)
+                                              quasiquote $ [] (~ field-name)
+                                                quote $ ~ type-form
+                                              quasiquote $ [] (~ field-name) (~ type-form)
                                             quasiquote $ [] (~ field-name)
                                               quote $ ~ type-form
-                                            quasiquote $ [] (~ field-name) (~ type-form)
-                                          quasiquote $ [] (~ field-name)
-                                            quote $ ~ type-form
-                                        quasiquote $ [] (~ field-name) (~ type-form)
+                                          quasiquote $ [] (~ field-name) (~ type-form)
+                                        if
+                                          &= 3 $ &list:count items
+                                          &list:append field-form $ quasiquote $ quote
+                                            ~ $ &list:nth items 2
+                                          , field-form
                               if (empty? generics)
                                 if has-where-form?
                                   quasiquote $ &struct-def:new

@@ -233,6 +233,10 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 只收集严格预处理诊断，不混入基于统计预算的 quality gate；批量问题修复后，可用普通
 `--check-only` 再做 fail-fast 检查。
 
+建议级诊断（如 `W_OPTION_ERASED_TO_NIL`）同样会收集：human 输出在 stderr 以 `Notes:` 列出，结构化 envelope 写在
+`data.advisories`，每项 `severity` 为 `note`，带 `definition` 与 `path`。它们不改变任何 definition 的 `status`，也不影响退出码。
+被 `blocked` 的 definition 不会预处理，其中的建议级诊断要等阻断解除后才会出现。
+
 ### 检查范围与 `--all-defs`
 
 不同命令检查的定义集合不同。默认 `--check-only` 只覆盖入口可达的定义，没有被入口引用的定义（热更新后接入的入口、
@@ -287,7 +291,7 @@ calcit --strict-types js
 
 所选 entry 未设置 `:feature-policy :js-ffi` 时，默认严格诊断在内存中采用 `:error`，不改写 Snapshot。
 
-`--check-only` 另会在 stderr 以 `Notes:` 列出建议级诊断，例如 `W_OPTION_ERASED_TO_NIL`。建议级诊断不是 warning，不会使检查、运行或代码生成失败，也不计入退出码；依赖项和 core 内部的调用不报告。
+`--check-only` 另会在 stderr 以 `Notes:` 列出建议级诊断，例如 `W_OPTION_ERASED_TO_NIL`；`--keep-going` 与 `--all-defs` 的报告也包含它们。建议级诊断不是 warning，不会使检查、运行或代码生成失败，也不计入退出码；依赖项和 core 内部的调用不报告。
 旧 entry 可显式设置 `calcit config set feature-policy.js-ffi warn`（或 `allow`）分阶段迁移，并用
 `calcit config show` 核对策略。默认严格诊断也包含定位到源码的未类型化 JS FFI 检查。
 开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
