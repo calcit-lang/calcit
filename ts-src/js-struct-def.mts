@@ -48,13 +48,18 @@ export class CalcitStructDef {
     throw new Error("Expected an impl as implementation");
   }
 
-  /** Data-schema identity excludes attached method implementations. */
-  sameDataSchema(other: CalcitStructDef): boolean {
+  /** Nominal identity for value matching; declared defaults only affect construction, so they are excluded. */
+  sameNominalDefinition(other: CalcitStructDef): boolean {
     return this.name === other.name && this.definitionRef === other.definitionRef && fieldsEqual(this.fields, other.fields)
       && this.fieldTypeIdentities.length === other.fieldTypeIdentities.length
       && this.fieldTypeIdentities.every((type, index) => _$n__$e_(type, other.fieldTypeIdentities[index]))
       && this.generics.length === other.generics.length && this.generics.every((generic, index) => _$n__$e_(generic, other.generics[index]))
-      && _$n__$e_(this.whereBounds, other.whereBounds)
+      && _$n__$e_(this.whereBounds, other.whereBounds);
+  }
+
+  /** Data-schema identity excludes attached method implementations. */
+  sameDataSchema(other: CalcitStructDef): boolean {
+    return this.sameNominalDefinition(other)
       && this.fieldDefaults.length === other.fieldDefaults.length
       && this.fieldDefaults.every((value, index) => _$n__$e_(value, other.fieldDefaults[index]));
   }
