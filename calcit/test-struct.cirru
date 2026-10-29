@@ -578,6 +578,7 @@
                 :count $ Option :some 8
               assert= 160 $ read-context-box $ {} (:value 1)
                 :count $ Option :none
+              assert= 160 $ read-context-box $ {} (:value 1)
             :tags $ #{} :nominal-contextual
         'read-env-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-env-option (name)

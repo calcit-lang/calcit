@@ -2687,7 +2687,8 @@ try {
         ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count 160)"],
         ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count 160)"],
         ["wrong-option-payload", "read-context-box $ {} (:value 1) (:count $ Option :some |wrong)"],
-        ["missing-required-field", "read-context-box $ {} (:value 1)"],
+        // `:count` is Option and may be omitted (#2482); `:value` is required.
+        ["missing-required-field", "read-number-box $ {} (:count $ Option :none)"],
         ["unknown-field", "read-context-box $ {} (:value 1) (:count $ Option :none) (:extra 1)"],
         ["concrete-generic-mismatch", "read-number-box $ {} (:value |wrong) (:count $ Option :none)"],
         ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count 160"],
