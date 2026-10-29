@@ -200,7 +200,10 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
         WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
+        // Splitting `:js-ffi` positions by host reach only changes reporting,
+        // so existing baselines keep counting them the same way.
         WeakTypeIntent::IntentionalJsFfi
+        | WeakTypeIntent::JsFfiNonHost
         | WeakTypeIntent::IntentionalMacroSyntax
         | WeakTypeIntent::IntentionalTypeSlotDynamic
         | WeakTypeIntent::ExplicitUnsafe
