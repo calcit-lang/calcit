@@ -20,11 +20,9 @@ const tests = canonicalTests;
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
-  // #2351: replay the two previously erased unsupported calls too. Exclusion
+  // #2351: replay the previously erased unsupported call too. Exclusion
   // is not evidence of rejection, so inspect actual outcomes on every backend.
   const boundaryCases = [
-    ["calcit.core/&format-ternary-tree#returns-finger-vec-debug-string", ["native"],
-      /native-only builtin/, /unsupported proc in WASM: &format-ternary-tree/],
     ["calcit.core/hint-fn#typed-callable-to-open-storage", ["native", "js"],
       null, /E_WASM_CLOSURE_SPECIALIZATION/],
   ];

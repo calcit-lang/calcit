@@ -72,7 +72,6 @@ aliases:
 &data-to-code
 &display-stack
 &extract-code-into-edn
-&format-ternary-tree
 &get-calcit-backend
 &get-calcit-running-mode
 &get-def-doc

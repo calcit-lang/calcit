@@ -34,8 +34,6 @@ pub enum CalcitProc {
   NativeGetDefDoc,
   #[strum(serialize = "&get-def-schema")]
   NativeGetDefSchema,
-  #[strum(serialize = "&format-ternary-tree")]
-  NativeFormatTernaryTree,
   #[strum(serialize = "&buffer")]
   NativeBuffer,
   #[strum(serialize = "&hash")]
@@ -1525,10 +1523,6 @@ impl CalcitProc {
       NativeBuffer => Some(ProcTypeSignature {
         return_type: some_tag("buffer"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      NativeFormatTernaryTree => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("list")],
       }),
       RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
         return_type: some_tag("unit"),

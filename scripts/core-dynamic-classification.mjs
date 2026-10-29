@@ -92,7 +92,6 @@ const runtimePolymorphic = new Set([
   "&enum:assoc",
   "&enum:nth",
   "&enum:params",
-  "&format-ternary-tree",
   "&get-def-doc",
   "&get-def-schema",
   "&get-in",
