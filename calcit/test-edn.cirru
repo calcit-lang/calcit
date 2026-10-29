@@ -254,9 +254,9 @@
           :code $ quote $ defn test-typed-edn ()
             let
                 person $ parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Ada)" Person
-                people $ parse-cirru-edn-as "|[] $ %{} :Person (:age 23) (:name |Ada)" $ :: 'List Person
+                people $ parse-cirru-edn-as "|[] $ %{} :Person (:age 23) (:name |Ada)" $ quote (List Person)
                 team $ parse-cirru-edn-as "|%{} :Team (:members ([] (%{} :Person (:age 23) (:name |Ada))))" Team
-                boxed $ parse-cirru-edn-as "|%{} :Box (:value |hello)" $ :: Box 'String
+                boxed $ parse-cirru-edn-as "|%{} :Box (:value |hello)" $ quote (Box String)
                 enum-value $ parse-cirru-edn-as "|%:: :DemoEnum :err |oops" DemoEnum
               assert=
                 %{} Person (:name |Ada) (:age 23)
@@ -271,7 +271,7 @@
               assert= :err $ &enum:nth enum-value 0
               assert= true $ try
                 do
-                  parse-cirru-edn-as "|[] $ %{} :Person (:age |old) (:name |Ada)" $ :: 'List Person
+                  parse-cirru-edn-as "|[] $ %{} :Person (:age |old) (:name |Ada)" $ quote $ List Person
                   , false
                 fn (error) true
               assert= true $ try
@@ -279,12 +279,12 @@
                 fn (error) true
               assert= true $ try
                 do
-                  parse-cirru-edn-as "|#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:name |Ada) (:age 23))" $ :: 'Set Person
+                  parse-cirru-edn-as "|#{} (%{} :Person (:age 23) (:name |Ada)) (%{} :Person (:name |Ada) (:age 23))" $ quote $ Set Person
                   , false
                 fn (error) true
               assert= true $ try
                 do
-                  parse-cirru-edn-as "|{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:name |Ada) (:age 23)) |second)" $ :: 'Map Person 'String
+                  parse-cirru-edn-as "|{} ((%{} :Person (:age 23) (:name |Ada)) |first) ((%{} :Person (:name |Ada) (:age 23)) |second)" $ quote $ Map Person String
                   , false
                 fn (error) true
               assert= (#{} 1)
