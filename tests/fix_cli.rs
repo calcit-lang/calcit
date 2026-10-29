@@ -7580,6 +7580,63 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
 }
 
 #[test]
+fn schema_evidence_does_not_promote_nil_placeholders_or_type_slots() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (target, source, schema) in [
+    (
+      "fix-command.main/evidence-pending",
+      "quote $ def evidence-pending nil",
+      Some("quote Dynamic"),
+    ),
+    (
+      "fix-command.main/*evidence-cache",
+      "quote $ defref *evidence-cache nil",
+      Some("quote $ Ref Dynamic"),
+    ),
+    ("fix-command.main/*evidence-op", "quote $ deftype-slot :evidence-op", None),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "create placeholder definition",
+    );
+    if let Some(schema) = schema {
+      assert_success(
+        &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+        "declare an open schema",
+      );
+    }
+  }
+
+  let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
+  assert_success(&output, "schema evidence report");
+  let report = parse_stdout(&output);
+  let candidates = report["data"]["evidence"]["schema_candidates"]
+    .as_array()
+    .expect("schema candidates should be an array");
+  let candidate = |name: &str| {
+    candidates
+      .iter()
+      .find(|candidate| candidate["definition"] == format!("fix-command.main/{name}"))
+  };
+  // A nil initializer is replaced later, so it never counts as exact evidence.
+  for (name, slot) in [("evidence-pending", "schema"), ("*evidence-cache", "schema.item")] {
+    let found = candidate(name).unwrap_or_else(|| panic!("{name} should have schema evidence"));
+    assert_eq!(found["confidence"], "boundary-unknown", "{name}");
+    assert!(
+      found["evidence"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["kind"] == "nil-placeholder" && item["slot"] == slot)),
+      "{name}: {found}"
+    );
+  }
+  // A type slot declaration is not a value, so it gets no candidate.
+  assert!(candidate("*evidence-op").is_none(), "{report}");
+}
+
+#[test]
 fn schema_evidence_types_a_map_literal_definition_as_the_whole_map() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
