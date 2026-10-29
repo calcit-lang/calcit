@@ -7637,6 +7637,53 @@ fn schema_evidence_does_not_promote_nil_placeholders_or_type_slots() {
 }
 
 #[test]
+fn schema_evidence_types_a_map_literal_definition_as_the_whole_map() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for (target, source) in [
+    (
+      "fix-command.main/evidence-site",
+      "quote $ def evidence-site $ {} (:port 5021) (:title |Calcium)",
+    ),
+    (
+      "fix-command.main/evidence-limits",
+      "quote $ def evidence-limits $ {} (:min 1) (:max 9)",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "create map literal definition",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", target, "--input-format", "cirru", "--code", "quote Dynamic"],
+      ),
+      "declare an open schema",
+    );
+  }
+
+  let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
+  assert_success(&output, "schema evidence report");
+  let report = parse_stdout(&output);
+  let candidates = report["data"]["evidence"]["schema_candidates"]
+    .as_array()
+    .expect("schema candidates should be an array");
+  let inferred = |name: &str| {
+    candidates
+      .iter()
+      .find(|candidate| candidate["definition"] == format!("fix-command.main/{name}"))
+      .unwrap_or_else(|| panic!("{name} should have schema evidence"))["evidence"][0]["inferred"]
+      .clone()
+  };
+  // The candidate describes the map, never the type of its last value.
+  assert_eq!(inferred("evidence-site"), "map<:tag,dynamic>");
+  assert_eq!(inferred("evidence-limits"), "map<:tag,:number>");
+}
+
+#[test]
 fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

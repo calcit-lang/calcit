@@ -8869,6 +8869,15 @@
                   fn (x) (+ x 1)
                   , 3
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |named-callback-call-contract)
+              :code $ quote $ let
+                  apply-one $ fn (callback value)
+                    hint-fn $ Fn
+                      Fn Number $ -> Number
+                      , Number $ -> Number
+                    callback value
+                assert= 8 $ apply-one inc 7
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |empty-list-call-contract)
               :code $ quote $ let
                   count-values $ fn (xs)

@@ -569,7 +569,8 @@ pub fn trace_snapshot_source_expressions(
     locations: &mut HashMap<usize, NodeLocation>,
   ) {
     if let Calcit::List(items) = code {
-      if matches!(items.first(), Some(Calcit::Proc(_) | Calcit::Syntax(..)))
+      // Tag heads carry no location, so field calls such as `(:a m)` are indexed here too.
+      if matches!(items.first(), Some(Calcit::Proc(_) | Calcit::Syntax(..) | Calcit::Tag(_)))
         && let Some(coord) = crate::data::cirru::reader_path_to_source_path(source, path)
           .and_then(|coord| coord.into_iter().map(u16::try_from).collect::<Result<Vec<_>, _>>().ok())
       {

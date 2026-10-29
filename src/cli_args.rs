@@ -470,7 +470,7 @@ pub struct WeakTypesCommand {
   /// with --only coverage, coverage levels to include, comma-separated: none,partial,full
   #[argh(option, long = "coverage-level")]
   pub coverage_level: Option<String>,
-  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,intentional-macro-syntax,intentional-type-slot-dynamic,explicit-unsafe,declared-unit,declared-optional
+  /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,js-ffi-non-host,intentional-macro-syntax,intentional-type-slot-dynamic,explicit-unsafe,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
   /// output format: human (default), edn, or json

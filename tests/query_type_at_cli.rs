@@ -9,11 +9,15 @@ use std::process::{Command, Output};
 const FIXTURE: &str = "tests/fixtures/type-at-definition-reference.cirru";
 
 fn type_at(target: &str, path: &str) -> (Output, serde_json::Value) {
+  type_at_in(FIXTURE, target, path)
+}
+
+fn type_at_in(fixture: &str, target: &str, path: &str) -> (Output, serde_json::Value) {
   let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
     .arg("--tips-level")
     .arg("none")
-    .arg(FIXTURE)
+    .arg(fixture)
     .args(["query", "type-at", target, "--path", path, "--format", "json"])
     .output()
     .expect("calcit command should run");
@@ -117,4 +121,24 @@ fn open_and_quoted_references_stay_unproven() {
   assert_eq!(quoted["data"]["inferred_type"], serde_json::Value::Null);
   assert_eq!(diagnostic_codes(&quoted), vec!["W_TYPE_AT_UNRESOLVED".to_owned()]);
   assert!(!has_next(&quoted, "query def 'app.ui/global'"));
+}
+
+/// A field call `(:field value)` lowers to bindings around the receiver. The
+/// reported type belongs to the whole call, not to the bound receiver.
+#[test]
+fn field_calls_report_the_field_type_not_the_receiver_type() {
+  // A map field call still warns that the field may be missing.
+  for (target, inferred, codes) in [
+    ("app.main/point-x", "Number", vec![]),
+    (
+      "app.main/map-a",
+      "calcit.core/Option Number",
+      vec!["W_REQUIRED_STRUCT_FIELD_TYPE".to_owned()],
+    ),
+  ] {
+    let (_, report) = type_at_in("tests/fixtures/type-at-field-call.cirru", target, "@3");
+    assert_eq!(report["data"]["inferred_type"], inferred, "{target}");
+    assert_eq!(report["data"]["confidence"], "exact", "{target}");
+    assert_eq!(diagnostic_codes(&report), codes, "{target}");
+  }
 }

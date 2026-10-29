@@ -3548,15 +3548,21 @@ mod tests {
       code: list(vec![
         leaf("defn"),
         leaf("ffi-wrapper"),
-        list(vec![leaf("value")]),
+        list(vec![leaf("value"), leaf("state")]),
         list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
+        list(vec![
+          leaf("&let"),
+          list(vec![leaf("target"), leaf("value")]),
+          list(vec![leaf(".!focus"), leaf("target")]),
+        ]),
+        list(vec![leaf("println"), leaf("state")]),
         leaf("nil"),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
-        arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
+        arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone(), calcit::calcit::DYNAMIC_TYPE.clone()],
         return_type: calcit::calcit::DYNAMIC_TYPE.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
@@ -3569,12 +3575,33 @@ mod tests {
     let row = type_coverage::analyze_weak_types_entry("app.main", "ffi-wrapper", &entry, &type_coverage::WeakTypeKind::all())
       .expect("should find weak types");
 
-    for occurrence in row.occurrences.iter().filter(|occurrence| {
-      !matches!(
-        occurrence.kind,
-        type_coverage::WeakTypeKind::CodeNil | type_coverage::WeakTypeKind::UnsafeCoerce
-      )
-    }) {
+    // `value` reaches `.!focus` through `target`; `state` and the `nil` return
+    // stay on the Calcit side of the adapter.
+    let intent_at = |kind: type_coverage::WeakTypeKind, path: &str| {
+      row
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.kind == kind && occurrence.path == path)
+        .map(|occurrence| occurrence.intent)
+    };
+    let schema = type_coverage::WeakTypeKind::SchemaDynamic;
+    assert_eq!(
+      intent_at(schema, "schema.args.0"),
+      Some(type_coverage::WeakTypeIntent::IntentionalJsFfi)
+    );
+    assert_eq!(
+      intent_at(schema, "schema.args.1"),
+      Some(type_coverage::WeakTypeIntent::JsFfiNonHost)
+    );
+    assert_eq!(
+      intent_at(schema, "schema.return"),
+      Some(type_coverage::WeakTypeIntent::JsFfiNonHost)
+    );
+    for occurrence in row
+      .occurrences
+      .iter()
+      .filter(|occurrence| occurrence.kind == type_coverage::WeakTypeKind::CodeDynamic)
+    {
       assert_eq!(
         occurrence.intent,
         type_coverage::WeakTypeIntent::IntentionalJsFfi,
