@@ -50,6 +50,8 @@ struct CheckData {
   entries: Vec<String>,
   summary: CheckSummary,
   definitions: Vec<DefinitionResult>,
+  /// Non-failing diagnostics such as `W_OPTION_ERASED_TO_NIL`; they never change `status`.
+  advisories: Vec<CheckDiagnostic>,
 }
 
 fn collect_graph(node: &CallTreeNode, graph: &mut DefinitionGraph) {
@@ -238,6 +240,13 @@ fn warning_diagnostic(warning: &LocatedWarning) -> CheckDiagnostic {
     expected: warning.expected().map(str::to_owned),
     actual: warning.actual().map(str::to_owned),
     provenance: Vec::new(),
+  }
+}
+
+fn advisory_diagnostic(advisory: &LocatedWarning) -> CheckDiagnostic {
+  CheckDiagnostic {
+    severity: "note",
+    ..warning_diagnostic(advisory)
   }
 }
 
@@ -438,11 +447,14 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
   let _output_guard = crate::ProgramOutputGuard::new(format != StructuredOutputFormat::Human, false);
   let (graph, definitions) = reachable_definitions(entries, all_defs)?;
   let mut results = check_definitions(&graph, &definitions);
+  let advisories = runner::preprocess::take_advisories();
   // Like plain check-only, the proof audit runs once the ordinary check passes,
   // so ordinary rejections keep their own diagnostics (#2121). One audit covers
   // the whole check, so shared dependencies are proved once.
   if runner::preprocess::default_proof_enabled() && results.iter().all(|result| result.status == "passed") {
     results = runner::preprocess::with_default_proof(|| check_definitions(&graph, &definitions));
+    // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
+    drop(runner::preprocess::take_advisories());
   }
   let summary = CheckSummary {
     total: results.len(),
@@ -458,6 +470,7 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
     entries: vec![entries.init_fn.to_string(), entries.reload_fn.to_string()],
     summary,
     definitions: results,
+    advisories: advisories.iter().map(advisory_diagnostic).collect(),
   };
 
   let envelope = serde_json::json!({
@@ -467,7 +480,14 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
     "diagnostics": [],
   });
   match format {
-    StructuredOutputFormat::Human => print_human(&data),
+    StructuredOutputFormat::Human => {
+      print_human(&data);
+      // Advisories never fail the check; stderr matches the plain check-only Notes.
+      if !advisories.is_empty() {
+        eprintln!("\nNotes: ({} notes, the check still passes)", advisories.len());
+        LocatedWarning::print_list(&advisories);
+      }
+    }
     StructuredOutputFormat::Edn => println!("{}", format_json_value_as_edn(&envelope)?),
     StructuredOutputFormat::Json => println!("{envelope}"),
   }

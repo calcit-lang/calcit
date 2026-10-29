@@ -1370,3 +1370,52 @@ fn each_method_keeps_the_element_callback_relation() {
     assert!(stderr.contains(code) && stderr.contains("`.each`"), "{label}:\n{stderr}");
   }
 }
+
+#[test]
+fn keep_going_and_all_defs_report_advisories_without_failing() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, false);
+  edit_def_at(
+    &snapshot,
+    "app.main/erase-field",
+    "quote $ defn erase-field (m) (hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)) (.unwrap-or (get m :a) nil)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/erase-field",
+        "--code",
+        "quote $ Fn (Map Tag Dynamic) (-> Dynamic)",
+      ],
+    ),
+    "edit erase-field schema",
+  );
+  // zeta-bad still fails, so the report must carry the note next to a failing status.
+  let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
+  let advisories = report["data"]["advisories"].as_array().expect("advisories should be an array");
+  let erased = advisories
+    .iter()
+    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
+    .collect::<Vec<_>>();
+  assert_eq!(erased.len(), 1, "advisories: {advisories:?}");
+  assert_eq!(erased[0]["severity"], "note");
+  assert_eq!(erased[0]["definition"], "app.main/erase-field");
+  assert!(!erased[0]["path"].as_array().unwrap().is_empty());
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["app.main/erase-field"], "passed", "a note never fails its definition");
+
+  // The human report lists the same note on stderr, like plain check-only.
+  let human = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  let stderr = String::from_utf8_lossy(&human.stderr);
+  assert!(stderr.contains("Notes: (1 notes"), "stderr:\n{stderr}");
+  assert!(stderr.contains("W_OPTION_ERASED_TO_NIL"), "stderr:\n{stderr}");
+
+  // The entry-reachable keep-going report never reaches erase-field, so it has no notes.
+  let reachable = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert_success(&reachable, "keep-going check stays entry-reachable");
+  let reachable_report: serde_json::Value = serde_json::from_slice(&reachable.stdout).unwrap();
+  assert_eq!(reachable_report["data"]["advisories"], serde_json::json!([]));
+}
