@@ -203,6 +203,38 @@ fn interrupted_cli_writer_releases_ownership_and_reports_recovery() {
   assert_eq!(query_definition(&snapshot, "test-wasm.main/main!")["data"]["doc"], "recovered");
 }
 
+/// `query def` and `query schema`, human and JSON, agree on whether a schema was written.
+fn assert_query_schema_views(snapshot: &Path, target: &str, expected: Option<&str>) {
+  let text = |args: &[&str]| {
+    let output = run_calcit(snapshot, args);
+    assert_success(&output, &args.join(" "));
+    String::from_utf8_lossy(&output.stdout).into_owned()
+  };
+  let json = |args: &[&str]| serde_json::from_str::<serde_json::Value>(&text(args)).expect("query output should be JSON");
+
+  let def = text(&["query", "def", target]);
+  let schema = text(&["query", "schema", target]);
+  let def_json = json(&["query", "def", target, "--format", "json"]);
+  let schema_json = json(&["query", "schema", target, "--format", "json"]);
+  match expected {
+    Some(written) => {
+      for output in [&def, &schema] {
+        assert!(!output.contains("_No explicit schema._"), "{output}");
+        assert!(output.contains(written), "{output}");
+      }
+      assert_eq!(def_json["data"]["schema"], written);
+      assert_eq!(schema_json["data"]["canonical_schema"], written);
+    }
+    None => {
+      for output in [&def, &schema] {
+        assert!(output.contains("_No explicit schema._"), "{output}");
+      }
+      assert!(def_json["data"]["schema"].is_null(), "{def_json}");
+      assert!(schema_json["data"]["canonical_schema"].is_null(), "{schema_json}");
+    }
+  }
+}
+
 #[test]
 fn schema_clear_and_structural_edits_preserve_missing_intent() {
   let directory = TestDirectory::create();
@@ -242,6 +274,8 @@ fn schema_clear_and_structural_edits_preserve_missing_intent() {
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format explicit schema");
   let explicit = read_entry();
   assert!(!calcit::snapshot::schema_annotation_is_missing(&explicit.schema));
+  // #2486: query views show a written Dynamic instead of "no schema".
+  assert_query_schema_views(&snapshot, target, Some("Dynamic"));
   assert_ne!(
     calcit::snapshot::definition_revision(&missing).unwrap(),
     calcit::snapshot::definition_revision(&explicit).unwrap()
@@ -266,6 +300,7 @@ fn schema_clear_and_structural_edits_preserve_missing_intent() {
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format missing schema");
   let cleared = read_entry();
   assert!(calcit::snapshot::schema_annotation_is_missing(&cleared.schema));
+  assert_query_schema_views(&snapshot, target, None);
   assert_eq!(
     calcit::snapshot::definition_revision(&missing).unwrap(),
     calcit::snapshot::definition_revision(&cleared).unwrap()
