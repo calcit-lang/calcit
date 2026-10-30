@@ -259,7 +259,8 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
     for source in [
       "nil->option nil",
       "let ((value (Option :some 1)))\n  nil->option value",
-      "let ((value (if (> 1 0) 1 nil)))\n  nil->option value",
+      // A nil join goes straight into the bridge; binding it first is a strict error.
+      "nil->option (if (> 1 0) 1 nil)",
     ] {
       let accepted = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);
