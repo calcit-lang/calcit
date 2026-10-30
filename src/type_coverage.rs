@@ -3908,7 +3908,7 @@ pub(crate) fn format_weak_types_json_with_rows(
     structural_candidates
   };
   let envelope = serde_json::json!({
-    "schema_version": 8,
+    "schema_version": 9,
     "command": "analyze.weak-types",
     "revision": analysis_revision(snapshot, &ids)?,
     "data": {

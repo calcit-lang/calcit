@@ -41,7 +41,7 @@ related:
 同时删除的还有：
 
 - `optionally` 的退场提示（tombstone）。0.33.0 起它是普通的未定义名字。
-- `analyze weak-types --intent declared-optional` 与质量基线的 `declaredOptional` 计数。传入 `declared-optional` 会报错并说明已删除；旧基线文件里的 `:declaredOptional` 仍可读取，但不再参与比较，也不再写出。
+- `analyze weak-types --intent declared-optional` 与质量基线的 `declaredOptional` 计数。传入 `declared-optional` 会报错并说明已删除；旧基线文件里的 `:declaredOptional` 仍可读取，但不再参与比较，也不再写出。`analyze weak-types` 的 JSON / EDN 报告去掉 `summary.intents.declared-optional`，`schema_version` 随之从 8 升到 9，按版本号解析报告的脚本需要一起更新。
 - `E_LEGACY_OPTIONAL_SCHEMA` 与 `W_LEGACY_OPTIONAL_TYPE` 两条过渡诊断，由加载期的 `E_LEGACY_OPTIONAL_TYPE` 取代。
 
 本版本不新增自动改写规则，`calcit fix` 不会改 schema：`Optional<T>` 混合了“Calcit 内缺失”和“宿主 nil”两种语义，只能逐处选择。
@@ -56,9 +56,11 @@ related:
 | --- | --- |
 | 参数 `quote $ Fn (Optional String) (-> Unit)` | `quote $ Fn (Option String) (-> Unit)`，调用方传 `Option :some value` / `Option :none` |
 | struct 字段 `(:value $ quote $ Optional Number)` | `(:value $ quote $ Option Number)`，缺省时写 `Option :none`，构造时可用 `nil->option` 包装已有的可能为 nil 的值 |
-| 返回 `quote $ Fn T (-> $ Optional T)`（来自 nil 的结果） | `quote $ Fn T (-> $ Option T)`，函数体里用 `nil->option` 转换 |
+| 返回 `quote $ Fn T (-> $ Optional T) (:generics T)`（来自 nil 的结果） | `quote $ Fn T (-> $ Option T) (:generics T)`，函数体里用 `nil->option` 转换 |
 | 读取 JS 宿主属性的 `Optional<T>` | `JsNullish<T>`，转换时用 `js-nullish->option` |
 | `hint-fn $ Fn (Optional Number) ...` 的局部函数 | 参数改为 `Option Number`，或去掉可空声明并在调用前用 `when` / `nil?` 收窄 |
+
+参数或字段从 `Optional<T>` 改为 `Option<T>` 后，函数体也要一起改：`Option :none` 不是 `nil`，`nil? (Option :none)` 为 false，原来的 `nil?` / `some?` / `if value` 判断会静默走错分支而不报类型错误。把这类判断改成 `match`（`(:some v)` / `(:none)`）或 `Option` 的方法（如 `option:fold`、`.unwrap-or`）。如果旧代码曾把 `nil` 当作“有值”传递，改写后要显式决定它对应 `Option :none` 还是 `Option :some nil`。
 
 `nil->option` 仍是显式桥：`nil` 得到 `Option :none`，其余值得到 `Option :some value`，已有的 `Option` 不会被展开。它的 schema 改为 `Fn T (-> $ Option T) (:generics T)`。推导出的 nil 合并（例如 `nil->option $ if c x`）得到 `Option<T>`，字面 `nil` 得到 `Option<Never>`，可以赋给任意 `Option<T>`。宿主 `JsNullish<T>` 仍不被接受，需要先 `js-present?` 收窄，或在接受不透明 payload 合同后用 `js-nullish->option`。
 

@@ -13156,7 +13156,7 @@ fn find_implicit_nil_branch(value: &Calcit, scope_types: &ScopeTypes) -> Option<
 
 /// `nil->option` is the explicit bridge from a possibly-nil value to `Option`, so
 /// a nil-able branch is its intended argument.
-fn is_nil_bridge_head(head: &Calcit) -> bool {
+pub(super) fn is_nil_bridge_head(head: &Calcit) -> bool {
   matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "nil->option")
 }
 

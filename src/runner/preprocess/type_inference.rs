@@ -1549,16 +1549,38 @@ fn infer_core_nominal_absence_return_type(
     "find-index" | "index-of" => Some(core_type_ref("Option", vec![tag_annotation("number")])),
     "parse-float" => Some(core_type_ref("Result", vec![tag_annotation("number"), tag_annotation("string")])),
     "get-env" => Some(core_type_ref("Option", vec![tag_annotation("string")])),
-    // The bridge removes the absence of an inferred nil join, so the payload
-    // is the live branch rather than the nullable join itself. A bare nil
-    // is always `Option :none`, whose payload slot is uninhabited.
-    "nil->option" => match call_expr.get(1).and_then(|value| resolve_type_value(value, scope_types))?.as_ref() {
-      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => Some(core_type_ref("Option", vec![inner.clone()])),
-      CalcitTypeAnnotation::Nil => Some(core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Never)])),
-      _ => None,
-    },
+    "nil->option" => nil_bridge_result_type(&resolve_type_value(call_expr.get(1)?, scope_types)?),
+    // A lowered `map` passing the bridge by name would otherwise instantiate
+    // its public schema with the nil join itself as `T`.
+    "&list:map" | "&set:map" if super::is_nil_bridge_head(call_expr.get(2)?) => {
+      match resolve_type_value(call_expr.get(1)?, scope_types)?.as_ref() {
+        CalcitTypeAnnotation::List(item) if def == "&list:map" => {
+          Some(Arc::new(CalcitTypeAnnotation::List(nil_bridge_result_type(item)?)))
+        }
+        CalcitTypeAnnotation::Set(item) if def == "&set:map" => {
+          Some(Arc::new(CalcitTypeAnnotation::Set(nil_bridge_result_type(item)?)))
+        }
+        _ => None,
+      }
+    }
     _ => None,
   }
+}
+
+/// The bridge removes every layer of absence from an inferred nil join (nested
+/// missing-else branches stack one layer each), so the payload is the live
+/// branch rather than the nullable join itself. A bare nil is always
+/// `Option :none`, whose payload slot is uninhabited. Other arguments keep the
+/// public `T -> Option<T>` schema.
+pub(super) fn nil_bridge_result_type(argument: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitTypeAnnotation>> {
+  if matches!(argument.as_ref(), CalcitTypeAnnotation::Nil) {
+    return Some(core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Never)]));
+  }
+  let mut payload = argument;
+  while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = payload.as_ref() {
+    payload = inner;
+  }
+  (!Arc::ptr_eq(payload, argument)).then(|| core_type_ref("Option", vec![payload.clone()]))
 }
 
 fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {

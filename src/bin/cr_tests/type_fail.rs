@@ -234,7 +234,7 @@ fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
   });
 }
 
-// Pins today's contract while `nil->option` still takes `Optional<T>`: a Rust
+// Pins the contract that `nil->option` rejects `JsNullish<T>` arguments: a Rust
 // type-fail test is required because `:tests` run only after a clean check and
 // cannot express an expected preprocessing diagnostic (#1554).
 #[test]
@@ -301,6 +301,31 @@ fn strict_type_fail_nil_to_option_as_map_callback_uses_element_types() {
       "nil-joined callback use stays clean: {:?}",
       warnings.borrow()
     );
+  });
+}
+
+// The bridge drops every inferred nil layer, also when nested missing-else
+// branches stack them or when it is passed to `map` by name, so the result
+// satisfies a declared `Option<Number>` payload.
+#[test]
+fn strict_type_fail_nil_to_option_flattens_nil_joins() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for source in [
+      "let\n    f $ fn (a b)\n      hint-fn $ Fn Bool Bool (-> $ Option Number)\n      nil->option $ if a $ if b 1\n  f true false",
+      "let\n    f $ fn ()\n      hint-fn $ Fn (-> $ List $ Option Number)\n      map ([] 1 nil 2) nil->option\n  f",
+      "let\n    f $ fn (c xs)\n      hint-fn $ Fn Bool (List Number) (-> $ List $ Option Number)\n      map (map xs $ fn (x) (if c x)) nil->option\n  f true ([] 1 2)",
+    ] {
+      let entries = load_snippet_entries(source);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("nil->option over a nil join should preprocess");
+      assert!(
+        warnings.borrow().is_empty(),
+        "`{source}` should prove an Option<Number> payload: {:?}",
+        warnings.borrow()
+      );
+    }
   });
 }
 

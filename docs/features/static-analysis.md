@@ -301,7 +301,7 @@ warning remains a completion-gate failure until the body is implemented.
 `raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
-`analyze.weak-types` 的 `schema_version: 8` 保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
+`analyze.weak-types` 的 `schema_version: 9`（0.33.0 起，删除了 `summary.intents.declared-optional`）保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
 
 模块来源沿用 namespace resolver 的 import 合同：`app.lib :as lib` 与 `app.lib :refer $ increment` 是普通 Calcit 引用，单纯调用它们不产生 FFI boundary 或 adapter 候选；字符串模块引用（如 `|node:fs :as fs`）和 JS default import 仍保留宿主来源。混合代码只报告实际宿主操作，`quote` 数据不参与，`quasiquote` 内可执行的 unquote 仍参与。
 

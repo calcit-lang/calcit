@@ -3452,7 +3452,7 @@ mod tests {
     };
     let json = type_coverage::format_weak_types_json(&options, &snapshot).expect("unsafe evidence JSON should format");
     let value: serde_json::Value = serde_json::from_str(&json).expect("unsafe evidence JSON should parse");
-    assert_eq!(value["schema_version"], 8);
+    assert_eq!(value["schema_version"], 9);
     assert_eq!(
       value["data"]["definitions"][0]["occurrences"][0]["evidence"]["source_form"],
       "raw-js-value"
@@ -3686,7 +3686,7 @@ mod tests {
     };
     let weak_json = type_coverage::format_weak_types_json(&weak_options, &snapshot).expect("weak type JSON should format");
     let weak_value: serde_json::Value = serde_json::from_str(&weak_json).expect("weak type JSON should parse");
-    assert_eq!(weak_value["schema_version"], 8);
+    assert_eq!(weak_value["schema_version"], 9);
     assert_eq!(weak_value["command"], "analyze.weak-types");
     assert_eq!(weak_value["data"]["filters"]["intent"], "unresolved");
     assert_eq!(weak_value["data"]["definitions"][0]["occurrences"][0]["path"], "schema.args.0");

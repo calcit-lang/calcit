@@ -8030,7 +8030,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
   assert_success(&output, "schema evidence report");
   let report = parse_stdout(&output);
-  assert_eq!(report["schema_version"], 8);
+  assert_eq!(report["schema_version"], 9);
   assert_eq!(report["data"]["filters"]["schema_evidence"], true);
   let schemas = report["data"]["evidence"]["schema_candidates"]
     .as_array()
