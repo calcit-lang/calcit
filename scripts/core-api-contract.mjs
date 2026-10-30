@@ -71,8 +71,10 @@ export function collect(scope, query) {
     if (!cache.has(name)) cache.set(name, query("def", name));
     const data = cache.get(name);
     assert.ok(data?.code !== undefined, `definition missing: ${name}`);
+    // A written `Dynamic` declares no static contract, the same as an omitted
+    // schema; `query def` shows it since #2486, but the frozen API does not change.
     return {
-      schema: data.schema == null ? null : { quote: data.schema },
+      schema: data.schema == null || data.schema === "Dynamic" ? null : { quote: data.schema },
       declaration: declaration(data.code),
       "runtime-arity": data.runtime_arity ?? sourceArity(data.code),
     };

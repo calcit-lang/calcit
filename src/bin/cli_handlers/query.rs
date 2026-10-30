@@ -615,6 +615,16 @@ fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Resul
   canonical_schema_cirru(annotation, wrapped)
 }
 
+/// Schema stored on a project definition. An omitted schema shares the
+/// Dynamic singleton and has no display; a written `Dynamic` is a reviewed
+/// open contract and is shown as such.
+fn definition_schema_cirru(schema: &Arc<CalcitTypeAnnotation>, wrapped: bool) -> Result<Option<Cirru>, String> {
+  match schema.as_ref() {
+    CalcitTypeAnnotation::Dynamic if !snapshot::schema_annotation_is_missing(schema) => Ok(Some(Cirru::Leaf("Dynamic".into()))),
+    annotation => query_schema_cirru(annotation, wrapped),
+  }
+}
+
 fn query_schema_edn(annotation: &CalcitTypeAnnotation, wrapped: bool) -> cirru_edn::Edn {
   match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
@@ -654,7 +664,11 @@ fn format_query_schema_oneline(cirru: &Cirru) -> Result<String, String> {
 }
 
 fn format_query_schema(annotation: &CalcitTypeAnnotation, wrapped: bool) -> String {
-  match query_schema_cirru(annotation, wrapped) {
+  format_schema_display(query_schema_cirru(annotation, wrapped))
+}
+
+fn format_schema_display(schema: Result<Option<Cirru>, String>) -> String {
+  match schema {
     Ok(Some(Cirru::Leaf(value))) => value.to_string(),
     Ok(Some(cirru @ Cirru::List(_))) => cirru_parser::format(std::slice::from_ref(&cirru), true.into())
       .map(normalize_single_schema_display)
@@ -671,7 +685,16 @@ fn format_schema_query_json(
   revision: String,
   runtime_arity: Option<RuntimeCallArity>,
 ) -> Result<String, String> {
-  let schema = query_schema_cirru(annotation, true)?;
+  format_schema_cirru_query_json(id, source, query_schema_cirru(annotation, true)?, revision, runtime_arity)
+}
+
+fn format_schema_cirru_query_json(
+  id: &str,
+  source: &str,
+  schema: Option<Cirru>,
+  revision: String,
+  runtime_arity: Option<RuntimeCallArity>,
+) -> Result<String, String> {
   let canonical_schema = schema.as_ref().map(format_query_schema_oneline).transpose()?;
   let tree = schema.as_ref().map(cirru_to_json_value);
   let mut envelope = serde_json::json!({
@@ -3535,6 +3558,14 @@ fn context_schema(annotation: &CalcitTypeAnnotation) -> Result<Option<String>, S
   }
 }
 
+/// Like `context_schema`, but a written `Dynamic` stays visible.
+fn definition_context_schema(schema: &Arc<CalcitTypeAnnotation>) -> Result<Option<String>, String> {
+  match schema.as_ref() {
+    CalcitTypeAnnotation::Dynamic if !snapshot::schema_annotation_is_missing(schema) => Ok(Some("Dynamic".to_owned())),
+    annotation => context_schema(annotation),
+  }
+}
+
 fn context_features(annotation: &CalcitTypeAnnotation) -> Vec<String> {
   let mut features = match annotation {
     CalcitTypeAnnotation::Fn(fn_annot) => fn_annot
@@ -3973,7 +4004,7 @@ fn build_regular_context(
     doc,
     doc_truncated,
     tags,
-    schema: context_schema(entry.schema.as_ref())?,
+    schema: definition_context_schema(&entry.schema)?,
     inferred_schema: inferred_schema.as_ref().map(|schema| context_schema(schema)).transpose()?.flatten(),
     runtime_arity: core_runtime_call_arity(namespace, definition, entry),
     failure: core_proc_failure(namespace, definition, entry),
@@ -4714,7 +4745,7 @@ fn format_tags_display(tags: &HashSet<EdnTag>) -> String {
 /// One-line signature for a namespace overview: the schema when declared,
 /// otherwise the declaration head such as `defn greet (name)`.
 fn definition_signature(entry: &snapshot::CodeEntry) -> String {
-  if let Ok(Some(schema)) = query_schema_cirru(entry.schema.as_ref(), true)
+  if let Ok(Some(schema)) = definition_schema_cirru(&entry.schema, true)
     && let Ok(text) = format_query_schema_oneline(&schema)
   {
     return text;
@@ -4813,7 +4844,7 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand, entry: Option<&str>) -
     };
     let schema_hint = if opts.signatures {
       format!("  {}", definition_signature(entry))
-    } else if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    } else if !snapshot::schema_annotation_is_missing(&entry.schema) {
       " [schema]".to_owned()
     } else {
       String::new()
@@ -5183,7 +5214,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   }
 
   let _ = writeln!(&mut out, "\n## Schema\n");
-  let schema_str = format_query_schema(code_entry.schema.as_ref(), true);
+  let schema_str = format_schema_display(definition_schema_cirru(&code_entry.schema, true));
   if schema_str == "(none)" {
     let _ = writeln!(&mut out, "_No explicit schema._");
   } else {
@@ -5287,7 +5318,7 @@ fn emit_def_query(
 }
 
 fn code_entry_to_json(entry: &snapshot::CodeEntry) -> Result<serde_json::Value, String> {
-  let schema_json = query_schema_cirru(entry.schema.as_ref(), false)?.map(|cirru| cirru_to_json(&cirru));
+  let schema_json = definition_schema_cirru(&entry.schema, false)?.map(|cirru| cirru_to_json(&cirru));
   let mut tags: Vec<String> = entry.tags.iter().map(|tag| tag.ref_str().to_string()).collect();
   tags.sort();
   Ok(serde_json::json!({
@@ -5480,7 +5511,7 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str, entry: Optio
   let _ = writeln!(&mut out, "- Tests: {}", code_entry.tests.len());
 
   let _ = writeln!(&mut out, "\n## Schema\n");
-  if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
+  if let Some(cirru) = definition_schema_cirru(&code_entry.schema, true)? {
     let preview = format_query_schema_oneline(&cirru)?;
     let display = truncate_chars_with_dots(&preview, 120);
     out.push_str(&markdown_fenced_block("cirru", &display));
@@ -5551,17 +5582,17 @@ fn handle_schema(
 
   if structured {
     let id = format!("{namespace}/{resolved_definition}");
-    format.print_json_text(&format_schema_query_json(
+    format.print_json_text(&format_schema_cirru_query_json(
       &id,
       &namespace_source(&snapshot, namespace),
-      code_entry.schema.as_ref(),
+      definition_schema_cirru(&code_entry.schema, true)?,
       snapshot::definition_revision(code_entry)?,
       None,
     )?)?;
     return Ok(());
   }
 
-  if let Some(cirru) = query_schema_cirru(code_entry.schema.as_ref(), true)? {
+  if let Some(cirru) = definition_schema_cirru(&code_entry.schema, true)? {
     let _ = writeln!(&mut out, "# Schema for `{namespace}/{resolved_definition}`\n");
     out.push_str(&markdown_fenced_block("cirru", &format_query_schema_oneline(&cirru)?));
   } else {
