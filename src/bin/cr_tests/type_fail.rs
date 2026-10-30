@@ -3824,6 +3824,9 @@ fn value_position_nil_branch_is_a_strict_error() {
     for (label, function) in [
       ("let-binding", number_fn("(let ((y (if (> x 0) x))) y)", "Dynamic")),
       ("let-nil-join", number_fn("(let ((y (if (> x 0) x nil))) y)", "Dynamic")),
+      // Literal branches carry no coordinate; the location comes from the condition.
+      ("let-literal-branches", number_fn("(let ((y (if (> x 0) nil 1))) y)", "Dynamic")),
+      ("let-cond", number_fn("(let ((y (cond ((> x 0) nil) (true 1)))) y)", "Dynamic")),
     ] {
       let (result, _, _) = compile(function);
       let err = result.expect_err(&format!("{label}: a `let` nil branch is a strict error"));

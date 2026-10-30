@@ -13110,8 +13110,7 @@ fn find_implicit_nil_branch(value: &Calcit, scope_types: &ScopeTypes) -> Option<
         items
           .iter()
           .skip(1)
-          .filter_map(Calcit::get_location)
-          .find(|loc| loc.def.as_ref() != GENERATED_DEF)
+          .find_map(|expr| find_calcit_location_matching(expr, |loc| loc.def.as_ref() != GENERATED_DEF))
       };
       let is_nil = |expr: &Calcit| {
         matches!(expr, Calcit::Nil)
