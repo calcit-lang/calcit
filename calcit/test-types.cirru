@@ -387,6 +387,60 @@
             , "|Typed method access checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)
+        'tuple-label $ %{} 'CodeEntry (:doc "|Reads a fixed-length tuple by position")
+          :code $ quote $ defn tuple-label (entry)
+            let[] (key title) entry $ str key |= title $ nth entry 0
+          :examples $ []
+          :schema $ quote $ Fn (Tuple Tag String) (-> String)
+          :tests $ []
+            %{} 'TestEntry (:name |reads-tuple-positions)
+              :code $ quote $ assert= |:title=Calcit:title
+                tuple-label $ [] :title |Calcit
+              :tags $ #{} :tuple
+            %{} 'TestEntry (:name |homogeneous-tuple-is-a-list)
+              :code $ quote $ let
+                  point $ assert-type ([] 3 4)
+                    quote $ Tuple Number Number
+                assert= ([] 4 5)
+                  map point $ fn (x) (&+ x 1)
+              :tags $ #{} :tuple
+            %{} 'TestEntry (:name |tuple-count-and-equality)
+              :code $ quote $ let
+                  pair $ assert-type ([] 1 |a)
+                    quote $ Tuple Number String
+                assert= 3 $ &+ (nth pair 0) (count pair)
+              :tags $ #{} :tuple
+            %{} 'TestEntry (:name |tuple-method-and-optional-reads)
+              :code $ quote $ let
+                  pair $ assert-type ([] 1 |a)
+                    quote $ Tuple Number String
+                  point $ assert-type ([] 3 4)
+                    quote $ Tuple Number Number
+                assert= 2 $ .count pair
+                assert= (Option :some 4) (get point 1)
+                assert= (Option :some 4) (last point)
+              :tags $ #{} :tuple
+        'tuple-nested-with-one $ %{} 'CodeEntry (:doc "|Nests a generic tuple inside another tuple")
+          :code $ quote $ defn tuple-nested-with-one (x)
+            [] ([] x 1) |done
+          :examples $ []
+          :schema $ quote $ Fn T
+            -> $ Tuple (Tuple T Number) String
+            :generics T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-nested-generic-slot)
+            :code $ quote $ let[] (inner status) (tuple-nested-with-one |a)
+              let[] (label n) inner $ assert= |a1done $ str label n status
+            :tags $ #{} :tuple
+        'tuple-with-one $ %{} 'CodeEntry (:doc "|Pairs a generic value with a number in a tuple")
+          :code $ quote $ defn tuple-with-one (x) ([] x 1)
+          :examples $ []
+          :schema $ quote $ Fn T
+            -> $ Tuple T Number
+            :generics T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-generic-slot)
+            :code $ quote $ let[] (label n) (tuple-with-one |a)
+              assert= |a1 $ str label n
+            :tags $ #{} :tuple
         'typed-only $ %{} 'CodeEntry (:doc "|Used to verify arg type hints are collected")
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []

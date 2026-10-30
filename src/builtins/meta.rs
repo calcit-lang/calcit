@@ -703,7 +703,7 @@ fn validate_trait_method_signature(method_type: &CalcitTypeAnnotation, type_form
           || info.rest_type.as_ref().is_some_and(|t| contains_dynamic(t))
           || contains_dynamic(info.return_type.as_ref())
       }
-      T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) => args.iter().any(|t| contains_dynamic(t)),
+      T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) | T::Tuple(args) => args.iter().any(|t| contains_dynamic(t)),
       _ => false,
     }
   }

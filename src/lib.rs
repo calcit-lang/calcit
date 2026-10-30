@@ -195,7 +195,7 @@ mod core_snapshot_tests {
         | CalcitTypeAnnotation::CirruQuote
         | CalcitTypeAnnotation::AnonymousEnum
         | CalcitTypeAnnotation::Custom(_) => Some(format!("{t:?}")),
-        CalcitTypeAnnotation::List(_) => Some("List".to_owned()),
+        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("List".to_owned()),
         CalcitTypeAnnotation::Map(..) => Some("Map".to_owned()),
         CalcitTypeAnnotation::Set(_) => Some("Set".to_owned()),
         _ => None,

@@ -940,6 +940,12 @@ fn scan_schema_dynamic_annotation(
         scan_schema_dynamic_annotation(arg, &format!("{path}.type-arg.{idx}"), &type_arg_detail, occurrences);
       }
     }
+    CalcitTypeAnnotation::Tuple(items) => {
+      for (idx, item) in items.iter().enumerate() {
+        let item_detail = extend_schema_dynamic_detail(detail, "item");
+        scan_schema_dynamic_annotation(item, &format!("{path}.item.{idx}"), &item_detail, occurrences);
+      }
+    }
     _ => {}
   }
 }

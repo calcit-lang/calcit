@@ -390,7 +390,10 @@ fn collect_type_variable_names(types: &[Arc<CalcitTypeAnnotation>], free_only: b
           names.insert(name.clone());
         }
       }
-      CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
+      CalcitTypeAnnotation::TypeRef(_, args)
+      | CalcitTypeAnnotation::Struct(_, args)
+      | CalcitTypeAnnotation::Enum(_, args)
+      | CalcitTypeAnnotation::Tuple(args) => {
         pending.extend(args.iter().map(|ty| (ty.as_ref(), bound.clone())));
       }
       CalcitTypeAnnotation::List(inner)
@@ -926,6 +929,7 @@ pub(crate) fn same_data_schema_annotation<'a>(actual: &'a CalcitTypeAnnotation, 
         worklist.push((actual_value.as_ref(), expected_value.as_ref()));
         true
       }
+      (Type::Tuple(actual), Type::Tuple(expected)) => push_slices(&mut worklist, actual, expected),
       (Type::Struct(actual, actual_args), Type::Struct(expected, expected_args)) => {
         push_struct(&mut worklist, actual, expected) && push_slices(&mut worklist, actual_args, expected_args)
       }
@@ -1142,6 +1146,7 @@ fn bounded_plain_type_relation<'a>(
         | CalcitTypeAnnotation::Nil
         | CalcitTypeAnnotation::Unit
         | CalcitTypeAnnotation::List(_)
+        | CalcitTypeAnnotation::Tuple(_)
         | CalcitTypeAnnotation::Map(_, _)
         | CalcitTypeAnnotation::Set(_)
         | CalcitTypeAnnotation::Ref(_)
@@ -1203,6 +1208,22 @@ fn bounded_plain_type_relation<'a>(
         push_pair(&mut worklist, actual_key, expected_key, depth);
         push_pair(&mut worklist, actual_value, expected_value, depth);
       }
+      // Positions are fixed: lengths must agree and each slot relates independently.
+      (Type::Tuple(left), Type::Tuple(right)) => {
+        if left.len() != right.len() {
+          return Ok(Some((Mismatch, stats)));
+        }
+        for (left, right) in left.iter().zip(right.iter()) {
+          push_pair(&mut worklist, left, right, depth);
+        }
+      }
+      // Only a homogeneous tuple is also a `List T`; a heterogeneous one never
+      // widens to a List, not even `List Dynamic`. A List never narrows to a
+      // tuple either: its length is unproven.
+      (Type::Tuple(left), Type::List(right)) => match Type::homogeneous_tuple_item(left) {
+        Some(item) => push_pair(&mut worklist, item, right, depth),
+        None => return Ok(Some((Mismatch, stats))),
+      },
       (Type::TypeRef(actual_name, actual_args), Type::TypeRef(expected_name, expected_args)) => {
         if matches!(mode, PlainRelationMode::Compatibility) && !expected_args.is_empty() && expected.resolve_to_struct().is_some() {
           return Ok(None);
@@ -1542,6 +1563,9 @@ pub enum CalcitTypeAnnotation {
   /// List type with element type annotation
   /// `List Dynamic` for dynamic list, `List<T>` for typed list
   List(Arc<CalcitTypeAnnotation>),
+  /// Fixed-length list with one type per position, e.g. `Tuple Number String`.
+  /// The runtime value stays a plain List.
+  Tuple(Arc<Vec<Arc<CalcitTypeAnnotation>>>),
   /// Map type with key and value type annotations
   Map(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>),
   /// A struct value's inferred type, identified by its struct definition.
@@ -1931,6 +1955,7 @@ impl CalcitTypeAnnotation {
         key.validate_applied_type_args()?;
         value.validate_applied_type_args()
       }
+      Self::Tuple(items) => items.iter().try_for_each(|item| item.validate_applied_type_args()),
       Self::Fn(signature) => signature.validate_applied_type_args(),
       Self::Macro(signature) => {
         for contract in signature.required_inputs.iter().chain(signature.optional_inputs.iter()) {
@@ -2142,9 +2167,10 @@ impl CalcitTypeAnnotation {
       "set" | "Set" => Some("Set"),
       "fn" | "Fn" => Some("Fn"),
       "macro" | "Macro" => Some("Macro"),
-      // Record/Tuple are accepted only as legacy input spellings. Writers and
-      // diagnostics always use the Struct/Enum value model.
-      "tuple" | "Tuple" | "enum" | "Enum" => Some("Enum"),
+      // Lowercase `tuple` and `Record` are legacy input spellings of the
+      // Enum/Struct value model. `Tuple` is the fixed-length positional type.
+      "tuple" | "enum" | "Enum" => Some("Enum"),
+      "Tuple" => Some("Tuple"),
       "ref" | "Ref" => Some("Ref"),
       "buffer" | "Buffer" => Some("Buffer"),
       "cirru-quote" | "CirruQuote" => Some("CirruQuote"),
@@ -2189,7 +2215,7 @@ impl CalcitTypeAnnotation {
       "Trait" => Some(Self::Custom(Arc::new(Calcit::tag("trait")))),
       "Impl" => Some(Self::Custom(Arc::new(Calcit::tag("impl")))),
       // These forms require a payload and are handled by the type-expression parser.
-      "Optional" | "JsNullish" | "Variadic" => None,
+      "Optional" | "JsNullish" | "Variadic" | "Tuple" => None,
       _ => None,
     }
   }
@@ -3973,7 +3999,6 @@ impl CalcitTypeAnnotation {
               | "Map"
               | "Set"
               | "Fn"
-              | "Tuple"
               | "Ref"
               | "Buffer"
               | "CirruQuote"
@@ -3988,6 +4013,12 @@ impl CalcitTypeAnnotation {
           return base;
         }
         match name {
+          "Tuple" => {
+            if args.is_empty() {
+              eprintln!("[Warn] Tuple expects at least 1 element type, e.g. `Tuple Number String`");
+            }
+            return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(args)));
+          }
           "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit)),
           "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::JsHost)),
           "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
@@ -4203,7 +4234,6 @@ impl CalcitTypeAnnotation {
                   | "Map"
                   | "Set"
                   | "Fn"
-                  | "Tuple"
                   | "Ref"
                   | "Buffer"
                   | "CirruQuote"
@@ -4218,6 +4248,12 @@ impl CalcitTypeAnnotation {
               return base;
             }
             match name {
+              "Tuple" => {
+                if args.is_empty() {
+                  eprintln!("[Warn] Tuple expects at least 1 element type, e.g. `Tuple Number String`");
+                }
+                return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(args)));
+              }
               "Optional" if args.len() == 1 => {
                 return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit));
               }
@@ -4339,6 +4375,10 @@ impl CalcitTypeAnnotation {
       ),
       Self::Set(inner) => format!("set<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
+      Self::Tuple(items) => {
+        let rendered = render_bounded_type_list(items, depth + 1, remaining, CalcitTypeAnnotation::to_brief_string_bounded);
+        format!("tuple<{rendered}>")
+      }
       Self::Custom(inner) => format!("{inner}"),
       Self::Nullable(inner, NullableOrigin::Calcit) => format!("{}?", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Nullable(inner, NullableOrigin::JsHost) => format!("js-nullish<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
@@ -4407,6 +4447,7 @@ impl CalcitTypeAnnotation {
       Cache((usize, usize)),
       BuildUnary(Unary),
       BuildMap,
+      BuildTuple(usize),
       BuildTypeRef(Arc<str>, usize),
       BuildStruct(Arc<CalcitStructDef>, usize),
       BuildEnum(Arc<CalcitEnumDef>, usize),
@@ -4457,6 +4498,10 @@ impl CalcitTypeAnnotation {
               tasks.push(Task::BuildMap);
               tasks.push(Task::Visit(value, scope));
               tasks.push(Task::Visit(key, scope));
+            }
+            Self::Tuple(items) => {
+              tasks.push(Task::BuildTuple(items.len()));
+              tasks.extend(items.iter().rev().map(|item| Task::Visit(item, scope)));
             }
             Self::Struct(base, args) => {
               tasks.push(Task::BuildStruct(base.clone(), args.len()));
@@ -4509,6 +4554,10 @@ impl CalcitTypeAnnotation {
           let key = values.pop().expect("substitution map key");
           values.push(Arc::new(Self::Map(key, value)));
         }
+        Task::BuildTuple(count) => {
+          let items = values.split_off(values.len() - count);
+          values.push(Arc::new(Self::Tuple(Arc::new(items))));
+        }
         Task::BuildTypeRef(name, count) => {
           let args = values.split_off(values.len() - count);
           values.push(Arc::new(Self::TypeRef(name, Arc::new(args))));
@@ -4551,7 +4600,7 @@ impl CalcitTypeAnnotation {
         return true;
       }
       match annotation {
-        Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
+        Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) | Self::Tuple(args) => {
           pending.extend(args.iter().map(Arc::as_ref));
         }
         Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Nullable(inner, _) | Self::Variadic(inner) => {
@@ -4626,9 +4675,10 @@ impl CalcitTypeAnnotation {
           visiting.remove(current);
           found
         }
-        CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
-          args.iter().any(|arg| walk(arg, name, bindings, visiting))
-        }
+        CalcitTypeAnnotation::TypeRef(_, args)
+        | CalcitTypeAnnotation::Struct(_, args)
+        | CalcitTypeAnnotation::Enum(_, args)
+        | CalcitTypeAnnotation::Tuple(args) => args.iter().any(|arg| walk(arg, name, bindings, visiting)),
         CalcitTypeAnnotation::List(inner)
         | CalcitTypeAnnotation::Set(inner)
         | CalcitTypeAnnotation::Ref(inner)
@@ -4786,7 +4836,7 @@ impl CalcitTypeAnnotation {
 
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
-      Self::List(_) => Some("&core-list-impls"),
+      Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
       Self::String => Some("&core-string-impls"),
       Self::Map(_, _) => Some("&core-map-impls"),
       Self::Set(_) => Some("&core-set-impls"),
@@ -4961,6 +5011,17 @@ impl CalcitTypeAnnotation {
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+    // A tuple keeps its arity and slot types, so it only has the capabilities
+    // that do not return a value of its own type: slicing or emptying would
+    // claim the same tuple type for a different length. Mapping needs one
+    // element type, which only a homogeneous tuple has.
+    if let Self::Tuple(items) = self {
+      match expected_trait.name.ref_str() {
+        "Debug" | "Eq" | "Countable" | "Len" => {}
+        "Mappable" if Self::homogeneous_tuple_item(items).is_some() => {}
+        _ => return false,
+      }
+    }
     if let Some(instance) = self.resolve_nominal_instance_type() {
       return instance.satisfies_trait_bound(expected_trait);
     }
@@ -5019,6 +5080,13 @@ impl CalcitTypeAnnotation {
     expected_traits
       .iter()
       .all(|trait_def| self.satisfies_trait_bound(trait_def.as_ref()))
+  }
+
+  /// The shared slot type of a tuple whose positions all have the same type.
+  /// Only such a tuple may also be used as a `List` of that type.
+  pub(crate) fn homogeneous_tuple_item(items: &[Arc<CalcitTypeAnnotation>]) -> Option<&Arc<CalcitTypeAnnotation>> {
+    let first = items.first()?;
+    items.iter().all(|item| item == first).then_some(first)
   }
 
   pub fn is_compatible_with(&self, expected: &CalcitTypeAnnotation) -> bool {
@@ -5212,6 +5280,10 @@ impl CalcitTypeAnnotation {
             .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
       (Self::List(a), Self::List(b)) => a.compatible_with_bindings(b, bindings),
+      (Self::Tuple(a), Self::Tuple(b)) => {
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.compatible_with_bindings(y, bindings))
+      }
+      (Self::Tuple(a), Self::List(b)) => Self::homogeneous_tuple_item(a).is_some_and(|item| item.compatible_with_bindings(b, bindings)),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.compatible_with_bindings(bk, bindings) && av.compatible_with_bindings(bv, bindings),
       (Self::Set(a), Self::Set(b)) => a.compatible_with_bindings(b, bindings),
       (Self::Ref(a), Self::Ref(b)) => a.compatible_with_bindings(b, bindings),
@@ -5662,6 +5734,11 @@ impl CalcitTypeAnnotation {
       (Self::List(actual), Self::List(expected))
       | (Self::Set(actual), Self::Set(expected))
       | (Self::Variadic(actual), Self::Variadic(expected)) => actual.prove_with_staged_bindings(expected, bindings),
+      (Self::Tuple(actual), Self::Tuple(expected)) => Self::prove_slices(actual, expected, bindings),
+      (Self::Tuple(actual), Self::List(expected)) => match Self::homogeneous_tuple_item(actual) {
+        Some(item) => item.prove_with_staged_bindings(expected, bindings),
+        None => TypeProof::Mismatch,
+      },
       (Self::Ref(actual), Self::Ref(expected)) => {
         let mut invariant_bindings = bindings.clone();
         let result = actual
@@ -6124,6 +6201,7 @@ impl CalcitTypeAnnotation {
       ),
       Self::TypeRef(name, args) => Self::TypeRef(name.clone(), arguments(args)),
       Self::List(inner) => Self::List(mapped(inner)),
+      Self::Tuple(items) => Self::Tuple(arguments(items)),
       Self::Map(key, value) => Self::Map(mapped(key), mapped(value)),
       Self::Set(inner) => Self::Set(mapped(inner)),
       Self::Ref(inner) => Self::Ref(mapped(inner)),
@@ -6183,6 +6261,7 @@ impl CalcitTypeAnnotation {
           Edn::enum_value("List", vec![inner.to_type_edn()])
         }
       }
+      Self::Tuple(items) => Edn::enum_value("Tuple", items.iter().map(|item| item.to_type_edn()).collect()),
       Self::Map(k, v) => {
         if Arc::ptr_eq(k, &DYNAMIC_TYPE) && Arc::ptr_eq(v, &DYNAMIC_TYPE) {
           Edn::Symbol(Arc::from("Map"))
@@ -6356,6 +6435,10 @@ impl CalcitTypeAnnotation {
         }
         return format!("ref<{}>", inner.describe_bounded(depth + 1, remaining));
       }
+      Self::Tuple(items) => {
+        let rendered = render_bounded_type_list(items, depth + 1, remaining, CalcitTypeAnnotation::describe_bounded);
+        return format!("tuple<{rendered}>");
+      }
       _ => {}
     }
 
@@ -6448,6 +6531,7 @@ impl CalcitTypeAnnotation {
       Self::EnumDef(_) => 34,
       Self::Macro(_) => 35,
       Self::Syntax(_) => 36,
+      Self::Tuple(_) => 38,
     }
   }
 }
@@ -10424,6 +10508,10 @@ impl Hash for CalcitTypeAnnotation {
         "list".hash(state);
         inner.hash(state);
       }
+      Self::Tuple(items) => {
+        "tuple".hash(state);
+        items.hash(state);
+      }
       Self::Map(k, v) => {
         "map".hash(state);
         k.hash(state);
@@ -10559,6 +10647,7 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
       (Self::Numeric(a), Self::Numeric(b)) => a.cmp(b),
       (Self::List(a), Self::List(b)) => a.cmp(b),
+      (Self::Tuple(a), Self::Tuple(b)) => a.cmp(b),
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.cmp(bk).then_with(|| av.cmp(bv)),
       (Self::StructValue(a), Self::StructValue(b)) => super::compare::compare_calcit_struct_values(a, b),
       (Self::EnumValue(a), Self::EnumValue(b)) => super::compare::compare_calcit_enum_values(a, b),
@@ -11119,6 +11208,12 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::Symbol => matches!(value, Calcit::Symbol { .. }),
     CalcitTypeAnnotation::Tag => matches!(value, Calcit::Tag(_)),
     CalcitTypeAnnotation::List(_) => matches!(value, Calcit::List(_)),
+    CalcitTypeAnnotation::Tuple(items) => match value {
+      Calcit::List(xs) => {
+        xs.len() == items.len() && xs.iter().zip(items.iter()).all(|(x, item)| value_matches_type_annotation(x, item))
+      }
+      _ => false,
+    },
     CalcitTypeAnnotation::Map(_, _) => matches!(value, Calcit::Map(_)),
     CalcitTypeAnnotation::Set(_) => matches!(value, Calcit::Set(_)),
     CalcitTypeAnnotation::Ref(_) => matches!(value, Calcit::Ref(..)),

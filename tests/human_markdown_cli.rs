@@ -164,9 +164,9 @@ fn mutation_and_cursor_apply_share_markdown_source_boundaries() {
       "--path",
       "3",
       "--expect",
-      "quote $ tuple-enum wrong",
+      "quote $ &tuple:enum wrong",
       "--code",
-      "quote $ tuple-enum value",
+      "quote $ &tuple:enum value",
     ],
   );
   assert!(!guard.status.success());
