@@ -4613,7 +4613,7 @@ fn preprocess_list_call(
             let processed_args = CalcitList::from(processed_args);
             reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
             for arg in processed_args.iter().skip(1) {
-              check_value_position_nil_branch(arg, "method argument", true, scope_types, file_ns, call_stack)?;
+              check_value_position_nil_branch(arg, "method argument", true, scope_types, file_ns, call_stack, None)?;
             }
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
             if let Some(expected_method_args) = expected_method_args
@@ -5332,7 +5332,7 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         if !is_nil_bridge_head(&head_form) {
           for arg in processed_args.iter() {
-            check_value_position_nil_branch(arg, "call argument", true, scope_types, file_ns, call_stack)?;
+            check_value_position_nil_branch(arg, "call argument", true, scope_types, file_ns, call_stack, None)?;
           }
         }
         if has_spread {
@@ -6178,7 +6178,7 @@ fn preprocess_known_function_call(
         .as_ref()
         .is_some_and(|expected| matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, _)))
     {
-      check_value_position_nil_branch(&form, "call argument", true, scope_types, file_ns, call_stack)?;
+      check_value_position_nil_branch(&form, "call argument", true, scope_types, file_ns, call_stack, None)?;
     }
 
     if let Some(expected) = expected_type.as_ref() {
@@ -13165,12 +13165,20 @@ fn is_dynamic_branch(expr: &Calcit, scope_types: &ScopeTypes) -> bool {
 
 /// A nil branch in project source that the caller can edit, as reported by
 /// `check_value_position_nil_branch`.
-fn reported_implicit_nil_branch(value: &Calcit, scope_types: &ScopeTypes, file_ns: &str) -> Option<(ImplicitNilBranch, NodeLocation)> {
+/// `fallback_location` is the enclosing source form, used when every part of
+/// the branch is a literal without a coordinate of its own.
+fn reported_implicit_nil_branch(
+  value: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  fallback_location: Option<&NodeLocation>,
+) -> Option<(ImplicitNilBranch, NodeLocation)> {
   if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
     return None;
   }
   let (kind, location) = find_implicit_nil_branch(value, scope_types)?;
   location
+    .or_else(|| fallback_location.filter(|location| location.def.as_ref() != GENERATED_DEF).cloned())
     .filter(|location| location.ns.as_ref() == file_ns)
     .map(|location| (kind, location))
 }
@@ -13191,8 +13199,9 @@ fn check_value_position_nil_branch(
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
+  fallback_location: Option<&NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  let Some((kind, location)) = reported_implicit_nil_branch(value, scope_types, file_ns) else {
+  let Some((kind, location)) = reported_implicit_nil_branch(value, scope_types, file_ns, fallback_location) else {
     return Ok(());
   };
   let reason = match kind {
@@ -14455,7 +14464,15 @@ pub fn preprocess_defn(
           .rev()
           .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
         {
-          check_value_position_nil_branch(returned_expr, "function return", true, &body_types, ctx.file_ns, ctx.call_stack)?;
+          check_value_position_nil_branch(
+            returned_expr,
+            "function return",
+            true,
+            &body_types,
+            ctx.file_ns,
+            ctx.call_stack,
+            None,
+          )?;
         }
         reject_strict_nil_for_unit_return(
           &processed_body,
@@ -14634,14 +14651,28 @@ pub fn preprocess_core_let(
       // The initializer executes before the new binding shadows its name.
       propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
+      // A branch made only of literals carries no coordinate; the binding name
+      // written in this definition still locates it.
+      let binding_location = location
+        .as_ref()
+        .map(|path| NodeLocation::new(info.at_ns.to_owned(), info.at_def.to_owned(), path.to_owned()));
       if existing_type.is_none() {
         // A nil join has no Calcit type since `Optional<T>` was removed (#2233), so
         // binding one is rejected like any other value use.
-        check_value_position_nil_branch(&form, "let binding", true, &body_types, ctx.file_ns, ctx.call_stack)?;
+        check_value_position_nil_branch(
+          &form,
+          "let binding",
+          true,
+          &body_types,
+          ctx.file_ns,
+          ctx.call_stack,
+          binding_location.as_ref(),
+        )?;
       }
       // Only compatibility mode reaches here with a reported nil branch; the
       // binding is an open value there rather than a nullable `T`.
-      let compat_nil_join = existing_type.is_none() && reported_implicit_nil_branch(&form, &body_types, ctx.file_ns).is_some();
+      let compat_nil_join =
+        existing_type.is_none() && reported_implicit_nil_branch(&form, &body_types, ctx.file_ns, binding_location.as_ref()).is_some();
       let inferred_type = existing_type.unwrap_or_else(|| {
         if compat_nil_join {
           return crate::calcit::DYNAMIC_TYPE.clone();
