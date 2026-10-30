@@ -28,12 +28,23 @@ pub struct QualityMetrics {
   pub code_nil: usize,
   pub unresolved: usize,
   /// Budget for declared legacy `Optional<T>`, removed in 0.33.0. Older
-  /// baselines still load; the metric is never counted or written again.
-  #[serde(default, rename = "declaredOptional", skip_serializing)]
+  /// baselines still load, but the value is discarded so it never affects
+  /// comparisons; the metric is never counted or written again.
+  #[serde(
+    default,
+    rename = "declaredOptional",
+    skip_serializing,
+    deserialize_with = "discard_retired_metric"
+  )]
   retired_declared_optional: usize,
   pub deprecated_calls: usize,
   #[serde(default)]
   pub unsafe_coerce: usize,
+}
+
+/// Accept a retired metric from an older baseline and drop its value.
+fn discard_retired_metric<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error> {
+  <usize as Deserialize>::deserialize(deserializer).map(|_| 0)
 }
 
 impl QualityMetrics {
@@ -775,6 +786,25 @@ mod tests {
     assert_eq!(parsed.schema_dynamic, 101);
     assert_eq!(parsed.unresolved, 136);
     assert_eq!(parsed.unsafe_coerce, 0);
+  }
+
+  #[test]
+  fn retired_declared_optional_budget_is_ignored_by_validation() {
+    let source = r#"{
+      "schemaVersion": 2,
+      "scope": {"namespace": null, "namespacePrefix": null, "includeDependencies": false},
+      "metrics": {"typeNone": 1, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 3, "deprecatedCalls": 0, "unsafeCoerce": 0},
+      "definitions": {"app.main/f": {"typeNone": 1, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 2, "deprecatedCalls": 0, "unsafeCoerce": 0}}
+    }"#;
+    let path = std::env::temp_dir().join(format!("calcit-quality-retired-{}.json", std::process::id()));
+    fs::write(&path, source).expect("write baseline with a retired budget");
+    let baseline = read_baseline(&path);
+    fs::remove_file(&path).expect("remove baseline with a retired budget");
+    let baseline = baseline
+      .expect("a retired budget must not fail validation")
+      .expect("native baseline");
+    assert_eq!(baseline.metrics, sum_metrics(baseline.definitions.values()));
+    assert_eq!(baseline.metrics.type_none, 1);
   }
 
   #[test]

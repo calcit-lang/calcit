@@ -1405,6 +1405,12 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
 }
 
 fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnotation>) -> Result<(), String> {
+  // `NilJoin` is only a diagnostic rendering; it would not parse back as a nil join.
+  if schema.contains_nil_join() {
+    return Err(format!(
+      "{owner}: an inferred nil join has no schema spelling and cannot be stored; declare `Option<T>` for Calcit absence or `JsNullish<T>` for JavaScript values"
+    ));
+  }
   let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
     return Ok(());
   };
@@ -3253,7 +3259,17 @@ fn find_legacy_optional_in_code(node: &Cirru) -> Option<&Cirru> {
     Some("::") if matches!(items.get(1), Some(Cirru::Leaf(value)) if value.starts_with('\'') && is_legacy_optional_leaf(value)) => {
       vec![node]
     }
-    Some("defstruct" | "defenum" | "deftrait") => items.iter().skip(2).collect(),
+    Some("defstruct" | "defenum" | "deftrait") => items
+      .iter()
+      .skip(2)
+      .flat_map(|slot| match slot {
+        // The leading `:name` / `.method` is a member name, not a type.
+        Cirru::List(entry) if matches!(entry.first(), Some(Cirru::Leaf(key)) if key.starts_with([':', '.'])) => {
+          entry.iter().skip(1).collect::<Vec<_>>()
+        }
+        other => vec![other],
+      })
+      .collect(),
     _ => vec![],
   };
   type_slots
@@ -5457,6 +5473,10 @@ mod tests {
       ("assert-type x $ quote $ Optional Number", Some("Optional Number")),
       ("decode-map-as m $ :: 'Optional 'String", Some(":: 'Optional 'String")),
       ("assert-type x $ :optional :number", Some(":optional :number")),
+      // A member named `:optional` is not a type; a legacy type inside one still is.
+      ("defstruct Box (:optional :bool)", None),
+      ("defenum Mode (:optional :number)", None),
+      ("defstruct Box (:value (:optional :number))", Some(":optional :number")),
       // A tag in runtime data and an ordinary call are not types.
       ("{} (:optional 1)", None),
       ("Optional 1", None),
@@ -5479,6 +5499,14 @@ mod tests {
     }
     let legacy_in_macro = parse("Macro (:required $ [] Syntax) (:expansion $ Expr $ Optional Number)");
     assert!(find_legacy_optional_in_type(&legacy_in_macro).is_some());
+
+    // An inferred nil join renders as `NilJoin` but has no schema spelling.
+    let nil_join = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      crate::calcit::NullableOrigin::Inferred,
+    ));
+    let stored = validate_schema_for_snapshot_write("app.main/f", &nil_join).expect_err("a nil join cannot be stored");
+    assert!(stored.contains("Option<T>"), "{stored}");
 
     let hits = vec!["app.main/f :schema `Optional Number`".to_owned()];
     let error = legacy_optional_type_error(&hits, "calcit.cirru").expect_err("hits fail the load");

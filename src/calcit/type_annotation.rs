@@ -4551,6 +4551,12 @@ impl CalcitTypeAnnotation {
     self.any_component(|annotation| matches!(annotation, Self::TypeVar(_)))
   }
 
+  /// Check whether this annotation contains an inferred nil join, which has
+  /// no schema spelling and therefore cannot be stored.
+  pub(crate) fn contains_nil_join(&self) -> bool {
+    self.any_component(|annotation| matches!(annotation, Self::Nullable(_, NullableOrigin::Inferred)))
+  }
+
   /// Check whether this annotation contains `Never`, e.g. the payload slot
   /// inferred from a payload-free constructor such as `Option :none`.
   pub(crate) fn contains_never(&self) -> bool {

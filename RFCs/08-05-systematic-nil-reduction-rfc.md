@@ -4,7 +4,7 @@
 
 0.33.0 删除后的现状：
 
-- Snapshot 中任何位置写出 `Optional`（schema、struct 字段、enum payload、`hint-fn`、`assert-type`、解码目标）都在加载时报 `E_LEGACY_OPTIONAL_TYPE`，并列出全部命中位置；没有新增自动改写规则；
+- Snapshot 中任何位置写出 `Optional`（schema、struct 字段、enum payload、`hint-fn`、`assert-type`、解码目标）都在加载时报 `E_LEGACY_OPTIONAL_TYPE`，最多列出 20 处命中，每个 schema 或代码形式只列第一处，改完后需要重新加载以发现其余位置；没有新增自动改写规则；
 - 无 else 的 `if` / `when` 与 `nil` 分支合并不再有可书写的类型：严格模式下任何值位置（含 `let` 初始化）都报 `E_IMPLICIT_NIL_BRANCH`，`--compat-types` 下 `let` 绑定按 Dynamic 处理；只有语句位置、`nil->option` 实参、`JsNullish<T>` 声明位置与 `Dynamic` 返回保留分支 payload 作为内部检查证据；
 - `nil->option` 的 schema 改为 `Fn T (-> $ Option T) (:generics T)`，推导出的 `T?` 折叠为 `Option<T>`，字面 `nil` 得到 `Option<Never>`，`JsNullish<T>` 仍被拒绝；
 - `optionally` 的退场提示、`declared-optional` 弱类型分类与质量基线的 `declaredOptional` 计数一并删除。

@@ -29,7 +29,7 @@ related:
 
 ## 0.33.0 删除 `'Optional` 公共 schema 与旧 Optional 类型（#2233，未发布）
 
-0.33.0 删除旧 `Optional<T>`。Snapshot 里任何一处写出 `Optional`（`'Optional`、`calcit.core/Optional`、`(:: 'Optional T)`、`:optional` 字段头）都会在加载时报 `E_LEGACY_OPTIONAL_TYPE`，检查、运行、编辑与格式化都不会继续。错误一次列出最多 20 处命中，每处带定义路径、所在位置（`:schema`、`:code`、`:examples`、`:tests`）和原写法，例如：
+0.33.0 删除旧 `Optional<T>`。Snapshot 里任何一处写出 `Optional`（`'Optional`、`calcit.core/Optional`、`(:: 'Optional T)`、`:optional` 字段头）都会在加载时报 `E_LEGACY_OPTIONAL_TYPE`，检查、运行、编辑与格式化都不会继续。错误最多列出 20 处命中（超出部分只给数量），每处带定义路径、所在位置（`:schema`、`:code`、`:examples`、`:tests`）和原写法。同一个 schema 或代码形式里有多处时只列第一处，所以改完后要重新加载，直到不再报错。例如：
 
 ```text
 [E_LEGACY_OPTIONAL_TYPE] legacy `Optional<T>` was removed in 0.33.0, but `calcit.cirru` still uses it:
@@ -64,7 +64,7 @@ related:
 
 ### 限制
 
-- 无 else 的 `if` / `when`，以及 `nil` 与具体值的分支合并，不再有可书写的类型。严格模式（默认）下，凡是用到它的值都报 `E_IMPLICIT_NIL_BRANCH`：调用和方法实参、声明了具体返回类型的函数结尾，以及 0.33.0 新增的 `let` 初始化。`let ((v (if c x))) ...` 这类写法要改成 `nil->option`、`Option :some` / `Option :none`，或补上 else。`--compat-types` 下只给 `W_IMPLICIT_NIL_BRANCH` 提示，`let` 绑定按 Dynamic 处理。见 [值位置的无 else 分支与 nil 合并改为严格错误](#031-值位置的无-else-分支与-nil-合并改为严格错误)。
+- 无 else 的 `if` / `when`，以及 `nil` 与具体值的分支合并，不再有可书写的类型。严格模式（默认）下，凡是用到它的值都报 `E_IMPLICIT_NIL_BRANCH`：调用和方法实参、声明了具体返回类型的函数结尾，以及 0.33.0 新增的 `let` 初始化。`let ((v (if c x))) ...` 这类写法要改成 `nil->option`、`Option :some` / `Option :none`，或补上 else。`--compat-types` 下只给 `W_IMPLICIT_NIL_BRANCH` 提示，`let` 绑定按 Dynamic 处理。见 [值位置的无 else 分支与 nil 合并改为严格错误](#0310-值位置的无-else-分支与-nil-合并改为严格错误)。
 - 仍然允许的位置：结果被丢弃的语句位置、`nil->option` 的实参（得到 `Option<T>`）、声明为 `JsNullish<T>` 的参数与返回值（逐个分支检查 payload）、`Dynamic` 返回。编译器在这些位置内部保留分支的 payload 作为检查证据，但它不是类型，schema 写不出来，也不能作为 struct 字段或解码目标的数据合同。
 - 删除前已对已知下游（Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer、TopixIM/diary 等）完成迁移；未列出的仓库、私有仓库与非默认分支不在普查范围内，升级前请先按上面的步骤自查。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
@@ -2536,7 +2536,7 @@ calcit calcit.cirru analyze weak-types --only coverage --summary-only
 calcit calcit.cirru analyze weak-types --only coverage --deps --summary-only --format json
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil \
-  --intent unresolved,declared-unit,declared-optional \
+  --intent unresolved,declared-unit \
   --summary-only
 calcit calcit.cirru analyze weak-types --only deprecated-call --summary-only
 ```
