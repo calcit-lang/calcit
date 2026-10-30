@@ -911,7 +911,7 @@ const scenarios = [
       "json",
     ],
     check(result) {
-      if (result.schema_version !== 8 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
+      if (result.schema_version !== 9 || result.command !== "analyze.weak-types" || result.data.summary.hits === 0) {
         throw new Error("weak type result is incomplete");
       }
       const occurrences = result.data.definitions.flatMap((definition) => definition.occurrences);
@@ -935,7 +935,7 @@ const scenarios = [
     ],
     check(result) {
       const boundaries = result.data?.evidence?.ffi_boundaries;
-      if (result.schema_version !== 8 || !Array.isArray(boundaries) || boundaries.length === 0) {
+      if (result.schema_version !== 9 || !Array.isArray(boundaries) || boundaries.length === 0) {
         throw new Error("FFI evidence envelope is incomplete");
       }
       const boundary = boundaries.find((item) => item.definition === "ffi-evidence.main/query-host");

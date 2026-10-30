@@ -63,7 +63,7 @@ const parseCalcitJson = (result, label) => {
     throw new Error(`${label} did not end with a JSON object:\n${output.trim()}`);
   }
   const parsed = JSON.parse(match[1]);
-  if (parsed.command !== "analyze.weak-types" || parsed.schema_version !== 8) {
+  if (parsed.command !== "analyze.weak-types" || parsed.schema_version !== 9) {
     throw new Error(`${label} returned an unexpected analyzer envelope`);
   }
   return parsed.data.summary;
@@ -80,7 +80,7 @@ const auditProject = ({ label, path }) => {
     "--only",
     "code-nil",
     "--intent",
-    "unresolved,declared-unit,declared-optional",
+    "unresolved,declared-unit",
     "--summary-only",
     "--format",
     "json",

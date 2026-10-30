@@ -500,15 +500,6 @@
               nil? $ .?-name p
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
-        'case-qfield-ret-opt $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn case-qfield-ret-opt ()
-            let
-                probe $ fn (flag)
-                  hint-fn $ Fn Bool $ -> (Optional String)
-                  .?-name $ P :age 1 :name |a
-              probe true
-          :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'case-qfield-str-concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn case-qfield-str-concat ()
             let

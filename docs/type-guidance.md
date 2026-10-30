@@ -215,9 +215,9 @@ let
 
 `JsNullish<T>` 表示 JavaScript 边界上可能缺席的值。已经证明为 `T` 的值和 `nil` 可以进入这个合同；同一关系递归适用于不可变 List、Map 与 Set，不需要逐层插入转换。例如一个保存 `Map<Tag,JsNullish<Number>>` 的 Struct 字段可以接收 `{} (:count 1)` 或 `{} (:count nil)`，具体回调同样可以存入可空回调表，其参数、返回值和 arity 仍按完整签名检查。
 
-反方向仍需要检查：`JsNullish<T>` 不能直接作为 `T` 使用，Dynamic 元素也不能仅凭容器声明变成具体元素。可变 `Ref<T>` 保持不变性，不能把 `Ref<Number>` 扩大为 `Ref<JsNullish<Number>>` 后写入 `nil`。这项关系不把历史 `Optional<T>` 与 `JsNullish<T>` 混同，Calcit 自身的缺席值继续使用名义 `Option<T>`。
+反方向仍需要检查：`JsNullish<T>` 不能直接作为 `T` 使用，Dynamic 元素也不能仅凭容器声明变成具体元素。可变 `Ref<T>` 保持不变性，不能把 `Ref<Number>` 扩大为 `Ref<JsNullish<Number>>` 后写入 `nil`。这项关系不把推导出的 nil 合并 `T?` 与 `JsNullish<T>` 混同，Calcit 自身的缺席值继续使用名义 `Option<T>`。
 
-声明返回 `JsNullish<T>` 的函数按各个退出值检查。例如 `if present? value nil` 在 `value` 已证明为 `T` 时满足声明；反向分支、`match` 的已知 payload 和函数尾部 `let` 的局部别名采用同一检查。无需为了中间合并出的遗留 Optional 插入转换。初始化值按父作用域验证，新绑定和 match payload 遮蔽同名外层变量的证据。返回检查不修改局部变量的推断类型，也不把 raw primitive 返回的 `Optional<T>` 当成 `JsNullish<T>`。
+声明返回 `JsNullish<T>` 的函数按各个退出值检查。例如 `if present? value nil` 在 `value` 已证明为 `T` 时满足声明；反向分支、`match` 的已知 payload 和函数尾部 `let` 的局部别名采用同一检查。无需为了中间合并出的 nil（内部 `T?`）插入转换。初始化值按父作用域验证，新绑定和 match payload 遮蔽同名外层变量的证据。返回检查不修改局部变量的推断类型，也不把推导出的 `T?` 当成 `JsNullish<T>`。
 
 已知字段、返回或显式 `assert-type` 合同也会逐项检查 List、Map、Set 字面量。例如 `Map<Tag,JsNullish<EventHandler>>` 可以接收 `{} (:click typed-handler) (:focus nil)`，嵌套集合采用同一规则；每个回调仍须具有兼容的完整签名。需要保存并复用混合集合时，可以在字面量处用 `assert-type` 明确检查合同。没有期望合同的异质集合仍按既有规则推导，开放的 Map 参数不会因此获得具体成员类型。检查不改变运行值，异步返回也不会自动等待集合中的 Promise。
 

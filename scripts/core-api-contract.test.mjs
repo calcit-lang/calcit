@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { assertHistoryPreserved, assertPreserved, baselinePath, collect, readEdn, writeEdn } from "./core-api-contract.mjs";
+import { assertHistoryPreserved, assertPreserved, baselinePath, collect, readEdn, readMigrations, writeEdn } from "./core-api-contract.mjs";
 
 const baseline = readEdn(readFileSync(baselinePath, "utf8"));
 const definition = (data, name) => data.definitions.find(row => row.name.symbol === `calcit.core/${name}`);
@@ -355,6 +355,22 @@ test("a missing primitive schema requires a matching trait method, not an arbitr
         : { code: "&runtime-implementation", schema: null, runtime_arity: { min: 1, max: 1 } }),
     /requires declared generic\/receiver evidence/);
   }
+});
+
+test("a reviewed migration accepts only its exact before and after rows", () => {
+  const migrations = readMigrations();
+  const migration = migrations.find(item => item.after.name.symbol === "calcit.core/nil->option");
+  assert.ok(migration, "the #2233 nil->option migration must stay registered");
+  assert.deepEqual(definition(baseline, "nil->option"), migration.after);
+  const replace = (data, row) => ({ ...data, definitions: data.definitions.map(item => item.name.symbol === row.name.symbol ? row : item) });
+  const previous = replace(baseline, migration.before);
+  assert.throws(() => assertPreserved(previous, baseline), /changed frozen definitions/);
+  assertPreserved(previous, baseline, migrations);
+  const drifted = replace(baseline, { ...migration.after, schema: { quote: ["{}", [":kind", ":fn"], [":args", ["[]", "'T"]], [":generics", ["[]", "'T"]], [":return", "'T"]] } });
+  assert.throws(() => assertPreserved(previous, drifted, migrations), /changed frozen definitions/);
+  const otherChange = structuredClone(baseline);
+  definition(otherChange, "str-spaced").schema = migration.after.schema;
+  assert.throws(() => assertPreserved(baseline, otherChange, migrations), /changed frozen definitions/);
 });
 
 test("Git history rejects a baseline-only waiver in both PR and push workflows", async () => {

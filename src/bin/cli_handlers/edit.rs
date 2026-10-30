@@ -4046,7 +4046,7 @@ mod tests {
       :defs $ {}
         |legacy $ %{} :CodeEntry
           :code $ quote $ defn legacy (x) x
-          :schema $ quote $ Fn (Optional String) (-> Dynamic)
+          :schema $ quote $ Fn (JsNullish String) (-> Dynamic)
         |target $ %{} :CodeEntry
           :code $ quote $ defn target () nil
           :schema $ quote Dynamic

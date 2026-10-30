@@ -1,4 +1,3 @@
-use calcit::calcit::NullableOrigin;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -337,7 +336,6 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
       };
       match occurrence.intent {
         type_coverage::WeakTypeIntent::Unresolved
-        | type_coverage::WeakTypeIntent::DeclaredOptional
         | type_coverage::WeakTypeIntent::ExplicitUnsafe
         | type_coverage::WeakTypeIntent::JsFfiNonHost => review_required.push(finding),
         type_coverage::WeakTypeIntent::IntentionalJsFfi | type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic => {
@@ -2251,7 +2249,6 @@ fn collect_optional_parameter_usages(
 fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<String> {
   match annotation {
     CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => optional_parameter_candidate(inner),
     CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
       if matches!(args[0].as_ref(), CalcitTypeAnnotation::Dynamic) {
         None
@@ -2265,10 +2262,7 @@ fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<Str
 
 /// Build a declaration-backed nominal Option slot without guessing through aliases or open types.
 fn optional_parameter_schema_type(annotation: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<std::sync::Arc<CalcitTypeAnnotation>> {
-  let mut inner = annotation.as_ref();
-  while let CalcitTypeAnnotation::Nullable(next, NullableOrigin::Calcit) = inner {
-    inner = next.as_ref();
-  }
+  let inner = annotation.as_ref();
   if !optional_candidate_type_is_closed(inner) {
     return None;
   }
@@ -5492,13 +5486,6 @@ mod tests {
     assert_eq!(
       optional_parameter_candidate(&CalcitTypeAnnotation::Number),
       Some("Option<:number>".to_owned())
-    );
-    assert_eq!(
-      optional_parameter_candidate(&CalcitTypeAnnotation::Nullable(
-        Arc::new(CalcitTypeAnnotation::String),
-        calcit::calcit::NullableOrigin::Calcit
-      )),
-      Some("Option<:string>".to_owned())
     );
     let option = CalcitTypeAnnotation::TypeRef(
       Arc::from("calcit.core/Option"),

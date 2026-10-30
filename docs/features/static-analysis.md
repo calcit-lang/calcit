@@ -78,7 +78,7 @@ calcit analyze weak-types --only dynamic-method --summary-only --format json
 calcit analyze weak-types --ns app.main --intent unresolved
 
 # Focus on nil migration debt while excluding declared Unit returns
-calcit analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-unit,declared-optional
+calcit analyze weak-types --ns app.main --only code-nil --intent unresolved,declared-unit
 
 # Inspect explicitly permitted JS FFI dynamic boundaries
 calcit analyze weak-types --ns app.main --intent intentional-js-ffi
@@ -199,7 +199,7 @@ calcit calcit.cirru analyze weak-types --only coverage --deps --summary-only --f
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. Inside such a `defn`, a schema position whose parameter never appears in a host operation (`.-field`, `.!method`, `js-get`, `js/...`, `new`, `js-cast`, `unsafe-coerce` and the other JavaScript syntax procs), directly or through `let` bindings, is reported as `js-ffi-non-host` instead; the same applies to a return whose tail expressions do not come from a host operation. These are usually Calcit props, states or callbacks that only pass through the adapter. `js-ffi-non-host` is listed under `review_required` in `calcit fix --workflow strict`, and the quality gate counts it like `intentional-js-ffi`, so existing baselines are unchanged. Calls into another adapter, imported JS module functions and external-object methods written as `.method` are not followed. A strict `MacroSignature` classifies `Dynamic` nested specifically inside `Expr<...>` inputs or expansion as `intentional-macro-syntax`: the phase-aware syntax contract remains checked, while the semantic value is deliberately open. Whole-Dynamic macro schemas, `Dynamic` expansions, and `Definition<Dynamic>` remain unresolved. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. These intent classes do not hide locations or remove schema-Dynamic coverage inventory; they separate reviewed boundary choices from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
-For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The same return-position rule applies to legacy `Optional<T>` as `declared-optional`. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit,declared-optional` and requires no findings.
+For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
@@ -213,15 +213,15 @@ For one expression, `calcit query type-at '<ns/def>' --path code@... --format js
 
 Under the default strict diagnostics, every unspecialized project method is rejected with
 `E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
-the receiver loss as a missing schema, Dynamic value/callable, legacy Optional,
+the receiver loss as a missing schema, Dynamic value/callable, nil-joined Dynamic,
 unbound generic/type slot, or explicit `:js-ffi` Dynamic boundary. The
 Option/Result nominal family additionally names the expected receiver family
 and its visible `option:*` / `result:*` helper. Compatibility mode retains the
 `P_DYNAMIC_*` inventory and `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` while projects
 migrate. A concrete inferred type, trait constraint, or external-object trait
-remains statically dispatchable and does not trigger this rule. An Optional
-chain over Dynamic is the legacy-optional cause, while `Optional<DynFn>` keeps
-the dynamic-callable cause.
+remains statically dispatchable and does not trigger this rule. An inferred
+nil join (`T?`, from an else-less `if` or a `nil` branch) over Dynamic is the
+nil-joined cause, while a nil join over `DynFn` keeps the dynamic-callable cause.
 
 Calling a value whose static type is Dynamic, such as `(x 1)` when `x` has a
 Dynamic schema or `((.unwrap-or ...))` from an extra indentation level, reports
@@ -301,7 +301,7 @@ warning remains a completion-gate failure until the body is implemented.
 `raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
-`analyze.weak-types` 的 `schema_version: 8` 保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
+`analyze.weak-types` 的 `schema_version: 9`（0.33.0 起，删除了 `summary.intents.declared-optional`）保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
 
 模块来源沿用 namespace resolver 的 import 合同：`app.lib :as lib` 与 `app.lib :refer $ increment` 是普通 Calcit 引用，单纯调用它们不产生 FFI boundary 或 adapter 候选；字符串模块引用（如 `|node:fs :as fs`）和 JS default import 仍保留宿主来源。混合代码只报告实际宿主操作，`quote` 数据不参与，`quasiquote` 内可执行的 unquote 仍参与。
 
@@ -561,7 +561,7 @@ let
   greet $ Option :none
 ```
 
-Failures use `Result<T,E>`, effects use `Unit`, and JavaScript `null`/`undefined` uses the distinct `JsNullish<T>` boundary. Public schemas reject the old `Optional<T>`; see [升级手册](../run/upgrade.md) for the migration.
+Failures use `Result<T,E>`, effects use `Unit`, and JavaScript `null`/`undefined` uses the distinct `JsNullish<T>` boundary. The old `Optional<T>` was removed in 0.33.0 and a Snapshot that still spells it fails to load with `E_LEGACY_OPTIONAL_TYPE`; see [升级手册](../run/upgrade.md) for the migration.
 
 #### Variadic Types
 

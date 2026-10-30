@@ -5917,7 +5917,7 @@ fn nil_type_evidence_is_open(annotation: &CalcitTypeAnnotation) -> bool {
     | CalcitTypeAnnotation::TypeSlot(_)
     | CalcitTypeAnnotation::Trait(_)
     | CalcitTypeAnnotation::TraitSet(_) => true,
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => nil_type_evidence_is_open(inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => nil_type_evidence_is_open(inner),
     _ => false,
   }
 }
@@ -5947,12 +5947,12 @@ fn scalar_truthiness_constant(annotation: &CalcitTypeAnnotation) -> Result<Optio
   match annotation {
     CalcitTypeAnnotation::Bool => Ok(None),
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never => Ok(Some(false)),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => match scalar_truthiness_constant(inner)? {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => match scalar_truthiness_constant(inner)? {
       Some(false) => Ok(Some(false)),
       None => Ok(None),
       Some(true) if wasm_non_nil_value_is_nonzero(inner) => Ok(None),
       _ => Err(format!(
-        "E_WASM_NIL_TYPE_EVIDENCE: if cannot distinguish nil from a zero-valued Optional<{}> payload in the current scalar ABI",
+        "E_WASM_NIL_TYPE_EVIDENCE: if cannot distinguish nil from a zero-valued nil-join {} payload in the current scalar ABI",
         inner.to_brief_string()
       )),
     },
@@ -8805,15 +8805,15 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
       ctx.emit(Instruction::Drop);
       ctx.emit(f64_const(1.0));
     }
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if wasm_non_nil_value_is_nonzero(inner) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if wasm_non_nil_value_is_nonzero(inner) => {
       emit_expr(ctx, &args[0])?;
       ctx.emit(f64_const(0.0));
       ctx.emit(Instruction::F64Eq);
       ctx.emit(Instruction::F64ConvertI32U);
     }
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
       return Err(format!(
-        "E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<{}> payload in the current scalar ABI",
+        "E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued nil-join {} payload in the current scalar ABI",
         inner.to_brief_string()
       ));
     }
@@ -11932,7 +11932,7 @@ mod tests {
           dynamic_type(),
           Arc::new(CalcitTypeAnnotation::Nullable(
             dynamic_type(),
-            crate::wasm::host::calcit::NullableOrigin::Calcit,
+            crate::wasm::host::calcit::NullableOrigin::Inferred,
           )),
         ],
         false,
@@ -13768,12 +13768,12 @@ mod tests {
       vec![ValType::I32, ValType::I32, ValType::I64, ValType::I32]
     );
 
-    let legacy = CalcitTypeAnnotation::Nullable(
+    let nil_join = CalcitTypeAnnotation::Nullable(
       Arc::new(CalcitTypeAnnotation::Number),
-      crate::wasm::host::calcit::NullableOrigin::Calcit,
+      crate::wasm::host::calcit::NullableOrigin::Inferred,
     );
-    let error = component_abi_type(&legacy, "app.main/legacy", "logical_schema.result")
-      .expect_err("legacy Optional must not degrade into nominal Option");
+    let error = component_abi_type(&nil_join, "app.main/nil-join", "logical_schema.result")
+      .expect_err("an inferred nil join must not degrade into nominal Option");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));
   }
 

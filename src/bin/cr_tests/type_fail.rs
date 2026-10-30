@@ -234,7 +234,7 @@ fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
   });
 }
 
-// Pins today's contract while `nil->option` still takes `Optional<T>`: a Rust
+// Pins the contract that `nil->option` rejects `JsNullish<T>` arguments: a Rust
 // type-fail test is required because `:tests` run only after a clean check and
 // cannot express an expected preprocessing diagnostic (#1554).
 #[test]
@@ -255,11 +255,12 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
       "nil->option must keep rejecting JsNullish arguments: {warnings:?}"
     );
 
-    // Ordinary values, nil and a legacy Optional argument stay warning-free.
+    // Ordinary values, nil and an inferred nil join stay warning-free.
     for source in [
       "nil->option nil",
       "let ((value (Option :some 1)))\n  nil->option value",
-      "let\n    f $ fn (x)\n      hint-fn $ Fn (Optional Number)\n        -> $ Option Number\n      nil->option x\n  f 1",
+      // A nil join goes straight into the bridge; binding it first is a strict error.
+      "nil->option (if (> 1 0) 1 nil)",
     ] {
       let accepted = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);
@@ -274,10 +275,10 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
   });
 }
 
-// `map xs nil->option` is accepted only when the list element type is known;
-// an untyped list literal reports E_ERASED_GENERIC_RELATION today.
+// `map xs nil->option` is accepted when the list element type is known, including
+// a literal whose elements infer an internal nil join.
 #[test]
-fn strict_type_fail_nil_to_option_as_map_callback_needs_typed_elements() {
+fn strict_type_fail_nil_to_option_as_map_callback_uses_element_types() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let typed = load_snippet_entries("let ((xs $ assert-type ([] 1 2) $ quote $ List Number)) $ map xs nil->option");
@@ -290,11 +291,42 @@ fn strict_type_fail_nil_to_option_as_map_callback_needs_typed_elements() {
       warnings.borrow()
     );
 
-    let untyped = load_snippet_entries("map ([] 1 nil 2) nil->option");
+    // A literal that mixes values with nil infers an internal nil join, which
+    // is exactly the argument nil->option accepts.
+    let joined = load_snippet_entries("map ([] 1 nil 2) nil->option");
     let warnings = RefCell::new(vec![]);
-    let error = runner::preprocess::ensure_ns_def_compiled(&untyped.init_ns, &untyped.init_def, &warnings, &CallStackList::default())
-      .expect_err("an untyped list cannot prove the callback contract");
-    assert!(error.to_string().contains("E_ERASED_GENERIC_RELATION"), "unexpected error: {error}");
+    runner::preprocess::ensure_ns_def_compiled(&joined.init_ns, &joined.init_def, &warnings, &CallStackList::default())
+      .expect("a nil-joined list literal should accept nil->option as a callback");
+    assert!(
+      warnings.borrow().is_empty(),
+      "nil-joined callback use stays clean: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
+// The bridge drops every inferred nil layer, also when nested missing-else
+// branches stack them or when it is passed to `map` by name, so the result
+// satisfies a declared `Option<Number>` payload.
+#[test]
+fn strict_type_fail_nil_to_option_flattens_nil_joins() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for source in [
+      "let\n    f $ fn (a b)\n      hint-fn $ Fn Bool Bool (-> $ Option Number)\n      nil->option $ if a $ if b 1\n  f true false",
+      "let\n    f $ fn ()\n      hint-fn $ Fn (-> $ List $ Option Number)\n      map ([] 1 nil 2) nil->option\n  f",
+      "let\n    f $ fn (c xs)\n      hint-fn $ Fn Bool (List Number) (-> $ List $ Option Number)\n      map (map xs $ fn (x) (if c x)) nil->option\n  f true ([] 1 2)",
+    ] {
+      let entries = load_snippet_entries(source);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("nil->option over a nil join should preprocess");
+      assert!(
+        warnings.borrow().is_empty(),
+        "`{source}` should prove an Option<Number> payload: {:?}",
+        warnings.borrow()
+      );
+    }
   });
 }
 
@@ -1767,7 +1799,6 @@ fn retired_core_functions_report_preferred_spelling() {
         "0.29.0",
       ),
       ("cpu-time", "cpu-time", "monotonic-time-ms", "0.29.0"),
-      ("optionally 1", "optionally", "nil->option", "0.31.0"),
       ("join ([] 1 2) 0", "join", "intersperse", "0.31.0"),
       ("section-by ([] 1 2 3) 2", "section-by", "chunks", "0.31.0"),
       ("turn-str 1", "turn-str", "to-string", "0.31.0"),
@@ -3789,15 +3820,20 @@ fn value_position_nil_branch_is_a_strict_error() {
       assert!(!err.msg.contains("`case`"), "{label}: {err:?}");
     }
 
+    // Since `Optional<T>` was removed (#2233) a nil join has no Calcit type,
+    // so binding one is a value use like any other.
     for (label, function) in [
       ("let-binding", number_fn("(let ((y (if (> x 0) x))) y)", "Dynamic")),
       ("let-nil-join", number_fn("(let ((y (if (> x 0) x nil))) y)", "Dynamic")),
+      // Literal branches carry no coordinate; the location comes from the condition.
+      ("let-literal-branches", number_fn("(let ((y (if (> x 0) nil 1))) y)", "Dynamic")),
+      ("let-cond", number_fn("(let ((y (cond ((> x 0) nil) (true 1)))) y)", "Dynamic")),
+      ("let-all-literals", number_fn("(let ((y (if (> 2 1) nil 1))) y)", "Dynamic")),
     ] {
-      let (result, warnings, advisories) = compile(function);
-      assert!(result.is_ok(), "{label}: a `let` binding is only noted: {result:?}");
-      assert!(warnings.iter().all(|w| !is_implicit(w.code())), "{label}: {warnings:?}");
-      let noted = advisories.iter().filter(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")).count();
-      assert_eq!(noted, 1, "{label}: {advisories:?}");
+      let (result, _, _) = compile(function);
+      let err = result.expect_err(&format!("{label}: a `let` nil branch is a strict error"));
+      assert_eq!(err.code.as_deref(), Some("E_IMPLICIT_NIL_BRANCH"), "{label}: {err:?}");
+      assert!(err.msg.contains("let binding"), "{label}: {err:?}");
     }
 
     for (label, function) in [
@@ -3823,6 +3859,19 @@ fn value_position_nil_branch_is_a_strict_error() {
     assert!(
       advisories.iter().any(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")),
       "compat mode keeps the warning: {advisories:?}"
+    );
+    // Compatibility mode binds a nil join as an open value, not a nullable `T`.
+    let (result, warnings, advisories) = compile(number_fn("(let ((y (if (> x 0) x))) (&+ y 1))", "Dynamic"));
+    assert!(result.is_ok(), "compat mode does not block a let nil branch: {result:?}");
+    assert!(
+      warnings
+        .iter()
+        .all(|w| !w.code().is_some_and(|code| code.ends_with("TYPE_MISMATCH"))),
+      "an open binding is not checked as a nullable Number: {warnings:?}"
+    );
+    assert!(
+      advisories.iter().any(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")),
+      "compat mode notes the let nil branch: {advisories:?}"
     );
   });
 }
@@ -3878,8 +3927,6 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
       ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
       ("missing-else-payload", nullable_return("(if flag |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
       ("matching-payload", nullable_return("(if flag 7 nil)"), None),
-      ("let-bound-wrong-payload", nullable_return("(let ((y (if flag |bad nil))) y)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
-      ("let-bound-matching-payload", nullable_return("(let ((y (if flag 7 nil))) y)"), None),
       (
         "wrong-argument-payload",
         "fn (flag) (hint-fn $ Fn Bool (-> Unit)) $ let ((take $ fn (v) (hint-fn $ Fn (JsNullish Number) (-> Unit)) &unit)) $ take $ if flag |bad nil".to_owned(),
@@ -3905,12 +3952,11 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
 }
 
 /// #1554 regression set: every case is one definition in
-/// `tests/fixtures/nil-branch-contracts.cirru`. Until `Optional<T>` is removed
-/// (0.32.0) a nil-yielding branch keeps its legacy nullable evidence for every
-/// contract check (returns, function / local / proc / method arguments, struct
-/// fields, `assert-type`, callbacks, `let` / `do` / nested bodies and `.?-field`),
-/// so `E_IMPLICIT_NIL_BRANCH` may reject more programs than main but must never
-/// accept one that main rejected.
+/// `tests/fixtures/nil-branch-contracts.cirru`. A nil-yielding branch keeps its
+/// inferred nullable evidence for every contract check (returns, function /
+/// local / proc / method arguments, struct fields, `assert-type`, callbacks,
+/// `let` / `do` / nested bodies and `.?-field`), so `E_IMPLICIT_NIL_BRANCH` may
+/// reject more programs than main but must never accept one that main rejected.
 /// Columns: case, rejected on main, rejected now, the `IMPLICIT_NIL_BRANCH` code
 /// reported (`E_` as the error, `W_` as an advisory), or `None` when the case
 /// keeps another diagnostic or none.
@@ -3944,16 +3990,16 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("map-callback", true, true, None),
   ("hof-typed-fn-arg", true, true, None),
   ("assert-type", true, true, None),
-  ("let-bound-ret", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-arg-defn", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-ok-arg", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-ret", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-arg-defn", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-ok-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-fn-literal", true, true, None),
   ("let-bound-list", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-cross-def", false, false, None),
   ("let-cross-def2", false, false, None),
   ("direct-cross-def", false, false, None),
-  ("let-bound-nilq", false, false, Some("W_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-plus", true, true, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-nilq", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("let-bound-plus", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-bool-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-string-niljoin-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-cond2", true, true, None),
@@ -3974,7 +4020,6 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("qfield-js-present", true, true, None),
   ("qfield-js-nullish-option", true, true, None),
   ("qfield-str-concat", false, false, None),
-  ("qfield-ret-opt", false, false, None),
   ("m-slice-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("m-slice-bad", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("m-slice-ok2", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
@@ -3984,7 +4029,7 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("n3-jsnullish-ret-join", false, false, None),
   ("n3-jsnullish-arg", false, false, None),
   ("n3-dynamic-ret", false, false, None),
-  ("n3-let-value", false, false, Some("W_IMPLICIT_NIL_BRANCH")),
+  ("n3-let-value", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("n3-statement", false, false, None),
   ("n3-nil-option", false, false, None),
 ];
@@ -4112,61 +4157,32 @@ fn option_erased_in_a_js_nullish_function_initializer_is_not_exempt() {
   });
 }
 
-/// #1554: legacy `Optional<T>` outside a public function schema is only noted
-/// (`W_LEGACY_OPTIONAL_TYPE`) before its removal in 0.32.0. Struct fields, enum
-/// payloads, a `def` value schema, a local `hint-fn`, `assert-type` and a
-/// decoder target are each reported once; the strict check still passes and
-/// the `Option<T>` forms stay quiet.
+/// #2233: legacy `Optional<T>` was removed in 0.33.0. Loading a Snapshot that
+/// still spells it fails once with `E_LEGACY_OPTIONAL_TYPE`, listing every
+/// position (struct fields, enum payloads, a `def` value schema, a local
+/// `hint-fn`, `assert-type` and a decoder target) while the `Option<T>` forms
+/// stay unlisted.
 #[test]
-fn legacy_optional_outside_public_schemas_is_only_noted() {
-  run_with_large_stack(|| {
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_fixture_entries("tests/fixtures/legacy-optional-advisory.cirru");
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-    let _ = runner::preprocess::take_advisories();
-
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("legacy Optional positions must not fail the strict check");
-
-    let warnings = warnings.into_inner();
-    assert!(
-      warnings
-        .iter()
-        .all(|warning| !warning.code().is_some_and(|code| code.contains("LEGACY_OPTIONAL"))),
-      "the advisory must never become a warning: {warnings:?}"
-    );
-    let advisories = runner::preprocess::take_advisories();
-    let noted = advisories
-      .iter()
-      .filter(|advisory| advisory.code() == Some("W_LEGACY_OPTIONAL_TYPE"))
-      .filter(|advisory| advisory.location().ns.as_ref() == "legacy-optional-advisory.main")
-      .collect::<Vec<_>>();
-    let mut positions = noted.iter().map(|advisory| advisory.location().def.to_string()).collect::<Vec<_>>();
-    positions.sort();
-    assert_eq!(
-      positions,
-      ["Box", "Choice", "fallback", "use-assert-type", "use-decoder", "use-hint-fn"],
-      "{advisories:?}"
-    );
-    for (def, position) in [
-      ("Box", "struct field `value`"),
-      ("Choice", "enum variant `maybe` payload"),
-      ("fallback", "the value schema"),
-      ("use-hint-fn", "a hint-fn schema"),
-      ("use-assert-type", "an assert-type target"),
-      ("use-decoder", "a parse-cirru-edn-as target"),
-    ] {
-      let advisory = noted
-        .iter()
-        .find(|advisory| advisory.location().def.as_ref() == def)
-        .expect("position is noted");
-      assert!(
-        advisory.message().contains(position) && advisory.message().contains("removed in 0.32.0"),
-        "{def}: {}",
-        advisory.message()
-      );
-    }
-  });
+fn legacy_optional_is_rejected_when_loading() {
+  let path = "tests/fixtures/legacy-optional-advisory.cirru";
+  let content = fs::read_to_string(path).expect("read fixture");
+  let data = cirru_edn::parse(&content).expect("parse fixture");
+  let error = snapshot::load_snapshot_data(&data, path).expect_err("legacy Optional must fail the load");
+  assert!(
+    error.contains("[E_LEGACY_OPTIONAL_TYPE]") && error.contains("removed in 0.33.0"),
+    "{error}"
+  );
+  for listed in [
+    "legacy-optional-advisory.main/Box `Optional Number`",
+    "legacy-optional-advisory.main/Choice `Optional String`",
+    "legacy-optional-advisory.main/fallback :schema `Optional Number`",
+    "legacy-optional-advisory.main/use-assert-type `Optional Number`",
+    "legacy-optional-advisory.main/use-decoder `:: 'Optional 'Number`",
+    "legacy-optional-advisory.main/use-hint-fn `Optional Number`",
+  ] {
+    assert!(error.contains(listed), "missing `{listed}`: {error}");
+  }
+  assert!(!error.contains("OptionBox") && !error.contains("use-option-hint"), "{error}");
 }
 
 #[test]

@@ -2149,7 +2149,7 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
 type DataShapeNode =
   | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
   | { kind: "numeric"; target: string }
-  | { kind: "optional" | "list" | "set" | "ref"; inner: number }
+  | { kind: "list" | "set" | "ref"; inner: number }
   | { kind: "map"; key: number; value: number }
   | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
   | { kind: "struct"; nominal: CalcitStructDef; fields: Array<[string, number]> }
@@ -2195,7 +2195,6 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
       case "tag": return value instanceof CalcitTag;
       case "buffer": return value instanceof Uint8Array;
       case "cirru-quote": return value instanceof CalcitCirruQuote;
-      case "optional": return value === null || check(value, node.inner, depth + 1);
       case "list": {
         if (!(value instanceof CalcitList || value instanceof CalcitSliceList)) return false;
         for (const item of value.items()) if (!check(item, node.inner, depth + 1)) return false;
@@ -2290,8 +2289,6 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     case "cirru-quote":
       if (input instanceof CalcitCirruQuote) return input;
       return fail(path, `expected cirru-quote, got ${typed_edn_kind(input)}`);
-    case "optional":
-      return input === null ? null : decode_typed_edn_node(graph, node.inner, input, path, depth + 1, fail);
     case "list": {
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
         return fail(path, `expected list, got ${typed_edn_kind(input)}`);
@@ -2541,8 +2538,6 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       });
       return new CalcitSliceMap(entries.flat());
     }
-    case "optional":
-      return input === null ? null : decode_runtime_map_node(graph, node.inner, input, path, depth + 1);
     case "ref":
       if (!(input instanceof CalcitRef)) return map_decode_error(path, `expected atom, got ${typed_edn_kind(input)}`);
       return ref(decode_runtime_map_node(graph, node.inner, input.value, `${path}.value`, depth + 1));

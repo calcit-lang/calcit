@@ -27,14 +27,28 @@ pub struct QualityMetrics {
   pub code_dynamic: usize,
   pub code_nil: usize,
   pub unresolved: usize,
-  pub declared_optional: usize,
+  /// Budget for declared legacy `Optional<T>`, removed in 0.33.0. Older
+  /// baselines still load, but the value is discarded so it never affects
+  /// comparisons; the metric is never counted or written again.
+  #[serde(
+    default,
+    rename = "declaredOptional",
+    skip_serializing,
+    deserialize_with = "discard_retired_metric"
+  )]
+  retired_declared_optional: usize,
   pub deprecated_calls: usize,
   #[serde(default)]
   pub unsafe_coerce: usize,
 }
 
+/// Accept a retired metric from an older baseline and drop its value.
+fn discard_retired_metric<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error> {
+  <usize as Deserialize>::deserialize(deserializer).map(|_| 0)
+}
+
 impl QualityMetrics {
-  fn values(&self) -> [(&'static str, usize); 9] {
+  fn values(&self) -> [(&'static str, usize); 8] {
     [
       ("typeNone", self.type_none),
       ("typeNotFull", self.type_not_full),
@@ -42,7 +56,6 @@ impl QualityMetrics {
       ("codeDynamic", self.code_dynamic),
       ("codeNil", self.code_nil),
       ("unresolved", self.unresolved),
-      ("declaredOptional", self.declared_optional),
       ("deprecatedCalls", self.deprecated_calls),
       ("unsafeCoerce", self.unsafe_coerce),
     ]
@@ -56,7 +69,6 @@ impl QualityMetrics {
       "codeDynamic" => self.code_dynamic,
       "codeNil" => self.code_nil,
       "unresolved" => self.unresolved,
-      "declaredOptional" => self.declared_optional,
       "deprecatedCalls" => self.deprecated_calls,
       "unsafeCoerce" => self.unsafe_coerce,
       _ => unreachable!("unknown quality metric: {metric}"),
@@ -70,7 +82,6 @@ impl QualityMetrics {
     self.code_dynamic += other.code_dynamic;
     self.code_nil += other.code_nil;
     self.unresolved += other.unresolved;
-    self.declared_optional += other.declared_optional;
     self.deprecated_calls += other.deprecated_calls;
     self.unsafe_coerce += other.unsafe_coerce;
   }
@@ -146,7 +157,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
     ns_prefix: options.ns_prefix.clone(),
     only: Some("schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce".to_owned()),
     coverage_level: None,
-    intent: Some("unresolved,intentional-macro-syntax,declared-unit,declared-optional,explicit-unsafe".to_owned()),
+    intent: Some("unresolved,intentional-macro-syntax,declared-unit,explicit-unsafe".to_owned()),
     format: "json".to_owned(),
     deps: options.deps,
     ffi_evidence: false,
@@ -199,7 +210,6 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,
-        WeakTypeIntent::DeclaredOptional => metrics.declared_optional += 1,
         // Splitting `:js-ffi` positions by host reach only changes reporting,
         // so existing baselines keep counting them the same way.
         WeakTypeIntent::IntentionalJsFfi
@@ -776,6 +786,25 @@ mod tests {
     assert_eq!(parsed.schema_dynamic, 101);
     assert_eq!(parsed.unresolved, 136);
     assert_eq!(parsed.unsafe_coerce, 0);
+  }
+
+  #[test]
+  fn retired_declared_optional_budget_is_ignored_by_validation() {
+    let source = r#"{
+      "schemaVersion": 2,
+      "scope": {"namespace": null, "namespacePrefix": null, "includeDependencies": false},
+      "metrics": {"typeNone": 1, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 3, "deprecatedCalls": 0, "unsafeCoerce": 0},
+      "definitions": {"app.main/f": {"typeNone": 1, "typeNotFull": 0, "schemaDynamic": 0, "codeDynamic": 0, "codeNil": 0, "unresolved": 0, "declaredOptional": 2, "deprecatedCalls": 0, "unsafeCoerce": 0}}
+    }"#;
+    let path = std::env::temp_dir().join(format!("calcit-quality-retired-{}.json", std::process::id()));
+    fs::write(&path, source).expect("write baseline with a retired budget");
+    let baseline = read_baseline(&path);
+    fs::remove_file(&path).expect("remove baseline with a retired budget");
+    let baseline = baseline
+      .expect("a retired budget must not fail validation")
+      .expect("native baseline");
+    assert_eq!(baseline.metrics, sum_metrics(baseline.definitions.values()));
+    assert_eq!(baseline.metrics.type_none, 1);
   }
 
   #[test]

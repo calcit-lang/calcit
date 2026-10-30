@@ -4,7 +4,7 @@
   :package |legacy-optional-advisory
   :entries $ {} $ :default
     {}
-      :description "|Legacy Optional<T> outside public function schemas is only noted (W_LEGACY_OPTIONAL_TYPE); the strict check still passes."
+      :description "|Legacy Optional<T> is rejected while loading the Snapshot (E_LEGACY_OPTIONAL_TYPE); the error lists every position and leaves the Option forms out."
       :init-fn 'legacy-optional-advisory.main/main!
       :mode :native
       :reload-fn 'legacy-optional-advisory.main/reload!
@@ -15,26 +15,26 @@
     %{} 'FileEntry
       :defs $ {}
         'Box $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: a struct field still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ defstruct Box
             :value $ quote $ Optional Number
             :label 'String
           :examples $ []
           :schema $ quote StructDef
         'Choice $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: an enum payload still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ defenum Choice
             :maybe $ quote $ Optional String
             :plain 'Number
           :examples $ []
           :schema $ quote EnumDef
-        'OptionBox $ %{} 'CodeEntry (:doc "|The Option form of Box is not noted.")
+        'OptionBox $ %{} 'CodeEntry (:doc "|The Option form of Box is not listed.")
           :code $ quote $ defstruct OptionBox
             :value $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'fallback $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: a value schema still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ def fallback nil
           :examples $ []
           :schema $ quote $ Optional Number
@@ -56,7 +56,7 @@
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'use-assert-type $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: an assert-type target still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ defn use-assert-type (x)
             let
                 y x
@@ -65,7 +65,7 @@
           :examples $ []
           :schema $ quote $ Fn Number (-> Unit)
         'use-decoder $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: a decoder target still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ defn use-decoder (text)
             let
                 decoded $ parse-cirru-edn-as text $ :: 'Optional 'Number
@@ -73,7 +73,7 @@
           :examples $ []
           :schema $ quote $ Fn String (-> Unit)
         'use-hint-fn $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: a local hint-fn still spelled Optional; retire with Optional (0.32.0)."
+          :doc "|Removed-syntax fixture: still spells Optional to pin the E_LEGACY_OPTIONAL_TYPE load error (0.33.0)."
           :code $ quote $ defn use-hint-fn (x)
             let
                 pick $ fn (value)
@@ -83,7 +83,7 @@
               , &unit
           :examples $ []
           :schema $ quote $ Fn Number (-> Unit)
-        'use-option-hint $ %{} 'CodeEntry (:doc "|A local hint-fn with Option is not noted.")
+        'use-option-hint $ %{} 'CodeEntry (:doc "|A local hint-fn with Option is not listed.")
           :code $ quote $ defn use-option-hint (x)
             let
                 pick $ fn (value)

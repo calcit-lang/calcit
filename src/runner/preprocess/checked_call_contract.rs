@@ -6,8 +6,8 @@ use std::{collections::HashSet, sync::Arc};
 use crate::calcit::{self, Calcit, CalcitList, CalcitTypeAnnotation};
 
 use super::{
-  ScopeTypes,
-  type_inference::{extract_literal_list_items, fully_typed_literal_assoc_path, resolve_type_value},
+  ScopeTypes, is_nil_bridge_head,
+  type_inference::{extract_literal_list_items, fully_typed_literal_assoc_path, nil_bridge_result_type, resolve_type_value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +51,14 @@ fn callback_return_type(
   scope_types: &ScopeTypes,
   inputs: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  // Passed by name, the bridge still drops an inferred nil join's absence
+  // instead of instantiating its public schema with the join as `T`.
+  if is_nil_bridge_head(callback)
+    && let [input] = inputs
+    && let Some(result) = nil_bridge_result_type(input)
+  {
+    return Some(result);
+  }
   callback_result_evidence(callback, scope_types, inputs, false)
 }
 

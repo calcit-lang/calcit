@@ -121,7 +121,6 @@ fn needs_deep_field_check(target: &CalcitTypeAnnotation) -> bool {
     CalcitTypeAnnotation::List(_)
       | CalcitTypeAnnotation::Map(_, _)
       | CalcitTypeAnnotation::Set(_)
-      | CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)
       | CalcitTypeAnnotation::Ref(_)
       | CalcitTypeAnnotation::TypeRef(..)
       | CalcitTypeAnnotation::Struct(..)
@@ -159,7 +158,6 @@ pub(crate) enum DataShapeNode {
   Tag,
   Buffer,
   CirruQuote,
-  Optional(usize),
   /// A nominal `Option<T>` accepted from an ordinary runtime value. Missing
   /// struct fields become `Option :none`; present raw values become `Option :some value`.
   MapOption {
@@ -260,11 +258,6 @@ impl DataShapeGraph {
       DataShapeNode::Ref(inner) => matches!(self.nodes.get(*inner), Some(DataShapeNode::Dynamic)),
       _ => true,
     })
-  }
-
-  /// An absent optional has no payload whose mutable contract needs proving.
-  pub(crate) fn has_optional_root(&self) -> bool {
-    matches!(self.nodes[self.root], DataShapeNode::Optional(_))
   }
 
   fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
@@ -373,13 +366,6 @@ impl DataShapeGraph {
       DataShapeNode::Tag if matches!(value, Calcit::Tag(_)) => Ok(()),
       DataShapeNode::Buffer if matches!(value, Calcit::Buffer(_)) => Ok(()),
       DataShapeNode::CirruQuote if matches!(value, Calcit::CirruQuote(_)) => Ok(()),
-      DataShapeNode::Optional(inner) => {
-        if matches!(value, Calcit::Nil) {
-          Ok(())
-        } else {
-          self.validate_node_value(*inner, value, path, depth + 1)
-        }
-      }
       DataShapeNode::Dynamic => Ok(()),
       DataShapeNode::MapOption { nominal, inner, .. } => match value {
         Calcit::Enum(enum_value)
@@ -517,7 +503,7 @@ impl DataShapeNode {
   fn child_nodes(&self) -> Vec<usize> {
     match self {
       Self::Dynamic => vec![],
-      Self::Optional(inner) | Self::List(inner) | Self::Set(inner) | Self::Ref(inner) => vec![*inner],
+      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) => vec![*inner],
       Self::MapOption { inner, .. } => vec![*inner],
       Self::Map { key, value } => vec![*key, *value],
       Self::Struct { fields, .. } => fields.iter().map(|(_, node)| *node).collect(),
@@ -540,7 +526,6 @@ impl DataShapeNode {
       Self::Buffer => "buffer",
       Self::CirruQuote => "cirru-quote",
       Self::MapOption { .. } => "Option",
-      Self::Optional(_) => "optional value",
       Self::List(_) => "list",
       Self::Set(_) => "set",
       Self::Map { .. } => "map",
@@ -578,10 +563,9 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Tag => Ok(self.push(DataShapeNode::Tag)),
       CalcitTypeAnnotation::Buffer => Ok(self.push(DataShapeNode::Buffer)),
       CalcitTypeAnnotation::CirruQuote => Ok(self.push(DataShapeNode::CirruQuote)),
-      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
-        let inner = self.build_type(inner, default_ns)?;
-        Ok(self.push(DataShapeNode::Optional(inner)))
-      }
+      CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => Err(unsupported_type(
+        "an inferred nil join has no data contract; declare Option<T> for Calcit absence",
+      )),
       CalcitTypeAnnotation::List(inner) => {
         let inner = self.build_type(inner, default_ns)?;
         Ok(self.push(DataShapeNode::List(inner)))
@@ -888,7 +872,6 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
       DataShapeNode::Tag => hasher.update(b"tag;"),
       DataShapeNode::Buffer => hasher.update(b"buffer;"),
       DataShapeNode::CirruQuote => hasher.update(b"cirru-quote;"),
-      DataShapeNode::Optional(inner) => hasher.update(format!("optional:{inner};").as_bytes()),
       DataShapeNode::MapOption {
         nominal,
         nominal_path,

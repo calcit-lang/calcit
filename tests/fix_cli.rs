@@ -3661,7 +3661,7 @@ fn spread_fix_never_writes_unproved_calls() {
 }
 
 #[test]
-fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
+fn spread_fix_preserves_rest_and_unknown_macro_boundaries() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
@@ -3710,10 +3710,6 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     (
       "rest-spread",
       "quote $ defn rest-spread () $ let\n    f $ fn (& xs)\n      hint-fn $ Fn & Number (-> Number)\n      , 1\n  f & $ [] 1 2",
-    ),
-    (
-      "optional-spread",
-      "quote $ defn optional-spread () $ let\n    f $ fn (x)\n      hint-fn $ Fn (Optional Number) (-> Number)\n      , 1\n  f & $ [] 1",
     ),
     (
       "macro-spread",
@@ -8034,7 +8030,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
   assert_success(&output, "schema evidence report");
   let report = parse_stdout(&output);
-  assert_eq!(report["schema_version"], 8);
+  assert_eq!(report["schema_version"], 9);
   assert_eq!(report["data"]["filters"]["schema_evidence"], true);
   let schemas = report["data"]["evidence"]["schema_candidates"]
     .as_array()

@@ -919,7 +919,7 @@ pub(crate) fn same_data_schema_annotation<'a>(actual: &'a CalcitTypeAnnotation, 
       | (Type::Set(actual), Type::Set(expected))
       | (Type::Ref(actual), Type::Ref(expected))
       | (Type::Variadic(actual), Type::Variadic(expected))
-      | (Type::Nullable(actual, NullableOrigin::Calcit), Type::Nullable(expected, NullableOrigin::Calcit))
+      | (Type::Nullable(actual, NullableOrigin::Inferred), Type::Nullable(expected, NullableOrigin::Inferred))
       | (Type::Nullable(actual, NullableOrigin::JsHost), Type::Nullable(expected, NullableOrigin::JsHost)) => {
         worklist.push((actual.as_ref(), expected.as_ref()));
         true
@@ -1194,7 +1194,7 @@ fn bounded_plain_type_relation<'a>(
       (Type::List(left), Type::List(right))
       | (Type::Set(left), Type::Set(right))
       | (Type::Variadic(left), Type::Variadic(right))
-      | (Type::Nullable(left, NullableOrigin::Calcit), Type::Nullable(right, NullableOrigin::Calcit))
+      | (Type::Nullable(left, NullableOrigin::Inferred), Type::Nullable(right, NullableOrigin::Inferred))
       | (Type::Nullable(left, NullableOrigin::JsHost), Type::Nullable(right, NullableOrigin::JsHost)) => {
         push_pair(&mut worklist, left, right, depth)
       }
@@ -1538,11 +1538,16 @@ impl CalcitNumericRefinement {
   }
 }
 
+/// Runtime tag carrying an inferred nil join through `to_calcit` / `from_calcit`.
+const INFERRED_NULLABLE_TAG: &str = "&nil-join";
+
 /// Where a nil-or-T type comes from; the two origins never prove each other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum NullableOrigin {
-  /// legacy Calcit `Optional<T>`
-  Calcit,
+  /// A nil-or-T value produced only by inference: an `if` / `when` without
+  /// an else, or a join of `nil` with a value. No schema can spell it;
+  /// declared Calcit absence is the nominal `Option<T>`.
+  Inferred,
   /// JavaScript FFI `JsNullish<T>`
   JsHost,
 }
@@ -1593,8 +1598,8 @@ pub enum CalcitTypeAnnotation {
   Custom(Arc<Calcit>),
   /// No checking at static analaysis time
   Dynamic,
-  /// A value that is either nil or the given type. `origin` keeps the legacy
-  /// Calcit `Optional<T>` distinct from the JavaScript FFI `JsNullish<T>`
+  /// A value that is either nil or the given type. `origin` keeps an
+  /// inferred nil join distinct from the JavaScript FFI `JsNullish<T>`
   /// boundary (`null`/`undefined`); neither is the nominal `Option<T>` enum.
   Nullable(Arc<CalcitTypeAnnotation>, NullableOrigin),
   /// Struct type definition, optionally with applied generic arguments.
@@ -1919,7 +1924,7 @@ impl CalcitTypeAnnotation {
   /// schemas such as `min`/`max`. Non-option types return `None`.
   pub(crate) fn option_payload(&self) -> Option<Arc<CalcitTypeAnnotation>> {
     match self {
-      Self::Nullable(inner, NullableOrigin::Calcit) => Some(inner.clone()),
+      Self::Nullable(inner, NullableOrigin::Inferred) => Some(inner.clone()),
       Self::TypeRef(name, args) => {
         let name = name.trim_start_matches('\'').trim_start_matches(':');
         (args.len() == 1 && matches!(name, "Option" | "calcit.core/Option")).then(|| args[0].clone())
@@ -2175,7 +2180,6 @@ impl CalcitTypeAnnotation {
       "buffer" | "Buffer" => Some("Buffer"),
       "cirru-quote" | "CirruQuote" => Some("CirruQuote"),
       "js-object" | "JsObject" => Some("JsObject"),
-      "optional" | "Optional" => Some("Optional"),
       "js-nullish" | "JsNullish" => Some("JsNullish"),
       "&" | "variadic" | "Variadic" => Some("Variadic"),
       "record" | "Record" | "struct" | "Struct" => Some("Struct"),
@@ -2215,7 +2219,7 @@ impl CalcitTypeAnnotation {
       "Trait" => Some(Self::Custom(Arc::new(Calcit::tag("trait")))),
       "Impl" => Some(Self::Custom(Arc::new(Calcit::tag("impl")))),
       // These forms require a payload and are handled by the type-expression parser.
-      "Optional" | "JsNullish" | "Variadic" | "Tuple" => None,
+      "JsNullish" | "Variadic" | "Tuple" => None,
       _ => None,
     }
   }
@@ -3693,12 +3697,12 @@ impl CalcitTypeAnnotation {
   ) {
     fn is_trait_annotation(ann: &CalcitTypeAnnotation) -> bool {
       matches!(ann, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
-        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_trait_annotation(inner.as_ref()))
+        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_trait_annotation(inner.as_ref()))
     }
 
     fn is_dynamic_annotation(ann: &CalcitTypeAnnotation) -> bool {
       matches!(ann, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
-        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_dynamic_annotation(inner.as_ref()))
+        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if is_dynamic_annotation(inner.as_ref()))
     }
 
     fn is_concrete_annotation(ann: &CalcitTypeAnnotation) -> bool {
@@ -3817,7 +3821,6 @@ impl CalcitTypeAnnotation {
   }
 
   fn parse_type_annotation_form_inner(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Arc<CalcitTypeAnnotation> {
-    let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
     let is_list_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "list";
     let is_map_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "map";
     let is_set_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "set";
@@ -3920,14 +3923,6 @@ impl CalcitTypeAnnotation {
         return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(args)));
       }
       if let Calcit::Tag(tag) = enum_value.tag.as_ref() {
-        if is_optional_tag(tag) {
-          if enum_value.extra.len() != 1 {
-            eprintln!("[Warn] :optional expects 1 argument, got {}", enum_value.extra.len());
-          }
-          if let Some(inner_form) = enum_value.extra.first() {
-            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
-          }
-        }
         if is_list_tag(tag) {
           if enum_value.extra.len() > 1 {
             eprintln!("[Warn] :list expects at most 1 argument, got {}", enum_value.extra.len());
@@ -4019,7 +4014,6 @@ impl CalcitTypeAnnotation {
             }
             return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(args)));
           }
-          "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit)),
           "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::JsHost)),
           "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
           "List" => {
@@ -4072,14 +4066,6 @@ impl CalcitTypeAnnotation {
     if let Calcit::List(xs) = form {
       if let Some(Calcit::Tag(tag)) = xs.first() {
         let tag_name = tag.ref_str().trim_start_matches(':');
-        if is_optional_tag(tag) {
-          if xs.len() != 2 {
-            eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 1);
-          }
-          if let Some(inner_form) = xs.get(1) {
-            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
-          }
-        }
         if is_list_tag(tag) {
           if xs.len() > 2 {
             eprintln!("[Warn] :list expects at most 1 argument, got {}", xs.len() as i64 - 1);
@@ -4141,17 +4127,6 @@ impl CalcitTypeAnnotation {
           && marker.ref_str().trim_start_matches(':') == "&"
         {
           return Arc::new(CalcitTypeAnnotation::Variadic(parse_nested(inner_form)));
-        }
-
-        if let Some(Calcit::Tag(tag)) = xs.get(1)
-          && is_optional_tag(tag)
-        {
-          if xs.len() != 3 {
-            eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
-          }
-          if let Some(inner_form) = xs.get(2) {
-            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
-          }
         }
 
         if let Some(Calcit::Tag(tag)) = xs.get(1) {
@@ -4253,9 +4228,6 @@ impl CalcitTypeAnnotation {
                   eprintln!("[Warn] Tuple expects at least 1 element type, e.g. `Tuple Number String`");
                 }
                 return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(args)));
-              }
-              "Optional" if args.len() == 1 => {
-                return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit));
               }
               "JsNullish" if args.len() == 1 => {
                 return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::JsHost));
@@ -4380,7 +4352,7 @@ impl CalcitTypeAnnotation {
         format!("tuple<{rendered}>")
       }
       Self::Custom(inner) => format!("{inner}"),
-      Self::Nullable(inner, NullableOrigin::Calcit) => format!("{}?", inner.to_brief_string_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::Inferred) => format!("{}?", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Nullable(inner, NullableOrigin::JsHost) => format!("js-nullish<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Struct(base, args) => {
         if args.is_empty() {
@@ -4628,6 +4600,12 @@ impl CalcitTypeAnnotation {
     self.any_component(|annotation| matches!(annotation, Self::TypeVar(_)))
   }
 
+  /// Check whether this annotation contains an inferred nil join, which has
+  /// no schema spelling and therefore cannot be stored.
+  pub(crate) fn contains_nil_join(&self) -> bool {
+    self.any_component(|annotation| matches!(annotation, Self::Nullable(_, NullableOrigin::Inferred)))
+  }
+
   /// Check whether this annotation contains `Never`, e.g. the payload slot
   /// inferred from a payload-free constructor such as `Option :none`.
   pub(crate) fn contains_never(&self) -> bool {
@@ -4725,7 +4703,7 @@ impl CalcitTypeAnnotation {
             .or_else(|| resolve_struct_from_program(CORE_NS, stripped).map(|s| (s, Some((Arc::from(CORE_NS), Arc::from(stripped))))))
         }
       }
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.resolve_to_struct_with_ref(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.resolve_to_struct_with_ref(),
       _ => None,
     }
   }
@@ -4764,7 +4742,7 @@ impl CalcitTypeAnnotation {
             })
         }
       }
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.resolve_to_enum_with_ref(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.resolve_to_enum_with_ref(),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_enum_with_ref()),
       _ => None,
     }
@@ -4793,7 +4771,7 @@ impl CalcitTypeAnnotation {
       }
       match annotation {
         CalcitTypeAnnotation::Fn(fn_annot) => Some((fn_annot.clone(), false)),
-        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
           resolve(inner, visited, depth + 1).map(|(signature, _)| (signature, true))
         }
         CalcitTypeAnnotation::TypeRef(name, args) => {
@@ -4847,7 +4825,7 @@ impl CalcitTypeAnnotation {
       Self::Nil | Self::Bool | Self::Tag | Self::Symbol => Some("&core-text-scalar-impls"),
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.core_impl_list_symbol(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
       _ => None,
@@ -4924,7 +4902,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Struct(struct_def, _) | Self::StructValue(struct_def) => Some(struct_def.impls.to_vec()),
       Self::Enum(enum_def, _) | Self::EnumValue(enum_def) => Some(enum_def.impls().to_vec()),
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.collect_static_impls(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.collect_static_impls(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.collect_static_impls()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.collect_static_impls()),
       _ => self.core_impl_list_symbol().and_then(|symbol| {
@@ -5133,7 +5111,7 @@ impl CalcitTypeAnnotation {
         | (Self::Set(actual), Self::Set(expected))
         | (Self::Ref(actual), Self::Ref(expected))
         | (Self::Variadic(actual), Self::Variadic(expected))
-        | (Self::Nullable(actual, NullableOrigin::Calcit), Self::Nullable(expected, NullableOrigin::Calcit))
+        | (Self::Nullable(actual, NullableOrigin::Inferred), Self::Nullable(expected, NullableOrigin::Inferred))
         | (Self::Nullable(actual, NullableOrigin::JsHost), Self::Nullable(expected, NullableOrigin::JsHost)) => {
           worklist.push((actual.as_ref(), expected.as_ref()));
         }
@@ -5924,9 +5902,9 @@ impl CalcitTypeAnnotation {
           if tag_name == "&" && enum_value.extra.len() == 1 {
             // Variadic type: (& :type)
             return Self::Variadic(Arc::new(Self::from_calcit(&enum_value.extra[0])));
-          } else if tag_name == "optional" && enum_value.extra.len() == 1 {
-            // Optional type: (optional :type)
-            return Self::Nullable(Arc::new(Self::from_calcit(&enum_value.extra[0])), NullableOrigin::Calcit);
+          } else if tag_name == INFERRED_NULLABLE_TAG && enum_value.extra.len() == 1 {
+            // Internal transport of an inferred nil join; no schema spells it.
+            return Self::Nullable(Arc::new(Self::from_calcit(&enum_value.extra[0])), NullableOrigin::Inferred);
           } else if tag_name == "js-nullish" && enum_value.extra.len() == 1 {
             return Self::Nullable(Arc::new(Self::from_calcit(&enum_value.extra[0])), NullableOrigin::JsHost);
           }
@@ -6110,8 +6088,8 @@ impl CalcitTypeAnnotation {
         sum_type: None,
       }),
       Self::Custom(value) => value.as_ref().to_owned(),
-      Self::Nullable(inner, NullableOrigin::Calcit) => Calcit::Enum(CalcitEnumValue {
-        tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
+      Self::Nullable(inner, NullableOrigin::Inferred) => Calcit::Enum(CalcitEnumValue {
+        tag: Arc::new(Calcit::Tag(EdnTag::from(INFERRED_NULLABLE_TAG))),
         extra: vec![inner.to_calcit()].into(),
         sum_type: None,
       }),
@@ -6283,7 +6261,7 @@ impl CalcitTypeAnnotation {
           Edn::enum_value("Ref", vec![inner.to_type_edn()])
         }
       }
-      Self::Nullable(inner, NullableOrigin::Calcit) => Edn::enum_value("Optional", vec![inner.to_type_edn()]),
+      Self::Nullable(inner, NullableOrigin::Inferred) => Edn::enum_value("NilJoin", vec![inner.to_type_edn()]),
       Self::Nullable(inner, NullableOrigin::JsHost) => Edn::enum_value("JsNullish", vec![inner.to_type_edn()]),
       Self::Variadic(inner) => Edn::enum_value("Variadic", vec![inner.to_type_edn()]),
       Self::Fn(fn_annot) => Edn::enum_value("Fn", vec![fn_annot.to_inline_type_schema_edn()]),
@@ -6361,7 +6339,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::EnumValue(enum_def) => Some(enum_def),
       Self::Enum(enum_def, _) => Some(enum_def),
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_enum(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.as_enum(),
       _ => None,
     }
   }
@@ -6375,7 +6353,7 @@ impl CalcitTypeAnnotation {
         Calcit::StructDef(struct_def) => Some(struct_def),
         _ => None,
       },
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_struct(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.as_struct(),
       _ => None,
     }
   }
@@ -6383,7 +6361,7 @@ impl CalcitTypeAnnotation {
   pub fn as_fn(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Fn(fn_annot) => Some(fn_annot.as_ref()),
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_fn(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.as_fn(),
       _ => None,
     }
   }
@@ -6391,7 +6369,7 @@ impl CalcitTypeAnnotation {
   pub fn as_function(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Fn(signature) => Some(signature.as_ref()),
-      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_function(),
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.as_function(),
       _ => None,
     }
   }
@@ -6457,7 +6435,7 @@ impl CalcitTypeAnnotation {
       },
       Self::Variadic(inner) => format!("variadic {}", inner.describe_bounded(depth + 1, remaining)),
       Self::Custom(_) => "custom".to_string(),
-      Self::Nullable(inner, NullableOrigin::Calcit) => format!("optional<{}>", inner.describe_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::Inferred) => format!("optional<{}>", inner.describe_bounded(depth + 1, remaining)),
       Self::Nullable(inner, NullableOrigin::JsHost) => format!("js-nullish<{}>", inner.describe_bounded(depth + 1, remaining)),
       Self::Struct(base, args) => {
         if args.is_empty() {
@@ -6514,7 +6492,7 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => 17,
       Self::Variadic(_) => 18,
       Self::Custom(_) => 19,
-      Self::Nullable(_, NullableOrigin::Calcit) => 20,
+      Self::Nullable(_, NullableOrigin::Inferred) => 20,
       Self::Nullable(_, NullableOrigin::JsHost) => 21,
       Self::Dynamic => 22,
       Self::TypeVar(_) => 23,
@@ -7095,7 +7073,7 @@ mod tests {
     for level in 0..depth {
       current = Arc::new(match level % 4 {
         0 => CalcitTypeAnnotation::List(current),
-        1 => CalcitTypeAnnotation::Nullable(current, NullableOrigin::Calcit),
+        1 => CalcitTypeAnnotation::Nullable(current, NullableOrigin::Inferred),
         2 => CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), current),
         _ => CalcitTypeAnnotation::TypeRef(Arc::from("tests.types/Layer"), Arc::new(vec![current])),
       });
@@ -8024,13 +8002,13 @@ mod tests {
       }),
       location: None,
     };
-    let optional_node = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEnum), symbol("Optional"), self_symbol]);
+    let node_list = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEnum), symbol("List"), self_symbol]);
 
-    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&optional_node, &[]);
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&node_list, &[]);
     assert!(
       matches!(
         parsed.as_ref(),
-        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)
+        CalcitTypeAnnotation::List(inner)
           if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Node" && args.is_empty())
       ),
       "recursive field annotation must remain a finite TypeRef, got {parsed:?}"
@@ -8311,7 +8289,7 @@ mod tests {
   #[test]
   fn call_type_proof_isolates_callee_variables_and_keeps_callers_rigid() {
     let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let optional_t = Arc::new(CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Calcit));
+    let optional_t = Arc::new(CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Inferred));
     let actual = Arc::new(CalcitTypeAnnotation::List(optional_t.clone()));
     let expected = Arc::new(CalcitTypeAnnotation::List(t.clone()));
     let names = [Arc::from("T")];
@@ -8338,7 +8316,7 @@ mod tests {
     let mut boundary = CallTypeProof::new(&[], std::slice::from_ref(&closed), std::slice::from_ref(&open));
     assert!(!boundary.prove(&open, &closed).is_proven());
     assert!(
-      !CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Calcit)
+      !CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Inferred)
         .prove_with_bindings(&t, &mut TypeBindings::new())
         .is_proven()
     );
@@ -8606,7 +8584,7 @@ mod tests {
   #[test]
   fn nested_type_vars_do_not_create_recursive_occurs_bindings() {
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let optional_type_var = CalcitTypeAnnotation::Nullable(type_var, NullableOrigin::Calcit);
+    let optional_type_var = CalcitTypeAnnotation::Nullable(type_var, NullableOrigin::Inferred);
     let expected_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let mut bindings = TypeBindings::new();
 
@@ -8617,7 +8595,7 @@ mod tests {
     assert_eq!(bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::Tag));
 
     let reverse_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
-    let reverse_optional = CalcitTypeAnnotation::Nullable(Arc::new(reverse_type_var.clone()), NullableOrigin::Calcit);
+    let reverse_optional = CalcitTypeAnnotation::Nullable(Arc::new(reverse_type_var.clone()), NullableOrigin::Inferred);
     let mut reverse_bindings = TypeBindings::new();
     assert!(reverse_type_var.compatible_with_bindings(&reverse_optional, &mut reverse_bindings));
     assert!(
@@ -8753,7 +8731,7 @@ mod tests {
     ] {
       for expected in [
         recursive.clone(),
-        CalcitTypeAnnotation::Nullable(Arc::new(recursive.clone()), NullableOrigin::Calcit),
+        CalcitTypeAnnotation::Nullable(Arc::new(recursive.clone()), NullableOrigin::Inferred),
       ] {
         let mut bindings = TypeBindings::new();
         assert_eq!(
@@ -8773,7 +8751,7 @@ mod tests {
   fn generic_occurs_check_follows_existing_alias_bindings() {
     let generic_t = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let generic_u = CalcitTypeAnnotation::TypeVar(Arc::from("U"));
-    let optional_t = CalcitTypeAnnotation::Nullable(Arc::new(generic_t.clone()), NullableOrigin::Calcit);
+    let optional_t = CalcitTypeAnnotation::Nullable(Arc::new(generic_t.clone()), NullableOrigin::Inferred);
     let mut bindings = TypeBindings::new();
 
     assert!(generic_u.compatible_with_bindings(&generic_t, &mut bindings));
@@ -9855,7 +9833,7 @@ mod tests {
   #[test]
   fn bound_type_var_matches_whole_nullable_type() {
     let var: Arc<str> = Arc::from("T");
-    let optional_number = CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), NullableOrigin::Calcit);
+    let optional_number = CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), NullableOrigin::Inferred);
     let js_nullish_number = CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), NullableOrigin::JsHost);
     for nullable in [optional_number, js_nullish_number] {
       let mut bindings = TypeBindings::new();
@@ -9951,7 +9929,7 @@ mod tests {
 
     let optional_number_ref = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Nullable(
       Arc::new(CalcitTypeAnnotation::Number),
-      NullableOrigin::Calcit,
+      NullableOrigin::Inferred,
     )));
     assert!(!number_ref.prove_with_bindings(&optional_number_ref, &mut bindings).is_proven());
 
@@ -10335,12 +10313,12 @@ mod tests {
   fn callback_parameter_matching_is_contravariant() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let actual = CalcitTypeAnnotation::from_function_parts(
-      vec![Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit))],
-      Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit)),
+      vec![Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Inferred))],
+      Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Inferred)),
     );
     let expected = CalcitTypeAnnotation::from_function_parts(
       vec![number.clone()],
-      Arc::new(CalcitTypeAnnotation::Nullable(number, NullableOrigin::Calcit)),
+      Arc::new(CalcitTypeAnnotation::Nullable(number, NullableOrigin::Inferred)),
     );
 
     assert!(actual.is_compatible_with(&expected));
@@ -10406,7 +10384,7 @@ mod tests {
   #[test]
   fn js_nullish_and_legacy_optional_are_distinct_boundaries() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
-    let optional = CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit);
+    let optional = CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Inferred);
     let js_nullish = CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::JsHost);
 
     assert!(!js_nullish.is_compatible_with(&optional));
@@ -10468,7 +10446,7 @@ mod tests {
     assert!(matches!(value_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Bool)));
 
     assert!(!CalcitTypeAnnotation::Unit.compatible_with_bindings(
-      &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Bool), NullableOrigin::Calcit),
+      &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Bool), NullableOrigin::Inferred),
       &mut TypeBindings::new()
     ));
   }
@@ -10560,7 +10538,7 @@ impl Hash for CalcitTypeAnnotation {
         "custom".hash(state);
         value.hash(state);
       }
-      Self::Nullable(inner, NullableOrigin::Calcit) => {
+      Self::Nullable(inner, NullableOrigin::Inferred) => {
         "optional".hash(state);
         inner.hash(state);
       }

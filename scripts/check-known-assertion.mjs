@@ -2578,95 +2578,6 @@ try {
         assert.deepEqual(await readFile(snapshot), original);
       }
       run("edit", "rm-def", "test-struct.main/try-rejected");
-      // Concrete Optional field admission preserves evidence without authorizing
-      // elimination, open payloads, or mutable Ref widening (Diary #61/#64).
-      run("test", "--tag", "optional-proof", "--require-match");
-      const optionalOwners = ["OptionalFields", "set-optional-fields", "OptionalGeneric", "set-optional-generic"];
-      const optionalDefinitions = optionalOwners.map(name =>
-        JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data);
-      const optionalFieldTests = optionalDefinitions.flatMap(definition =>
-        definition.tests.filter(test => test.tags.includes("optional-proof")));
-      assert.equal(optionalFieldTests.length, 5);
-      for (const name of ["set-optional-fields", "set-optional-generic"]) {
-        const before = await readFile(snapshot);
-        run("fix", "--rule", "nominal-write-proof-v1", "--ns", "test-struct.main", "--def", name, "--format", "edn");
-        assert.deepEqual(await readFile(snapshot), before);
-      }
-      run("edit", "def", "test-struct.main/optional-replay", "--input-format", "json-ast", "--code",
-        JSON.stringify(["defn", "optional-replay", [], ...optionalFieldTests.map(test => test.code), "&unit"]));
-      run("edit", "schema", "test-struct.main/optional-replay", "--input-format", "cirru", "--code",
-        "quote $ Fn (-> Unit)");
-      const optionalEntry = ["--init-fn", "test-struct.main/optional-replay", "--reload-fn", "test-struct.main/optional-replay"];
-      run(...optionalEntry);
-      const optionalFieldOutput = join(project, "optional-js");
-      run(...optionalEntry, "--emit-path", optionalFieldOutput, "js");
-      (await import(pathToFileURL(join(optionalFieldOutput, "test-struct.main.mjs")).href)).optional_replay();
-
-      // Replay the same source in a dependency-free project to exercise the full
-      // strict workflow, not just a selected nominal-write migration rule.
-      const workflowSnapshot = join(project, "optional-workflow.cirru");
-      await copyFile("tests/fixtures/deep-recursion.cirru", workflowSnapshot);
-      const workflowRun = (...args) => execFileSync(binary, [workflowSnapshot, ...args], options);
-      const workflowSchema = node => Array.isArray(node) ? node.map(workflowSchema)
-        : typeof node === "string" && node.startsWith("'test-struct.main/") ? node.replace("'test-struct.main/", "'app.main/") : node;
-      const workflowOperations = [
-        ["edit", "rm-def", "app.main/f"],
-        ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defn", "main!", [], ["set-optional-fields", "7", "|saved"],
-            ["set-optional-generic", ["OptionalGeneric", ":value", "1"], "9"], "&unit"])],
-        ["edit", "def", "app.main/reload!", "--overwrite", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defn", "reload!", [], "&unit"])],
-      ];
-      for (const definition of optionalDefinitions) {
-        const target = definition.id.replace("test-struct.main/", "app.main/");
-        const queriedSchema = workflowSchema(definition.schema);
-        // Query exposes a callable contract map; edit schema requires its Fn wrapper.
-        const schema = Array.isArray(queriedSchema) && queriedSchema[0] === "{}"
-          ? ["::", "'Fn", ["{}", ...queriedSchema.slice(1).filter(field => field[0] !== ":kind")]] : queriedSchema;
-        workflowOperations.push(
-          ["edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
-          ["edit", "schema", target, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
-        );
-        for (const test of definition.tests) {
-          workflowOperations.push(["edit", "add-test", target, test.name, "--tags", test.tags.join(","),
-            "--input-format", "json-ast", "--code", JSON.stringify(test.code)]);
-        }
-      }
-      const workflowRevision = JSON.parse(workflowRun("query", "config", "--format", "json")).revision;
-      const workflowTransaction = ["edit", "transaction", "--code", JSON.stringify(workflowOperations),
-        "--expect-revision", workflowRevision, "--format", "json"];
-      workflowRun(...workflowTransaction, "--dry-run");
-      workflowRun(...workflowTransaction);
-      const workflowOriginal = await readFile(workflowSnapshot);
-      workflowRun("fix", "--workflow", "strict", "--verify", "--format", "edn");
-      workflowRun("--check-only");
-      workflowRun("test", "--tag", "optional-proof", "--require-match");
-      assert.deepEqual(await readFile(workflowSnapshot), workflowOriginal);
-      run("edit", "def", "test-struct.main/OptionalRefField", "--input-format", "cirru", "--code",
-        "quote $ defstruct OptionalRefField (:cell $ quote $ Ref $ Optional Number)");
-      run("edit", "schema", "test-struct.main/OptionalRefField", "--input-format", "cirru", "--code", "quote 'StructDef");
-      for (const [label, argumentType, body, returnType, rule] of [
-        ["wrong-payload", "'String", "struct-with (OptionalFields :count nil :label nil) (:count raw)", "'test-struct.main/OptionalFields", "nominal-write-proof-v1"],
-        ["open-payload", "'Dynamic", "struct-with (OptionalFields :count nil :label nil) (:count raw)", "'test-struct.main/OptionalFields", "nominal-write-proof-v1"],
-        ["host-wrapper-conversion", ":: 'JsNullish 'Number", "struct-with (OptionalFields :count nil :label nil) (:count raw)", "'test-struct.main/OptionalFields", "nominal-write-proof-v1"],
-        ["optional-elimination", "'test-struct.main/OptionalFields", ":count raw", "'Number", "concrete-return-proof-v1"],
-        ["mutable-ref-widening", ":: 'Ref 'Number", "OptionalRefField :cell raw", "'test-struct.main/OptionalRefField", "nominal-write-proof-v1"],
-        ["generic-payload-mismatch", "'String", "set-optional-generic (OptionalGeneric :value 1) raw", "'Dynamic", "concrete-return-proof-v1"],
-      ]) {
-        run("edit", "def", "test-struct.main/optional-rejected", "--overwrite", "--input-format", "cirru", "--code",
-          `quote $ defn optional-rejected (raw) $ ${body}`);
-        run("edit", "schema", "test-struct.main/optional-rejected", "--input-format", "cirru", "--code",
-          `quote $ :: 'Fn $ {} (:args $ [] ${argumentType.startsWith("::") ? `(${argumentType})` : argumentType}) (:return ${returnType})`);
-        const before = await readFile(snapshot);
-        const rejected = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-struct.main",
-          "--def", "optional-rejected", "--format", "edn"], options);
-        if (rejected.error) throw rejected.error;
-        assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`,
-          /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_FN_RETURN_UNPROVEN|W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH/);
-        assert.deepEqual(await readFile(snapshot), before);
-      }
-      run("edit", "rm-def", "test-struct.main/optional-rejected");
       // Contextual nominal literals must pass the ordinary constructor checks
       // after lowering, before the nominal wrapper hides its field payloads.
       run("test", "--tag", "nominal-contextual", "--require-match");
@@ -2891,8 +2802,8 @@ try {
         ["wrong-live-payload", [], "[]", "if flag |bad nil", nullableNumber, true],
         ["wrong-reversed-payload", [], "[]", "if flag nil |bad", nullableNumber, true],
         ["open-live-payload", ["raw"], "[] 'Dynamic", "if flag raw nil", nullableNumber, false],
-        ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (if flag 7 nil))) (let ((selected raw)) selected)", nullableNumber, false],
-        ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (if flag 7 nil))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
+        ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (let ((selected raw)) selected)", nullableNumber, false],
+        ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
         ["nullish-elimination", ["raw"], `[] $ ${nullableNumber}`, "if flag raw 7", "'Number", true],
         ["stored-optional", [], "[]", "&parse-float |1", nullableNumber, true],
         ["wrong-callback-input", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'String)) (:return 'Unit)) &unit) nil", nullableCallback, true],
@@ -4301,11 +4212,11 @@ try {
       const fieldModule = await import(pathToFileURL(join(fieldOutput, "app.field-consumer.mjs")).href);
       fieldModule.replay_$x_();
       for (const [name, expression] of [
-        ["foreign-map-value", "owner/Database :users ({} (|one (User :name |wrong-origin))) :maybe nil"],
-        ["wrong-map-value", "owner/Database :users ({} (|one 42)) :maybe nil"],
-        ["foreign-optional-value", "owner/Database :users ({}) :maybe (User :name |wrong-origin)"],
+        ["foreign-map-value", "owner/Database :users ({} (|one (User :name |wrong-origin))) :maybe (Option :none)"],
+        ["wrong-map-value", "owner/Database :users ({} (|one 42)) :maybe (Option :none)"],
+        ["foreign-option-value", "owner/Database :users ({}) :maybe (Option :some (User :name |wrong-origin))"],
         ["foreign-generic-field", "owner/Envelope :user (User :name |wrong-origin) :value 42"],
-        ["foreign-update", "let ((db (owner/Database :users ({}) :maybe nil))) (db .assoc :maybe (User :name |wrong-origin))"],
+        ["foreign-update", "let ((db (owner/Database :users ({}) :maybe (Option :none)))) (db .assoc :maybe (Option :some (User :name |wrong-origin)))"],
       ]) {
         run("edit", "def", "app.field-consumer/replay!", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn replay! () (${expression}) &unit`);
@@ -4321,7 +4232,7 @@ try {
         }
       }
 
-      // Optional adds nil, not a stricter contract for proven empty literals.
+      // An Option payload keeps the contract of proven empty literals.
       await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
       run("test", "--tag", "optional-empty-field", "--require-match");
       const optionalTests = ["verify-empty", "verify-nil"].flatMap(name => {
@@ -4352,7 +4263,7 @@ try {
         ["wrong-set-value", ":members", "#{} 42"],
         ["open-map-is-not-literal", ":mapping", "open-map"],
       ]) {
-        const fields = [":mapping", ":items", ":members"].map(key => `${key} ${key === field ? `(${value})` : "nil"}`).join(" ");
+        const fields = [":mapping", ":items", ":members"].map(key => `${key} ${key === field ? `(Option :some (${value}))` : "(Option :none)"}`).join(" ");
         run("edit", "def", "app.empty-fields/replay!", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn replay! () (Fields ${fields}) &unit`);
         const original = await readFile(snapshot);
@@ -4367,7 +4278,7 @@ try {
         }
       }
 
-      // Nullable branch evidence must survive local bindings without proving open values.
+      // Option evidence from a nil join must survive local bindings without proving open values.
       await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
       run("test", "--tag", "nullable-branch-binding", "--require-match");
       run("test", "--tag", "open-match-payload", "--require-match");
@@ -4424,7 +4335,8 @@ try {
           const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
-          const diagnostic = /W_FN_ARG_TYPE_MISMATCH/;
+          // Since #2233 a let-bound `if` nil join is itself a strict error.
+          const diagnostic = expression.startsWith("if ") ? /W_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/ : /W_FN_ARG_TYPE_MISMATCH/;
           assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
           assert.deepEqual(await readFile(snapshot), original);
           if (mode[0] === "js") await assertRejectedArtifacts(output, name, diagnostic, true);

@@ -751,7 +751,7 @@ fn parse_zero_payload_schema_wrapper(value: &Edn) -> Option<Arc<CalcitTypeAnnota
     return None;
   }
   let canonical = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)?;
-  if matches!(canonical, "Optional" | "JsNullish" | "Variadic") {
+  if matches!(canonical, "JsNullish" | "Variadic") {
     return None;
   }
   Some(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(
@@ -1323,20 +1323,6 @@ fn parse_schema_cirru_from_edn(value: &Edn) -> Result<Cirru, String> {
 }
 
 pub fn parse_schema_data(schema: &Cirru) -> Result<(), String> {
-  if let Cirru::List(items) = schema
-    && let Some(Cirru::Leaf(head)) = items.first()
-  {
-    if &**head == ":optional" {
-      if items.len() != 2 {
-        return Err("schema `:optional` expects exactly one payload".to_owned());
-      }
-      return parse_schema_data(&items[1]);
-    }
-    if &**head == "::" && items.len() == 3 && matches!(items.get(1), Some(Cirru::Leaf(tag)) if &**tag == ":optional") {
-      return parse_schema_data(&items[2]);
-    }
-  }
-
   let schema_text =
     cirru_parser::format(std::slice::from_ref(schema), true.into()).map_err(|e| format!("Failed to format schema to Cirru: {e}"))?;
 
@@ -1431,6 +1417,12 @@ pub fn schema_cirru_to_edn(schema: Cirru) -> Edn {
 }
 
 fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnotation>) -> Result<(), String> {
+  // `NilJoin` is only a diagnostic rendering; it would not parse back as a nil join.
+  if schema.contains_nil_join() {
+    return Err(format!(
+      "{owner}: an inferred nil join has no schema spelling and cannot be stored; declare `Option<T>` for Calcit absence or `JsNullish<T>` for JavaScript values"
+    ));
+  }
   let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref() else {
     return Ok(());
   };
@@ -1481,6 +1473,7 @@ fn migrate_snapshot_code_for_write(snapshot: &Snapshot) -> Option<Snapshot> {
 }
 
 fn validate_snapshot_contracts_for_write(snapshot: &Snapshot) -> Result<(), String> {
+  legacy_optional_type_error(&collect_snapshot_legacy_optional_hits(&snapshot.files), "<snapshot>")?;
   check_snapshot_code_type_syntax(&snapshot.files, "<snapshot>")?;
   for (ns_name, file_data) in &snapshot.files {
     if ns_name.ends_with(".$meta") {
@@ -2945,6 +2938,7 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
   let data = data.view_map()?;
   let mut migration = SnapshotFormatMigration::default();
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
+  legacy_optional_type_error(&collect_raw_legacy_optional_hits(&data.get_or_nil("files")), path)?;
   let mut files = parse_files_for_format_with_context(&data.get_or_nil("files"), &mut migration)?;
 
   // Direct-quote macros receive a conservative strict contract while they are
@@ -3239,6 +3233,174 @@ fn check_raw_schema_syntax(files: &Edn, path: &str) -> Result<(), String> {
   Ok(())
 }
 
+/// Error code for the legacy `Optional<T>` type removed in 0.33.0.
+pub const LEGACY_OPTIONAL_TYPE_CODE: &str = "E_LEGACY_OPTIONAL_TYPE";
+
+fn is_legacy_optional_leaf(value: &str) -> bool {
+  matches!(value.trim_start_matches('\''), "Optional" | "calcit.core/Optional")
+}
+
+fn is_cirru_leaf(node: Option<&Cirru>, expected: &str) -> bool {
+  matches!(node, Some(Cirru::Leaf(value)) if value.as_ref() == expected)
+}
+
+/// Find a legacy `Optional<T>` inside a type form: a leaf naming `Optional`,
+/// or the tag form `(:optional T)` / `(:: :optional T)`.
+fn find_legacy_optional_in_type(node: &Cirru) -> Option<&Cirru> {
+  let Cirru::List(items) = node else {
+    return matches!(node, Cirru::Leaf(value) if is_legacy_optional_leaf(value)).then_some(node);
+  };
+  let legacy_head =
+    |item: Option<&Cirru>| matches!(item, Some(Cirru::Leaf(value)) if value.as_ref() == ":optional" || is_legacy_optional_leaf(value));
+  if legacy_head(items.first()) || (is_cirru_leaf(items.first(), "::") && legacy_head(items.get(1))) {
+    return Some(node);
+  }
+  // Map literals and compact `Macro` contracts carry types in the values of
+  // `(:key value)` entries, so a `:optional` key is not a type.
+  if is_cirru_leaf(items.first(), "{}") || is_cirru_leaf(items.first(), "Macro") {
+    return items.iter().skip(1).find_map(|entry| match entry {
+      Cirru::List(pair) if matches!(pair.first(), Some(Cirru::Leaf(key)) if key.starts_with(':')) => {
+        pair.iter().skip(1).find_map(find_legacy_optional_in_type)
+      }
+      other => find_legacy_optional_in_type(other),
+    });
+  }
+  items.iter().find_map(find_legacy_optional_in_type)
+}
+
+/// Find a legacy `Optional<T>` in code: a `'Optional` symbol literal, or any
+/// legacy spelling inside a quoted form or a code type position
+/// (`assert-type`, `unsafe-coerce`, `hint-fn`, struct/enum/trait slots).
+fn find_legacy_optional_in_code(node: &Cirru) -> Option<&Cirru> {
+  let Cirru::List(items) = node else {
+    return matches!(node, Cirru::Leaf(value) if value.starts_with('\'') && is_legacy_optional_leaf(value)).then_some(node);
+  };
+  let head = match items.first() {
+    Some(Cirru::Leaf(value)) => Some(value.as_ref()),
+    _ => None,
+  };
+  let type_slots: Vec<&Cirru> = match head {
+    Some("quote") => items.iter().skip(1).collect(),
+    Some("assert-type" | "unsafe-coerce") => items.get(2).into_iter().collect(),
+    Some("hint-fn") if items.len() >= 2 => items.last().into_iter().collect(),
+    Some("::") if matches!(items.get(1), Some(Cirru::Leaf(value)) if value.starts_with('\'') && is_legacy_optional_leaf(value)) => {
+      vec![node]
+    }
+    Some(kind @ ("defstruct" | "defenum" | "deftrait")) => items
+      .iter()
+      .skip(2)
+      .flat_map(|slot| match slot {
+        // The leading `:name` / `.method` is a member name, not a type. A
+        // struct field holds one type followed by an optional default value;
+        // enum payloads and trait members are all types.
+        Cirru::List(entry) if matches!(entry.first(), Some(Cirru::Leaf(key)) if key.starts_with([':', '.'])) => {
+          let types = entry.iter().skip(1);
+          if kind == "defstruct" {
+            types.take(1).collect::<Vec<_>>()
+          } else {
+            types.collect::<Vec<_>>()
+          }
+        }
+        other => vec![other],
+      })
+      .collect(),
+    _ => vec![],
+  };
+  type_slots
+    .into_iter()
+    .find_map(find_legacy_optional_in_type)
+    .or_else(|| items.iter().find_map(find_legacy_optional_in_code))
+}
+
+fn legacy_optional_hit(owner: &str, form: &Cirru) -> String {
+  format!("{owner} `{}`", render_cirru_inline(form))
+}
+
+/// Collect legacy `Optional<T>` uses from raw `:files` before schemas are
+/// parsed, so one load reports every definition instead of the first failure.
+fn collect_raw_legacy_optional_hits(files: &Edn) -> Vec<String> {
+  let mut hits = vec![];
+  let Ok(files) = files.view_map() else { return hits };
+  for (file_key, file) in files.0.iter() {
+    let Some(Edn::Map(defs)) = ffi_metadata_value(file, "defs") else {
+      continue;
+    };
+    for (def_key, entry) in defs.0.iter() {
+      let owner = format!("{}/{}", edn_key_text(file_key), edn_key_text(def_key));
+      if let Some(schema) = ffi_metadata_value(entry, "schema") {
+        let schema_cirru = match schema {
+          Edn::Nil => None,
+          Edn::Quote(payload) => Some(payload.to_owned()),
+          other => parse_schema_cirru_from_edn(other).ok(),
+        };
+        if let Some(form) = schema_cirru.as_ref().and_then(find_legacy_optional_in_type) {
+          hits.push(legacy_optional_hit(&format!("{owner} :schema"), form));
+        }
+      }
+      if let Some(Edn::Quote(code)) = ffi_metadata_value(entry, "code")
+        && let Some(form) = find_legacy_optional_in_code(code)
+      {
+        hits.push(legacy_optional_hit(&owner, form));
+      }
+      if let Some(Edn::List(examples)) = ffi_metadata_value(entry, "examples") {
+        for example in examples.0.iter() {
+          if let Edn::Quote(code) = example
+            && let Some(form) = find_legacy_optional_in_code(code)
+          {
+            hits.push(legacy_optional_hit(&format!("{owner} example"), form));
+          }
+        }
+      }
+      if let Some(Edn::List(tests)) = ffi_metadata_value(entry, "tests") {
+        for test in tests.0.iter() {
+          if let Some(Edn::Quote(code)) = ffi_metadata_value(test, "code")
+            && let Some(form) = find_legacy_optional_in_code(code)
+          {
+            hits.push(legacy_optional_hit(&format!("{owner} test"), form));
+          }
+        }
+      }
+    }
+  }
+  hits.sort();
+  hits
+}
+
+/// Collect legacy `Optional<T>` uses from parsed definitions; schemas were
+/// already rejected before parsing.
+fn collect_snapshot_legacy_optional_hits(files: &HashMap<String, FileInSnapShot>) -> Vec<String> {
+  let mut hits = vec![];
+  for (ns, file) in files {
+    for (def, entry) in &file.defs {
+      let owner = format!("{ns}/{def}");
+      let codes = std::iter::once((owner.clone(), &entry.code))
+        .chain(entry.examples.iter().map(|example| (format!("{owner} example"), example)))
+        .chain(entry.tests.iter().map(|test| (format!("{owner} test `{}`", test.name), &test.code)));
+      for (owner, code) in codes {
+        if let Some(form) = find_legacy_optional_in_code(code) {
+          hits.push(legacy_optional_hit(&owner, form));
+        }
+      }
+    }
+  }
+  hits.sort();
+  hits
+}
+
+fn legacy_optional_type_error(hits: &[String], path: &str) -> Result<(), String> {
+  if hits.is_empty() {
+    return Ok(());
+  }
+  const LISTED: usize = 20;
+  let mut listed = hits.iter().take(LISTED).map(|hit| format!("\n  - {hit}")).collect::<String>();
+  if hits.len() > LISTED {
+    listed.push_str(&format!("\n  - ... and {} more", hits.len() - LISTED));
+  }
+  Err(format!(
+    "[{LEGACY_OPTIONAL_TYPE_CODE}] legacy `Optional<T>` was removed in 0.33.0, but `{path}` still uses it:{listed}\nWrite `Option<T>` for Calcit absence (wrap an existing nil with `nil->option`), `JsNullish<T>` only for JavaScript FFI values, or `Result<T, E>` for failures; choose per use, `calcit fix` does not rewrite schemas. See the 0.33.0 section of docs/run/upgrade.md."
+  ))
+}
+
 fn edn_key_text(key: &Edn) -> String {
   match key {
     Edn::Symbol(name) | Edn::Str(name) => name.to_string(),
@@ -3275,6 +3437,7 @@ fn load_snapshot_data_inner(data: &Edn, path: &str, strict_macros: bool) -> Resu
     return Err(retired_snapshot_configs_error(path));
   }
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
+  legacy_optional_type_error(&collect_raw_legacy_optional_hits(&data.get_or_nil("files")), path)?;
   check_raw_schema_syntax(&data.get_or_nil("files"), path)?;
   let mut files: HashMap<String, FileInSnapShot> = parse_files_with_context(&data.get_or_nil("files"))?;
   check_snapshot_code_type_syntax(&files, path)?;
@@ -5327,14 +5490,64 @@ mod tests {
     ]);
     assert!(parse_schema_data(&missing_return).is_ok());
 
-    let optional_wrapped = Cirru::List(vec![Cirru::leaf(":optional"), valid.clone()]);
-    assert!(parse_schema_data(&optional_wrapped).is_ok());
-
-    let optional_wrapped_by_enum = Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), valid]);
-    assert!(parse_schema_data(&optional_wrapped_by_enum).is_ok());
-
     let invalid_edn = Cirru::List(vec![Cirru::leaf("~"), Cirru::leaf("x")]);
     assert!(parse_schema_data(&invalid_edn).is_err());
+  }
+
+  #[test]
+  fn legacy_optional_is_found_in_type_positions_only() {
+    let parse = |text: &str| cirru_parser::parse(text).expect("parse cirru")[0].to_owned();
+    for (code, found) in [
+      ("defstruct Box (:value $ quote $ Optional Number)", Some("Optional Number")),
+      (
+        "defenum Choice (:maybe $ quote $ calcit.core/Optional String)",
+        Some("calcit.core/Optional String"),
+      ),
+      ("fn (x) (hint-fn $ Fn (Optional Bool) (-> String)) x", Some("Optional Bool")),
+      ("assert-type x $ quote $ Optional Number", Some("Optional Number")),
+      ("decode-map-as m $ :: 'Optional 'String", Some(":: 'Optional 'String")),
+      ("assert-type x $ :optional :number", Some(":optional :number")),
+      // A member named `:optional` is not a type; a legacy type inside one still is.
+      ("defstruct Box (:optional :bool)", None),
+      ("defenum Mode (:optional :number)", None),
+      ("defstruct Box (:value (:optional :number))", Some(":optional :number")),
+      // A struct field default value is data, not a type.
+      ("defstruct Box (:value 'Map (:optional 1))", None),
+      // A tag in runtime data and an ordinary call are not types.
+      ("{} (:optional 1)", None),
+      ("Optional 1", None),
+      ("defmacro m (x) (quote $ {} (:optional $ [] 'SyntaxList))", None),
+    ] {
+      let node = parse(code);
+      let rendered = find_legacy_optional_in_code(&node).map(render_cirru_inline);
+      assert_eq!(rendered.as_deref(), found, "{code}");
+    }
+    let schema = parse("Fn (Optional T) (-> $ Option T)");
+    assert_eq!(
+      find_legacy_optional_in_type(&schema).map(render_cirru_inline).as_deref(),
+      Some("Optional T")
+    );
+    for contract in [
+      "Macro $ {} (:required $ [] 'Syntax) (:optional $ [] 'SyntaxList)",
+      "Macro (:required $ [] Syntax) (:optional $ Expr Dynamic) (:expansion $ Expr Dynamic)",
+    ] {
+      assert_eq!(find_legacy_optional_in_type(&parse(contract)), None, "{contract}");
+    }
+    let legacy_in_macro = parse("Macro (:required $ [] Syntax) (:expansion $ Expr $ Optional Number)");
+    assert!(find_legacy_optional_in_type(&legacy_in_macro).is_some());
+
+    // An inferred nil join renders as `NilJoin` but has no schema spelling.
+    let nil_join = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      crate::calcit::NullableOrigin::Inferred,
+    ));
+    let stored = validate_schema_for_snapshot_write("app.main/f", &nil_join).expect_err("a nil join cannot be stored");
+    assert!(stored.contains("Option<T>"), "{stored}");
+
+    let hits = vec!["app.main/f :schema `Optional Number`".to_owned()];
+    let error = legacy_optional_type_error(&hits, "calcit.cirru").expect_err("hits fail the load");
+    assert!(error.starts_with("[E_LEGACY_OPTIONAL_TYPE]") && error.contains("app.main/f :schema") && error.contains("Option<T>"));
+    assert!(legacy_optional_type_error(&[], "calcit.cirru").is_ok());
   }
 
   #[test]
@@ -6817,7 +7030,7 @@ mod tests {
   }
 
   #[test]
-  fn nil_to_option_schema_bridges_nullable_values_to_nominal_option() {
+  fn nil_to_option_schema_maps_a_type_variable_to_nominal_option() {
     let _guard = crate::program::lock_program_test_state();
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -6831,13 +7044,12 @@ mod tests {
       panic!("nil->option should have a function schema");
     };
 
+    // The public input is a plain `T`; call sites also admit an inferred nil
+    // join of `T` (see `specialize_core_expected_types`).
     let input_var = match schema.arg_types.as_slice() {
       [arg] => match arg.as_ref() {
-        CalcitTypeAnnotation::Nullable(inner, crate::calcit::NullableOrigin::Calcit) => match inner.as_ref() {
-          CalcitTypeAnnotation::TypeVar(name) => name,
-          other => panic!("nil->option Optional input should contain a type variable, got {other:?}"),
-        },
-        other => panic!("nil->option should accept Optional<T>, got {other:?}"),
+        CalcitTypeAnnotation::TypeVar(name) => name,
+        other => panic!("nil->option should accept a type variable, got {other:?}"),
       },
       args => panic!("nil->option should accept exactly one argument, got {args:?}"),
     };

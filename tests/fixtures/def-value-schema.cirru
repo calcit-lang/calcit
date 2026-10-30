@@ -11,9 +11,9 @@
     'app.binding-proof $ %{} 'FileEntry
       :defs $ {}
         'Box $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
+          :doc "|A nil join reaches this Option field through `nil->option`."
           :code $ quote $ defstruct Box
-            :value $ quote $ Optional app.binding-proof/Value
+            :value $ quote $ Option app.binding-proof/Value
           :examples $ []
           :schema $ quote StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
@@ -21,9 +21,9 @@
           :examples $ []
           :schema $ quote StructDef
         'OptionBox $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
+          :doc "|A nil join of an Option payload keeps both layers of absence."
           :code $ quote $ defstruct OptionBox
-            :value $ quote $ Optional (Option String)
+            :value $ quote $ Option (Option String)
           :examples $ []
           :schema $ quote StructDef
         'Value $ %{} 'CodeEntry (:doc |)
@@ -33,48 +33,55 @@
         'choose-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-nil (present)
             let
-                selected $ if present nil nil
+                selected $ nil->option $ if present nil nil
               Box :value selected
           :examples $ []
           :schema $ quote $ Fn Bool (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
-              assert= (Box :value nil) (choose-nil true)
-              assert= (Box :value nil) (choose-nil false)
+              assert=
+                Box :value $ Option :none
+                choose-nil true
+              assert=
+                Box :value $ Option :none
+                choose-nil false
             :tags $ #{} :nullable-branch-binding
         'choose-nullable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-nullable (present box)
             let
-                selected $ if present (:value box) nil
+                selected $ if present (:value box) (Option :none)
               Box :value selected
           :examples $ []
           :schema $ quote $ Fn Bool app.binding-proof/Box (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
-              assert= (Box :value nil)
-                choose-nullable false $ Box :value $ Value :text |ok
-              assert= (Box :value nil)
-                choose-nullable true $ Box :value nil
               assert=
-                Box :value $ Value :text |ok
-                choose-nullable true $ Box :value $ Value :text |ok
+                Box :value $ Option :none
+                choose-nullable false $ Box :value $ Option :some (Value :text |ok)
+              assert=
+                Box :value $ Option :none
+                choose-nullable true $ Box :value $ Option :none
+              assert=
+                Box :value $ Option :some $ Value :text |ok
+                choose-nullable true $ Box :value $ Option :some (Value :text |ok)
             :tags $ #{} :nullable-branch-binding
         'choose-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose-option (present value)
             let
-                selected $ if present value nil
+                selected $ nil->option $ if present value nil
               OptionBox :value selected
           :examples $ []
           :schema $ quote $ Fn Bool (Option String) (-> app.binding-proof/OptionBox)
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
-              assert= (OptionBox :value nil)
-                choose-option false $ Option :some |ok
-              assert=
-                OptionBox :value $ Option :some |ok
-                choose-option true $ Option :some |ok
               assert=
                 OptionBox :value $ Option :none
+                choose-option false $ Option :some |ok
+              assert=
+                OptionBox :value $ Option :some $ Option :some |ok
+                choose-option true $ Option :some |ok
+              assert=
+                OptionBox :value $ Option :some $ Option :none
                 choose-option true $ Option :none
             :tags $ #{} :nullable-branch-binding
         'decode-lookup $ %{} 'CodeEntry (:doc |)
@@ -86,18 +93,20 @@
                       (:ok typed) typed
                       (:err reason) nil
                   (:none) nil
-              Box :value selected
+              Box :value $ nil->option selected
           :examples $ []
           :schema $ quote $ Fn (Map String Dynamic) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 decode-lookup $ {} $ |key
                   {} $ :text |ok
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-lookup $ {} $ |key 42
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-lookup $ {} $ |other 42
             :tags $ #{} :open-match-payload
         'decode-option $ %{} 'CodeEntry (:doc |)
@@ -109,17 +118,19 @@
                       (:ok typed) typed
                       (:err reason) nil
                   (:none) nil
-              Box :value selected
+              Box :value $ nil->option selected
           :examples $ []
           :schema $ quote $ Fn (Option Dynamic) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 decode-option $ Option :some $ {} (:text |ok)
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-option $ Option :some 42
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-option $ Option :none
             :tags $ #{} :open-match-payload
         'decode-result $ %{} 'CodeEntry (:doc |)
@@ -131,23 +142,25 @@
                       (:ok typed) typed
                       (:err reason) nil
                   (:err reason) nil
-              Box :value selected
+              Box :value $ nil->option selected
           :examples $ []
           :schema $ quote $ Fn (Result Dynamic String) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
             :code $ quote $ do
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 decode-result $ Result :ok $ {} (:text |ok)
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-result $ Result :ok 42
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 decode-result $ Result :err |missing
             :tags $ #{} :open-match-payload
         'if-nil-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-nil-first (present)
             let
-                selected $ if present nil $ Value :text |ok
+                selected $ nil->option $ if present nil (Value :text |ok)
                 alias selected
               Box :value alias
           :examples $ []
@@ -155,14 +168,16 @@
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 if-nil-first false
-              assert= (Box :value nil) (if-nil-first true)
+              assert=
+                Box :value $ Option :none
+                if-nil-first true
             :tags $ #{} :nullable-branch-binding
         'if-value-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-value-first (present)
             let
-                selected $ if present (Value :text |ok) nil
+                selected $ nil->option $ if present (Value :text |ok) nil
                 alias selected
               Box :value alias
           :examples $ []
@@ -170,23 +185,26 @@
           :tests $ [] $ %{} 'TestEntry (:name |both-branches)
             :code $ quote $ do
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 if-value-first true
-              assert= (Box :value nil) (if-value-first false)
+              assert=
+                Box :value $ Option :none
+                if-value-first false
             :tags $ #{} :nullable-branch-binding
         'lookup-inline $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lookup-inline (items)
-            Box :value $ match (items .get |key)
+            Box :value $ nil->option $ match (items .get |key)
               (:some value) value
               (:none) nil
           :examples $ []
           :schema $ quote $ Fn (Map String app.binding-proof/Value) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
             :code $ quote $ do
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 lookup-inline $ {} $ |other (Value :text |ok)
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 lookup-inline $ {} $ |key (Value :text |ok)
             :tags $ #{} :nullable-branch-binding
         'lookup-local $ %{} 'CodeEntry (:doc |)
@@ -195,15 +213,16 @@
                 selected $ match (items .get |key)
                   (:some value) value
                   (:none) nil
-              Box :value selected
+              Box :value $ nil->option selected
           :examples $ []
           :schema $ quote $ Fn (Map String app.binding-proof/Value) (-> app.binding-proof/Box)
           :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
             :code $ quote $ do
-              assert= (Box :value nil)
+              assert=
+                Box :value $ Option :none
                 lookup-local $ {} $ |other (Value :text |ok)
               assert=
-                Box :value $ Value :text |ok
+                Box :value $ Option :some $ Value :text |ok
                 lookup-local $ {} $ |key (Value :text |ok)
             :tags $ #{} :nullable-branch-binding
         'retain-open $ %{} 'CodeEntry (:doc |)
@@ -791,8 +810,8 @@
             %{} 'TestEntry (:name |map)
               :code $ quote $ do
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
-                  checked-create MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
+                  checked-create MapBox :items $ {} $ :a ([] 1)
                 assert= nil $ checked-create MapBox :items $ {}
                   :a $ [] |wrong
               :tags $ #{} :checked-struct-construction :unit
@@ -920,8 +939,8 @@
             %{} 'TestEntry (:name |map)
               :code $ quote $ do
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
-                  checked-map-field MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
+                  checked-map-field MapBox :items $ {} $ :a ([] 1)
                 assert= nil $ checked-map-field MapBox :items $ {}
                   :a $ [] |wrong
               :tags $ #{} :checked-struct-construction :unit
@@ -1035,11 +1054,9 @@
             :items $ quote $ List Number
           :examples $ []
           :schema $ quote StructDef
-        'MapBox $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
+        'MapBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MapBox
-            :items $ quote $ Map Tag
-              List $ Optional Number
+            :items $ quote $ Map Tag (List Number)
           :examples $ []
           :schema $ quote StructDef
         'NestedRefBox $ %{} 'CodeEntry (:doc |)
@@ -1048,19 +1065,6 @@
           :schema $ quote StructDef
         'NominalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
-          :examples $ []
-          :schema $ quote StructDef
-        'NullableFunctionBox $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
-          :code $ quote $ defstruct NullableFunctionBox
-            :value $ quote $ Optional
-              Fn Number $ -> Number
-          :examples $ []
-          :schema $ quote StructDef
-        'NullableRefBox $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
-          :code $ quote $ defstruct NullableRefBox
-            :value $ quote $ Optional (Ref Number)
           :examples $ []
           :schema $ quote StructDef
         'NullishFunctionBox $ %{} 'CodeEntry (:doc |)
@@ -1151,10 +1155,10 @@
             %{} 'TestEntry (:name |nested-map)
               :code $ quote $ let
                   base $ MapBox :items $ {}
-                    :a $ [] 1 nil
+                    :a $ [] 1
                 assert=
-                  MapBox :items $ {} $ :b ([] 2 nil)
-                  checked-assoc base :items $ {} $ :b ([] 2 nil)
+                  MapBox :items $ {} $ :b ([] 2)
+                  checked-assoc base :items $ {} $ :b ([] 2)
                 assert=
                   MapBox :items $ {}
                   checked-assoc base :items $ {}
@@ -1163,7 +1167,7 @@
                 assert= nil $ checked-assoc base :items $ {}
                   :a $ [] |wrong
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
                   , base
               :tags $ #{} :checked-struct-write :unit
             %{} 'TestEntry (:name |set-members)
@@ -1264,24 +1268,6 @@
                 assert= (OpenCallableBox :apply string-id) (checked-assoc base :apply string-id)
                 assert= nil $ checked-assoc base :apply |not-fn
               :tags $ #{} :checked-struct-write :unit
-            %{} 'TestEntry (:name |nullable-absence-NullableRefBox)
-              :code $ quote $ let
-                  payload $ ref 1
-                  base $ NullableRefBox :value payload
-                assert= (NullableRefBox :value nil) (checked-assoc base :value nil)
-                assert= nil $ checked-assoc base :value payload
-                assert= nil $ checked-assoc base :value |wrong
-                assert= base $ NullableRefBox :value payload
-              :tags $ #{} :checked-struct-write :nullable-write :unit
-            %{} 'TestEntry (:name |nullable-absence-NullableFunctionBox)
-              :code $ quote $ let
-                  payload number-id
-                  base $ NullableFunctionBox :value payload
-                assert= (NullableFunctionBox :value nil) (checked-assoc base :value nil)
-                assert= nil $ checked-assoc base :value payload
-                assert= nil $ checked-assoc base :value |wrong
-                assert= base $ NullableFunctionBox :value payload
-              :tags $ #{} :checked-struct-write :nullable-write :unit
             %{} 'TestEntry (:name |nullable-absence-NullishFunctionBox)
               :code $ quote $ let
                   payload number-id
@@ -1340,10 +1326,10 @@
             %{} 'TestEntry (:name |nested-map)
               :code $ quote $ let
                   base $ MapBox :items $ {}
-                    :a $ [] 1 nil
+                    :a $ [] 1
                 assert=
-                  MapBox :items $ {} $ :b ([] 2 nil)
-                  checked-assoc-at base :items $ {} $ :b ([] 2 nil)
+                  MapBox :items $ {} $ :b ([] 2)
+                  checked-assoc-at base :items $ {} $ :b ([] 2)
                 assert=
                   MapBox :items $ {}
                   checked-assoc-at base :items $ {}
@@ -1352,7 +1338,7 @@
                 assert= nil $ checked-assoc-at base :items $ {}
                   :a $ [] |wrong
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
                   , base
               :tags $ #{} :checked-struct-write :unit
             %{} 'TestEntry (:name |set-members)
@@ -1451,10 +1437,10 @@
             %{} 'TestEntry (:name |nested-map)
               :code $ quote $ let
                   base $ MapBox :items $ {}
-                    :a $ [] 1 nil
+                    :a $ [] 1
                 assert=
-                  MapBox :items $ {} $ :b ([] 2 nil)
-                  checked-with base :items $ {} $ :b ([] 2 nil)
+                  MapBox :items $ {} $ :b ([] 2)
+                  checked-with base :items $ {} $ :b ([] 2)
                 assert=
                   MapBox :items $ {}
                   checked-with base :items $ {}
@@ -1463,7 +1449,7 @@
                 assert= nil $ checked-with base :items $ {}
                   :a $ [] |wrong
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
                   , base
               :tags $ #{} :checked-struct-write :unit
             %{} 'TestEntry (:name |set-members)
@@ -1564,24 +1550,6 @@
                 assert= (OpenCallableBox :apply string-id) (checked-with base :apply string-id)
                 assert= nil $ checked-with base :apply |not-fn
               :tags $ #{} :checked-struct-write :unit
-            %{} 'TestEntry (:name |nullable-absence-NullableRefBox)
-              :code $ quote $ let
-                  payload $ ref 1
-                  base $ NullableRefBox :value payload
-                assert= (NullableRefBox :value nil) (checked-with base :value nil)
-                assert= nil $ checked-with base :value payload
-                assert= nil $ checked-with base :value |wrong
-                assert= base $ NullableRefBox :value payload
-              :tags $ #{} :checked-struct-write :nullable-write :unit
-            %{} 'TestEntry (:name |nullable-absence-NullableFunctionBox)
-              :code $ quote $ let
-                  payload number-id
-                  base $ NullableFunctionBox :value payload
-                assert= (NullableFunctionBox :value nil) (checked-with base :value nil)
-                assert= nil $ checked-with base :value payload
-                assert= nil $ checked-with base :value |wrong
-                assert= base $ NullableFunctionBox :value payload
-              :tags $ #{} :checked-struct-write :nullable-write :unit
             %{} 'TestEntry (:name |nullable-absence-NullishFunctionBox)
               :code $ quote $ let
                   payload number-id
@@ -1640,10 +1608,10 @@
             %{} 'TestEntry (:name |nested-map)
               :code $ quote $ let
                   base $ MapBox :items $ {}
-                    :a $ [] 1 nil
+                    :a $ [] 1
                 assert=
-                  MapBox :items $ {} $ :b ([] 2 nil)
-                  checked-with-at base :items $ {} $ :b ([] 2 nil)
+                  MapBox :items $ {} $ :b ([] 2)
+                  checked-with-at base :items $ {} $ :b ([] 2)
                 assert=
                   MapBox :items $ {}
                   checked-with-at base :items $ {}
@@ -1652,7 +1620,7 @@
                 assert= nil $ checked-with-at base :items $ {}
                   :a $ [] |wrong
                 assert=
-                  MapBox :items $ {} $ :a ([] 1 nil)
+                  MapBox :items $ {} $ :a ([] 1)
                   , base
               :tags $ #{} :checked-struct-write :unit
             %{} 'TestEntry (:name |set-members)
@@ -2271,11 +2239,11 @@
     'app.empty-fields $ %{} 'FileEntry
       :defs $ {}
         'Fields $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
+          :doc "|Option fields keep the contract of proven empty container literals."
           :code $ quote $ defstruct Fields
-            :mapping $ quote $ Optional (Map Tag String)
-            :items $ quote $ Optional (List Number)
-            :members $ quote $ Optional (Set String)
+            :mapping $ quote $ Option (Map Tag String)
+            :items $ quote $ Option (List Number)
+            :members $ quote $ Option (Set String)
           :examples $ []
           :schema $ quote StructDef
         'open-map $ %{} 'CodeEntry (:doc |)
@@ -2286,25 +2254,35 @@
         'verify-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn verify-empty ()
             let
-                value $ Fields :mapping ({}) :items ([]) :members $ #{}
-              assert= ({}) (:mapping value)
-              assert= ([]) (:items value)
-              assert= (#{}) (:members value)
+                value $ Fields :mapping
+                  Option :some $ {}
+                  , :items
+                    Option :some $ []
+                    , :members $ Option :some (#{})
+              assert=
+                Option :some $ {}
+                :mapping value
+              assert=
+                Option :some $ []
+                :items value
+              assert=
+                Option :some $ #{}
+                :members value
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
-          :tests $ [] $ %{} 'TestEntry (:name |optional-empty-container-literals)
+          :tests $ [] $ %{} 'TestEntry (:name |option-empty-container-literals)
             :code $ quote $ verify-empty
             :tags $ #{} :optional-empty-field
         'verify-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn verify-nil ()
             let
-                value $ Fields :mapping nil :items nil :members nil
-              assert= nil $ :mapping value
-              assert= nil $ :items value
-              assert= nil $ :members value
+                value $ Fields :mapping (Option :none) :items (Option :none) :members $ Option :none
+              assert= (Option :none) (:mapping value)
+              assert= (Option :none) (:items value)
+              assert= (Option :none) (:members value)
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
-          :tests $ [] $ %{} 'TestEntry (:name |optional-nil-container-fields)
+          :tests $ [] $ %{} 'TestEntry (:name |option-none-container-fields)
             :code $ quote $ verify-nil
             :tags $ #{} :optional-empty-field
       :ns $ %{} 'NsEntry (:doc |)
@@ -2350,7 +2328,7 @@
                 user $ owner/make-user
                 db $ owner/Database :users
                   {} $ |one user
-                  , :maybe nil
+                  , :maybe $ Option :none
                 found $ -> (:users db) (.get |one) (.unwrap)
               assert= |Ada $ :name found
           :examples $ []
@@ -2364,8 +2342,8 @@
                 user $ owner/make-user
                 db $ owner/Database :users
                   {} $ |one user
-                  , :maybe user
-              assert= user $ :maybe db
+                  , :maybe $ Option :some user
+              assert= (Option :some user) (:maybe db)
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
           :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-optional)
@@ -2377,11 +2355,11 @@
                 user $ owner/make-user
                 original $ owner/Database :users
                   {} $ |one user
-                  , :maybe nil
-                updated $ original .assoc :maybe user
+                  , :maybe $ Option :none
+                updated $ original .assoc :maybe $ Option :some user
                 changed $ updated .assoc :users $ {} (|two user)
-              assert= nil $ :maybe original
-              assert= user $ :maybe changed
+              assert= (Option :none) (:maybe original)
+              assert= (Option :some user) (:maybe changed)
               assert= (Option :none)
                 get (:users original) |two
               assert= (Option :some user)
@@ -2396,11 +2374,10 @@
           :require $ app.field-owner :as owner
     'app.field-owner $ %{} 'FileEntry
       :defs $ {}
-        'Database $ %{} 'CodeEntry
-          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
+        'Database $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Database
             :users $ quote $ Map String User
-            :maybe $ quote $ Optional User
+            :maybe $ quote $ Option User
           :examples $ []
           :schema $ quote StructDef
         'Envelope $ %{} 'CodeEntry (:doc |)

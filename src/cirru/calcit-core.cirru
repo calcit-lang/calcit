@@ -9079,12 +9079,13 @@
                     , xs
                   forward $ fn (xs)
                     hint-fn $ Fn
-                      List $ Optional T
-                      -> $ List $ Optional T
+                      List $ List T
+                      -> $ List $ List T
                       :generics T
                     identity-list xs
-                assert= ([] 1 2)
-                  forward $ [] 1 2
+                assert=
+                  [] ([] 1) ([] 2)
+                  forward $ [] ([] 1) ([] 2)
                 assert= ([])
                   forward $ []
               :tags $ #{} :generic-call-proof :unit
@@ -9430,18 +9431,22 @@
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |nullable-bool-and-text-conditions)
               :code $ quote $ let
-                  choose-bool $ fn (value)
-                    hint-fn $ Fn (Optional Bool) (-> String)
-                    if value |yes |no
-                  choose-text $ fn (value)
-                    hint-fn $ Fn (Optional String) (-> String)
-                    if value |yes |no
-                assert= |no $ choose-bool nil
-                assert= |no $ choose-bool false
-                assert= |yes $ choose-bool true
-                assert= |no $ choose-text nil
-                assert= |yes $ choose-text |
-                assert= |yes $ choose-text |text
+                  choose-bool $ fn (present value)
+                    hint-fn $ Fn Bool Bool $ -> String
+                    let
+                        maybe $ when present value
+                      if maybe |yes |no
+                  choose-text $ fn (present value)
+                    hint-fn $ Fn Bool String $ -> String
+                    let
+                        maybe $ when present value
+                      if maybe |yes |no
+                assert= |no $ choose-bool false true
+                assert= |no $ choose-bool true false
+                assert= |yes $ choose-bool true true
+                assert= |no $ choose-text false |text
+                assert= |yes $ choose-text true |
+                assert= |yes $ choose-text true |text
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |function-and-definition-values-are-truthy)
               :code $ quote $ do
@@ -10695,7 +10700,7 @@
             quote $ assert= (Option :none) (nil->option nil)
             quote $ assert= (Option :some Option)
               &enum:definition $ nil->option 1
-          :schema $ quote $ Fn (Optional T)
+          :schema $ quote $ Fn T
             -> $ Option T
             :generics T
           :tests $ []
@@ -10746,16 +10751,16 @@
                 assert= (Option :some |pos) (from-nil-local 5)
                 assert= (Option :none) (from-nil-local -5)
               :tags $ #{} :core :types :unit
-            %{} 'TestEntry
-              :name |collapses-legacy-optional-values-under-declared-option
+            %{} 'TestEntry (:name |collapses-nil-joins-under-declared-option)
               :code $ quote $ let
                   from-if $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
                     nil->option $ if (> x 0) x
-                  from-optional $ fn (x)
-                    hint-fn $ Fn (Optional Number)
-                      -> $ Option Number
-                    nil->option x
+                  from-local-join $ fn (x)
+                    hint-fn $ Fn Number $ -> (Option Number)
+                    let
+                        maybe $ if (> x 0) x
+                      nil->option maybe
                   from-branches $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
                     if (> x 0) (nil->option x) (nil->option nil)
@@ -10763,7 +10768,8 @@
                     quote $ List Number
                 assert= (Option :some 1) (from-if 1)
                 assert= (Option :none) (from-if -1)
-                assert= (Option :some 2) (from-optional 2)
+                assert= (Option :some 2) (from-local-join 2)
+                assert= (Option :none) (from-local-join -2)
                 assert= (Option :some 3) (from-branches 3)
                 assert= (Option :none) (from-branches -3)
                 assert=
@@ -11167,13 +11173,6 @@
                 assert= :nil $ type-of $ produce-nil
                 assert= false $ number? $ produce-unit
                 assert= :number $ type-of $ produce-number 0
-              :tags $ #{} :scalar-kind-evidence :unit
-            %{} 'TestEntry (:name |optional-number-input-remains-accepted)
-              :code $ quote $ let
-                  inspect $ fn (value)
-                    hint-fn $ Fn (Optional Number) (-> Bool)
-                    number? value
-                assert= true $ inspect 1
               :tags $ #{} :scalar-kind-evidence :unit
             %{} 'TestEntry (:name |proven-tags-are-not-numbers)
               :code $ quote $ let

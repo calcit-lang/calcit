@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { parse_cirru_edn } from "../lib/calcit.procs.mjs";
 import { CalcitSymbol, CalcitTag, newTag } from "../lib/calcit-data.mjs";
 import { CalcitMap, CalcitSliceMap } from "../lib/js-map.mjs";
@@ -11,6 +12,9 @@ import { CalcitCirruQuote, format_cirru_edn } from "../lib/js-cirru.mjs";
 
 export const baselinePath = "docs/data/core-api-0.28-baseline.edn";
 const scopePath = "docs/data/core-api-0.28-scope.edn";
+// Reviewed, versioned signature changes. Each entry names the exact frozen row
+// before and after the change, so it cannot waive any other drift.
+export const migrationsPath = "docs/data/core-api-contract-migrations.edn";
 
 // JSON is only the Node subprocess bridge; the versioned artifact is native EDN.
 export function encode(value) {
@@ -192,7 +196,9 @@ function contract(row, family, nominalNames = new Map(), variables = new Set()) 
   return publicContract;
 }
 
-export function assertPreserved(previous, current) {
+export const readMigrations = (path = migrationsPath) => readEdn(readFileSync(path, "utf8")).migrations ?? [];
+
+export function assertPreserved(previous, current, migrations = []) {
   // Only declarations already frozen in core can prove an implicit-core
   // spelling equivalent. Never infer aliases from newly added declarations.
   const nominalNames = new Map((previous.definitions ?? []).flatMap(row => {
@@ -220,12 +226,17 @@ export function assertPreserved(previous, current) {
       const names = before?.provenance?.symbol.startsWith("calcit.core/") && after?.provenance?.symbol.startsWith("calcit.core/")
         ? nominalNames : new Map();
       const variables = new Set(genericNames(before?.schema?.quote));
-      assert.deepEqual(contract(row, family, names, variables), contract(old, family, names, variables), `changed frozen ${family}: ${JSON.stringify(old.name)}`);
+      const currentContract = contract(row, family, names, variables);
+      const frozenContract = contract(old, family, names, variables);
+      const reviewed = migrations.some(migration => migration.family === family
+        && isDeepStrictEqual(contract(migration.before, family, names, variables), frozenContract)
+        && isDeepStrictEqual(contract(migration.after, family, names, variables), currentContract));
+      if (!reviewed) assert.deepEqual(currentContract, frozenContract, `changed frozen ${family}: ${JSON.stringify(old.name)}`);
     }
   }
 }
 
-export function assertHistoryPreserved(baseline, current, { repository = process.cwd(), baseRef, eventName } = {}) {
+export function assertHistoryPreserved(baseline, current, { repository = process.cwd(), baseRef, eventName, migrations = [] } = {}) {
   const git = args => execFileSync("git", args, { cwd: repository, encoding: "utf8" }).trim();
   const revisions = ["HEAD"];
   if (baseRef) revisions.push(git(["merge-base", "HEAD", `origin/${baseRef}`]));
@@ -233,8 +244,8 @@ export function assertHistoryPreserved(baseline, current, { repository = process
   for (const revision of revisions) {
     if (git(["ls-tree", revision, "--", baselinePath])) {
       const previous = readEdn(git(["show", `${revision}:${baselinePath}`]));
-      assertPreserved(previous, baseline);
-      assertPreserved(previous, current);
+      assertPreserved(previous, baseline, migrations);
+      assertPreserved(previous, current, migrations);
     }
   }
 }
@@ -255,9 +266,10 @@ export function check() {
     return;
   }
   const baseline = readEdn(readFileSync(baselinePath, "utf8"));
-  assertPreserved(baseline, current);
+  const migrations = readMigrations();
+  assertPreserved(baseline, current, migrations);
   // Compare the committed baseline too: editing the working copy is not a waiver.
-  assertHistoryPreserved(baseline, current, { baseRef: process.env.GITHUB_BASE_REF, eventName: process.env.GITHUB_EVENT_NAME });
+  assertHistoryPreserved(baseline, current, { baseRef: process.env.GITHUB_BASE_REF, eventName: process.env.GITHUB_EVENT_NAME, migrations });
   console.log("Reviewed core contracts preserve native schemas, arity and specialized method call types");
 }
 

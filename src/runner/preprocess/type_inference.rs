@@ -166,8 +166,8 @@ fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTyp
 
 fn wrap_option_like(template: &CalcitTypeAnnotation, inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match template {
-    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => {
-      Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit))
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => {
+      Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred))
     }
     CalcitTypeAnnotation::TypeRef(name, _) => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(vec![inner]))),
     _ => inner,
@@ -208,8 +208,8 @@ fn compatible_if_join(
 }
 
 /// Payload of a schema-level `Option<T>` (`TypeRef`) only. The internal
-/// `Optional` marker used for control-flow joins keeps its historical
-/// compatibility path so core bootstrap macros are unaffected.
+/// nil-join marker used for control-flow joins is not a schema `Option<T>`
+/// and keeps its own path so core bootstrap macros are unaffected.
 fn schema_option_payload(type_value: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
   match type_value {
     CalcitTypeAnnotation::TypeRef(_, _) => type_value.option_payload(),
@@ -262,10 +262,10 @@ fn merge_if_branch_types(
   // absence. Existing nullable types were handled by compatibility above;
   // this is not a nominal Option constructor or evidence for an open value.
   if matches!(true_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return Some(Arc::new(CalcitTypeAnnotation::Nullable(false_type, NullableOrigin::Calcit)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(false_type, NullableOrigin::Inferred)));
   }
   if matches!(false_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Inferred)));
   }
 
   // The branches share no compatible annotation. When one side is a schema
@@ -652,7 +652,7 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
     let true_type = resolve_type_value(true_expr, scope_types)?;
-    Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)))
+    Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Inferred)))
   }
 }
 
@@ -1549,8 +1549,38 @@ fn infer_core_nominal_absence_return_type(
     "find-index" | "index-of" => Some(core_type_ref("Option", vec![tag_annotation("number")])),
     "parse-float" => Some(core_type_ref("Result", vec![tag_annotation("number"), tag_annotation("string")])),
     "get-env" => Some(core_type_ref("Option", vec![tag_annotation("string")])),
+    "nil->option" => nil_bridge_result_type(&resolve_type_value(call_expr.get(1)?, scope_types)?),
+    // A lowered `map` passing the bridge by name would otherwise instantiate
+    // its public schema with the nil join itself as `T`.
+    "&list:map" | "&set:map" if super::is_nil_bridge_head(call_expr.get(2)?) => {
+      match resolve_type_value(call_expr.get(1)?, scope_types)?.as_ref() {
+        CalcitTypeAnnotation::List(item) if def == "&list:map" => {
+          Some(Arc::new(CalcitTypeAnnotation::List(nil_bridge_result_type(item)?)))
+        }
+        CalcitTypeAnnotation::Set(item) if def == "&set:map" => {
+          Some(Arc::new(CalcitTypeAnnotation::Set(nil_bridge_result_type(item)?)))
+        }
+        _ => None,
+      }
+    }
     _ => None,
   }
+}
+
+/// The bridge removes every layer of absence from an inferred nil join (nested
+/// missing-else branches stack one layer each), so the payload is the live
+/// branch rather than the nullable join itself. A bare nil is always
+/// `Option :none`, whose payload slot is uninhabited. Other arguments keep the
+/// public `T -> Option<T>` schema.
+pub(super) fn nil_bridge_result_type(argument: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitTypeAnnotation>> {
+  if matches!(argument.as_ref(), CalcitTypeAnnotation::Nil) {
+    return Some(core_type_ref("Option", vec![Arc::new(CalcitTypeAnnotation::Never)]));
+  }
+  let mut payload = argument;
+  while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = payload.as_ref() {
+    payload = inner;
+  }
+  (!Arc::ptr_eq(payload, argument)).then(|| core_type_ref("Option", vec![payload.clone()]))
 }
 
 fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1703,8 +1733,8 @@ fn core_option_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotatio
 
 fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match inner.as_ref() {
-    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => inner,
-    _ => Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)),
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => inner,
+    _ => Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred)),
   }
 }
 
@@ -2220,7 +2250,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Method(_, calcit::MethodKind::ExternalSet(_)) => xs.get(2).and_then(|value| resolve_type_value(value, scope_types)),
 
         // Native JavaScript access/calls remain explicit JsNullish boundary values,
-        // not legacy Optional or nominal Option values. The opaque JsObject payload
+        // not inferred nil joins or nominal Option values. The opaque JsObject payload
         // prevents an unchecked host value from matching strong Calcit types.
         Calcit::Method(field_name, calcit::MethodKind::AccessOptional) => {
           if let Some(receiver) = xs.get(1)
@@ -2330,8 +2360,8 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     Some(Calcit::Syntax(CalcitSyntax::Defmacro, _)) => SchemaKind::Macro,
     _ => fn_annotation.fn_kind,
   };
-  // Legacy `?` is a property of the lexical parameter list, not of the
-  // Optional value type. Preserve it when a local function gains a signature.
+  // Legacy `?` is a property of the lexical parameter list, not of a
+  // nil-joined value type. Preserve it when a local function gains a signature.
   let runtime_arity = fn_annotation.runtime_arity.or_else(|| {
     let Calcit::List(params) = xs.get(2)? else { return None };
     let shape = super::analyze_def_schema_param_shape(params);
@@ -3631,7 +3661,7 @@ pub fn fixed_call_arguments_are_proven(callable: &Calcit, arguments: &[Calcit]) 
     || signature
       .arg_types
       .iter()
-      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)))
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred)))
   {
     return false;
   }
@@ -4011,7 +4041,7 @@ fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str)
 }
 
 pub(crate) fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usize) -> Option<Arc<CalcitTypeAnnotation>> {
-  if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = type_info {
+  if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) = type_info {
     return resolve_struct_field_type_by_index(inner, idx);
   }
   let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
@@ -4772,9 +4802,9 @@ mod tests {
       Some(option_number.clone())
     );
 
-    // An internal Optional wrapper is kept by the corrected compatibility
+    // An internal nil-join wrapper is kept by the corrected compatibility
     // direction instead of being dropped for the plain payload.
-    let optional_number = Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit));
+    let optional_number = Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Inferred));
     assert_eq!(
       merge_if_branch_types(number.clone(), optional_number.clone()),
       Some(optional_number)
@@ -5097,7 +5127,7 @@ mod tests {
     ));
     let callable = local(
       "maybe-format",
-      Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Calcit)),
+      Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Inferred)),
     );
     let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
     let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
@@ -5111,7 +5141,7 @@ mod tests {
       vec![Arc::new(CalcitTypeAnnotation::Number)],
       Arc::new(CalcitTypeAnnotation::String),
     ));
-    let optional_callable = Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Calcit));
+    let optional_callable = Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Inferred));
     let direct_call = Calcit::from(vec![local("maybe-format", optional_callable.clone()), Calcit::Number(1.0)]);
     assert_eq!(
       infer_type_from_expr(&direct_call, &ScopeTypes::new()),
@@ -5478,13 +5508,13 @@ mod tests {
     let optional_args = CalcitList::from(&[
       local(
         "maybe-user",
-        Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(user_type), NullableOrigin::Calcit)),
+        Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(user_type), NullableOrigin::Inferred)),
       ),
       key,
     ] as &[Calcit]);
     assert!(
       resolve_checked_call_contract(calcit::CORE_NS, "get", &optional_args, &ScopeTypes::new()).is_none(),
-      "legacy Optional receivers must be narrowed or converted before nominal lookup"
+      "nil-joined receivers must be narrowed or converted before nominal lookup"
     );
   }
 
@@ -5874,7 +5904,7 @@ mod tests {
       Some(CalcitTypeAnnotation::EnumDef(definition)) if definition.name() == enum_def.name()
     ));
     for open in [
-      Arc::new(CalcitTypeAnnotation::Nullable(nominal, NullableOrigin::Calcit)),
+      Arc::new(CalcitTypeAnnotation::Nullable(nominal, NullableOrigin::Inferred)),
       Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     ] {
       let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", open)]);

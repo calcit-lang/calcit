@@ -1577,7 +1577,7 @@
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-legacy-optional-inference $ %{} 'CodeEntry
-          :doc "|Legacy-contract test: pins assert-type against Optional; retire with Optional (0.32.0). The Option forms are asserted first."
+          :doc "|Pins assert-type and inferred types for Option and absence-returning core lookups."
           :code $ quote $ defn test-legacy-optional-inference ()
             let
                 opt-some $ Option :some 10
@@ -1586,14 +1586,6 @@
               assert-type opt-none $ quote $ Option Number
               &inspect-type opt-some
               &inspect-type opt-none
-            let
-                opt 10
-              assert-type opt $ quote $ Optional Number
-              &inspect-type opt
-            let
-                opt-nil nil
-              assert-type opt-nil $ quote $ Optional String
-              &inspect-type opt-nil
             let
                 xs $ [] 1 2
                 empty-xs $ empty xs

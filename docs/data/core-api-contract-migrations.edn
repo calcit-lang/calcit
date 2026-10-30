@@ -1,0 +1,21 @@
+
+{}
+  :migrations $ []
+    {} (:family |definitions) (:version |0.33.0) (:issue |#2233)
+      :reason "|legacy_Optional<T>_was_removed;_the_nil_join_argument_is_now_a_plain_type_variable"
+      :before $ {} (:declaration nil)
+        :failure "|nil_转为_Option_none，其余值原样包装为_some，不展开已有_Option"
+        :name 'calcit.core/nil->option
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Optional 'T
+          :generics $ [] 'T
+          :return $ :: 'Option 'T
+      :after $ {} (:declaration nil)
+        :failure "|nil_转为_Option_none，其余值原样包装为_some，不展开已有_Option"
+        :name 'calcit.core/nil->option
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'T
+          :generics $ [] 'T
+          :return $ :: 'Option 'T
