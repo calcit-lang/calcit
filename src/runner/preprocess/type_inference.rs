@@ -1116,6 +1116,17 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   call_expr: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  // A tuple position always exists, so `nth` with a literal index returns the
+  // bare slot value, matching its `&list:nth` lowering.
+  if ns == calcit::CORE_NS
+    && def == "nth"
+    && let (Some(receiver), Some(index)) = (call_expr.get(1), call_expr.get(2))
+    && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
+    && let Ok(index) = tuple_literal_index(index, slots.len())
+  {
+    return Some(slots[index].clone());
+  }
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
@@ -3054,6 +3065,8 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     return Some(inferred);
   }
   if matches!(proc, CalcitProc::List) {
+    // A heterogeneous literal stays an open List; it becomes a tuple only
+    // where a `Tuple` type is expected and checks position by position.
     return Some(Arc::new(CalcitTypeAnnotation::List(infer_homogeneous_type(
       xs.iter().skip(1),
       scope_types,
@@ -3103,6 +3116,19 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     {
       return Some(expected[1].clone());
     }
+  }
+  // A literal tuple index reads that slot's type, as `let[]` does after expansion.
+  // A computed index, as in generated `get` / `last` reads, can only see a
+  // homogeneous tuple's shared element type.
+  if matches!(proc, CalcitProc::NativeListNth)
+    && let (Some(receiver), Some(index)) = (xs.get(1), xs.get(2))
+    && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
+  {
+    return match tuple_literal_index(index, slots.len()) {
+      Ok(index) => Some(slots[index].clone()),
+      Err(_) => CalcitTypeAnnotation::homogeneous_tuple_item(slots).cloned(),
+    };
   }
   // `&list:nth` retains its unchecked payload type for guarded core macro
   // expansion. Unlike it, `&list:first` / `&list:last` return nominal
@@ -3402,6 +3428,18 @@ fn infer_collection_growth(proc: &CalcitProc, xs: &CalcitList, scope: &ScopeType
       Some(Arc::new(T::Set(member)))
     }
     _ => None,
+  }
+}
+
+/// The position a tuple read selects. Tuple slots have independent types, so
+/// the index must be a literal within the tuple's arity.
+pub(crate) fn tuple_literal_index(index: &Calcit, arity: usize) -> Result<usize, String> {
+  match index {
+    Calcit::Number(n) if n.fract() == 0.0 && *n >= 0.0 && (*n as usize) < arity => Ok(*n as usize),
+    Calcit::Number(n) => Err(format!("index {n} is out of range for a tuple of {arity} element(s)")),
+    _ => Err(String::from(
+      "a tuple index must be a literal number; use `let[]` to read every position, or treat a homogeneous tuple as `List T` for computed indexes",
+    )),
   }
 }
 

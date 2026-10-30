@@ -866,7 +866,7 @@ fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
       }
       assert_success(&run_calcit(&snapshot, &args), "create attached surface fixture");
     }
-    let code = "quote $ assert= (Option :some Choice) $ tuple-enum $ do $ %:: Choice :none";
+    let code = "quote $ do $ assert= (Option :some Choice) $ &tuple:enum $ %:: Choice :none";
     assert_success(
       &run_calcit(
         &snapshot,
@@ -936,7 +936,7 @@ fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
 }
 
 #[test]
-fn attached_removed_data_diagnostics_preserve_ambiguous_and_opaque_regions() {
+fn attached_removed_data_diagnostics_preserve_opaque_regions() {
   for selector in ["removed-data-api-v1", "surface-latest-v2"] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
@@ -952,12 +952,11 @@ fn attached_removed_data_diagnostics_preserve_ambiguous_and_opaque_regions() {
       assert_success(&run_calcit(&snapshot, &args), "create removed API boundary fixture");
     }
     for (name, code) in [
-      ("ambiguous", "quote $ tuple? 1"),
       (
         "opaque",
-        "quote $ do (tuple-enum $ Option :some 1) (opaque $ tuple-enum $ Option :some 2)",
+        "quote $ do (&tuple:enum $ Option :some 1) (opaque $ &tuple:enum $ Option :some 2)",
       ),
-      ("quoted", "quote $ assert= (quote $ tuple-enum 1) (quote $ tuple-enum 1)"),
+      ("quoted", "quote $ assert= (quote $ &tuple:enum 1) (quote $ &tuple:enum 1)"),
     ] {
       assert_success(
         &run_calcit(
@@ -995,7 +994,7 @@ fn attached_removed_data_diagnostics_preserve_ambiguous_and_opaque_regions() {
     assert_success(&preview, "removed API boundary preview");
     let report = parse_stdout(&preview);
     let suggestions = report["data"]["suggestions"].as_array().unwrap();
-    assert_eq!(suggestions.len(), 2, "{selector}: {report}");
+    assert_eq!(suggestions.len(), 1, "{selector}: {report}");
     assert!(
       suggestions
         .iter()
@@ -4255,7 +4254,7 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
     ("E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"),
   ];
   if !migrated {
-    expected.push(("W_FN_RETURN_TYPE_MISMATCH", "fix-command.main/fixable"));
+    expected.push(("E_FN_RETURN_UNPROVEN", "fix-command.main/fixable"));
   }
   let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
   assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
@@ -4309,7 +4308,7 @@ fn optional_parameter_rule_reports_review_evidence_without_writing() {
         "fix-command.main/ambiguous",
         "--overwrite",
         "--code",
-        "quote $ defn ambiguous (? value) (tuple? value)",
+        "quote $ defn ambiguous (? value) (nil? value)",
       ],
     ),
     "install legacy optional source",
@@ -4464,7 +4463,7 @@ fn optional_parameter_rule_reports_declared_type_candidate() {
         "fix-command.main/ambiguous",
         "--overwrite",
         "--code",
-        "quote $ defn ambiguous (? value) (tuple? value)",
+        "quote $ defn ambiguous (? value) (nil? value)",
       ],
     ),
     "install typed optional source",
@@ -8500,7 +8499,7 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
     preview_json["data"]["suggestions"][0]["source_file"],
     snapshot.to_string_lossy().as_ref()
   );
-  assert_eq!(preview_json["data"]["suggestions"][0]["replacement"]["value"], "enum-definition");
+  assert_eq!(preview_json["data"]["suggestions"][0]["replacement"]["value"], "&enum:definition");
   assert_eq!(preview_json["data"]["validation"]["status"], "passed");
   assert_eq!(preview_json["data"]["validation"]["staged_scope_preprocess"], true);
   assert_eq!(preview_json["data"]["validation"]["checked_operations"], 1);
@@ -8563,9 +8562,9 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
   assert_eq!(applied_json["data"]["mode"], "apply");
   assert_eq!(applied_json["data"]["changed"], true);
   let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
-  assert!(updated.contains("enum-definition value"));
-  assert!(!updated.contains("defn fixable (value) (tuple-enum value)"));
-  assert!(updated.contains("defn shadowed (tuple-enum value) (tuple-enum value)"));
+  assert!(updated.contains("&enum:definition value"));
+  assert!(!updated.contains("defn fixable (value) (&tuple:enum value)"));
+  assert!(updated.contains("defn shadowed (&tuple:enum value) (&tuple:enum value)"));
   let calcit_test = run_calcit(&snapshot, &["test", "fix-command.main/fixable", "--require-match"]);
   assert!(
     calcit_test.status.success(),
@@ -8582,20 +8581,6 @@ fn fix_preview_apply_and_repeat_are_revision_safe() {
   assert_eq!(repeated_json["data"]["validation"]["staged_scope_preprocess"], false);
   assert_eq!(repeated_json["data"]["validation"]["checked_operations"], 0);
   assert_eq!(repeated_json["data"]["suggestions"].as_array().map(Vec::len), Some(0));
-}
-
-#[test]
-fn ambiguous_removed_predicate_is_reported_without_a_replacement() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-
-  let preview = run_fix(&snapshot, &["--ns", "fix-command.main", "--def", "ambiguous", "--format", "json"]);
-  assert!(preview.status.success(), "stderr:\n{}", String::from_utf8_lossy(&preview.stderr));
-  let report = parse_stdout(&preview);
-  assert_eq!(report["data"]["changed"], false);
-  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review");
-  assert!(report["data"]["suggestions"][0]["replacement"].is_null());
 }
 
 #[test]

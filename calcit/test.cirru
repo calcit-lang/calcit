@@ -384,7 +384,7 @@
                 _ $ do (assert-type a0 NumBox)
                   let
                       a0-tuple a0
-                    assert-type a0-tuple 'Tuple
+                    assert-type a0-tuple 'Enum
                     assert= true $ any? (&enum:impls a0-tuple)
                       fn (impl)
                         = (impl-origin impl) (Option :some NumTrait)

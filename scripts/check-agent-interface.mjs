@@ -767,8 +767,8 @@ const scenarios = [
       if (
         suggestion.path !== "code@3.0" ||
         suggestion.applicability !== "machine-applicable" ||
-        suggestion.original?.value !== "tuple-enum" ||
-        suggestion.replacement?.value !== "enum-definition"
+        suggestion.original?.value !== "&tuple:enum" ||
+        suggestion.replacement?.value !== "&enum:definition"
       ) {
         throw new Error("fix preview lost its source path or quoted AST replacement");
       }
@@ -802,7 +802,7 @@ const scenarios = [
         throw new Error("strict workflow lost its plan or safe preset identity");
       }
       const expected = [
-        ["W_FN_RETURN_TYPE_MISMATCH", "fix-command.main/fixable"],
+        ["E_FN_RETURN_UNPROVEN", "fix-command.main/fixable"],
         ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/option-struct-field"],
         ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"],
       ];

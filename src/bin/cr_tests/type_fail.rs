@@ -4314,3 +4314,61 @@ fn type_fail_compact_type_expr_reports_syntax_errors() {
     assert!(error.to_string().contains("E_ASSERT_TYPE_MISMATCH"), "unexpected error: {error}");
   });
 }
+
+#[test]
+fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let tuple = "assert-type ([] 1 |a) (quote $ Tuple Number String)";
+    for (body, expected) in [
+      ("nth t 2", "index 2 is out of range"),
+      ("let ((i 0)) (nth t i)", "must be a literal number"),
+    ] {
+      let entries = load_snippet_entries(&format!("let ((t ({tuple}))) ({body})"));
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("an unproven tuple position must be rejected");
+      assert_eq!(error.code.as_deref(), Some("E_TUPLE_INDEX"), "{body}: {error}");
+      assert!(error.msg.contains(expected), "{body}: {error}");
+    }
+
+    for (body, code) in [
+      // `let[]` expands to `&list:nth`, which checks the same literal index.
+      ("let[] (a b c) t a", "W_TUPLE_INDEX"),
+      // A heterogeneous tuple has no element type, so it is never a List.
+      ("conj t 1", "W_FN_ARG_TYPE_MISMATCH"),
+      // Shape-rebuilding traits need the value used as `List T` first.
+      ("rest t", "W_GENERIC_WHERE_BOUND_MISMATCH"),
+      // A tuple read still goes through the ordinary proc arity check.
+      ("&list:nth t 0 1", "W_PROC_ARG_TYPE_MISMATCH"),
+      // Only a Number index reads a homogeneous tuple as `List T`.
+      (
+        "let ((h (assert-type ([] 1 2) (quote $ Tuple Number Number)))) (&list:nth h :bad)",
+        "W_TUPLE_INDEX",
+      ),
+    ] {
+      let entries = load_snippet_entries(&format!("let ((t ({tuple}))) ({body})"));
+      let warnings = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| warning.code() == Some(code)),
+        "{body} should report {code}, got: {warnings:?}"
+      );
+    }
+
+    let entries = load_snippet_entries("let ((t (assert-type ([] |a 1) (quote $ Tuple Number String)))) t");
+    let error = runner::preprocess::ensure_ns_def_compiled(
+      &entries.init_ns,
+      &entries.init_def,
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("a literal is checked position by position");
+    assert_eq!(error.code.as_deref(), Some("E_ASSERT_TYPE_MISMATCH"), "{error}");
+  });
+}

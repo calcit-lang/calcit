@@ -22,10 +22,6 @@
           :code $ quote $ defenum FixPersonChoice (:person 'fix-command.main/FixPerson) (:none)
           :examples $ []
           :schema $ quote EnumDef
-        'ambiguous $ %{} 'CodeEntry (:doc "|Removed predicate needs a semantic choice.")
-          :code $ quote $ defn ambiguous (value) (tuple? value)
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Bool)
         'defaulted-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn defaulted-struct-field (person) (:name person)
           :examples $ []
@@ -43,7 +39,7 @@
               dynamic-struct-field $ {} $ :name |Ada
             :tags $ #{} :migration
         'fixable $ %{} 'CodeEntry (:doc "|Exact removed API call.")
-          :code $ quote $ defn fixable (value) (tuple-enum value)
+          :code $ quote $ defn fixable (value) (&tuple:enum value)
           :examples $ []
           :schema $ quote $ Fn Enum
             -> $ calcit.core/Option EnumDef
@@ -173,7 +169,7 @@
             :tags $ #{} :migration
         'shadowed $ %{} 'CodeEntry
           :doc "|A local binding that shares the removed core API name."
-          :code $ quote $ defn shadowed (tuple-enum value) (tuple-enum value)
+          :code $ quote $ defn shadowed (&tuple:enum value) (&tuple:enum value)
           :examples $ []
           :schema $ quote $ Fn
             Fn Dynamic $ -> Dynamic

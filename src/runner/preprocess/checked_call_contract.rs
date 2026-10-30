@@ -276,6 +276,23 @@ pub(crate) fn resolve_checked_call_contract(
       let payload = resolve_type_value(items.get(payload_index)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
+  // Collection operations see a homogeneous tuple as `List T`. A heterogeneous
+  // tuple has no element type, so the receiver must be a List it cannot prove.
+  let receiver_type = match receiver_type.as_ref() {
+    T::Tuple(slots) if fn_def != "nth" => match T::homogeneous_tuple_item(slots) {
+      Some(item) => Arc::new(T::List(item.clone())),
+      None => {
+        let mut expected_types = vec![Arc::new(T::List(calcit::DYNAMIC_TYPE.clone()))];
+        expected_types.resize(required_arity, calcit::DYNAMIC_TYPE.clone());
+        return Some(CheckedCallContract {
+          expected_types: Some(expected_types),
+          return_type: calcit::DYNAMIC_TYPE.clone(),
+          lowering: None,
+        });
+      }
+    },
+    _ => receiver_type,
+  };
   if matches!(fn_def, "assoc-in" | "update-in") {
     let path_arg = args.get(1)?;
     let path = extract_literal_list_items(path_arg)?;

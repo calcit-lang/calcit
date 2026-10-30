@@ -2307,7 +2307,7 @@ fn optional_candidate_type_is_closed(annotation: &CalcitTypeAnnotation) -> bool 
       args.iter().all(|arg| optional_candidate_type_is_closed(arg))
         && (annotation.resolve_to_struct().is_some() || annotation.resolve_to_enum().is_some())
     }
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::Tuple(args) => {
       args.iter().all(|arg| optional_candidate_type_is_closed(arg))
     }
     CalcitTypeAnnotation::Fn(signature) => optional_candidate_signature_is_closed(signature),
@@ -5548,8 +5548,8 @@ mod tests {
   #[test]
   fn preserves_source_qualifier_for_exact_removed_api_migration() {
     assert_eq!(
-      migration_for_source_leaf("core/tuple-enum"),
-      Some((Some("core/enum-definition".to_owned()), "core/enum-definition".to_owned()))
+      migration_for_source_leaf("core/&tuple:enum"),
+      Some((Some("core/&enum:definition".to_owned()), "core/&enum:definition".to_owned()))
     );
   }
 
@@ -5563,11 +5563,9 @@ mod tests {
   }
 
   #[test]
-  fn keeps_ambiguous_tuple_predicate_for_review() {
-    assert_eq!(
-      migration_for_source_leaf("tuple?"),
-      Some((None, "enum? (values) or enum-def? (definitions)".to_owned()))
-    );
+  fn retired_enum_predicates_are_not_data_api_migrations() {
+    assert_eq!(migration_for_source_leaf("tuple?"), None);
+    assert_eq!(migration_for_source_leaf("tuple-enum"), None);
   }
 
   #[test]

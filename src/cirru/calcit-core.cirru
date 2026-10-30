@@ -13281,18 +13281,6 @@
           :schema $ quote $ Fn String (Option Bool)
             -> $ Result (List String) String
           :tags $ #{} :file :io
-        'tuple-enum $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn tuple-enum (_value)
-            raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>"
-          :examples $ []
-          :schema $ quote $ Fn Dynamic
-            -> $ Option Tag
-        'tuple? $ %{} 'CodeEntry
-          :doc "|Removed legacy predicate. Use enum? for values or enum-def? for definitions."
-          :code $ quote $ defn tuple? (_value)
-            raise "|`tuple?` was removed; use `enum?` for enum values or `enum-def?` for definitions"
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Bool)
         'turn-symbol $ %{} 'CodeEntry
           :doc "|内部 String → Symbol 转换。严格类型调用只接受 String，成功返回 Symbol；不支持的输入会报错。native 运行时仍接受 Tag/Symbol 作为历史兼容，但这不是静态类型契约；新代码不应依赖该隐式转换。"
           :code $ quote &runtime-implementation
