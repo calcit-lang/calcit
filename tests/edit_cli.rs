@@ -229,8 +229,12 @@ fn assert_query_schema_views(snapshot: &Path, target: &str, expected: Option<&st
       for output in [&def, &schema] {
         assert!(output.contains("_No explicit schema._"), "{output}");
       }
-      assert!(def_json["data"]["schema"].is_null(), "{def_json}");
-      assert!(schema_json["data"]["canonical_schema"].is_null(), "{schema_json}");
+      assert_eq!(def_json.pointer("/data/schema"), Some(&serde_json::Value::Null), "{def_json}");
+      assert_eq!(
+        schema_json.pointer("/data/canonical_schema"),
+        Some(&serde_json::Value::Null),
+        "{schema_json}"
+      );
     }
   }
 }

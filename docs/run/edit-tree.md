@@ -68,7 +68,7 @@ calcit edit def app.util/double --input-format cirru --code 'quote $ defn double
 
 `calcit edit schema app.main/helper --clear` 删除已有 schema 字段，而不是声明 `Dynamic`。如需显式开放声明，使用 `calcit edit schema app.main/helper --input-format cirru --code "quote Dynamic"`。两种状态拥有不同的 definition revision，不能混用旧的编辑前置条件或分析证据。
 
-`query def`、`query schema`、`query context` 和 `query defs` 也区分两者：显式声明显示为 `Dynamic`（JSON 中为 `"Dynamic"`），缺省时显示 `_No explicit schema._`（JSON 中为 `null`）。
+`query def`、`query schema` 和 `query context` 也区分两者：显式声明显示为 `Dynamic`（JSON 中为 `"Dynamic"`），缺省时显示 `_No explicit schema._`（JSON 中为 `null`）。`query defs` 用 `[schema]` 标记显式声明；加 `--signatures` 时显式声明显示为 `Dynamic`，缺省时显示 `(untyped)` 加定义头。
 
 清除声明不等于通过类型检查，也不启用新的推断能力；当前严格模式仍要求无法证明的函数边界提供结构化 `Fn` 契约。编辑后继续运行 `calcit --check-only`。函数体推断由 [#1307](https://github.com/calcit-lang/calcit/issues/1307) 跟进，不应通过自动补写 `Dynamic` 绕过。
 
