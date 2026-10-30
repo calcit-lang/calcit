@@ -420,6 +420,17 @@
                 assert= (Option :some 4) (get point 1)
                 assert= (Option :some 4) (last point)
               :tags $ #{} :tuple
+        'tuple-nested-with-one $ %{} 'CodeEntry (:doc "|Nests a generic tuple inside another tuple")
+          :code $ quote $ defn tuple-nested-with-one (x)
+            [] ([] x 1) |done
+          :examples $ []
+          :schema $ quote $ Fn T
+            -> $ Tuple (Tuple T Number) String
+            :generics T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-nested-generic-slot)
+            :code $ quote $ let[] (inner status) (tuple-nested-with-one |a)
+              let[] (label n) inner $ assert= |a1done $ str label n status
+            :tags $ #{} :tuple
         'tuple-with-one $ %{} 'CodeEntry (:doc "|Pairs a generic value with a number in a tuple")
           :code $ quote $ defn tuple-with-one (x) ([] x 1)
           :examples $ []

@@ -40,8 +40,8 @@ related:
 迁移方式：这两个名字没有 `calcit fix` 规则，因为 `tuple?` 需要按场景选 `enum?` 或 `enum-def?`。先找到残留调用，
 
 ```bash
-calcit query search 'tuple?'
-calcit query search 'tuple-enum'
+calcit query search 'tuple?' --source project --exact
+calcit query search 'tuple-enum' --source project --exact
 ```
 
 搜索结果的 `Path` 指向那个名字本身。按结果中的定义和路径逐处替换这个名字，用 `--expect` 确认改的是原来那个节点；判断定义时把 `enum?` 换成 `enum-def?`。最后跑一遍 `calcit --check-only --all-defs`：

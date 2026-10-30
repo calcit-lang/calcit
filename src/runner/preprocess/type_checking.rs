@@ -2063,6 +2063,33 @@ fn refined_generic_return_is_proven(
 }
 
 /// Check function return type matches declared return_type.
+/// Positional evidence for a `[]` literal checked against a tuple, recursing
+/// into nested tuple slots; other slots use ordinary inference.
+fn tuple_literal_evidence(
+  expr: &Calcit,
+  expected: &CalcitTypeAnnotation,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (CalcitTypeAnnotation::Tuple(slots), Calcit::List(items)) = (expected, expr) else {
+    return None;
+  };
+  if !matches!(items.first(), Some(Calcit::Proc(CalcitProc::List))) || items.len() - 1 != slots.len() {
+    return None;
+  }
+  Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+    items
+      .iter()
+      .skip(1)
+      .zip(slots.iter())
+      .map(|(item, slot)| {
+        tuple_literal_evidence(item, slot, scope_types)
+          .or_else(|| resolve_type_value(item, scope_types))
+          .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
+      })
+      .collect(),
+  ))))
+}
+
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
   declared_return_type: &Arc<CalcitTypeAnnotation>,
@@ -2157,20 +2184,7 @@ pub(crate) fn check_function_return_type(
   };
   // A heterogeneous literal infers as a List; against a declared tuple return,
   // its positions are the evidence, so generic slots keep their binders.
-  let actual_type = match (declared_return_type.as_ref(), last_expr) {
-    (CalcitTypeAnnotation::Tuple(slots), Calcit::List(items))
-      if matches!(items.first(), Some(Calcit::Proc(CalcitProc::List))) && items.len() - 1 == slots.len() =>
-    {
-      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
-        items
-          .iter()
-          .skip(1)
-          .map(|item| resolve_type_value(item, scope_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()))
-          .collect(),
-      )))
-    }
-    _ => actual_type,
-  };
+  let actual_type = tuple_literal_evidence(last_expr, declared_return_type, scope_types).unwrap_or(actual_type);
 
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
