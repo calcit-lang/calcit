@@ -386,7 +386,7 @@ workflow 还组合 `spread-call-proof-v1` 与 unsafe、assert、return、callabl
 `:preflight` 与 `analyze verify` 共享只读证据：Snapshot path/revision、Calcit/`@calcit/procs` 版本链、显式声明的 host
 requirements，以及只由调用方执行的 external gates。它不会运行 shell gate，也不会从项目文件猜测包管理器。
 无法自动应用的 source suggestion 单独保留在 `:review-required :source-fixes`，不会计入
-`:safe-fixes :suggestions`。只有 unresolved 与 explicit-unsafe 类型位置进入
+`:safe-fixes :suggestions`。只有 unresolved、js-ffi-non-host 与 explicit-unsafe 类型位置进入
 `:review-required :type-findings`；已显式声明的 JS FFI/type-slot Dynamic 单独进入 `:retained-type-boundaries`，
 macro syntax 与明确的 Unit 返回不会伪装成迁移债务。
 

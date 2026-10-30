@@ -3259,13 +3259,20 @@ fn find_legacy_optional_in_code(node: &Cirru) -> Option<&Cirru> {
     Some("::") if matches!(items.get(1), Some(Cirru::Leaf(value)) if value.starts_with('\'') && is_legacy_optional_leaf(value)) => {
       vec![node]
     }
-    Some("defstruct" | "defenum" | "deftrait") => items
+    Some(kind @ ("defstruct" | "defenum" | "deftrait")) => items
       .iter()
       .skip(2)
       .flat_map(|slot| match slot {
-        // The leading `:name` / `.method` is a member name, not a type.
+        // The leading `:name` / `.method` is a member name, not a type. A
+        // struct field holds one type followed by an optional default value;
+        // enum payloads and trait members are all types.
         Cirru::List(entry) if matches!(entry.first(), Some(Cirru::Leaf(key)) if key.starts_with([':', '.'])) => {
-          entry.iter().skip(1).collect::<Vec<_>>()
+          let types = entry.iter().skip(1);
+          if kind == "defstruct" {
+            types.take(1).collect::<Vec<_>>()
+          } else {
+            types.collect::<Vec<_>>()
+          }
         }
         other => vec![other],
       })
@@ -5477,6 +5484,8 @@ mod tests {
       ("defstruct Box (:optional :bool)", None),
       ("defenum Mode (:optional :number)", None),
       ("defstruct Box (:value (:optional :number))", Some(":optional :number")),
+      // A struct field default value is data, not a type.
+      ("defstruct Box (:value 'Map (:optional 1))", None),
       // A tag in runtime data and an ordinary call are not types.
       ("{} (:optional 1)", None),
       ("Optional 1", None),

@@ -54,9 +54,9 @@ related:
 
 | 旧写法 | 新写法 |
 | --- | --- |
-| `:args $ [] $ :: 'Optional 'String` | `:args $ [] $ :: 'Option 'String`，调用方传 `Option :some value` / `Option :none` |
-| struct 字段 `:: 'Optional 'Number` | `:: 'Option 'Number`，缺省时写 `Option :none`，构造时可用 `nil->option` 包装已有的可能为 nil 的值 |
-| `:return $ :: 'Optional 'T`（来自 nil 的结果） | `:return $ :: 'Option 'T`，函数体里用 `nil->option` 转换 |
+| 参数 `quote $ Fn (Optional String) (-> Unit)` | `quote $ Fn (Option String) (-> Unit)`，调用方传 `Option :some value` / `Option :none` |
+| struct 字段 `(:value $ quote $ Optional Number)` | `(:value $ quote $ Option Number)`，缺省时写 `Option :none`，构造时可用 `nil->option` 包装已有的可能为 nil 的值 |
+| 返回 `quote $ Fn T (-> $ Optional T)`（来自 nil 的结果） | `quote $ Fn T (-> $ Option T)`，函数体里用 `nil->option` 转换 |
 | 读取 JS 宿主属性的 `Optional<T>` | `JsNullish<T>`，转换时用 `js-nullish->option` |
 | `hint-fn $ Fn (Optional Number) ...` 的局部函数 | 参数改为 `Option Number`，或去掉可空声明并在调用前用 `when` / `nil?` 收窄 |
 
