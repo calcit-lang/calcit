@@ -1012,6 +1012,10 @@ fn let_bound_lambda_body_is_checked_per_call() {
         "caller shadows a captured callee",
         "    h $ fn (s) (str s)\n    g $ fn (y) (h y)\n  let\n      h f\n    g |abc",
       ),
+      (
+        "captured callee reassigned before the call",
+        "    h $ fn (x) (+ x 1)\n    g $ fn (y) (h y)\n  set! h $ fn (s) (str s)\n  g |abc",
+      ),
     ] {
       let found = diagnostics(body);
       assert!(

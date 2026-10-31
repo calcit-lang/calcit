@@ -14745,16 +14745,22 @@ fn recheck_let_lambda_call(
     .unwrap_or_else(|| format!(" (with the argument types of a call to `{}`)", local.sym));
   let mut types = lambda.scope_types.clone();
   let warnings = RefCell::new(vec![]);
+  // The body was traced when it was bound; a re-check must not add a second
+  // expression at the same source path.
+  let suspended_trace = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(None));
+  struct ResumeTrace(Option<SourceExpressionTrace>);
+  impl Drop for ResumeTrace {
+    fn drop(&mut self) {
+      let trace = self.0.take();
+      SOURCE_EXPRESSION_TRACE.with(|current| current.replace(trace));
+    }
+  }
+  let resume_trace = ResumeTrace(suspended_trace);
   let rechecked = explicit_open::with_scope_locals(&lambda.scope_locals, || {
     preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack)
   });
-  if let Err(mut error) = rechecked {
-    if !reports_let_lambda_recheck(error.code.as_deref(), &error.msg) {
-      return Ok(());
-    }
-    error.msg.push_str(&called_at);
-    return Err(error);
-  }
+  drop(resume_trace);
+  // Warnings found before a failure are reported whatever happens to it.
   let mut target = check_warnings.borrow_mut();
   for mut warning in warnings.into_inner() {
     if !reports_let_lambda_recheck(warning.code(), warning.message()) {
@@ -14769,6 +14775,13 @@ fn recheck_let_lambda_call(
       continue;
     }
     target.push(warning);
+  }
+  drop(target);
+  if let Err(mut error) = rechecked
+    && reports_let_lambda_recheck(error.code.as_deref(), &error.msg)
+  {
+    error.msg.push_str(&called_at);
+    return Err(error);
   }
   Ok(())
 }
