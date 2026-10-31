@@ -82,6 +82,9 @@ pub struct IrEmitOptions {
 }
 
 pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str, options: IrEmitOptions) -> Result<(), String> {
+  if options.sources_only && !ir_sources::has_ir_sources() {
+    return Err("`ir --sources-only` needs Snapshot sources, but none were installed for this run".to_owned());
+  }
   let program_data = program::clone_compiled_program_snapshot()?;
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
@@ -549,6 +552,20 @@ mod tests {
   use cirru_edn::{Edn, EdnTag};
   use std::collections::HashSet;
   use std::sync::Arc;
+
+  #[test]
+  fn sources_only_requires_installed_sources() {
+    let directory = std::env::temp_dir().join(format!("calcit-ir-sources-only-{}", std::process::id()));
+    let error = super::emit_ir(
+      "app.main/main!",
+      "app.main/reload!",
+      directory.to_str().expect("UTF-8 path"),
+      super::IrEmitOptions { sources_only: true },
+    )
+    .expect_err("sources-only IR without Snapshot sources must fail");
+    assert!(error.contains("--sources-only"), "{error}");
+    assert!(!directory.join("program-ir.cirru").exists(), "no partial artifact is written");
+  }
 
   #[test]
   fn dumps_impl_values_for_ir() {

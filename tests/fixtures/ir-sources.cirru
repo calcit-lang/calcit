@@ -6,9 +6,17 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'app.main
-    %{} 'FileEntry
+  :files $ {}
+    'app.empty $ %{} 'FileEntry
       :defs $ {}
+      :ns $ %{} 'NsEntry (:doc "|Namespace without definitions")
+        :code $ quote $ ns app.empty
+    'app.main $ %{} 'FileEntry
+      :defs $ {}
+        'Point $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Point (:x 'Number)
+          :examples $ []
+          :schema $ quote StructDef
         'double $ %{} 'CodeEntry (:doc "|Twice the input")
           :code $ quote $ defn double (n)
             let
@@ -20,6 +28,10 @@
           :code $ quote $ defn main! () (double 21)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
+        'read-point $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-point (raw) (decode-map-as raw 'app.main/Point)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> app.main/Point)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

@@ -13,7 +13,7 @@ use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
-use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitTypeAnnotation, LocatedWarning};
+use crate::calcit::{Calcit, CalcitLocal, CalcitTypeAnnotation, LocatedWarning};
 use crate::call_stack::CallStackList;
 use crate::program::{self, CompiledDefKind};
 use crate::runner::preprocess;
@@ -170,7 +170,8 @@ pub(crate) fn dump_sources(compiled: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> E
       .keys()
       .filter(|def| file.origin == IrSourceOrigin::Project || reached.is_some_and(|defs| defs.contains(*def)))
       .collect();
-    if def_names.is_empty() {
+    // An empty project namespace still has an `ns` form readers can show.
+    if def_names.is_empty() && file.origin != IrSourceOrigin::Project {
       continue;
     }
     def_names.sort();
@@ -316,24 +317,13 @@ pub(crate) fn type_display(annotation: &CalcitTypeAnnotation) -> String {
 }
 
 /// Definitions referenced by compiled code, as sorted `ns/def` strings.
+/// Uses the same collection as the compiler's dependency graph, so nominal
+/// types named by typed decode calls are edges too.
 fn collect_deps(code: &Calcit, ns: &str, def: &str) -> Vec<String> {
-  fn walk(code: &Calcit, found: &mut BTreeSet<String>) {
-    match code {
-      Calcit::Import(CalcitImport { ns, def, .. }) => {
-        found.insert(format!("{ns}/{def}"));
-      }
-      Calcit::List(xs) => xs.traverse(&mut |x| walk(x, found)),
-      Calcit::Fn { info, .. } => {
-        for x in &info.body {
-          walk(x, found);
-        }
-      }
-      Calcit::Thunk(thunk) => walk(thunk.get_code(), found),
-      _ => {}
-    }
-  }
-  let mut found = BTreeSet::new();
-  walk(code, &mut found);
+  let mut found: BTreeSet<String> = program::collect_compiled_dep_names(code)
+    .into_iter()
+    .map(|(dep_ns, dep_def)| format!("{dep_ns}/{dep_def}"))
+    .collect();
   found.remove(&format!("{ns}/{def}"));
   found.into_iter().collect()
 }

@@ -88,6 +88,19 @@ fn ir_sources_carry_source_types_and_dependencies() {
   assert_eq!(member(unused, Edn::tag("type")), &Edn::str("Fn String $ -> String"));
   assert!(path_types(unused).contains(&("3".to_owned(), "String".to_owned())));
 
+  // Typed decode calls name nominal types through a data-shape handle, not an import.
+  let read_point = member(defs, Edn::str("read-point"));
+  assert_eq!(
+    member(read_point, Edn::tag("deps")),
+    &Edn::List(cirru_edn::EdnListView(vec![Edn::str("app.main/Point")]))
+  );
+
+  // A project namespace without definitions keeps its ns form for readers.
+  let empty = member(sources, Edn::str("app.empty"));
+  assert_eq!(member(empty, Edn::tag("ns-doc")), &Edn::str("Namespace without definitions"));
+  assert!(matches!(member(empty, Edn::tag("ns-code")), Edn::Quote(_)));
+  assert!(matches!(member(empty, Edn::tag("defs")), Edn::Map(map) if map.0.is_empty()));
+
   // Library namespaces list the definitions the compiled program holds.
   let core = member(sources, Edn::str("calcit.core"));
   assert_eq!(member(core, Edn::tag("origin")), &Edn::tag("core"));
