@@ -355,6 +355,16 @@ CALCIT_PROOF_AUDIT=0 CALCIT_LINT_CORE=1 yarn check-all
 验证。该脚本主动清除 `CALCIT_PROOF_AUDIT`，执行默认审计的合法用例与错误拒绝用例；
 通用 fixture 模式不会替代这一门禁。对比本地与 CI 的结果时，先记录完整命令和上述两个环境变量。
 
+CI 的 Core and CLI checks 还统计 core Snapshot 中未归类的弱类型位置，数量只能持平或下降：
+
+```bash
+calcit src/cirru/calcit-core.cirru analyze weak-types --summary-only --format json \
+  | jq '.data.summary.intents.unresolved'
+```
+
+上限写在 `.github/workflows/test.yaml` 的 `UNRESOLVED_LIMIT`。数量下降时，在同一个 PR 里把上限改成新的数量；
+新增的位置应写出具体类型，确实开放的边界归入已有的 intent 分类。
+
 普通业务项目继续使用默认证明审计：
 
 ```bash
