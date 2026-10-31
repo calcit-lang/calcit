@@ -42,11 +42,11 @@ calcit calcit.cirru ir --sources-only
 | `:source` | Snapshot 中的原始代码（`quote`） |
 | `:doc` | 定义文档 |
 | `:head` | 源码首个叶子，如 `defn`、`defcomp`、`defstruct` |
-| `:kind` | 编译结果类别：`:fn`、`:macro`、`:value`、`:lazy-value` 等 |
+| `:kind` | 编译结果类别：`:fn`、`:macro`、`:value`、`:lazy-value` 等；calcit.core 中的语法（如 `defn`、`if`）为 `:syntax` |
 | `:schema` | 声明的 schema，精简写法字符串；未声明时为 `nil` |
 | `:type` | 编译器采用的类型，精简写法字符串 |
 | `:deps` | 编译后代码引用的定义，`ns/def` 字符串列表 |
-| `:types` | 仅项目定义：`[] path type` 列表，`path` 与 `query type-at --path` 使用同一套坐标，空字符串表示整个定义 |
+| `:types` | 仅项目定义：`[] path type` 列表，`path` 与 `query type-at --path` 使用同一套坐标，空字符串表示整个定义。包含调用表达式的结果类型、参数与局部变量（含 `Dynamic`）、以及调用内建函数或其他定义时调用头的签名；宏调用的头没有类型 |
 | `:hash` | 源码、schema 与文档的摘要，内容不变时保持不变 |
 | `:error` | 仅在该定义编译失败时出现 |
 

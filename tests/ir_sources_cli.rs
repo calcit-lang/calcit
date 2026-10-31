@@ -77,7 +77,15 @@ fn ir_sources_carry_source_types_and_dependencies() {
   assert!(types.contains(&("3.1.0.0".to_owned(), "Number".to_owned())), "{types:?}");
   assert!(types.contains(&("3.1.0.1".to_owned(), "Number".to_owned())), "{types:?}");
 
+  // The head of a call to a builtin gets the builtin's signature.
+  assert!(
+    types.iter().any(|(path, t)| path == "3.1.0.1.0" && t.starts_with("Fn Number")),
+    "{types:?}"
+  );
+
   let main = member(defs, Edn::str("main!"));
+  // The head of a call to another definition gets that definition's type.
+  assert!(path_types(main).contains(&("3.0".to_owned(), "Fn Number $ -> Number".to_owned())));
   assert_eq!(
     member(main, Edn::tag("deps")),
     &Edn::List(cirru_edn::EdnListView(vec![Edn::str("app.main/double")]))
@@ -90,6 +98,16 @@ fn ir_sources_carry_source_types_and_dependencies() {
 
   // Typed decode calls name nominal types through a data-shape handle, not an import.
   let read_point = member(defs, Edn::str("read-point"));
+  // Parameters are recorded even when their type is Dynamic.
+  assert!(path_types(read_point).contains(&("2.0".to_owned(), "Dynamic".to_owned())));
+  // A macro head such as `defstruct` lowers to another call and gets no type.
+  assert!(!path_types(member(defs, Edn::str("Point"))).iter().any(|(path, _)| path == "0"));
+  // A macro head written as a fully qualified `ns/def` is excluded too.
+  assert!(
+    !path_types(member(defs, Edn::str("qualified-macro")))
+      .iter()
+      .any(|(path, _)| path == "3.0")
+  );
   assert_eq!(
     member(read_point, Edn::tag("deps")),
     &Edn::List(cirru_edn::EdnListView(vec![Edn::str("app.main/Point")]))
@@ -105,6 +123,11 @@ fn ir_sources_carry_source_types_and_dependencies() {
   let core = member(sources, Edn::str("calcit.core"));
   assert_eq!(member(core, Edn::tag("origin")), &Edn::tag("core"));
   assert!(has_member(member(core, Edn::tag("defs")), Edn::str("*")));
+  // Core syntax is a runtime stub; `:kind` names it as syntax.
+  assert_eq!(
+    member(member(member(core, Edn::tag("defs")), Edn::str("defn")), Edn::tag("kind")),
+    &Edn::tag("syntax")
+  );
 }
 
 #[test]

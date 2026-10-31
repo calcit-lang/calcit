@@ -13,7 +13,9 @@ use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
-use crate::calcit::{Calcit, CalcitLocal, CalcitTypeAnnotation, LocatedWarning};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, SchemaKind,
+};
 use crate::call_stack::CallStackList;
 use crate::program::{self, CompiledDefKind};
 use crate::runner::preprocess;
@@ -238,10 +240,15 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn 
     (Edn::tag("head"), source_head(source)),
     (
       Edn::tag("kind"),
-      compiled
-        .as_ref()
-        .map(|compiled| compiled_kind_tag(&compiled.kind))
-        .unwrap_or(Edn::Nil),
+      // Core syntax such as `defn` or `if` is registered as a runtime stub; name it for readers.
+      if ns == crate::calcit::CORE_NS && CalcitSyntax::is_valid(def) {
+        Edn::tag("syntax")
+      } else {
+        compiled
+          .as_ref()
+          .map(|compiled| compiled_kind_tag(&compiled.kind))
+          .unwrap_or(Edn::Nil)
+      },
     ),
     (Edn::tag("doc"), Edn::str(doc)),
     (Edn::tag("source"), Edn::Quote(source.to_owned())),
@@ -329,8 +336,10 @@ fn collect_deps(code: &Calcit, ns: &str, def: &str) -> Vec<String> {
 }
 
 /// Inferred types keyed by dotted source path. Call results come from the
-/// compiler's source expression trace; locals keep their preprocessing type
-/// at the coordinate of the symbol they were read from.
+/// compiler's source expression trace, and the head symbol of a traced call to a
+/// builtin or another definition gets that callee's signature. Locals keep their
+/// preprocessing type, `Dynamic` included, at the coordinate of the symbol they
+/// were read from; parameters and `let` names are locals too.
 fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<&Calcit>) -> BTreeMap<String, String> {
   let mut found: BTreeMap<String, String> = BTreeMap::new();
   let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -340,9 +349,15 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
         continue;
       }
       if let Some(annotation) = &item.inferred_type {
-        found
-          .entry(path_key(&item.location.coord))
-          .or_insert_with(|| type_display(annotation));
+        record_type(&mut found, &item.location.coord, annotation);
+      }
+      let mut head_path = item.location.coord.to_vec();
+      head_path.push(0);
+      if let Some(head) = source_leaf_at(source, &head_path)
+        && !names_macro(ns, head)
+        && let Some(annotation) = call_head_type(&item.processed)
+      {
+        record_type(&mut found, &head_path, &annotation);
       }
     }
   }
@@ -353,11 +368,8 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
         location: Some(coord),
         type_info,
         ..
-      }) if info.at_ns.as_ref() == ns
-        && info.at_def.as_ref() == def
-        && !matches!(type_info.as_ref(), CalcitTypeAnnotation::Dynamic) =>
-      {
-        found.entry(path_key(coord)).or_insert_with(|| type_display(type_info));
+      }) if info.at_ns.as_ref() == ns && info.at_def.as_ref() == def => {
+        record_type(found, coord, type_info);
       }
       Calcit::List(xs) => xs.traverse(&mut |x| walk(x, ns, def, found)),
       Calcit::Fn { info, .. } => {
@@ -372,6 +384,81 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
     walk(code, ns, def, &mut found);
   }
   found
+}
+
+/// Keeps the first type seen at a path, except that a concrete type replaces `Dynamic`.
+fn record_type(found: &mut BTreeMap<String, String>, coord: &[u16], annotation: &CalcitTypeAnnotation) {
+  let text = type_display(annotation);
+  let key = path_key(coord);
+  match found.get(&key) {
+    Some(existing) if existing != "Dynamic" || text == "Dynamic" => {}
+    _ => {
+      found.insert(key, text);
+    }
+  }
+}
+
+/// Signature of the callee at the head of a processed call: a builtin proc or an imported definition.
+fn call_head_type(processed: &Calcit) -> Option<CalcitTypeAnnotation> {
+  let Calcit::List(items) = processed else { return None };
+  match items.first()? {
+    Calcit::Proc(proc) => {
+      let signature = proc.get_type_signature()?;
+      Some(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: signature.arg_types.clone(),
+        return_type: signature.return_type.clone(),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(Default::default()),
+        runtime_arity: None,
+      })))
+    }
+    Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_codegen_type_hint(ns, def).map(|annotation| (*annotation).clone()),
+    _ => None,
+  }
+}
+
+/// Whether a head symbol names a macro. Its call lowers to unrelated code, so
+/// the lowered callee's signature would describe something the reader did not write.
+fn names_macro(ns: &str, head: &str) -> bool {
+  let target = match head.split_once('/') {
+    // `alias/def` through an `:as` import, otherwise a namespace written out in full.
+    Some((alias, def)) if !alias.is_empty() && !def.is_empty() => Some((
+      program::lookup_ns_target_in_import(ns, alias).map_or_else(|| alias.to_owned(), |target| target.to_string()),
+      def.to_owned(),
+    )),
+    _ => {
+      if program::has_def_code(ns, head) {
+        Some((ns.to_owned(), head.to_owned()))
+      } else if let Some(target) = program::lookup_def_target_in_import(ns, head) {
+        Some((target.to_string(), head.to_owned()))
+      } else {
+        Some((crate::calcit::CORE_NS.to_owned(), head.to_owned()))
+      }
+    }
+  };
+  target.is_some_and(|(target_ns, target_def)| {
+    matches!(
+      program::lookup_def_code(&target_ns, &target_def),
+      Some(Calcit::List(items)) if matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro")
+    )
+  })
+}
+
+fn source_leaf_at<'a>(source: &'a Cirru, path: &[u16]) -> Option<&'a str> {
+  let mut node = source;
+  for idx in path {
+    match node {
+      Cirru::List(items) => node = items.get(*idx as usize)?,
+      Cirru::Leaf(_) => return None,
+    }
+  }
+  match node {
+    Cirru::Leaf(text) => Some(text.as_ref()),
+    Cirru::List(_) => None,
+  }
 }
 
 fn path_key(coord: &[u16]) -> String {
