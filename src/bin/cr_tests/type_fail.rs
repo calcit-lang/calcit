@@ -992,6 +992,10 @@ fn let_bound_lambda_body_is_checked_per_call() {
       ("pass through", "    g $ fn (h x) (h x)\n  g f |abc"),
       ("fixed argument", "    apply1 $ fn (h) (h |abc)\n  apply1 f"),
       ("call a Number", "    g $ fn (h x) (h x)\n  g 1 3"),
+      (
+        "captured callee shadowed at the call",
+        "    h f\n    g $ fn (y) (h y)\n  let\n      h $ fn (s) (str s)\n    g |abc",
+      ),
     ] {
       let found = diagnostics(body);
       assert!(
@@ -1004,6 +1008,10 @@ fn let_bound_lambda_body_is_checked_per_call() {
       ("matching argument", "    g $ fn (h x) (h x)\n  g f 3"),
       ("unknown argument", "    g $ fn (h x) (h x)\n  fn (y) (g f y)"),
       ("shadowed name", "    g $ fn (h x) (h x)\n    use $ fn (g) (g f |abc)\n  , use"),
+      (
+        "caller shadows a captured callee",
+        "    h $ fn (s) (str s)\n    g $ fn (y) (h y)\n  let\n      h f\n    g |abc",
+      ),
     ] {
       let found = diagnostics(body);
       assert!(
@@ -1011,6 +1019,14 @@ fn let_bound_lambda_body_is_checked_per_call() {
         "{label}: no diagnostic should come from re-checking: {found:?}"
       );
     }
+
+    // Each call reports its own argument types, even at the same body location.
+    let found = diagnostics("    g $ fn (h x) (h x)\n  g f |abc\n  g f :tag");
+    let rechecked = found
+      .iter()
+      .filter(|item| item.contains("with the argument types of the call to `g`"))
+      .count();
+    assert_eq!(rechecked, 2, "both calls should be reported: {found:?}");
   });
 }
 

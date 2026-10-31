@@ -14745,7 +14745,10 @@ fn recheck_let_lambda_call(
     .unwrap_or_else(|| format!(" (with the argument types of a call to `{}`)", local.sym));
   let mut types = lambda.scope_types.clone();
   let warnings = RefCell::new(vec![]);
-  if let Err(mut error) = preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack) {
+  let rechecked = explicit_open::with_scope_locals(&lambda.scope_locals, || {
+    preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack)
+  });
+  if let Err(mut error) = rechecked {
     if !reports_let_lambda_recheck(error.code.as_deref(), &error.msg) {
       return Ok(());
     }
@@ -14754,14 +14757,17 @@ fn recheck_let_lambda_call(
   }
   let mut target = check_warnings.borrow_mut();
   for mut warning in warnings.into_inner() {
-    if !reports_let_lambda_recheck(warning.code(), warning.message())
-      || target
-        .iter()
-        .any(|existing| existing.location() == warning.location() && existing.code() == warning.code())
-    {
+    if !reports_let_lambda_recheck(warning.code(), warning.message()) {
       continue;
     }
+    // The suffix names the call, so distinct calls stay distinct while a
+    // body re-checked twice for the same call reports once.
     warning.append_message(&called_at);
+    if target.iter().any(|existing| {
+      existing.location() == warning.location() && existing.code() == warning.code() && existing.message() == warning.message()
+    }) {
+      continue;
+    }
     target.push(warning);
   }
   Ok(())
@@ -14812,6 +14818,7 @@ pub fn preprocess_core_let(
           arity,
           scope_defs: body_defs.clone(),
           scope_types: body_types.clone(),
+          scope_locals: explicit_open::capture_scope_locals(),
         });
       let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
       // The initializer executes before the new binding shadows its name.

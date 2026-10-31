@@ -28,6 +28,32 @@ pub(super) struct LetLambda {
   pub(super) arity: usize,
   pub(super) scope_defs: HashSet<Arc<str>>,
   pub(super) scope_types: ScopeTypes,
+  pub(super) scope_locals: ScopeLocals,
+}
+
+/// The lexical binding records visible where a `&let` lambda was written. A
+/// re-check at a call site resolves the body's locals against these, so a
+/// caller's shadowing binding with the same name does not stand in for them.
+pub(super) struct ScopeLocals(HashMap<BindingKey, LocalContract>);
+
+pub(super) fn capture_scope_locals() -> ScopeLocals {
+  ScopeLocals(EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().clone()))
+}
+
+/// Run `f` with the captured records in place, restoring the caller's records
+/// afterwards, including on unwinding.
+pub(super) fn with_scope_locals<R>(locals: &ScopeLocals, f: impl FnOnce() -> R) -> R {
+  struct Restore(Option<HashMap<BindingKey, LocalContract>>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      if let Some(previous) = self.0.take() {
+        EXPLICIT_OPEN_LOCALS.with(|marks| *marks.borrow_mut() = previous);
+      }
+    }
+  }
+  let previous = EXPLICIT_OPEN_LOCALS.with(|marks| std::mem::replace(&mut *marks.borrow_mut(), locals.0.clone()));
+  let _restore = Restore(Some(previous));
+  f()
 }
 
 thread_local! {
