@@ -13,7 +13,9 @@ use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
-use crate::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
+use crate::calcit::{
+  Calcit, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, SchemaKind,
+};
 use crate::call_stack::CallStackList;
 use crate::program::{self, CompiledDefKind};
 use crate::runner::preprocess;
@@ -238,10 +240,15 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn 
     (Edn::tag("head"), source_head(source)),
     (
       Edn::tag("kind"),
-      compiled
-        .as_ref()
-        .map(|compiled| compiled_kind_tag(&compiled.kind))
-        .unwrap_or(Edn::Nil),
+      // Core syntax such as `defn` or `if` is registered as a runtime stub; name it for readers.
+      if ns == crate::calcit::CORE_NS && CalcitSyntax::is_valid(def) {
+        Edn::tag("syntax")
+      } else {
+        compiled
+          .as_ref()
+          .map(|compiled| compiled_kind_tag(&compiled.kind))
+          .unwrap_or(Edn::Nil)
+      },
     ),
     (Edn::tag("doc"), Edn::str(doc)),
     (Edn::tag("source"), Edn::Quote(source.to_owned())),

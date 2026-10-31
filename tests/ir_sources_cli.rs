@@ -117,6 +117,11 @@ fn ir_sources_carry_source_types_and_dependencies() {
   let core = member(sources, Edn::str("calcit.core"));
   assert_eq!(member(core, Edn::tag("origin")), &Edn::tag("core"));
   assert!(has_member(member(core, Edn::tag("defs")), Edn::str("*")));
+  // Core syntax is a runtime stub; `:kind` names it as syntax.
+  assert_eq!(
+    member(member(member(core, Edn::tag("defs")), Edn::str("defn")), Edn::tag("kind")),
+    &Edn::tag("syntax")
+  );
 }
 
 #[test]

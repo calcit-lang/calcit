@@ -42,7 +42,7 @@ calcit calcit.cirru ir --sources-only
 | `:source` | Snapshot 中的原始代码（`quote`） |
 | `:doc` | 定义文档 |
 | `:head` | 源码首个叶子，如 `defn`、`defcomp`、`defstruct` |
-| `:kind` | 编译结果类别：`:fn`、`:macro`、`:value`、`:lazy-value` 等 |
+| `:kind` | 编译结果类别：`:fn`、`:macro`、`:value`、`:lazy-value` 等；calcit.core 中的语法（如 `defn`、`if`）为 `:syntax` |
 | `:schema` | 声明的 schema，精简写法字符串；未声明时为 `nil` |
 | `:type` | 编译器采用的类型，精简写法字符串 |
 | `:deps` | 编译后代码引用的定义，`ns/def` 字符串列表 |
