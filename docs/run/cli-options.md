@@ -595,6 +595,8 @@ calcit --disable-stack
 
 `calcit ir` 仅用于编译器内部表示与生成结果调试，不是普通应用的运行目标或 CI 完成证明。只有排查该层问题时才查看 `calcit ir --help`；日常项目验证仍使用直接运行、`--check-only`、`test` 或目标明确的 `js` / `wasm` / `wasi`。
 
+`calcit ir --sources-only` 只写出给阅读工具（如 calcit-viewer）使用的 `:meta`、`:configs` 和 `:sources`，跳过展开后的 `:files`。`:sources` 按命名空间列出每个定义的原始源码、文档、声明 schema、编译器采用的类型、依赖的定义、按源码路径记录的推断类型和内容哈希，详见[开发调试](debugging.md#给阅读工具的-sources)。
+
 ## Snapshot 语义差异
 
 升级 review 统一使用现有 `analyze program-diff` 入口，不再增加独立的 diff/query 命令：

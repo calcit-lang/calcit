@@ -10,6 +10,7 @@ pub mod emit_js;
 #[path = "wasm/emit_wasm.rs"]
 pub mod emit_wasm;
 pub mod gen_ir;
+pub mod ir_sources;
 
 /// switch whether in codegen mode
 static CODEGEN_MODE: AtomicBool = AtomicBool::new(true);

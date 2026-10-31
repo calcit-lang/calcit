@@ -471,6 +471,14 @@ fn collect_compiled_dep_keys(code: &Calcit, deps: &mut Vec<(Arc<str>, Arc<str>)>
   }
 }
 
+/// `ns/def` pairs referenced by compiled code, including nominal types read by
+/// typed EDN parse and decode calls; repeated and unregistered pairs are kept.
+pub fn collect_compiled_dep_names(code: &Calcit) -> Vec<(Arc<str>, Arc<str>)> {
+  let mut keys: Vec<(Arc<str>, Arc<str>)> = vec![];
+  collect_compiled_dep_keys(code, &mut keys);
+  keys
+}
+
 pub fn collect_compiled_deps(code: &Calcit) -> Vec<DefId> {
   let mut keys: Vec<(Arc<str>, Arc<str>)> = vec![];
   collect_compiled_dep_keys(code, &mut keys);

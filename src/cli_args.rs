@@ -345,6 +345,9 @@ pub struct EmitIrCommand {
   /// enable watch mode (default behavior is run once)
   #[argh(switch, short = 'w')]
   pub watch: bool,
+  /// write only `:meta`, `:configs` and `:sources` (source, docs, types, deps) for program viewers
+  #[argh(switch)]
+  pub sources_only: bool,
 }
 
 /// evaluate snippet
