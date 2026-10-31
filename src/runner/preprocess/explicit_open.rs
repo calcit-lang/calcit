@@ -17,6 +17,17 @@ struct LocalContract {
   annotation: Arc<CalcitTypeAnnotation>,
   static_callee: Option<Calcit>,
   callee_used: bool,
+  let_lambda: Option<Arc<LetLambda>>,
+}
+
+/// A `&let`-bound lambda literal without a contextual signature (#1655). Its
+/// parameters get no types from the binding, so each call re-checks the body
+/// with the call's argument types, in the scope the literal was written in.
+pub(super) struct LetLambda {
+  pub(super) form: Calcit,
+  pub(super) arity: usize,
+  pub(super) scope_defs: HashSet<Arc<str>>,
+  pub(super) scope_types: ScopeTypes,
 }
 
 thread_local! {
@@ -47,6 +58,7 @@ impl ExplicitOpenScope {
       annotation: local.type_info.clone(),
       static_callee: None,
       callee_used: false,
+      let_lambda: None,
     };
     let previous = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow_mut().insert(key.clone(), contract));
     self.0.push((key, previous));
@@ -68,6 +80,31 @@ pub(super) fn retain_static_callee(local: &Calcit, value: Option<Calcit>) {
       contract.static_callee = value.filter(|value| matches!(value, Calcit::Fn { .. }));
     }
   });
+}
+
+/// Remember the source lambda bound by `&let`; parameters and shadowing
+/// bindings replace the record like any other contract.
+pub(super) fn retain_let_lambda(local: &Calcit, lambda: LetLambda) {
+  let Calcit::Local(local) = local else { return };
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    if let Some(contract) = marks.borrow_mut().get_mut(&binding_key(local)) {
+      contract.let_lambda = Some(Arc::new(lambda));
+    }
+  });
+}
+
+/// The lambda a call head refers to, while the reference keeps the binding's
+/// original contract.
+pub(super) fn let_lambda(local: &CalcitLocal, types: &ScopeTypes) -> Option<Arc<LetLambda>> {
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    marks
+      .borrow()
+      .get(&binding_key(local))
+      .filter(|contract| {
+        contract.annotation == local.type_info && types.get(&local.sym).is_none_or(|annotation| *annotation == contract.annotation)
+      })
+      .and_then(|contract| contract.let_lambda.clone())
+  })
 }
 
 /// Return identity only while both the binding and its reference retain the
@@ -104,6 +141,7 @@ pub(super) fn invalidate_static_callee(local: &CalcitLocal) -> bool {
       return false;
     };
     contract.static_callee = None;
+    contract.let_lambda = None;
     contract.callee_used
   })
 }

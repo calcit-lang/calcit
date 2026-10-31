@@ -5793,6 +5793,15 @@ fn preprocess_list_call(
               )?;
             }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
+            recheck_let_lambda_call(
+              local,
+              &updated_args,
+              scope_types,
+              file_ns,
+              check_warnings,
+              call_stack,
+              call_info.call_location.as_ref(),
+            )?;
           }
         }
 
@@ -14611,6 +14620,146 @@ fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warn
   }
 }
 
+/// Parameter count of a `fn` literal whose parameters are plain names and
+/// whose body declares no signature with `hint-fn`; such a lambda has no
+/// contextual signature when it is bound by `&let` (#1655).
+fn plain_lambda_arity(form: &Calcit) -> Option<usize> {
+  let Calcit::List(items) = form else { return None };
+  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn") {
+    return None;
+  }
+  let Some(Calcit::List(parameters)) = items.get(1) else {
+    return None;
+  };
+  let plain = parameters
+    .iter()
+    .all(|parameter| matches!(parameter, Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?")));
+  let hinted = items.iter().skip(2).any(|item| {
+    matches!(item, Calcit::List(body) if matches!(body.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn")
+      || matches!(body.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _))))
+  });
+  (plain && !hinted && items.len() > 2).then_some(parameters.len())
+}
+
+/// A lambda bound once may serve several argument types, so a re-check keeps
+/// only failures of the values it passes on, such as an argument a typed
+/// callee rejects; findings about the body itself, like a pattern that cannot
+/// match one call's input, stay with the ordinary check of the binding.
+fn reports_let_lambda_recheck(code: Option<&str>, message: &str) -> bool {
+  match code {
+    Some(code) => code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH",
+    // Calling a parameter that holds a non-function value has no code yet.
+    None => message.starts_with("[Warn] trying to call "),
+  }
+}
+
+thread_local! {
+  /// Lambdas whose bodies are being re-checked, to stop a body that calls its
+  /// own binding name from re-checking itself.
+  static RECHECKING_LET_LAMBDAS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Re-check a `&let`-bound lambda body with the argument types of one call,
+/// like an immediately invoked lambda (#1655). Only diagnostics are kept; the
+/// call keeps the body compiled at the binding.
+fn recheck_let_lambda_call(
+  local: &CalcitLocal,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+  call_location: Option<&NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let Some(lambda) = explicit_open::let_lambda(local, scope_types) else {
+    return Ok(());
+  };
+  if args.len() != lambda.arity
+    || args.iter().any(|arg| {
+      matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(arg, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    return Ok(());
+  }
+  let arg_types: Vec<_> = args
+    .iter()
+    .map(|arg| resolve_type_value(arg, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+    .collect();
+  if arg_types
+    .iter()
+    .all(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
+    return Ok(());
+  }
+  let identity = Arc::as_ptr(&lambda) as usize;
+  let entered = RECHECKING_LET_LAMBDAS.with(|stack| {
+    let mut stack = stack.borrow_mut();
+    if stack.contains(&identity) || stack.len() >= 4 {
+      return false;
+    }
+    stack.push(identity);
+    true
+  });
+  if !entered {
+    return Ok(());
+  }
+  struct Leave;
+  impl Drop for Leave {
+    fn drop(&mut self) {
+      RECHECKING_LET_LAMBDAS.with(|stack| {
+        stack.borrow_mut().pop();
+      });
+    }
+  }
+  let _leave = Leave;
+  let signature = Arc::new(CalcitFnTypeAnnotation {
+    arg_types,
+    runtime_arity: None,
+    return_type: calcit::DYNAMIC_TYPE.clone(),
+    rest_type: None,
+    generics: Arc::new(vec![]),
+    where_bounds: Arc::new(vec![]),
+    fn_kind: SchemaKind::Fn,
+    features: Arc::new(HashSet::new()),
+  });
+  let _context = ExpressionContextScope::enter(
+    Some(ExpectedFunctionContext {
+      signature,
+      member_inputs: false,
+      immediate: true,
+      callee_owned_generics: Arc::new(vec![]),
+    }),
+    None,
+  );
+  let called_at = call_location
+    .cloned()
+    .or_else(|| args.iter().find_map(Calcit::get_location))
+    .map(|location| format!(" (with the argument types of the call to `{}` at {location})", local.sym))
+    .unwrap_or_else(|| format!(" (with the argument types of a call to `{}`)", local.sym));
+  let mut types = lambda.scope_types.clone();
+  let warnings = RefCell::new(vec![]);
+  if let Err(mut error) = preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack) {
+    if !reports_let_lambda_recheck(error.code.as_deref(), &error.msg) {
+      return Ok(());
+    }
+    error.msg.push_str(&called_at);
+    return Err(error);
+  }
+  let mut target = check_warnings.borrow_mut();
+  for mut warning in warnings.into_inner() {
+    if !reports_let_lambda_recheck(warning.code(), warning.message())
+      || target
+        .iter()
+        .any(|existing| existing.location() == warning.location() && existing.code() == warning.code())
+    {
+      continue;
+    }
+    warning.append_message(&called_at);
+    target.push(warning);
+  }
+  Ok(())
+}
+
 pub fn preprocess_core_let(
   head: &CalcitSyntax,
   // where the symbol was defined
@@ -14621,6 +14770,7 @@ pub fn preprocess_core_let(
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
   let mut body_types: ScopeTypes = ctx.scope_types.clone();
+  let mut let_lambda = None;
   let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => {
@@ -14647,6 +14797,15 @@ pub fn preprocess_core_let(
         check_symbol(sym, ys, loc, ctx.check_warnings);
       }
       body_defs.insert(sym.to_owned());
+      let_lambda = (existing_type.is_none())
+        .then(|| plain_lambda_arity(a))
+        .flatten()
+        .map(|arity| explicit_open::LetLambda {
+          form: a.to_owned(),
+          arity,
+          scope_defs: body_defs.clone(),
+          scope_types: body_types.clone(),
+        });
       let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
       // The initializer executes before the new binding shadows its name.
       propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
@@ -14743,6 +14902,9 @@ pub fn preprocess_core_let(
     };
     explicit_open_binding.bind(local, open);
     explicit_open::retain_static_callee(local, callable);
+    if let Some(lambda) = let_lambda {
+      explicit_open::retain_let_lambda(local, lambda);
+    }
   }
 
   let mut skipped_head = false;

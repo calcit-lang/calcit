@@ -133,6 +133,31 @@ let
 
 只处理列表根的调用（例如整个文件的解析结果、顶层表达式）结果不变。
 
+## 0.33.0 按调用点检查 let 绑定的 lambda（#1655，未发布）
+
+`let` 绑定的 lambda 字面量如果没有写 `hint-fn`，参数没有类型。以前调用它时不会用实参类型检查函数体，
+下面的代码能通过严格检查，运行时才在 `f` 里出错：
+
+```cirru
+let
+    g $ fn (h x) (h x)
+  g f |abc
+```
+
+现在每个调用点都会用实参类型把 lambda 体再检查一遍，和立即调用 `(fn (h x) (h x)) f |abc` 的检查方式相同。
+上例在 `(h x)` 处报 `W_LOCAL_FN_ARG_TYPE_MISMATCH`，消息末尾注明是哪个调用点的实参类型：
+
+```text
+[W_LOCAL_FN_ARG_TYPE_MISMATCH] [Warn] calling `h` arg 1 expects type `:number`, but got `:string` at app.main/main!
+  Expression: (h 'h 'x) (with the argument types of the call to `g` at app.main/main! @3.2)
+```
+
+只报告实参在函数体里被拒绝的情况（参数类型不匹配、把非函数当函数调用）；同一个 lambda 可以被不同类型的实参调用，
+所以函数体自身的其他提示（例如某个模式匹配不到这一次的输入）不会因此重复报告。实参类型都未知、
+参数用 `&` 展开，或 lambda 里已经写了 `hint-fn` 时不做这一步。
+
+升级时如果出现这类新告警，说明调用点传入的值确实会在运行时出错，修改实参或给 lambda 写 `hint-fn`。
+
 <a id="format-ternary-tree-removal"></a>
 
 ## 0.33.0 删除 `&format-ternary-tree`（#2193，未发布）

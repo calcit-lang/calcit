@@ -965,6 +965,55 @@ fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
   });
 }
 
+/// #1655: a `&let`-bound lambda literal has no contextual signature, so each
+/// call re-checks its body with the call's argument types.
+#[test]
+fn let_bound_lambda_body_is_checked_per_call() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let f = "    f $ fn (x)\n      hint-fn $ Fn Number (-> Number)\n      - x 1\n";
+    let diagnostics = |body: &str| {
+      let entries = load_snippet_entries(&format!("let\n{f}{body}"));
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let mut found: Vec<String> = warnings
+        .borrow()
+        .iter()
+        .map(|warning| format!("{:?}: {}", warning.code(), warning.message()))
+        .collect();
+      if let Err(error) = result {
+        found.push(format!("{:?}: {}", error.code, error.msg));
+      }
+      found
+    };
+
+    for (label, body) in [
+      ("pass through", "    g $ fn (h x) (h x)\n  g f |abc"),
+      ("fixed argument", "    apply1 $ fn (h) (h |abc)\n  apply1 f"),
+      ("call a Number", "    g $ fn (h x) (h x)\n  g 1 3"),
+    ] {
+      let found = diagnostics(body);
+      assert!(
+        found.iter().any(|item| item.contains("with the argument types of the call to `")),
+        "{label}: the call should re-check the lambda body: {found:?}"
+      );
+    }
+
+    for (label, body) in [
+      ("matching argument", "    g $ fn (h x) (h x)\n  g f 3"),
+      ("unknown argument", "    g $ fn (h x) (h x)\n  fn (y) (g f y)"),
+      ("shadowed name", "    g $ fn (h x) (h x)\n    use $ fn (g) (g f |abc)\n  , use"),
+    ] {
+      let found = diagnostics(body);
+      assert!(
+        !found.iter().any(|item| item.contains("with the argument types of the call to `")),
+        "{label}: no diagnostic should come from re-checking: {found:?}"
+      );
+    }
+  });
+}
+
 #[test]
 fn contextual_callback_output_does_not_bind_output_only_generic() {
   run_with_large_stack(|| {

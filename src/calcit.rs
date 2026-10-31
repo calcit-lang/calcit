@@ -1399,6 +1399,11 @@ impl LocatedWarning {
     &self.message
   }
 
+  /// Add context to the message, such as the call site a body was checked for.
+  pub fn append_message(&mut self, extra: &str) {
+    self.message.push_str(extra);
+  }
+
   pub fn code(&self) -> Option<&str> {
     self.code.as_deref()
   }
