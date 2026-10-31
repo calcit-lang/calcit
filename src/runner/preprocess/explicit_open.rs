@@ -8,6 +8,7 @@
 //! The same lexical record retains the initial write contract independently
 //! of predicate refinements on references to the binding.
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 type BindingKey = (Arc<str>, Arc<str>, Arc<str>);
 
@@ -17,6 +18,46 @@ struct LocalContract {
   annotation: Arc<CalcitTypeAnnotation>,
   static_callee: Option<Calcit>,
   callee_used: bool,
+  let_lambda: Option<Arc<LetLambda>>,
+  /// Shared by every copy of this binding's record, including scopes captured
+  /// for let-lambda re-checks, so a `set!` revokes identity in all of them.
+  identity_revoked: Arc<AtomicBool>,
+}
+
+/// A `&let`-bound lambda literal without a contextual signature (#1655). Its
+/// parameters get no types from the binding, so each call re-checks the body
+/// with the call's argument types, in the scope the literal was written in.
+pub(super) struct LetLambda {
+  pub(super) form: Calcit,
+  pub(super) arity: usize,
+  pub(super) scope_defs: HashSet<Arc<str>>,
+  pub(super) scope_types: ScopeTypes,
+  pub(super) scope_locals: ScopeLocals,
+}
+
+/// The lexical binding records visible where a `&let` lambda was written. A
+/// re-check at a call site resolves the body's locals against these, so a
+/// caller's shadowing binding with the same name does not stand in for them.
+pub(super) struct ScopeLocals(HashMap<BindingKey, LocalContract>);
+
+pub(super) fn capture_scope_locals() -> ScopeLocals {
+  ScopeLocals(EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().clone()))
+}
+
+/// Run `f` with the captured records in place, restoring the caller's records
+/// afterwards, including on unwinding.
+pub(super) fn with_scope_locals<R>(locals: &ScopeLocals, f: impl FnOnce() -> R) -> R {
+  struct Restore(Option<HashMap<BindingKey, LocalContract>>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      if let Some(previous) = self.0.take() {
+        EXPLICIT_OPEN_LOCALS.with(|marks| *marks.borrow_mut() = previous);
+      }
+    }
+  }
+  let previous = EXPLICIT_OPEN_LOCALS.with(|marks| std::mem::replace(&mut *marks.borrow_mut(), locals.0.clone()));
+  let _restore = Restore(Some(previous));
+  f()
 }
 
 thread_local! {
@@ -47,6 +88,8 @@ impl ExplicitOpenScope {
       annotation: local.type_info.clone(),
       static_callee: None,
       callee_used: false,
+      let_lambda: None,
+      identity_revoked: Arc::new(AtomicBool::new(false)),
     };
     let previous = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow_mut().insert(key.clone(), contract));
     self.0.push((key, previous));
@@ -70,6 +113,33 @@ pub(super) fn retain_static_callee(local: &Calcit, value: Option<Calcit>) {
   });
 }
 
+/// Remember the source lambda bound by `&let`; parameters and shadowing
+/// bindings replace the record like any other contract.
+pub(super) fn retain_let_lambda(local: &Calcit, lambda: LetLambda) {
+  let Calcit::Local(local) = local else { return };
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    if let Some(contract) = marks.borrow_mut().get_mut(&binding_key(local)) {
+      contract.let_lambda = Some(Arc::new(lambda));
+    }
+  });
+}
+
+/// The lambda a call head refers to, while the reference keeps the binding's
+/// original contract.
+pub(super) fn let_lambda(local: &CalcitLocal, types: &ScopeTypes) -> Option<Arc<LetLambda>> {
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    marks
+      .borrow()
+      .get(&binding_key(local))
+      .filter(|contract| {
+        !contract.identity_revoked.load(Ordering::Relaxed)
+          && contract.annotation == local.type_info
+          && types.get(&local.sym).is_none_or(|annotation| *annotation == contract.annotation)
+      })
+      .and_then(|contract| contract.let_lambda.clone())
+  })
+}
+
 /// Return identity only while both the binding and its reference retain the
 /// original contract; an explicit replacement contract must stand on its own.
 pub(super) fn static_callee(local: &CalcitLocal, types: &ScopeTypes) -> Option<Calcit> {
@@ -78,7 +148,9 @@ pub(super) fn static_callee(local: &CalcitLocal, types: &ScopeTypes) -> Option<C
       .borrow()
       .get(&binding_key(local))
       .filter(|contract| {
-        contract.annotation == local.type_info && types.get(&local.sym).is_none_or(|annotation| *annotation == contract.annotation)
+        !contract.identity_revoked.load(Ordering::Relaxed)
+          && contract.annotation == local.type_info
+          && types.get(&local.sym).is_none_or(|annotation| *annotation == contract.annotation)
       })
       .and_then(|contract| contract.static_callee.clone())
   })
@@ -104,6 +176,8 @@ pub(super) fn invalidate_static_callee(local: &CalcitLocal) -> bool {
       return false;
     };
     contract.static_callee = None;
+    contract.let_lambda = None;
+    contract.identity_revoked.store(true, Ordering::Relaxed);
     contract.callee_used
   })
 }

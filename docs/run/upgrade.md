@@ -133,6 +133,36 @@ let
 
 只处理列表根的调用（例如整个文件的解析结果、顶层表达式）结果不变。
 
+## 0.33.0 按调用点检查 let 绑定的 lambda（#1655，未发布）
+
+`let` 绑定的 lambda 字面量如果没有写 `hint-fn`，参数没有类型。以前调用它时不会用实参类型检查函数体，
+下面的代码能通过严格检查，运行时才在 `inc` 里出错：
+
+```cirru.no-check
+let
+    g $ fn (h x) (h x)
+  g inc |abc
+```
+
+现在每个调用点都会用实参类型把 lambda 体再检查一遍，和立即调用 `(fn (h x) (h x)) inc |abc` 的检查方式相同。
+上例在 `(h x)` 处报 `W_LOCAL_FN_ARG_TYPE_MISMATCH`，消息末尾注明是哪个调用点的实参类型：
+
+```text
+[W_LOCAL_FN_ARG_TYPE_MISMATCH] [Warn] calling `h` arg 1 expects type `:number`, but got `:string` at app.main/main!
+  Expression: (h 'h 'x) (with the argument types of the call to `g` at app.main/main! @3.2)
+```
+
+只报告实参在函数体里被拒绝的情况（参数类型不匹配、把非函数当函数调用）；同一个 lambda 可以被不同类型的实参调用，
+所以函数体自身的其他提示（例如某个模式匹配不到这一次的输入）不会因此重复报告。以下情况不做这一步：
+实参类型都未知；调用时用 `&` 展开参数；lambda 的参数里有 `?` 可选参数或 `&` 剩余参数；lambda 里已经写了 `hint-fn`。
+lambda 体里再调用别的 let lambda 时会继续逐层检查，遇到递归回到自身或嵌套超过 4 层就停止。
+
+升级时如果出现这类新告警，先确认调用点传入的值和函数体期望的类型是否一致：多数情况下是运行时确实会出错，
+也可能只是和推断出的类型冲突（见下面 map 的例子，运行时能通过）。按实际意图修改实参，或给 lambda 写 `hint-fn`。
+
+已有的规则同样会作用到函数体里：例如 `data $ {} (:x 1) (:y 2)` 推断为值是 `:number` 的 map，
+直接写 `assoc data :step1 true` 本来就会报 `W_FN_ARG_TYPE_MISMATCH`，现在通过 let lambda 间接调用也会报。
+
 ## 0.33.0 解码目标里的旧类型写法改为提示，并由 `edit format` 改写（未发布）
 
 0.32.0 关闭旧类型写法时，`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as`
