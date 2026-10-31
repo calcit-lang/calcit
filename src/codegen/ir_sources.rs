@@ -424,9 +424,11 @@ fn call_head_type(processed: &Calcit) -> Option<CalcitTypeAnnotation> {
 /// the lowered callee's signature would describe something the reader did not write.
 fn names_macro(ns: &str, head: &str) -> bool {
   let target = match head.split_once('/') {
-    Some((alias, def)) if !alias.is_empty() && !def.is_empty() => {
-      program::lookup_ns_target_in_import(ns, alias).map(|target| (target.to_string(), def.to_owned()))
-    }
+    // `alias/def` through an `:as` import, otherwise a namespace written out in full.
+    Some((alias, def)) if !alias.is_empty() && !def.is_empty() => Some((
+      program::lookup_ns_target_in_import(ns, alias).map_or_else(|| alias.to_owned(), |target| target.to_string()),
+      def.to_owned(),
+    )),
     _ => {
       if program::has_def_code(ns, head) {
         Some((ns.to_owned(), head.to_owned()))

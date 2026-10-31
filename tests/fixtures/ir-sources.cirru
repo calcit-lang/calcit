@@ -11,6 +11,16 @@
       :defs $ {}
       :ns $ %{} 'NsEntry (:doc "|Namespace without definitions")
         :code $ quote $ ns app.empty
+    'app.macros $ %{} 'FileEntry
+      :defs $ {}
+        'twice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro twice (x)
+            quasiquote $ &+ ~x ~x
+          :examples $ []
+          :schema $ quote $ Macro (Expr Number)
+            -> $ Expr Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.macros
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'Point $ %{} 'CodeEntry (:doc |)
@@ -32,6 +42,10 @@
           :code $ quote $ defn read-point (raw) (decode-map-as raw 'app.main/Point)
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> app.main/Point)
+        'qualified-macro $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn qualified-macro () (app.macros/twice 1)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

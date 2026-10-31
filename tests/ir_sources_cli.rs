@@ -102,6 +102,12 @@ fn ir_sources_carry_source_types_and_dependencies() {
   assert!(path_types(read_point).contains(&("2.0".to_owned(), "Dynamic".to_owned())));
   // A macro head such as `defstruct` lowers to another call and gets no type.
   assert!(!path_types(member(defs, Edn::str("Point"))).iter().any(|(path, _)| path == "0"));
+  // A macro head written as a fully qualified `ns/def` is excluded too.
+  assert!(
+    !path_types(member(defs, Edn::str("qualified-macro")))
+      .iter()
+      .any(|(path, _)| path == "3.0")
+  );
   assert_eq!(
     member(read_point, Edn::tag("deps")),
     &Edn::List(cirru_edn::EdnListView(vec![Edn::str("app.main/Point")]))
