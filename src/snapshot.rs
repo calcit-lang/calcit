@@ -4456,22 +4456,25 @@ fn is_decoder_type_head(head: Option<&str>) -> bool {
   head.is_some_and(|head| DECODER_TYPE_HEADS.contains(&head))
 }
 
+/// `decoders` turns on decoder target migration; it is switched off inside
+/// `quote`, whose data is not code.
 fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
   };
-  let mut rewritten = Vec::with_capacity(items.len());
-  let mut changed = 0;
-  for item in items {
-    let (next, count) = canonicalize_code_type_syntax_in(item, decoders);
-    rewritten.push(next);
-    changed += count;
-  }
-
   let head = items.first().and_then(|item| match item {
     Cirru::Leaf(value) => Some(value.as_ref()),
     _ => None,
   });
+  let nested_decoders = decoders && head != Some("quote");
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders);
+    rewritten.push(next);
+    changed += count;
+  }
+
   match head {
     Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => {
       let (next, count) = canonicalize_type_expression(&items[2]);
@@ -5942,6 +5945,7 @@ mod tests {
       "decode-map-as raw $ quote $ List Number",
       "decode-map-as raw Person",
       "parse-cirru-edn-as text 'Number",
+      "quote $ decode-map-as raw $ :: 'List 'Number",
     ] {
       let node = parse_one(source);
       assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
