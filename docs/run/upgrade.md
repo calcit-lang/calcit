@@ -136,15 +136,15 @@ let
 ## 0.33.0 按调用点检查 let 绑定的 lambda（#1655，未发布）
 
 `let` 绑定的 lambda 字面量如果没有写 `hint-fn`，参数没有类型。以前调用它时不会用实参类型检查函数体，
-下面的代码能通过严格检查，运行时才在 `f` 里出错：
+下面的代码能通过严格检查，运行时才在 `inc` 里出错：
 
-```cirru
+```cirru.no-check
 let
     g $ fn (h x) (h x)
-  g f |abc
+  g inc |abc
 ```
 
-现在每个调用点都会用实参类型把 lambda 体再检查一遍，和立即调用 `(fn (h x) (h x)) f |abc` 的检查方式相同。
+现在每个调用点都会用实参类型把 lambda 体再检查一遍，和立即调用 `(fn (h x) (h x)) inc |abc` 的检查方式相同。
 上例在 `(h x)` 处报 `W_LOCAL_FN_ARG_TYPE_MISMATCH`，消息末尾注明是哪个调用点的实参类型：
 
 ```text
@@ -157,6 +157,9 @@ let
 参数用 `&` 展开，或 lambda 里已经写了 `hint-fn` 时不做这一步。
 
 升级时如果出现这类新告警，说明调用点传入的值确实会在运行时出错，修改实参或给 lambda 写 `hint-fn`。
+
+已有的规则同样会作用到函数体里：例如 `data $ {} (:x 1) (:y 2)` 推断为值是 `:number` 的 map，
+直接写 `assoc data :step1 true` 本来就会报 `W_FN_ARG_TYPE_MISMATCH`，现在通过 let lambda 间接调用也会报。
 
 <a id="format-ternary-tree-removal"></a>
 

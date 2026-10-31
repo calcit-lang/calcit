@@ -400,8 +400,8 @@ let
 ```cirru
 let
     ; stub implementations for demonstration
-    transform-1 $ fn (x) (assoc x :step1 true)
-    transform-2 $ fn (x) (assoc x :step2 true)
+    transform-1 $ fn (x) (assoc x :step1 1)
+    transform-2 $ fn (x) (assoc x :step2 1)
     data $ {} (:x 1) (:y 2)
     result $ -> data transform-1 transform-2
     x 5
