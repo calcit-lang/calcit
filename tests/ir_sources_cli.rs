@@ -58,6 +58,9 @@ fn ir_sources_carry_source_types_and_dependencies() {
   assert_eq!(member(meta, Edn::tag("schema-version")), &Edn::Number(1.0));
   assert_eq!(member(meta, Edn::tag("package")), &Edn::str("app"));
   assert_eq!(member(meta, Edn::tag("calcit-version")), &Edn::str(env!("CARGO_PKG_VERSION")));
+  let default_entry = member(member(meta, Edn::tag("entries")), Edn::str("default"));
+  assert_eq!(member(default_entry, Edn::tag("init-fn")), &Edn::str("app.main/main!"));
+  assert_eq!(member(default_entry, Edn::tag("reload-fn")), &Edn::str("app.main/reload!"));
 
   let sources = member(&ir, Edn::tag("sources"));
   let app = member(sources, Edn::str("app.main"));

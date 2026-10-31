@@ -50,7 +50,7 @@ calcit calcit.cirru ir --sources-only
 | `:hash` | 源码、schema 与文档的摘要，内容不变时保持不变 |
 | `:error` | 仅在该定义编译失败时出现 |
 
-`:meta` 记录 `:schema-version`、`:calcit-version`、`:package`、`:snapshot` 与 `:generated-at`（毫秒时间戳）。
+`:meta` 记录 `:schema-version`、`:calcit-version`、`:package`、`:snapshot`、`:generated-at`（毫秒时间戳），以及 `:entries`：Snapshot 中每个入口的 `:init-fn`、`:reload-fn` 与 `:description`。
 
 限制：
 

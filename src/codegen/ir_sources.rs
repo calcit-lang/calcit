@@ -54,6 +54,8 @@ struct IrSourceFile {
 struct IrSourceIndex {
   package: String,
   snapshot_path: String,
+  /// Snapshot entries by name: init-fn, reload-fn and description.
+  entries: Vec<(String, String, String, String)>,
   files: HashMap<Arc<str>, IrSourceFile>,
 }
 
@@ -89,9 +91,23 @@ pub fn install_ir_sources(snapshot: &Snapshot, snapshot_path: &str, project_name
       },
     );
   }
+  let mut entries: Vec<(String, String, String, String)> = snapshot
+    .entries
+    .iter()
+    .map(|(name, entry)| {
+      (
+        name.to_owned(),
+        entry.init_fn.to_owned(),
+        entry.reload_fn.to_owned(),
+        entry.description.to_owned(),
+      )
+    })
+    .collect();
+  entries.sort();
   *IR_SOURCES.write().expect("write IR sources") = Some(IrSourceIndex {
     package: snapshot.package.to_owned(),
     snapshot_path: snapshot_path.to_owned(),
+    entries,
     files,
   });
 }
@@ -143,7 +159,27 @@ pub(crate) fn dump_meta(generated_at_ms: f64) -> Edn {
     .as_ref()
     .map(|index| (index.package.as_str(), index.snapshot_path.as_str()))
     .unwrap_or(("", ""));
+  let entries = guard
+    .as_ref()
+    .map(|index| {
+      index
+        .entries
+        .iter()
+        .map(|(name, init_fn, reload_fn, description)| {
+          (
+            Edn::str(name.as_str()),
+            Edn::map_from_iter([
+              (Edn::tag("init-fn"), Edn::str(init_fn.as_str())),
+              (Edn::tag("reload-fn"), Edn::str(reload_fn.as_str())),
+              (Edn::tag("description"), Edn::str(description.as_str())),
+            ]),
+          )
+        })
+        .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
   Edn::map_from_iter([
+    (Edn::tag("entries"), Edn::map_from_iter(entries)),
     (Edn::tag("schema-version"), Edn::Number(1.0)),
     (Edn::tag("calcit-version"), Edn::str(env!("CARGO_PKG_VERSION"))),
     (Edn::tag("package"), Edn::str(package)),
