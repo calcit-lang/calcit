@@ -14514,6 +14514,13 @@ pub fn preprocess_defn(
               .and_then(|returned| find_macro_location_in_def(ctx.call_stack, &returned.ns, &returned.def))
               .or_else(|| find_preferred_macro_location(ctx.call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
               .or_else(|| ctx.call_location.clone())
+              .or_else(|| {
+                ctx
+                  .call_stack
+                  .0
+                  .first()
+                  .map(|frame| NodeLocation::new(frame.ns.to_owned(), frame.def.to_owned(), Arc::new(vec![])))
+              })
               .or(Some(definition_location.clone())),
           },
           ctx.check_warnings,
@@ -15451,6 +15458,63 @@ pub(super) fn desugar_compact_type_form(form: &Calcit, ctx: &PreprocessContext) 
   }
 }
 
+/// Desugar a decode or cast target type, reporting a retired `::` / tag
+/// spelling as the `W_LEGACY_TYPE_SYNTAX` advisory with its compact form.
+/// A tag target such as `:number` carries no location, so the value argument
+/// the call or else the enclosing definition locates the advisory then.
+pub(super) fn desugar_decoder_type_form(head: &str, args: &CalcitList, ctx: &PreprocessContext) -> Result<Calcit, CalcitErr> {
+  let located = |node: &Calcit| node.get_location().or_else(|| crate::calcit::type_expr::first_location(node));
+  let form = args.get(1).expect("validated decoder type argument");
+  if should_emit_project_source_lint(ctx.file_ns)
+    && let Some(written) = decoder_type_form_to_cirru(form)
+    && let Some(compact) = crate::snapshot::migrate_decoder_type_argument(&written)
+    && let Some(location) = located(form)
+      .or_else(|| args.first().and_then(located))
+      .or_else(|| ctx.call_location.clone())
+      .or_else(|| {
+        ctx
+          .call_stack
+          .0
+          .first()
+          .map(|frame| NodeLocation::new(frame.ns.to_owned(), frame.def.to_owned(), Arc::new(vec![])))
+      })
+  {
+    let message = format!(
+      "[Warn] the `{head}` target type `{}` uses the retired `::`/tag type syntax; write `{}` instead, or run `calcit edit format` to migrate the Snapshot",
+      crate::snapshot::render_cirru_inline(&written),
+      crate::snapshot::render_cirru_inline(&compact)
+    );
+    push_advisory(LocatedWarning::new_with_detail(
+      message,
+      location,
+      Some(crate::snapshot::LEGACY_TYPE_SYNTAX_WARNING.to_owned()),
+      None,
+    ));
+  }
+  desugar_compact_type_form(form, ctx)
+}
+
+/// Source spelling of an unprocessed type form: `(quote X)` from a `'X` leaf
+/// is printed back as `'X`.
+fn decoder_type_form_to_cirru(form: &Calcit) -> Option<cirru_parser::Cirru> {
+  match form {
+    Calcit::List(items) => {
+      if items.len() == 2
+        && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+        && let Some(Calcit::Symbol { sym, .. }) = items.get(1)
+      {
+        return Some(cirru_parser::Cirru::Leaf(format!("'{sym}").into()));
+      }
+      let mut nodes = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        nodes.push(decoder_type_form_to_cirru(item)?);
+      }
+      Some(cirru_parser::Cirru::List(nodes))
+    }
+    _ => crate::data::cirru::calcit_to_cirru(form).ok(),
+  }
+}
+
 /// Qualify namespace-aliased type names (`alias/Def`) inside a decoder type form
 /// through the namespace's `:as` imports. The data shape, the static result type
 /// and backend codegen all read this form, so an alias, a `:refer` name and a full
@@ -15556,7 +15620,7 @@ pub fn preprocess_parse_cirru_edn_as(
       text_form.get_location(),
     ));
   }
-  let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated parse-cirru-edn-as type"), ctx)?;
+  let source_type_form = &desugar_decoder_type_form(head.as_ref(), args, ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
@@ -15616,7 +15680,7 @@ pub fn preprocess_decode_map_as(
       value_form.get_location(),
     ));
   }
-  let source_type_form = &desugar_compact_type_form(args.get(1).expect("validated decode-map-as type"), ctx)?;
+  let source_type_form = &desugar_decoder_type_form(head.as_ref(), args, ctx)?;
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;

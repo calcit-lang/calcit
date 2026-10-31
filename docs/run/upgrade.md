@@ -161,6 +161,24 @@ let
 已有的规则同样会作用到函数体里：例如 `data $ {} (:x 1) (:y 2)` 推断为值是 `:number` 的 map，
 直接写 `assoc data :step1 true` 本来就会报 `W_FN_ARG_TYPE_MISMATCH`，现在通过 let lambda 间接调用也会报。
 
+## 0.33.0 解码目标里的旧类型写法改为提示，并由 `edit format` 改写（未发布）
+
+0.32.0 关闭旧类型写法时，`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as`
+和 `js-cast` 的目标类型没有纳入，`decode-map-as raw $ :: 'List 'Dynamic` 这类写法既不报错，`edit format` 也不改写。
+现在检查时对这些位置报告非阻塞提示，`edit format` 会改写它们：
+
+```text
+[W_LEGACY_TYPE_SYNTAX] [Warn] the `decode-map-as` target type `:: 'List 'Dynamic` uses the retired `::`/tag type syntax; write `quote $ List Dynamic` instead, or run `calcit edit format` to migrate the Snapshot
+```
+
+迁移命令：
+
+```bash
+calcit <snapshot> edit format
+```
+
+提示不会让严格检查失败。含值引用的形式（如 `:: 'List Person`）没有等价的精简写法，保持原样，也不提示。
+
 <a id="format-ternary-tree-removal"></a>
 
 ## 0.33.0 删除 `&format-ternary-tree`（#2193，未发布）
