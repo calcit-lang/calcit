@@ -320,6 +320,24 @@ jobs:
         run: |
           "$CALCIT_BIN" calcit/test-wasi-command.cirru --check-only --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
 
+      - name: "keep unresolved weak types in core from growing (#2472)"
+        # Same rule as the ecosystem libraries: a PR may keep or lower
+        # `intents.unresolved` for the core Snapshot. When it drops, lower the
+        # limit in the same PR.
+        env:
+          UNRESOLVED_LIMIT: "216"
+        run: |
+          set -euo pipefail
+          actual="$("$CALCIT_BIN" src/cirru/calcit-core.cirru analyze weak-types --summary-only --format json | jq -e '.data.summary.intents.unresolved')"
+          echo "unresolved weak types in core: ${actual} (limit ${UNRESOLVED_LIMIT})"
+          if (( actual > UNRESOLVED_LIMIT )); then
+            echo "::error title=Unresolved weak types grew::${actual} > ${UNRESOLVED_LIMIT}. Give the new core positions concrete types; list intentional open boundaries with the existing intent classes."
+            exit 1
+          fi
+          if (( actual < UNRESOLVED_LIMIT )); then
+            echo "::notice title=Unresolved weak types dropped::Lower UNRESOLVED_LIMIT to ${actual} in .github/workflows/test.yaml."
+          fi
+
       # Steps already covered by `yarn check-all` in lint_core_check_all (with the
       # post-lowering validator on) are not repeated here; this job keeps only the
       # checks that check-all does not run.
