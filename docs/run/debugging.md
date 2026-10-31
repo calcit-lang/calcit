@@ -27,6 +27,36 @@ entry_for:
 调试结果中的已解析 trait 保留声明来源、字段与方法的类型、父 trait 和宿主 FFI 名称映射，方便追查
 `js-cast` 等边界的类型证据。生成的 `program-ir.cirru` 是诊断数据，不是可重新执行或部署的 Snapshot。
 
+### 给阅读工具的 `:sources`
+
+`program-ir.cirru` 同时包含 `:meta` 和 `:sources`，供 calcit-viewer 等阅读工具展示源码与类型。只需要这部分时运行：
+
+```bash
+calcit calcit.cirru ir --sources-only
+```
+
+`:sources` 以命名空间为键，`:origin` 为 `:project`、`:dep` 或 `:core`。项目命名空间列出全部定义；依赖与 core 只列出编译后程序包含的定义。每个定义包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `:source` | Snapshot 中的原始代码（`quote`） |
+| `:doc` | 定义文档 |
+| `:head` | 源码首个叶子，如 `defn`、`defcomp`、`defstruct` |
+| `:kind` | 编译结果类别：`:fn`、`:macro`、`:value`、`:lazy-value` 等 |
+| `:schema` | 声明的 schema，精简写法字符串；未声明时为 `nil` |
+| `:type` | 编译器采用的类型，精简写法字符串 |
+| `:deps` | 编译后代码引用的定义，`ns/def` 字符串列表 |
+| `:types` | 仅项目定义：`[] path type` 列表，`path` 与 `query type-at --path` 使用同一套坐标，空字符串表示整个定义 |
+| `:hash` | 源码、schema 与文档的摘要，内容不变时保持不变 |
+| `:error` | 仅在该定义编译失败时出现 |
+
+`:meta` 记录 `:schema-version`、`:calcit-version`、`:package`、`:snapshot` 与 `:generated-at`（毫秒时间戳）。
+
+限制：
+
+- `:types` 只覆盖编译器记录了类型的位置，未出现的路径表示没有推断结果。
+- 由宏生成、没有源码的定义可能出现在 `:deps` 中，但不在 `:sources` 里。
+
 Calcit snapshot 文件中 config 有 `init-fn` 和 `reload-fn` 配置：
 
 - 初次启动调用 `init-fn`

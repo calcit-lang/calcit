@@ -1,8 +1,9 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cirru_edn::{Edn, EdnListView, format};
 
@@ -10,6 +11,7 @@ use crate::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitEnumValue, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal,
   CalcitStructDef, CalcitStructValue, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
+use crate::codegen::ir_sources;
 use crate::program;
 
 thread_local! {
@@ -72,24 +74,24 @@ impl From<IrDataConfig> for Edn {
   }
 }
 
-#[derive(Debug)]
-pub struct IrData {
-  configs: IrDataConfig,
-  files: HashMap<Arc<str>, IrDataFile>,
+/// Options for `calcit ir`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IrEmitOptions {
+  /// Write `:meta`, `:configs` and `:sources` only, skipping the lowered `:files`.
+  pub sources_only: bool,
 }
 
-impl From<IrData> for Edn {
-  fn from(x: IrData) -> Edn {
-    Edn::map_from_iter([(Edn::tag("configs"), x.configs.into()), (Edn::tag("files"), x.files.into())])
-  }
-}
-
-pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), String> {
+pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str, options: IrEmitOptions) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
+  let mut compiled_names: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
 
   for (ns, file_info) in program_data.iter() {
+    compiled_names.insert(Arc::clone(ns), file_info.defs.keys().cloned().collect());
+    if options.sources_only {
+      continue;
+    }
     let mut defs: HashMap<Arc<str>, Edn> = HashMap::new();
     for (def, compiled) in &file_info.defs {
       defs.insert(def.to_owned(), dump_code(&compiled.codegen_form));
@@ -99,15 +101,27 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
     files.insert(Arc::clone(ns), file);
   }
 
-  let data = IrData {
-    configs: IrDataConfig {
-      init_fn: init_fn.to_owned(),
-      reload_fn: reload_fn.to_owned(),
-    },
-    files,
+  let configs = IrDataConfig {
+    init_fn: init_fn.to_owned(),
+    reload_fn: reload_fn.to_owned(),
   };
 
-  let content = match format(&data.into(), true) {
+  let mut root: Vec<(Edn, Edn)> = vec![(Edn::tag("configs"), configs.into())];
+  if !options.sources_only {
+    root.push((Edn::tag("files"), files.into()));
+  }
+  // `:files` is collected above, before `:sources` compiles any project
+  // definition the program has not compiled yet.
+  if ir_sources::has_ir_sources() {
+    let generated_at = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .map(|duration| duration.as_millis() as f64)
+      .unwrap_or(0.0);
+    root.push((Edn::tag("meta"), ir_sources::dump_meta(generated_at)));
+    root.push((Edn::tag("sources"), ir_sources::dump_sources(&compiled_names)));
+  }
+
+  let content = match format(&Edn::map_from_iter(root), true) {
     Ok(v) => v,
     Err(e) => return Err(format!("failed {e}")),
   };

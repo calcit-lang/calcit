@@ -50,6 +50,7 @@ use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, DynamicMethodsCommand,
   EffectsGraphCommand, QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
+use calcit::codegen::gen_ir::IrEmitOptions;
 use calcit::js_ffi_source::{JsFfiSource, parse_js_source};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
@@ -987,6 +988,9 @@ fn run_cli() -> Result<(), String> {
   // with an older globally installed `calcit` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
+  if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
+    codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
+  }
 
   // now global states
   {
@@ -1065,13 +1069,19 @@ fn run_cli() -> Result<(), String> {
     if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
-    run_codegen_with_timeout(&entries, &cli_args.emit_path, false, cli_args.timeout, cli_args.verbose)
+    run_codegen_with_timeout(&entries, &cli_args.emit_path, None, cli_args.timeout, cli_args.verbose)
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
     if !ir_options.watch {
       // `calcit ir` defaults to once mode; use --watch/-w to keep watching
       eval_once = true;
     }
-    run_codegen_with_timeout(&entries, &cli_args.emit_path, true, cli_args.timeout, cli_args.verbose)
+    run_codegen_with_timeout(
+      &entries,
+      &cli_args.emit_path,
+      Some(ir_emit_options(ir_options)),
+      cli_args.timeout,
+      cli_args.verbose,
+    )
   } else if let Some(view) = analyze_view
     .as_ref()
     .filter(|_| matches!(&cli_args.subcommand, Some(CalcitCommand::Analyze(_))))
@@ -1800,7 +1810,7 @@ pub fn watch_files(
           .any(|event| js_ffi_files.contains(&event.path) || event.path.canonicalize().is_ok_and(|path| js_ffi_files.contains(&path)));
         let inc_changed = events.iter().any(|event| event.path == inc_path);
         if js_ffi_changed && !inc_changed && should_emit_js(&settings.subcommand, configured_run_mode) {
-          if let Err(error) = run_codegen_with_timeout(&entries, &settings.emit_path, false, settings.timeout, settings.verbose) {
+          if let Err(error) = run_codegen_with_timeout(&entries, &settings.emit_path, None, settings.timeout, settings.verbose) {
             eprintln!("failed to recompile JS FFI source: {error}");
           }
           continue;
@@ -1895,6 +1905,9 @@ fn recall_program(
   }
 
   program::apply_code_changes(&changes)?;
+  if matches!(&settings.subcommand, Some(CalcitCommand::EmitIr(_))) {
+    codegen::ir_sources::apply_ir_source_changes(&changes);
+  }
   ensure_host_running("reload")?;
   println!("{} Changes applied to program", "✓".green());
 
@@ -1917,9 +1930,15 @@ fn recall_program(
   let task = if let Err(error) = preflight {
     Err(error)
   } else if emits_js {
-    run_codegen_with_timeout(entries, &settings.emit_path, false, settings.timeout, settings.verbose)
-  } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
-    run_codegen_with_timeout(entries, &settings.emit_path, true, settings.timeout, settings.verbose)
+    run_codegen_with_timeout(entries, &settings.emit_path, None, settings.timeout, settings.verbose)
+  } else if let Some(CalcitCommand::EmitIr(ir_options)) = &settings.subcommand {
+    run_codegen_with_timeout(
+      entries,
+      &settings.emit_path,
+      Some(ir_emit_options(ir_options)),
+      settings.timeout,
+      settings.verbose,
+    )
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
@@ -2114,10 +2133,16 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   Ok(())
 }
 
+fn ir_emit_options(options: &cli_args::EmitIrCommand) -> IrEmitOptions {
+  IrEmitOptions {
+    sources_only: options.sources_only,
+  }
+}
+
 fn run_codegen_with_timeout(
   entries: &ProgramEntries,
   emit_path: &str,
-  ir_mode: bool,
+  ir: Option<IrEmitOptions>,
   timeout_secs: u64,
   verbose: bool,
 ) -> Result<(), String> {
@@ -2135,7 +2160,7 @@ fn run_codegen_with_timeout(
     .spawn(move || {
       calcit::runner::arm_stack_guard(CODEGEN_STACK_SIZE);
       calcit::calcit::install_entry_type_slots(entry_type_slots);
-      let result = run_codegen(&entries, &emit_path, ir_mode, verbose);
+      let result = run_codegen(&entries, &emit_path, ir, verbose);
       let _ = tx.send(result);
     })
     .map_err(|err| format!("failed to start codegen thread: {err}"))?;
@@ -2160,7 +2185,7 @@ fn run_codegen_with_timeout(
   }
 }
 
-fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose: bool) -> Result<(), String> {
+fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir: Option<IrEmitOptions>, verbose: bool) -> Result<(), String> {
   ensure_host_running("codegen")?;
   let started_time = Instant::now();
   let phase = |name: &str| {
@@ -2171,7 +2196,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
   phase("codegen started");
   codegen::set_codegen_mode(true);
 
-  if ir_mode {
+  if ir.is_some() {
     builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Ir)?;
   } else {
     builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Js)?;
@@ -2234,10 +2259,10 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
       .map_err(|e| format!("failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
   }
 
-  if ir_mode {
+  if let Some(ir_options) = ir {
     ensure_host_running("codegen")?;
     phase("emitting IR");
-    match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
+    match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path, ir_options) {
       Ok(_) => (),
       Err(failure) => {
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
@@ -2488,7 +2513,7 @@ fn run_js_examples(target_ns: &str, check_fn_name: &str, emit_path: &str) -> Res
     reload_ns: Arc::from(target_ns),
     reload_def: Arc::from(check_fn_name),
   };
-  run_codegen(&entries, emit_path, false, false)?;
+  run_codegen(&entries, emit_path, None, false)?;
 
   let runner_path = Path::new(emit_path).join(format!(".calcit-check-examples-{}.mjs", std::process::id()));
   fs::write(&runner_path, js_examples_runner_source(target_ns, check_fn_name))
