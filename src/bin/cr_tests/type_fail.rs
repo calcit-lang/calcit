@@ -4097,6 +4097,38 @@ fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
 }
 
 #[test]
+fn legacy_decoder_target_type_is_an_advisory() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    xs $ decode-map-as ([] 1 2) $ :: 'List 'Number\n    n $ parse-cirru-edn-as |1 :number\n    ys $ decode-map-as ([] 1 2) $ quote $ List Number\n  [] xs n ys",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("a legacy decoder target type should still preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let legacy = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_LEGACY_TYPE_SYNTAX"))
+      .map(|advisory| advisory.message().to_owned())
+      .collect::<Vec<_>>();
+    // The compact `quote $ List Number` target is already canonical.
+    assert_eq!(legacy.len(), 2, "{advisories:?}");
+    assert!(legacy[0].contains("quote $ List Number"), "{legacy:?}");
+    assert!(legacy[1].contains("'Number"), "{legacy:?}");
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .all(|warning| warning.code() != Some("W_LEGACY_TYPE_SYNTAX")),
+      "the advisory must not block the check"
+    );
+  });
+}
+
+#[test]
 fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/option-nil-host-position.cirru");

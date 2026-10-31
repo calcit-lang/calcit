@@ -28,10 +28,7 @@ pub(super) fn preprocess_js_cast(head_ns: &str, args: &CalcitList, ctx: &mut Pre
     ));
   }
   let target = resolve_program_trait_refs_for_body(resolve_namespace_type_refs_for_body(
-    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
-      &desugar_compact_type_form(args.get(1).expect("checked arity"), ctx)?,
-      &[],
-    ),
+    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&desugar_decoder_type_form("js-cast", args, ctx)?, &[]),
     ctx.file_ns,
   ));
   let CalcitTypeAnnotation::Trait(trait_def) = target.as_ref() else {
