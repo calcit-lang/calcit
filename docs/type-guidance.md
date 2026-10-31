@@ -68,6 +68,11 @@ quote $ Macro (Expr T)
 `calcit <snapshot> edit format` 再升级。`edit schema`、`edit def` 等编辑命令仍接受旧写法的输入，但一律以精简写法写入；
 `edit schema` 会给出 `W_LEGACY_TYPE_SYNTAX` 提示：
 
+解码与转换的目标类型（`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as`、`js-cast`
+的第二个参数）里的旧写法在加载时不报错，检查时报告非阻塞的 `W_LEGACY_TYPE_SYNTAX` 提示，并给出精简写法；
+`edit format` 与其他位置一样把它们改写，例如 `decode-map-as raw $ :: 'List 'Dynamic` 改为
+`decode-map-as raw $ quote $ List Dynamic`，`parse-cirru-edn-as text :number` 改为 `parse-cirru-edn-as text 'Number`。
+
 ```bash
 calcit app.cirru edit schema app.main/f --code "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
 # ⚠️  [W_LEGACY_TYPE_SYNTAX] the `::`/`{}` schema syntax `:: 'Fn …` is retired; write `quote $ Fn Number (-> Number)` instead.

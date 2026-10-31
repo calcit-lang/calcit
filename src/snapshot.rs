@@ -3137,7 +3137,7 @@ pub const LEGACY_TYPE_SYNTAX_CODE: &str = "E_LEGACY_TYPE_SYNTAX";
 
 /// One-line Cirru for diagnostics: nested lists in parentheses, a trailing
 /// non-clause list after `$`.
-fn render_cirru_inline(node: &Cirru) -> String {
+pub fn render_cirru_inline(node: &Cirru) -> String {
   fn item(node: &Cirru) -> String {
     match node {
       Cirru::Leaf(s) => s.to_string(),
@@ -3187,7 +3187,8 @@ fn legacy_type_syntax_error(owner: &str, path: &str, written: &Cirru, migrated: 
 /// Reject canonical type forms in code type positions that have a compact
 /// spelling. Value references and partial hints have none and stay accepted.
 pub fn check_code_type_syntax(code: &Cirru, owner: &str, path: &str) -> Result<(), String> {
-  let (migrated, count) = migrate_code_type_syntax(code);
+  // Decode and cast targets are reported during preprocessing as an advisory.
+  let (migrated, count) = migrate_code_type_syntax_in(code, false);
   if count == 0 {
     return Ok(());
   }
@@ -4438,26 +4439,55 @@ fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
 }
 
 fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  canonicalize_code_type_syntax_in(node, true)
+}
+
+/// Heads whose second argument is a decode or cast target type. `edit format`
+/// migrates these, while loading only reports them as `W_LEGACY_TYPE_SYNTAX`.
+const DECODER_TYPE_HEADS: [&str; 5] = [
+  "decode-map-as",
+  "try-decode-map-as",
+  "parse-cirru-edn-as",
+  "try-parse-cirru-edn-as",
+  "js-cast",
+];
+
+fn is_decoder_type_head(head: Option<&str>) -> bool {
+  head.is_some_and(|head| DECODER_TYPE_HEADS.contains(&head))
+}
+
+/// `decoders` turns on decoder target migration; it is switched off inside
+/// `quote`, whose data is not code.
+fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
   };
-  let mut rewritten = Vec::with_capacity(items.len());
-  let mut changed = 0;
-  for item in items {
-    let (next, count) = canonicalize_code_type_syntax(item);
-    rewritten.push(next);
-    changed += count;
-  }
-
   let head = items.first().and_then(|item| match item {
     Cirru::Leaf(value) => Some(value.as_ref()),
     _ => None,
   });
+  let nested_decoders = decoders && head != Some("quote");
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders);
+    rewritten.push(next);
+    changed += count;
+  }
+
   match head {
     Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => {
       let (next, count) = canonicalize_type_expression(&items[2]);
       rewritten[2] = next;
       changed += count;
+    }
+    _ if decoders && is_decoder_type_head(head) && items.len() == 3 => {
+      // A value reference such as `:: 'List Person` has no compact spelling
+      // and keeps its canonical form, like in `assert-type`.
+      if let Some(compact) = migrate_decoder_type_argument(&items[2]) {
+        rewritten[2] = compact;
+        changed += 1;
+      }
     }
     Some("defstruct" | "defrecord" | "defenum") if items.len() >= 3 => {
       for index in 2..items.len() {
@@ -4693,9 +4723,25 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 }
 
 fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  let (canonical, legacy) = canonicalize_code_type_syntax(node);
+  migrate_code_type_syntax_in(node, true)
+}
+
+fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
+  let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders);
   let (compact, count) = compact_code_type_syntax(&canonical);
   (compact, legacy + count)
+}
+
+/// The compact spelling of a legacy decode or cast target type, such as
+/// `quote $ List Dynamic` for `:: 'List 'Dynamic`; `None` when the form is
+/// already compact or names a value reference.
+pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
+  let (canonical, legacy) = canonicalize_type_expression(node);
+  match compact_type_form(&canonical) {
+    Some(compact) => Some(compact),
+    None if legacy > 0 && canonicalize_legacy_type_leaf(node).is_some() => Some(canonical),
+    None => None,
+  }
 }
 
 /// Rewrite legacy tag-based type syntax in code type positions. This is intentionally
@@ -5866,6 +5912,40 @@ mod tests {
       "hint-fn $ {} $ :args ([] 'A)",
       "hint-fn $ {} (:async false)",
       "quote $ assert-type xs $ :: 'List 'Number",
+    ] {
+      let node = parse_one(source);
+      assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
+    }
+  }
+
+  #[test]
+  fn format_migrates_decoder_targets_but_loading_accepts_them() {
+    let cases = [
+      ("decode-map-as raw $ :: 'List 'Dynamic", "decode-map-as raw $ quote $ List Dynamic"),
+      (
+        "try-decode-map-as raw $ :: 'Map 'Tag 'Number",
+        "try-decode-map-as raw $ quote $ Map Tag Number",
+      ),
+      ("parse-cirru-edn-as text :number", "parse-cirru-edn-as text 'Number"),
+      (
+        "try-parse-cirru-edn-as text $ :: 'Set 'String",
+        "try-parse-cirru-edn-as text $ quote $ Set String",
+      ),
+    ];
+    for (source, expected) in cases {
+      let node = parse_one(source);
+      let (migrated, count) = migrate_code_type_syntax(&node);
+      assert_eq!(migrated, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+      // Loading reports these as an advisory during preprocessing instead.
+      check_code_type_syntax(&node, "mini.main/f", "calcit.cirru").unwrap_or_else(|err| panic!("{source}: {err}"));
+    }
+    for source in [
+      "decode-map-as raw $ :: 'List Person",
+      "decode-map-as raw $ quote $ List Number",
+      "decode-map-as raw Person",
+      "parse-cirru-edn-as text 'Number",
+      "quote $ decode-map-as raw $ :: 'List 'Number",
     ] {
       let node = parse_one(source);
       assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
