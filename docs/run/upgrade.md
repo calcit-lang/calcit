@@ -27,7 +27,7 @@ related:
 <a id="032-删除-optional-公共-schema-与旧-optional-类型"></a>
 <a id="033-删除-optional-公共-schema-与旧-optional-类型"></a>
 
-## 0.33.0 删除 `'Optional` 公共 schema 与旧 Optional 类型（#2233，未发布）
+## 0.33.0 删除 `'Optional` 公共 schema 与旧 Optional 类型（#2233）
 
 0.33.0 删除旧 `Optional<T>`。Snapshot 里任何一处写出 `Optional`（`'Optional`、`calcit.core/Optional`、`(:: 'Optional T)`、`:optional` 字段头）都会在加载时报 `E_LEGACY_OPTIONAL_TYPE`，检查、运行、编辑与格式化都不会继续。错误最多列出 20 处命中（超出部分只给数量），每处带定义路径、所在位置（`:schema`、`:code`、`:examples`、`:tests`）和原写法。同一个 schema 或代码形式里有多处时只列第一处，所以改完后要重新加载，直到不再报错。例如：
 
@@ -71,7 +71,7 @@ related:
 - 删除前已对已知下游（Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer、TopixIM/diary 等）完成迁移；未列出的仓库、私有仓库与非默认分支不在普查范围内，升级前请先按上面的步骤自查。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
-## 0.33.0 `Tuple` 改为定长元组类型，删除 `tuple?` / `tuple-enum`（#2479，未发布）
+## 0.33.0 `Tuple` 改为定长元组类型，删除 `tuple?` / `tuple-enum`（#2479）
 
 `Tuple` 现在是定长、按位置异构的 List 类型，例如 `quote $ Tuple Number String`，用法见
 [类型使用指南](../type-guidance.md#定长元组-tuple)。它和旧的 tuple 值模型（现在的 Enum）无关：
@@ -98,7 +98,7 @@ calcit tree replace app.main/kind-label --path @3.1.0 \
   --expect 'quote tuple?' --code 'quote enum?'
 ```
 
-## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435，未发布）
+## 0.33.0 内部 `&cirru-quote:to-list` 只接受列表根（#2435）
 
 旧的内部入口 `&cirru-quote:to-list` 签名声明返回 List，但在 0.32.x 及更早版本中，叶根会返回 token
 String，strict 检查因此可能把一个 String 当成 List 放行，运行时才在后续操作里崩溃。从 0.33.0 起，
@@ -133,7 +133,7 @@ let
 
 只处理列表根的调用（例如整个文件的解析结果、顶层表达式）结果不变。
 
-## 0.33.0 按调用点检查 let 绑定的 lambda（#1655，未发布）
+## 0.33.0 按调用点检查 let 绑定的 lambda（#1655）
 
 `let` 绑定的 lambda 字面量如果没有写 `hint-fn`，参数没有类型。以前调用它时不会用实参类型检查函数体，
 下面的代码能通过严格检查，运行时才在 `inc` 里出错：
@@ -163,7 +163,7 @@ lambda 体里再调用别的 let lambda 时会继续逐层检查，遇到递归�
 已有的规则同样会作用到函数体里：例如 `data $ {} (:x 1) (:y 2)` 推断为值是 `:number` 的 map，
 直接写 `assoc data :step1 true` 本来就会报 `W_FN_ARG_TYPE_MISMATCH`，现在通过 let lambda 间接调用也会报。
 
-## 0.33.0 解码目标里的旧类型写法改为提示，并由 `edit format` 改写（未发布）
+## 0.33.0 解码目标里的旧类型写法改为提示，并由 `edit format` 改写（#2497）
 
 0.32.0 关闭旧类型写法时，`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as`
 和 `js-cast` 的目标类型没有纳入，`decode-map-as raw $ :: 'List 'Dynamic` 这类写法既不报错，`edit format` 也不改写。
@@ -183,7 +183,7 @@ calcit <snapshot> edit format
 
 <a id="broad-type-advisory"></a>
 
-## 0.33.0 裸 `Enum` / `Struct` / `Trait` / `Fn` 报告提示（未发布）
+## 0.33.0 裸 `Enum` / `Struct` / `Trait` / `Fn` 报告提示（#2505）
 
 类型位置里的裸 `Enum`、`Struct`、`Trait`、`Fn` 只约束“某个 enum / struct / trait / 函数”，具体内容按 Dynamic 处理。
 现在检查时报告非阻塞的 `W_BROAD_TYPE` 提示，指出位置并建议写具体类型：
@@ -205,7 +205,7 @@ calcit <snapshot> edit format
 
 <a id="format-ternary-tree-removal"></a>
 
-## 0.33.0 删除 `&format-ternary-tree`（#2193，未发布）
+## 0.33.0 删除 `&format-ternary-tree`（#2193）
 
 0.31.0 弃用的 `&format-ternary-tree` 原计划在 0.32.0 删除，因 0.32.0 只做语法收口而顺延到 0.33.0。
 它返回的是 native List 当前 FingerVec 表示的调试文本，不是三叉树，也不是稳定的数据格式。
