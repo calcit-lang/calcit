@@ -777,6 +777,43 @@
             :tags $ #{} :callback-container-shape :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-shape
+    'app.collection-value $ %{} 'FileEntry
+      :defs $ {}
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar String Number Tag
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |mixed-collection-initializers)
+            :code $ quote $ do
+              assert=
+                {} (:width 12) (:display :block) (:font-family |sans)
+                , style
+              assert= ([] 12 :block |sans) values
+              assert= (#{} 12 :block |sans) members
+              assert=
+                Option :some $ [] 12 :block |sans
+                get nested :items
+            :tags $ #{} :collection-value-contract
+        'members $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def members (#{} 12 :block |sans)
+          :examples $ []
+          :schema $ quote $ Set app.collection-value/Scalar
+        'nested $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def nested
+            {} $ :items $ [] 12 :block |sans
+          :examples $ []
+          :schema $ quote $ Map Tag (List app.collection-value/Scalar)
+        'style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def style
+            {} (:width 12) (:display :block) (:font-family |sans)
+          :examples $ []
+          :schema $ quote $ Map Tag app.collection-value/Scalar
+        'values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def values ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote $ List app.collection-value/Scalar
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.collection-value
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)
