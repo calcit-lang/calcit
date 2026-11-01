@@ -6481,7 +6481,7 @@
                           &= [] $ &list:nth first-variant 0
                           &list:rest first-variant
                           , first-variant
-                        , data-definition-type-form
+                        fn (generic) (data-definition-type-form generic)
                       []
                     &let
                       tail-forms $ if (empty? generics) variants $ &list:rest variants
@@ -6652,7 +6652,7 @@
                           &= [] $ &list:nth first-pair 0
                           &list:rest first-pair
                           , first-pair
-                        , data-definition-type-form
+                        fn (generic) (data-definition-type-form generic)
                       []
                     &let
                       tail-forms $ if (empty? generics) pairs $ &list:rest pairs
@@ -6685,23 +6685,25 @@
                                     &let
                                       type-form $ data-definition-type-form $ &list:nth items 1
                                       &let
-                                        field-form $ if (list? type-form)
-                                          if
-                                            and
-                                              &= 2 $ count type-form
-                                              syntax? $ &list:nth type-form 0
-                                            if (includes? generics type-form)
+                                        generic-type? $ includes? generics type-form
+                                        &let
+                                          field-form $ if (list? type-form)
+                                            if
+                                              and
+                                                &= 2 $ count type-form
+                                                syntax? $ &list:nth type-form 0
+                                              if generic-type?
+                                                quasiquote $ [] (~ field-name)
+                                                  quote $ ~ type-form
+                                                quasiquote $ [] (~ field-name) (~ type-form)
                                               quasiquote $ [] (~ field-name)
                                                 quote $ ~ type-form
-                                              quasiquote $ [] (~ field-name) (~ type-form)
-                                            quasiquote $ [] (~ field-name)
-                                              quote $ ~ type-form
-                                          quasiquote $ [] (~ field-name) (~ type-form)
-                                        if
-                                          &= 3 $ &list:count items
-                                          &list:append field-form $ quasiquote $ quote
-                                            ~ $ &list:nth items 2
-                                          , field-form
+                                            quasiquote $ [] (~ field-name) (~ type-form)
+                                          if
+                                            &= 3 $ &list:count items
+                                            &list:append field-form $ quasiquote $ quote
+                                              ~ $ &list:nth items 2
+                                            , field-form
                               if (empty? generics)
                                 if has-where-form?
                                   quasiquote $ &struct-def:new
@@ -6827,7 +6829,17 @@
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
             &let
-              member-forms $ &list:map members data-definition-type-form
+              member-forms $ &list:map members $ fn (member)
+                if (symbol? member)
+                  &list:assoc (quote 'T) 1 member
+                  if
+                    and (list? member)
+                      not $ empty? member
+                      symbol? $ &list:nth member 0
+                      not $ &= 'quote $ &list:nth member 0
+                      not $ &= ':: $ &list:nth member 0
+                    [] 'quote member
+                    , member
               quasiquote $ &union-def:new (~ $ turn-tag name) ~@member-forms
           :examples $ [] $ quote (; defunion CssValue 'String 'Number)
           :schema $ quote $ Macro Syntax & Syntax
