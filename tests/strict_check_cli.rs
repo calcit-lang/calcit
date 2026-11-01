@@ -616,6 +616,8 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     ("sequence-value", "quote $ def sequence-value $ [] 12 false :block", false),
     ("pair-value", "quote $ def pair-value $ [] 12 false", false),
     ("pair-value", "quote $ def pair-value $ [] 12 |ready |extra", false),
+    ("ref-value", "quote $ def ref-value $ ref $ [] 12 :block |sans", true),
+    ("ref-value", "quote $ def ref-value $ ref $ [] 12 false :block", false),
     (
       "app.collection-shadow/nested-values",
       "quote $ def nested-values $ [] 12 :block |sans",
@@ -639,6 +641,24 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     let probe = format!("{namespace}/probe!");
     let operations = serde_json::json!([
       ["config", "set", "target", "native"],
+      [
+        "edit",
+        "def",
+        "app.collection-value/ref-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def ref-value $ ref $ [] 12 :block |sans"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.collection-value/ref-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote (Ref (List app.collection-value/Scalar))"
+      ],
       [
         "edit",
         "def",
