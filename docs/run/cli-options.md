@@ -312,7 +312,7 @@ policies. It cannot be combined with `--strict-types`; the CLI rejects that
 contradictory request.
 
 `--no-proof-audit` keeps every other strict diagnostic but skips the default
-assertion-proof audit (#2121) for check-only, run and `js`. Use it for
+assertion-proof audit (#2121) for check-only (including `--check-only --ns`), run and `js`. Use it for
 programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
 `calcit/test.cirru`. It is rejected together with `--compat-types`, which
 already skips the audit. Setting `CALCIT_PROOF_AUDIT=0` in the environment has
@@ -453,7 +453,7 @@ calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --format json
 ```
 
-`--check-only --ns` 要求 entry 声明 target，可与 `--deps`、`--summary-only`、`--format human|edn|json` 组合，不能与 `--keep-going`、`--all-defs` 或 `--incremental` 同用。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。结构化输出（`analyze.check-public` schema version 1）返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
+`--check-only --ns` 要求 entry 声明 target，可与 `--deps`、`--summary-only`、`--format human|edn|json` 组合，不能与 `--keep-going`、`--all-defs` 或 `--incremental` 同用。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。所选 definition 全部通过普通检查后，再按默认证明审计逐个检查一遍，与普通 `--check-only` 报告同样的 `E_FN_RETURN_UNPROVEN`、`E_CALL_ARGUMENT_UNPROVEN` 等诊断；`--no-proof-audit` 或 `CALCIT_PROOF_AUDIT=0` 跳过这一步。结构化输出（`analyze.check-public` schema version 1）返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
 
 ### Macro Expansion Metrics (--macro-metrics)
 
