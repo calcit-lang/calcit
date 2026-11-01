@@ -84,7 +84,7 @@ impl CalcitProc {
       NativeImplOrigin => Result("`Option :none` for an inherent impl"),
       NativeNamedEnumNew => Raises("the variant is not defined or the payload does not match its arity"),
       NativeEnumNth | NativeEnumAssoc | NativeImplNth => Raises(INDEX),
-      NativeStructNew | NativeEnumNew | NativeTraitNew | NativeImplNew => Raises("the definition data is malformed"),
+      NativeStructNew | NativeEnumNew | NativeUnionNew | NativeTraitNew | NativeImplNew => Raises("the definition data is malformed"),
       NativeStructValueImplTraits | NativeEnumValueImplTraits | NativeStructImplTraits | NativeEnumImplTraits => {
         Raises("an attached value is not an impl")
       }

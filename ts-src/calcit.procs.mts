@@ -29,6 +29,7 @@ import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStructDef } from "./js-struct-def.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
+import { CalcitUnionDef } from "./js-union-def.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 
 export * from "./calcit-data.mjs";
@@ -104,6 +105,9 @@ export let type_of = (x: any): CalcitTag => {
   }
   if (x instanceof CalcitEnumDef) {
     return newTag("enum-def");
+  }
+  if (x instanceof CalcitUnionDef) {
+    return newTag("union-def");
   }
   if (x instanceof CalcitTrait) {
     return newTag("trait");
@@ -473,6 +477,13 @@ export let _$n_struct_def_$o_new = (name: CalcitValue, ...entries: CalcitValue[]
 
 export let _$n_enum_def_$o_new = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {
   return defenum(name, ...variants);
+};
+
+export let _$n_union_def_$o_new = (name: CalcitValue, ...members: CalcitValue[]): CalcitUnionDef => {
+  if (members.length < 2) {
+    throw new Error("&union-def:new expects at least two member types");
+  }
+  return new CalcitUnionDef(castTag(name).value, members);
 };
 
 export let print = (...xs: CalcitValue[]): void => {

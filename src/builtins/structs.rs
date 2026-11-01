@@ -442,6 +442,31 @@ fn check_struct_field_default(form: &Calcit, field_type: &CalcitTypeAnnotation) 
   Ok(value)
 }
 
+/// Build the runtime value of a `defunion`. Member checks happen in preprocess,
+/// where the member forms resolve against the program.
+pub fn new_union(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let name = match xs.first() {
+    Some(Calcit::Symbol { sym, .. }) => EdnTag(sym.to_owned()),
+    Some(Calcit::Tag(k)) => k.to_owned(),
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&union-def:new expects a name (symbol or tag), but received: {other:?}"),
+      );
+    }
+  };
+  if xs.len() < 3 {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&union-def:new expects at least two member types for {name}"),
+    );
+  }
+  Ok(Calcit::UnionDef(Arc::new(crate::calcit::CalcitUnionDef::new(
+    name,
+    xs[1..].to_vec(),
+  ))))
+}
+
 pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     let hint = format_proc_examples_hint(&CalcitProc::NativeEnumNew).unwrap_or_default();

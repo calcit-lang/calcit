@@ -13,7 +13,7 @@ use cirru_edn::{Edn, EdnListView, EdnMapView, EdnSetView, EdnTag};
 
 use super::{
   CORE_NS, Calcit, CalcitEnumDef, CalcitEnumValue, CalcitFn, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
-  CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
+  CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitUnionDef,
 };
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{LazyLock, OnceLock};
@@ -1191,6 +1191,8 @@ fn bounded_plain_type_relation<'a>(
           result = result.and(NeedsBoundary(Boundary::Dynamic));
         }
       }
+      // Union membership needs the member list; the full matcher owns it.
+      _ if !Type::same_zero_arg_type_ref(actual, expected) && (actual.names_union() || expected.names_union()) => return Ok(None),
       (Type::List(left), Type::List(right))
       | (Type::Set(left), Type::Set(right))
       | (Type::Variadic(left), Type::Variadic(right))
@@ -2185,6 +2187,7 @@ impl CalcitTypeAnnotation {
       "record" | "Record" | "struct" | "Struct" => Some("Struct"),
       "struct-def" | "StructDef" => Some("StructDef"),
       "enum-def" | "EnumDef" => Some("EnumDef"),
+      "union-def" | "UnionDef" => Some("UnionDef"),
       "trait" | "Trait" => Some("Trait"),
       "impl" | "Impl" => Some("Impl"),
       _ => None,
@@ -2221,6 +2224,7 @@ impl CalcitTypeAnnotation {
       "Struct" => Some(Self::Custom(Arc::new(Calcit::tag("struct")))),
       "StructDef" => Some(Self::Custom(Arc::new(Calcit::tag("struct-def")))),
       "EnumDef" => Some(Self::Custom(Arc::new(Calcit::tag("enum-def")))),
+      "UnionDef" => Some(Self::Custom(Arc::new(Calcit::tag("union-def")))),
       "Trait" => Some(Self::Custom(Arc::new(Calcit::tag("trait")))),
       "Impl" => Some(Self::Custom(Arc::new(Calcit::tag("impl")))),
       // These forms require a payload and are handled by the type-expression parser.
@@ -4753,6 +4757,120 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Whether this is a zero-argument reference naming a `defunion`.
+  pub(crate) fn names_union(&self) -> bool {
+    matches!(self, Self::TypeRef(_, args) if args.is_empty()) && self.resolve_to_union().is_some()
+  }
+
+  fn same_zero_arg_type_ref(left: &Self, right: &Self) -> bool {
+    matches!((left, right), (Self::TypeRef(a, a_args), Self::TypeRef(b, b_args))
+      if a_args.is_empty() && b_args.is_empty() && a.trim_start_matches('\'') == b.trim_start_matches('\''))
+  }
+
+  /// Relation rules for `defunion` types, or `None` when neither side is a union.
+  ///
+  /// A member type flows into its union, and a union flows into a union that
+  /// has all of its members. A union flows nowhere else except Dynamic and
+  /// unconstrained type variables: its value must be taken apart with `match`.
+  #[inline]
+  fn union_relation(&self, expected: &Self, bindings: &mut TypeBindings, mode: PlainRelationMode) -> Option<TypeProof> {
+    // Cheap shape check first: only zero-argument references can name a union.
+    // The full check lives out of line so relation recursion keeps small frames.
+    let zero_arg_ref = |annotation: &Self| matches!(annotation, Self::TypeRef(_, args) if args.is_empty());
+    if !zero_arg_ref(self) && !zero_arg_ref(expected) {
+      return None;
+    }
+    self.union_relation_slow(expected, bindings, mode)
+  }
+
+  #[inline(never)]
+  fn union_relation_slow(&self, expected: &Self, bindings: &mut TypeBindings, mode: PlainRelationMode) -> Option<TypeProof> {
+    use TypeProof::{Mismatch, NeedsBoundary, Proven};
+    let as_union = |annotation: &Self| match annotation {
+      Self::TypeRef(_, args) if args.is_empty() => annotation.resolve_to_union(),
+      _ => None,
+    };
+    let expected_union = as_union(expected);
+    let actual_union = as_union(self);
+    if expected_union.is_none() && actual_union.is_none() {
+      return None;
+    }
+    match (self, expected) {
+      (Self::Never, _) => return Some(Proven),
+      (_, Self::Dynamic) => return Some(Proven),
+      (Self::Dynamic, _) => {
+        return Some(match mode {
+          PlainRelationMode::Proof => NeedsBoundary(TypeBoundaryReason::Dynamic),
+          PlainRelationMode::Compatibility => Proven,
+        });
+      }
+      (Self::TypeVar(_), _) | (_, Self::TypeVar(_)) => return None,
+      _ => {}
+    }
+    let relate = |actual: &Self, expected: &Self, bindings: &mut TypeBindings| match mode {
+      PlainRelationMode::Proof => actual.prove_with_bindings(expected, bindings),
+      PlainRelationMode::Compatibility => {
+        if actual.compatible_with_bindings(expected, bindings) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
+    };
+    // Relate one actual type to a union: the first member that admits it wins.
+    let into_union = |actual: &Self, union_def: &CalcitUnionDef, bindings: &mut TypeBindings| {
+      let Ok(members) = union_def.checked_members() else {
+        return Mismatch;
+      };
+      let mut best = Mismatch;
+      for member in members {
+        match relate(actual, member.annotation.as_ref(), bindings) {
+          Proven => return Proven,
+          boundary @ NeedsBoundary(_) if best.is_mismatch() => best = boundary,
+          _ => {}
+        }
+      }
+      best
+    };
+    Some(match (actual_union, expected_union) {
+      (Some(actual), Some(expected)) if actual.same_definition(&expected) => Proven,
+      (Some(actual), Some(expected)) => {
+        let Ok(members) = actual.checked_members() else {
+          return Some(Mismatch);
+        };
+        let mut result = Proven;
+        for member in members {
+          result = result.and(into_union(member.annotation.as_ref(), &expected, bindings));
+          if result.is_mismatch() {
+            break;
+          }
+        }
+        result
+      }
+      (Some(_), None) => Mismatch,
+      (None, Some(expected)) => into_union(self, &expected, bindings),
+      (None, None) => unreachable!("checked above"),
+    })
+  }
+
+  /// Resolve a named reference to a `defunion` definition.
+  pub fn resolve_to_union(&self) -> Option<Arc<CalcitUnionDef>> {
+    match self {
+      Self::TypeRef(name, args) if args.is_empty() => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_union_from_program(ns, def)
+        } else {
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_union_from_program(&ns, stripped))
+            .or_else(|| resolve_union_from_program(CORE_NS, stripped))
+        }
+      }
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_union()),
+      _ => None,
+    }
+  }
+
   /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
   pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
     self.resolve_fn_with_optionality().map(|(signature, _)| signature)
@@ -5090,6 +5208,9 @@ impl CalcitTypeAnnotation {
     if matches!(expected, Self::Never) {
       return false;
     }
+    if let Some(proof) = self.union_relation(expected, bindings, PlainRelationMode::Compatibility) {
+      return !proof.is_mismatch();
+    }
     let _relation_guard = enter_compatibility_relation();
     // The bounded plain relation intentionally does not carry generic bindings.
     // Let the binding-aware matcher below specialize either side before taking
@@ -5161,6 +5282,9 @@ impl CalcitTypeAnnotation {
   }
 
   fn compatible_one_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    if let Some(proof) = self.union_relation(expected, bindings, PlainRelationMode::Compatibility) {
+      return !proof.is_mismatch();
+    }
     // Applied Struct arguments are a payload contract, not a nominal wildcard.
     // Reuse proof so a bare instance or Dynamic argument cannot borrow concrete
     // evidence from the destination declaration, including nested call types.
@@ -5539,6 +5663,9 @@ impl CalcitTypeAnnotation {
 
     if matches!(self, Self::Never) {
       return Proven;
+    }
+    if let Some(proof) = self.union_relation(expected, bindings, PlainRelationMode::Proof) {
+      return proof;
     }
 
     match bounded_plain_type_relation(self, expected, PlainRelationMode::Proof) {
@@ -6706,7 +6833,67 @@ pub(crate) fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   if is_defenum_head(head) || is_enum_new_head(head) {
     return parse_defenum_code(items.as_ref()).map(Calcit::EnumDef);
   }
+  if is_defunion_head(head) || is_union_new_head(head) {
+    return parse_defunion_code(items.as_ref()).map(|union_def| Calcit::UnionDef(Arc::new(union_def)));
+  }
   None
+}
+
+fn is_defunion_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defunion")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "defunion")
+}
+
+fn is_union_new_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Proc(CalcitProc::NativeUnionNew))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&union-def:new")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "&union-def:new")
+}
+
+/// Read a `defunion` source form without evaluating it. Member forms stay as
+/// written; `CalcitUnionDef::members` parses them on demand.
+fn parse_defunion_code(items: &CalcitList) -> Option<CalcitUnionDef> {
+  let name_form = items.get(1)?;
+  let name = parse_type_name(name_form)?;
+  let definition_ref = match name_form {
+    Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
+    _ => None,
+  };
+  let members: Vec<Calcit> = items.iter().skip(2).cloned().collect();
+  let mut union_def = CalcitUnionDef::new(name, members);
+  union_def.set_definition_ref(definition_ref);
+  Some(union_def)
+}
+
+/// Read a `defunion` from definition source without evaluating anything:
+/// only `quote`, thunk and `def` wrappers are peeled.
+fn union_def_from_code(code: &Calcit) -> Option<CalcitUnionDef> {
+  match code {
+    Calcit::Thunk(thunk) => union_def_from_code(thunk.get_code()),
+    Calcit::List(items) => {
+      let head = items.first()?;
+      if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+      {
+        return union_def_from_code(items.get(1)?);
+      }
+      if is_def_head(head) {
+        return union_def_from_code(items.get(2)?);
+      }
+      if is_defunion_head(head) || is_union_new_head(head) {
+        return parse_defunion_code(items.as_ref());
+      }
+      None
+    }
+    Calcit::UnionDef(union_def) => Some(union_def.as_ref().to_owned()),
+    _ => None,
+  }
+}
+
+/// Resolve a union definition by namespace and definition name from the program registry.
+fn resolve_union_from_program(ns: &str, def: &str) -> Option<Arc<CalcitUnionDef>> {
+  let mut union_def = lookup_def_code_registered(ns, def).and_then(|code| union_def_from_code(&code))?;
+  union_def.set_definition_ref(Some(Arc::from(format!("{ns}/{def}"))));
+  Some(Arc::new(union_def))
 }
 
 fn is_def_head(head: &Calcit) -> bool {
@@ -11284,6 +11471,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         "tuple" | "enum" => matches!(value, Calcit::Enum(_)),
         "struct-def" => matches!(value, Calcit::StructDef(_)),
         "enum-def" => matches!(value, Calcit::EnumDef(_)),
+        "union-def" => matches!(value, Calcit::UnionDef(_)),
         _ => true, // unknown custom types: be permissive
       },
       Calcit::Trait(expected) => {
@@ -11455,6 +11643,7 @@ pub fn brief_type_of_value(value: &Calcit) -> &'static str {
     Calcit::Struct(_) => "struct",
     Calcit::StructDef(_) => "struct-def",
     Calcit::EnumDef(_) => "enum-def",
+    Calcit::UnionDef(_) => "union-def",
     Calcit::Fn { .. } | Calcit::Proc(_) => "fn",
     Calcit::Macro { .. } => "macro",
     Calcit::Syntax(..) => "syntax",

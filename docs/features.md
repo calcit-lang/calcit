@@ -19,6 +19,7 @@ leads_to:
   - core/features/structs
   - core/features/anonymous-enums
   - core/features/enums
+  - core/features/unions
   - core/features/type-guidance
   - core/features/api-roles
 ---
@@ -85,7 +86,7 @@ Use this section as a keyword index for `calcit docs read`:
 Task-oriented jump map:
 
 - Data transforms → [List](features/list.md), [HashMap](features/hashmap.md), [Sets](features/sets.md)
-- Domain modeling → [Structs](features/structs.md), [Enums](features/enums.md), [Anonymous Enums](features/anonymous-enums.md)
+- Domain modeling → [Structs](features/structs.md), [Enums](features/enums.md), [Anonymous Enums](features/anonymous-enums.md), [Unions](features/unions.md)
 - Type safety → [Static Analysis](features/static-analysis.md), [Error Handling](features/error-handling.md)
 - Extensibility → [Macros](features/macros.md), [Traits](features/traits.md), [Polymorphism](features/polymorphism.md)
 - Runtime integration → [JavaScript Interop](features/js-interop.md), [Imports](features/imports.md)

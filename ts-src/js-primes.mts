@@ -5,6 +5,7 @@ import { CalcitStructValue } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStructDef } from "./js-struct-def.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
+import { CalcitUnionDef } from "./js-union-def.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
@@ -31,6 +32,7 @@ export type CalcitValue =
   | CalcitTrait
   | CalcitStructDef
   | CalcitEnumDef
+  | CalcitUnionDef
   | CalcitCirruQuote
   | Uint8Array
   | undefined

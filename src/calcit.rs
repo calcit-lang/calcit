@@ -19,6 +19,7 @@ mod syntax_name;
 mod thunk;
 pub(crate) mod type_annotation;
 pub(crate) mod type_expr;
+pub mod union_def;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -69,6 +70,7 @@ pub use type_annotation::{
   configure_entry_type_slots, entry_type_slots, install_entry_type_slots, pop_type_slot_override, push_type_slot_override,
   register_program_lookups, register_type_slot, resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
 };
+pub use union_def::CalcitUnionDef;
 
 use compare::{
   compare_any_ref_values, compare_calcit_enum_values, compare_calcit_impl_values, compare_calcit_struct_values,
@@ -129,6 +131,8 @@ pub enum Calcit {
   StructDef(CalcitStructDef),
   /// `defenum` definition value, wraps the closed variant set.
   EnumDef(CalcitEnumDef),
+  /// `defunion` definition value: a closed set of member types without a runtime wrapper.
+  UnionDef(Arc<CalcitUnionDef>),
   /// trait definition value, carries method signatures
   Trait(CalcitTrait),
   /// trait implementation value, carries methods and target trait name
@@ -283,6 +287,15 @@ impl fmt::Display for Calcit {
         for (k, t) in fields.iter().zip(field_types.iter()) {
           f.write_char(' ')?;
           f.write_str(&format!("(:{k} {})", t.to_brief_string()))?;
+        }
+        f.write_char(')')
+      }
+      UnionDef(union_def) => {
+        f.write_str("(%union-def ")?;
+        f.write_str(&format!("'{}", union_def.name))?;
+        for member in union_def.member_forms.iter() {
+          f.write_char(' ')?;
+          f.write_str(&format!("{member}"))?;
         }
         f.write_char(')')
       }
@@ -574,6 +587,12 @@ impl Hash for Calcit {
           imp.values.hash(_state);
         }
       }
+      UnionDef(union_def) => {
+        "union:".hash(_state);
+        union_def.definition_ref().hash(_state);
+        union_def.name.hash(_state);
+        union_def.member_forms.hash(_state);
+      }
       EnumDef(enum_def) => {
         "enum:".hash(_state);
         enum_def.definition_ref().hash(_state);
@@ -758,6 +777,10 @@ impl Ord for Calcit {
       (EnumDef { .. }, _) => Less,
       (_, EnumDef { .. }) => Greater,
 
+      (UnionDef(a), UnionDef(b)) => a.name.cmp(&b.name).then_with(|| a.definition_ref().cmp(&b.definition_ref())),
+      (UnionDef { .. }, _) => Less,
+      (_, UnionDef { .. }) => Greater,
+
       (Trait(a), Trait(b)) => compare_calcit_trait_values(a, b),
       (Trait { .. }, _) => Less,
       (_, Trait { .. }) => Greater,
@@ -833,6 +856,7 @@ impl PartialEq for Calcit {
       (Struct(a), Struct(b)) => a == b,
       (StructDef(a), StructDef(b)) => a == b,
       (EnumDef(a), EnumDef(b)) => a == b,
+      (UnionDef(a), UnionDef(b)) => a == b,
       (Trait(a), Trait(b)) => a == b,
       (Impl(a), Impl(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,
@@ -986,6 +1010,7 @@ impl Calcit {
       Struct(struct_value) => format!("**Calcit struct value** (`{}`)", struct_value.name()),
       StructDef(strukt) => format!("**Calcit struct definition** (`{}`)", strukt.name),
       EnumDef(enm) => format!("**Calcit enum definition** (`{}`)", enm.name()),
+      UnionDef(union_def) => format!("**Calcit union definition** (`{}`)", union_def.name),
       Trait(trt) => format!("**Calcit trait** (`{}`) — trait definition", trt.name),
       Impl(imp) => format!("**Calcit impl** (`{}`) — trait implementation", imp.name),
       Proc(p) => format!("**Calcit procedure** (`{p}`) — native function"),

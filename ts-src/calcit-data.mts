@@ -7,6 +7,7 @@ import { CalcitStructValue, fieldsEqual } from "./js-struct-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStructDef } from "./js-struct-def.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
+import { CalcitUnionDef } from "./js-union-def.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 import { CalcitValue, _$n_compare } from "./js-primes.mjs";
@@ -600,6 +601,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitEnumDef) {
+    return x.toString();
+  }
+  if (x instanceof CalcitUnionDef) {
     return x.toString();
   }
   if (x instanceof CalcitTrait) {

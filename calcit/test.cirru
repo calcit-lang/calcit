@@ -5,7 +5,7 @@
   :entries $ {} $ :default
     {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
-      :modules $ [] |./test-hygienic.cirru |./test-macro.cirru |./test-recursion.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
+      :modules $ [] |./test-hygienic.cirru |./test-macro.cirru |./test-recursion.cirru |./test-edn.cirru |./test-js.cirru |./test-struct.cirru |./test-anonymous-enum.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-union.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./test-def-meta.cirru |./util.cirru
       :type-slots $ {}
   :files $ {} $ 'app.main
     %{} 'FileEntry
@@ -134,6 +134,7 @@
             test-types-inference/main!
             test-generics/main!
             test-enum/main!
+            test-union/main!
             test-traits/main!
             assert= 2 $ cross-module-counter-next $ %{} test-traits.external/Counter (:value 1)
             test-doc-smoke/main!
@@ -479,5 +480,5 @@
           :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
-          :require (test-hygienic.main :as test-hygienic) (test-macro.main :as test-macro) (test-recursion.main :as test-recursion) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
+          :require (test-hygienic.main :as test-hygienic) (test-macro.main :as test-macro) (test-recursion.main :as test-recursion) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-union.main :as test-union) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)
             util.core :refer $ log-title inside-eval: inside-js:
