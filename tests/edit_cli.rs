@@ -3172,6 +3172,77 @@ fn transaction_scope(snapshot: &Path, operations: &str) -> String {
   report["scoped_revision"].as_str().expect("scoped revision").to_owned()
 }
 
+#[test]
+fn union_alias_patterns_reject_other_definitions_and_duplicate_members() {
+  // Rejected programs cannot execute attached tests. Keep the positive
+  // Struct/Enum alias contract in test-union.cirru for native/JS replay.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let operations = serde_json::json!([
+    ["config", "set", "target", "native"],
+    ["edit", "def", "app.main/Base", "--code", "quote $ defstruct Base (:value String)"],
+    ["edit", "def", "app.main/String", "--code", "quote $ def String Base"],
+    ["edit", "def", "app.main/Other", "--code", "quote $ defstruct Other (:value String)"],
+    ["edit", "def", "app.main/Alias", "--code", "quote $ def Alias Base"],
+    ["edit", "def", "app.main/OtherAlias", "--code", "quote $ def OtherAlias Other"],
+    ["edit", "def", "app.main/Input", "--code", "quote $ defunion Input Base String"],
+    [
+      "edit",
+      "def",
+      "app.main/read-input",
+      "--code",
+      "quote $ defn read-input (value) $ match value ((String text) text) ((Alias item) (:value item))"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.main/read-input",
+      "--code",
+      "quote $ Fn app.main/Input (-> String)"
+    ]
+  ])
+  .to_string();
+  let revision = transaction_scope(&snapshot, &operations);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--expect-revision", &revision],
+    ),
+    "prepare nominal alias fixture",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]),
+    "the actual member alias must check",
+  );
+  for (body, expected) in [
+    (
+      "quote $ match value ((String text) text) ((OtherAlias item) (:value item))",
+      "not a member",
+    ),
+    (
+      "quote $ match value ((String text) text) ((Base item) (:value item)) ((Alias item) (:value item))",
+      "duplicate branch",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["tree", "replace", "app.main/read-input", "--path", "@3", "--code", body],
+      ),
+      "replace only the rejected match body",
+    );
+    let output = run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]);
+    assert!(!output.status.success(), "invalid nominal pattern must be rejected");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("public check JSON");
+    assert!(
+      report["diagnostics"].as_array().unwrap().iter().any(|diagnostic| {
+        diagnostic["code"] == "E_UNION_MATCH_PATTERN" && diagnostic["message"].as_str().unwrap().contains(expected)
+      }),
+      "expected nominal-pattern diagnostic: {report}"
+    );
+  }
+}
+
 /// Transactions on different definitions commit in either order with scoped revisions.
 #[test]
 fn scoped_revisions_let_transactions_on_different_definitions_commit_independently() {

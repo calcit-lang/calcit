@@ -163,6 +163,37 @@ fn typed_local(
   })
 }
 
+fn nominal_pattern_type(name: &str, file_ns: &str) -> CalcitTypeAnnotation {
+  let (ns, def): (Arc<str>, Arc<str>) = if let Some((prefix, def)) = name.rsplit_once('/') {
+    (
+      program::lookup_ns_target_in_import(file_ns, prefix).unwrap_or_else(|| Arc::from(prefix)),
+      Arc::from(def),
+    )
+  } else if program::has_def_code(file_ns, name) {
+    (Arc::from(file_ns), Arc::from(name))
+  } else {
+    (
+      program::lookup_def_target_in_import(file_ns, name).unwrap_or_else(|| Arc::from(calcit::CORE_NS)),
+      Arc::from(name),
+    )
+  };
+  CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]))
+}
+
+fn same_nominal_pattern(member: &UnionMember, pattern: &CalcitTypeAnnotation) -> bool {
+  match member.kind {
+    UnionMemberKind::Struct(_) => pattern
+      .resolve_to_struct()
+      .zip(member.annotation.resolve_to_struct())
+      .is_some_and(|(actual, expected)| actual.same_nominal_definition(&expected)),
+    UnionMemberKind::Enum(_) => pattern
+      .resolve_to_enum()
+      .zip(member.annotation.resolve_to_enum())
+      .is_some_and(|(actual, expected)| actual.same_nominal_definition(&expected)),
+    _ => false,
+  }
+}
+
 /// Lower `match` on a union value. `value_form` is already preprocessed.
 pub(super) fn lower_union_match(
   union_def: &CalcitUnionDef,
@@ -229,7 +260,16 @@ pub(super) fn lower_union_match(
             Some(&pair[0]),
           ));
         };
-        let Some(member_index) = members.iter().position(|member| member.pattern_name.as_ref() == type_name.as_ref()) else {
+        // Canonical member names remain valid labels. Other spellings must
+        // resolve to the same nominal definition, including constructor aliases.
+        let Some(member_index) = members
+          .iter()
+          .position(|member| member.pattern_name.as_ref() == type_name.as_ref())
+          .or_else(|| {
+            let pattern_type = nominal_pattern_type(type_name, file_ns);
+            members.iter().position(|member| same_nominal_pattern(member, &pattern_type))
+          })
+        else {
           let names: Vec<&str> = members.iter().map(|member| member.pattern_name.as_ref()).collect();
           return Err(union_error(
             format!(

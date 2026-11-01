@@ -10,6 +10,10 @@
   :files $ {} $ 'test-union.main
     %{} 'FileEntry
       :defs $ {}
+        'AliasValue $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion AliasValue test-union.main/PointAlias test-union.main/ShapeAlias String
+          :examples $ []
+          :schema $ quote UnionDef
         'Cells $ %{} 'CodeEntry
           :doc "|A member written as a compound type, which keeps its quote."
           :code $ quote $ defunion Cells String
@@ -32,8 +36,16 @@
           :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
+        'PointAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def PointAlias Point
+          :examples $ []
+          :schema $ quote StructDef
         'Shape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Shape (:circle Number) (:square Number)
+          :examples $ []
+          :schema $ quote EnumDef
+        'ShapeAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def ShapeAlias Shape
           :examples $ []
           :schema $ quote EnumDef
         'Style $ %{} 'CodeEntry
@@ -82,6 +94,24 @@
               assert= "|point 1" $ describe $ Point :x 1 :y 2
               assert= "|circle 3" $ describe $ Shape :circle 3
               assert= |plain $ describe |plain
+            :tags $ #{} :union :unit
+        'describe-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn describe-alias (value)
+            match value
+              (PointAlias point)
+                str "|point " $ :x point
+              (test-union.main/ShapeAlias shape)
+                match shape
+                  (:circle radius) (str "|circle " radius)
+                  (:square width) (str "|square " width)
+              (String text) text
+          :examples $ []
+          :schema $ quote $ Fn test-union.main/AliasValue (-> String)
+          :tests $ [] $ %{} 'TestEntry (:name |nominal-alias-patterns)
+            :code $ quote $ do
+              assert= "|point 1" $ describe-alias $ PointAlias :x 1 :y 2
+              assert= "|circle 3" $ describe-alias $ ShapeAlias :circle 3
+              assert= |plain $ describe-alias |plain
             :tags $ #{} :union :unit
         'describe-all $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn describe-all (xs)
