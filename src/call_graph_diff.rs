@@ -1,7 +1,7 @@
 use crate::call_tree::{self, CallTreeNode};
 use crate::cli_args::CallGraphDiffCommand;
 use crate::program::{self, PROGRAM_CODE_DATA};
-use crate::program_diff::DiffStatus;
+use crate::program_diff::{DiffStatus, parse_historical_snapshot};
 use crate::snapshot::{CodeEntry, Snapshot, load_snapshot_data};
 use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
@@ -57,7 +57,7 @@ pub fn analyze_call_graph_diff(cmd: &CallGraphDiffCommand, input_path: &str) -> 
 
   let historical_content = git_show_file(&repo_root, &cmd.git_ref, &repo_rel_path)?;
   let historical_label = format!("{}:{}", cmd.git_ref, repo_rel_path.display());
-  let mut historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+  let mut historical_snapshot = parse_historical_snapshot(&historical_content, &historical_label, &snapshot_path)?;
   attach_modules_and_core(&mut historical_snapshot, base_dir, &module_folder, &core_snapshot)?;
 
   let (entry_ns, entry_def) = resolve_entry_point(&current_snapshot, cmd.root.as_deref())?;

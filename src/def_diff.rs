@@ -1,6 +1,6 @@
 use crate::program_diff::{
-  DiffNode, ProgramDiffStats, collect_stats, diff_code_entry, format_tree_node, git_root, git_show_file, parse_snapshot,
-  repo_relative_path, resolve_input_path,
+  DiffNode, ProgramDiffStats, collect_stats, diff_code_entry, format_tree_node, git_root, git_show_file, parse_historical_snapshot,
+  parse_snapshot, repo_relative_path, resolve_input_path,
 };
 use crate::snapshot::{CodeEntry, Snapshot};
 use crate::util::string::extract_ns_def;
@@ -30,11 +30,11 @@ pub fn analyze_def_diff(target: &str, git_ref: &str, base_ref: Option<&str>, inp
     Some(base) => {
       let base_content = git_show_file(&repo_root, base, &repo_rel_path)?;
       let base_label = format!("{base}:{}", repo_rel_path.display());
-      let base_snapshot = parse_snapshot(&base_content, &base_label, &snapshot_path)?;
+      let base_snapshot = parse_historical_snapshot(&base_content, &base_label, &snapshot_path)?;
 
       let target_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
       let target_label = format!("{git_ref}:{}", repo_rel_path.display());
-      let target_snapshot = parse_snapshot(&target_content, &target_label, &snapshot_path)?;
+      let target_snapshot = parse_historical_snapshot(&target_content, &target_label, &snapshot_path)?;
 
       (base_snapshot, target_snapshot, format!("{base}..{git_ref}"))
     }
@@ -44,7 +44,7 @@ pub fn analyze_def_diff(target: &str, git_ref: &str, base_ref: Option<&str>, inp
 
       let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
       let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
-      let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+      let historical_snapshot = parse_historical_snapshot(&historical_content, &historical_label, &snapshot_path)?;
 
       (historical_snapshot, current_snapshot, git_ref.to_string())
     }

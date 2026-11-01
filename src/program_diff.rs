@@ -1,5 +1,7 @@
 use crate::calcit::CalcitTypeAnnotation;
-use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, VerificationConfig, load_snapshot_data};
+use crate::snapshot::{
+  CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, VerificationConfig, load_historical_snapshot_data, load_snapshot_data,
+};
 use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
@@ -169,11 +171,11 @@ pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &
       // Two-ref mode: both sides from git history
       let base_content = git_show_file(&repo_root, base, &repo_rel_path)?;
       let base_label = format!("{base}:{}", repo_rel_path.display());
-      let base_snapshot = parse_snapshot(&base_content, &base_label, &snapshot_path)?;
+      let base_snapshot = parse_historical_snapshot(&base_content, &base_label, &snapshot_path)?;
 
       let target_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
       let target_label = format!("{git_ref}:{}", repo_rel_path.display());
-      let target_snapshot = parse_snapshot(&target_content, &target_label, &snapshot_path)?;
+      let target_snapshot = parse_historical_snapshot(&target_content, &target_label, &snapshot_path)?;
 
       let root = diff_snapshot(&base_snapshot, &target_snapshot);
       let stats = collect_stats(&root);
@@ -194,7 +196,7 @@ pub fn analyze_program_diff(git_ref: &str, base_ref: Option<&str>, input_path: &
 
       let historical_content = git_show_file(&repo_root, git_ref, &repo_rel_path)?;
       let historical_label = format!("{git_ref}:{}", repo_rel_path.display());
-      let historical_snapshot = parse_snapshot(&historical_content, &historical_label, &snapshot_path)?;
+      let historical_snapshot = parse_historical_snapshot(&historical_content, &historical_label, &snapshot_path)?;
 
       let root = diff_snapshot(&historical_snapshot, &current_snapshot);
       let stats = collect_stats(&root);
@@ -640,6 +642,23 @@ pub(crate) fn parse_snapshot(content: &str, error_label: &str, snapshot_path: &s
   strip_shebang(&mut content);
   let parsed: Edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse '{error_label}' as Cirru EDN: {e}"))?;
   load_snapshot_data(&parsed, snapshot_path).map_err(|e| format!("Failed to load snapshot '{error_label}': {e}"))
+}
+
+/// Parse a read-only historical Snapshot (a Git revision). Retired type storage is
+/// normalized in memory the way `calcit edit format` would write it; the working tree
+/// keeps the strict loader because users can format it themselves.
+pub(crate) fn parse_historical_snapshot(content: &str, error_label: &str, snapshot_path: &str) -> Result<Snapshot, String> {
+  let mut content = content.to_string();
+  strip_shebang(&mut content);
+  let parsed: Edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse '{error_label}' as Cirru EDN: {e}"))?;
+  let (snapshot, normalized) =
+    load_historical_snapshot_data(&parsed, snapshot_path).map_err(|e| format!("Failed to load snapshot '{error_label}': {e}"))?;
+  if normalized {
+    eprintln!(
+      "note: '{error_label}' uses retired Snapshot storage; compared its `edit format` normalization in memory (history is unchanged)"
+    );
+  }
+  Ok(snapshot)
 }
 
 fn diff_snapshot(old: &Snapshot, new: &Snapshot) -> DiffNode {

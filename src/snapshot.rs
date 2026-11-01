@@ -4774,6 +4774,29 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
   changed
 }
 
+/// Load a read-only historical Snapshot (for example a Git baseline) for comparison.
+///
+/// Content accepted by the strict loader is returned unchanged. Otherwise the content
+/// is normalized in memory through the same steps `calcit edit format` uses
+/// ([`load_snapshot_data_for_format`], [`canonicalize_snapshot_type_syntax`],
+/// [`render_snapshot_content`]) and the rendered text is reloaded strictly, so callers
+/// never receive retired syntax. Nothing is written back. Representations that
+/// `edit format` cannot migrate (such as the removed `Optional<T>`) keep their error.
+/// The boolean reports whether normalization was needed.
+pub fn load_historical_snapshot_data(data: &Edn, path: &str) -> Result<(Snapshot, bool), String> {
+  if let Ok(snapshot) = load_snapshot_data(data, path) {
+    return Ok((snapshot, false));
+  }
+  let unsupported = |error: String| format!("read-only `edit format` normalization does not support this Snapshot: {error}");
+  let (mut snapshot, _migration) = load_snapshot_data_for_format(data, path).map_err(unsupported)?;
+  canonicalize_snapshot_type_syntax(&mut snapshot);
+  let mut rendered = render_snapshot_content(&snapshot).map_err(unsupported)?;
+  crate::util::string::strip_shebang(&mut rendered);
+  let reparsed = cirru_edn::parse(&rendered).map_err(|error| unsupported(error.to_string()))?;
+  let normalized = load_snapshot_data(&reparsed, path).map_err(unsupported)?;
+  Ok((normalized, true))
+}
+
 /// Render snapshot content for runtime snapshot files such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
 pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
@@ -6008,6 +6031,24 @@ mod tests {
     ] {
       load_snapshot_data(&mini_snapshot_with_def(schema, code), "mini.cirru").unwrap_or_else(|err| panic!("{schema} {code}: {err}"));
     }
+  }
+
+  #[test]
+  fn historical_load_normalizes_retired_type_storage_like_format() {
+    let canonical = mini_snapshot_with_def("$ quote $ Fn Number (-> String)", "(defn main! (x) (str x))");
+    let (snapshot, normalized) = load_historical_snapshot_data(&canonical, "mini.cirru").expect("canonical history loads");
+    assert!(!normalized);
+    let expected = render_snapshot_content(&snapshot).expect("canonical snapshot renders");
+
+    let legacy = mini_snapshot_with_def("$ :: 'Fn $ {} (:args $ [] 'Number) (:return 'String)", "(defn main! (x) (str x))");
+    load_snapshot_data(&legacy, "mini.cirru").expect_err("strict loader still rejects retired storage");
+    let (snapshot, normalized) = load_historical_snapshot_data(&legacy, "mini.cirru").expect("retired history is normalized");
+    assert!(normalized);
+    assert_eq!(render_snapshot_content(&snapshot).expect("normalized snapshot renders"), expected);
+
+    let optional = mini_snapshot_with_def("$ :: 'Optional 'Number", "(def main! 1)");
+    let err = load_historical_snapshot_data(&optional, "mini.cirru").expect_err("removed Optional has no format migration");
+    assert!(err.contains(LEGACY_OPTIONAL_TYPE_CODE), "{err}");
   }
 
   #[test]
