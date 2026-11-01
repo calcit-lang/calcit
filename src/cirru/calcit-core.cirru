@@ -6050,7 +6050,7 @@
                 [] 'quote form
                 , form
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Syntax (-> Syntax)
         'data-definition-where-form? $ %{} 'CodeEntry
           :doc "|Detect optional where-map form after generic parameters in data-definition macros"
           :code $ quote $ defn data-definition-where-form? (tail-forms)
