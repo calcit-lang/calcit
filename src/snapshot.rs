@@ -3499,16 +3499,33 @@ fn code_type_slots(items: &[Cirru]) -> Vec<Vec<u16>> {
     Some(Cirru::Leaf(value)) => Some(value.as_ref()),
     _ => None,
   };
-  let member_types = |skip: usize, first_only: bool| {
+  let member_types = |first_only: bool| {
+    // Types of one `:name T …` / `.method T` member; a struct field holds one
+    // type followed by an optional default value.
+    let member = |path: Vec<u16>, entry: &[Cirru], slots: &mut Vec<Vec<u16>>| {
+      let last = if first_only { 2.min(entry.len()) } else { entry.len() };
+      for type_index in 1..last {
+        let mut slot = path.clone();
+        slot.push(type_index as u16);
+        slots.push(slot);
+      }
+    };
     let mut slots = vec![];
-    for (index, member) in items.iter().enumerate().skip(2) {
-      let Cirru::List(entry) = member else { continue };
+    for (index, item) in items.iter().enumerate().skip(2) {
+      let Cirru::List(entry) = item else { continue };
       match entry.first() {
         // `deftrait` members may be written as `[] name type`.
         Some(Cirru::Leaf(bracket)) if bracket.as_ref() == "[]" && entry.len() == 3 => slots.push(vec![index as u16, 2]),
-        Some(Cirru::Leaf(key)) if key.starts_with([':', '.']) => {
-          let last = if first_only { (1 + skip).min(entry.len()) } else { entry.len() };
-          slots.extend((1..last).map(|type_index| vec![index as u16, type_index as u16]));
+        Some(Cirru::Leaf(key)) if key.starts_with([':', '.']) => member(vec![index as u16], entry, &mut slots),
+        // Members may also be wrapped in one `{}` form: `defstruct Mode $ {} (:kind 'Enum) …`.
+        Some(Cirru::Leaf(brace)) if brace.as_ref() == "{}" => {
+          for (inner_index, inner) in entry.iter().enumerate().skip(1) {
+            if let Cirru::List(field) = inner
+              && is_tag_leaf(field.first())
+            {
+              member(vec![index as u16, inner_index as u16], field, &mut slots);
+            }
+          }
         }
         _ => {}
       }
@@ -3519,9 +3536,8 @@ fn code_type_slots(items: &[Cirru]) -> Vec<Vec<u16>> {
     Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => vec![vec![2]],
     _ if is_decoder_type_head(head) && items.len() == 3 => vec![vec![2]],
     Some("hint-fn") => (1..items.len()).map(|index| vec![index as u16]).collect(),
-    // A struct field holds one type followed by an optional default value.
-    Some("defstruct" | "defrecord") => member_types(1, true),
-    Some("defenum" | "deftrait") => member_types(0, false),
+    Some("defstruct" | "defrecord") => member_types(true),
+    Some("defenum" | "deftrait") => member_types(false),
     Some("fn" | "defn" | "defmacro" | "defcomp" | "defeffect") => {
       let type_index = if head == Some("fn") { 2 } else { 3 };
       // A lone form after the parameters is the body's value, not a return label.
@@ -3584,7 +3600,11 @@ fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static
 /// tests, and `:schema`. A `deftrait` keeps `Trait` as its definition kind.
 pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<BroadTypeHit> {
   let mut hits = vec![];
-  let mut names: Vec<&String> = namespaces.iter().filter(|ns| snapshot.files.contains_key(*ns)).collect();
+  // Core procs that work on any enum or struct keep their broad signatures.
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .collect();
   names.sort();
   for ns in names {
     let file = &snapshot.files[ns];
@@ -6221,7 +6241,7 @@ mod tests {
         .collect::<Vec<_>>()
     };
     type Expected<'a> = Vec<(&'a str, Vec<u16>, &'a str, Option<&'a str>)>;
-    let cases: [(&str, &str, Expected); 7] = [
+    let cases: [(&str, &str, Expected); 9] = [
       (
         "$ quote $ Fn Enum (-> String)",
         "(defn main! (x) (str x))",
@@ -6248,6 +6268,17 @@ mod tests {
         "(defn main! (xs) (assert-type xs $ quote $ List $ Map Tag Trait) xs)",
         vec![("", vec![3, 2, 1, 1, 2], "Trait", None)],
       ),
+      // Members wrapped in one `{}` form; the struct default `:enum` is a value.
+      (
+        "nil",
+        "(defstruct main! $ {} (:kind 'Enum :enum) (:size 'Number))",
+        vec![("", vec![2, 1, 1], "Enum", None)],
+      ),
+      (
+        "nil",
+        "(defenum main! $ {} (:ok 'Struct))",
+        vec![("", vec![2, 1, 1], "Struct", None)],
+      ),
       // A `deftrait` keeps `Trait` as its definition kind.
       ("$ quote Trait", "(deftrait main! (.run $ :: Fn main! (-> Unit)))", vec![]),
       (
@@ -6272,6 +6303,14 @@ mod tests {
     ] {
       assert_eq!(hits_for("nil", code), vec![], "{code}");
     }
+    // Core procs such as `&enum:assoc` keep their broad signatures even when core is checked as a project.
+    let core_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cirru/calcit-core.cirru");
+    let core_text = std::fs::read_to_string(&core_path).expect("read calcit-core.cirru");
+    let core = load_snapshot_data(&cirru_edn::parse(&core_text).expect("parse core"), "calcit-core.cirru").expect("load core");
+    assert_eq!(
+      collect_broad_type_hits(&core, &HashSet::from([crate::calcit::CORE_NS.to_owned()])),
+      vec![]
+    );
     let message = BroadTypeHit {
       ns: "mini".to_owned(),
       def: "main!".to_owned(),

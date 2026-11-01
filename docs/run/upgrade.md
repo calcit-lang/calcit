@@ -196,8 +196,9 @@ calcit <snapshot> edit format
 
 1. 运行 `calcit <snapshot> --check-only`，在 Notes 中找到 `W_BROAD_TYPE`。
 2. 按用途改写：dispatch 处理函数的 `Fn Enum (-> Unit)` 改为应用的操作 enum，如 `Fn app.schema/Op (-> Unit)`；
-   `reel.typed/State Enum Store` 写出操作类型；回调的裸 `Fn` 写出签名；库内需要通用的位置改用 `:generics` 类型变量。
-3. `defstruct` / `defenum` 的 `:schema` 若写成 `Enum` 或 `Struct`，改为 `StructDef` / `EnumDef`。
+   `reel.typed/State Enum Store` 写出操作类型；回调的裸 `Fn` 写出签名；库需要把调用方的具体类型原样传回时改用 `:generics`
+   类型变量（类型变量不限定为 enum，不能当作 `Enum` 的等价写法）。
+3. `defstruct` 的 `:schema` 若写成 `Enum` 或 `Struct`，改为 `StructDef`；`defenum` 的改为 `EnumDef`。
 4. 每改一批，重新运行检查和测试。
 
 提示不会让严格检查失败，`edit format` 不会自动改写。后续非 patch 版本计划把它升级为错误。

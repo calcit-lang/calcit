@@ -261,7 +261,7 @@ assert-type store $ quote $ reel.typed/State app.schema/Op app.schema/Store
 defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 ```
 
-库函数需要对多种 enum 通用时，用 `:generics` 的类型变量表达，不写 `Enum`。
+库需要把调用方的具体类型原样传回时（如 `reel.typed/State` 的操作类型参数），用 `:generics` 类型变量。类型变量不限定为 enum，可以绑定任意类型，所以它不等价于 `Enum`；只对任意 enum 做底层操作的少数位置会继续得到提示。
 
 检查时这些写法报告非阻塞的 `W_BROAD_TYPE` 提示，范围是项目自身的定义代码、examples、tests 和 `:schema`：
 `assert-type`、`unsafe-coerce`、`hint-fn`、解码目标、函数返回标注、`defstruct` 字段、`defenum` 载荷和 `deftrait` 成员。
@@ -277,6 +277,7 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 - 提示不会让严格检查失败，`edit format` 也不改写：具体类型只有作者知道。
 - `calcit.core` 内部对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不提示。
+- 还没有“任意 enum”这类约束的具体写法，确实只接受任意 enum / struct 的项目代码，提示目前只能保留。
 
 ## 定长元组 `Tuple`
 
