@@ -32,6 +32,17 @@
           :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
+        'Scale $ %{} 'CodeEntry
+          :doc "|A scale: one factor for both axes, or one per axis."
+          :code $ quote $ defunion Scale Number
+            quote $ List Number
+          :examples $ []
+          :schema $ quote UnionDef
+        'Segment $ %{} 'CodeEntry
+          :doc "|A route pattern segment: literal text or a parameter name (respo-router)."
+          :code $ quote $ defunion Segment String Symbol
+          :examples $ []
+          :schema $ quote UnionDef
         'Shape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Shape (:circle Number) (:square Number)
           :examples $ []
@@ -111,6 +122,25 @@
             assert= |s $ text-only |s
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
+            assert= ([] 2 2)
+              scale-xy $ read-scale 2
+            assert= ([] 1 3)
+              scale-xy $ read-scale $ [] 1 3
+            assert= false $ scale-decodes? |x
+            assert= false $ scale-decodes? $ [] 1 |a
+            assert= true $ scale-decodes? 1
+            assert= "|point 1" $ describe $ read-geo
+              {} (:x 1) (:y 2)
+            assert= "|circle 3" $ describe $ read-geo (Shape :circle 3)
+            assert= |plain $ describe $ read-geo |plain
+            assert= ([] 4 5)
+              scale-xy $ parse-cirru-edn-as "|[] 4 5" Scale
+            assert= ([] 6 6)
+              scale-xy $ parse-cirru-edn-as "|do 6" Scale
+            assert= "|point 7" $ describe $ parse-cirru-edn-as "|%{} :Point (:x 7) (:y 0)" Geo
+            assert= true $ .err? $ try-parse-cirru-edn-as "|do :a" Scale
+            assert= |text:home $ segment-text $ decode-map-as (segment-raw |home) Segment
+            assert= |param:id $ segment-text $ decode-map-as (segment-raw 'id) Segment
             println "|Union tests passed"
             , &unit
           :examples $ []
@@ -120,6 +150,55 @@
             if (> n 0) (Point :x n :y 2) |none
           :examples $ []
           :schema $ quote $ Fn Number (-> Geo)
+        'read-geo $ %{} 'CodeEntry
+          :doc "|Checked decode into a union whose members include a struct and an enum."
+          :code $ quote $ defn read-geo (raw) (decode-map-as raw Geo)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Geo)
+          :tests $ [] $ %{} 'TestEntry (:name |map-decodes-to-struct-member)
+            :code $ quote $ do
+              assert= "|point 1" $ describe $ read-geo
+                {} (:x 1) (:y 2)
+              assert= "|circle 3" $ describe $ read-geo (Shape :circle 3)
+              assert= |plain $ describe $ read-geo |plain
+            :tags $ #{} :union :unit
+        'read-scale $ %{} 'CodeEntry (:doc "|Checked decode of open data into a union.")
+          :code $ quote $ defn read-scale (raw) (decode-map-as raw Scale)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Scale)
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-each-member)
+            :code $ quote $ do
+              assert= ([] 2 2)
+                scale-xy $ read-scale 2
+              assert= ([] 1 3)
+                scale-xy $ read-scale $ [] 1 3
+            :tags $ #{} :union :unit
+        'scale-decodes? $ %{} 'CodeEntry
+          :doc "|A member kind that matches but holds the wrong elements still fails."
+          :code $ quote $ defn scale-decodes? (raw)
+            .ok? $ try-decode-map-as raw Scale
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool)
+        'scale-xy $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn scale-xy (s)
+            match s
+              (Number n) ([] n n)
+              (List xs) xs
+          :examples $ []
+          :schema $ quote $ Fn Scale
+            -> $ List Number
+        'segment-raw $ %{} 'CodeEntry
+          :doc "|Hands a value over as open data, as a route table read from a Dynamic list would."
+          :code $ quote $ defn segment-raw (x) x
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'segment-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn segment-text (s)
+            match s
+              (String t) (str |text: t)
+              (Symbol p) (str |param: (to-string p))
+          :examples $ []
+          :schema $ quote $ Fn Segment (-> String)
         'text-only $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn text-only (v)
             match v

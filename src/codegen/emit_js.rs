@@ -1433,6 +1433,10 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
           .join(",");
         format!("{{kind:\"enum\",nominal:{nominal},variants:[{variants}]}}")
       }
+      DataShapeNode::Union { name, members, .. } => {
+        let members = members.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+        format!("{{kind:\"union\",name:{},members:[{members}]}}", escape_cirru_str(name))
+      }
     };
     nodes.push(code);
   }

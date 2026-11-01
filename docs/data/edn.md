@@ -133,7 +133,7 @@ Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,S
 
 ## Decoding runtime maps into Structs
 
-`decode-map-as` is the companion for data that has already crossed a host boundary and is now an evaluated Calcit value, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries. Struct targets consume maps, while list, map, enum, ref, and scalar targets are decoded recursively as well.
+`decode-map-as` is the companion for data that has already crossed a host boundary and is now an evaluated Calcit value, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries. Struct targets consume maps, while list, map, enum, ref, `defunion`, and scalar targets are decoded recursively as well. A union target picks the member whose runtime kind matches the value, then decodes that member fully; see [Unions](../features/unions.md).
 
 Decode exactly once, at the boundary. Passing an already nominal Struct to
 `decode-map-as` or `try-decode-map-as` is a compile-time

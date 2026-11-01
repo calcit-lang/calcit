@@ -9,7 +9,7 @@ use cirru_edn::EdnTag;
 use md5::{Digest, Md5};
 
 use super::type_annotation::{CalcitNumericRefinement, TypeBindings, validate_runtime_generic_where_bounds};
-use super::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation};
+use super::{Calcit, CalcitEnumDef, CalcitStructDef, CalcitTypeAnnotation, CalcitUnionDef};
 use crate::program;
 
 const DATA_SHAPE_ABI_VERSION: u16 = 3;
@@ -183,6 +183,13 @@ pub(crate) enum DataShapeNode {
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     type_args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
     variants: Vec<(EdnTag, Vec<usize>)>,
+  },
+  /// A `defunion`: the value is exactly one of the member shapes, chosen by
+  /// its runtime kind. Members keep declaration order.
+  Union {
+    name: Arc<str>,
+    nominal_path: Option<(Arc<str>, Arc<str>)>,
+    members: Vec<usize>,
   },
 }
 
@@ -494,12 +501,89 @@ impl DataShapeGraph {
         }
         Ok(())
       }
+      DataShapeNode::Union { name, members, .. } => {
+        let candidates = self.union_candidates(members, value, false);
+        let mut first_error = None;
+        for member in &candidates {
+          match self.validate_node_value(*member, value, path, depth + 1) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+              first_error.get_or_insert(error);
+            }
+          }
+        }
+        Err(first_error.unwrap_or_else(|| shape_kind_mismatch(path, &self.describe_union(name, members), value)))
+      }
       _ => Err(shape_kind_mismatch(path, node.expected_kind(), value)),
     }
   }
 }
 
+impl DataShapeGraph {
+  /// Members of a union whose runtime kind matches `value`, in declaration
+  /// order. Member kinds are unique, so at most one member matches exactly.
+  /// With `map_to_struct`, a runtime map also reaches struct members after
+  /// that exact match, because `decode-map-as` builds structs from maps.
+  pub(crate) fn union_candidates(&self, members: &[usize], value: &Calcit, map_to_struct: bool) -> Vec<usize> {
+    let mut exact = vec![];
+    let mut fallback = vec![];
+    for member in members {
+      let Some(node) = self.nodes.get(*member) else {
+        continue;
+      };
+      if node.accepts_runtime_kind(value) {
+        exact.push(*member);
+      } else if map_to_struct && matches!(value, Calcit::Map(_)) && matches!(node, DataShapeNode::Struct { .. }) {
+        fallback.push(*member);
+      }
+    }
+    exact.extend(fallback);
+    exact
+  }
+
+  /// `union :Name (number | list)` for decode errors.
+  pub(crate) fn describe_union(&self, name: &str, members: &[usize]) -> String {
+    let kinds = members
+      .iter()
+      .map(|member| match self.nodes.get(*member) {
+        Some(DataShapeNode::Struct { nominal, .. }) => format!("struct :{}", nominal.name),
+        Some(DataShapeNode::Enum { nominal, .. }) => format!("enum :{}", nominal.name()),
+        Some(node) => node.expected_kind().to_owned(),
+        None => format!("#{member}"),
+      })
+      .collect::<Vec<_>>()
+      .join(" | ");
+    format!("union :{name} ({kinds})")
+  }
+}
+
 impl DataShapeNode {
+  /// Shallow runtime-kind test used to select a union member. Nominal
+  /// structs and enums compare their definitions.
+  pub(crate) fn accepts_runtime_kind(&self, value: &Calcit) -> bool {
+    match (self, value) {
+      (Self::Number | Self::Numeric(_), Calcit::Number(_)) => true,
+      (Self::Bool, Calcit::Bool(_)) => true,
+      (Self::String, Calcit::Str(_)) => true,
+      (Self::Symbol, Calcit::Symbol { .. }) => true,
+      (Self::Tag, Calcit::Tag(_)) => true,
+      (Self::Buffer, Calcit::Buffer(_)) => true,
+      (Self::CirruQuote, Calcit::CirruQuote(_)) => true,
+      (Self::List(_), Calcit::List(_)) => true,
+      (Self::Set(_), Calcit::Set(_)) => true,
+      (Self::Map { .. }, Calcit::Map(_)) => true,
+      (Self::Ref(_), Calcit::Ref(..)) => true,
+      (Self::Struct { nominal, .. }, Calcit::Struct(value)) => {
+        Arc::ptr_eq(&value.struct_ref, nominal) || value.struct_ref.same_nominal_definition(nominal)
+      }
+      (Self::Enum { nominal, .. }, Calcit::Enum(value)) => value
+        .sum_type
+        .as_ref()
+        .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.same_nominal_definition(nominal)),
+      _ => false,
+    }
+  }
+
   fn child_nodes(&self) -> Vec<usize> {
     match self {
       Self::Dynamic => vec![],
@@ -508,6 +592,7 @@ impl DataShapeNode {
       Self::Map { key, value } => vec![*key, *value],
       Self::Struct { fields, .. } => fields.iter().map(|(_, node)| *node).collect(),
       Self::Enum { variants, .. } => variants.iter().flat_map(|(_, payloads)| payloads.iter().copied()).collect(),
+      Self::Union { members, .. } => members.clone(),
       _ => vec![],
     }
   }
@@ -532,6 +617,7 @@ impl DataShapeNode {
       Self::Ref(_) => "ref",
       Self::Struct { .. } => "struct",
       Self::Enum { .. } => "enum",
+      Self::Union { .. } => "union",
     }
   }
 }
@@ -685,6 +771,9 @@ impl GraphBuilder {
     if let Some(enum_def) = qualified.resolve_to_enum() {
       return self.build_enum(Arc::new(enum_def), args, Some((ns, def)), default_ns);
     }
+    if let Some(union_def) = qualified.resolve_to_union() {
+      return self.build_union(union_def, ns, def);
+    }
 
     let schema = program::lookup_def_schema(&ns, &def);
     if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
@@ -707,6 +796,36 @@ impl GraphBuilder {
     }
 
     Err(DataShapeError::new(format!("cannot resolve named type `{ns}/{def}`")))
+  }
+
+  /// A union shape lists one node per checked member (nested unions are
+  /// already flattened). Named members resolve through their own definition
+  /// path; other member types resolve in the union's namespace.
+  fn build_union(&mut self, union_def: Arc<CalcitUnionDef>, ns: Arc<str>, def: Arc<str>) -> Result<usize, DataShapeError> {
+    let key = format!("union:{ns}/{def}");
+    if let Some(existing) = self.nominal_nodes.get(&key) {
+      return Ok(*existing);
+    }
+    let members = union_def
+      .checked_members()
+      .map_err(|message| DataShapeError::new(format!("cannot derive `{ns}/{def}`: {message}")))?;
+    let node_id = self.nodes.len();
+    self.nodes.push(None);
+    self.nominal_nodes.insert(key, node_id);
+    let mut member_nodes = Vec::with_capacity(members.len());
+    for member in members {
+      let member_node = match &member.definition {
+        Some((member_ns, member_def)) => self.build_named(&format!("{member_ns}/{member_def}"), &Arc::new(vec![]), &ns)?,
+        None => self.build_type(member.annotation.as_ref(), &ns)?,
+      };
+      member_nodes.push(member_node);
+    }
+    self.nodes[node_id] = Some(DataShapeNode::Union {
+      name: Arc::from(union_def.name.ref_str()),
+      nominal_path: Some((ns, def)),
+      members: member_nodes,
+    });
+    Ok(node_id)
   }
 
   fn build_struct(
@@ -908,6 +1027,16 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
             hasher.update(format!("{child},").as_bytes());
           }
           hasher.update(b";");
+        }
+      }
+      DataShapeNode::Union {
+        name,
+        nominal_path,
+        members,
+      } => {
+        update_nominal_fingerprint(&mut hasher, "union", name, nominal_path.as_ref(), &[]);
+        for child in members {
+          hasher.update(format!("member:{child};").as_bytes());
         }
       }
     }

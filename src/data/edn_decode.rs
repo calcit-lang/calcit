@@ -351,6 +351,19 @@ impl MapDecoder<'_> {
           sum_type: Some(nominal.clone()),
         }))
       }
+      DataShapeNode::Union { name, members, .. } => {
+        let candidates = self.shape.union_candidates(members, input, true);
+        let mut first_error = None;
+        for member in candidates {
+          match self.decode_node(member, input, path, depth + 1) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+              first_error.get_or_insert(error);
+            }
+          }
+        }
+        Err(first_error.unwrap_or_else(|| map_kind_mismatch(path, &self.shape.describe_union(name, members), input)))
+      }
       DataShapeNode::Ref(inner) => {
         let Calcit::Ref(_, value_and_listeners) = input else {
           return Err(map_kind_mismatch(path, "ref", input));
@@ -485,6 +498,21 @@ impl Decoder<'_> {
         }
         _ => Err(kind_mismatch(path, "map", input)),
       },
+      DataShapeNode::Union { name, members, .. } => {
+        let mut first_error = None;
+        for member in members {
+          if !self.shape.nodes.get(*member).is_some_and(|node| edn_matches_kind(node, input)) {
+            continue;
+          }
+          match self.decode_node(*member, input, path, depth + 1) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+              first_error.get_or_insert(error);
+            }
+          }
+        }
+        Err(first_error.unwrap_or_else(|| kind_mismatch(path, &self.shape.describe_union(name, members), input)))
+      }
       DataShapeNode::Ref(inner) => match input {
         Edn::Atom(value) => {
           let decoded = self.decode_node(*inner, value, &format!("{path}.value"), depth + 1)?;
@@ -606,6 +634,28 @@ fn edn_kind(value: &Edn) -> &'static str {
     Edn::Buffer(_) => "buffer",
     Edn::AnyRef(_) => "any-ref",
     Edn::Atom(_) => "atom",
+  }
+}
+
+/// Shallow runtime-kind test that selects a union member for Cirru EDN input.
+fn edn_matches_kind(node: &DataShapeNode, input: &Edn) -> bool {
+  match (node, input) {
+    (DataShapeNode::Number | DataShapeNode::Numeric(_), Edn::Number(_)) => true,
+    (DataShapeNode::Bool, Edn::Bool(_)) => true,
+    (DataShapeNode::String, Edn::Str(_)) => true,
+    (DataShapeNode::Symbol, Edn::Symbol(_)) => true,
+    (DataShapeNode::Tag, Edn::Tag(_)) => true,
+    (DataShapeNode::Buffer, Edn::Buffer(_)) => true,
+    (DataShapeNode::CirruQuote, Edn::Quote(_)) => true,
+    (DataShapeNode::List(_), Edn::List(_)) => true,
+    (DataShapeNode::Set(_), Edn::Set(_)) => true,
+    (DataShapeNode::Map { .. }, Edn::Map(_)) => true,
+    (DataShapeNode::Ref(_), Edn::Atom(_)) => true,
+    (DataShapeNode::Struct { nominal, .. }, Edn::Struct(EdnStructView { name, .. })) => name.as_ref() == nominal.name.ref_str(),
+    (DataShapeNode::Enum { nominal, .. }, Edn::Enum(EdnEnumView { type_name, .. })) => {
+      type_name.as_deref() == Some(nominal.name().ref_str())
+    }
+    _ => false,
   }
 }
 

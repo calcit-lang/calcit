@@ -2164,7 +2164,8 @@ type DataShapeNode =
   | { kind: "map"; key: number; value: number }
   | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
   | { kind: "struct"; nominal: CalcitStructDef; fields: Array<[string, number]> }
-  | { kind: "enum"; nominal: CalcitEnumDef; variants: Array<{ tag: string; payload: number[] }> };
+  | { kind: "enum"; nominal: CalcitEnumDef; variants: Array<{ tag: string; payload: number[] }> }
+  | { kind: "union"; name: string; members: number[] };
 
 type DataShapeGraph = {
   version: number;
@@ -2231,6 +2232,7 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
         return variant != null && value.extra.length === variant.payload.length &&
           variant.payload.every((child, idx) => check(value.extra[idx], child, depth + 1));
       }
+      case "union": return node.members.some(member => check(value, member, depth + 1));
     }
   };
   return check(input, graph.root, 0);
@@ -2261,6 +2263,70 @@ const typed_edn_error = (path: string, message: string): never => {
 
 const enum_prototype_name = (value: CalcitEnumDef | CalcitStructValue): string => {
   return value instanceof CalcitEnumDef ? value.name() : value.name.value;
+};
+
+/** Shallow runtime-kind test that selects a union member. Typed Cirru EDN
+ * names nominal values; runtime maps compare definitions. */
+const union_member_matches = (node: DataShapeNode, input: any, byIdentity: boolean): boolean => {
+  switch (node.kind) {
+    case "number":
+    case "numeric": return typeof input === "number";
+    case "bool": return typeof input === "boolean";
+    case "string": return typeof input === "string";
+    case "symbol": return input instanceof CalcitSymbol;
+    case "tag": return input instanceof CalcitTag;
+    case "buffer": return input instanceof Uint8Array;
+    case "cirru-quote": return input instanceof CalcitCirruQuote;
+    case "list": return input instanceof CalcitList || input instanceof CalcitSliceList;
+    case "set": return input instanceof CalcitSet || input instanceof TypedEdnSetView;
+    case "map": return input instanceof CalcitMap || input instanceof CalcitSliceMap;
+    case "ref": return input instanceof CalcitRef;
+    case "struct":
+      return input instanceof CalcitStructValue &&
+        (byIdentity ? same_nominal_struct(input.structRef, node.nominal) : input.name.value === node.nominal.name.value);
+    case "enum":
+      return input instanceof CalcitEnumValue && input.enumPrototype != null &&
+        (byIdentity ? same_nominal_enum(input.enumPrototype, node.nominal) : enum_prototype_name(input.enumPrototype) === node.nominal.name());
+    default: return false;
+  }
+};
+
+const union_description = (graph: DataShapeGraph, node: { name: string; members: number[] }): string => {
+  const kinds = node.members.map((member) => {
+    const child = graph.nodes[member];
+    if (child?.kind === "struct") return `struct :${child.nominal.name.value}`;
+    if (child?.kind === "enum") return `enum :${child.nominal.name()}`;
+    return child?.kind ?? `#${member}`;
+  });
+  return `union :${node.name} (${kinds.join(" | ")})`;
+};
+
+/** Try the members whose runtime kind matches, in declaration order; with
+ * `mapToStruct`, a runtime map then reaches struct members. */
+const decode_union_node = (
+  graph: DataShapeGraph,
+  node: { name: string; members: number[] },
+  input: any,
+  path: string,
+  decodeMember: (member: number) => any,
+  fail: (path: string, message: string) => never,
+  byIdentity: boolean,
+  mapToStruct: boolean
+): any => {
+  const exact = node.members.filter((member) => union_member_matches(graph.nodes[member], input, byIdentity));
+  const fallback = mapToStruct && (input instanceof CalcitMap || input instanceof CalcitSliceMap)
+    ? node.members.filter((member) => graph.nodes[member]?.kind === "struct" && !exact.includes(member))
+    : [];
+  let firstError: unknown = null;
+  for (const member of [...exact, ...fallback]) {
+    try {
+      return decodeMember(member);
+    } catch (error) {
+      if (firstError == null) firstError = error;
+    }
+  }
+  if (firstError != null) throw firstError;
+  return fail(path, `expected ${union_description(graph, node)}, got ${typed_edn_kind(input)}`);
 };
 
 const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number, fail = typed_edn_error): any => {
@@ -2408,6 +2474,17 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       );
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
+    case "union":
+      return decode_union_node(
+        graph,
+        node,
+        input,
+        path,
+        (member) => decode_typed_edn_node(graph, member, input, path, depth + 1, fail),
+        fail,
+        false,
+        false
+      );
     default:
       return fail(path, `invalid data shape node kind: ${(node as any).kind}`);
   }
@@ -2578,6 +2655,17 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       if (input.enumPrototype === node.nominal && values.every((value, idx) => Object.is(value, input.extra[idx]))) return input;
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
+    case "union":
+      return decode_union_node(
+        graph,
+        node,
+        input,
+        path,
+        (member) => decode_runtime_map_node(graph, member, input, path, depth + 1),
+        map_decode_error,
+        true,
+        true
+      );
     default:
       return decode_typed_edn_node(graph, nodeId, input, path, depth, map_decode_error);
   }
