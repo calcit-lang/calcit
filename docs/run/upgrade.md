@@ -28,7 +28,8 @@ related:
 
 `defstruct` 字段、`defenum` payload、`defunion` 成员和这三者的泛型列表现在按类型语法读取，与 `:schema` 里的写法相同：类型名直接写，复合类型写成列表。
 
-```cirru
+```cirru.no-check
+defstruct Point (:x Number) (:y Number)
 defstruct Box ([] T) (:value T) (:items $ List T) (:label String |box)
 defenum Shape (:circle Number) (:poly $ List Point) (:none)
 defunion Sized Number (List Number) Point
