@@ -4206,6 +4206,12 @@ fn parse_files_for_format_with_context(
   Ok(files)
 }
 
+/// Namespaces built at load time instead of read from the Snapshot `:files`,
+/// such as `<package>.$meta` with the runtime `calcit-filename` / `calcit-dirname`.
+pub fn is_generated_namespace(ns: &str) -> bool {
+  ns.ends_with(".$meta")
+}
+
 pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let path_data = Path::new(path);
   let parent = path_data.parent().expect("parent path");
