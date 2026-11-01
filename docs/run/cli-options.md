@@ -618,6 +618,8 @@ calcit calcit.cirru analyze program-diff HEAD --format edn --fail-on-widening
 
 结构化结果包含 Snapshot path、before/after content revision、稳定分类、受影响 definition 与是否需要 semantic review。`canonical-format-only` 表示原始文件字节不同、但解析后的 Snapshot 没有配置、schema、definition 或可执行表达式变化；它只能减少文本 diff 的人工确认，不能替代 strict check、测试或运行时验证。`--def` 保留原有的交互式 tree diff，目前只支持 human 输出；自动化证据应省略 `--def`，在同一份 Snapshot 报告中筛选 `:changes`。
 
+Git revision 一侧是只读历史：如果它仍使用已退役的类型存储写法（如 EDN `:: 'StructDef` schema 或 `::`/`{}` 代码类型），`program-diff`（含 `--def`）与 `call-graph-diff` 会在内存中套用 `calcit edit format` 的同一迁移再比较，并在 stderr 提示；Git 内容不变。只有存储写法不同时报告 `canonical-format-only`，真实的 schema 放宽仍按 `schema-signature` 分类。工作区一侧仍走严格加载，请先运行 `edit format`。`edit format` 本身也无法迁移的表示（如 0.33.0 移除的 `Optional<T>`）会以原诊断报错，不会当作等价。
+
 schema 按持久化合同比较，包括 `Struct` / `StructDef` 等值类别、函数 feature 与缺失标注和显式 `Dynamic` 的区别；诊断中的缩写或截断不决定是否变化。实际变更使用现有 `schema-signature` 分类并要求 semantic review，等价的 Map/Set 重排保持不变。互不包含的类别变化记为 `changed`；`--fail-on-widening` 只拒绝已证明的放宽，其他合同变化通过 `:semantic-review-required` 评估。
 
 ## WASM preview 命令

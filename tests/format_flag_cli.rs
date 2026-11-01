@@ -718,3 +718,134 @@ fn program_diff_formats_preserve_value_schema_evidence_and_widening_gate() {
   );
   assert_eq!(fs::read(&snapshot).unwrap(), before_gate);
 }
+
+/// A Git baseline written before the type storage migration is read-only history:
+/// program-diff compares its in-memory `edit format` normalization (#2503).
+#[test]
+fn program_diff_normalizes_legacy_type_storage_in_git_baseline() {
+  const LEGACY_BASELINE: &str = r#"{} (:package |app)
+  :version |0.0.0
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/main!)
+      :modules $ []
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns app.main)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |Store $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Store (:count 'Number))
+          :examples $ []
+          :schema $ :: 'StructDef
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! (xs) (assert-type xs $ :: 'List 'Number) (count xs))
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)
+"#;
+
+  let directory = tempfile::tempdir().expect("isolated program-diff project");
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::write(&snapshot, LEGACY_BASELINE).unwrap();
+  let call = |args: &[&str]| run_in(Some(directory.path()), &snapshot, args);
+  let git = |args: &[&str]| {
+    let output = Command::new("git")
+      .current_dir(directory.path())
+      .args([
+        "-c",
+        "user.name=Calcit Fixture",
+        "-c",
+        "user.email=calcit-fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+      ])
+      .arg("-c")
+      .arg(format!("core.hooksPath={}", directory.path().join("no-hooks").display()))
+      .args(args)
+      .output()
+      .expect("fixture git should run");
+    assert!(output.status.success(), "git {args:?}: {}", stderr(&output));
+  };
+  git(&["init", "--quiet"]);
+  git(&["add", "calcit.cirru"]);
+  git(&["commit", "--quiet", "-m", "Legacy type storage"]);
+
+  // Execution keeps rejecting the retired storage; only the read-only view normalizes it.
+  let strict = call(&["--check-only"]);
+  assert!(!strict.status.success());
+  assert!(stderr(&strict).contains("E_LEGACY_TYPE_SYNTAX"), "{}", stderr(&strict));
+
+  let formatted = call(&["edit", "format"]);
+  assert!(formatted.status.success(), "{}", stderr(&formatted));
+  let canonical = fs::read_to_string(&snapshot).unwrap();
+  assert!(canonical.contains(":schema $ quote StructDef"), "{canonical}");
+  assert!(canonical.contains("quote $ Fn Dynamic (-> Number)"), "{canonical}");
+
+  let format_only = call(&["analyze", "program-diff", "HEAD", "--format", "json", "--fail-on-widening"]);
+  assert!(
+    stderr(&format_only).contains("compared its `edit format` normalization in memory"),
+    "{}",
+    stderr(&format_only)
+  );
+  let report = assert_json_document(&format_only, "legacy baseline program-diff");
+  let evidence = &report["data"]["evidence"];
+  assert_eq!(evidence["classification"], "canonical-format-only");
+  assert_eq!(evidence["semantic_review_required"], false);
+  assert_eq!(evidence["changes"], serde_json::json!([]));
+  assert_eq!(evidence["schema_widening"], serde_json::json!([]));
+  assert_ne!(evidence["before_revision"], evidence["after_revision"]);
+  let def_diff = call(&["analyze", "program-diff", "HEAD", "--def", "app.main/Store"]);
+  assert!(def_diff.status.success(), "{}", stderr(&def_diff));
+  let call_graph = call(&["analyze", "call-graph", "--diff", "HEAD"]);
+  assert!(call_graph.status.success(), "{}", stderr(&call_graph));
+  assert!(
+    stderr(&call_graph).contains("compared its `edit format` normalization in memory"),
+    "{}",
+    stderr(&call_graph)
+  );
+
+  git(&["add", "calcit.cirru"]);
+  git(&["commit", "--quiet", "-m", "Format snapshot"]);
+  let two_ref = assert_json_document(
+    &call(&["analyze", "program-diff", "HEAD", "--base", "HEAD^", "--format", "json"]),
+    "two-ref legacy baseline",
+  );
+  assert_eq!(two_ref["data"]["evidence"]["classification"], "canonical-format-only");
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), canonical);
+
+  // A real widening against the legacy baseline is still classified and gated.
+  fs::write(
+    &snapshot,
+    canonical.replace("quote $ Fn Dynamic (-> Number)", "quote $ Fn Dynamic (-> Dynamic)"),
+  )
+  .unwrap();
+  let widened = run_in(
+    Some(directory.path()),
+    &snapshot,
+    &["analyze", "program-diff", "HEAD^", "--format", "json", "--fail-on-widening"],
+  );
+  assert!(!widened.status.success(), "actual widening must still fail");
+  assert!(stderr(&widened).contains("Schema widening"), "{}", stderr(&widened));
+  let widened = assert_json_stdout(&widened, "widening against legacy baseline");
+  let evidence = &widened["data"]["evidence"];
+  assert_eq!(evidence["classification"], "semantic-change");
+  assert_eq!(evidence["schema_widening"], serde_json::json!(["app.main/main!"]));
+  assert_eq!(evidence["changes"].as_array().unwrap().len(), 1);
+  assert_eq!(evidence["changes"][0]["schema_direction"], "widened");
+  assert_eq!(evidence["changes"][0]["widened_slots"], serde_json::json!(["return"]));
+
+  // Storage that `edit format` cannot migrate is reported, not treated as equivalent.
+  fs::write(
+    &snapshot,
+    LEGACY_BASELINE.replace("(:return 'Number)", "(:return $ :: 'Optional 'Number)"),
+  )
+  .unwrap();
+  git(&["commit", "--quiet", "-am", "Removed Optional storage"]);
+  fs::write(&snapshot, &canonical).unwrap();
+  let unsupported = call(&["analyze", "program-diff", "HEAD", "--format", "json"]);
+  assert!(!unsupported.status.success());
+  assert!(unsupported.stdout.is_empty());
+  let message = stderr(&unsupported);
+  assert!(
+    message.contains("read-only `edit format` normalization does not support") && message.contains("E_LEGACY_OPTIONAL_TYPE"),
+    "{message}"
+  );
+}
