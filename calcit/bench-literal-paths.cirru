@@ -15,7 +15,7 @@
           :examples $ []
           :schema $ quote $ Ref Number
         'BenchUser $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct BenchUser (:name 'String)
+          :code $ quote $ defstruct BenchUser (:name String)
           :examples $ []
           :schema $ quote StructDef
         'bench-read-dynamic! $ %{} 'CodeEntry (:doc |)

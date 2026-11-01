@@ -36,7 +36,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'AtomBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum AtomBox (:atom 'Dynamic)
+          :code $ quote $ defenum AtomBox (:atom Dynamic)
           :examples $ []
           :schema $ quote EnumDef
         'AtomDerefTrait $ %{} 'CodeEntry (:doc |)
@@ -48,7 +48,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'Demo0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Demo (:a 'Dynamic)
+          :code $ quote $ defenum Demo (:a Dynamic)
           :examples $ []
           :schema $ quote EnumDef
         'DemoGetTrait $ %{} 'CodeEntry (:doc |)
@@ -76,7 +76,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'NumBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum NumBox (:number 'Number)
+          :code $ quote $ defenum NumBox (:number Number)
           :examples $ []
           :schema $ quote EnumDef
         'NumTrait $ %{} 'CodeEntry (:doc |)
@@ -88,7 +88,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'ValueBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum ValueBox (:value 'Dynamic)
+          :code $ quote $ defenum ValueBox (:value Dynamic)
           :examples $ []
           :schema $ quote EnumDef
         'cross-module-counter-next $ %{} 'CodeEntry (:doc |)

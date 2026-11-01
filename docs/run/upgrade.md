@@ -24,6 +24,34 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.34.0 `defstruct` / `defenum` / `defunion` 的类型不再写 quote（#2516）
+
+这三个声明宏的成员类型现在按类型语法读取，与 `:schema` 里 `quote` 之后的写法相同：裸符号是类型名，带参数的类型直接写成列表。
+
+```cirru.no-check
+defstruct Point (:x Number) (:tags (List String))
+defenum Shape (:circle Number) (:poly (List Point)) (:none)
+defunion Cells String (List Number)
+defstruct Box ([] T)
+  {} $ T Debug
+  :value T
+```
+
+覆盖的位置是 `defstruct` 字段类型、`defenum` 变体 payload、`defunion` 成员，以及 `defstruct` / `defenum` 的泛型参数和 `{}` 约束里的类型变量。struct 字段默认值仍是普通字面量。
+
+行为变化：
+
+- 以前裸写的 `Number` 报 ``unknown `Number` ``，裸写的 `Point` 会被当成变量求值，作用域里有同名局部绑定时取到错误的值；现在两者都是类型名。
+- 以前成员位置不带 quote 的 `(List Number)` 在 Snapshot 加载时报 `E_LEGACY_TYPE_SYNTAX`，在 `calcit eval` 片段里则静默变成 `List Dynamic`；现在按写出的元素类型检查。
+
+旧写法 `'Number`、`quote $ List Number` 在 0.34.x 仍然可用，下一个非 patch 版本删除。迁移命令：
+
+```bash
+calcit <snapshot> edit format
+```
+
+它只改这三个声明宏的成员类型：`'Number` 改为 `Number`，`quote $ List Number` 改为 `List Number`，`[] 'T` 改为 `[] T`，`{} $ 'T Debug` 改为 `{} $ T Debug`。`assert-type`、`:schema`、`deftrait` 等其他类型位置保持原样。宏或代码生成器里拼出的 `defstruct` 需要手动改为不带 quote 的写法。
+
 ## 0.34.0 `--check-only --ns` 运行默认证明审计（#2506）
 
 `--check-only --ns <ns>` 现在和普通 `--check-only` 一样，在所选 definition 通过普通检查后运行默认证明审计。

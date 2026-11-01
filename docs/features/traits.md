@@ -54,7 +54,7 @@ Use `defimpl` to create a nominal impl value for a trait.
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
@@ -78,7 +78,7 @@ Examples:
 
 ```cirru
 let
-    PersonA0 $ defstruct PersonA $ :name 'String
+    PersonA0 $ defstruct PersonA $ :name String
     MyFooA $ deftrait MyFooA $ .foo
       quote $ Fn T (-> String) (:generics T)
     MyFooImplA $ defimpl MyFooImplA MyFooA $ .foo
@@ -97,7 +97,7 @@ let
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     ImplB $ defimpl ImplB MyFoo $ :: .foo
       fn (p) (assert-type p Person0)
         str |B: $ :name p
@@ -156,7 +156,7 @@ Syntax:
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    StructDef0 $ defstruct StructDef $ :name 'String
+    StructDef0 $ defstruct StructDef $ :name String
     ImplA $ defimpl ImplA MyFoo $ .foo
       fn (p) (assert-type p StructDef0)
         str |A: $ :name p
@@ -179,7 +179,7 @@ do (; struct example)
   let
       MyFoo $ deftrait MyFoo
         .foo $ quote $ Fn T (-> String) (:generics T)
-      Person0 $ defstruct Person (:name 'String)
+      Person0 $ defstruct Person (:name String)
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p) (assert-type p Person0)
           str-spaced |foo $ :name p
@@ -195,7 +195,7 @@ do (; struct example)
           match x
             (:ok v) (str |ok: v)
             (:err v) (str |err: v)
-      Result0 $ defenum Result0 (:ok 'String) (:err 'String)
+      Result0 $ defenum Result0 (:ok String) (:err String)
       MyResult $ impl-traits Result0 ResultImpl
       r $ %:: MyResult :ok |done
     r .describe
@@ -259,7 +259,7 @@ let
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB
       .zap $ fn (_x) |zapB
-    Person0 $ defstruct Person (:name 'String)
+    Person0 $ defstruct Person (:name String)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ Person :name |Alice
   ; compatibility mode keeps last-wins; strict mode rejects this ambiguous call
@@ -290,7 +290,7 @@ You can also inspect impl origins directly when validating trait dispatch:
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Shape0 $ defenum Shape $ :point 'Number 'Number
+    Shape0 $ defenum Shape $ :point Number Number
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (t)
         str |shape: $ &enum:nth t 0
@@ -315,7 +315,7 @@ deftrait Greeting (requires Labeled)
   .greeting $ quote $ Fn Greeting (-> String)
 
 def Greeter $ impl-traits
-  defstruct Greeter $ :name 'String
+  defstruct Greeter $ :name String
   , LabeledImpl GreetingImpl
 ```
 
@@ -338,7 +338,7 @@ Notes:
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p

@@ -37,7 +37,7 @@
                 quasiquote $ &%{} ~R ~@args
           :examples $ [] $ quote
             let
-                Point $ defstruct Point (:x 'Number) (:y 'Number)
+                Point $ defstruct Point (:x Number) (:y Number)
                 rec $ %{} Point (:x 1) (:y 2)
               assert= 1 $ :x rec
           :schema $ quote $ Macro (Expr Dynamic) & SyntaxList
@@ -3472,7 +3472,7 @@
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             let
-                User $ defstruct User $ :name 'String
+                User $ defstruct User $ :name String
                 user $ User :name |Alice
               assert= (Option :some User) (&struct:definition user)
           :schema $ quote $ Fn Struct
@@ -3552,8 +3552,7 @@
         '&union-def:new $ %{} 'CodeEntry
           :doc "|Create the runtime value of a defunion from its name and member type forms."
           :code $ quote &runtime-implementation
-          :examples $ [] $ quote
-            &union-def:new :CssValue 'String 'Number
+          :examples $ [] $ quote (&union-def:new :CssValue 'String 'Number)
           :schema $ quote $ Fn Tag (-> UnionDef)
           :tags $ #{} :builtin :internal
         '&wait-ms $ %{} 'CodeEntry
@@ -3888,7 +3887,7 @@
           :doc "|Step result returned by fold-while reducers: :continue carries the next accumulator, :break stops the fold and returns its value."
           :code $ quote $ def ControlFlow
             impl-traits
-              defenum ControlFlow ([] 'A) (:continue 'A) (:break 'A)
+              defenum ControlFlow ([] A) (:continue A) (:break A)
               , internal/&core-debug-impl internal/&core-eq-impl
           :examples $ []
           :schema $ quote Dynamic
@@ -3901,15 +3900,15 @@
           :tags $ #{} :trait
         'Data $ %{} 'CodeEntry
           :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
-          :code $ quote $ defenum Data (:nil) (:bool 'Bool) (:number 'Number) (:string 'String) (:tag 'Tag) (:symbol 'Symbol)
-            :list $ quote $ List Dynamic
-            :map $ quote $ Map Dynamic Dynamic
-            :set $ quote $ Set Dynamic
-            :fn 'Dynamic
-            :enum 'Dynamic
-            :struct 'Dynamic
-            :ref 'Dynamic
-            :other 'Dynamic
+          :code $ quote $ defenum Data (:nil) (:bool Bool) (:number Number) (:string String) (:tag Tag) (:symbol Symbol)
+            :list $ List Dynamic
+            :map $ Map Dynamic Dynamic
+            :set $ Set Dynamic
+            :fn Dynamic
+            :enum Dynamic
+            :struct Dynamic
+            :ref Dynamic
+            :other Dynamic
           :examples $ []
           :schema $ quote EnumDef
           :tags $ #{} :data
@@ -3943,7 +3942,7 @@
           :doc "|Nominal wrapper for an exactly-once native async response capability."
           :code $ quote $ def FfiResponse
             impl-traits
-              defstruct FfiResponse $ :raw 'Dynamic
+              defstruct FfiResponse $ :raw Dynamic
               , FfiResponseOpsImpl
           :examples $ []
           :schema $ quote StructDef
@@ -3966,7 +3965,7 @@
           :doc "|Nominal wrapper for a cancellable native async task capability."
           :code $ quote $ def FfiTask
             impl-traits
-              defstruct FfiTask $ :raw 'Dynamic
+              defstruct FfiTask $ :raw Dynamic
               , FfiTaskOpsImpl
           :examples $ []
           :schema $ quote StructDef
@@ -3989,7 +3988,7 @@
           :doc "|Nominal UTF-8 host filesystem path. Construct with fs:path; file effects are exposed on FsPath rather than String."
           :code $ quote $ def FsPath
             impl-traits
-              defstruct FsPath $ :value 'String
+              defstruct FsPath $ :value String
               , FsPathOpsImpl
           :examples $ []
           :schema $ quote StructDef
@@ -4021,23 +4020,23 @@
           :tags $ #{} :trait
         'ListDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-list: none, or a head element with the remaining list."
-          :code $ quote $ defenum ListDestruct ([] 'T)
-            :some 'T $ quote $ List T
+          :code $ quote $ defenum ListDestruct ([] T)
+            :some T $ List T
             :none
           :examples $ []
           :schema $ quote Enum
           :tags $ #{} :data
         'MapDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-map: none, or a key, value, and remaining map."
-          :code $ quote $ defenum MapDestruct ([] 'K 'V)
-            :some 'K 'V $ quote $ Map K V
+          :code $ quote $ defenum MapDestruct ([] K V)
+            :some K V $ Map K V
             :none
           :examples $ []
           :schema $ quote Enum
           :tags $ #{} :data
         'MapEntry $ %{} 'CodeEntry
           :doc "|保留键和值各自类型的具名 Map 条目，可用于排序和索引映射；不改变旧的 &map:to-list 返回值。"
-          :code $ quote $ defstruct MapEntry ([] 'K 'V) (:key 'K) (:value 'V)
+          :code $ quote $ defstruct MapEntry ([] K V) (:key K) (:value V)
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :data
@@ -4045,7 +4044,7 @@
           :doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry."
           :code $ quote $ def MapEntryDecision
             impl-traits
-              defenum MapEntryDecision ([] 'K 'V) (:keep 'K 'V) (:drop)
+              defenum MapEntryDecision ([] K V) (:keep K V) (:drop)
               , internal/&core-debug-impl internal/&core-eq-impl
           :examples $ []
           :schema $ quote Dynamic
@@ -4066,7 +4065,7 @@
           :doc "|Calcit 泛型 Option<T> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Option :some value 或 Option :none 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Option
             impl-traits
-              defenum Option ([] 'T) (:some 'T) (:none)
+              defenum Option ([] T) (:some T) (:none)
               , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ quote Dynamic
@@ -4137,7 +4136,7 @@
           :doc "|get-in 的失败值：:missing 表示路径不存在或遍历中遇到 nil；:shape 携带说明，表示中间值不是可遍历的集合。"
           :code $ quote $ def PathError
             impl-traits
-              defenum PathError (:missing) (:shape 'String)
+              defenum PathError (:missing) (:shape String)
               , internal/&core-debug-impl internal/&core-eq-impl
           :examples $ []
           :schema $ quote Dynamic
@@ -4157,7 +4156,7 @@
           :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Result
             impl-traits
-              defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+              defenum Result ([] T E) (:ok T) (:err E)
               , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ quote Dynamic
@@ -4220,14 +4219,14 @@
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
         'RuntimeMapMeta $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct RuntimeMapMeta (:kind 'Tag)
+          :code $ quote $ defstruct RuntimeMapMeta (:kind Tag)
           :examples $ []
           :schema $ quote Struct
         'RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct RuntimeMapResponse (:code 'Number)
-            :message $ quote $ Option String
-            :body 'Dynamic
-            :meta $ quote $ Option RuntimeMapMeta
+          :code $ quote $ defstruct RuntimeMapResponse (:code Number)
+            :message $ Option String
+            :body Dynamic
+            :meta $ Option RuntimeMapMeta
           :examples $ []
           :schema $ quote Struct
           :tags $ #{} :data :internal
@@ -4239,8 +4238,8 @@
           :tags $ #{} :trait
         'SetDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-set: none, or an element with the remaining set."
-          :code $ quote $ defenum SetDestruct ([] 'T)
-            :some 'T $ quote $ Set T
+          :code $ quote $ defenum SetDestruct ([] T)
+            :some T $ Set T
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4267,7 +4266,7 @@
           :tags $ #{} :data
         'StringDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-str: none, or the first character with the remaining string."
-          :code $ quote $ defenum StringDestruct (:some 'String 'String) (:none)
+          :code $ quote $ defenum StringDestruct (:some String String) (:none)
           :examples $ []
           :schema $ quote Enum
           :tags $ #{} :data
@@ -4726,7 +4725,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-struct-through-option-match)
               :code $ quote $ let
-                  Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                  Draft $ defstruct Draft (:text String) (:mono? Bool)
                   original $ Draft :text |old :mono? false
                   drafts $ {} $ |a original
                   changed $ match (get drafts |a)
@@ -5505,7 +5504,7 @@
           :schema $ quote $ Fn Struct Tag (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |checks-tag-field-and-missing-field)
             :code $ quote $ let
-                Point $ defstruct Point (:x 'Number) (:y 'Number)
+                Point $ defstruct Point (:x Number) (:y Number)
                 point $ Point :x 1 :y 2
               assert-type (point .contains-field? :x) 'Bool
               assert= true $ point .contains-field? :x
@@ -5996,6 +5995,19 @@
                 assert= 3 $ .len "|A😀𠮷"
                 assert= 3 $ &trait-call Countable :count "|A😀𠮷"
               :tags $ #{} :core :count-contract :unit
+        'data-definition-bound-form $ %{} 'CodeEntry
+          :doc "|Read the `{} (T Debug) ...` bounds of defstruct or defenum: each bound starts with a type variable, which may be written bare as in the generics list."
+          :code $ quote $ defn data-definition-bound-form (form)
+            if (list? form)
+              &list:map form $ fn (entry)
+                if
+                  and (list? entry)
+                    not $ empty? entry
+                  &list:assoc entry 0 $ data-definition-type-form $ &list:nth entry 0
+                  , entry
+              , form
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'data-definition-form $ %{} 'CodeEntry
           :doc "|Normalize wrapped forms used by data-definition macros"
           :code $ quote $ defn data-definition-form (entry)
@@ -6036,6 +6048,28 @@
               , false
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> Bool)
+        'data-definition-type-form $ %{} 'CodeEntry
+          :doc "|Read one declared type of defstruct, defenum or defunion as type syntax. A bare symbol is a type name and a list headed by a type name is a compact type such as `(List Number)`; both are quoted so the macro never evaluates them. Other forms, such as `'Number` or `quote $ List Number`, pass through unchanged."
+          :code $ quote $ defn data-definition-type-form (form)
+            if (symbol? form) ([] 'quote form)
+              if
+                and (list? form)
+                  not $ empty? form
+                  symbol? $ &list:nth form 0
+                  not $ includes? ([] ':: '{} '[] '#{} '%{} 'quote 'quasiquote) (&list:nth form 0)
+                  &let
+                    head $ str $ &list:nth form 0
+                    not $ or (starts-with? head |:) (starts-with? head |&)
+                [] 'quote form
+                , form
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'data-definition-type-forms $ %{} 'CodeEntry
+          :doc "|Apply data-definition-type-form to each form of a list, such as the generic parameters of defstruct or defenum."
+          :code $ quote $ defn data-definition-type-forms (forms)
+            if (list? forms) (&list:map forms data-definition-type-form) forms
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'data-definition-where-form? $ %{} 'CodeEntry
           :doc "|Detect optional where-map form after generic parameters in data-definition macros"
           :code $ quote $ defn data-definition-where-form? (tail-forms)
@@ -6461,7 +6495,7 @@
                       and (list? first-variant)
                         not $ empty? first-variant
                         not $ tag? $ &list:nth first-variant 0
-                      if
+                      data-definition-type-forms $ if
                         &= [] $ &list:nth first-variant 0
                         &list:rest first-variant
                         , first-variant
@@ -6472,7 +6506,7 @@
                         has-where-form? $ data-definition-where-form? tail-forms
                         &let
                           where-form $ if has-where-form?
-                            data-definition-form $ &list:nth tail-forms 0
+                            data-definition-bound-form $ data-definition-form $ &list:nth tail-forms 0
                             {}
                           &let
                             variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
@@ -6495,7 +6529,8 @@
                                   &let
                                     variant-tag $ &list:nth items 0
                                     &let
-                                      payload-forms $ &list:map (&list:rest items)
+                                      payload-forms $ &list:map
+                                        &list:map (&list:rest items) data-definition-type-form
                                         fn (t)
                                           if (list? t)
                                             quasiquote $ quote $ ~ t
@@ -6521,10 +6556,19 @@
                                     [] ~@generics
                                     ~@ normalized
           :examples $ [] $ quote
-            defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+            defenum Result ([] T E) (:ok T) (:err E)
           :schema $ quote $ Macro Syntax & SyntaxList
             -> $ Expr EnumDef
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |reads-payload-types-as-type-syntax)
+            :code $ quote $ let
+                bare $ defenum Shape ([] T) (:circle Number) (:poly (List Number)) (:tagged T String) (:none)
+                quoted $ defenum Shape ([] 'T) (:circle 'Number) (:poly (quote $ List Number)) (:tagged 'T 'String) (:none)
+              assert= quoted bare
+              assert= 2 $ match (bare :circle 2)
+                (:circle r) r
+                _ 0
+            :tags $ #{} :core :unit
         'defimpl $ %{} 'CodeEntry
           :doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: name and trait must be symbols; legacy tag names/origins are retired with E_LEGACY_DEFIMPL_TAG. Define a capability with deftrait and pass its symbol. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
@@ -6628,7 +6672,7 @@
                       and (list? first-pair)
                         not $ empty? first-pair
                         not $ tag? $ &list:nth first-pair 0
-                      if
+                      data-definition-type-forms $ if
                         &= [] $ &list:nth first-pair 0
                         &list:rest first-pair
                         , first-pair
@@ -6639,7 +6683,7 @@
                         has-where-form? $ data-definition-where-form? tail-forms
                         &let
                           where-form $ if has-where-form?
-                            data-definition-form $ &list:nth tail-forms 0
+                            data-definition-bound-form $ data-definition-form $ &list:nth tail-forms 0
                             {}
                           &let
                             field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
@@ -6662,13 +6706,15 @@
                                   &let
                                     field-name $ &list:nth items 0
                                     &let
-                                      type-form $ &list:nth items 1
+                                      type-form $ data-definition-type-form $ &list:nth items 1
                                       &let
                                         field-form $ if (list? type-form)
                                           if
                                             and
                                               &= 2 $ count type-form
-                                              syntax? $ &list:nth type-form 0
+                                              or
+                                                syntax? $ &list:nth type-form 0
+                                                symbol? $ &list:nth items 1
                                             if (includes? generics type-form)
                                               quasiquote $ [] (~ field-name)
                                                 quote $ ~ type-form
@@ -6701,25 +6747,44 @@
                                     [] ~@generics
                                     ~@ normalized
           :examples $ [] $ quote
-            defstruct Person (:name 'String) (:age 'Number)
+            defstruct Person (:name String) (:age Number)
           :schema $ quote $ Macro Syntax & SyntaxList
             -> $ Expr StructDef
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |local-definition-constructs-directly)
-            :code $ quote $ let
-                Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
-                draft $ Draft :text |old :mono? false
-                Shape $ defenum Shape (:circle 'Number) (:dot)
-                shape $ Shape :circle 2
-              assert= |old $ :text draft
-              assert= false $ :mono? draft
-              assert= (Option :some Draft) (&struct:definition draft)
-              assert= draft $ %{} Draft (:text |old) (:mono? false)
-              assert= 2 $ match shape
-                (:circle r) r
-                (:dot) 0
-              assert= (%:: Shape :dot) (Shape :dot)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |local-definition-constructs-directly)
+              :code $ quote $ let
+                  Draft $ defstruct Draft (:text String) (:mono? Bool)
+                  draft $ Draft :text |old :mono? false
+                  Shape $ defenum Shape (:circle Number) (:dot)
+                  shape $ Shape :circle 2
+                assert= |old $ :text draft
+                assert= false $ :mono? draft
+                assert= (Option :some Draft) (&struct:definition draft)
+                assert= draft $ %{} Draft (:text |old) (:mono? false)
+                assert= 2 $ match shape
+                  (:circle r) r
+                  (:dot) 0
+                assert= (%:: Shape :dot) (Shape :dot)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
+              :code $ quote $ let
+                  Item $ defstruct Item $ :n Number
+                  bare $ defstruct Box ([] T)
+                    {} $ T Debug
+                    :value T
+                    :count Number 0
+                    :items $ List Item
+                    :table $ Map String (List Number)
+                  quoted $ defstruct Box ([] 'T)
+                    {} $ 'T Debug
+                    :value 'T
+                    :count 'Number 0
+                    :items $ quote $ List Item
+                    :table $ quote $ Map String (List Number)
+                assert= quoted bare
+                assert= 0 $ :count $ bare :value |a :items ([]) :table ({})
+              :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ quote $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
@@ -6801,15 +6866,23 @@
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'defunion $ %{} 'CodeEntry
-          :doc "|定义闭合的无标签联合类型：(defunion Name 'MemberA 'MemberB ...)。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`、`(List Number)`。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
-            quasiquote $ &union-def:new (~ $ turn-tag name) ~@members
-          :examples $ [] $ quote (; defunion CssValue 'String 'Number)
+            quasiquote $ &union-def:new
+              ~ $ turn-tag name
+              ~@ $ &list:map members data-definition-type-form
+          :examples $ [] $ quote (; defunion CssValue String Number)
           :schema $ quote $ Macro Syntax & Syntax
             -> $ Expr UnionDef
           :tags $ #{} :macro :type
+          :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
+            :code $ quote $ let
+                bare $ defunion Cell String (List Number)
+                quoted $ defunion Cell 'String (quote $ List Number)
+              assert= quoted bare
+            :tags $ #{} :core :unit
         'deref $ %{} 'CodeEntry
           :doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation."
           :code $ quote $ defn deref (*a) (&atom:deref *a)
@@ -7450,7 +7523,7 @@
             &= (type-of x) :enum-def
           :examples $ []
             quote $ assert= true $ enum-def?
-              defenum Result (:ok) (:err 'String)
+              defenum Result (:ok) (:err String)
             quote $ assert= false $ enum-def? (%:: _ :ok 1)
           :schema $ quote $ Fn T (-> Bool) (:generics T)
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
@@ -7465,8 +7538,8 @@
           :tests $ []
             %{} 'TestEntry (:name |distinct-definition-names)
               :code $ quote $ let
-                  left $ defenum Left $ :item 'String
-                  right $ defenum Right $ :item 'String
+                  left $ defenum Left $ :item String
+                  right $ defenum Right $ :item String
                   alias left
                   equal-definition? $ fn (a b)
                     hint-fn $ Fn EnumDef EnumDef $ -> Bool
@@ -7478,10 +7551,10 @@
               :tags $ #{} :enum-definition-equality :unit
             %{} 'TestEntry (:name |definition-schema-equality)
               :code $ quote $ let
-                  original $ defenum Entry $ :item 'String
-                  equivalent $ defenum Entry $ :item 'String
-                  different $ defenum Entry $ :item 'Number
-                  arity $ defenum Entry $ :item 'String 'String
+                  original $ defenum Entry $ :item String
+                  equivalent $ defenum Entry $ :item String
+                  different $ defenum Entry $ :item Number
+                  arity $ defenum Entry $ :item String String
                 assert= true $ = original equivalent
                 assert= false $ = original different
                 assert= false $ = original arity
@@ -7492,9 +7565,9 @@
               :tags $ #{} :enum-definition-equality :unit
             %{} 'TestEntry (:name |definition-collection-keys)
               :code $ quote $ let
-                  original $ defenum Entry $ :item 'String
-                  equivalent $ defenum Entry $ :item 'String
-                  different $ defenum Entry $ :item 'Number
+                  original $ defenum Entry $ :item String
+                  equivalent $ defenum Entry $ :item String
+                  different $ defenum Entry $ :item Number
                   entries $ {} (original |text) (different |number)
                 assert= 2 $ count entries
                 assert= (Option :some |text) (get entries equivalent)
@@ -12610,7 +12683,7 @@
             &= (type-of x) :struct-def
           :examples $ []
             quote $ assert= true $ struct-def?
-              defstruct Person $ :name 'String
+              defstruct Person $ :name String
             quote $ assert= false $ struct-def?
               %{} _ $ :x 1
           :schema $ quote $ Fn T (-> Bool) (:generics T)
@@ -12618,7 +12691,7 @@
           :code $ quote $ defn struct-definition (value) (&struct:definition value)
           :examples $ [] $ quote
             let
-                User $ defstruct User $ :name 'String
+                User $ defstruct User $ :name String
                 user $ User :name |Ada
               assert= (Option :some User) (struct-definition user)
           :schema $ quote $ Fn Struct
@@ -12653,7 +12726,7 @@
               :tags $ #{} :core :struct-match-guard :unit
             %{} 'TestEntry (:name |evaluates-subject-once-and-keeps-body-errors)
               :code $ quote $ let
-                  Entry $ defstruct Entry $ :value 'Number
+                  Entry $ defstruct Entry $ :value Number
                   expected $ Entry :value 7
                   counter $ ref 0
                   result $ struct-match
@@ -13434,7 +13507,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-struct-and-enum-slots)
               :code $ quote $ let
-                  Point $ defstruct Point $ :n 'Number
+                  Point $ defstruct Point $ :n Number
                   p $ Point :n 1
                   changed $ update p :n inc
                 assert= 2 $ :n changed

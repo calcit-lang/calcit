@@ -10,31 +10,48 @@
   :files $ {} $ 'test-union.main
     %{} 'FileEntry
       :defs $ {}
+        'Cells $ %{} 'CodeEntry
+          :doc "|A member written as a compound type, read without quote."
+          :code $ quote $ defunion Cells String (List Number)
+          :examples $ []
+          :schema $ quote UnionDef
         'CssValue $ %{} 'CodeEntry (:doc "|A style value: text or a number of pixels.")
-          :code $ quote $ defunion CssValue 'String 'Number
+          :code $ quote $ defunion CssValue String Number
           :examples $ []
           :schema $ quote UnionDef
         'Geo $ %{} 'CodeEntry (:doc "|Members told apart by their definitions.")
-          :code $ quote $ defunion Geo 'Point 'Shape 'String
+          :code $ quote $ defunion Geo Point Shape String
           :examples $ []
           :schema $ quote UnionDef
         'Label $ %{} 'CodeEntry (:doc "|Every member of Label is also a member of Geo.")
-          :code $ quote $ defunion Label 'String 'Point
+          :code $ quote $ defunion Label String Point
           :examples $ []
           :schema $ quote UnionDef
         'Point $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
+          :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
         'Shape $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Shape (:circle 'Number) (:square 'Number)
+          :code $ quote $ defenum Shape (:circle Number) (:square Number)
           :examples $ []
           :schema $ quote EnumDef
         'Style $ %{} 'CodeEntry
           :doc "|A struct field typed as a union accepts any member at runtime."
-          :code $ quote $ defstruct Style (:width 'CssValue)
+          :code $ quote $ defstruct Style (:width CssValue)
           :examples $ []
           :schema $ quote StructDef
+        'cells-total $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn cells-total (c)
+            match c
+              (String s) (count s)
+              (List xs) (reduce xs 0 &+)
+          :examples $ []
+          :schema $ quote $ Fn Cells (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |compound-member-keeps-element-type)
+            :code $ quote $ do
+              assert= 6 $ cells-total $ [] 1 2 3
+              assert= 3 $ cells-total |abc
+            :tags $ #{} :union :unit
         'css-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn css-text (v)
             match v

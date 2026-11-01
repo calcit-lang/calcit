@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Result $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
           :schema $ quote EnumDef
         'main! $ %{} 'CodeEntry (:doc |)

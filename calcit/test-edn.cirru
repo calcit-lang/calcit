@@ -11,7 +11,7 @@
     'test-edn.main $ %{} 'FileEntry
       :defs $ {}
         'A $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct A (:a 'Dynamic)
+          :code $ quote $ defstruct A (:a Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'A-typed-person $ %{} 'CodeEntry (:doc |)
@@ -19,21 +19,21 @@
           :examples $ []
           :schema $ quote Dynamic
         'Box $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Box ([] 'T) (:value 'T)
+          :code $ quote $ defstruct Box ([] T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'DemoEnum $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum DemoEnum (:ok) (:err 'String)
+          :code $ quote $ defenum DemoEnum (:ok) (:err String)
           :examples $ []
           :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
+          :code $ quote $ defstruct Person (:name String) (:age Number)
           :examples $ []
           :schema $ quote StructDef
         'Response $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Response (:code 'Number)
-            :message $ quote $ Option String
-            :body 'Dynamic
+          :code $ quote $ defstruct Response (:code Number)
+            :message $ Option String
+            :body Dynamic
           :examples $ []
           :schema $ quote StructDef
         'Team $ %{} 'CodeEntry (:doc |)
@@ -303,11 +303,11 @@
     'test-edn.schema $ %{} 'FileEntry
       :defs $ {}
         'External $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct External (:label 'String)
+          :code $ quote $ defstruct External (:label String)
           :examples $ []
           :schema $ quote StructDef
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person (:handle 'String)
+          :code $ quote $ defstruct Person (:handle String)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)

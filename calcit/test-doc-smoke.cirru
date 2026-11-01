@@ -11,11 +11,11 @@
     %{} 'FileEntry
       :defs $ {}
         'DocEnum0 $ %{} 'CodeEntry (:doc "|Doc smoke enum")
-          :code $ quote $ defenum DocEnum (:ok 'String)
+          :code $ quote $ defenum DocEnum (:ok String)
           :examples $ []
           :schema $ quote EnumDef
         'DocPerson0 $ %{} 'CodeEntry (:doc "|Doc smoke struct")
-          :code $ quote $ defstruct DocPerson (:name 'String)
+          :code $ quote $ defstruct DocPerson (:name String)
           :examples $ []
           :schema $ quote StructDef
         'DocTrait $ %{} 'CodeEntry (:doc "|Doc smoke trait")

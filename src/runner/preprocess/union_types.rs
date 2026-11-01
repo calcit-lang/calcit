@@ -508,7 +508,7 @@ pub(super) fn reject_inline_union_schema(
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "{ns}/{def_name} writes an inline `Union` in its schema; declare the union with `defunion Name 'MemberA 'MemberB` and refer to it by name"
+      "{ns}/{def_name} writes an inline `Union` in its schema; declare the union with `defunion Name MemberA MemberB` and refer to it by name"
     ),
     "E_UNION_INLINE",
     call_stack,

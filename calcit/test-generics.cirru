@@ -11,22 +11,22 @@
     %{} 'FileEntry
       :defs $ {}
         'Box $ %{} 'CodeEntry (:doc "|Generic box struct")
-          :code $ quote $ defstruct Box ([] 'T) (:value 'T)
+          :code $ quote $ defstruct Box ([] T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
-          :code $ quote $ defstruct Holder ([] 'T)
-            :box $ quote $ Box T
+          :code $ quote $ defstruct Holder ([] T)
+            :box $ Box T
           :examples $ []
           :schema $ quote StructDef
         'Node $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Node
             :next $ :: 'Option Node
-            :value 'Number
+            :value Number
           :examples $ []
           :schema $ quote StructDef
         'Pair $ %{} 'CodeEntry (:doc "|Generic pair struct")
-          :code $ quote $ defstruct Pair ([] 'T 'U) (:left 'T) (:right 'U)
+          :code $ quote $ defstruct Pair ([] T U) (:left T) (:right U)
           :examples $ []
           :schema $ quote StructDef
         'main! $ %{} 'CodeEntry (:doc |)

@@ -13,7 +13,7 @@
         'Counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Counter
             impl-traits
-              defstruct Counter $ :value 'Number
+              defstruct Counter $ :value Number
               , CounterOpsImpl CounterAddImpl
           :examples $ []
           :schema $ quote StructDef
@@ -95,7 +95,7 @@
               :tags $ #{} :trait :unit
             %{} 'TestEntry (:name |orders-definition-kinds-like-native)
               :code $ quote $ let
-                  NominalRecord $ defstruct NominalRecord $ :value 'Number
+                  NominalRecord $ defstruct NominalRecord $ :value Number
                   Choice $ defenum Choice $ :choice
                   marker $ make-marker
                   implementation $ defimpl MarkerImpl marker
@@ -181,7 +181,7 @@
           :examples $ []
           :schema $ quote Impl
         'AliasSharedBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum AliasSharedBase (:item 'Number)
+          :code $ quote $ defenum AliasSharedBase (:item Number)
           :examples $ []
           :schema $ quote EnumDef
         'CoreShowImpl $ %{} 'CodeEntry (:doc |)
@@ -193,7 +193,7 @@
           :examples $ []
           :schema $ quote Impl
         'Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
-          :code $ quote $ defenum Demo (:demo 'Dynamic)
+          :code $ quote $ defenum Demo (:demo Dynamic)
           :examples $ []
           :schema $ quote Enum
         'DemoBar $ %{} 'CodeEntry (:doc "|Enum with MyBar impls")
@@ -252,7 +252,7 @@
           :schema $ quote StructDef
         'GreeterBase $ %{} 'CodeEntry (:doc "|Greeter 的基础数据定义；附加 trait 的别名保留相同来源。")
           :code $ quote $ def GreeterBase
-            defstruct Greeter $ :name 'String
+            defstruct Greeter $ :name String
           :examples $ []
           :schema $ quote StructDef
         'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
@@ -285,7 +285,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
             :code $ quote $ let
                 Other $ impl-traits
-                  defstruct Greeter $ :name 'String
+                  defstruct Greeter $ :name String
                   , LabeledImpl GreetingImpl
                 OtherEnum $ impl-traits
                   defenum OtherGreeter $ :foreign
@@ -313,7 +313,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
             :code $ quote $ let
                 Other $ impl-traits
-                  defstruct Greeter $ :name 'String
+                  defstruct Greeter $ :name String
                   , LabeledImpl GreetingImpl
                 OtherEnum $ impl-traits
                   defenum OtherGreeter $ :foreign
@@ -373,7 +373,7 @@
           :examples $ []
           :schema $ quote Impl
         'OpenContainsBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum OpenContainsBase (:item 'Number)
+          :code $ quote $ defenum OpenContainsBase (:item Number)
           :examples $ []
           :schema $ quote EnumDef
         'OpenContainsFalseImpl $ %{} 'CodeEntry (:doc |)
@@ -402,11 +402,11 @@
           :examples $ []
           :schema $ quote EnumDef
         'OpenEnumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OpenEnumBox (:value 'Enum)
+          :code $ quote $ defstruct OpenEnumBox (:value Enum)
           :examples $ []
           :schema $ quote StructDef
         'Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
-          :code $ quote $ defstruct Person0 (:name 'String)
+          :code $ quote $ defstruct Person0 (:name String)
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |preserves-nominal-method-input-after-attachment)
@@ -463,7 +463,7 @@
                 assert= 1 $ deref calls
               :tags $ #{} :unit
         'RestBoxBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct RestBoxBase (:value 'Number)
+          :code $ quote $ defstruct RestBoxBase (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'RestBoxImpl $ %{} 'CodeEntry (:doc |)
@@ -495,7 +495,7 @@
                 assert= 7 $ found .unwrap
               :tags $ #{} :trait :unit
         'ResultBoxBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ResultBoxBase (:value 'Number)
+          :code $ quote $ defstruct ResultBoxBase (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'ResultBoxImpl $ %{} 'CodeEntry (:doc |)
@@ -1199,7 +1199,7 @@
                       hint-fn $ Fn Enum $ -> Number
                       , 1
                   EmptyProbe $ impl-traits
-                    defenum EmptyProbe $ :item 'Number
+                    defenum EmptyProbe $ :item Number
                     , EmptyProbeImpl
                 assert= true $ throws? $ empty? (EmptyProbe :item 1)
                 assert= true $ throws? $ empty? nil
@@ -1213,7 +1213,7 @@
                       hint-fn $ Fn Enum Number $ -> Number
                       , 1
                   ContainsProbe $ impl-traits
-                    defenum ContainsProbe $ :item 'Number
+                    defenum ContainsProbe $ :item Number
                     , ContainsProbeImpl
                   has-open-index $ fn (value key)
                     hint-fn $ Fn Enum Dynamic $ -> Bool
@@ -1251,7 +1251,7 @@
                       hint-fn $ Fn Enum Number $ -> Bool
                       , false
                   ReviewContains $ impl-traits
-                    defenum ReviewContains $ :item 'Number
+                    defenum ReviewContains $ :item Number
                     , ReviewContainsImpl
                   via-method $ fn (value)
                     hint-fn $ Fn Enum $ -> Bool
@@ -1720,7 +1720,7 @@
                 CustomContainsImpl $ defimpl CustomContainsImpl CustomContains $ .contains?
                   fn (self field) (&= field :virtual)
                 Box $ impl-traits
-                  defstruct Box $ :value 'Tag
+                  defstruct Box $ :value Tag
                   , CustomContainsImpl
                 box $ %{} Box $ :value :x
               and (&trait-call CustomContains :contains? box :virtual)
@@ -1800,40 +1800,40 @@
           :tests $ []
             %{} 'TestEntry (:name |preserves-equivalent-definition-control)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value 'Number
-                  right $ defstruct ComparedRecord $ :value 'Number
+                  left $ defstruct ComparedRecord $ :value Number
+                  right $ defstruct ComparedRecord $ :value Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-field-contracts)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value 'Number
-                  right $ defstruct ComparedRecord $ :value 'String
+                  left $ defstruct ComparedRecord $ :value Number
+                  right $ defstruct ComparedRecord $ :value String
                 assert= false $ = left right
                 assert= 2 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-declared-generic-slots)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] 'T) (:value 'Number)
-                  right $ defstruct ComparedRecord ([] 'T 'U) (:value 'Number)
+                  left $ defstruct ComparedRecord ([] T) (:value Number)
+                  right $ defstruct ComparedRecord ([] T U) (:value Number)
                 assert= false $ = left right
                 assert= 2 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-trait-bounds)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T Debug
-                    :value 'T
-                  right $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T ToString
-                    :value 'T
+                  left $ defstruct ComparedRecord ([] T)
+                    {} $ T Debug
+                    :value T
+                  right $ defstruct ComparedRecord ([] T)
+                    {} $ T ToString
+                    :value T
                 assert= false $ = left right
                 assert= 2 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-canonical-field-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value 'Number
-                  right $ defstruct ComparedRecord $ :value 'Number
+                  left $ defstruct ComparedRecord $ :value Number
+                  right $ defstruct ComparedRecord $ :value Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1842,18 +1842,18 @@
               :code $ quote $ let
                   left-origin $ deftrait Marker
                   right-origin $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T left-origin
-                    :value 'T
-                  right $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T right-origin
-                    :value 'T
+                  left $ defstruct ComparedRecord ([] T)
+                    {} $ T left-origin
+                    :value T
+                  right $ defstruct ComparedRecord ([] T)
+                    {} $ T right-origin
+                    :value T
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-old-edn-definitions)
               :code $ quote $ let
-                  Point $ defstruct Point $ :x 'Number
+                  Point $ defstruct Point $ :x Number
                   live $ Point :x 1
                   parsed $ parse-cirru-edn $ format-cirru-edn live
                 if (struct? parsed)
@@ -1866,64 +1866,63 @@
               :code $ quote $ let
                   marker $ deftrait Marker
                   implementation $ defimpl MarkerImpl marker
-                  left $ defstruct ComparedRecord ([] 'T) (:value 'Number)
-                  right $ defstruct ComparedRecord ([] 'T 'U) (:value 'Number)
+                  left $ defstruct ComparedRecord ([] T) (:value Number)
+                  right $ defstruct ComparedRecord ([] T U) (:value Number)
                 assert= false $ = (impl-traits left implementation) (impl-traits right implementation)
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-equivalent-trait-bound-forms)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T marker
-                    :value 'T
-                  right $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T $ [] marker
-                    :value 'T
+                  left $ defstruct ComparedRecord ([] T)
+                    {} $ T marker
+                    :value T
+                  right $ defstruct ComparedRecord ([] T)
+                    {} $ T $ [] marker
+                    :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-nested-container-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                   right $ defstruct ComparedRecord $ :value
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-default-container-arguments)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value 'List
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ List Dynamic
+                  left $ defstruct ComparedRecord $ :value List
+                  right $ defstruct ComparedRecord $ :value (List Dynamic)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-function-type-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> String
+                    Fn Number $ -> String
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> String
+                    Fn Number $ -> String
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-rest-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number & String $ -> Bool
+                    Fn Number & String $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number & Number $ -> Bool
+                    Fn Number & Number $ -> Bool
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-feature-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> Bool
+                    Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number (-> Bool) (:features :js-ffi)
+                    Fn Number (-> Bool) (:features :js-ffi)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -1965,7 +1964,7 @@
             %{} 'TestEntry (:name |preserves-function-schema-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn $ -> Bool
+                    Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ []
@@ -1978,7 +1977,7 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-serialized-open-field-contracts)
               :code $ quote $ let
-                  Open $ defstruct Open $ :value 'Dynamic
+                  Open $ defstruct Open $ :value Dynamic
                   live $ Open :value 1
                   parsed $ parse-cirru-edn $ format-cirru-edn live
                 if (struct? parsed)
@@ -1989,8 +1988,8 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-deduplicated-generic-parameters)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] 'T) (:value 'T)
-                  right $ defstruct ComparedRecord ([] 'T 'T) (:value 'T)
+                  left $ defstruct ComparedRecord ([] T) (:value T)
+                  right $ defstruct ComparedRecord ([] T T) (:value T)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1998,7 +1997,7 @@
             %{} 'TestEntry (:name |preserves-function-generic-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> Bool
+                    Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ [] 'Number
@@ -2012,15 +2011,15 @@
             %{} 'TestEntry (:name |orders-function-async-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn $ -> Bool
+                    Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn (-> Bool) (:async)
+                    Fn (-> Bool) (:async)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-open-callback-spellings)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :callback 'Fn
+                  left $ defstruct ComparedRecord $ :callback Fn
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                   applied $ defstruct ComparedRecord $ :callback (:: 'Fn)
@@ -2032,20 +2031,16 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-host-nullable-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value
-                    quote $ JsNullish Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ JsNullish Number
+                  left $ defstruct ComparedRecord $ :value (JsNullish Number)
+                  right $ defstruct ComparedRecord $ :value (JsNullish Number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-variadic-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value
-                    quote $ Variadic Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ Variadic Number
+                  left $ defstruct ComparedRecord $ :value (Variadic Number)
+                  right $ defstruct ComparedRecord $ :value (Variadic Number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2053,7 +2048,7 @@
             %{} 'TestEntry (:name |does-not-invent-host-type-aliases)
               :code $ quote $ let
                   named $ test-traits.struct-left/make-host-holder
-                  host $ defstruct ComparedRecord $ :value 'JsObject
+                  host $ defstruct ComparedRecord $ :value JsObject
                 assert= false $ = named host
                 assert= false $ = 0 $ &compare named host
                 assert= 2 $ count $ #{} named host
@@ -2061,12 +2056,12 @@
             %{} 'TestEntry (:name |preserves-string-bound-keys)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T marker
-                    :value 'T
-                  right $ defstruct ComparedRecord ([] 'T)
+                  left $ defstruct ComparedRecord ([] T)
+                    {} $ T marker
+                    :value T
+                  right $ defstruct ComparedRecord ([] T)
                     {} $ |:T marker
-                    :value 'T
+                    :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2074,20 +2069,20 @@
             %{} 'TestEntry (:name |does-not-invent-bounds-from-tag-keys)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] 'T) (:value 'T)
-                  right $ defstruct ComparedRecord ([] 'T)
+                  left $ defstruct ComparedRecord ([] T) (:value T)
+                  right $ defstruct ComparedRecord ([] T)
                     {} $ :T marker
-                    :value 'T
+                    :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |does-not-invent-bounds-from-scalar-types)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] 'T) (:value 'T)
-                  right $ defstruct ComparedRecord ([] 'T)
-                    {} $ 'T 'Number
-                    :value 'T
+                  left $ defstruct ComparedRecord ([] T) (:value T)
+                  right $ defstruct ComparedRecord ([] T)
+                    {} $ T 'Number
+                    :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2123,11 +2118,11 @@
     'test-traits.struct-left $ %{} 'FileEntry
       :defs $ {}
         'GenericBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct GenericBox ([] 'T) (:value 'T)
+          :code $ quote $ defstruct GenericBox ([] T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'Point $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'Number)
+          :code $ quote $ defstruct Point (:x Number)
           :examples $ []
           :schema $ quote StructDef
           :tests $ []
@@ -2168,8 +2163,8 @@
               :tags $ #{} :struct-origin :unit
             %{} 'TestEntry (:name |preserves-ownerless-local-pattern-semantics)
               :code $ quote $ let
-                  Pattern $ defstruct Point $ :x 'String
-                  OtherPattern $ defstruct OtherPoint $ :x 'Number
+                  Pattern $ defstruct Point $ :x String
+                  OtherPattern $ defstruct OtherPoint $ :x Number
                   point $ test-traits.struct-left/Point :x 2
                 assert= true $ &struct:matches? point Pattern
                 assert= false $ &struct:matches? point OtherPattern
@@ -2214,7 +2209,7 @@
           :examples $ []
           :schema $ quote StructDef
         'StructDef $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct StructDef (:value 'Number)
+          :code $ quote $ defstruct StructDef (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'definition $ %{} 'CodeEntry (:doc |)
@@ -2222,32 +2217,32 @@
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'jsobject $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct jsobject (:value 'Number)
+          :code $ quote $ defstruct jsobject (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'make-builtin-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-builtin-holder ()
-            defstruct Holder $ :value 'StructDef
+            defstruct Holder $ :value StructDef
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
-            defstruct Holder ([] 'Point) (:point 'Point)
+            defstruct Holder ([] Point) (:point Point)
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-holder ()
-            defstruct Holder $ :point 'Point
+            defstruct Holder $ :point Point
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-host-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-host-holder ()
-            defstruct ComparedRecord $ :value 'jsobject
+            defstruct ComparedRecord $ :value jsobject
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-qualified-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-qualified-holder ()
-            defstruct Holder $ :value 'test-traits.struct-left/StructDef
+            defstruct Holder $ :value test-traits.struct-left/StructDef
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'read-origin-point $ %{} 'CodeEntry (:doc |)
@@ -2262,11 +2257,11 @@
     'test-traits.struct-right $ %{} 'FileEntry
       :defs $ {}
         'Point $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'Number)
+          :code $ quote $ defstruct Point (:x Number)
           :examples $ []
           :schema $ quote StructDef
         'StructDef $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct StructDef (:value 'Number)
+          :code $ quote $ defstruct StructDef (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'definition $ %{} 'CodeEntry (:doc |)
@@ -2275,22 +2270,22 @@
           :schema $ quote $ Fn (-> StructDef)
         'make-builtin-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-builtin-holder ()
-            defstruct Holder $ :value 'StructDef
+            defstruct Holder $ :value StructDef
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
-            defstruct Holder ([] 'Point) (:point 'Point)
+            defstruct Holder ([] Point) (:point Point)
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-holder ()
-            defstruct Holder $ :point 'Point
+            defstruct Holder $ :point Point
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-qualified-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-qualified-holder ()
-            defstruct Holder $ :value 'test-traits.struct-right/StructDef
+            defstruct Holder $ :value test-traits.struct-right/StructDef
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
       :ns $ %{} 'NsEntry (:doc |)
@@ -2298,7 +2293,7 @@
     'test-traits.struct-text $ %{} 'FileEntry
       :defs $ {} $ 'Point
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'String)
+          :code $ quote $ defstruct Point (:x String)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)

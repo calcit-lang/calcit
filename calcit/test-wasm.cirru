@@ -20,7 +20,7 @@
     'test-wasm.layout $ %{} 'FileEntry
       :defs $ {} $ 'Point
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:z 'Number)
+          :code $ quote $ defstruct Point (:z Number)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
@@ -40,12 +40,12 @@
           :examples $ []
           :schema $ quote StructDef
         'NominalPayload $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NominalPayload (:label 'String) (:point Point)
+          :code $ quote $ defstruct NominalPayload (:label String) (:point Point)
           :examples $ []
           :schema $ quote StructDef
         'Point $ %{} 'CodeEntry
           :doc "|Struct definition (via legacy defrecord) for WASM test"
-          :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
+          :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
         'PointScore $ %{} 'CodeEntry (:doc |)
@@ -58,7 +58,7 @@
           :examples $ []
           :schema $ quote Impl
         'PointValue $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct PointValue (:value 'Number)
+          :code $ quote $ defstruct PointValue (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
@@ -2104,7 +2104,7 @@
     'test-wasm.nominal $ %{} 'FileEntry
       :defs $ {} $ 'Point
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
+          :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)

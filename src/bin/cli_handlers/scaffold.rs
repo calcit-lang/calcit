@@ -948,7 +948,7 @@ mod tests {
       :kind :data
       :doc "|Nominal box."
       :schema $ quote StructDef
-      :code $ quote (defstruct Box0 (:value 'String))
+      :code $ quote (defstruct Box0 (:value String))
     'app.main/Choice0 $ {}
       :mode :ensure
       :kind :data
