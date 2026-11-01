@@ -4776,18 +4776,34 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
 
 /// Load a read-only historical Snapshot (for example a Git baseline) for comparison.
 ///
-/// Content accepted by the strict loader is returned unchanged. Otherwise the content
-/// is normalized in memory through the same steps `calcit edit format` uses
+/// Content accepted by the strict loader is returned unchanged. When the strict loader
+/// rejects retired type storage (`E_LEGACY_TYPE_SYNTAX` / `E_LEGACY_OPTIONAL_TYPE`), the
+/// content is normalized in memory through the same steps `calcit edit format` uses
 /// ([`load_snapshot_data_for_format`], [`canonicalize_snapshot_type_syntax`],
 /// [`render_snapshot_content`]) and the rendered text is reloaded strictly, so callers
-/// never receive retired syntax. Nothing is written back. Representations that
-/// `edit format` cannot migrate (such as the removed `Optional<T>`) keep their error.
+/// never receive retired syntax. Nothing is written back. History that is invalid for
+/// any other reason keeps the strict error unchanged; representations that
+/// `edit format` cannot migrate (such as the removed `Optional<T>`) report the strict
+/// diagnostic behind a read-only normalization prefix.
 /// The boolean reports whether normalization was needed.
 pub fn load_historical_snapshot_data(data: &Edn, path: &str) -> Result<(Snapshot, bool), String> {
-  if let Ok(snapshot) = load_snapshot_data(data, path) {
-    return Ok((snapshot, false));
+  let strict_error = match load_snapshot_data(data, path) {
+    Ok(snapshot) => return Ok((snapshot, false)),
+    Err(error) => error,
+  };
+  if !(strict_error.contains(LEGACY_TYPE_SYNTAX_CODE) || strict_error.contains(LEGACY_OPTIONAL_TYPE_CODE)) {
+    return Err(strict_error);
   }
-  let unsupported = |error: String| format!("read-only `edit format` normalization does not support this Snapshot: {error}");
+  let unsupported = |detail: String| {
+    let mut message = format!("read-only `edit format` normalization does not support this Snapshot: {strict_error}");
+    // The format loader often repeats the strict diagnostic; only add a different cause.
+    let repeats_strict = diagnostic_code(&strict_error).is_some_and(|code| detail.contains(code));
+    if !repeats_strict {
+      message.push_str("\nnormalization failed with: ");
+      message.push_str(&detail);
+    }
+    message
+  };
   let (mut snapshot, _migration) = load_snapshot_data_for_format(data, path).map_err(unsupported)?;
   canonicalize_snapshot_type_syntax(&mut snapshot);
   let mut rendered = render_snapshot_content(&snapshot).map_err(unsupported)?;
@@ -4795,6 +4811,13 @@ pub fn load_historical_snapshot_data(data: &Edn, path: &str) -> Result<(Snapshot
   let reparsed = cirru_edn::parse(&rendered).map_err(|error| unsupported(error.to_string()))?;
   let normalized = load_snapshot_data(&reparsed, path).map_err(unsupported)?;
   Ok((normalized, true))
+}
+
+/// The first bracketed `[E_…]` diagnostic code in a message.
+fn diagnostic_code(message: &str) -> Option<&str> {
+  let start = message.find("[E_")?;
+  let end = start + message[start..].find(']')?;
+  Some(&message[start..=end])
 }
 
 /// Render snapshot content for runtime snapshot files such as `calcit.cirru`
@@ -6049,6 +6072,21 @@ mod tests {
     let optional = mini_snapshot_with_def("$ :: 'Optional 'Number", "(def main! 1)");
     let err = load_historical_snapshot_data(&optional, "mini.cirru").expect_err("removed Optional has no format migration");
     assert!(err.contains(LEGACY_OPTIONAL_TYPE_CODE), "{err}");
+    assert!(err.starts_with("read-only `edit format` normalization does not support"), "{err}");
+    assert!(
+      !err.contains("normalization failed with"),
+      "repeated diagnostic is not duplicated: {err}"
+    );
+
+    // Invalid for reasons other than retired storage: the strict error is kept as-is.
+    let Edn::Map(mut broken) = canonical.clone() else {
+      panic!("snapshot is a map")
+    };
+    broken.0.remove(&Edn::tag("entries"));
+    let broken = Edn::Map(broken);
+    let strict = load_snapshot_data(&broken, "mini.cirru").expect_err("missing entries is invalid");
+    let err = load_historical_snapshot_data(&broken, "mini.cirru").expect_err("missing entries stays invalid");
+    assert_eq!(err, strict);
   }
 
   #[test]

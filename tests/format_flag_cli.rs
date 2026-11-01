@@ -794,6 +794,13 @@ fn program_diff_normalizes_legacy_type_storage_in_git_baseline() {
   assert_ne!(evidence["before_revision"], evidence["after_revision"]);
   let def_diff = call(&["analyze", "program-diff", "HEAD", "--def", "app.main/Store"]);
   assert!(def_diff.status.success(), "{}", stderr(&def_diff));
+  let call_graph = call(&["analyze", "call-graph", "--diff", "HEAD"]);
+  assert!(call_graph.status.success(), "{}", stderr(&call_graph));
+  assert!(
+    stderr(&call_graph).contains("compared its `edit format` normalization in memory"),
+    "{}",
+    stderr(&call_graph)
+  );
 
   git(&["add", "calcit.cirru"]);
   git(&["commit", "--quiet", "-m", "Format snapshot"]);
