@@ -21,6 +21,7 @@ use std::sync::Arc;
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof, free_type_variable_names};
+use crate::calcit::union_def::UnionMemberKind;
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -1647,6 +1648,19 @@ fn collection_literal_matches(
   let mut expected = expected;
   while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = expected {
     expected = inner;
+  }
+  let union_member = expected.resolve_to_union().and_then(|union| {
+    let kind = match items.first()? {
+      Calcit::Proc(CalcitProc::List) => UnionMemberKind::List,
+      Calcit::Proc(CalcitProc::Set) => UnionMemberKind::Set,
+      Calcit::Proc(CalcitProc::Ref) => UnionMemberKind::Ref,
+      Calcit::Proc(CalcitProc::NativeMap) => UnionMemberKind::Map,
+      _ => return None,
+    };
+    union.checked_members().ok()?.into_iter().find(|member| member.kind == kind)
+  });
+  if let Some(member) = &union_member {
+    expected = member.annotation.as_ref();
   }
   match (items.first(), expected) {
     (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))

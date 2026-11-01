@@ -17,7 +17,7 @@
           :examples $ []
           :schema $ quote StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OpenBox (:value 'Dynamic)
+          :code $ quote $ defstruct OpenBox (:value Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'OptionBox $ %{} 'CodeEntry
@@ -27,7 +27,7 @@
           :examples $ []
           :schema $ quote StructDef
         'Value $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Value (:text 'String)
+          :code $ quote $ defstruct Value (:text String)
           :examples $ []
           :schema $ quote StructDef
         'choose-nil $ %{} 'CodeEntry (:doc |)
@@ -310,7 +310,7 @@
     'app.callback-left $ %{} 'FileEntry
       :defs $ {} $ 'Item
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Item (:n 'Number)
+          :code $ quote $ defstruct Item (:n Number)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
@@ -318,13 +318,13 @@
     'app.callback-origin $ %{} 'FileEntry
       :defs $ {}
         'Controller $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Controller ([] 'Op)
+          :code $ quote $ defstruct Controller ([] Op)
             :dispatch $ quote $ Ref
               Fn Op $ -> Unit
           :examples $ []
           :schema $ quote StructDef
         'RepeatedPayload $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum RepeatedPayload ([] 'T) (:pair 'T 'T)
+          :code $ quote $ defenum RepeatedPayload ([] T) (:pair T T)
           :examples $ []
           :schema $ quote EnumDef
         'branch-empty-generic-list $ %{} 'CodeEntry (:doc |)
@@ -704,7 +704,7 @@
     'app.callback-right $ %{} 'FileEntry
       :defs $ {} $ 'Item
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Item (:n 'Number)
+          :code $ quote $ defstruct Item (:n Number)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
@@ -779,6 +779,11 @@
         :code $ quote $ ns app.callback-shape
     'app.collection-value $ %{} 'FileEntry
       :defs $ {}
+        'Pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Pair String
+            quote $ Tuple Number String
+          :examples $ []
+          :schema $ quote UnionDef
         'Scalar $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Scalar String Number Tag
           :examples $ []
@@ -793,7 +798,21 @@
               assert=
                 Option :some $ [] 12 :block |sans
                 get nested :items
+              match sequence-value
+                (List items) (assert= values items)
+                (String text) (raise |Expected-list-member)
+              match pair-value
+                (Tuple pair)
+                  do
+                    assert= 12 $ nth pair 0
+                    assert= |ready $ nth pair 1
+                (String text) (raise |Expected-tuple-member)
             :tags $ #{} :collection-value-contract
+        'Sequence $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Sequence String
+            quote $ List app.collection-value/Scalar
+          :examples $ []
+          :schema $ quote UnionDef
         'members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def members (#{} 12 :block |sans)
           :examples $ []
@@ -803,6 +822,14 @@
             {} $ :items $ [] 12 :block |sans
           :examples $ []
           :schema $ quote $ Map Tag (List app.collection-value/Scalar)
+        'pair-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def pair-value ([] 12 |ready)
+          :examples $ []
+          :schema $ quote app.collection-value/Pair
+        'sequence-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def sequence-value ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote app.collection-value/Sequence
         'style $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def style
             {} (:width 12) (:display :block) (:font-family |sans)
@@ -821,7 +848,7 @@
           :examples $ []
           :schema $ quote StructDef
         'PairBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct PairBox (:a 'Dynamic) (:b 'Dynamic)
+          :code $ quote $ defstruct PairBox (:a Dynamic) (:b Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'checked-create $ %{} 'CodeEntry (:doc |)
@@ -1059,7 +1086,7 @@
     'app.dynamic-write $ %{} 'FileEntry
       :defs $ {}
         'AliasBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AliasBox (:user 'app.dynamic-write/UserAlias)
+          :code $ quote $ defstruct AliasBox (:user app.dynamic-write/UserAlias)
           :examples $ []
           :schema $ quote StructDef
         'AppliedBox $ %{} 'CodeEntry (:doc |)
@@ -1068,7 +1095,7 @@
           :examples $ []
           :schema $ quote StructDef
         'Box $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Box (:value 'Number)
+          :code $ quote $ defstruct Box (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'FunctionBox $ %{} 'CodeEntry (:doc |)
@@ -1077,7 +1104,7 @@
           :examples $ []
           :schema $ quote StructDef
         'GenericBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct GenericBox ([] 'T)
+          :code $ quote $ defstruct GenericBox ([] T)
             :items $ quote $ List T
           :examples $ []
           :schema $ quote StructDef
@@ -1097,11 +1124,11 @@
           :examples $ []
           :schema $ quote StructDef
         'NestedRefBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NestedRefBox (:item 'app.dynamic-write/RefBox)
+          :code $ quote $ defstruct NestedRefBox (:item app.dynamic-write/RefBox)
           :examples $ []
           :schema $ quote StructDef
         'NominalBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
+          :code $ quote $ defstruct NominalBox (:user app.field-owner/User)
           :examples $ []
           :schema $ quote StructDef
         'NullishFunctionBox $ %{} 'CodeEntry (:doc |)
@@ -1116,7 +1143,7 @@
           :examples $ []
           :schema $ quote StructDef
         'OpenCallableBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OpenCallableBox (:apply 'Fn)
+          :code $ quote $ defstruct OpenCallableBox (:apply Fn)
           :examples $ []
           :schema $ quote StructDef
         'OpenRefBox $ %{} 'CodeEntry (:doc |)
@@ -2327,7 +2354,7 @@
     'app.field-consumer $ %{} 'FileEntry
       :defs $ {}
         'User $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct User (:name 'String)
+          :code $ quote $ defstruct User (:name String)
           :examples $ []
           :schema $ quote StructDef
         'make-local-user $ %{} 'CodeEntry (:doc |)
@@ -2418,11 +2445,11 @@
           :examples $ []
           :schema $ quote StructDef
         'Envelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Envelope ([] 'T) (:user 'User) (:value 'T)
+          :code $ quote $ defstruct Envelope ([] T) (:user User) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'User $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct User (:name 'String)
+          :code $ quote $ defstruct User (:name String)
           :examples $ []
           :schema $ quote StructDef
         'make-user $ %{} 'CodeEntry (:doc |)
@@ -3217,17 +3244,17 @@
     'app.values $ %{} 'FileEntry
       :defs $ {}
         'ClientProjection $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ClientProjection (:count 'Number) (:color 'String)
+          :code $ quote $ defstruct ClientProjection (:count Number) (:color String)
           :examples $ []
           :schema $ quote StructDef
         'LoginState $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct LoginState (:username 'String) (:password 'String)
+          :code $ quote $ defstruct LoginState (:username String) (:password String)
           :examples $ []
           :schema $ quote StructDef
         'PatchCandidate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct PatchCandidate
             :raw $ quote $ Map Tag Dynamic
-            :typed 'app.values/ClientProjection
+            :typed app.values/ClientProjection
           :examples $ []
           :schema $ quote StructDef
         'initial-state $ %{} 'CodeEntry (:doc |)
