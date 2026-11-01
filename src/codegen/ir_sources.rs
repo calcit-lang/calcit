@@ -13,9 +13,7 @@ use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
-use crate::calcit::{
-  Calcit, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, SchemaKind,
-};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning};
 use crate::call_stack::CallStackList;
 use crate::program::{self, CompiledDefKind};
 use crate::runner::preprocess;
@@ -130,7 +128,12 @@ pub fn install_ir_sources(snapshot: &Snapshot, snapshot_path: &str, project_name
 /// Mirror an incremental reload so `ir --watch` keeps writing current source.
 pub fn apply_ir_source_changes(changes: &ChangesDict) {
   let mut guard = IR_SOURCES.write().expect("write IR sources");
-  let Some(index) = guard.as_mut() else { return };
+  if let Some(index) = guard.as_mut() {
+    apply_changes_to(index, changes);
+  }
+}
+
+fn apply_changes_to(index: &mut IrSourceIndex, changes: &ChangesDict) {
   for ns in &changes.removed {
     index.files.remove(ns);
   }
@@ -148,9 +151,21 @@ pub fn apply_ir_source_changes(changes: &ChangesDict) {
       file.defs.remove(def.as_str());
       file.tests.remove(def.as_str());
     }
-    for (def, change) in info.added_defs.iter().chain(info.changed_defs.iter()) {
+    // Tests follow `program::apply_code_changes`: a full CodeEntry replaces them, a
+    // code-only change keeps the loaded ones, and a code-only addition starts without any.
+    for (def, change) in &info.added_defs {
       file.defs.insert(Arc::from(def.as_str()), change.code().to_owned());
-      // Bare code changes keep the loaded tests, like the rest of the metadata.
+      match change {
+        snapshot::DefinitionChange::Entry(entry) => {
+          file.tests.insert(Arc::from(def.as_str()), test_pairs(&entry.tests));
+        }
+        snapshot::DefinitionChange::Code(_) => {
+          file.tests.remove(def.as_str());
+        }
+      }
+    }
+    for (def, change) in &info.changed_defs {
+      file.defs.insert(Arc::from(def.as_str()), change.code().to_owned());
       if let snapshot::DefinitionChange::Entry(entry) = change {
         file.tests.insert(Arc::from(def.as_str()), test_pairs(&entry.tests));
       }
@@ -283,7 +298,7 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, tests: &[(String, Cirru)], orig
     _ => String::new(),
   };
   let mut entries = vec![
-    (Edn::tag("hash"), Edn::str(source_hash(source, &schema_text, &doc))),
+    (Edn::tag("hash"), Edn::str(source_hash(source, &schema_text, &doc, tests))),
     (Edn::tag("head"), source_head(source)),
     (
       Edn::tag("kind"),
@@ -357,13 +372,19 @@ fn source_head(source: &Cirru) -> Edn {
 }
 
 /// Stable per-definition digest so readers can refresh only what changed.
-fn source_hash(source: &Cirru, schema: &str, doc: &str) -> String {
+fn source_hash(source: &Cirru, schema: &str, doc: &str, tests: &[(String, Cirru)]) -> String {
   let mut hasher = Md5::new();
   hasher.update(format!("{source:?}").as_bytes());
   hasher.update([0]);
   hasher.update(schema.as_bytes());
   hasher.update([0]);
   hasher.update(doc.as_bytes());
+  for (name, code) in tests {
+    hasher.update([0]);
+    hasher.update(name.as_bytes());
+    hasher.update([0]);
+    hasher.update(format!("{code:?}").as_bytes());
+  }
   format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
@@ -466,17 +487,13 @@ fn call_head_type(processed: &Calcit) -> Option<CalcitTypeAnnotation> {
   let Calcit::List(items) = processed else { return None };
   match items.first()? {
     Calcit::Proc(proc) => {
+      // The same conversion runtime procs use, so rest arguments and type variables survive.
       let signature = proc.get_type_signature()?;
-      Some(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-        generics: Arc::new(vec![]),
-        where_bounds: Arc::new(vec![]),
-        arg_types: signature.arg_types.clone(),
-        return_type: signature.return_type.clone(),
-        fn_kind: SchemaKind::Fn,
-        rest_type: None,
-        features: Arc::new(Default::default()),
-        runtime_arity: None,
-      })))
+      Some(CalcitTypeAnnotation::from_proc_parts(
+        signature.arg_types.clone(),
+        signature.return_type.clone(),
+        proc.arity(),
+      ))
     }
     Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_codegen_type_hint(ns, def).map(|annotation| (*annotation).clone()),
     _ => None,
@@ -530,6 +547,46 @@ fn path_key(coord: &[u16]) -> String {
 
 #[cfg(test)]
 mod tests {
+  use super::{IrSourceFile, IrSourceIndex, IrSourceOrigin, apply_changes_to};
+  use crate::snapshot::{ChangesDict, DefinitionChange, FileChangeInfo};
+  use std::collections::{HashMap, HashSet};
+  use std::sync::Arc;
+
+  #[test]
+  fn code_only_changes_keep_tests_but_code_only_additions_drop_them() {
+    let code = |leaf: &str| Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf(leaf), Cirru::List(vec![])]);
+    let file = IrSourceFile {
+      origin: IrSourceOrigin::Project,
+      ns_code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+      ns_doc: Arc::from(""),
+      defs: HashMap::from([(Arc::from("kept"), code("kept")), (Arc::from("replaced"), code("replaced"))]),
+      tests: HashMap::from([
+        (Arc::from("kept"), vec![("t".to_owned(), code("t"))]),
+        (Arc::from("replaced"), vec![("t".to_owned(), code("t"))]),
+      ]),
+    };
+    let mut index = IrSourceIndex {
+      files: HashMap::from([(Arc::from("app.main"), file)]),
+      ..Default::default()
+    };
+    let changes = ChangesDict {
+      changed: HashMap::from([(
+        Arc::from("app.main"),
+        FileChangeInfo {
+          ns: None,
+          added_defs: HashMap::from([("replaced".to_owned(), DefinitionChange::Code(code("replaced2")))]),
+          removed_defs: HashSet::new(),
+          changed_defs: HashMap::from([("kept".to_owned(), DefinitionChange::Code(code("kept2")))]),
+        },
+      )]),
+      ..Default::default()
+    };
+    apply_changes_to(&mut index, &changes);
+    let file = &index.files["app.main"];
+    assert!(file.tests.contains_key("kept"), "a code-only change keeps loaded tests");
+    assert!(!file.tests.contains_key("replaced"), "a code-only addition starts without tests");
+  }
+
   use super::{path_key, source_hash};
   use cirru_parser::Cirru;
 
@@ -540,11 +597,19 @@ mod tests {
   }
 
   #[test]
-  fn source_hash_tracks_source_schema_and_doc() {
+  fn source_hash_tracks_source_schema_doc_and_tests() {
     let source = Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("f"), Cirru::List(vec![])]);
-    let base = source_hash(&source, "Fn (-> Unit)", "");
-    assert_eq!(base, source_hash(&source, "Fn (-> Unit)", ""));
-    assert_ne!(base, source_hash(&source, "Fn (-> Number)", ""));
-    assert_ne!(base, source_hash(&source, "Fn (-> Unit)", "doc"));
+    let base = source_hash(&source, "Fn (-> Unit)", "", &[]);
+    assert_eq!(base, source_hash(&source, "Fn (-> Unit)", "", &[]));
+    assert_ne!(base, source_hash(&source, "Fn (-> Number)", "", &[]));
+    assert_ne!(base, source_hash(&source, "Fn (-> Unit)", "doc", &[]));
+    let test = |code: &str| vec![("works".to_owned(), Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf(code)]))];
+    let with_test = source_hash(&source, "Fn (-> Unit)", "", &test("1"));
+    assert_ne!(base, with_test, "adding a test changes the hash");
+    assert_ne!(
+      with_test,
+      source_hash(&source, "Fn (-> Unit)", "", &test("2")),
+      "a tests-only change changes the hash"
+    );
   }
 }
