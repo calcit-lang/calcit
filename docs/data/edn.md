@@ -161,6 +161,27 @@ The raising and Result-returning typed syntaxes are available for native executi
 
 Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.
 
+### 恢复可能是 Struct 的存档值
+
+旧存档、缓存或同步通道读出的开放值可能是三种之一：本程序已经构造的本地 Struct、从文本解析出来但不再指向本地定义的 Struct（例如没有传 options Map 的 `parse-cirru-edn` 结果），或者普通 Map。只有第一种可以直接沿用原对象；第二种只是带名字的数据，同名不代表来源或名义身份，要先转成 Map 再完整解码：
+
+```cirru.no-run
+def Store $ defstruct Store (:count 'Number) (:title 'String)
+
+defn restore-store (raw)
+  hint-fn $ Fn Dynamic (-> $ Result Store String)
+  if (struct? raw)
+    struct-match raw
+      Store store $ Result :ok store
+      _ other $ if
+        = :Store $ &struct:get-name other
+        try-decode-map-as (.to-map other) Store
+        Result :err |expected-a-Store-record
+    try-decode-map-as raw Store
+```
+
+`struct-match` 只匹配本地 `Store` 定义构造的值，这时返回原对象，`identical?` 仍然成立。其他 Struct 先按 `&struct:get-name` 筛掉名字不是 `Store` 的记录，名字只是 wire 数据里的标记，见 [Struct 名称](../features/structs.md)；剩下的走 `.to-map` 后按字段重新检查并构造新的本地值，字段不合法时得到 `:err` 和出错路径。普通 Map 直接解码。只用 `struct-match` 时，解析出来的 Struct 会落到兜底分支而无法恢复；只按名字判断则会把未检查的字段当成可信数据。
+
 ## Choosing Cirru EDN or JSON
 
 | Calcit value | Cirru EDN | JSON |
