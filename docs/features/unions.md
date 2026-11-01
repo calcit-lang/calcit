@@ -110,7 +110,7 @@ defn read-scale (props)
   decode-map-as (.unwrap-or (get props :scale) 1) Scale
 ```
 
-解码先按运行时种类选出成员，再按该成员完整解码，所以 `[] 1 |a` 会选中 `List Number` 成员并在 `$[1]` 处报错，而不是被当成别的成员。没有种类相符的成员时，错误会列出全部成员，例如 `expected union :Scale (number | list), got string`。
+解码先按运行时种类选出成员，再按该成员完整解码，所以 `[] 1 |a` 会选中 `List Number` 成员并在 `$[1]` 处报错，而不是被当成别的成员。没有种类相符的成员时，错误会列出全部成员，例如 `expected union :Scale (number | list), got string`。 成员内的短类型名使用该成员的原始声明命名空间，嵌套 union 展平后仍保留这一来源。
 
 `decode-map-as` 会把 map 解码成 struct：输入是 map 时，先试 union 里的 `Map` 成员，再依次试 struct 成员。`parse-cirru-edn-as` 的输入里 struct 写成 `%{} :Point …`，按名字选成员。
 

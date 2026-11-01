@@ -97,6 +97,8 @@ impl UnionMemberKind {
 #[derive(Debug, Clone)]
 pub struct UnionMember {
   pub annotation: Arc<CalcitTypeAnnotation>,
+  /// Namespace that owns short references in this member, before flattening.
+  pub declaring_namespace: Option<Arc<str>>,
   pub kind: UnionMemberKind,
   pub pattern_name: Arc<str>,
   /// `(ns, def)` of a named Struct/Enum member, used to test the definition at runtime.
@@ -187,6 +189,10 @@ impl CalcitUnionDef {
   fn check_member(&self, annotation: Arc<CalcitTypeAnnotation>) -> Result<UnionMember, String> {
     use CalcitTypeAnnotation as T;
     let union_name = self.display_name();
+    let declaring_namespace = self
+      .definition_ref()
+      .and_then(|reference| reference.rsplit_once('/'))
+      .map(|(namespace, _)| Arc::from(namespace));
     let reject = |reason: &str| {
       Err(format!(
         "defunion {union_name} member `{}` is not allowed: {reason}",
@@ -199,6 +205,7 @@ impl CalcitUnionDef {
     let builtin = |kind: UnionMemberKind, name: &str| {
       Ok(UnionMember {
         annotation: annotation.clone(),
+        declaring_namespace: declaring_namespace.clone(),
         kind,
         pattern_name: Arc::from(name),
         definition: None,
@@ -241,6 +248,7 @@ impl CalcitUnionDef {
           }
           return Ok(UnionMember {
             annotation: annotation.clone(),
+            declaring_namespace: declaring_namespace.clone(),
             pattern_name: short_name(&reference),
             kind: UnionMemberKind::Enum(reference),
             definition,
@@ -257,6 +265,7 @@ impl CalcitUnionDef {
           }
           return Ok(UnionMember {
             annotation: annotation.clone(),
+            declaring_namespace,
             pattern_name: short_name(&reference),
             kind: UnionMemberKind::Struct(reference),
             definition,

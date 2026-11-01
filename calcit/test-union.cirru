@@ -7,8 +7,8 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-union.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-union.main $ %{} 'FileEntry
       :defs $ {}
         'AliasValue $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion AliasValue test-union.main/PointAlias test-union.main/ShapeAlias String
@@ -239,3 +239,43 @@
           :schema $ quote $ Fn CssValue (-> String)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-union.main
+    'test-union.member-origin $ %{} 'FileEntry
+      :defs $ {}
+        'Inner $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Inner String
+            quote $ List Scalar
+          :examples $ []
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar String Number Tag
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-union.member-origin
+    'test-union.member-shadow $ %{} 'FileEntry
+      :defs $ {}
+        'Outer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Outer test-union.member-origin/Inner Tag
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |nested-members-keep-declaration-namespace)
+            :code $ quote $ do
+              match
+                decode-map-as ([] 12 :block |sans) Outer
+                (List items)
+                  assert= ([] 12 :block |sans) items
+                _ $ raise |Expected-list-from-nested-union
+              match (parse-cirru-edn-as "|[] 12 :block |sans" Outer)
+                (List items)
+                  assert= ([] 12 :block |sans) items
+                _ $ raise |Expected-list-from-nested-union
+              match
+                try-decode-map-as ([] false 'bad) Outer
+                (:err error) &unit
+                (:ok value) (raise |Accepted-shadowed-invalid-member)
+              match (try-parse-cirru-edn-as "|[] false 'bad" Outer)
+                (:err error) &unit
+                (:ok value) (raise |Accepted-shadowed-invalid-member)
+            :tags $ #{} :union :unit
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar Bool Symbol
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-union.member-shadow

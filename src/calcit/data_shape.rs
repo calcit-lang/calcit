@@ -800,7 +800,7 @@ impl GraphBuilder {
 
   /// A union shape lists one node per checked member (nested unions are
   /// already flattened). Named members resolve through their own definition
-  /// path; other member types resolve in the union's namespace.
+  /// path; nested short references retain the member's declaring namespace.
   fn build_union(&mut self, union_def: Arc<CalcitUnionDef>, ns: Arc<str>, def: Arc<str>) -> Result<usize, DataShapeError> {
     let key = format!("union:{ns}/{def}");
     if let Some(existing) = self.nominal_nodes.get(&key) {
@@ -816,7 +816,7 @@ impl GraphBuilder {
     for member in members {
       let member_node = match &member.definition {
         Some((member_ns, member_def)) => self.build_named(&format!("{member_ns}/{member_def}"), &Arc::new(vec![]), &ns)?,
-        None => self.build_type(member.annotation.as_ref(), &ns)?,
+        None => self.build_type(member.annotation.as_ref(), member.declaring_namespace.as_deref().unwrap_or(&ns))?,
       };
       member_nodes.push(member_node);
     }
