@@ -48,6 +48,33 @@ struct IrSourceFile {
   ns_code: Cirru,
   ns_doc: Arc<str>,
   defs: HashMap<Arc<str>, Cirru>,
+  /// Definition-attached tests as `(name, code)`, in Snapshot order.
+  tests: HashMap<Arc<str>, Vec<(String, Cirru)>>,
+}
+
+impl IrSourceFile {
+  fn from_snapshot(origin: IrSourceOrigin, file: &snapshot::FileInSnapShot) -> Self {
+    IrSourceFile {
+      origin,
+      ns_code: file.ns.code.to_owned(),
+      ns_doc: Arc::from(file.ns.doc.as_str()),
+      defs: file
+        .defs
+        .iter()
+        .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
+        .collect(),
+      tests: file
+        .defs
+        .iter()
+        .filter(|(_, entry)| !entry.tests.is_empty())
+        .map(|(def, entry)| (Arc::from(def.as_str()), test_pairs(&entry.tests)))
+        .collect(),
+    }
+  }
+}
+
+fn test_pairs(tests: &[snapshot::TestEntry]) -> Vec<(String, Cirru)> {
+  tests.iter().map(|test| (test.name.to_owned(), test.code.to_owned())).collect()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -77,19 +104,7 @@ pub fn install_ir_sources(snapshot: &Snapshot, snapshot_path: &str, project_name
     } else {
       IrSourceOrigin::Dep
     };
-    files.insert(
-      Arc::from(ns.as_str()),
-      IrSourceFile {
-        origin,
-        ns_code: file.ns.code.to_owned(),
-        ns_doc: Arc::from(file.ns.doc.as_str()),
-        defs: file
-          .defs
-          .iter()
-          .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
-          .collect(),
-      },
-    );
+    files.insert(Arc::from(ns.as_str()), IrSourceFile::from_snapshot(origin, file));
   }
   let mut entries: Vec<(String, String, String, String)> = snapshot
     .entries
@@ -120,19 +135,9 @@ pub fn apply_ir_source_changes(changes: &ChangesDict) {
     index.files.remove(ns);
   }
   for (ns, file) in &changes.added {
-    index.files.insert(
-      ns.to_owned(),
-      IrSourceFile {
-        origin: IrSourceOrigin::Project,
-        ns_code: file.ns.code.to_owned(),
-        ns_doc: Arc::from(file.ns.doc.as_str()),
-        defs: file
-          .defs
-          .iter()
-          .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
-          .collect(),
-      },
-    );
+    index
+      .files
+      .insert(ns.to_owned(), IrSourceFile::from_snapshot(IrSourceOrigin::Project, file));
   }
   for (ns, info) in &changes.changed {
     let Some(file) = index.files.get_mut(ns) else { continue };
@@ -141,9 +146,14 @@ pub fn apply_ir_source_changes(changes: &ChangesDict) {
     }
     for def in &info.removed_defs {
       file.defs.remove(def.as_str());
+      file.tests.remove(def.as_str());
     }
     for (def, change) in info.added_defs.iter().chain(info.changed_defs.iter()) {
       file.defs.insert(Arc::from(def.as_str()), change.code().to_owned());
+      // Bare code changes keep the loaded tests, like the rest of the metadata.
+      if let snapshot::DefinitionChange::Entry(entry) = change {
+        file.tests.insert(Arc::from(def.as_str()), test_pairs(&entry.tests));
+      }
     }
   }
 }
@@ -217,7 +227,8 @@ pub(crate) fn dump_sources(compiled: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> E
       .into_iter()
       .map(|def| {
         let source = &file.defs[def];
-        (Edn::str(def.as_ref()), dump_def(ns, def, source, file.origin))
+        let tests = file.tests.get(def).map(Vec::as_slice).unwrap_or(&[]);
+        (Edn::str(def.as_ref()), dump_def(ns, def, source, tests, file.origin))
       })
       .collect::<Vec<_>>();
     entries.push((
@@ -233,7 +244,7 @@ pub(crate) fn dump_sources(compiled: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> E
   Edn::map_from_iter(entries)
 }
 
-fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn {
+fn dump_def(ns: &str, def: &str, source: &Cirru, tests: &[(String, Cirru)], origin: IrSourceOrigin) -> Edn {
   let mut error: Option<String> = None;
   if origin == IrSourceOrigin::Project {
     let warnings = RefCell::new(vec![]);
@@ -301,6 +312,22 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn 
       )),
     ),
   ];
+  if !tests.is_empty() {
+    entries.push((
+      Edn::tag("tests"),
+      Edn::List(EdnListView(
+        tests
+          .iter()
+          .map(|(name, code)| {
+            Edn::map_from_iter([
+              (Edn::tag("name"), Edn::str(name.as_str())),
+              (Edn::tag("code"), Edn::Quote(code.to_owned())),
+            ])
+          })
+          .collect(),
+      )),
+    ));
+  }
   if let Some(message) = error {
     entries.push((Edn::tag("error"), Edn::str(message)));
   }
