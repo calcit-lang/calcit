@@ -97,8 +97,6 @@ impl UnionMemberKind {
 #[derive(Debug, Clone)]
 pub struct UnionMember {
   pub annotation: Arc<CalcitTypeAnnotation>,
-  /// Namespace that owns short references in this member, before flattening.
-  pub declaring_namespace: Option<Arc<str>>,
   pub kind: UnionMemberKind,
   pub pattern_name: Arc<str>,
   /// `(ns, def)` of a named Struct/Enum member, used to test the definition at runtime.
@@ -138,7 +136,7 @@ impl CalcitUnionDef {
   /// the offending member and the rule it breaks.
   pub fn checked_members(&self) -> Result<Vec<UnionMember>, String> {
     let mut visiting = vec![self.display_name()];
-    let members = self.collect_members(&mut visiting)?;
+    let members = self.collect_members(&mut visiting, None)?;
     if members.len() < 2 {
       return Err(format!("defunion {} needs at least two member types", self.display_name()));
     }
@@ -165,9 +163,18 @@ impl CalcitUnionDef {
     Ok(members)
   }
 
-  fn collect_members(&self, visiting: &mut Vec<String>) -> Result<Vec<UnionMember>, String> {
+  fn collect_members(&self, visiting: &mut Vec<String>, fallback_namespace: Option<&str>) -> Result<Vec<UnionMember>, String> {
+    let declaring_namespace = self
+      .definition_ref()
+      .and_then(|reference| reference.rsplit_once('/'))
+      .map(|(ns, _)| ns)
+      .or(fallback_namespace);
     let mut members = vec![];
     for annotation in self.members() {
+      let annotation = match declaring_namespace {
+        Some(ns) => super::type_refs::qualify_namespace_type_refs(annotation, ns),
+        None => annotation,
+      };
       if let Some(nested) = annotation.resolve_to_union() {
         let nested_name = nested.display_name();
         if visiting.contains(&nested_name) {
@@ -177,7 +184,7 @@ impl CalcitUnionDef {
           ));
         }
         visiting.push(nested_name);
-        members.extend(nested.collect_members(visiting)?);
+        members.extend(nested.collect_members(visiting, declaring_namespace)?);
         visiting.pop();
         continue;
       }
@@ -189,10 +196,6 @@ impl CalcitUnionDef {
   fn check_member(&self, annotation: Arc<CalcitTypeAnnotation>) -> Result<UnionMember, String> {
     use CalcitTypeAnnotation as T;
     let union_name = self.display_name();
-    let declaring_namespace = self
-      .definition_ref()
-      .and_then(|reference| reference.rsplit_once('/'))
-      .map(|(namespace, _)| Arc::from(namespace));
     let reject = |reason: &str| {
       Err(format!(
         "defunion {union_name} member `{}` is not allowed: {reason}",
@@ -205,7 +208,6 @@ impl CalcitUnionDef {
     let builtin = |kind: UnionMemberKind, name: &str| {
       Ok(UnionMember {
         annotation: annotation.clone(),
-        declaring_namespace: declaring_namespace.clone(),
         kind,
         pattern_name: Arc::from(name),
         definition: None,
@@ -248,7 +250,6 @@ impl CalcitUnionDef {
           }
           return Ok(UnionMember {
             annotation: annotation.clone(),
-            declaring_namespace: declaring_namespace.clone(),
             pattern_name: short_name(&reference),
             kind: UnionMemberKind::Enum(reference),
             definition,
@@ -265,7 +266,6 @@ impl CalcitUnionDef {
           }
           return Ok(UnionMember {
             annotation: annotation.clone(),
-            declaring_namespace,
             pattern_name: short_name(&reference),
             kind: UnionMemberKind::Struct(reference),
             definition,

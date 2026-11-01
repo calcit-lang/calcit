@@ -241,6 +241,19 @@
         :code $ quote $ ns test-union.main
     'test-union.member-origin $ %{} 'FileEntry
       :defs $ {}
+        'GenericCell $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct GenericCell ([] T) (:value T)
+          :examples $ []
+          :schema $ quote StructDef
+        'GenericMembers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion GenericMembers Scalar
+            quote $ GenericCell Number
+            quote $ GenericPacket Number
+          :examples $ []
+        'GenericPacket $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum GenericPacket ([] T) (:payload T)
+          :examples $ []
+          :schema $ quote EnumDef
         'Inner $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Inner String
             quote $ List Scalar
@@ -255,25 +268,65 @@
         'Outer $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Outer test-union.member-origin/Inner Tag
           :examples $ []
-          :tests $ [] $ %{} 'TestEntry (:name |nested-members-keep-declaration-namespace)
-            :code $ quote $ do
-              match
-                decode-map-as ([] 12 :block |sans) Outer
-                (List items)
-                  assert= ([] 12 :block |sans) items
-                _ $ raise |Expected-list-from-nested-union
-              match (parse-cirru-edn-as "|[] 12 :block |sans" Outer)
-                (List items)
-                  assert= ([] 12 :block |sans) items
-                _ $ raise |Expected-list-from-nested-union
-              match
-                try-decode-map-as ([] false 'bad) Outer
-                (:err error) &unit
-                (:ok value) (raise |Accepted-shadowed-invalid-member)
-              match (try-parse-cirru-edn-as "|[] false 'bad" Outer)
-                (:err error) &unit
-                (:ok value) (raise |Accepted-shadowed-invalid-member)
-            :tags $ #{} :union :unit
+          :tests $ []
+            %{} 'TestEntry (:name |nested-members-keep-declaration-namespace)
+              :code $ quote $ do
+                match
+                  decode-map-as ([] 12 :block |sans) Outer
+                  (List items)
+                    assert= ([] 12 :block |sans) items
+                  _ $ raise |Expected-list-from-nested-union
+                match (parse-cirru-edn-as "|[] 12 :block |sans" Outer)
+                  (List items)
+                    assert= ([] 12 :block |sans) items
+                  _ $ raise |Expected-list-from-nested-union
+                match
+                  try-decode-map-as ([] false 'bad) Outer
+                  (:err error) &unit
+                  (:ok value) (raise |Accepted-shadowed-invalid-member)
+                match (try-parse-cirru-edn-as "|[] false 'bad" Outer)
+                  (:err error) &unit
+                  (:ok value) (raise |Accepted-shadowed-invalid-member)
+              :tags $ #{} :union :unit
+            %{} 'TestEntry
+              :name |applied-generic-members-keep-declaration-scope-and-payload-types
+              :code $ quote $ do
+                assert=
+                  format-cirru-edn $ test-union.member-origin/GenericCell :value 12
+                  format-cirru-edn $ parse-cirru-edn-as "|%{} :GenericCell (:value 12)" test-union.member-origin/GenericMembers
+                assert=
+                  format-cirru-edn $ test-union.member-origin/GenericPacket :payload 12
+                  format-cirru-edn $ parse-cirru-edn-as "|%:: :GenericPacket :payload 12" test-union.member-origin/GenericMembers
+                assert= true $ match
+                  try-decode-map-as
+                    {} $ :value 12
+                    , test-union.member-origin/GenericMembers
+                  (:ok value) true
+                  (:err error) false
+                assert= true $ match
+                  try-decode-map-as (test-union.member-origin/GenericPacket :payload 12) test-union.member-origin/GenericMembers
+                  (:ok value) true
+                  (:err error) false
+                assert= true $ match
+                  try-decode-map-as
+                    {} $ :value |bad
+                    , test-union.member-origin/GenericMembers
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match
+                  try-decode-map-as (test-union.member-origin/GenericPacket :payload |bad) test-union.member-origin/GenericMembers
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-parse-cirru-edn-as "|%{} :GenericCell (:value |bad)" test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-parse-cirru-edn-as "|%:: :GenericPacket :payload |bad" test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-decode-map-as false test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+              :tags $ #{} :union :unit
         'Scalar $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Scalar Bool Symbol
           :examples $ []
