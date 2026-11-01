@@ -742,7 +742,7 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
           String::from_utf8_lossy(&output.stderr)
         );
         assert!(report.contains("E_SCHEMA_DEF_MISMATCH") && report.contains(&target), "{report}");
-        assert!(!output_directory.join("app.collection-value.mjs").exists());
+        assert!(!output_directory.join(format!("{namespace}.mjs")).exists());
       }
       assert_eq!(fs::read(&snapshot).unwrap(), original);
     }

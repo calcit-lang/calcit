@@ -14,6 +14,6 @@ Respo UI 的 0.34.0 迁移将 31 个静态样式常量声明为 `Map Tag StyleVa
 
 Resolve nested member references in the declaring union namespace using the existing resolver. The short-name fixture reproduces the earlier false rejection; valid attached tests and invalid/open CLI controls share that fixture.
 
-跨命名空间嵌套 union 的后续评审核实：同名 Scalar 故意遮蔽时，旧候选会拒绝合法 List 并接受 Bool/Symbol List。现在在既有 UnionMember 中保留展平前的声明 namespace；集合访问复用它解析嵌套短名，仅无来源时回退外层。没有新增证明状态或检查入口。原 fixture 新增遮蔽 namespace 与一项共享测试，CLI 扩到15组×普通/公开/JS控制；共享 native/JS各2/2、Clippy通过，原20个namespace完整视图/元数据保留。最新冻结源码全量门禁仍单独完成，不沿用源码演进期间的旧运行。
+跨命名空间嵌套 union 的后续评审核实：同名 Scalar 故意遮蔽时，旧候选会拒绝合法 List 并接受 Bool/Symbol List。现在在既有 UnionMember 中保留展平前的声明 namespace；集合访问复用它解析嵌套短名，仅无来源时回退外层。没有新增证明状态或检查入口。原 fixture 新增遮蔽 namespace 与一项共享测试，CLI 扩到17组×普通/公开/JS控制；共享 native/JS各2/2、Clippy通过，原20个namespace完整视图/元数据保留。最新冻结源码全量门禁仍单独完成，不沿用源码演进期间的旧运行。
 
-Preserve the owning namespace on each existing flattened UnionMember. A shadowing fixture reproduces both false rejection and false acceptance before the fix. Shared native/JS replay passes two tests per backend, the original CLI suite covers fifteen controls, and all twenty original namespace views and metadata are preserved. Full frozen-source gates remain separate from obsolete runs spanning source changes.
+Preserve the owning namespace on each existing flattened UnionMember. A shadowing fixture reproduces both false rejection and false acceptance before the fix. Shared native/JS replay passes two tests per backend, the original CLI suite covers seventeen controls, and all twenty original namespace views and metadata are preserved. Full frozen-source gates remain separate from obsolete runs spanning source changes.
