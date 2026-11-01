@@ -12207,6 +12207,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     "bool?" => Some(tag_annotation("bool")),
     "symbol?" => Some(tag_annotation("symbol")),
     "fn?" => Some(tag_annotation("fn")),
+    "cirru-quote?" => Some(tag_annotation("cirru-quote")),
     _ => None,
   } {
     return PredicateNarrowing {
@@ -18938,7 +18939,7 @@ mod tests {
         NullableOrigin::JsHost,
       )),
     )]);
-    for name in ["string?", "list?", "nil?", "non-nil?", "js-nullish?", "js-present?"] {
+    for name in ["string?", "list?", "cirru-quote?", "nil?", "non-nil?", "js-nullish?", "js-present?"] {
       let heads = [
         core_import(name, "tests.predicate-origin"),
         Calcit::Import(CalcitImport {
