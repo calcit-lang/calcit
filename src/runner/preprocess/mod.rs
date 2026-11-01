@@ -2057,7 +2057,7 @@ fn parse_trait_member_kind_from_source(form: &Calcit) -> CalcitTraitMemberKind {
 
 type TraitMemberSpecs = (Vec<EdnTag>, Vec<Arc<CalcitTypeAnnotation>>, Vec<CalcitTraitMemberKind>);
 
-fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calcit>) -> Option<TraitMemberSpecs> {
+fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calcit>, file_ns: &str) -> Option<TraitMemberSpecs> {
   let mut methods: Vec<EdnTag> = vec![];
   let mut method_types: Vec<Arc<CalcitTypeAnnotation>> = vec![];
   let mut member_kinds: Vec<CalcitTraitMemberKind> = vec![];
@@ -2071,9 +2071,9 @@ fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calc
     }
 
     let method_name = parse_trait_method_name_from_source(entry.first()?)?;
-    let type_form = entry.get(1)?;
+    let type_form = crate::builtins::meta::qualify_trait_member_type_form(entry.get(1)?, file_ns);
     let method_type = calcit::with_type_annotation_warning_context(format!("trait:{}", method_name.ref_str()), || {
-      CalcitTypeAnnotation::parse_type_annotation_form(type_form)
+      CalcitTypeAnnotation::parse_type_annotation_form(&type_form)
     });
     methods.push(method_name);
     method_types.push(method_type);
@@ -2143,7 +2143,7 @@ fn parse_trait_new_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTra
     Calcit::List(list) => list,
     _ => return None,
   };
-  let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(method_specs.iter())?;
+  let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(method_specs.iter(), file_ns)?;
   let trait_def = CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds));
   let requires = match items.get(3) {
     None => vec![],
@@ -2161,7 +2161,7 @@ fn parse_trait_new_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTra
 fn parse_deftrait_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTrait> {
   let name = parse_trait_name_from_source(items.get(1)?)?;
   let (methods, method_types, member_kinds) =
-    parse_trait_method_specs_from_source(items.iter().skip(2).filter(|item| !is_trait_requires_entry(item)))?;
+    parse_trait_method_specs_from_source(items.iter().skip(2).filter(|item| !is_trait_requires_entry(item)), file_ns)?;
   let parents = items
     .iter()
     .skip(2)

@@ -1668,6 +1668,26 @@ fn strict_type_fail_untyped_js_object_access_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_unbound_trait_field_tag_key_reports_stable_error_code() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/unbound-trait-field-tag-key-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries(fixture);
+    let err = run_check_only(&entries).expect_err("a Tag key on a type-variable receiver must fail strict check-only");
+
+    assert!(
+      err.contains("E_UNTYPED_JS_OBJECT_ACCESS"),
+      "unexpected strict type-variable host key error: {err}"
+    );
+    assert!(err.contains("`js-set`"), "operation should be explicit: {err}");
+    assert!(
+      err.contains("type variable `MissingStyle`"),
+      "receiver evidence should be explicit: {err}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_js_nullish_dereference_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/js-nullish-dereference-strict.cirru";

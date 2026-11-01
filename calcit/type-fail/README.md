@@ -25,6 +25,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `cargo run --bin calcit -- calcit/type-fail/dynamic-method-dispatch-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/raw-primitive-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/untyped-js-object-access-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/unbound-trait-field-tag-key-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/js-nullish-dereference-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/js-nullish-predicate-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unsafe-coerce-unscoped-strict.cirru --strict-types --check-only`
@@ -50,6 +51,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `raw-primitive-strict.cirru` 会验证 strict 模式拒绝项目源码直接调用 `&get-raw`，并报告稳定的 `E_RAW_PRIMITIVE_IN_TYPED_CODE`。
 - strict indexed-access integration 会验证完整预处理路径拒绝 Number 等静态不支持的 `first` / `last` / `nth` / `get` receiver，并报告稳定的 `E_UNSUPPORTED_INDEXED_RECEIVER`；该检查属于 native/JS 共用的前端语义。
 - `untyped-js-object-access-strict.cirru` 会验证 strict 模式拒绝裸 `JsObject` 上的静态成员访问，并报告稳定的 `E_UNTYPED_JS_OBJECT_ACCESS` 与 external-object trait 迁移建议。
+- `unbound-trait-field-tag-key-strict.cirru` 会验证 trait 字段类型名找不到定义、读出值只剩类型变量时，strict 模式拒绝以 Tag key 调用 `js-set`，同样报告 `E_UNTYPED_JS_OBJECT_ACCESS`，避免静默写入 `:width` 这类 raw 属性。
 - `js-nullish-dereference-strict.cirru` 会验证 strict 模式拒绝直接解引用 `JsNullish<JsObject>`，并报告稳定的 `E_JS_FFI_NULLABLE_DEREF` 与显式 narrow/optional access 建议。
 - `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 `nil?`/`some?`/`non-nil?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
 - `unsafe-coerce-unscoped-strict.cirru` 会验证 strict 模式拒绝未声明 `:js-ffi` 的 `unsafe-coerce`，并报告稳定的 `E_UNSCOPED_UNSAFE_COERCE`。

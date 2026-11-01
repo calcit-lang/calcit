@@ -467,16 +467,21 @@ pub(super) fn reject_or_warn_on_untyped_js_ffi_field_access(
   let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
     return Ok(());
   };
-  // Only the bare, non-nullable `JsObject` case is targeted here: it already
+  // The bare, non-nullable `JsObject` case is targeted here: it already
   // proves the value is a raw host object, and the key is a literal the
   // developer already knows, so declaring a trait is directly actionable.
+  // A type variable receiver carries no field evidence either; with a Tag key
+  // the raw operation would write a `:field` property, so it takes the same
+  // gate (a string key keeps explicit raw JavaScript semantics there).
   // Nullable receivers and declared traits are covered by other diagnostics.
-  if !matches!(receiver_type.as_ref(), CalcitTypeAnnotation::JsObject) {
-    return Ok(());
-  }
+  let receiver_label = match receiver_type.as_ref() {
+    CalcitTypeAnnotation::JsObject => "`JsObject`".to_owned(),
+    CalcitTypeAnnotation::TypeVar(name) if is_tag_key_operation(head, args) => format!("type variable `{name}`"),
+    _ => return Ok(()),
+  };
 
   let message = format!(
-    "[Warn] `{operation}` accesses untyped JS field `:{field_name}` on inferred `JsObject` in {file_ns}/{def_name}; declare an external-object trait (`deftrait ... :ffi {{:kind :external-object ...}}`) containing that field or method, then coerce the host value to the trait inside the lexical `:js-ffi` adapter; use a dynamic key only when raw lookup semantics are intentional"
+    "[Warn] `{operation}` accesses untyped JS field `:{field_name}` on inferred {receiver_label} in {file_ns}/{def_name}; declare an external-object trait (`deftrait ... :ffi {{:kind :external-object ...}}`) containing that field or method, then coerce the host value to the trait inside the lexical `:js-ffi` adapter; use a dynamic key only when raw lookup semantics are intentional"
   );
 
   let location = head.get_location().or_else(|| receiver.get_location());
@@ -494,6 +499,12 @@ pub(super) fn reject_or_warn_on_untyped_js_ffi_field_access(
     gen_check_warning_code_at(message, "W_JS_FFI_UNTYPED_ACCESS", file_ns, location, check_warnings);
   }
   Ok(())
+}
+
+/// Whether a `js-get`/`js-set`/`aget`/`aset` call uses a literal Tag key.
+fn is_tag_key_operation(head: &Calcit, args: &CalcitList) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "aget" | "js-get" | "aset" | "js-set"))
+    && matches!(args.get(1), Some(Calcit::Tag(_)))
 }
 
 pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(

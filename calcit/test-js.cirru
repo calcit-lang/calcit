@@ -41,6 +41,11 @@
           :ffi $ {} (:backend :js) (:kind :external-object)
             :writable $ #{} :a :a-b :b
           :schema $ quote Trait
+        'TestQualifiedStyleHost $ %{} 'CodeEntry (:doc "|Qualified control for TestStyleHost (#2502).")
+          :code $ quote $ deftrait TestQualifiedStyleHost (:style 'test-js.main/TestStyle)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ quote Trait
         'TestStringChain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestStringChain
             .upper $ quote $ Fn test-js.main/TestStringChain (-> test-js.main/TestStringChain)
@@ -48,6 +53,19 @@
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :names $ {} (:lower |toLowerCase) (:upper |toUpperCase)
+          :schema $ quote Trait
+        'TestStyle $ %{} 'CodeEntry
+          :doc "|Writable host style used by nested external-object field regressions (#2502)."
+          :code $ quote $ deftrait TestStyle (:width 'String)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+            :writable $ #{} :width
+          :schema $ quote Trait
+        'TestStyleHost $ %{} 'CodeEntry
+          :doc "|Names the same-namespace field trait unqualified; it must keep the nominal TestStyle identity (#2502)."
+          :code $ quote $ deftrait TestStyleHost (:style 'TestStyle)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
           :schema $ quote Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
@@ -71,6 +89,7 @@
             test-return-raw-code
             test-method-tag-access
             test-nested-external-chain
+            test-nested-external-field
             do true
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
@@ -324,6 +343,26 @@
                 upper $ .upper base
               assert= |abc $ .lower $ .upper base
               assert= |abc $ .lower upper
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :js-ffi)
+        'test-nested-external-field $ %{} 'CodeEntry
+          :doc "|An unqualified same-namespace field trait writes the declared host key, like its qualified control (#2502)."
+          :code $ quote $ defn test-nested-external-field ()
+            let
+                host $ unsafe-coerce
+                  js-object $ :style $ js-object (:width |)
+                  , test-js.main/TestStyleHost
+                style $ host :style
+                qualified $ unsafe-coerce
+                  js-object $ :style $ js-object (:width |)
+                  , test-js.main/TestQualifiedStyleHost
+                qualified-style $ qualified :style
+              js-set style :width |100px
+              js-set qualified-style :width |200px
+              assert= "|{\"width\":\"100px\"}" $ js/JSON.stringify style
+              assert= "|{\"width\":\"200px\"}" $ js/JSON.stringify qualified-style
+              assert= |100px $ js-get style :width
+              , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :js-ffi)
         'test-property $ %{} 'CodeEntry (:doc "|try property ops")

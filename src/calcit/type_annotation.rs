@@ -2191,6 +2191,11 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Whether a bare type name denotes a builtin type rather than a nominal reference.
+  pub(crate) fn is_builtin_type_symbol_name(name: &str) -> bool {
+    Self::builtin_type_from_symbol_name(name).is_some()
+  }
+
   fn builtin_type_from_symbol_name(name: &str) -> Option<Self> {
     match Self::canonical_type_symbol_name(name)? {
       "Dynamic" => Some(Self::Dynamic),
