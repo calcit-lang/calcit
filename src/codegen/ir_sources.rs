@@ -13,7 +13,7 @@ use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
 use md5::{Digest, Md5};
 
-use crate::calcit::{Calcit, CalcitLocal, CalcitTypeAnnotation, LocatedWarning};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning};
 use crate::call_stack::CallStackList;
 use crate::program::{self, CompiledDefKind};
 use crate::runner::preprocess;
@@ -46,12 +46,41 @@ struct IrSourceFile {
   ns_code: Cirru,
   ns_doc: Arc<str>,
   defs: HashMap<Arc<str>, Cirru>,
+  /// Definition-attached tests as `(name, code)`, in Snapshot order.
+  tests: HashMap<Arc<str>, Vec<(String, Cirru)>>,
+}
+
+impl IrSourceFile {
+  fn from_snapshot(origin: IrSourceOrigin, file: &snapshot::FileInSnapShot) -> Self {
+    IrSourceFile {
+      origin,
+      ns_code: file.ns.code.to_owned(),
+      ns_doc: Arc::from(file.ns.doc.as_str()),
+      defs: file
+        .defs
+        .iter()
+        .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
+        .collect(),
+      tests: file
+        .defs
+        .iter()
+        .filter(|(_, entry)| !entry.tests.is_empty())
+        .map(|(def, entry)| (Arc::from(def.as_str()), test_pairs(&entry.tests)))
+        .collect(),
+    }
+  }
+}
+
+fn test_pairs(tests: &[snapshot::TestEntry]) -> Vec<(String, Cirru)> {
+  tests.iter().map(|test| (test.name.to_owned(), test.code.to_owned())).collect()
 }
 
 #[derive(Debug, Clone, Default)]
 struct IrSourceIndex {
   package: String,
   snapshot_path: String,
+  /// Snapshot entries by name: init-fn, reload-fn and description.
+  entries: Vec<(String, String, String, String)>,
   files: HashMap<Arc<str>, IrSourceFile>,
 }
 
@@ -73,23 +102,25 @@ pub fn install_ir_sources(snapshot: &Snapshot, snapshot_path: &str, project_name
     } else {
       IrSourceOrigin::Dep
     };
-    files.insert(
-      Arc::from(ns.as_str()),
-      IrSourceFile {
-        origin,
-        ns_code: file.ns.code.to_owned(),
-        ns_doc: Arc::from(file.ns.doc.as_str()),
-        defs: file
-          .defs
-          .iter()
-          .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
-          .collect(),
-      },
-    );
+    files.insert(Arc::from(ns.as_str()), IrSourceFile::from_snapshot(origin, file));
   }
+  let mut entries: Vec<(String, String, String, String)> = snapshot
+    .entries
+    .iter()
+    .map(|(name, entry)| {
+      (
+        name.to_owned(),
+        entry.init_fn.to_owned(),
+        entry.reload_fn.to_owned(),
+        entry.description.to_owned(),
+      )
+    })
+    .collect();
+  entries.sort();
   *IR_SOURCES.write().expect("write IR sources") = Some(IrSourceIndex {
     package: snapshot.package.to_owned(),
     snapshot_path: snapshot_path.to_owned(),
+    entries,
     files,
   });
 }
@@ -97,24 +128,19 @@ pub fn install_ir_sources(snapshot: &Snapshot, snapshot_path: &str, project_name
 /// Mirror an incremental reload so `ir --watch` keeps writing current source.
 pub fn apply_ir_source_changes(changes: &ChangesDict) {
   let mut guard = IR_SOURCES.write().expect("write IR sources");
-  let Some(index) = guard.as_mut() else { return };
+  if let Some(index) = guard.as_mut() {
+    apply_changes_to(index, changes);
+  }
+}
+
+fn apply_changes_to(index: &mut IrSourceIndex, changes: &ChangesDict) {
   for ns in &changes.removed {
     index.files.remove(ns);
   }
   for (ns, file) in &changes.added {
-    index.files.insert(
-      ns.to_owned(),
-      IrSourceFile {
-        origin: IrSourceOrigin::Project,
-        ns_code: file.ns.code.to_owned(),
-        ns_doc: Arc::from(file.ns.doc.as_str()),
-        defs: file
-          .defs
-          .iter()
-          .map(|(def, entry)| (Arc::from(def.as_str()), entry.code.to_owned()))
-          .collect(),
-      },
-    );
+    index
+      .files
+      .insert(ns.to_owned(), IrSourceFile::from_snapshot(IrSourceOrigin::Project, file));
   }
   for (ns, info) in &changes.changed {
     let Some(file) = index.files.get_mut(ns) else { continue };
@@ -123,9 +149,26 @@ pub fn apply_ir_source_changes(changes: &ChangesDict) {
     }
     for def in &info.removed_defs {
       file.defs.remove(def.as_str());
+      file.tests.remove(def.as_str());
     }
-    for (def, change) in info.added_defs.iter().chain(info.changed_defs.iter()) {
+    // Tests follow `program::apply_code_changes`: a full CodeEntry replaces them, a
+    // code-only change keeps the loaded ones, and a code-only addition starts without any.
+    for (def, change) in &info.added_defs {
       file.defs.insert(Arc::from(def.as_str()), change.code().to_owned());
+      match change {
+        snapshot::DefinitionChange::Entry(entry) => {
+          file.tests.insert(Arc::from(def.as_str()), test_pairs(&entry.tests));
+        }
+        snapshot::DefinitionChange::Code(_) => {
+          file.tests.remove(def.as_str());
+        }
+      }
+    }
+    for (def, change) in &info.changed_defs {
+      file.defs.insert(Arc::from(def.as_str()), change.code().to_owned());
+      if let snapshot::DefinitionChange::Entry(entry) = change {
+        file.tests.insert(Arc::from(def.as_str()), test_pairs(&entry.tests));
+      }
     }
   }
 }
@@ -141,7 +184,27 @@ pub(crate) fn dump_meta(generated_at_ms: f64) -> Edn {
     .as_ref()
     .map(|index| (index.package.as_str(), index.snapshot_path.as_str()))
     .unwrap_or(("", ""));
+  let entries = guard
+    .as_ref()
+    .map(|index| {
+      index
+        .entries
+        .iter()
+        .map(|(name, init_fn, reload_fn, description)| {
+          (
+            Edn::str(name.as_str()),
+            Edn::map_from_iter([
+              (Edn::tag("init-fn"), Edn::str(init_fn.as_str())),
+              (Edn::tag("reload-fn"), Edn::str(reload_fn.as_str())),
+              (Edn::tag("description"), Edn::str(description.as_str())),
+            ]),
+          )
+        })
+        .collect::<Vec<_>>()
+    })
+    .unwrap_or_default();
   Edn::map_from_iter([
+    (Edn::tag("entries"), Edn::map_from_iter(entries)),
     (Edn::tag("schema-version"), Edn::Number(1.0)),
     (Edn::tag("calcit-version"), Edn::str(env!("CARGO_PKG_VERSION"))),
     (Edn::tag("package"), Edn::str(package)),
@@ -179,7 +242,8 @@ pub(crate) fn dump_sources(compiled: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> E
       .into_iter()
       .map(|def| {
         let source = &file.defs[def];
-        (Edn::str(def.as_ref()), dump_def(ns, def, source, file.origin))
+        let tests = file.tests.get(def).map(Vec::as_slice).unwrap_or(&[]);
+        (Edn::str(def.as_ref()), dump_def(ns, def, source, tests, file.origin))
       })
       .collect::<Vec<_>>();
     entries.push((
@@ -195,7 +259,7 @@ pub(crate) fn dump_sources(compiled: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> E
   Edn::map_from_iter(entries)
 }
 
-fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn {
+fn dump_def(ns: &str, def: &str, source: &Cirru, tests: &[(String, Cirru)], origin: IrSourceOrigin) -> Edn {
   let mut error: Option<String> = None;
   if origin == IrSourceOrigin::Project {
     let warnings = RefCell::new(vec![]);
@@ -234,14 +298,19 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn 
     _ => String::new(),
   };
   let mut entries = vec![
-    (Edn::tag("hash"), Edn::str(source_hash(source, &schema_text, &doc))),
+    (Edn::tag("hash"), Edn::str(source_hash(source, &schema_text, &doc, tests))),
     (Edn::tag("head"), source_head(source)),
     (
       Edn::tag("kind"),
-      compiled
-        .as_ref()
-        .map(|compiled| compiled_kind_tag(&compiled.kind))
-        .unwrap_or(Edn::Nil),
+      // Core syntax such as `defn` or `if` is registered as a runtime stub; name it for readers.
+      if ns == crate::calcit::CORE_NS && CalcitSyntax::is_valid(def) {
+        Edn::tag("syntax")
+      } else {
+        compiled
+          .as_ref()
+          .map(|compiled| compiled_kind_tag(&compiled.kind))
+          .unwrap_or(Edn::Nil)
+      },
     ),
     (Edn::tag("doc"), Edn::str(doc)),
     (Edn::tag("source"), Edn::Quote(source.to_owned())),
@@ -258,6 +327,22 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, origin: IrSourceOrigin) -> Edn 
       )),
     ),
   ];
+  if !tests.is_empty() {
+    entries.push((
+      Edn::tag("tests"),
+      Edn::List(EdnListView(
+        tests
+          .iter()
+          .map(|(name, code)| {
+            Edn::map_from_iter([
+              (Edn::tag("name"), Edn::str(name.as_str())),
+              (Edn::tag("code"), Edn::Quote(code.to_owned())),
+            ])
+          })
+          .collect(),
+      )),
+    ));
+  }
   if let Some(message) = error {
     entries.push((Edn::tag("error"), Edn::str(message)));
   }
@@ -287,13 +372,19 @@ fn source_head(source: &Cirru) -> Edn {
 }
 
 /// Stable per-definition digest so readers can refresh only what changed.
-fn source_hash(source: &Cirru, schema: &str, doc: &str) -> String {
+fn source_hash(source: &Cirru, schema: &str, doc: &str, tests: &[(String, Cirru)]) -> String {
   let mut hasher = Md5::new();
   hasher.update(format!("{source:?}").as_bytes());
   hasher.update([0]);
   hasher.update(schema.as_bytes());
   hasher.update([0]);
   hasher.update(doc.as_bytes());
+  for (name, code) in tests {
+    hasher.update([0]);
+    hasher.update(name.as_bytes());
+    hasher.update([0]);
+    hasher.update(format!("{code:?}").as_bytes());
+  }
   format!("md5:{}", hex::encode(hasher.finalize()))
 }
 
@@ -329,8 +420,10 @@ fn collect_deps(code: &Calcit, ns: &str, def: &str) -> Vec<String> {
 }
 
 /// Inferred types keyed by dotted source path. Call results come from the
-/// compiler's source expression trace; locals keep their preprocessing type
-/// at the coordinate of the symbol they were read from.
+/// compiler's source expression trace, and the head symbol of a traced call to a
+/// builtin or another definition gets that callee's signature. Locals keep their
+/// preprocessing type, `Dynamic` included, at the coordinate of the symbol they
+/// were read from; parameters and `let` names are locals too.
 fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<&Calcit>) -> BTreeMap<String, String> {
   let mut found: BTreeMap<String, String> = BTreeMap::new();
   let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -340,9 +433,15 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
         continue;
       }
       if let Some(annotation) = &item.inferred_type {
-        found
-          .entry(path_key(&item.location.coord))
-          .or_insert_with(|| type_display(annotation));
+        record_type(&mut found, &item.location.coord, annotation);
+      }
+      let mut head_path = item.location.coord.to_vec();
+      head_path.push(0);
+      if let Some(head) = source_leaf_at(source, &head_path)
+        && !names_macro(ns, head)
+        && let Some(annotation) = call_head_type(&item.processed)
+      {
+        record_type(&mut found, &head_path, &annotation);
       }
     }
   }
@@ -353,11 +452,8 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
         location: Some(coord),
         type_info,
         ..
-      }) if info.at_ns.as_ref() == ns
-        && info.at_def.as_ref() == def
-        && !matches!(type_info.as_ref(), CalcitTypeAnnotation::Dynamic) =>
-      {
-        found.entry(path_key(coord)).or_insert_with(|| type_display(type_info));
+      }) if info.at_ns.as_ref() == ns && info.at_def.as_ref() == def => {
+        record_type(found, coord, type_info);
       }
       Calcit::List(xs) => xs.traverse(&mut |x| walk(x, ns, def, found)),
       Calcit::Fn { info, .. } => {
@@ -374,12 +470,123 @@ fn collect_path_types(ns: &str, def: &str, source: &Cirru, preprocessed: Option<
   found
 }
 
+/// Keeps the first type seen at a path, except that a concrete type replaces `Dynamic`.
+fn record_type(found: &mut BTreeMap<String, String>, coord: &[u16], annotation: &CalcitTypeAnnotation) {
+  let text = type_display(annotation);
+  let key = path_key(coord);
+  match found.get(&key) {
+    Some(existing) if existing != "Dynamic" || text == "Dynamic" => {}
+    _ => {
+      found.insert(key, text);
+    }
+  }
+}
+
+/// Signature of the callee at the head of a processed call: a builtin proc or an imported definition.
+fn call_head_type(processed: &Calcit) -> Option<CalcitTypeAnnotation> {
+  let Calcit::List(items) = processed else { return None };
+  match items.first()? {
+    Calcit::Proc(proc) => {
+      // The same conversion runtime procs use, so rest arguments and type variables survive.
+      let signature = proc.get_type_signature()?;
+      Some(CalcitTypeAnnotation::from_proc_parts(
+        signature.arg_types.clone(),
+        signature.return_type.clone(),
+        proc.arity(),
+      ))
+    }
+    Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_codegen_type_hint(ns, def).map(|annotation| (*annotation).clone()),
+    _ => None,
+  }
+}
+
+/// Whether a head symbol names a macro. Its call lowers to unrelated code, so
+/// the lowered callee's signature would describe something the reader did not write.
+fn names_macro(ns: &str, head: &str) -> bool {
+  let target = match head.split_once('/') {
+    // `alias/def` through an `:as` import, otherwise a namespace written out in full.
+    Some((alias, def)) if !alias.is_empty() && !def.is_empty() => Some((
+      program::lookup_ns_target_in_import(ns, alias).map_or_else(|| alias.to_owned(), |target| target.to_string()),
+      def.to_owned(),
+    )),
+    _ => {
+      if program::has_def_code(ns, head) {
+        Some((ns.to_owned(), head.to_owned()))
+      } else if let Some(target) = program::lookup_def_target_in_import(ns, head) {
+        Some((target.to_string(), head.to_owned()))
+      } else {
+        Some((crate::calcit::CORE_NS.to_owned(), head.to_owned()))
+      }
+    }
+  };
+  target.is_some_and(|(target_ns, target_def)| {
+    matches!(
+      program::lookup_def_code(&target_ns, &target_def),
+      Some(Calcit::List(items)) if matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro")
+    )
+  })
+}
+
+fn source_leaf_at<'a>(source: &'a Cirru, path: &[u16]) -> Option<&'a str> {
+  let mut node = source;
+  for idx in path {
+    match node {
+      Cirru::List(items) => node = items.get(*idx as usize)?,
+      Cirru::Leaf(_) => return None,
+    }
+  }
+  match node {
+    Cirru::Leaf(text) => Some(text.as_ref()),
+    Cirru::List(_) => None,
+  }
+}
+
 fn path_key(coord: &[u16]) -> String {
   coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(".")
 }
 
 #[cfg(test)]
 mod tests {
+  use super::{IrSourceFile, IrSourceIndex, IrSourceOrigin, apply_changes_to};
+  use crate::snapshot::{ChangesDict, DefinitionChange, FileChangeInfo};
+  use std::collections::{HashMap, HashSet};
+  use std::sync::Arc;
+
+  #[test]
+  fn code_only_changes_keep_tests_but_code_only_additions_drop_them() {
+    let code = |leaf: &str| Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf(leaf), Cirru::List(vec![])]);
+    let file = IrSourceFile {
+      origin: IrSourceOrigin::Project,
+      ns_code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+      ns_doc: Arc::from(""),
+      defs: HashMap::from([(Arc::from("kept"), code("kept")), (Arc::from("replaced"), code("replaced"))]),
+      tests: HashMap::from([
+        (Arc::from("kept"), vec![("t".to_owned(), code("t"))]),
+        (Arc::from("replaced"), vec![("t".to_owned(), code("t"))]),
+      ]),
+    };
+    let mut index = IrSourceIndex {
+      files: HashMap::from([(Arc::from("app.main"), file)]),
+      ..Default::default()
+    };
+    let changes = ChangesDict {
+      changed: HashMap::from([(
+        Arc::from("app.main"),
+        FileChangeInfo {
+          ns: None,
+          added_defs: HashMap::from([("replaced".to_owned(), DefinitionChange::Code(code("replaced2")))]),
+          removed_defs: HashSet::new(),
+          changed_defs: HashMap::from([("kept".to_owned(), DefinitionChange::Code(code("kept2")))]),
+        },
+      )]),
+      ..Default::default()
+    };
+    apply_changes_to(&mut index, &changes);
+    let file = &index.files["app.main"];
+    assert!(file.tests.contains_key("kept"), "a code-only change keeps loaded tests");
+    assert!(!file.tests.contains_key("replaced"), "a code-only addition starts without tests");
+  }
+
   use super::{path_key, source_hash};
   use cirru_parser::Cirru;
 
@@ -390,11 +597,19 @@ mod tests {
   }
 
   #[test]
-  fn source_hash_tracks_source_schema_and_doc() {
+  fn source_hash_tracks_source_schema_doc_and_tests() {
     let source = Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("f"), Cirru::List(vec![])]);
-    let base = source_hash(&source, "Fn (-> Unit)", "");
-    assert_eq!(base, source_hash(&source, "Fn (-> Unit)", ""));
-    assert_ne!(base, source_hash(&source, "Fn (-> Number)", ""));
-    assert_ne!(base, source_hash(&source, "Fn (-> Unit)", "doc"));
+    let base = source_hash(&source, "Fn (-> Unit)", "", &[]);
+    assert_eq!(base, source_hash(&source, "Fn (-> Unit)", "", &[]));
+    assert_ne!(base, source_hash(&source, "Fn (-> Number)", "", &[]));
+    assert_ne!(base, source_hash(&source, "Fn (-> Unit)", "doc", &[]));
+    let test = |code: &str| vec![("works".to_owned(), Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf(code)]))];
+    let with_test = source_hash(&source, "Fn (-> Unit)", "", &test("1"));
+    assert_ne!(base, with_test, "adding a test changes the hash");
+    assert_ne!(
+      with_test,
+      source_hash(&source, "Fn (-> Unit)", "", &test("2")),
+      "a tests-only change changes the hash"
+    );
   }
 }
