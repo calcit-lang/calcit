@@ -164,19 +164,7 @@ fn typed_local(
 }
 
 fn nominal_pattern_type(name: &str, file_ns: &str) -> CalcitTypeAnnotation {
-  let (ns, def): (Arc<str>, Arc<str>) = if let Some((prefix, def)) = name.rsplit_once('/') {
-    (
-      program::lookup_ns_target_in_import(file_ns, prefix).unwrap_or_else(|| Arc::from(prefix)),
-      Arc::from(def),
-    )
-  } else if program::has_def_code(file_ns, name) {
-    (Arc::from(file_ns), Arc::from(name))
-  } else {
-    (
-      program::lookup_def_target_in_import(file_ns, name).unwrap_or_else(|| Arc::from(calcit::CORE_NS)),
-      Arc::from(name),
-    )
-  };
+  let (ns, def) = program::resolve_type_name_in_ns(file_ns, name).unwrap_or_else(|| (Arc::from(calcit::CORE_NS), Arc::from(name)));
   CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]))
 }
 

@@ -3180,6 +3180,46 @@ fn union_alias_patterns_reject_other_definitions_and_duplicate_members() {
   let snapshot = prepare_minimal_snapshot(&directory);
   let operations = serde_json::json!([
     ["config", "set", "target", "native"],
+    ["edit", "add-ns", "app.real"],
+    ["edit", "add-ns", "app.imported"],
+    ["edit", "def", "app.real/Other", "--code", "quote $ defstruct Other (:value String)"],
+    [
+      "edit",
+      "def",
+      "app.imported/Other",
+      "--code",
+      "quote $ defstruct Other (:value String)"
+    ],
+    [
+      "edit",
+      "add-import",
+      "app.main",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ app.imported :as app.real"
+    ],
+    [
+      "edit",
+      "def",
+      "app.main/QualifiedInput",
+      "--code",
+      "quote $ defunion QualifiedInput String app.real/Other"
+    ],
+    [
+      "edit",
+      "def",
+      "app.main/read-qualified",
+      "--code",
+      "quote $ defn read-qualified (value) $ match value ((String text) text) ((app.real/Other item) (:value item))"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.main/read-qualified",
+      "--code",
+      "quote $ Fn app.main/QualifiedInput (-> String)"
+    ],
     ["edit", "def", "app.main/Base", "--code", "quote $ defstruct Base (:value String)"],
     ["edit", "def", "app.main/String", "--code", "quote $ def String Base"],
     ["edit", "def", "app.main/Other", "--code", "quote $ defstruct Other (:value String)"],
@@ -3214,21 +3254,25 @@ fn union_alias_patterns_reject_other_definitions_and_duplicate_members() {
     &run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]),
     "the actual member alias must check",
   );
-  for (body, expected) in [
+  for (target, body, expected) in [
     (
+      "app.main/read-input",
       "quote $ match value ((String text) text) ((OtherAlias item) (:value item))",
       "not a member",
     ),
     (
+      "app.main/read-input",
       "quote $ match value ((String text) text) ((Base item) (:value item)) ((Alias item) (:value item))",
       "duplicate branch",
     ),
+    (
+      "app.main/read-qualified",
+      "quote $ match value ((String text) text) ((app.imported/Other item) (:value item))",
+      "not a member",
+    ),
   ] {
     assert_success(
-      &run_calcit(
-        &snapshot,
-        &["tree", "replace", "app.main/read-input", "--path", "@3", "--code", body],
-      ),
+      &run_calcit(&snapshot, &["tree", "replace", target, "--path", "@3", "--code", body]),
       "replace only the rejected match body",
     );
     let output = run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]);
