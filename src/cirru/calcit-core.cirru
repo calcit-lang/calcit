@@ -5997,17 +5997,20 @@
               :tags $ #{} :core :count-contract :unit
         'data-definition-bound-form $ %{} 'CodeEntry
           :doc "|Read the `{} (T Debug) ...` bounds of defstruct or defenum: each bound starts with a type variable, which may be written bare as in the generics list."
-          :code $ quote $ defn data-definition-bound-form (form)
-            if (list? form)
-              &list:map form $ fn (entry)
-                if
-                  and (list? entry)
-                    not $ empty? entry
-                  &list:assoc entry 0 $ data-definition-type-form $ &list:nth entry 0
-                  , entry
-              , form
+          :code $ quote $ defmacro data-definition-bound-form (form)
+            quasiquote $ &let (%bound-form ~form)
+              if (list? %bound-form)
+                &list:map %bound-form $ fn (%entry)
+                  if
+                    and (list? %entry)
+                      not $ empty? %entry
+                    &list:assoc %entry 0 $ data-definition-type-form $ &list:nth %entry 0
+                    , %entry
+                , %bound-form
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
+          :tags $ #{} :macro
         'data-definition-form $ %{} 'CodeEntry
           :doc "|Normalize wrapped forms used by data-definition macros"
           :code $ quote $ defn data-definition-form (entry)
@@ -6050,26 +6053,34 @@
           :schema $ quote $ Fn Dynamic (-> Bool)
         'data-definition-type-form $ %{} 'CodeEntry
           :doc "|Read one declared type of defstruct, defenum or defunion as type syntax. A bare symbol is a type name and a list headed by a type name is a compact type such as `(List Number)`; both are quoted so the macro never evaluates them. Other forms, such as `'Number` or `quote $ List Number`, pass through unchanged."
-          :code $ quote $ defn data-definition-type-form (form)
-            if (symbol? form) ([] 'quote form)
-              if
-                and (list? form)
-                  not $ empty? form
-                  symbol? $ &list:nth form 0
-                  not $ includes? ([] ':: '{} '[] '#{} '%{} 'quote 'quasiquote) (&list:nth form 0)
-                  &let
-                    head $ str $ &list:nth form 0
-                    not $ or (starts-with? head |:) (starts-with? head |&)
-                [] 'quote form
-                , form
+          :code $ quote $ defmacro data-definition-type-form (form)
+            quasiquote $ &let (%type-form ~form)
+              if (symbol? %type-form) ([] 'quote %type-form)
+                if
+                  and (list? %type-form)
+                    not $ empty? %type-form
+                    symbol? $ &list:nth %type-form 0
+                    not $ includes? ([] ':: '{} '[] '#{} '%{} 'quote 'quasiquote) (&list:nth %type-form 0)
+                    &let
+                      %head $ str $ &list:nth %type-form 0
+                      not $ or (starts-with? %head |:) (starts-with? %head |&)
+                  [] 'quote %type-form
+                  , %type-form
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
+          :tags $ #{} :macro
         'data-definition-type-forms $ %{} 'CodeEntry
           :doc "|Apply data-definition-type-form to each form of a list, such as the generic parameters of defstruct or defenum."
-          :code $ quote $ defn data-definition-type-forms (forms)
-            if (list? forms) (&list:map forms data-definition-type-form) forms
+          :code $ quote $ defmacro data-definition-type-forms (forms)
+            quasiquote $ &let (%type-forms ~forms)
+              if (list? %type-forms)
+                &list:map %type-forms $ fn (%form) (data-definition-type-form %form)
+                , %type-forms
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
+          :tags $ #{} :macro
         'data-definition-where-form? $ %{} 'CodeEntry
           :doc "|Detect optional where-map form after generic parameters in data-definition macros"
           :code $ quote $ defn data-definition-where-form? (tail-forms)
@@ -6530,7 +6541,7 @@
                                     variant-tag $ &list:nth items 0
                                     &let
                                       payload-forms $ &list:map
-                                        &list:map (&list:rest items) data-definition-type-form
+                                        &list:map (&list:rest items) $ fn (t) (data-definition-type-form t)
                                         fn (t)
                                           if (list? t)
                                             quasiquote $ quote $ ~ t
@@ -6872,7 +6883,7 @@
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
             quasiquote $ &union-def:new
               ~ $ turn-tag name
-              ~@ $ &list:map members data-definition-type-form
+              ~@ $ &list:map members $ fn (m) (data-definition-type-form m)
           :examples $ [] $ quote (; defunion CssValue String Number)
           :schema $ quote $ Macro Syntax & Syntax
             -> $ Expr UnionDef
