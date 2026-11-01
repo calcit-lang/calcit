@@ -16758,14 +16758,18 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
         .zip(expected_args.iter())
         .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
     }
+    // Parameters are contravariant: the caller of the expected callback supplies
+    // values of the expected parameter type, and they flow into the actual
+    // function's parameter. Accepting Dynamic there is safe; a Dynamic expected
+    // parameter flowing into a nominal actual parameter is the erasing direction.
     (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) if actual.arg_types.len() == expected.arg_types.len() => {
       actual
         .arg_types
         .iter()
         .zip(expected.arg_types.iter())
-        .any(|(actual, expected)| dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()))
+        .any(|(actual, expected)| dynamic_erases_nominal_contract(expected.as_ref(), actual.as_ref()))
         || match (actual.rest_type.as_ref(), expected.rest_type.as_ref()) {
-          (Some(actual), Some(expected)) => dynamic_erases_nominal_contract(actual.as_ref(), expected.as_ref()),
+          (Some(actual), Some(expected)) => dynamic_erases_nominal_contract(expected.as_ref(), actual.as_ref()),
           _ => false,
         }
         || dynamic_erases_nominal_contract(actual.return_type.as_ref(), expected.return_type.as_ref())
@@ -26090,9 +26094,21 @@ mod tests {
     assert!(contains_nominal_contract(&CalcitTypeAnnotation::Fn(Arc::new(
       person_callback.clone()
     ))));
+    // #2499: a callback that accepts Dynamic safely satisfies a Person callback
+    // slot, while a Person-only callback cannot serve a Dynamic callback slot.
+    assert!(!dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Fn(Arc::new(open_callback.clone())),
+      &CalcitTypeAnnotation::Fn(Arc::new(person_callback.clone())),
+    ));
     assert!(dynamic_erases_nominal_contract(
-      &CalcitTypeAnnotation::Fn(Arc::new(open_callback)),
       &CalcitTypeAnnotation::Fn(Arc::new(person_callback)),
+      &CalcitTypeAnnotation::Fn(Arc::new(open_callback)),
+    ));
+    let open_producer = generic_relation_test_signature(vec![], calcit::DYNAMIC_TYPE.clone(), None);
+    let person_producer = generic_relation_test_signature(vec![], person_type.clone(), None);
+    assert!(dynamic_erases_nominal_contract(
+      &CalcitTypeAnnotation::Fn(Arc::new(open_producer)),
+      &CalcitTypeAnnotation::Fn(Arc::new(person_producer)),
     ));
     assert!(contains_nominal_contract(&CalcitTypeAnnotation::TypeRef(
       Arc::from("tests/Envelope"),
