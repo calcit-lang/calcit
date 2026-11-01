@@ -772,43 +772,54 @@ pub(crate) fn qualify_trait_member_type_form(form: &Calcit, fallback_ns: &str) -
       _ => false,
     }
   }
-  match form {
-    Calcit::Symbol { sym, info, location } if sym.starts_with('\'') => {
-      let stripped = sym.trim_start_matches('\'');
-      match qualify_name(stripped, info, fallback_ns) {
-        Some(qualified) if sym.len() - stripped.len() == 1 => Calcit::Symbol {
-          sym: Arc::from(format!("'{qualified}")),
-          info: info.to_owned(),
-          location: location.to_owned(),
-        },
-        _ => form.to_owned(),
-      }
+  // `::` heads the canonical `(:: 'Fn …)` schema encoding.
+  fn is_tuple_head(item: &Calcit) -> bool {
+    match item {
+      Calcit::Proc(CalcitProc::NativeEnum) => true,
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "::",
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == "::",
+      _ => false,
     }
-    // Compact `(Fn …)` and canonical `(:: 'Fn …)` schemas, possibly quoted.
-    Calcit::List(list) if list.iter().take(2).any(is_callable_schema_head) => form.to_owned(),
-    Calcit::List(list) if list.len() == 2 && list.first().is_some_and(is_quote_head) => match list.get(1) {
-      Some(Calcit::Symbol { sym, info, location }) if !sym.starts_with('\'') => match qualify_name(sym, info, fallback_ns) {
-        Some(qualified) => Calcit::from(vec![
-          list[0].to_owned(),
-          Calcit::Symbol {
-            sym: Arc::from(qualified),
-            info: info.to_owned(),
-            location: location.to_owned(),
-          },
-        ]),
-        None => form.to_owned(),
-      },
-      Some(inner @ Calcit::List(_)) => Calcit::from(vec![list[0].to_owned(), qualify_trait_member_type_form(inner, fallback_ns)]),
-      _ => form.to_owned(),
-    },
-    Calcit::List(list) => Calcit::from(
-      list
-        .iter()
-        .map(|item| qualify_trait_member_type_form(item, fallback_ns))
-        .collect::<Vec<_>>(),
-    ),
-    _ => form.to_owned(),
   }
+  // Only the schema head decides: `(Box Fn)` applies `Box` to a `Fn` argument.
+  fn is_callable_schema_form(list: &CalcitList) -> bool {
+    match list.first() {
+      Some(head) if is_callable_schema_head(head) => true,
+      Some(head) if is_tuple_head(head) => list.get(1).is_some_and(is_callable_schema_head),
+      _ => false,
+    }
+  }
+  fn qualified_symbol(sym: &str, info: &Arc<CalcitSymbolInfo>, location: &Option<Arc<Vec<u16>>>, fallback_ns: &str) -> Option<Calcit> {
+    let stripped = sym.trim_start_matches('\'');
+    let quotes = &sym[..sym.len() - stripped.len()];
+    if quotes.len() > 1 {
+      return None;
+    }
+    qualify_name(stripped, info, fallback_ns).map(|qualified| Calcit::Symbol {
+      sym: Arc::from(format!("{quotes}{qualified}")),
+      info: info.to_owned(),
+      location: location.to_owned(),
+    })
+  }
+  // Inside `quote`, bare symbols are type names too, e.g. `quote $ Box Fn`.
+  fn walk(form: &Calcit, fallback_ns: &str, quoted: bool) -> Calcit {
+    match form {
+      Calcit::Symbol { sym, info, location } if quoted || sym.starts_with('\'') => {
+        qualified_symbol(sym, info, location, fallback_ns).unwrap_or_else(|| form.to_owned())
+      }
+      // Compact `(Fn …)` and canonical `(:: 'Fn …)` schemas, possibly quoted.
+      Calcit::List(list) if is_callable_schema_form(list) => form.to_owned(),
+      Calcit::List(list) if list.len() == 2 && list.first().is_some_and(is_quote_head) => match list.get(1) {
+        Some(inner @ (Calcit::Symbol { .. } | Calcit::List(_))) => {
+          Calcit::from(vec![list[0].to_owned(), walk(inner, fallback_ns, true)])
+        }
+        _ => form.to_owned(),
+      },
+      Calcit::List(list) => Calcit::from(list.iter().map(|item| walk(item, fallback_ns, quoted)).collect::<Vec<_>>()),
+      _ => form.to_owned(),
+    }
+  }
+  walk(form, fallback_ns, false)
 }
 
 /// Preserve quoted type syntax while sharing parsing and validation across both phases.
@@ -2363,6 +2374,60 @@ mod tests {
   use crate::calcit::{
     CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnUsageMeta, CalcitGenericBound, CalcitLocal, CalcitScope, CalcitSymbolInfo,
   };
+
+  #[test]
+  fn trait_member_types_qualify_only_outside_callable_schema_heads() {
+    let ns = "test.meta.trait-member-qualify";
+    let entry = || program::ProgramDefEntry {
+      code: Calcit::Nil,
+      schema: crate::calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+      ffi: None,
+      tags: Default::default(),
+    };
+    program::install_internal_source_namespace(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(Arc::from("Box"), entry()), (Arc::from("Style"), entry())]),
+      },
+    )
+    .expect("install namespace");
+    let sym = |name: &str| Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(ns),
+        at_def: Arc::from("Host"),
+      }),
+      location: None,
+    };
+    let quote = |item: Calcit| Calcit::from(vec![Calcit::Syntax(CalcitSyntax::Quote, Arc::from(ns)), item]);
+    let qualify = |form: Calcit| qualify_trait_member_type_form(&form, ns).to_string();
+
+    let leaf = qualify(quote(sym("Style")));
+    let fn_argument = qualify(quote(Calcit::from(vec![sym("Box"), sym("Fn")])));
+    let macro_argument = qualify(Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeEnum),
+      quote(sym("Box")),
+      quote(sym("Macro")),
+    ]));
+    let compact_schema = qualify(quote(Calcit::from(vec![sym("Fn"), sym("Style")])));
+    let canonical_schema = qualify(Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeEnum),
+      quote(sym("Fn")),
+      quote(sym("Style")),
+    ]));
+    let missing = qualify(quote(sym("Missing")));
+    program::remove_internal_source_namespace(ns);
+
+    assert!(leaf.contains("test.meta.trait-member-qualify/Style"), "{leaf}");
+    assert!(fn_argument.contains("test.meta.trait-member-qualify/Box"), "{fn_argument}");
+    assert!(macro_argument.contains("test.meta.trait-member-qualify/Box"), "{macro_argument}");
+    assert!(!compact_schema.contains("trait-member-qualify/"), "{compact_schema}");
+    assert!(!canonical_schema.contains("trait-member-qualify/"), "{canonical_schema}");
+    assert!(!missing.contains("trait-member-qualify/"), "{missing}");
+  }
 
   fn symbol(name: &str) -> Calcit {
     Calcit::Symbol {
