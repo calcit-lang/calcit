@@ -57,7 +57,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
 - `unsafe-coerce-global-leak-strict.cirru` 验证标记为 `:js-ffi` 的调用方不能把权限传给被引用的顶层 `defatom` 初始化；即使该值在入口依赖闭包中也必须报 `E_UNSCOPED_UNSAFE_COERCE`。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式允许 Dynamic 作为开放泛型 payload 传递，但拒绝用只接受具体类型的 callback 隐式收窄该绑定，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
-- `callback-contravariance-strict.cirru` 的 `default` entry 是正例：`Fn Dynamic (-> Unit)` callback 可以传入只会以 `FsPath` 调用的 callback 参数（参数逆变）；`reverse`（`FsPath` callback 进入 `Dynamic` 参数槽）与 `result`（`Dynamic` 返回值进入 `FsPath` 返回合同）报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，`arity` 报告 `W_FN_ARG_TYPE_MISMATCH`。
+- `callback-contravariance-strict.cirru` 的 `default` entry 是正例：`Fn Dynamic (-> Unit)` 与 `Fn & Dynamic (-> Unit)` callback 可以传入只会以 `FsPath` 调用的 callback 参数（参数逆变，rest 参数同样适用）；`reverse`（`FsPath` callback 进入 `Dynamic` 参数槽）、`reverse-rest`（`FsPath` rest callback 进入 `Dynamic` rest 槽）、`rest-for-fixed`（只有 `FsPath` rest 参数的 callback 进入固定 `Dynamic` 参数槽）与 `result`（`Dynamic` 返回值进入 `FsPath` 返回合同）报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，`arity` 报告 `W_FN_ARG_TYPE_MISMATCH`。
 
 ## 自动化测试
 

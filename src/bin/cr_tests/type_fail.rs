@@ -2082,16 +2082,23 @@ fn default_proof_accepts_explicit_dynamic_schemas() {
 }
 
 /// #2499: callback parameters are contravariant at the strict Dynamic/nominal
-/// boundary. A callback accepting Dynamic fits a slot that only passes FsPath;
-/// the reverse direction, a Dynamic result and a wrong arity stay rejected.
+/// boundary, including rest parameters. A callback accepting Dynamic (fixed or
+/// rest) fits a slot that only passes FsPath; the reverse directions, a rest-only
+/// FsPath callback in a fixed Dynamic slot, a Dynamic result and a wrong arity
+/// stay rejected.
 #[test]
 fn strict_callback_parameters_are_contravariant_at_the_nominal_boundary() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/callback-contravariance-strict.cirru";
     let _strict = StrictTypesReset::enabled();
     injection::inject_platform_apis();
-    run_check_only(&load_fixture_entries(fixture)).expect("a Dynamic -> Unit callback must satisfy a FsPath -> Unit slot");
-    for (entry, detail) in [("reverse", "`fn(dynamic) -> unit`"), ("result", "-> dynamic` data")] {
+    run_check_only(&load_fixture_entries(fixture)).expect("open fixed and rest callbacks must satisfy FsPath callback slots");
+    for (entry, detail) in [
+      ("reverse", "`fn(dynamic) -> unit`"),
+      ("result", "-> dynamic` data"),
+      ("reverse-rest", "`fn(& dynamic) -> unit`"),
+      ("rest-for-fixed", "`fn(& type calcit.core/FsPath) -> unit` data"),
+    ] {
       let err = run_check_only(&load_fixture_entries_with_entry(fixture, Some(entry)))
         .expect_err(&format!("{entry} must fail strict check-only"));
       assert!(err.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "{entry}: unexpected error: {err}");
