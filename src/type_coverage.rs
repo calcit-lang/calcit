@@ -163,6 +163,16 @@ fn unwrap_singleton_group(mut node: &Cirru) -> &Cirru {
   node
 }
 
+fn is_cirru_list_head(node: &Cirru) -> bool {
+  matches!(node, Cirru::Leaf(head) if head.as_ref() == "[]")
+}
+
+/// `T` or `'T`: an uppercase name with at most one leading quote.
+fn is_type_variable_leaf(name: &str) -> bool {
+  let bare = name.strip_prefix('\'').unwrap_or(name);
+  bare.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+}
+
 fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>) {
   if let CalcitTypeAnnotation::Fn(fn_annot) = entry.schema.as_ref() {
     return fn_polymorphism(fn_annot);
@@ -182,13 +192,22 @@ fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>)
   }
 
   let generics = match items.get(2) {
-    Some(Cirru::List(vars)) if vars.iter().all(|item| matches!(item, Cirru::Leaf(name) if name.starts_with('\''))) => vars
-      .iter()
-      .filter_map(|item| match item {
-        Cirru::Leaf(name) => Some(name.to_string()),
-        _ => None,
-      })
-      .collect(),
+    // Generic parameters are written `[] T` or the older `[] 'T`.
+    Some(Cirru::List(vars))
+      if vars.iter().any(|item| !is_cirru_list_head(item))
+        && vars
+          .iter()
+          .all(|item| is_cirru_list_head(item) || matches!(item, Cirru::Leaf(name) if is_type_variable_leaf(name))) =>
+    {
+      vars
+        .iter()
+        .filter(|item| !is_cirru_list_head(item))
+        .filter_map(|item| match item {
+          Cirru::Leaf(name) => Some(format!("'{}", name.trim_start_matches('\''))),
+          _ => None,
+        })
+        .collect()
+    }
     _ => vec![],
   };
   let where_bounds = items

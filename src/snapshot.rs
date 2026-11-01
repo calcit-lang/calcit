@@ -3539,6 +3539,7 @@ fn code_type_slots(items: &[Cirru]) -> Vec<Vec<u16>> {
     Some("hint-fn") => (1..items.len()).map(|index| vec![index as u16]).collect(),
     Some("defstruct" | "defrecord") => member_types(true),
     Some("defenum" | "deftrait") => member_types(false),
+    Some("defunion") => (2..items.len()).map(|index| vec![index as u16]).collect(),
     Some("fn" | "defn" | "defmacro" | "defcomp" | "defeffect") => {
       let type_index = if head == Some("fn") { 2 } else { 3 };
       // A lone form after the parameters is the body's value, not a return label.
@@ -5023,6 +5024,141 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
   }
 }
 
+/// The full `calcit edit format` rewrite of one code tree: the legacy type
+/// migration that loading enforces, then dropping quotes from declared member
+/// types, which loading still accepts in both spellings.
+fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  let (migrated, legacy) = migrate_code_type_syntax(node);
+  let (unquoted, count) = unquote_declaration_types(&migrated);
+  (unquoted, legacy + count)
+}
+
+/// Drop the quote from the type names in `defstruct`, `defenum` and
+/// `defunion` (#2516): `'Number` and `quote Number` become `Number`, and
+/// generic parameters `[] 'T` and bounds `{} $ 'T Debug` lose their quotes.
+/// Compound types such as `quote $ List Number` keep their quote, and struct
+/// field defaults stay as written.
+pub fn unquote_declaration_types(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  // Quoted data is not code.
+  if head == Some("quote") {
+    return (node.clone(), 0);
+  }
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = unquote_declaration_types(item);
+    rewritten.push(next);
+    changed += count;
+  }
+  match head {
+    Some(kind @ ("defstruct" | "defenum")) if rewritten.len() >= 3 => {
+      for (index, slot) in rewritten.iter_mut().enumerate().skip(2) {
+        let (next, count) = unquote_member_slot(kind, slot, index == 2);
+        *slot = next;
+        changed += count;
+      }
+    }
+    Some("defunion") => {
+      for slot in rewritten.iter_mut().skip(2) {
+        if let Some(next) = unquote_declared_type(slot) {
+          *slot = next;
+          changed += 1;
+        }
+      }
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
+}
+
+/// One slot after the name of `defstruct` / `defenum`: a member entry, a `{}`
+/// wrapper of member entries, or (first slot only) the generic parameter list.
+fn unquote_member_slot(kind: &str, slot: &Cirru, first_slot: bool) -> (Cirru, usize) {
+  let Cirru::List(entry) = slot else {
+    return (slot.clone(), 0);
+  };
+  let first = entry.first();
+  if is_tag_leaf(first) {
+    // `defstruct` fields hold one type followed by an optional default value;
+    // every `defenum` payload is a type.
+    let last = if kind == "defstruct" { 2.min(entry.len()) } else { entry.len() };
+    let mut next = entry.clone();
+    let mut changed = 0;
+    for item in next.iter_mut().take(last).skip(1) {
+      if let Some(unquoted) = unquote_declared_type(item) {
+        *item = unquoted;
+        changed += 1;
+      }
+    }
+    return (Cirru::List(next), changed);
+  }
+  if is_cirru_leaf(first, "{}") {
+    // Either a `{}` wrapper of member entries or the `{} ('T Debug)` bounds,
+    // whose entries start with a type variable instead of a tag.
+    let mut next = entry.clone();
+    let mut changed = 0;
+    for item in next.iter_mut().skip(1) {
+      let Cirru::List(inner) = item else { continue };
+      if is_tag_leaf(inner.first()) {
+        let (unquoted, count) = unquote_member_slot(kind, item, false);
+        *item = unquoted;
+        changed += count;
+      } else if let Some(unquoted) = inner
+        .first()
+        .filter(|key| matches!(key, Cirru::Leaf(_)))
+        .and_then(unquote_declared_type)
+      {
+        let mut bound = inner.clone();
+        bound[0] = unquoted;
+        *item = Cirru::List(bound);
+        changed += 1;
+      }
+    }
+    return (Cirru::List(next), changed);
+  }
+  if first_slot {
+    // Generic parameters: `[] 'T 'U`, or a plain list of quoted names.
+    let skip = usize::from(is_cirru_leaf(first, "[]"));
+    let params = &entry[skip..];
+    if !params.is_empty() && params.iter().all(|param| matches!(param, Cirru::Leaf(_))) {
+      let mut next = entry.clone();
+      let mut changed = 0;
+      for item in next.iter_mut().skip(skip) {
+        if let Some(unquoted) = unquote_declared_type(item) {
+          *item = unquoted;
+          changed += 1;
+        }
+      }
+      return (Cirru::List(next), changed);
+    }
+  }
+  (slot.clone(), 0)
+}
+
+/// `'Number` → `Number`; `None` for forms that are already bare and for
+/// compound types, which keep their quote for now.
+fn unquote_declared_type(node: &Cirru) -> Option<Cirru> {
+  match node {
+    Cirru::Leaf(value) => {
+      let name = value.strip_prefix('\'')?;
+      (!name.is_empty() && !name.starts_with('\'')).then(|| Cirru::leaf(name))
+    }
+    Cirru::List(items) => match items.as_slice() {
+      [Cirru::Leaf(head), Cirru::Leaf(name)] if head.as_ref() == "quote" && !name.starts_with(['\'', ':']) => {
+        Some(Cirru::Leaf(name.clone()))
+      }
+      _ => None,
+    },
+  }
+}
+
 /// Rewrite legacy tag-based type syntax in code type positions. This is intentionally
 /// called by `calcit edit format`, not by unrelated structural edits: old snapshots stay
 /// compatible until users explicitly request canonical formatting.
@@ -5033,16 +5169,18 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
     file.ns.code = ns_code;
     changed += count;
     for entry in file.defs.values_mut() {
-      let (code, count) = migrate_code_type_syntax(&entry.code);
+      let (code, count) = format_code_type_syntax(&entry.code);
       entry.code = code;
       changed += count;
       let mut rewritten_examples = Vec::with_capacity(entry.examples.len());
       for example in &entry.examples {
-        let (code, count) = migrate_code_type_syntax(example);
+        let (code, count) = format_code_type_syntax(example);
         rewritten_examples.push(code);
         changed += count;
       }
       entry.examples = rewritten_examples;
+      // Tests keep the quoted spelling as written: they exercise the old
+      // syntax that 0.34.x still accepts.
       for test in entry.tests.iter_mut() {
         let (code, count) = migrate_code_type_syntax(&test.code);
         test.code = code;
@@ -6199,6 +6337,33 @@ mod tests {
   }
 
   #[test]
+  fn format_unquotes_declared_type_names_but_keeps_compound_quotes() {
+    let cases = [
+      (
+        "defstruct Box ([] 'T) ({} $ 'T Debug) (:value 'T) (:count 'Number 0) (:items $ quote $ List Number)",
+        "defstruct Box ([] T) ({} $ T Debug) (:value T) (:count Number 0) (:items $ quote $ List Number)",
+      ),
+      (
+        "defenum Shape (:circle 'Number) (:poly $ quote $ List Number) (:none)",
+        "defenum Shape (:circle Number) (:poly $ quote $ List Number) (:none)",
+      ),
+      (
+        "defunion Cells 'String (quote Number) (quote $ List Number)",
+        "defunion Cells String Number (quote $ List Number)",
+      ),
+    ];
+    for (source, expected) in cases {
+      let (formatted, count) = unquote_declaration_types(&parse_one(source));
+      assert_eq!(formatted, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+    }
+    let compound_only = parse_one("defstruct Box $ :items $ quote $ List Number");
+    let (formatted, count) = unquote_declaration_types(&compound_only);
+    assert_eq!(count, 0);
+    assert_eq!(formatted, compound_only, "compound types keep their quote");
+  }
+
+  #[test]
   fn format_migrates_canonical_type_positions_to_compact_quotes() {
     let cases = [
       ("assert-type xs $ :: 'List 'Number", "assert-type xs $ quote $ List Number"),
@@ -7083,7 +7248,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 51,
+      macro_count, 54,
       "update the audited bundled macro inventory when core macros change"
     );
   }

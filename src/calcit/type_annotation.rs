@@ -6841,6 +6841,18 @@ pub(crate) fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   None
 }
 
+/// A union member as `&union-def:new` stores it at runtime: the macro writes
+/// `quote $ List Number`, and evaluating that leaves the bare list
+/// `(List Number)`, which reads as a compact type again here. Other forms are
+/// returned unchanged.
+pub fn declared_type_form(form: &Calcit) -> Calcit {
+  if crate::calcit::type_expr::unquoted_compact_form(form).is_some() {
+    Calcit::from(vec![Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)), form.to_owned()])
+  } else {
+    form.to_owned()
+  }
+}
+
 fn is_defunion_head(head: &Calcit) -> bool {
   matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defunion")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "defunion")

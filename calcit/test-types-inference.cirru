@@ -20,29 +20,29 @@
               assert= 1 $ deref *dynamic-ref
               assert= 1 @*dynamic-ref
         'Address $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Address (:city 'String)
+          :code $ quote $ defstruct Address (:city String)
           :examples $ []
           :schema $ quote StructDef
         'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct CallbackEnvelope ([] 'T)
+          :code $ quote $ defstruct CallbackEnvelope ([] T)
             :holder $ quote $ test-types-inference.main/CallbackHolder T
           :examples $ []
           :schema $ quote StructDef
         'CallbackHolder $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct CallbackHolder ([] 'T)
+          :code $ quote $ defstruct CallbackHolder ([] T)
             :callback $ quote $ Fn
               Fn T $ -> Number
               -> Number
           :examples $ []
           :schema $ quote StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct EmptyFieldBox ([] 'T 'S)
+          :code $ quote $ defstruct EmptyFieldBox ([] T S)
             :items $ quote $ List T
-            :seed 'S
+            :seed S
           :examples $ []
           :schema $ quote StructDef
         'Job $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Job (:title 'String) (:status Status)
+          :code $ quote $ defstruct Job (:title String) (:status Status)
           :examples $ []
           :schema $ quote StructDef
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
@@ -57,7 +57,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
+          :code $ quote $ defstruct Person (:name String) (:age Number)
             :address $ :: Address
           :examples $ []
           :schema $ quote StructDef
@@ -68,7 +68,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'SliceReceiver $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct SliceReceiver (:n 'Number)
+          :code $ quote $ defstruct SliceReceiver (:n Number)
             :end $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
@@ -86,7 +86,7 @@
           :examples $ []
           :schema $ quote StructDef
         'Status $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
+          :code $ quote $ defenum Status (:ok Number) (:err String)
           :examples $ []
           :schema $ quote EnumDef
         'bounded-forward $ %{} 'CodeEntry (:doc |)
@@ -1968,7 +1968,7 @@
     'test-types-inference.shadow $ %{} 'FileEntry
       :defs $ {}
         'Option $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Option ([] 'T) (:none) (:some 'T)
+          :code $ quote $ defenum Option ([] T) (:none) (:some T)
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-option)
@@ -1976,7 +1976,7 @@
               test-types-inference.shadow/foreign-option-is-nil $ test-types-inference.shadow/Option :none
             :tags $ #{} :unit
         'Result $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-result)
@@ -1987,8 +1987,8 @@
           :code $ quote $ defstruct ShadowFields
             :option $ quote $ test-types-inference.shadow/Option Number
             :other-option $ quote $ test-types-inference.shadow/Option Number
-            :result 'test-types-inference.shadow/Result
-            :other-result 'test-types-inference.shadow/Result
+            :result test-types-inference.shadow/Result
+            :other-result test-types-inference.shadow/Result
           :examples $ []
           :schema $ quote StructDef
         'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)

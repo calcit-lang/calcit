@@ -11,19 +11,19 @@
     %{} 'FileEntry
       :defs $ {}
         'EdnEnvelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct EdnEnvelope (:request-id 'String)
+          :code $ quote $ defstruct EdnEnvelope (:request-id String)
             :note $ quote $ Option String
-            :outcome 'EdnOutcome
+            :outcome EdnOutcome
           :examples $ []
           :schema $ quote StructDef
         'EdnJob $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct EdnJob (:name 'String) (:count 'Int32) (:ready 'Bool)
+          :code $ quote $ defstruct EdnJob (:name String) (:count Int32) (:ready Bool)
           :examples $ []
           :schema $ quote StructDef
         'EdnOutcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum EdnOutcome
             :ready $ quote $ List Int32
-            :failed 'String
+            :failed String
             :idle
           :examples $ []
           :schema $ quote EnumDef

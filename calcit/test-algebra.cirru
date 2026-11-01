@@ -23,7 +23,7 @@
           :examples $ []
           :schema $ quote Dynamic
         'AlgebraBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AlgebraBox0 (:value 'Dynamic)
+          :code $ quote $ defstruct AlgebraBox0 (:value Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'AlgebraBoxApplyImpl $ %{} 'CodeEntry (:doc |)

@@ -478,7 +478,7 @@ update-in data ([] :settings :retries)
 Struct 也支持同样的类型化头部调用：
 
 ```cirru.no-check
-defstruct Profile (:name 'String)
+defstruct Profile (:name String)
   :bio $ quote $ Option String
 
 Profile :name |Ada

@@ -67,7 +67,7 @@ Traits are values and can be referenced like normal symbols.
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str "|foo " $ :name p
@@ -86,7 +86,7 @@ let
       quote $ Fn T (-> String) (:generics T)
     EqTrait $ deftrait EqTrait $ .eq
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     ShowImpl $ defimpl ShowImpl ShowTrait $ .show
       fn (p) (assert-type p Person0)
         str |Person: $ :name p
@@ -109,7 +109,7 @@ let
 let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name 'String
+    Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p

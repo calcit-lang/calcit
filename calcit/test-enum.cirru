@@ -11,16 +11,16 @@
     'test-enum.main $ %{} 'FileEntry
       :defs $ {}
         'ContentNode $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ContentNode (:wrong 'Number)
+          :code $ quote $ defstruct ContentNode (:wrong Number)
           :examples $ []
           :schema $ quote StructDef
         'Duo $ %{} 'CodeEntry (:doc "|Generic enum with 2 type variables")
-          :code $ quote $ defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
+          :code $ quote $ defenum Duo (T U) (:pair T U) (:swapped U T)
           :examples $ []
           :schema $ quote EnumDef
         'MapLiteralChoice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum MapLiteralChoice
-            {} (:some 'String) (:none)
+            {} (:some String) (:none)
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |map-literal-variants)
@@ -28,15 +28,15 @@
               (:some value) (assert= |ok value)
               (:none) (raise |expected-some)
         'Maybe1 $ %{} 'CodeEntry (:doc "|Generic enum with 1 type variable")
-          :code $ quote $ defenum Maybe1 ('T) (:some 'T) (:none)
+          :code $ quote $ defenum Maybe1 (T) (:some T) (:none)
           :examples $ []
           :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Payload (:wrong 'Number)
+          :code $ quote $ defstruct Payload (:wrong Number)
           :examples $ []
           :schema $ quote StructDef
         'Result0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Result0 (:err 'String) (:ok)
+          :code $ quote $ defenum Result0 (:err String) (:ok)
           :examples $ []
           :schema $ quote EnumDef
         'ResultImpl $ %{} 'CodeEntry (:doc |)
@@ -50,15 +50,15 @@
           :examples $ []
           :schema $ quote Trait
         'ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
-          :code $ quote $ defstruct ShownBox ('T)
-            {} $ 'T Debug
-            :value 'T
+          :code $ quote $ defstruct ShownBox (T)
+            {} $ T Debug
+            :value T
           :examples $ []
           :schema $ quote StructDef
         'ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
-          :code $ quote $ defenum ShownMaybe ('T)
-            {} $ 'T Debug
-            :some 'T
+          :code $ quote $ defenum ShownMaybe (T)
+            {} $ T Debug
+            :some T
             :none
           :examples $ []
           :schema $ quote EnumDef
@@ -123,7 +123,7 @@
         'read-runtime-local-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-runtime-local-type ()
             let
-                Payload $ defstruct LocalPayload $ :value 'Number
+                Payload $ defstruct LocalPayload $ :value Number
                 read $ fn (record)
                   hint-fn $ Fn Payload $ -> Number
                   :value record
@@ -361,20 +361,20 @@
     'test-enum.recursive $ %{} 'FileEntry
       :defs $ {}
         'ContentNode $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum ContentNode (:text 'String) (:pair 'ContentNode 'ContentNode)
+          :code $ quote $ defenum ContentNode (:text String) (:pair ContentNode ContentNode)
             :list $ quote $ List ContentNode
           :examples $ []
           :schema $ quote EnumDef
         'Envelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Envelope ('T) (:item 'T)
+          :code $ quote $ defenum Envelope (T) (:item T)
           :examples $ []
           :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Payload (:value 'String)
+          :code $ quote $ defstruct Payload (:value String)
           :examples $ []
           :schema $ quote StructDef
         'RecordEnvelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum RecordEnvelope (:record 'Payload)
+          :code $ quote $ defenum RecordEnvelope (:record Payload)
           :examples $ []
           :schema $ quote EnumDef
       :ns $ %{} 'NsEntry (:doc |)

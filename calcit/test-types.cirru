@@ -25,7 +25,7 @@
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
         'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
-          :code $ quote $ defstruct Person (:name 'String) (:age nil)
+          :code $ quote $ defstruct Person (:name String) (:age nil)
           :examples $ []
           :schema $ quote Struct
           :tests $ [] $ %{} 'TestEntry (:name |same-slot-callback)
@@ -43,7 +43,7 @@
                   , &unit
             :tags $ #{} :type-slot :unit
         'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
-          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
           :schema $ quote Enum
         'ResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum tuple tests")

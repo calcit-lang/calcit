@@ -11,15 +11,15 @@
     %{} 'FileEntry
       :defs $ {}
         'A $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct A (:a 'Dynamic)
+          :code $ quote $ defstruct A (:a Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'A0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct A0 (:name 'String)
+          :code $ quote $ defstruct A0 (:name String)
           :examples $ []
           :schema $ quote StructDef
         'B $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct B (:b 'Dynamic)
+          :code $ quote $ defstruct B (:b Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'BirdImpl $ %{} 'CodeEntry (:doc |)
@@ -32,7 +32,7 @@
           :examples $ []
           :schema $ quote Impl
         'BirdShape $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct BirdShape (:show 'Fn) (:rename 'Fn)
+          :code $ quote $ defstruct BirdShape (:show Fn) (:rename Fn)
           :examples $ []
           :schema $ quote StructDef
         'BirdTrait $ %{} 'CodeEntry (:doc |)
@@ -40,24 +40,24 @@
           :examples $ []
           :schema $ quote Trait
         'C $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct C (:c 'Dynamic)
+          :code $ quote $ defstruct C (:c Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'Cat $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Cat (:name 'String) (:color 'Tag)
+          :code $ quote $ defstruct Cat (:name String) (:color Tag)
           :examples $ []
           :schema $ quote StructDef
         'City $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct City (:name 'String) (:province 'String)
+          :code $ quote $ defstruct City (:name String) (:province String)
           :examples $ []
           :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ContextBox ([] 'T) (:value 'T)
+          :code $ quote $ defstruct ContextBox ([] T) (:value T)
             :count $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'DefaultFields $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct DefaultFields (:host 'String) (:port 'Number 8080) (:label 'String |guest) (:mode 'Tag :read) (:secure? 'Bool false)
+          :code $ quote $ defstruct DefaultFields (:host String) (:port Number 8080) (:label String |guest) (:mode Tag :read) (:secure? Bool false)
             :tags
               quote $ List String
               []
@@ -73,7 +73,7 @@
               assert= (DefaultOnly :size 12) (DefaultOnly)
             :tags $ #{} :struct-defaults :unit
         'DefaultOnly $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct DefaultOnly (:size 'Number 12)
+          :code $ quote $ defstruct DefaultOnly (:size Number 12)
             :hint $ quote $ Option String
           :examples $ []
           :schema $ quote StructDef
@@ -86,14 +86,14 @@
                   :table
                     quote $ Map Tag Number
                     {}
-                  :marks 'Set $ #{}
+                  :marks Set $ #{}
                 value $ Local
               assert= ([]) (:items value)
               assert= ({}) (:table value)
               assert= (#{}) (:marks value)
             :tags $ #{} :struct-defaults :unit
         'Demo $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
+          :code $ quote $ defstruct Demo (:a Dynamic) (:b Dynamic) (:c Dynamic) (:d Dynamic)
           :examples $ []
           :schema $ quote StructDef
         'Lagopus $ %{} 'CodeEntry (:doc |)
@@ -101,12 +101,12 @@
           :examples $ []
           :schema $ quote Dynamic
         'Lagopus0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Lagopus0 (:name 'String)
+          :code $ quote $ defstruct Lagopus0 (:name String)
           :examples $ []
           :schema $ quote StructDef
         'MapLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MapLiteralStore
-            {} $ :text 'String
+            {} $ :text String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |map-literal-fields)
@@ -235,15 +235,15 @@
                 :label $ OptionFields :count (Option :none) :label $ Option :some |
             :tags $ #{} :option-fields :unit
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
+          :code $ quote $ defstruct Person (:name String) (:age Number) (:position Tag)
           :examples $ []
           :schema $ quote StructDef
         'Point2D $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point2D (:x 'Number) (:y 'Number)
+          :code $ quote $ defstruct Point2D (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
         'TagShorthandEvent $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct TagShorthandEvent (:type 'Tag) (:path 'String)
+          :code $ quote $ defstruct TagShorthandEvent (:type Tag) (:path String)
           :examples $ []
           :schema $ quote StructDef
           :tests $ []

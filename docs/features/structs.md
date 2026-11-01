@@ -17,7 +17,7 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 
 ## Quick Recipes
 
-- **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
+- **Define**: `defstruct Point (:x Number) (:y Number)`
 - **Create**: `Point :x 1 :y 2`
 - **Low-level (dynamic prototype)**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `(:x p)`
@@ -29,13 +29,15 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 Use `defstruct` to declare a named type with typed fields:
 
 ```cirru
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 ```
 
-Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'Number`, `'String`, `'Bool`, `'Tag`, `'List`, `'Map`, `'Fn`, and `'Dynamic` (untyped). Legacy tag spellings remain compatible and are rewritten by `calcit edit format`.
+每个字段写成 `(:field-name type)`。类型名直接写裸符号，如 `Number`、`String`、`Bool`、`Tag`、`Dynamic`（不限类型）或已声明的 `Point`。`defstruct` 不会把类型名当表达式求值，所以同名的局部绑定不会影响字段类型。带参数的复合类型目前仍写 quote，如 `quote $ List String`、`quote $ Map Tag Number`。
+
+旧写法 `'Number` 仍然可用，`calcit edit format` 会把它改为 `Number`，见[升级手册](../run/upgrade.md)。
 
 ```cirru
-defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
+defstruct Person (:name String) (:age Number) (:position Tag)
 ```
 
 ### 字段类型的声明来源
@@ -57,7 +59,7 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 
 在 native 与 JS 中，`StructDef` 的 `=` 比较定义本身：声明来源、名称、字段及其类型、
 泛型参数、约束和附加 impl 都参与比较。类型的兼容写法按语义比较，例如字段声明
-`'Number` 与旧写法 `:number` 相等；生成的字段校验闭包不参与定义相等性。
+`Number`、`'Number` 与旧写法 `:number` 相等；生成的字段校验闭包不参与定义相等性。
 
 `struct-definition` 返回实例携带的定义。Cirru EDN 恢复的旧 Struct 可能缺少声明来源、
 字段类型与 impl，不能仅凭相同名称和字段名，就把它视为当前模块的类型定义。
@@ -69,11 +71,11 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 
 ## Generic Structs
 
-`defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `quote $ TypeName …`.
+`defstruct` 可以在类型名后接泛型参数列表。泛型参数和字段类型一样直接写名字（`[] T`），在 schema 里用 `quote $ TypeName …` 套用具体类型。
 
 ```cirru
 let
-    Box $ defstruct Box ([] 'T) (:value 'T)
+    Box $ defstruct Box ([] T) (:value T)
     keep $ fn (box)
       hint-fn $ Fn (Box T) (-> T) (:generics T)
       :value box
@@ -103,18 +105,18 @@ Use this pattern when the struct definition owns the type variable. Function-lev
 
 ```cirru
 let
-    ShownBox $ defstruct ShownBox ([] 'T)
-      {} $ 'T Debug
-      :value 'T
+    ShownBox $ defstruct ShownBox ([] T)
+      {} $ T Debug
+      :value T
     box $ ShownBox :value 1
     item $ :value box
   assert-type box $ quote $ ShownBox Number
   assert= |1 $ item .debug
 ```
 
-Here `{} $ 'T Debug` means `T` must satisfy the built-in `Debug` trait. The `{}`
+Here `{} $ T Debug` means `T` must satisfy the built-in `Debug` trait. The `{}`
 line already becomes a list through indentation, so do not add another outer pair
-of parentheses around it or around `:value 'T`. `%{}` enforces the bound when
+of parentheses around it or around `:value T`. `%{}` enforces the bound when
 constructing a struct value, so the constraint lives on the data definition rather
 than on each individual function schema. Use `Show` instead only when the payload
 has an explicit user-facing presentation implementation.
@@ -127,7 +129,7 @@ the call site. It works for top-level definitions and for a `defstruct` bound by
 
 ```cirru
 let
-    Point $ defstruct Point (:x 'Number) (:y 'Number)
+    Point $ defstruct Point (:x Number) (:y Number)
     p $ Point :x 1 :y 2
   , p
 ```
@@ -142,7 +144,7 @@ declared as `Option<T>` may be omitted; the constructor inserts the nominal
 
 ```cirru
 let
-    Config $ defstruct Config (:host 'String) (:port 'Number 8080) (:debug? 'Bool false) (:tags (quote $ List String) ([]))
+    Config $ defstruct Config (:host String) (:port Number 8080) (:debug? Bool false) (:tags (quote $ List String) ([]))
     config $ Config :host |localhost
   assert= 8080 $ :port config
   assert= false $ :debug? config
@@ -194,9 +196,9 @@ This means a concise same-namespace field type such as `'Router` remains
 statically resolvable even when the outer Struct flows into another namespace:
 
 ```cirru.no-check
-defstruct Router $ :name 'String
+defstruct Router $ :name String
 
-defstruct ClientStore $ :router 'Router
+defstruct ClientStore $ :router Router
 
 defn router-name (store)
   hint-fn $ Fn app.schema/ClientStore (-> String)
@@ -434,7 +436,7 @@ let
 
 ```cirru
 let
-    User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
+    User $ defstruct User (:name String) (:age Number) (:email String)
     get-user-name $ fn (user)
       hint-fn $ Fn User (-> String)
       :name user
@@ -449,7 +451,7 @@ let
 When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to struct construction (`%{}`). This keeps ergonomic literal syntax while retaining the nominal type.
 
 ```cirru.no-check
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 
 defn sum-point (p)
   hint-fn $ Fn app.main/Point (-> Number)
@@ -509,7 +511,7 @@ let
 When an anonymous struct is passed to a function whose parameter is a named struct, the preprocessor can rewrite it to the expected nominal definition:
 
 ```cirru.no-check
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 
 defn sum-point (p)
   hint-fn $ Fn app.main/Point (-> Number)

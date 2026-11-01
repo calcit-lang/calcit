@@ -85,9 +85,9 @@ calcit eval "echo |done"
 - **HashSets**: `#{} :a :b :c`
 - **Anonymous Enums**: `%:: _ :tag 1 2` (or `:: :tag 1 2`) - short-lived tagged values
 - **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
-- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `Point :x 1 :y 2`
-- **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
-- **Unions**: `defunion CssValue 'String 'Number`，只能用 `match v ((String s) ..) ((Number n) ..)` 拆解，见 [Unions](features/unions.md)
+- **Structs**: `defstruct Point (:x Number) (:y Number)` and `Point :x 1 :y 2`
+- **Enums**: `defenum Result (:ok ..) (:err String)` and `%:: Result ...`
+- **Unions**: `defunion CssValue String Number`，只能用 `match v ((String s) ..) ((Number n) ..)` 拆解，见 [Unions](features/unions.md)
 - **Refs**: `ref 0` - mutable references
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
@@ -137,7 +137,7 @@ let
       hint-fn $ Fn & Number (-> Number)
       apply + xs
     ; Struct definition
-    User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
+    User $ defstruct User (:name String) (:age Number) (:email String)
     x 42
   ; Type assertion $ composable check, returns original value
   assert-type x 'Number

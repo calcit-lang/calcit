@@ -39,13 +39,14 @@ impl CalcitUnionDef {
     self.definition_ref = reference;
   }
 
-  /// Parsed member types. Named members stay symbolic (`TypeRef`) until a
+  /// Parsed member types; a runtime member `(List Number)` reads as the
+  /// compact type it was quoted from. Named members stay symbolic (`TypeRef`) until a
   /// relation resolves them, exactly like Struct field types.
   pub fn members(&self) -> Vec<Arc<CalcitTypeAnnotation>> {
     self
       .member_forms
       .iter()
-      .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]))
+      .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&super::declared_type_form(form), &[]))
       .collect()
   }
 
@@ -164,8 +165,7 @@ impl CalcitUnionDef {
 
   fn collect_members(&self, visiting: &mut Vec<String>) -> Result<Vec<UnionMember>, String> {
     let mut members = vec![];
-    for form in self.member_forms.iter() {
-      let annotation = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]);
+    for annotation in self.members() {
       if let Some(nested) = annotation.resolve_to_union() {
         let nested_name = nested.display_name();
         if visiting.contains(&nested_name) {
