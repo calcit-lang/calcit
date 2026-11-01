@@ -1708,7 +1708,7 @@ fn check_top_level_value_schema(
   // contradiction must never become a consumer's dispatch contract.
   let proof =
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || actual.prove_with_bindings(&expected, &mut HashMap::new()));
-  if !matches!(proof, TypeProof::Mismatch) {
+  if !matches!(proof, TypeProof::Mismatch) && !type_checking::expression_has_known_mismatch(resolved, &expected, scope_types) {
     return Ok(());
   }
   // A literal is checked against the declared shape, e.g. `[] 1 2` as `Tuple Number Number`.

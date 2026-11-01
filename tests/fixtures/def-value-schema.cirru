@@ -777,6 +777,92 @@
             :tags $ #{} :callback-container-shape :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-shape
+    'app.collection-shadow $ %{} 'FileEntry
+      :defs $ {}
+        'NestedSequence $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion NestedSequence app.collection-value/Sequence Tag
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |nested-union-keeps-member-namespace)
+            :code $ quote $ match nested-values
+              (List items)
+                assert= ([] 12 :block |sans) items
+              _ $ raise |Expected-nested-list-member
+            :tags $ #{} :collection-value-contract
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar Bool Symbol
+          :examples $ []
+          :schema $ quote UnionDef
+        'nested-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def nested-values ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote app.collection-shadow/NestedSequence
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.collection-shadow
+    'app.collection-value $ %{} 'FileEntry
+      :defs $ {}
+        'Pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Pair String
+            quote $ Tuple Number String
+          :examples $ []
+          :schema $ quote UnionDef
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar String Number Tag
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |mixed-collection-initializers)
+            :code $ quote $ do
+              assert=
+                {} (:width 12) (:display :block) (:font-family |sans)
+                , style
+              assert= ([] 12 :block |sans) values
+              assert= (#{} 12 :block |sans) members
+              assert=
+                Option :some $ [] 12 :block |sans
+                get nested :items
+              match sequence-value
+                (List items) (assert= values items)
+                (String text) (raise |Expected-list-member)
+              match pair-value
+                (Tuple pair)
+                  do
+                    assert= 12 $ nth pair 0
+                    assert= |ready $ nth pair 1
+                (String text) (raise |Expected-tuple-member)
+            :tags $ #{} :collection-value-contract
+        'Sequence $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Sequence String
+            quote $ List Scalar
+          :examples $ []
+          :schema $ quote UnionDef
+        'members $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def members (#{} 12 :block |sans)
+          :examples $ []
+          :schema $ quote $ Set app.collection-value/Scalar
+        'nested $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def nested
+            {} $ :items $ [] 12 :block |sans
+          :examples $ []
+          :schema $ quote $ Map Tag (List app.collection-value/Scalar)
+        'pair-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def pair-value ([] 12 |ready)
+          :examples $ []
+          :schema $ quote app.collection-value/Pair
+        'sequence-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def sequence-value ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote app.collection-value/Sequence
+        'style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def style
+            {} (:width 12) (:display :block) (:font-family |sans)
+          :examples $ []
+          :schema $ quote $ Map Tag app.collection-value/Scalar
+        'values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def values ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote $ List app.collection-value/Scalar
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.collection-value
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)
