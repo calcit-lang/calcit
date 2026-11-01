@@ -94,6 +94,29 @@ fn result_json(row: &DefinitionResult) -> Value {
   })
 }
 
+fn check_definition(
+  namespace: &str,
+  definition: &str,
+  id: &str,
+  warnings: &RefCell<Vec<LocatedWarning>>,
+  diagnostics: &mut Vec<Value>,
+) -> &'static str {
+  let warning_count = warnings.borrow().len();
+  let outcome = runner::preprocess::ensure_ns_def_compiled(namespace, definition, warnings, &CallStackList::default());
+  // During the proof audit, warnings owned by a macro implementation describe
+  // syntax production; drop them before they decide this row's status.
+  runner::preprocess::drop_macro_owned_proof_warnings(warnings, warning_count);
+  match outcome {
+    Ok(()) if warnings.borrow().len() == warning_count => "passed",
+    Ok(()) => "warning",
+    Err(error) => {
+      diagnostics.push(error_diagnostic(&error, id));
+      diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
+      "failed"
+    }
+  }
+}
+
 pub fn run(
   options: &CheckPublicCommand,
   snapshot: &snapshot::Snapshot,
@@ -272,20 +295,10 @@ pub fn run(
         ..
       } = row;
       checked_definition_ids.push(id.clone());
-      let warning_count = warnings.borrow().len();
       let status = if runtime_intrinsic {
         "intrinsic"
       } else {
-        let result = runner::preprocess::ensure_ns_def_compiled(&namespace, &definition, &warnings, &CallStackList::default());
-        match result {
-          Ok(()) if warnings.borrow().len() == warning_count => "passed",
-          Ok(()) => "warning",
-          Err(error) => {
-            diagnostics.push(error_diagnostic(&error, &id));
-            diagnostics.extend(error.warnings.iter().map(warning_diagnostic));
-            "failed"
-          }
-        }
+        check_definition(&namespace, &definition, &id, &warnings, &mut diagnostics)
       };
       results.push(DefinitionResult {
         id,
@@ -305,6 +318,26 @@ pub fn run(
         status: if row.rejected { "rejected" } else { "not_checked" },
       });
     }
+  }
+
+  // Like plain `--check-only`, the default proof audit runs once the ordinary
+  // check passes, so ordinary rejections keep their own diagnostics (#2121).
+  // Without it, a passing public check could miss proof errors that the entry
+  // check reports for the same definitions (#2506).
+  if runner::preprocess::default_proof_enabled()
+    && diagnostics.is_empty()
+    && warnings.borrow().is_empty()
+    && results.iter().any(|row| row.status == "passed")
+    && results.iter().all(|row| matches!(row.status, "passed" | "intrinsic"))
+  {
+    // The audit re-preprocesses the same definitions; macro output from it
+    // repeats the ordinary pass, so it stays silent.
+    let _silence = crate::ProgramOutputGuard::new(false, true);
+    runner::preprocess::check_with_default_proof(&warnings, || {
+      for row in results.iter_mut().filter(|row| row.status == "passed") {
+        row.status = check_definition(&row.namespace, &row.definition, &row.id, &warnings, &mut diagnostics);
+      }
+    });
   }
 
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));

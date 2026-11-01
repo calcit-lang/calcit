@@ -24,6 +24,16 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.34.0 `--check-only --ns` 运行默认证明审计（#2506）
+
+`--check-only --ns <ns>` 现在和普通 `--check-only` 一样，在所选 definition 通过普通检查后运行默认证明审计。
+以前在 `--ns` 下通过、只在入口检查里报出的 `E_FN_RETURN_UNPROVEN`、`E_CALL_ARGUMENT_UNPROVEN` 等，现在在 `--ns` 的报告里出现，对应定义的状态为 `failed`。
+
+### 迁移步骤
+
+1. 运行 `calcit calcit.cirru --check-only --ns <ns>`，逐条按诊断补齐真实合同（例如给顶层 `def` 写 schema）或证明。
+2. 需要暂时保留旧行为时加 `--no-proof-audit`，它只跳过证明审计，其余严格诊断不变。
+
 <a id="032-删除-optional-公共-schema-与旧-optional-类型"></a>
 <a id="033-删除-optional-公共-schema-与旧-optional-类型"></a>
 

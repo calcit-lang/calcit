@@ -1432,6 +1432,71 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
 }
 
 #[test]
+fn public_check_runs_default_proof_audit_after_ordinary_check() {
+  run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot
+      .entries
+      .get_mut(snapshot::DEFAULT_ENTRY_NAME)
+      .expect("default entry")
+      .target = Some(snapshot::SnapshotTarget::Node);
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defn main! () &unit\n\n",
+      "defn reload! () &unit\n\n",
+      "defn as-number (x) x",
+    ))
+    .expect("public-check snippet should parse");
+    let fn_schema = |arg_types, return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    file.defs.get_mut("main!").expect("main entry").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("reload!").expect("reload entry").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("as-number").expect("unproven entry").schema =
+      fn_schema(vec![calcit::calcit::DYNAMIC_TYPE.clone()], CalcitTypeAnnotation::Number);
+    snapshot.files.insert("app.main".to_owned(), file);
+
+    // #2506: the ordinary pass accepts the declared return; the default proof
+    // audit, as in plain `--check-only`, rejects it for the selected definition.
+    let project_namespaces = HashSet::from(["app.main".to_owned()]);
+    let entries = prepare_snapshot_entries(snapshot.clone());
+    let _strict = StrictTypesReset::enabled();
+    // The ordinary pass alone accepts the definition, so a public-check
+    // failure below can only come from the proof audit.
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "as-number", &warnings, &CallStackList::default())
+      .expect("the ordinary pass accepts a declared return");
+    assert!(
+      warnings.borrow().is_empty(),
+      "unexpected ordinary warnings: {:?}",
+      warnings.borrow()
+    );
+    let error = public_api_check::run(
+      &calcit::cli_args::CheckPublicCommand {
+        ns: vec!["app.main".to_owned()],
+        format: "json".to_owned(),
+        deps: false,
+        summary_only: false,
+      },
+      &snapshot,
+      &project_namespaces,
+      None,
+    )
+    .expect_err("public check must run the default proof audit");
+    assert!(error.contains("2 passed"), "unexpected public-check outcome: {error}");
+  });
+}
+
+#[test]
 fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
   run_with_large_stack(|| {
     builtins::effects::init_effects_states();
