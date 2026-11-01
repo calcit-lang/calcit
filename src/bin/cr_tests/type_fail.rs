@@ -4650,6 +4650,8 @@ fn strict_type_fail_union_rules_report_stable_codes() {
       ("calcit/type-fail/union-member-dynamic.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-member-option.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-member-dup-kind.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-dup-pattern-name.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-unused-invalid.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-inline.cirru", "E_UNION_INLINE"),
       ("calcit/type-fail/union-where-bound.cirru", "W_GENERIC_WHERE_BOUND_MISMATCH"),
     ];

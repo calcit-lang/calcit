@@ -33,6 +33,43 @@ fn union_error(message: String, code: &str, ctx: &PreprocessContext, location: O
   )
 }
 
+/// Check a `defunion` declaration where it is written, so an invalid union is
+/// rejected even when no code uses its type yet.
+pub(super) fn check_union_declaration(
+  head: &Calcit,
+  args: &CalcitList,
+  file_ns: &str,
+  call_stack: &crate::call_stack::CallStackList,
+) -> Result<(), CalcitErr> {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeUnionNew)) {
+    return Ok(());
+  }
+  fn unquote(form: &Calcit) -> &Calcit {
+    match form {
+      Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(calcit::CalcitSyntax::Quote, _))) => {
+        items.get(1).unwrap_or(form)
+      }
+      _ => form,
+    }
+  }
+  // The macro passes `(turn-tag name)` or a literal tag, then quoted member forms.
+  let name = match args.first().map(unquote) {
+    Some(Calcit::Tag(tag)) => tag.ref_str().to_owned(),
+    Some(Calcit::Symbol { sym, .. }) => sym.to_string(),
+    Some(Calcit::List(items)) => match items.get(1).map(unquote) {
+      Some(Calcit::Tag(tag)) => tag.ref_str().to_owned(),
+      Some(Calcit::Symbol { sym, .. }) => sym.to_string(),
+      _ => return Ok(()),
+    },
+    _ => return Ok(()),
+  };
+  let members = args.iter().skip(1).map(|form| unquote(form).to_owned()).collect();
+  let union_def = CalcitUnionDef::new(cirru_edn::EdnTag::from(name.as_str()), members).with_definition_ref(file_ns, &name);
+  union_def.checked_members().map(|_| ()).map_err(|message| {
+    CalcitErr::use_msg_stack_location_with_code(CalcitErrKind::Type, message, "E_UNION_MEMBER_INVALID", call_stack, None)
+  })
+}
+
 /// Whether any branch uses a type pattern `(Name binding)`, i.e. a pattern
 /// list whose head is a symbol. Enum patterns always start with a tag.
 pub(super) fn has_type_pattern(args: &CalcitList) -> bool {

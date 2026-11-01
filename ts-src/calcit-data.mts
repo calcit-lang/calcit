@@ -253,6 +253,7 @@ let defaultHash_trait = valueHash("trait:");
 let defaultHash_struct = valueHash("struct:");
 let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
+let defaultHash_union_def = valueHash("union-def:");
 
 let defaultHash_unknown = valueHash("unknown:");
 let defaultHash_buffer = valueHash("buffer:");
@@ -438,6 +439,13 @@ export let hashFunction = (x: CalcitValue): Hash => {
     for (let impl of x.impls) {
       base = mergeValueHash(base, hashFunction(impl));
     }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitUnionDef) {
+    if (x.cachedHash != null) return x.cachedHash;
+    let base = mergeValueHash(defaultHash_union_def, hashFunction(x.name));
+    for (const member of x.members) base = mergeValueHash(base, hashFunction(member));
     x.cachedHash = base;
     return base;
   }
@@ -953,6 +961,15 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       return _$n__$e_(x.prototype, y.prototype)
         && x.impls.length === y.impls.length
         && x.impls.every((impl, index) => _$n__$e_(impl, y.impls[index]));
+    }
+    return false;
+  }
+  if (x instanceof CalcitUnionDef) {
+    if (y instanceof CalcitUnionDef) {
+      // Same fields as native equality: the name and the member type forms.
+      return x.name === y.name
+        && x.members.length === y.members.length
+        && x.members.every((member, index) => _$n__$e_(member, y.members[index]));
     }
     return false;
   }

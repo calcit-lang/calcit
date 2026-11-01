@@ -65,6 +65,7 @@ enum PseudoTypeIndex {
   struct_value,
   struct_def,
   enum_def,
+  union_def,
   trait,
   impl,
   fn,
@@ -91,6 +92,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitImpl) return PseudoTypeIndex.impl;
   if (x instanceof CalcitStructDef) return PseudoTypeIndex.struct_def;
   if (x instanceof CalcitEnumDef) return PseudoTypeIndex.enum_def;
+  if (x instanceof CalcitUnionDef) return PseudoTypeIndex.union_def;
   if (x instanceof CalcitTrait) return PseudoTypeIndex.trait;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   // proc, fn, macro, syntax, not distinguished
@@ -232,6 +234,14 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         const tagOrder = _$n_compare(left.tag, right.tag);
         if (tagOrder !== 0) return tagOrder;
         return compareSequences(left.extra, right.extra);
+      }
+      case PseudoTypeIndex.union_def: {
+        // Native order: name, then member type forms.
+        const left = a as CalcitUnionDef;
+        const right = b as CalcitUnionDef;
+        const nameOrder = compareUnicodeStrings(left.name, right.name);
+        if (nameOrder !== 0) return nameOrder;
+        return compareSequences(left.members, right.members);
       }
       case PseudoTypeIndex.enum_def: {
         const left = a as CalcitEnumDef;

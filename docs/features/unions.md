@@ -53,7 +53,10 @@ defunion Label 'String 'Point
 - 类型变量：第一版 union 不带类型参数，也不能引用自己；
 - core 的 `Option` / `Result`：缺失写成 union 外面的 `Option CssValue`；
 - 匿名 enum / struct、trait、`JsObject`；
-- 两个运行时种类相同的成员。
+- 两个运行时种类相同的成员；
+- 两个模式名相同的成员，例如来自不同命名空间的同名 struct。
+
+这些规则在 `defunion` 声明处就会检查，即使还没有代码用到这个类型。
 
 schema 里不能内联写 `Union A B`，会报 `E_UNION_INLINE`，必须先用 `defunion` 起名。
 

@@ -5604,6 +5604,7 @@ fn preprocess_list_call(
           )?;
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           union_types::reject_union_value_use(call_head, &processed_args, scope_types, call_stack)?;
+          union_types::check_union_declaration(call_head, &processed_args, file_ns, call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
           reject_or_warn_on_js_nullish_predicate_mismatch(

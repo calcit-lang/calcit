@@ -777,7 +777,11 @@ impl Ord for Calcit {
       (EnumDef { .. }, _) => Less,
       (_, EnumDef { .. }) => Greater,
 
-      (UnionDef(a), UnionDef(b)) => a.name.cmp(&b.name).then_with(|| a.definition_ref().cmp(&b.definition_ref())),
+      (UnionDef(a), UnionDef(b)) => a
+        .name
+        .cmp(&b.name)
+        .then_with(|| a.definition_ref().cmp(&b.definition_ref()))
+        .then_with(|| a.member_forms.cmp(&b.member_forms)),
       (UnionDef { .. }, _) => Less,
       (_, UnionDef { .. }) => Greater,
 

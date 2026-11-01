@@ -62,7 +62,8 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式允许 Dynamic 作为开放泛型 payload 传递，但拒绝用只接受具体类型的 callback 隐式收窄该绑定，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
 - `callback-contravariance-strict.cirru` 的 `default` entry 是正例：`Fn Dynamic (-> Unit)` 与 `Fn & Dynamic (-> Unit)` callback 可以传入只会以 `FsPath` 调用的 callback 参数（参数逆变，rest 参数同样适用）；`reverse`（`FsPath` callback 进入 `Dynamic` 参数槽）、`reverse-rest`（`FsPath` rest callback 进入 `Dynamic` rest 槽）、`rest-for-fixed`（只有 `FsPath` rest 参数的 callback 进入固定 `Dynamic` 参数槽）与 `result`（`Dynamic` 返回值进入 `FsPath` 返回合同）报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，`arity` 报告 `W_FN_ARG_TYPE_MISMATCH`。
 - `union-*.cirru` 覆盖 `defunion` 的限制（见 [Unions](../../docs/features/unions.md)），每个 fixture 对应一个稳定错误码：
-  - `union-member-dynamic` / `union-member-option` / `union-member-dup-kind`：成员含 Dynamic、成员是 core Option、两个成员运行时种类相同，报 `E_UNION_MEMBER_INVALID`；
+  - `union-member-dynamic` / `union-member-option` / `union-member-dup-kind` / `union-dup-pattern-name`：成员含 Dynamic、成员是 core Option、两个成员运行时种类相同、两个成员的模式名相同，报 `E_UNION_MEMBER_INVALID`；
+  - `union-unused-invalid`：没有任何代码用到这个 union 的类型，在声明处同样报 `E_UNION_MEMBER_INVALID`；
   - `union-inline`：schema 内联 `Union A B`，报 `E_UNION_INLINE`；
   - `union-not-exhaustive`：`match` 未覆盖全部成员，报 `E_UNION_MATCH_NOT_EXHAUSTIVE`；
   - `union-unknown-member` / `union-tag-pattern` / `union-type-pattern-on-dynamic`：模式名不在 union 中、union 上写 Tag 模式、非 union 值上写类型模式，报 `E_UNION_MATCH_PATTERN`；

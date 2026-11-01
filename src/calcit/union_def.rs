@@ -140,6 +140,15 @@ impl CalcitUnionDef {
       return Err(format!("defunion {} needs at least two member types", self.display_name()));
     }
     for (index, member) in members.iter().enumerate() {
+      if let Some(previous) = members[..index].iter().find(|other| other.pattern_name == member.pattern_name) {
+        return Err(format!(
+          "defunion {} members `{}` and `{}` share the pattern name `{}`, so a `match` type pattern could not tell them apart",
+          self.display_name(),
+          previous.annotation.to_brief_string(),
+          member.annotation.to_brief_string(),
+          member.pattern_name
+        ));
+      }
       if let Some(previous) = members[..index].iter().find(|other| other.kind == member.kind) {
         return Err(format!(
           "defunion {} members `{}` and `{}` share the runtime kind {}, so a value cannot be told apart at runtime",
