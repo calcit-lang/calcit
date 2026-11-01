@@ -815,7 +815,7 @@ pub struct QueryNsCommand {
   /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
-  /// output format: Markdown-compatible human (default), edn, json, or cirru (the namespace's `%{} 'FileEntry` data as stored in the Snapshot, accepted by `edit ns`)
+  /// output format: Markdown-compatible human (default), edn, json, or cirru (the namespace's `%{} 'FileEntry` data as stored in the Snapshot, accepted by `edit ns`; generated namespaces such as `<package>.$meta` are not stored and are rejected)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }

@@ -4653,6 +4653,7 @@ fn handle_ns(
     .collect();
 
   if format != StructuredOutputFormat::Human {
+    let generated: Vec<_> = filtered.iter().filter(|ns| snapshot::is_generated_namespace(ns)).collect();
     return format.print_value(&serde_json::json!({
       "schema_version": 1,
       "command": "query.ns",
@@ -4660,6 +4661,7 @@ fn handle_ns(
         "include_dependencies": include_deps,
         "count": filtered.len(),
         "namespaces": filtered,
+        "generated": generated,
       },
     }));
   }
@@ -4671,7 +4673,11 @@ fn handle_ns(
   );
 
   for ns in &filtered {
-    println!("  {}", ns.cyan());
+    if snapshot::is_generated_namespace(ns) {
+      println!("  {} {}", ns.cyan(), "(generated, not in Snapshot)".dimmed());
+    } else {
+      println!("  {}", ns.cyan());
+    }
   }
 
   Ok(())
@@ -4679,6 +4685,11 @@ fn handle_ns(
 
 /// Print the namespace's `FileEntry` data as stored in the Snapshot, the input `edit ns` accepts.
 fn handle_ns_cirru_view(input_path: &str, namespace: &str, entry: Option<&str>) -> Result<(), String> {
+  if snapshot::is_generated_namespace(namespace) {
+    return Err(format!(
+      "Namespace '{namespace}' is generated at load time and is not stored in the Snapshot, so it has no FileEntry source to edit"
+    ));
+  }
   let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
   let file_data = snapshot
     .files
@@ -4696,6 +4707,7 @@ fn handle_ns_details(input_path: &str, namespace: &str, format: StructuredOutput
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let generated = snapshot::is_generated_namespace(namespace);
 
   if format != StructuredOutputFormat::Human {
     return format.print_value(&serde_json::json!({
@@ -4703,11 +4715,16 @@ fn handle_ns_details(input_path: &str, namespace: &str, format: StructuredOutput
       "command": "query.ns",
       "data": {
         "namespace": namespace,
+        "generated": generated,
         "doc": file_data.ns.doc,
         "ns_code": cirru_to_json_value(&file_data.ns.code),
         "definition_count": file_data.defs.len(),
       },
     }));
+  }
+
+  if generated {
+    println!("{}", "Generated at load time, not stored in the Snapshot.".dimmed());
   }
 
   if !file_data.ns.doc.is_empty() {
