@@ -109,10 +109,15 @@ calcit query ns calcit.core
 calcit query ns app.demo --format cirru
 ```
 
-`query ns [<ns>]` 同样接受 `--format edn|json`，返回命名空间列表或该命名空间的 ns 声明与定义数量。`query schema` 与 `tree show` 也接受 `--format human|edn|json`。
+`query ns [<ns>]` 同样接受 `--format edn|json`，返回命名空间列表或该命名空间的 ns 声明与定义数量。
+
+`<package>.$meta` 是加载时按 Snapshot 路径生成的命名空间，提供 `calcit-filename` 与 `calcit-dirname`，不保存在
+Snapshot 的 `:files` 中，同一 Snapshot 复制到不同目录时内容不同。列表的结构化输出用 `generated` 列出这类命名空间
+（`namespaces` 仍包含它们），单个命名空间的结构化输出带 `generated` 布尔字段，human 输出标注
+`(generated, not in Snapshot)`。编辑器筛选可编辑命名空间时读取这个字段，不按名字猜测。`query schema` 与 `tree show` 也接受 `--format human|edn|json`。
 
 `query ns <ns> --format cirru` 输出该命名空间在 Snapshot `:files` 中保存的 `%{} 'FileEntry` 数据，使用与 Snapshot
-文件相同的序列化和格式：
+文件相同的序列化和格式（生成的命名空间没有可写回的源码，会直接报错）：
 
 ```cirru.no-check
 %{} 'FileEntry

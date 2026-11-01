@@ -12206,8 +12206,8 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     "tag?" => Some(tag_annotation("tag")),
     "bool?" => Some(tag_annotation("bool")),
     "symbol?" => Some(tag_annotation("symbol")),
-    "cirru-quote?" => Some(tag_annotation("cirru-quote")),
     "fn?" => Some(tag_annotation("fn")),
+    "cirru-quote?" => Some(tag_annotation("cirru-quote")),
     _ => None,
   } {
     return PredicateNarrowing {

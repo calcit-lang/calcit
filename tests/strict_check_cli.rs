@@ -928,6 +928,58 @@ fn recur_arguments_follow_the_lexical_function_contract() {
   );
 }
 
+/// #2521: the bundled core `cirru-quote?` guard narrows a Dynamic argument
+/// before it fills a CirruQuote struct field; a same-named user function does not.
+#[test]
+fn core_cirru_quote_guard_narrows_dynamic_for_struct_fields() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+  edit_definition(&snapshot, "QuoteBox", "quote $ defstruct QuoteBox (:code CirruQuote)", false);
+  edit_definition(
+    &snapshot,
+    "checked-quote",
+    "quote $ defn checked-quote (value) $ if (cirru-quote? value) (QuoteBox :code value) (raise |Expected-CirruQuote)",
+    false,
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/checked-quote",
+        "--code",
+        "quote $ Fn Dynamic (-> app.main/QuoteBox)",
+      ],
+    ),
+    "declare Dynamic to QuoteBox contract",
+  );
+  let public = run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]);
+  assert_success(&public, "core cirru-quote? guard narrows the field value");
+
+  // A user predicate with the same short name is an ordinary Bool function.
+  edit_definition(
+    &snapshot,
+    "checked-quote",
+    "quote $ defn checked-quote (value) $ if (app.main/cirru-quote? value) (QuoteBox :code value) (raise |Expected-CirruQuote)",
+    true,
+  );
+  edit_definition(&snapshot, "cirru-quote?", "quote $ defn cirru-quote? (x) true", false);
+  let spoofed = run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]);
+  assert!(
+    !spoofed.status.success(),
+    "a user predicate must not narrow Dynamic\nstdout:\n{}",
+    String::from_utf8_lossy(&spoofed.stdout)
+  );
+  assert!(
+    String::from_utf8_lossy(&spoofed.stdout).contains("QuoteBox"),
+    "the field boundary should still be reported: {}",
+    String::from_utf8_lossy(&spoofed.stdout)
+  );
+}
+
 #[test]
 fn keep_going_reports_independent_failures_and_blocks_dependents() {
   let (_directory, snapshot) = prepare_project();

@@ -163,6 +163,7 @@ fn query_ns_schema_and_tree_show_accept_unified_format_values() {
   assert_eq!(ns_json["data"]["namespace"], "test-effects-graph.main");
   let cirru = run(&["query", "ns", "test-effects-graph.main", "--format", "cirru"]);
   assert!(cirru.status.success(), "{}", stderr(&cirru));
+  assert_eq!(ns_json["data"]["generated"], false);
 
   assert_edn_document(&run(&["query", "schema", MAIN_DEF, "--format", "edn"]), "query schema --format edn");
   let schema = assert_json_document(
@@ -848,4 +849,32 @@ fn program_diff_normalizes_legacy_type_storage_in_git_baseline() {
     message.contains("read-only `edit format` normalization does not support") && message.contains("E_LEGACY_OPTIONAL_TYPE"),
     "{message}"
   );
+}
+
+/// #2518: `<package>.$meta` is generated from the Snapshot path, so editors need to tell it apart
+/// from Snapshot source without guessing from the name.
+#[test]
+fn query_ns_marks_generated_namespaces() {
+  let list = assert_json_document(&run(&["query", "ns", "--format", "json"]), "query ns --format json");
+  let namespaces = list["data"]["namespaces"].as_array().expect("namespaces");
+  assert!(namespaces.iter().any(|ns| ns == "test-effects-graph.$meta"), "{list}");
+  assert_eq!(list["data"]["generated"], serde_json::json!(["test-effects-graph.$meta"]));
+
+  let human = run(&["query", "ns"]);
+  assert!(human.status.success(), "{}", stderr(&human));
+  assert!(
+    stdout(&human).contains("test-effects-graph.$meta (generated, not in Snapshot)"),
+    "{}",
+    stdout(&human)
+  );
+
+  let details = assert_json_document(
+    &run(&["query", "ns", "test-effects-graph.$meta", "--format", "json"]),
+    "query ns <generated> --format json",
+  );
+  assert_eq!(details["data"]["generated"], true);
+
+  let cirru = run(&["query", "ns", "test-effects-graph.$meta", "--format", "cirru"]);
+  assert!(!cirru.status.success(), "generated namespace has no FileEntry source");
+  assert!(stderr(&cirru).contains("not stored in the Snapshot"), "{}", stderr(&cirru));
 }
