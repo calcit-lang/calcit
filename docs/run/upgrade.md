@@ -181,6 +181,27 @@ calcit <snapshot> edit format
 
 提示不会让严格检查失败。含值引用的形式（如 `:: 'List Person`）没有等价的精简写法，保持原样，也不提示。
 
+<a id="broad-type-advisory"></a>
+
+## 0.33.0 裸 `Enum` / `Struct` / `Trait` / `Fn` 报告提示（未发布）
+
+类型位置里的裸 `Enum`、`Struct`、`Trait`、`Fn` 只约束“某个 enum / struct / trait / 函数”，具体内容按 Dynamic 处理。
+现在检查时报告非阻塞的 `W_BROAD_TYPE` 提示，指出位置并建议写具体类型：
+
+```text
+[W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `Dynamic` only where the boundary is intentionally open. @app.main/on-op @3.1.1
+```
+
+迁移步骤：
+
+1. 运行 `calcit <snapshot> --check-only`，在 Notes 中找到 `W_BROAD_TYPE`。
+2. 按用途改写：dispatch 处理函数的 `Fn Enum (-> Unit)` 改为应用的操作 enum，如 `Fn app.schema/Op (-> Unit)`；
+   `reel.typed/State Enum Store` 写出操作类型；回调的裸 `Fn` 写出签名；库内需要通用的位置改用 `:generics` 类型变量。
+3. `defstruct` / `defenum` 的 `:schema` 若写成 `Enum` 或 `Struct`，改为 `StructDef` / `EnumDef`。
+4. 每改一批，重新运行检查和测试。
+
+提示不会让严格检查失败，`edit format` 不会自动改写。后续非 patch 版本计划把它升级为错误。
+
 <a id="format-ternary-tree-removal"></a>
 
 ## 0.33.0 删除 `&format-ternary-tree`（#2193，未发布）

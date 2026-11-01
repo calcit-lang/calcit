@@ -988,6 +988,7 @@ fn run_cli() -> Result<(), String> {
   // with an older globally installed `calcit` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
+  push_broad_type_advisories(&snapshot, &project_namespaces);
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
   }
@@ -2042,6 +2043,21 @@ fn run_entry_proof_preflight(entries: &ProgramEntries, js_emit_path: Option<&str
       }
     }
   })
+}
+
+/// Report bare `Enum`/`Struct`/`Trait`/`Fn` types in project definitions as
+/// check notes. They are not rewritten: only the author knows the concrete type.
+fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  for hit in snapshot::collect_broad_type_hits(snapshot, project_namespaces) {
+    // Coordinates of examples and tests do not point into the definition code.
+    let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
+    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
+      hit.message(),
+      calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
+      Some(snapshot::BROAD_TYPE_WARNING.to_owned()),
+      None,
+    ));
+  }
 }
 
 /// Native runs and JS codegen prove the entries before compiling them
