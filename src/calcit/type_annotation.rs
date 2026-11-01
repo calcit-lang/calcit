@@ -6841,9 +6841,10 @@ pub(crate) fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   None
 }
 
-/// Member types of `defstruct`, `defenum` and `defunion` are type syntax
-/// (#2516): a compact type written without `quote`, such as `(List Number)`,
-/// reads as `quote $ List Number`. Other forms are returned unchanged.
+/// A union member as `&union-def:new` stores it at runtime: the macro writes
+/// `quote $ List Number`, and evaluating that leaves the bare list
+/// `(List Number)`, which reads as a compact type again here. Other forms are
+/// returned unchanged.
 pub fn declared_type_form(form: &Calcit) -> Calcit {
   if crate::calcit::type_expr::unquoted_compact_form(form).is_some() {
     Calcit::from(vec![Calcit::Syntax(CalcitSyntax::Quote, Arc::from(CORE_NS)), form.to_owned()])
@@ -7004,8 +7005,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
       _ => return None,
     };
     let field_name = parse_type_name(field_name_form)?;
-    let field_type =
-      CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(field_type_form), generics.as_slice());
+    let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(field_type_form, generics.as_slice());
     let default_value = default_form.and_then(crate::calcit::struct_field_default_from_code);
     fields.push((field_name, field_type, default_value));
   }
@@ -7075,7 +7075,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     };
     let tag_form = variant.first()?;
     let tag = parse_type_name(tag_form)?;
-    let payloads: Vec<Calcit> = variant.iter().skip(1).map(declared_type_form).collect();
+    let payloads: Vec<Calcit> = variant.iter().skip(1).map(|v| v.to_owned()).collect();
     let payload_value = if payloads.is_empty() {
       Calcit::Nil
     } else {

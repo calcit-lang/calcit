@@ -37,7 +37,7 @@ defunion Geo Point Shape String
 defunion Label String Point
 ```
 
-成员按类型语法读取，和 `defstruct` 字段一样不写 quote：裸符号是类型名，带参数的类型写成列表，例如 `defunion Cells String (List Number)`。旧写法 `'String`、`quote $ List Number` 仍可使用，`calcit edit format` 会去掉 quote。
+类型名成员和 `defstruct` 字段一样直接写裸符号；带参数的复合类型目前仍写 quote，例如 `defunion Cells String $ quote (List Number)`。旧写法 `'String` 仍可使用，`calcit edit format` 会改为 `String`。
 
 成员可以是：
 

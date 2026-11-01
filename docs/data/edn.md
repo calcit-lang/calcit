@@ -145,7 +145,7 @@ failing later with “expected map, got struct”.
 
 ```cirru.no-run
 defstruct Response (:code Number)
-  :message $ Option String
+  :message $ quote $ Option String
   :body Dynamic
 
 ; `raw` may be { :code 200, :message |ok, :body ... }

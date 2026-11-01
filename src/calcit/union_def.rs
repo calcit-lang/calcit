@@ -39,8 +39,8 @@ impl CalcitUnionDef {
     self.definition_ref = reference;
   }
 
-  /// Parsed member types, read as declared type syntax (bare `(List Number)`
-  /// included). Named members stay symbolic (`TypeRef`) until a
+  /// Parsed member types; a runtime member `(List Number)` reads as the
+  /// compact type it was quoted from. Named members stay symbolic (`TypeRef`) until a
   /// relation resolves them, exactly like Struct field types.
   pub fn members(&self) -> Vec<Arc<CalcitTypeAnnotation>> {
     self

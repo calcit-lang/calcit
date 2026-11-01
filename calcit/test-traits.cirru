@@ -1885,9 +1885,9 @@
             %{} 'TestEntry (:name |preserves-nested-container-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
-                    Map Tag $ List Number
+                    quote $ Map Tag $ List Number
                   right $ defstruct ComparedRecord $ :value
-                    Map Tag $ List Number
+                    quote $ Map Tag $ List Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1895,34 +1895,35 @@
             %{} 'TestEntry (:name |preserves-default-container-arguments)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value List
-                  right $ defstruct ComparedRecord $ :value (List Dynamic)
+                  right $ defstruct ComparedRecord $ :value
+                    quote $ List Dynamic
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-function-type-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn Number $ -> String
+                    quote $ Fn Number $ -> String
                   right $ defstruct ComparedRecord $ :callback
-                    Fn Number $ -> String
+                    quote $ Fn Number $ -> String
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-rest-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn Number & String $ -> Bool
+                    quote $ Fn Number & String $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    Fn Number & Number $ -> Bool
+                    quote $ Fn Number & Number $ -> Bool
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-feature-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn Number $ -> Bool
+                    quote $ Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    Fn Number (-> Bool) (:features :js-ffi)
+                    quote $ Fn Number (-> Bool) (:features :js-ffi)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -1964,7 +1965,7 @@
             %{} 'TestEntry (:name |preserves-function-schema-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn $ -> Bool
+                    quote $ Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ []
@@ -1997,7 +1998,7 @@
             %{} 'TestEntry (:name |preserves-function-generic-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn Number $ -> Bool
+                    quote $ Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ [] 'Number
@@ -2011,9 +2012,9 @@
             %{} 'TestEntry (:name |orders-function-async-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    Fn $ -> Bool
+                    quote $ Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    Fn (-> Bool) (:async)
+                    quote $ Fn (-> Bool) (:async)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -2031,16 +2032,20 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-host-nullable-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value (JsNullish Number)
-                  right $ defstruct ComparedRecord $ :value (JsNullish Number)
+                  left $ defstruct ComparedRecord $ :value
+                    quote $ JsNullish Number
+                  right $ defstruct ComparedRecord $ :value
+                    quote $ JsNullish Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-variadic-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value (Variadic Number)
-                  right $ defstruct ComparedRecord $ :value (Variadic Number)
+                  left $ defstruct ComparedRecord $ :value
+                    quote $ Variadic Number
+                  right $ defstruct ComparedRecord $ :value
+                    quote $ Variadic Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right

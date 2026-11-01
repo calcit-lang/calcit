@@ -4706,29 +4706,12 @@ fn is_tag_leaf(node: Option<&Cirru>) -> bool {
   matches!(node, Some(Cirru::Leaf(leaf)) if leaf.starts_with(':'))
 }
 
-/// A compact type written without `quote` in a declaration member slot, such as
-/// `(List Number)` in `defstruct Point (:xs (List Number))`. Declaration macros
-/// read these slots as type syntax (#2516), so it is current syntax, not a
-/// legacy implicit `::` constructor.
-fn is_bare_compact_type(node: &Cirru) -> bool {
-  matches!(node, Cirru::List(items) if matches!(items.first(), Some(Cirru::Leaf(head)) if !head.starts_with(['\'', ':'])))
-    && crate::calcit::type_expr::is_compact_payload(node)
-}
-
-/// Canonicalize one declared member type, keeping bare compact types as written.
-fn canonicalize_declared_type(node: &Cirru) -> (Cirru, usize) {
-  if is_bare_compact_type(node) {
-    return (node.clone(), 0);
-  }
-  canonicalize_type_expression(node)
-}
-
 /// Canonicalize the type of a `(:field type default?)` entry, leaving the default as data.
 fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
   let mut next = entry.to_vec();
   let mut changed = 0;
   if let Some(type_form) = entry.get(1) {
-    let (type_form, count) = canonicalize_declared_type(type_form);
+    let (type_form, count) = canonicalize_type_expression(type_form);
     next[1] = type_form;
     changed += count;
   }
@@ -4807,9 +4790,9 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
               if type_index > 1 {
                 continue;
               }
-              canonicalize_declared_type(&field[type_index])
+              canonicalize_type_expression(&field[type_index])
             }
-            (item, _) => canonicalize_declared_type(item),
+            (item, _) => canonicalize_type_expression(item),
           };
           next_field[type_index] = next;
           changed += count;
@@ -5050,10 +5033,11 @@ fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   (unquoted, legacy + count)
 }
 
-/// Drop the quote from the member types of `defstruct`, `defenum` and
-/// `defunion` (#2516): `'Number` becomes `Number`, `quote $ List Number`
-/// becomes `List Number`, and generic parameters `[] 'T` and bounds
-/// `{} $ 'T Debug` lose their quotes. Struct field defaults stay as written.
+/// Drop the quote from the type names in `defstruct`, `defenum` and
+/// `defunion` (#2516): `'Number` and `quote Number` become `Number`, and
+/// generic parameters `[] 'T` and bounds `{} $ 'T Debug` lose their quotes.
+/// Compound types such as `quote $ List Number` keep their quote, and struct
+/// field defaults stay as written.
 pub fn unquote_declaration_types(node: &Cirru) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
@@ -5158,8 +5142,8 @@ fn unquote_member_slot(kind: &str, slot: &Cirru, first_slot: bool) -> (Cirru, us
   (slot.clone(), 0)
 }
 
-/// `'Number` → `Number` and `quote $ List Number` → `List Number`; `None` for
-/// forms that are already bare or have no bare spelling.
+/// `'Number` → `Number`; `None` for forms that are already bare and for
+/// compound types, which keep their quote for now.
 fn unquote_declared_type(node: &Cirru) -> Option<Cirru> {
   match node {
     Cirru::Leaf(value) => {
@@ -5170,7 +5154,6 @@ fn unquote_declared_type(node: &Cirru) -> Option<Cirru> {
       [Cirru::Leaf(head), Cirru::Leaf(name)] if head.as_ref() == "quote" && !name.starts_with(['\'', ':']) => {
         Some(Cirru::Leaf(name.clone()))
       }
-      [Cirru::Leaf(head), payload] if head.as_ref() == "quote" && is_bare_compact_type(payload) => Some(payload.clone()),
       _ => None,
     },
   }
@@ -5196,8 +5179,10 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
         changed += count;
       }
       entry.examples = rewritten_examples;
+      // Tests keep the quoted spelling as written: they exercise the old
+      // syntax that 0.34.x still accepts.
       for test in entry.tests.iter_mut() {
-        let (code, count) = format_code_type_syntax(&test.code);
+        let (code, count) = migrate_code_type_syntax(&test.code);
         test.code = code;
         changed += count;
       }
@@ -6352,6 +6337,33 @@ mod tests {
   }
 
   #[test]
+  fn format_unquotes_declared_type_names_but_keeps_compound_quotes() {
+    let cases = [
+      (
+        "defstruct Box ([] 'T) ({} $ 'T Debug) (:value 'T) (:count 'Number 0) (:items $ quote $ List Number)",
+        "defstruct Box ([] T) ({} $ T Debug) (:value T) (:count Number 0) (:items $ quote $ List Number)",
+      ),
+      (
+        "defenum Shape (:circle 'Number) (:poly $ quote $ List Number) (:none)",
+        "defenum Shape (:circle Number) (:poly $ quote $ List Number) (:none)",
+      ),
+      (
+        "defunion Cells 'String (quote Number) (quote $ List Number)",
+        "defunion Cells String Number (quote $ List Number)",
+      ),
+    ];
+    for (source, expected) in cases {
+      let (formatted, count) = unquote_declaration_types(&parse_one(source));
+      assert_eq!(formatted, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+    }
+    let compound_only = parse_one("defstruct Box $ :items $ quote $ List Number");
+    let (formatted, count) = unquote_declaration_types(&compound_only);
+    assert_eq!(count, 0);
+    assert_eq!(formatted, compound_only, "compound types keep their quote");
+  }
+
+  #[test]
   fn format_migrates_canonical_type_positions_to_compact_quotes() {
     let cases = [
       ("assert-type xs $ :: 'List 'Number", "assert-type xs $ quote $ List Number"),
@@ -7236,7 +7248,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 51,
+      macro_count, 54,
       "update the audited bundled macro inventory when core macros change"
     );
   }

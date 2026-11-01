@@ -3901,9 +3901,9 @@
         'Data $ %{} 'CodeEntry
           :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
           :code $ quote $ defenum Data (:nil) (:bool Bool) (:number Number) (:string String) (:tag Tag) (:symbol Symbol)
-            :list $ List Dynamic
-            :map $ Map Dynamic Dynamic
-            :set $ Set Dynamic
+            :list $ quote $ List Dynamic
+            :map $ quote $ Map Dynamic Dynamic
+            :set $ quote $ Set Dynamic
             :fn Dynamic
             :enum Dynamic
             :struct Dynamic
@@ -4021,7 +4021,7 @@
         'ListDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-list: none, or a head element with the remaining list."
           :code $ quote $ defenum ListDestruct ([] T)
-            :some T $ List T
+            :some T $ quote $ List T
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4029,7 +4029,7 @@
         'MapDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-map: none, or a key, value, and remaining map."
           :code $ quote $ defenum MapDestruct ([] K V)
-            :some K V $ Map K V
+            :some K V $ quote $ Map K V
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4224,9 +4224,9 @@
           :schema $ quote Struct
         'RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct RuntimeMapResponse (:code Number)
-            :message $ Option String
+            :message $ quote $ Option String
             :body Dynamic
-            :meta $ Option RuntimeMapMeta
+            :meta $ quote $ Option RuntimeMapMeta
           :examples $ []
           :schema $ quote Struct
           :tags $ #{} :data :internal
@@ -4239,7 +4239,7 @@
         'SetDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-set: none, or an element with the remaining set."
           :code $ quote $ defenum SetDestruct ([] T)
-            :some T $ Set T
+            :some T $ quote $ Set T
             :none
           :examples $ []
           :schema $ quote Enum
@@ -6052,20 +6052,10 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> Bool)
         'data-definition-type-form $ %{} 'CodeEntry
-          :doc "|Read one declared type of defstruct, defenum or defunion as type syntax. A bare symbol is a type name and a list headed by a type name is a compact type such as `(List Number)`; both are quoted so the macro never evaluates them. Other forms, such as `'Number` or `quote $ List Number`, pass through unchanged."
+          :doc "|Read one declared type of defstruct, defenum or defunion. A bare symbol is a type name and is quoted so the macro never evaluates it. Other forms, such as `'Number` or a compound type written `quote $ List Number`, pass through unchanged."
           :code $ quote $ defmacro data-definition-type-form (form)
             quasiquote $ &let (%type-form ~form)
-              if (symbol? %type-form) ([] 'quote %type-form)
-                if
-                  and (list? %type-form)
-                    not $ empty? %type-form
-                    symbol? $ &list:nth %type-form 0
-                    not $ includes? ([] ':: '{} '[] '#{} '%{} 'quote 'quasiquote) (&list:nth %type-form 0)
-                    &let
-                      %head $ str $ &list:nth %type-form 0
-                      not $ or (starts-with? %head |:) (starts-with? %head |&)
-                  [] 'quote %type-form
-                  , %type-form
+              if (symbol? %type-form) ([] 'quote %type-form) %type-form
           :examples $ []
           :schema $ quote $ Macro Syntax
             -> $ Expr Dynamic
@@ -6541,7 +6531,8 @@
                                     variant-tag $ &list:nth items 0
                                     &let
                                       payload-forms $ &list:map
-                                        &list:map (&list:rest items) $ fn (t) (data-definition-type-form t)
+                                        &list:map (&list:rest items)
+                                          fn (t) (data-definition-type-form t)
                                         fn (t)
                                           if (list? t)
                                             quasiquote $ quote $ ~ t
@@ -6573,8 +6564,14 @@
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |reads-payload-types-as-type-syntax)
             :code $ quote $ let
-                bare $ defenum Shape ([] T) (:circle Number) (:poly (List Number)) (:tagged T String) (:none)
-                quoted $ defenum Shape ([] 'T) (:circle 'Number) (:poly (quote $ List Number)) (:tagged 'T 'String) (:none)
+                bare $ defenum Shape ([] T) (:circle Number)
+                  :poly $ quote $ List Number
+                  :tagged T String
+                  :none
+                quoted $ defenum Shape ([] 'T) (:circle 'Number)
+                  :poly $ quote $ List Number
+                  :tagged 'T 'String
+                  :none
               assert= quoted bare
               assert= 2 $ match (bare :circle 2)
                 (:circle r) r
@@ -6785,8 +6782,8 @@
                     {} $ T Debug
                     :value T
                     :count Number 0
-                    :items $ List Item
-                    :table $ Map String (List Number)
+                    :items $ quote $ List Item
+                    :table $ quote $ Map String (List Number)
                   quoted $ defstruct Box ([] 'T)
                     {} $ 'T Debug
                     :value 'T
@@ -6890,8 +6887,8 @@
           :tags $ #{} :macro :type
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
-                bare $ defunion Cell String (List Number)
-                quoted $ defunion Cell 'String (quote $ List Number)
+                bare $ defunion Cell String $ quote (List Number)
+                quoted $ defunion Cell 'String $ quote (List Number)
               assert= quoted bare
             :tags $ #{} :core :unit
         'deref $ %{} 'CodeEntry

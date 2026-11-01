@@ -25,19 +25,19 @@
           :schema $ quote StructDef
         'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackEnvelope ([] T)
-            :holder $ test-types-inference.main/CallbackHolder T
+            :holder $ quote $ test-types-inference.main/CallbackHolder T
           :examples $ []
           :schema $ quote StructDef
         'CallbackHolder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackHolder ([] T)
-            :callback $ Fn
+            :callback $ quote $ Fn
               Fn T $ -> Number
               -> Number
           :examples $ []
           :schema $ quote StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EmptyFieldBox ([] T S)
-            :items $ List T
+            :items $ quote $ List T
             :seed S
           :examples $ []
           :schema $ quote StructDef
@@ -47,9 +47,9 @@
           :schema $ quote StructDef
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
-            :number $ Option Number
-            :text $ Option String
-            :result $ Result Number String
+            :number $ quote $ Option Number
+            :text $ quote $ Option String
+            :result $ quote $ Result Number String
           :examples $ []
           :schema $ quote StructDef
         'Outcome $ %{} 'CodeEntry (:doc |)
@@ -69,7 +69,7 @@
           :schema $ quote EnumDef
         'SliceReceiver $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct SliceReceiver (:n Number)
-            :end $ Option Number
+            :end $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
@@ -1985,8 +1985,8 @@
             :tags $ #{} :unit
         'ShadowFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ShadowFields
-            :option $ test-types-inference.shadow/Option Number
-            :other-option $ test-types-inference.shadow/Option Number
+            :option $ quote $ test-types-inference.shadow/Option Number
+            :other-option $ quote $ test-types-inference.shadow/Option Number
             :result test-types-inference.shadow/Result
             :other-result test-types-inference.shadow/Result
           :examples $ []

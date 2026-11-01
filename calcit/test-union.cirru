@@ -11,8 +11,9 @@
     %{} 'FileEntry
       :defs $ {}
         'Cells $ %{} 'CodeEntry
-          :doc "|A member written as a compound type, read without quote."
-          :code $ quote $ defunion Cells String (List Number)
+          :doc "|A member written as a compound type, which keeps its quote."
+          :code $ quote $ defunion Cells String
+            quote $ List Number
           :examples $ []
           :schema $ quote UnionDef
         'CssValue $ %{} 'CodeEntry (:doc "|A style value: text or a number of pixels.")

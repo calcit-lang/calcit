@@ -577,7 +577,7 @@ defn request (url trace-id timeout-ms)
 request |/health
 request |/health (Option :some |trace-1)
 
-defstruct Profile (:name String) (:bio (Option String))
+defstruct Profile (:name String) (:bio (quote (Option String)))
 Profile :name |Ada
 ```
 

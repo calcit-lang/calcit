@@ -12,7 +12,7 @@
       :defs $ {}
         'EdnEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EdnEnvelope (:request-id String)
-            :note $ Option String
+            :note $ quote $ Option String
             :outcome EdnOutcome
           :examples $ []
           :schema $ quote StructDef
@@ -22,7 +22,7 @@
           :schema $ quote StructDef
         'EdnOutcome $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum EdnOutcome
-            :ready $ List Int32
+            :ready $ quote $ List Int32
             :failed String
             :idle
           :examples $ []

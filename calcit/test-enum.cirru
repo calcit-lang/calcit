@@ -362,7 +362,7 @@
       :defs $ {}
         'ContentNode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum ContentNode (:text String) (:pair ContentNode ContentNode)
-            :list $ List ContentNode
+            :list $ quote $ List ContentNode
           :examples $ []
           :schema $ quote EnumDef
         'Envelope $ %{} 'CodeEntry (:doc |)

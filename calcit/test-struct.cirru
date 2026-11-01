@@ -53,13 +53,15 @@
           :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox ([] T) (:value T)
-            :count $ Option Number
+            :count $ quote $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'DefaultFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DefaultFields (:host String) (:port Number 8080) (:label String |guest) (:mode Tag :read) (:secure? Bool false)
-            :tags (List String) ([])
-            :proxy $ Option String
+            :tags
+              quote $ List String
+              []
+            :proxy $ quote $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |omitted-fields-take-declared-defaults)
@@ -72,14 +74,18 @@
             :tags $ #{} :struct-defaults :unit
         'DefaultOnly $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DefaultOnly (:size Number 12)
-            :hint $ Option String
+            :hint $ quote $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |local-definition-fills-empty-container-defaults)
             :code $ quote $ let
                 Local $ defstruct Local
-                  :items (List String) ([])
-                  :table (Map Tag Number) ({})
+                  :items
+                    quote $ List String
+                    []
+                  :table
+                    quote $ Map Tag Number
+                    {}
                   :marks Set $ #{}
                 value $ Local
               assert= ([]) (:items value)
@@ -161,10 +167,10 @@
               :tags $ #{} :collection-proof
         'NullableLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableLiteralStore
-            :items $ List $ JsNullish Number
-            :unique $ Set $ JsNullish Number
-            :nested $ Map Tag $ List
-              Map Tag $ JsNullish Number
+            :items $ quote $ List (JsNullish Number)
+            :unique $ quote $ Set (JsNullish Number)
+            :nested $ quote $ Map Tag
+              List $ Map Tag $ JsNullish Number
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |nested-literal-members)
@@ -180,8 +186,9 @@
             :tags $ #{} :collection-proof
         'NullableNumberStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableNumberStore
-            :values $ Map Tag $ JsNullish Number
-            :nested $ List $ Map Tag (JsNullish Number)
+            :values $ quote $ Map Tag (JsNullish Number)
+            :nested $ quote $ List
+              Map Tag $ JsNullish Number
           :examples $ []
           :schema $ quote StructDef
           :tests $ []
@@ -214,8 +221,8 @@
               :tags $ #{} :collection-proof
         'OptionFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionFields
-            :count $ Option Number
-            :label $ Option String
+            :count $ quote $ Option Number
+            :label $ quote $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)

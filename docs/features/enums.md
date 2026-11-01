@@ -34,7 +34,7 @@ let
 
 Variants with payloads:
 
-payload 类型按类型语法读取，与 `defstruct` 字段相同：`Number`、`Point` 等裸符号是类型名，`(List Number)` 这类列表是带参数的类型，都不写 quote。旧写法 `'Number`、`quote $ List Number` 仍然可用，`calcit edit format` 会去掉 quote。
+payload 的类型名与 `defstruct` 字段相同，直接写 `Number`、`Point` 这样的裸符号；带参数的复合类型目前仍写 quote，如 `quote $ List Number`。旧写法 `'Number` 仍然可用，`calcit edit format` 会改为 `Number`。
 
 ```cirru
 let
@@ -61,7 +61,7 @@ let
 
 ## Generic Enums
 
-`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type as `quote $ TypeName …` in schemas and assertions.
+`defenum` 可以在类型名后接泛型参数列表。泛型参数直接写名字（`[] T E`），旧写法 `[] 'T 'E` 在 0.34.x 仍可使用，`calcit edit format` 会去掉 quote。在 schema、断言和复合 payload 里用 `quote $ TypeName …` 套用具体类型。
 
 ```cirru
 let
@@ -119,7 +119,7 @@ Applied generic structs also work in enum payloads:
 let
     Box $ defstruct Box ([] T) (:value T)
     Wrapped $ defenum Wrapped ([] T)
-      :box $ Box T
+      :box $ quote $ Box T
       :empty
     value $ Wrapped :box $ %{} Box (:value 1)
   assert-type value $ quote $ Wrapped Number
@@ -360,7 +360,7 @@ defenum Shape (:point :number :number) (:circle :number)
 defstruct Box ([] T) (:value T)
 
 defenum Wrapped ([] T)
-  :box $ Box T
+  :box $ quote $ Box T
   :empty
 
 ; (:none) means no payload

@@ -32,7 +32,7 @@
           :schema $ quote StructDef
         'Response $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Response (:code Number)
-            :message $ Option String
+            :message $ quote $ Option String
             :body Dynamic
           :examples $ []
           :schema $ quote StructDef

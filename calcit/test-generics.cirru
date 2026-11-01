@@ -16,7 +16,7 @@
           :schema $ quote StructDef
         'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
           :code $ quote $ defstruct Holder ([] T)
-            :box $ Box T
+            :box $ quote $ Box T
           :examples $ []
           :schema $ quote StructDef
         'Node $ %{} 'CodeEntry (:doc |)
