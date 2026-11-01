@@ -3388,6 +3388,284 @@ fn collect_snapshot_legacy_optional_hits(files: &HashMap<String, FileInSnapShot>
   hits
 }
 
+/// Advisory code for a bare `Enum`, `Struct`, `Trait` or `Fn` in a type
+/// position. The broad family accepts any member and drops its nominal
+/// identity or signature, so whatever is read from the value is `Dynamic`.
+pub const BROAD_TYPE_WARNING: &str = "W_BROAD_TYPE";
+
+/// A bare broad type written in a definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BroadTypeHit {
+  pub ns: String,
+  pub def: String,
+  /// Empty for the definition code; otherwise `:schema`, `example` or `test \`name\``.
+  pub place: String,
+  /// Path of the type inside the code, example or test; empty for `:schema`.
+  pub coord: Vec<u16>,
+  pub family: &'static str,
+  /// Set when the root `:schema` of a `defstruct`/`defenum` names a value
+  /// family although the definition value is a definition.
+  pub definition_kind: Option<&'static str>,
+}
+
+impl BroadTypeHit {
+  pub fn message(&self) -> String {
+    let place = if self.place.is_empty() {
+      String::new()
+    } else {
+      format!(" in {}", self.place)
+    };
+    let advice = match (self.definition_kind, self.family) {
+      (Some(kind), family) => {
+        return format!(
+          "[Warn] the `:schema` of this definition is bare `{family}`, but its value is a `{kind}`; write `{kind}` instead"
+        );
+      }
+      (None, "Enum") => {
+        "accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`"
+      }
+      (None, "Struct") => {
+        "accepts any struct and drops its fields, so they read back as Dynamic; name the concrete struct, such as `app.schema/User`"
+      }
+      (None, "Trait") => "accepts any trait definition; name the concrete trait",
+      _ => "drops the signature, so arguments and results are Dynamic; write it, such as `Fn Number (-> String)`",
+    };
+    format!(
+      "[Warn] bare `{}`{place} {advice}. Write `Dynamic` only where the boundary is intentionally open.",
+      self.family
+    )
+  }
+}
+
+/// The broad family a type leaf names: `'Enum`, `Enum`, `:enum` and the
+/// legacy `'tuple` / `'Record` spellings.
+fn broad_type_family(leaf: &str) -> Option<&'static str> {
+  let name = leaf.strip_prefix('\'').unwrap_or(leaf);
+  let family = CalcitTypeAnnotation::canonical_type_symbol_name(name)?;
+  if !matches!(family, "Enum" | "Struct" | "Trait" | "Fn") {
+    return None;
+  }
+  // An unquoted lowercase leaf such as `fn` is an ordinary symbol.
+  (leaf.starts_with(['\'', ':']) || family == name).then_some(family)
+}
+
+fn collect_broad_types_in_type(node: &Cirru, coord: &mut Vec<u16>, out: &mut Vec<(Vec<u16>, &'static str)>) {
+  let Cirru::List(items) = node else {
+    if let Cirru::Leaf(leaf) = node
+      && let Some(family) = broad_type_family(leaf)
+    {
+      out.push((coord.clone(), family));
+    }
+    return;
+  };
+  let visit = |index: usize, node: &Cirru, coord: &mut Vec<u16>, out: &mut Vec<(Vec<u16>, &'static str)>| {
+    coord.push(index as u16);
+    collect_broad_types_in_type(node, coord, out);
+    coord.pop();
+  };
+  // `{}` schema maps keep types in entry values; `:kind :fn` names the schema kind.
+  if is_cirru_leaf(items.first(), "{}") {
+    for (index, entry) in items.iter().enumerate().skip(1) {
+      match entry {
+        Cirru::List(pair) if is_tag_leaf(pair.first()) => {
+          if is_cirru_leaf(pair.first(), ":kind") {
+            continue;
+          }
+          coord.push(index as u16);
+          for (value_index, value) in pair.iter().enumerate().skip(1) {
+            visit(value_index, value, coord, out);
+          }
+          coord.pop();
+        }
+        other => visit(index, other, coord, out),
+      }
+    }
+    return;
+  }
+  for (index, item) in items.iter().enumerate() {
+    // A head that takes arguments, such as `Fn` in `Fn Number (-> String)`
+    // or `'Fn` in `:: 'Fn $ {} …`, is not bare.
+    let applied = (index == 0 && items.len() > 1) || (index == 1 && is_cirru_leaf(items.first(), "::") && items.len() > 2);
+    if applied && matches!(item, Cirru::Leaf(_)) {
+      continue;
+    }
+    visit(index, item, coord, out);
+  }
+}
+
+/// Type slots of one code form, as paths relative to the form.
+fn code_type_slots(items: &[Cirru]) -> Vec<Vec<u16>> {
+  let head = match items.first() {
+    Some(Cirru::Leaf(value)) => Some(value.as_ref()),
+    _ => None,
+  };
+  let member_types = |first_only: bool| {
+    // Types of one `:name T …` / `.method T` member; a struct field holds one
+    // type followed by an optional default value.
+    let member = |path: Vec<u16>, entry: &[Cirru], slots: &mut Vec<Vec<u16>>| {
+      let last = if first_only { 2.min(entry.len()) } else { entry.len() };
+      for type_index in 1..last {
+        let mut slot = path.clone();
+        slot.push(type_index as u16);
+        slots.push(slot);
+      }
+    };
+    let mut slots = vec![];
+    for (index, item) in items.iter().enumerate().skip(2) {
+      let Cirru::List(entry) = item else { continue };
+      match entry.first() {
+        // `deftrait` members may be written as `[] name type`.
+        Some(Cirru::Leaf(bracket)) if bracket.as_ref() == "[]" && entry.len() == 3 => slots.push(vec![index as u16, 2]),
+        Some(Cirru::Leaf(key)) if key.starts_with([':', '.']) => member(vec![index as u16], entry, &mut slots),
+        // Members may also be wrapped in one `{}` form: `defstruct Mode $ {} (:kind 'Enum) …`.
+        Some(Cirru::Leaf(brace)) if brace.as_ref() == "{}" => {
+          for (inner_index, inner) in entry.iter().enumerate().skip(1) {
+            if let Cirru::List(field) = inner
+              && is_tag_leaf(field.first())
+            {
+              member(vec![index as u16, inner_index as u16], field, &mut slots);
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    slots
+  };
+  match head {
+    Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => vec![vec![2]],
+    _ if is_decoder_type_head(head) && items.len() == 3 => vec![vec![2]],
+    Some("hint-fn") => (1..items.len()).map(|index| vec![index as u16]).collect(),
+    Some("defstruct" | "defrecord") => member_types(true),
+    Some("defenum" | "deftrait") => member_types(false),
+    Some("fn" | "defn" | "defmacro" | "defcomp" | "defeffect") => {
+      let type_index = if head == Some("fn") { 2 } else { 3 };
+      // A lone form after the parameters is the body's value, not a return label.
+      match items.get(type_index) {
+        Some(Cirru::Leaf(leaf)) if items.len() > type_index + 1 && leaf.starts_with(['\'', ':']) => vec![vec![type_index as u16]],
+        Some(Cirru::List(inner)) if items.len() > type_index + 1 && is_cirru_leaf(inner.first(), "::") => {
+          vec![vec![type_index as u16]]
+        }
+        _ => vec![],
+      }
+    }
+    _ => vec![],
+  }
+}
+
+fn collect_broad_types_in_code(node: &Cirru, coord: &mut Vec<u16>, out: &mut Vec<(Vec<u16>, &'static str)>) {
+  let Cirru::List(items) = node else { return };
+  // Quoted data is not code.
+  if is_cirru_leaf(items.first(), "quote") {
+    return;
+  }
+  for slot in code_type_slots(items) {
+    let mut target = node;
+    for index in &slot {
+      match target {
+        Cirru::List(xs) => target = &xs[*index as usize],
+        Cirru::Leaf(_) => unreachable!("type slots point into lists"),
+      }
+    }
+    let depth = coord.len();
+    coord.extend(&slot);
+    collect_broad_types_in_type(target, coord, out);
+    coord.truncate(depth);
+  }
+  for (index, item) in items.iter().enumerate() {
+    coord.push(index as u16);
+    collect_broad_types_in_code(item, coord, out);
+    coord.pop();
+  }
+}
+
+/// The value family that a definition schema's root names, if it is bare.
+fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match annotation {
+    CalcitTypeAnnotation::AnonymousEnum => Some("Enum"),
+    CalcitTypeAnnotation::DynFn => Some("Fn"),
+    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+      Calcit::Tag(tag) => match tag.ref_str() {
+        "struct" | "record" => Some("Struct"),
+        "trait" => Some("Trait"),
+        _ => None,
+      },
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Bare broad types in the given namespaces: definition code, examples and
+/// tests, and `:schema`. A `deftrait` keeps `Trait` as its definition kind.
+pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<BroadTypeHit> {
+  let mut hits = vec![];
+  // Core procs that work on any enum or struct keep their broad signatures.
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let entry = &file.defs[def];
+      let mut push = |place: String, coord: Vec<u16>, family: &'static str, definition_kind: Option<&'static str>| {
+        hits.push(BroadTypeHit {
+          ns: ns.to_owned(),
+          def: def.to_owned(),
+          place,
+          coord,
+          family,
+          definition_kind,
+        })
+      };
+      let codes = std::iter::once((String::new(), &entry.code))
+        .chain(entry.examples.iter().map(|example| ("example".to_owned(), example)))
+        .chain(entry.tests.iter().map(|test| (format!("test `{}`", test.name), &test.code)));
+      for (place, code) in codes {
+        let mut found = vec![];
+        collect_broad_types_in_code(code, &mut vec![], &mut found);
+        for (coord, family) in found {
+          push(place.clone(), coord, family, None);
+        }
+      }
+
+      let definition_kind = match &entry.code {
+        Cirru::List(items) => match items.first() {
+          Some(Cirru::Leaf(head)) => match head.as_ref() {
+            "defstruct" | "defrecord" => Some("StructDef"),
+            "defenum" => Some("EnumDef"),
+            "deftrait" | "defexternal" => Some("Trait"),
+            "defimpl" => Some("Impl"),
+            _ => None,
+          },
+          _ => None,
+        },
+        _ => None,
+      };
+      let root = entry.schema.as_ref();
+      let found = std::cell::RefCell::new(vec![]);
+      root.any_component(|annotation| {
+        if let Some(family) = broad_annotation_family(annotation) {
+          found.borrow_mut().push((std::ptr::eq(annotation, root), family));
+        }
+        false
+      });
+      for (is_root, family) in found.into_inner() {
+        match (is_root, definition_kind) {
+          (true, Some("Trait")) if family == "Trait" => {}
+          (true, Some(kind)) => push(":schema".to_owned(), vec![], family, Some(kind)),
+          _ => push(":schema".to_owned(), vec![], family, None),
+        }
+      }
+    }
+  }
+  hits
+}
+
 fn legacy_optional_type_error(hits: &[String], path: &str) -> Result<(), String> {
   if hits.is_empty() {
     return Ok(());
@@ -5950,6 +6228,99 @@ mod tests {
       let node = parse_one(source);
       assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
     }
+  }
+
+  #[test]
+  fn broad_types_are_reported_with_their_place() {
+    let hits_for = |schema: &str, code: &str| {
+      let snapshot =
+        load_snapshot_data(&mini_snapshot_with_def(schema, code), "mini.cirru").unwrap_or_else(|err| panic!("{schema} {code}: {err}"));
+      collect_broad_type_hits(&snapshot, &HashSet::from(["mini".to_owned()]))
+        .into_iter()
+        .map(|hit| (hit.place, hit.coord, hit.family, hit.definition_kind))
+        .collect::<Vec<_>>()
+    };
+    type Expected<'a> = Vec<(&'a str, Vec<u16>, &'a str, Option<&'a str>)>;
+    let cases: [(&str, &str, Expected); 9] = [
+      (
+        "$ quote $ Fn Enum (-> String)",
+        "(defn main! (x) (str x))",
+        vec![(":schema", vec![], "Enum", None)],
+      ),
+      (
+        "nil",
+        "(defn main! (x) (assert-type x 'Struct) x)",
+        vec![("", vec![3, 2], "Struct", None)],
+      ),
+      // The head of `Fn Fn (-> Unit)` takes arguments; its first argument is bare.
+      (
+        "nil",
+        "(defn main! (f) (hint-fn $ Fn Fn (-> Unit)) (f))",
+        vec![("", vec![3, 1, 1], "Fn", None)],
+      ),
+      (
+        "nil",
+        "(defenum main! (:ok 'Enum) (:done $ :: Fn Number (-> Unit)))",
+        vec![("", vec![2, 1], "Enum", None)],
+      ),
+      (
+        "nil",
+        "(defn main! (xs) (assert-type xs $ quote $ List $ Map Tag Trait) xs)",
+        vec![("", vec![3, 2, 1, 1, 2], "Trait", None)],
+      ),
+      // Members wrapped in one `{}` form; the struct default `:enum` is a value.
+      (
+        "nil",
+        "(defstruct main! $ {} (:kind 'Enum :enum) (:size 'Number))",
+        vec![("", vec![2, 1, 1], "Enum", None)],
+      ),
+      (
+        "nil",
+        "(defenum main! $ {} (:ok 'Struct))",
+        vec![("", vec![2, 1, 1], "Struct", None)],
+      ),
+      // A `deftrait` keeps `Trait` as its definition kind.
+      ("$ quote Trait", "(deftrait main! (.run $ :: Fn main! (-> Unit)))", vec![]),
+      (
+        "$ quote Enum",
+        "(defstruct main! (:name 'String))",
+        vec![(":schema", vec![], "Enum", Some("StructDef"))],
+      ),
+    ];
+    for (schema, code, expected) in cases {
+      let expected = expected
+        .into_iter()
+        .map(|(place, coord, family, kind)| (place.to_owned(), coord, family, kind))
+        .collect::<Vec<_>>();
+      assert_eq!(hits_for(schema, code), expected, "{schema} {code}");
+    }
+    // Concrete and signed types, quoted data and struct default values are not bare.
+    for code in [
+      "(defn main! (x) (assert-type x $ quote $ List Number) (hint-fn $ Fn Number (-> String)) x)",
+      "(defn main! () (quote $ assert-type x 'Enum))",
+      "(defstruct main! (:kind 'Tag :enum) (:on-change $ :: Fn String (-> Unit)))",
+      "(defn main! (raw) (decode-map-as raw $ quote $ List mini/Item))",
+    ] {
+      assert_eq!(hits_for("nil", code), vec![], "{code}");
+    }
+    // Core procs such as `&enum:assoc` keep their broad signatures even when core is checked as a project.
+    let core_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cirru/calcit-core.cirru");
+    let core_text = std::fs::read_to_string(&core_path).expect("read calcit-core.cirru");
+    let core = load_snapshot_data(&cirru_edn::parse(&core_text).expect("parse core"), "calcit-core.cirru").expect("load core");
+    assert_eq!(
+      collect_broad_type_hits(&core, &HashSet::from([crate::calcit::CORE_NS.to_owned()])),
+      vec![]
+    );
+    let message = BroadTypeHit {
+      ns: "mini".to_owned(),
+      def: "main!".to_owned(),
+      place: String::new(),
+      coord: vec![],
+      family: "Enum",
+      definition_kind: None,
+    }
+    .message();
+    assert!(message.contains("bare `Enum`") && message.contains("Option Number"), "{message}");
   }
 
   fn mini_snapshot_with_def(schema: &str, code: &str) -> Edn {

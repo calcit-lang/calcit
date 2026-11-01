@@ -246,6 +246,39 @@ calcit analyze weak-types --only coverage --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
+## 用具体类型代替裸 `Enum` / `Struct` / `Trait` / `Fn`
+
+类型位置里的裸 `Enum`、`Struct` 接受任意 enum / struct，但丢掉了具体定义：读出的载荷和字段都是 Dynamic，
+传给需要具体类型的函数时还要额外的边界证明。裸 `Trait` 接受任意 trait 定义，裸 `Fn` 丢掉参数和返回类型。
+写出具体定义：
+
+```cirru.no-check
+; 处理应用自己的操作 enum，而不是任意 enum
+hint-fn $ Fn app.schema/Op (-> Unit)
+; 泛型容器的类型参数同样写具体类型
+assert-type store $ quote $ reel.typed/State app.schema/Op app.schema/Store
+; 回调写出签名
+defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
+```
+
+库需要把调用方的具体类型原样传回时（如 `reel.typed/State` 的操作类型参数），用 `:generics` 类型变量。类型变量不限定为 enum，可以绑定任意类型，所以它不等价于 `Enum`；只对任意 enum 做底层操作的少数位置会继续得到提示。
+
+检查时这些写法报告非阻塞的 `W_BROAD_TYPE` 提示，范围是项目自身的定义代码、examples、tests 和 `:schema`：
+`assert-type`、`unsafe-coerce`、`hint-fn`、解码目标、函数返回标注、`defstruct` 字段、`defenum` 载荷和 `deftrait` 成员。
+
+```text
+[W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `Dynamic` only where the boundary is intentionally open. @app.main/on-op @3.1.1
+```
+
+定义级 `:schema` 写的是定义值自身的种类：`defstruct` 为 `StructDef`，`defenum` 为 `EnumDef`，`deftrait` 为 `Trait`。
+`deftrait` 的 `Trait` 不提示；`defstruct` / `defenum` 的 `:schema` 写成 `Enum` 或 `Struct` 时，提示改为对应的种类。
+
+### 限制
+
+- 提示不会让严格检查失败，`edit format` 也不改写：具体类型只有作者知道。
+- `calcit.core` 内部对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不提示。
+- 还没有“任意 enum”这类约束的具体写法，确实只接受任意 enum / struct 的项目代码，提示目前只能保留。
+
 ## 定长元组 `Tuple`
 
 `Tuple` 描述长度固定、每个位置类型各自固定的 List，例如二维点 `Tuple Number Number`、属性对 `Tuple Tag String`。运行时它仍是普通 List，native、JS 和 WASM 的表示不变；元组只存在于类型检查中。

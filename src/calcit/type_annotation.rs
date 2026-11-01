@@ -4565,7 +4565,7 @@ impl CalcitTypeAnnotation {
   }
 
   /// Check whether any nested component (including `self`) satisfies `predicate`.
-  fn any_component(&self, predicate: impl Fn(&Self) -> bool) -> bool {
+  pub(crate) fn any_component(&self, predicate: impl Fn(&Self) -> bool) -> bool {
     let mut pending = vec![self];
     while let Some(annotation) = pending.pop() {
       if predicate(annotation) {
