@@ -1657,10 +1657,14 @@ fn collection_literal_matches(
       Calcit::Proc(CalcitProc::NativeMap) => UnionMemberKind::Map,
       _ => return None,
     };
-    union.checked_members().ok()?.into_iter().find(|member| member.kind == kind)
+    let member = union.checked_members().ok()?.into_iter().find(|member| member.kind == kind)?;
+    Some(match union.definition_ref().and_then(|reference| reference.rsplit_once('/')) {
+      Some((namespace, _)) => super::resolve_namespace_type_refs_for_body(member.annotation, namespace),
+      None => member.annotation,
+    })
   });
   if let Some(member) = &union_member {
-    expected = member.annotation.as_ref();
+    expected = member.as_ref();
   }
   match (items.first(), expected) {
     (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))

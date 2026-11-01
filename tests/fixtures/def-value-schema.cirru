@@ -810,7 +810,7 @@
             :tags $ #{} :collection-value-contract
         'Sequence $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Sequence String
-            quote $ List app.collection-value/Scalar
+            quote $ List Scalar
           :examples $ []
           :schema $ quote UnionDef
         'members $ %{} 'CodeEntry (:doc |)

@@ -8,4 +8,8 @@ Respo UI 的 0.34.0 迁移将 31 个静态样式常量声明为 `Map Tag StyleVa
 
 合法混合 Map/List/Set 和嵌套值放在原 fixture 的 definition tests，通过共享 native/JS runner 回放。拒绝程序无法执行附带测试，留在原 strict CLI 测试，覆盖普通入口、公开 namespace 与 JS 生成前拒绝，以及开放成员仍保留、其他已知矛盾仍拒绝。真实 UI 候选和 width=false 控制使用同一未发布编译器验证，正式发布验收仍单独完成。
 
-评审补齐期望类型自身为 union 的情况：复用 checked_members 的唯一运行时种类选择集合成员，List/Tuple 同属 List 种类，再用同一逐项访问检查其合同。新增 List/Tuple union 的合法附带语义及拒绝回归，保留开放成员策略，不把容器 union 的整体开放推导当作成员均合法。
+本次评审补充覆盖了期望类型自身为 union 的情况：复用 checked_members 的唯一运行时种类选择集合成员，List/Tuple 同属 List 种类，再用同一逐项访问检查其合同。新增 List/Tuple union 的合法附带语义及拒绝回归，保留开放成员策略，不把容器 union 的整体开放推导当作成员均合法。
+
+补充核实短名称成员：将 `Sequence` 中的 `(List app.collection-value/Scalar)` 改为用户自然书写的 `(List Scalar)` 后，原候选错误拒绝合法混合 List。现在复用既有 namespace 类型引用解析，在 union 声明 namespace 解析成员，保留原受检关系。共享附带测试覆盖合法短名称，原拒绝/开放证据回归沿用同一 fixture。
+
+Resolve nested member references in the declaring union namespace using the existing resolver. The short-name fixture reproduces the earlier false rejection; valid attached tests and invalid/open CLI controls share that fixture.

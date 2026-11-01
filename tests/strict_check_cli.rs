@@ -610,6 +610,7 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     ("values", "quote $ def values $ [] 12 false :block", false),
     ("members", "quote $ def members $ #{} 12 false :block", false),
     ("nested", "quote $ def nested $ {} (:items $ [] 12 false :block)", false),
+    ("sequence-value", "quote $ def sequence-value $ [] 12 |ready :block", true),
     ("sequence-value", "quote $ def sequence-value $ [] open-value :block", true),
     ("sequence-value", "quote $ def sequence-value $ [] open-value false", false),
     ("sequence-value", "quote $ def sequence-value $ [] 12 false :block", false),
