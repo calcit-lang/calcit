@@ -23,7 +23,7 @@ fn emit_ir(emit_path: &Path, extra: &[&str]) -> Edn {
   cirru_edn::parse(&fs::read_to_string(emit_path.join("program-ir.cirru")).expect("IR artifact")).expect("IR should be valid Cirru EDN")
 }
 
-fn member<'a>(value: &'a Edn, key: Edn) -> &'a Edn {
+fn member(value: &Edn, key: Edn) -> &Edn {
   let Edn::Map(map) = value else { panic!("expected a map: {value}") };
   map.get(&key).unwrap_or_else(|| panic!("missing {key}: {value}"))
 }

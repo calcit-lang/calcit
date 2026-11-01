@@ -5391,6 +5391,19 @@
             &= (type-of x) :cirru-quote
           :examples $ []
           :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :tests $ [] $ %{} 'TestEntry (:name |narrows-checked-quote-constructor)
+            :code $ quote $ let
+                QuoteBox $ defstruct QuoteBox $ :code 'CirruQuote
+                construct $ fn (value)
+                  hint-fn $ Fn Dynamic $ -> Struct
+                  if (cirru-quote? value) (QuoteBox :code value) (raise "|Expected CirruQuote")
+              let
+                  quoted $ parse-cirru |value
+                assert= (QuoteBox :code quoted) (construct quoted)
+              assert= :rejected $ try
+                do (construct |not-a-quote) :accepted
+                fn (error) :rejected
+            :tags $ #{} :core :js :native :shared :unit
         'concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn concat (& args)
             &list-match-internal args ([]) (a0 as) (&list:concat a0 & as)

@@ -18985,7 +18985,7 @@ mod tests {
     let entry = source.get_mut(calcit::CORE_NS).unwrap().defs.get_mut("js-nullish?").unwrap();
     entry.code = Calcit::Bool(false);
     drop(source);
-    for name in ["js-present?", "js-nullish?", "non-nil?"] {
+    for name in ["js-present?", "js-nullish?", "non-nil?", "cirru-quote?"] {
       let narrowed = extract_predicate_bindings(
         &Calcit::from(vec![core_import(name, "tests.predicate-origin"), target.clone()]),
         &scope_types,

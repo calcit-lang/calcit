@@ -2378,6 +2378,7 @@ mod tests {
 
   #[test]
   fn trait_member_types_qualify_only_outside_callable_schema_heads() {
+    let _guard = program::lock_program_test_state();
     let ns = "test.meta.trait-member-qualify";
     let entry = || program::ProgramDefEntry {
       code: Calcit::Nil,
