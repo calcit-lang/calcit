@@ -92,7 +92,7 @@ These Result-returning parser methods currently run on the native and JavaScript
 公开定义需要声明可检查的函数契约；以下 `hint-fn` 与 Snapshot `Fn` schema 等价地提供这一信息：
 
 ```cirru.no-run
-def Person $ defstruct Person (:name 'String) (:age 'Number)
+def Person $ defstruct Person (:name String) (:age Number)
 
 defn decode-person (raw)
   hint-fn $ Fn String (-> Person)
@@ -119,7 +119,7 @@ parse-cirru-edn-as failed at $.friends[2].age: expected number, got string
 The compatibility form raises the failure like `parse-cirru-edn`. New code that expects malformed external input should use the Result-returning syntax:
 
 ```cirru.no-run
-def Person $ defstruct Person (:name 'String) (:age 'Number)
+def Person $ defstruct Person (:name String) (:age Number)
 
 defn decode-people (raw)
   hint-fn $ Fn String
@@ -144,7 +144,7 @@ failing later with “expected map, got struct”.
 它会递归地把 Map 解码为 nominal Struct，拒绝未知 key 与缺失的必填字段，并报告错误值所在路径。缺失的 `Option<T>` 字段变成 `Option :none`，已有的原始 `T` 变成 `Option :some value`。旧 helper 创建的等价值在迁移窗口内仍可读取。
 
 ```cirru.no-run
-defstruct Response (:code 'Number)
+defstruct Response (:code Number)
   :message $ quote $ Option String
   :body 'Dynamic
 
@@ -166,7 +166,7 @@ Map and Set iteration order is not a semantic guarantee. The formatter applies a
 旧存档、缓存或同步通道读出的开放值可能是三种之一：本程序已经构造的本地 Struct、从文本解析出来但不再指向本地定义的 Struct（例如没有传 options Map 的 `parse-cirru-edn` 结果），或者普通 Map。只有第一种可以直接沿用原对象；第二种只是带名字的数据，同名不代表来源或名义身份，要先转成 Map 再完整解码：
 
 ```cirru.no-run
-def Store $ defstruct Store (:count 'Number) (:title 'String)
+def Store $ defstruct Store (:count Number) (:title String)
 
 defn restore-store (raw)
   hint-fn $ Fn Dynamic (-> $ Result Store String)
@@ -205,7 +205,7 @@ Cirru EDN always retains the printed struct or enum name. To reconnect parsed va
 
 ```cirru
 let
-    Person $ defstruct Person (:name 'String)
+    Person $ defstruct Person (:name String)
     encoded $ format-cirru-edn $ %{} Person (:name |Ada)
   parse-cirru-edn encoded $ {}
     :Person $ %{} Person (:name |)
@@ -297,7 +297,7 @@ Structs retain their type name and fields:
 
 ```cirru
 let
-    A $ defstruct A (:a 'Number)
+    A $ defstruct A (:a Number)
   ; Then create an instance in Calcit
   %{} A
     :a 1
@@ -307,7 +307,7 @@ Named enums use `%:: EnumDef ...`; anonymous enum values use `%:: _ ...` or the 
 
 ```cirru.no-run
 let
-    SampleResult $ defenum SampleResult (:ok 'Number) (:err 'String)
+    SampleResult $ defenum SampleResult (:ok Number) (:err String)
   %:: SampleResult :ok 1
 :: :point 10 20
 ```

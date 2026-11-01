@@ -20,7 +20,7 @@ parent: core/features
 
 ## 快速示例
 
-- **定义**：`defunion CssValue 'String 'Number`
+- **定义**：`defunion CssValue String Number`
 - **标注**：`hint-fn $ Fn CssValue (-> String)`
 - **拆解**：`match v ((String s) s) ((Number n) (str n |px))`
 
@@ -29,13 +29,15 @@ parent: core/features
 `defunion` 只能写成具名顶层定义，至少两个成员：
 
 ```cirru.no-check
-defstruct Point (:x 'Number) (:y 'Number)
-defenum Shape (:circle 'Number) (:square 'Number)
+defstruct Point (:x Number) (:y Number)
+defenum Shape (:circle Number) (:square Number)
 
-defunion CssValue 'String 'Number
-defunion Geo 'Point 'Shape 'String
-defunion Label 'String 'Point
+defunion CssValue String Number
+defunion Geo Point Shape String
+defunion Label String Point
 ```
+
+成员按类型语法书写，与 `:schema` 里相同：类型名直接写，复合类型写成列表，例如 `defunion Sized Number (List Number)`。旧的 `'String`、`quote $ List Number` 写法在 0.34.0 仍可用，`calcit edit format` 会改写成新写法，0.35.0 删除。
 
 成员可以是：
 

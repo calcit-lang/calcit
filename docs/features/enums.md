@@ -17,7 +17,7 @@ Calcit enums are tagged unions: each variant has a tag and zero or more typed pa
 
 ## Quick Recipes
 
-- **Define**: `defenum Shape (:circle 'Number) (:rect 'Number 'Number)`
+- **Define**: `defenum Shape (:circle Number) (:rect Number Number)`
 - **Create**: `Shape :circle 5`
 - **Match**: `match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape 'Shape`
@@ -32,11 +32,13 @@ let
   ; => $ %:: 'Color :red
 ```
 
+Payload types are written in type syntax, the same as in a `:schema`: `Number`, `Point`, `(List Point)`. The quoted spelling `'Number` / `quote $ List Point` still works in 0.34.0; `calcit edit format` rewrites it and 0.35.0 removes it.
+
 Variants with payloads:
 
 ```cirru
 let
-    Shape $ defenum Shape (:circle 'Number) (:rect 'Number 'Number)
+    Shape $ defenum Shape (:circle Number) (:rect Number Number)
     c $ Shape :circle 5
     r $ Shape :rect 3 4
   println c
@@ -59,11 +61,11 @@ let
 
 ## Generic Enums
 
-`defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type as `quote $ TypeName …` in schemas and assertions.
+`defenum` accepts an optional generics list right after the type name, such as `([] T E)`. Declare the generic slots, then apply the named type as `quote $ TypeName …` in schemas and assertions.
 
 ```cirru
 let
-    ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
+    ResultX $ defenum ResultX ([] T E) (:ok T) (:err E)
     ok $ ResultX :ok 1
     err $ ResultX :err |oops
   assert-type ok $ quote $ ResultX Number String
@@ -80,9 +82,9 @@ After the optional generics list, `defenum` may also take a `where` map to const
 
 ```cirru
 let
-    ShownMaybe $ defenum ShownMaybe ([] 'T)
+    ShownMaybe $ defenum ShownMaybe ([] T)
       {} $ 'T Debug
-      :some 'T
+      :some T
       :none
     some-val $ ShownMaybe :some 1
     none-val $ ShownMaybe :none
@@ -115,9 +117,9 @@ Applied generic structs also work in enum payloads:
 
 ```cirru
 let
-    Box $ defstruct Box ([] 'T) (:value 'T)
-    Wrapped $ defenum Wrapped ([] 'T)
-      :box $ quote $ Box T
+    Box $ defstruct Box ([] T) (:value T)
+    Wrapped $ defenum Wrapped ([] T)
+      :box $ Box T
       :empty
     value $ Wrapped :box $ %{} Box (:value 1)
   assert-type value $ quote $ Wrapped Number
@@ -254,7 +256,7 @@ When a variant has no payload, the pattern is just the tag wrapped in parenthese
 
 ```cirru
 let
-    MaybeInt $ defenum MaybeInt (:some 'Number) (:none)
+    MaybeInt $ defenum MaybeInt (:some Number) (:none)
     some-val $ MaybeInt :some 42
     none-val $ MaybeInt :none
     extracted $ match some-val
@@ -355,15 +357,15 @@ defenum Shape (:point :number :number) (:circle :number)
 
 ; generic struct payloads use applied named types
 
-defstruct Box ([] 'T) (:value 'T)
+defstruct Box ([] T) (:value T)
 
-defenum Wrapped ([] 'T)
+defenum Wrapped ([] T)
   :box $ quote $ Box T
   :empty
 
 ; (:none) means no payload
 
-defenum MaybeInt (:some 'Number) (:none)
+defenum MaybeInt (:some Number) (:none)
 ```
 
 Payloads may also reference named struct types (illustrative, cross-file type ref):
@@ -371,9 +373,9 @@ Payloads may also reference named struct types (illustrative, cross-file type re
 ```cirru.no-check
 ; defstruct and defenum from the same snippet context:
 
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 
-defenum Shape2 (:point Point) (:circle 'Number)
+defenum Shape2 (:point Point) (:circle Number)
 ```
 
 Runtime type validation is enforced at instance creation — passing the wrong type to `%::` will raise an error.
@@ -384,7 +386,7 @@ When a function parameter is typed as an enum, the preprocessor can rewrite an a
 
 ```cirru
 let
-    Result0 $ defenum Result0 (:err 'String) (:ok)
+    Result0 $ defenum Result0 (:err String) (:ok)
     takes-result $ fn (r)
       hint-fn $ Fn Result0 (-> Tag)
       match r

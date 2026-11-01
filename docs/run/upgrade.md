@@ -24,6 +24,26 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.34.0 声明宏的成员类型不再需要 quote（#2516）
+
+`defstruct` 字段、`defenum` payload、`defunion` 成员和这三者的泛型列表现在按类型语法读取，与 `:schema` 里的写法相同：类型名直接写，复合类型写成列表。
+
+```cirru
+defstruct Box ([] T) (:value T) (:items $ List T) (:label String |box)
+defenum Shape (:circle Number) (:poly $ List Point) (:none)
+defunion Sized Number (List Number) Point
+```
+
+旧写法 `'Number`、`quote $ List T` 在 0.34.0 照常加载，检查结果与新写法相同。`calcit <snapshot> edit format` 会把这些位置改写成新写法，0.35.0 删除旧写法。`:where` 约束（如 `{} $ 'T Debug`）、`deftrait` 签名、`assert-type` 等其他位置不变。
+
+以前裸写的名字会当作表达式求值：`(:shape Shape)` 取到 `Shape` 的定义值，作用域里有同名局部绑定时取到局部值；裸写 `Number` 会报 unknown。现在这些位置只读类型名，`Shape` 按命名空间和 import 解析，不再受局部绑定影响。
+
+### 迁移步骤
+
+1. 升级 CLI、`deps.cirru` 工具链与 `@calcit/procs` 到 0.34.0。
+2. 运行 `calcit calcit.cirru edit format`，再运行 `--check-only` 与测试。
+3. 改写后的 Snapshot 只能由 0.34.0 及以后的版本加载；还要给 0.33.x 用的依赖库，先不要运行 `edit format`。
+
 ## 0.34.0 `--check-only --ns` 运行默认证明审计（#2506）
 
 `--check-only --ns <ns>` 现在和普通 `--check-only` 一样，在所选 definition 通过普通检查后运行默认证明审计。

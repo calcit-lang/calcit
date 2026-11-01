@@ -6036,6 +6036,21 @@
               , false
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> Bool)
+        'data-definition-type-form $ %{} 'CodeEntry
+          :doc "|Read a member type of a data-definition macro as type syntax: a bare `Number` becomes `'Number` and a bare `List Number` becomes `quote $ List Number`; quoted forms, legacy `::` forms and tags are kept as written"
+          :code $ quote $ defn data-definition-type-form (form)
+            if (symbol? form)
+              &list:assoc (quote 'T) 1 form
+              if
+                and (list? form)
+                  not $ empty? form
+                  symbol? $ &list:nth form 0
+                  not $ &= 'quote $ &list:nth form 0
+                  not $ &= ':: $ &list:nth form 0
+                [] 'quote form
+                , form
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'data-definition-where-form? $ %{} 'CodeEntry
           :doc "|Detect optional where-map form after generic parameters in data-definition macros"
           :code $ quote $ defn data-definition-where-form? (tail-forms)
@@ -6461,10 +6476,12 @@
                       and (list? first-variant)
                         not $ empty? first-variant
                         not $ tag? $ &list:nth first-variant 0
-                      if
-                        &= [] $ &list:nth first-variant 0
-                        &list:rest first-variant
-                        , first-variant
+                      &list:map
+                        if
+                          &= [] $ &list:nth first-variant 0
+                          &list:rest first-variant
+                          , first-variant
+                        , data-definition-type-form
                       []
                     &let
                       tail-forms $ if (empty? generics) variants $ &list:rest variants
@@ -6496,10 +6513,12 @@
                                     variant-tag $ &list:nth items 0
                                     &let
                                       payload-forms $ &list:map (&list:rest items)
-                                        fn (t)
-                                          if (list? t)
-                                            quasiquote $ quote $ ~ t
-                                            , t
+                                        fn (payload)
+                                          &let
+                                            t $ data-definition-type-form payload
+                                            if (list? t)
+                                              quasiquote $ quote $ ~ t
+                                              , t
                                       quasiquote $ [] (~ variant-tag) (~@ payload-forms)
                               if (empty? generics)
                                 if has-where-form?
@@ -6628,10 +6647,12 @@
                       and (list? first-pair)
                         not $ empty? first-pair
                         not $ tag? $ &list:nth first-pair 0
-                      if
-                        &= [] $ &list:nth first-pair 0
-                        &list:rest first-pair
-                        , first-pair
+                      &list:map
+                        if
+                          &= [] $ &list:nth first-pair 0
+                          &list:rest first-pair
+                          , first-pair
+                        , data-definition-type-form
                       []
                     &let
                       tail-forms $ if (empty? generics) pairs $ &list:rest pairs
@@ -6662,7 +6683,7 @@
                                   &let
                                     field-name $ &list:nth items 0
                                     &let
-                                      type-form $ &list:nth items 1
+                                      type-form $ data-definition-type-form $ &list:nth items 1
                                       &let
                                         field-form $ if (list? type-form)
                                           if
@@ -6805,7 +6826,9 @@
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
-            quasiquote $ &union-def:new (~ $ turn-tag name) ~@members
+            &let
+              member-forms $ &list:map members data-definition-type-form
+              quasiquote $ &union-def:new (~ $ turn-tag name) ~@member-forms
           :examples $ [] $ quote (; defunion CssValue 'String 'Number)
           :schema $ quote $ Macro Syntax & Syntax
             -> $ Expr UnionDef

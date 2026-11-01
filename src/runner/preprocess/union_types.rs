@@ -63,7 +63,9 @@ pub(super) fn check_union_declaration(
     },
     _ => return Ok(()),
   };
-  let members = args.iter().skip(1).map(|form| unquote(form).to_owned()).collect();
+  // Member forms stay quoted: `quote $ List Number` is a compact type, while
+  // the unquoted list would read as a List value.
+  let members = args.iter().skip(1).cloned().collect();
   let union_def = CalcitUnionDef::new(cirru_edn::EdnTag::from(name.as_str()), members).with_definition_ref(file_ns, &name);
   union_def.checked_members().map(|_| ()).map_err(|message| {
     CalcitErr::use_msg_stack_location_with_code(CalcitErrKind::Type, message, "E_UNION_MEMBER_INVALID", call_stack, None)

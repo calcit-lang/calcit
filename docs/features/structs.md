@@ -17,7 +17,7 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 
 ## Quick Recipes
 
-- **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
+- **Define**: `defstruct Point (:x Number) (:y Number)`
 - **Create**: `Point :x 1 :y 2`
 - **Low-level (dynamic prototype)**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `(:x p)`
@@ -29,13 +29,13 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 Use `defstruct` to declare a named type with typed fields:
 
 ```cirru
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 ```
 
-Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'Number`, `'String`, `'Bool`, `'Tag`, `'List`, `'Map`, `'Fn`, and `'Dynamic` (untyped). Legacy tag spellings remain compatible and are rewritten by `calcit edit format`.
+Each field is a pair of `(:field-name type)`. The type is written in type syntax, the same as inside a `:schema`: a bare name such as `Number`, `String`, `Bool`, `Tag` or `Dynamic` (untyped), a definition such as `Point` or `app.schema/User`, or a compound type such as `(List String)`. The older quoted spelling `'Number` / `quote $ List String` still works in 0.34.0; `calcit edit format` rewrites it, and 0.35.0 removes it. Legacy tag spellings are also rewritten by `calcit edit format`.
 
 ```cirru
-defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
+defstruct Person (:name String) (:age Number) (:position Tag)
 ```
 
 ### 字段类型的声明来源
@@ -73,7 +73,7 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 
 ```cirru
 let
-    Box $ defstruct Box ([] 'T) (:value 'T)
+    Box $ defstruct Box ([] T) (:value T)
     keep $ fn (box)
       hint-fn $ Fn (Box T) (-> T) (:generics T)
       :value box
@@ -103,9 +103,9 @@ Use this pattern when the struct definition owns the type variable. Function-lev
 
 ```cirru
 let
-    ShownBox $ defstruct ShownBox ([] 'T)
+    ShownBox $ defstruct ShownBox ([] T)
       {} $ 'T Debug
-      :value 'T
+      :value T
     box $ ShownBox :value 1
     item $ :value box
   assert-type box $ quote $ ShownBox Number
@@ -127,7 +127,7 @@ the call site. It works for top-level definitions and for a `defstruct` bound by
 
 ```cirru
 let
-    Point $ defstruct Point (:x 'Number) (:y 'Number)
+    Point $ defstruct Point (:x Number) (:y Number)
     p $ Point :x 1 :y 2
   , p
 ```
@@ -142,7 +142,7 @@ declared as `Option<T>` may be omitted; the constructor inserts the nominal
 
 ```cirru
 let
-    Config $ defstruct Config (:host 'String) (:port 'Number 8080) (:debug? 'Bool false) (:tags (quote $ List String) ([]))
+    Config $ defstruct Config (:host String) (:port Number 8080) (:debug? Bool false) (:tags (List String) ([]))
     config $ Config :host |localhost
   assert= 8080 $ :port config
   assert= false $ :debug? config
@@ -194,9 +194,9 @@ This means a concise same-namespace field type such as `'Router` remains
 statically resolvable even when the outer Struct flows into another namespace:
 
 ```cirru.no-check
-defstruct Router $ :name 'String
+defstruct Router $ :name String
 
-defstruct ClientStore $ :router 'Router
+defstruct ClientStore $ :router Router
 
 defn router-name (store)
   hint-fn $ Fn app.schema/ClientStore (-> String)
@@ -434,7 +434,7 @@ let
 
 ```cirru
 let
-    User $ defstruct User (:name 'String) (:age 'Number) (:email 'String)
+    User $ defstruct User (:name String) (:age Number) (:email String)
     get-user-name $ fn (user)
       hint-fn $ Fn User (-> String)
       :name user
@@ -449,7 +449,7 @@ let
 When a function parameter is typed as a struct in its schema, the preprocessor automatically rewrites hashmap literal (`{}`) arguments to struct construction (`%{}`). This keeps ergonomic literal syntax while retaining the nominal type.
 
 ```cirru.no-check
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 
 defn sum-point (p)
   hint-fn $ Fn app.main/Point (-> Number)
@@ -509,7 +509,7 @@ let
 When an anonymous struct is passed to a function whose parameter is a named struct, the preprocessor can rewrite it to the expected nominal definition:
 
 ```cirru.no-check
-defstruct Point (:x 'Number) (:y 'Number)
+defstruct Point (:x Number) (:y Number)
 
 defn sum-point (p)
   hint-fn $ Fn app.main/Point (-> Number)

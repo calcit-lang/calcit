@@ -6861,7 +6861,7 @@ fn parse_defunion_code(items: &CalcitList) -> Option<CalcitUnionDef> {
     Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
     _ => None,
   };
-  let members: Vec<Calcit> = items.iter().skip(2).cloned().collect();
+  let members: Vec<Calcit> = items.iter().skip(2).map(declaration_type_form).collect();
   let mut union_def = CalcitUnionDef::new(name, members);
   union_def.set_definition_ref(definition_ref);
   Some(union_def)
@@ -6950,6 +6950,42 @@ pub(crate) fn dedup_generic_names(generics: &mut Vec<Arc<str>>) {
   generics.retain(|name| seen.insert(name.clone()));
 }
 
+/// Member types of `defstruct`, `defenum` and `defunion` are type syntax
+/// (#2516): read a bare `Number` or `List Number` like the quoted
+/// `'Number` / `quote $ List Number`, as the macros do. Quoted forms, legacy
+/// `::` forms and tags stay as written.
+fn declaration_type_form(form: &Calcit) -> Calcit {
+  let quoted = |ns: Arc<str>| {
+    Calcit::List(Arc::new(CalcitList::from(
+      &[Calcit::Syntax(CalcitSyntax::Quote, ns), form.to_owned()][..],
+    )))
+  };
+  match form {
+    Calcit::Symbol { sym, info, .. } if !sym.starts_with('\'') => quoted(info.at_ns.to_owned()),
+    Calcit::List(items) => {
+      let keep = match items.first() {
+        None => true,
+        Some(Calcit::Syntax(CalcitSyntax::Quote, _)) => true,
+        Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "quote" | "::"),
+        Some(Calcit::Import(CalcitImport { ns, def, .. })) => &**ns == CORE_NS && matches!(def.as_ref(), "quote" | "::"),
+        // Only a type name heads a compound type; tag-headed legacy forms stay.
+        Some(Calcit::Local(_)) => false,
+        Some(_) => true,
+      };
+      if keep {
+        form.to_owned()
+      } else {
+        let ns = match items.first() {
+          Some(Calcit::Symbol { info, .. }) => info.at_ns.to_owned(),
+          _ => Arc::from(CORE_NS),
+        };
+        quoted(ns)
+      }
+    }
+    _ => form.to_owned(),
+  }
+}
+
 fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
   let forms = normalized_data_definition_forms(items);
   let name_form = forms.get(1)?;
@@ -6993,7 +7029,8 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
       _ => return None,
     };
     let field_name = parse_type_name(field_name_form)?;
-    let field_type = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(field_type_form, generics.as_slice());
+    let field_type =
+      CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declaration_type_form(field_type_form), generics.as_slice());
     let default_value = default_form.and_then(crate::calcit::struct_field_default_from_code);
     fields.push((field_name, field_type, default_value));
   }
@@ -7063,7 +7100,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     };
     let tag_form = variant.first()?;
     let tag = parse_type_name(tag_form)?;
-    let payloads: Vec<Calcit> = variant.iter().skip(1).map(|v| v.to_owned()).collect();
+    let payloads: Vec<Calcit> = variant.iter().skip(1).map(declaration_type_form).collect();
     let payload_value = if payloads.is_empty() {
       Calcit::Nil
     } else {

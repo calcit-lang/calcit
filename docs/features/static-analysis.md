@@ -617,7 +617,7 @@ Use the name defined by `defstruct` or `defenum`:
 
 ```cirru
 let
-    User $ defstruct User $ :name 'String
+    User $ defstruct User $ :name String
     get-name $ fn (u)
       hint-fn $ Fn User (-> String)
       :name u

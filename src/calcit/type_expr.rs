@@ -179,7 +179,7 @@ fn is_uppercase_name(name: &str) -> bool {
     && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '?' | '!'))
 }
 
-fn is_type_name(name: &str) -> bool {
+pub(crate) fn is_type_name(name: &str) -> bool {
   is_uppercase_name(name) || is_qualified_name(name)
 }
 

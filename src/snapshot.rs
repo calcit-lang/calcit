@@ -4706,11 +4706,20 @@ fn is_tag_leaf(node: Option<&Cirru>) -> bool {
 }
 
 /// Canonicalize the type of a `(:field type default?)` entry, leaving the default as data.
+/// A member type of `defstruct` / `defenum`. A bare compact form such as
+/// `List Number` is already the type syntax these positions read (#2516).
+fn canonicalize_declaration_type(node: &Cirru) -> (Cirru, usize) {
+  if crate::calcit::type_expr::is_compact_payload(node) {
+    return (node.clone(), 0);
+  }
+  canonicalize_type_expression(node)
+}
+
 fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
   let mut next = entry.to_vec();
   let mut changed = 0;
   if let Some(type_form) = entry.get(1) {
-    let (type_form, count) = canonicalize_type_expression(type_form);
+    let (type_form, count) = canonicalize_declaration_type(type_form);
     next[1] = type_form;
     changed += count;
   }
@@ -4789,9 +4798,9 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
               if type_index > 1 {
                 continue;
               }
-              canonicalize_type_expression(&field[type_index])
+              canonicalize_declaration_type(&field[type_index])
             }
-            (item, _) => canonicalize_type_expression(item),
+            (item, _) => canonicalize_declaration_type(item),
           };
           next_field[type_index] = next;
           changed += count;
@@ -5001,6 +5010,104 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   (Cirru::List(rewritten), changed)
 }
 
+/// The bare spelling of a quoted member type: `'Number` → `Number` and
+/// `quote $ List Number` → `List Number`. `None` when the form is already bare
+/// or is not a quoted type, such as a legacy `:: 'List 'Number` value reference.
+fn bare_declaration_type(node: &Cirru) -> Option<Cirru> {
+  match node {
+    Cirru::Leaf(leaf) => {
+      let name = leaf.strip_prefix('\'')?;
+      crate::calcit::type_expr::is_type_name(name).then(|| Cirru::leaf(name))
+    }
+    Cirru::List(items) => match items.as_slice() {
+      [Cirru::Leaf(head), payload] if head.as_ref() == "quote" => match payload {
+        Cirru::Leaf(name) if crate::calcit::type_expr::is_type_name(name) => Some(payload.clone()),
+        Cirru::List(_) if crate::calcit::type_expr::is_compact_payload(payload) => Some(payload.clone()),
+        _ => None,
+      },
+      _ => None,
+    },
+  }
+}
+
+/// `edit format` writes member types of `defstruct`, `defenum` and `defunion`
+/// without quotes (#2516). Loading keeps accepting the quoted spelling, so this
+/// runs only when formatting.
+fn bare_declaration_type_syntax(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = match items.first() {
+    Some(Cirru::Leaf(value)) => value.as_ref(),
+    _ => "",
+  };
+  // Quoted data is not code.
+  if head == "quote" {
+    return (node.clone(), 0);
+  }
+  let mut changed = 0;
+  let mut rewritten: Vec<Cirru> = items
+    .iter()
+    .map(|item| {
+      let (next, count) = bare_declaration_type_syntax(item);
+      changed += count;
+      next
+    })
+    .collect();
+  // Unquote the type forms of `entry` from index 1, up to `last` items.
+  let mut bare_types = |entry: &mut [Cirru], last: usize| {
+    for form in entry.iter_mut().take(last).skip(1) {
+      if let Some(bare) = bare_declaration_type(form) {
+        *form = bare;
+        changed += 1;
+      }
+    }
+  };
+  // A struct field holds one type and an optional default; enum payloads are all types.
+  let member_last = |len: usize| if head == "defstruct" { 2.min(len) } else { len };
+  match head {
+    "defstruct" | "defenum" => {
+      for (index, slot) in rewritten.iter_mut().enumerate().skip(2) {
+        let Cirru::List(entry) = slot else { continue };
+        match entry.first() {
+          // Generics: `[] 'T 'E`, right after the name.
+          Some(Cirru::Leaf(first)) if first.as_ref() == "[]" && index == 2 => {
+            let len = entry.len();
+            bare_types(entry, len);
+          }
+          Some(Cirru::Leaf(first)) if first.starts_with(':') => {
+            let last = member_last(entry.len());
+            bare_types(entry, last);
+          }
+          // Members wrapped in one `{}` form: `defstruct Mode $ {} (:kind 'Tag) …`.
+          Some(Cirru::Leaf(first)) if first.as_ref() == "{}" => {
+            for field in entry.iter_mut().skip(1) {
+              if let Cirru::List(field) = field
+                && is_tag_leaf(field.first())
+              {
+                let last = member_last(field.len());
+                bare_types(field, last);
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+    }
+    "defunion" => {
+      // Members follow the name: treat the whole form as one entry from index 2.
+      for form in rewritten.iter_mut().skip(2) {
+        if let Some(bare) = bare_declaration_type(form) {
+          *form = bare;
+          changed += 1;
+        }
+      }
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
+}
+
 fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   migrate_code_type_syntax_in(node, true)
 }
@@ -5028,23 +5135,28 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
 /// compatible until users explicitly request canonical formatting.
 pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
   let mut changed = 0;
+  let format_code = |code: &Cirru| {
+    let (migrated, legacy) = migrate_code_type_syntax(code);
+    let (bare, count) = bare_declaration_type_syntax(&migrated);
+    (bare, legacy + count)
+  };
   for file in snapshot.files.values_mut() {
     let (ns_code, count) = canonicalize_code_type_syntax(&file.ns.code);
     file.ns.code = ns_code;
     changed += count;
     for entry in file.defs.values_mut() {
-      let (code, count) = migrate_code_type_syntax(&entry.code);
+      let (code, count) = format_code(&entry.code);
       entry.code = code;
       changed += count;
       let mut rewritten_examples = Vec::with_capacity(entry.examples.len());
       for example in &entry.examples {
-        let (code, count) = migrate_code_type_syntax(example);
+        let (code, count) = format_code(example);
         rewritten_examples.push(code);
         changed += count;
       }
       entry.examples = rewritten_examples;
       for test in entry.tests.iter_mut() {
-        let (code, count) = migrate_code_type_syntax(&test.code);
+        let (code, count) = format_code(&test.code);
         test.code = code;
         changed += count;
       }
@@ -6240,6 +6352,59 @@ mod tests {
     ] {
       let node = parse_one(source);
       assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
+    }
+  }
+
+  #[test]
+  fn format_writes_declaration_member_types_without_quotes() {
+    let cases = [
+      (
+        "defstruct Point (:x 'Number) (:y 'Number 0)",
+        "defstruct Point (:x Number) (:y Number 0)",
+      ),
+      (
+        "defstruct Box ([] 'T) (:value 'T) (:items $ quote $ List T)",
+        "defstruct Box ([] T) (:value T) (:items $ List T)",
+      ),
+      (
+        "defstruct Mode $ {} (:kind 'Tag) (:size 'app.schema/Size)",
+        "defstruct Mode $ {} (:kind Tag) (:size app.schema/Size)",
+      ),
+      (
+        "defenum Shape (:circle 'Number) (:poly $ quote $ List Point) (:none)",
+        "defenum Shape (:circle Number) (:poly $ List Point) (:none)",
+      ),
+      (
+        "defunion Geo 'Point 'String (quote $ List Number)",
+        "defunion Geo Point String (List Number)",
+      ),
+      // The legacy spelling is first migrated to the compact quote, then unquoted.
+      ("defstruct Box (:items $ :: 'List 'Number)", "defstruct Box (:items $ List Number)"),
+    ];
+    for (source, expected) in cases {
+      let (migrated, _) = migrate_code_type_syntax(&parse_one(source));
+      let (bare, count) = bare_declaration_type_syntax(&migrated);
+      assert_eq!(bare, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+      // Both spellings load: the quoted one stays accepted until the next non-patch release.
+      check_code_type_syntax(
+        &parse_one(source.replace(":: 'List 'Number", "quote $ List Number").as_str()),
+        "app.main/x",
+        "calcit.cirru",
+      )
+      .expect("quoted member types still load");
+      check_code_type_syntax(&bare, "app.main/x", "calcit.cirru").expect("bare member types load");
+    }
+    // Default values, quoted data and other code keep their written shape.
+    for source in [
+      "defstruct Cfg (:host String) (:port Number 8080)",
+      "defstruct Cfg (:mode Tag ':fast)",
+      "quote $ defstruct Point (:x 'Number)",
+      "assert-type x 'Number",
+      "defenum Legacy (:ok :string)",
+    ] {
+      let node = parse_one(source);
+      assert_eq!(bare_declaration_type_syntax(&node), (node.clone(), 0), "{source}");
     }
   }
 
