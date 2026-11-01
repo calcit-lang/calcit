@@ -102,7 +102,11 @@ fn check_definition(
   diagnostics: &mut Vec<Value>,
 ) -> &'static str {
   let warning_count = warnings.borrow().len();
-  match runner::preprocess::ensure_ns_def_compiled(namespace, definition, warnings, &CallStackList::default()) {
+  let outcome = runner::preprocess::ensure_ns_def_compiled(namespace, definition, warnings, &CallStackList::default());
+  // During the proof audit, warnings owned by a macro implementation describe
+  // syntax production; drop them before they decide this row's status.
+  runner::preprocess::drop_macro_owned_proof_warnings(warnings, warning_count);
+  match outcome {
     Ok(()) if warnings.borrow().len() == warning_count => "passed",
     Ok(()) => "warning",
     Err(error) => {
@@ -326,6 +330,9 @@ pub fn run(
     && results.iter().any(|row| row.status == "passed")
     && results.iter().all(|row| matches!(row.status, "passed" | "intrinsic"))
   {
+    // The audit re-preprocesses the same definitions; macro output from it
+    // repeats the ordinary pass, so it stays silent.
+    let _silence = crate::ProgramOutputGuard::new(false, true);
     runner::preprocess::check_with_default_proof(&warnings, || {
       for row in results.iter_mut().filter(|row| row.status == "passed") {
         row.status = check_definition(&row.namespace, &row.definition, &row.id, &warnings, &mut diagnostics);

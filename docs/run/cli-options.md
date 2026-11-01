@@ -453,7 +453,7 @@ calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --format json
 ```
 
-`--check-only --ns` 要求 entry 声明 target，可与 `--deps`、`--summary-only`、`--format human|edn|json` 组合，不能与 `--keep-going`、`--all-defs` 或 `--incremental` 同用。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。所选 definition 全部通过普通检查后，再按默认证明审计逐个检查一遍，与普通 `--check-only` 报告同样的 `E_FN_RETURN_UNPROVEN`、`E_CALL_ARGUMENT_UNPROVEN` 等诊断；`--no-proof-audit` 或 `CALCIT_PROOF_AUDIT=0` 跳过这一步。结构化输出（`analyze.check-public` schema version 1）返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
+`--check-only --ns` 要求 entry 声明 target，可与 `--deps`、`--summary-only`、`--format human|edn|json` 组合，不能与 `--keep-going`、`--all-defs` 或 `--incremental` 同用。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。所选 definition 全部通过普通检查后，再按默认证明审计逐个检查一遍，与普通 `--check-only` 报告同样的 `E_FN_RETURN_UNPROVEN`、`E_CALL_ARGUMENT_UNPROVEN` 等诊断；`--no-proof-audit` 或 `CALCIT_PROOF_AUDIT=0` 跳过这一步。与普通 `--check-only` 相同，证明审计只覆盖项目命名空间，`--deps` 选入的依赖命名空间只做普通检查。结构化输出（`analyze.check-public` schema version 1）返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
 
 ### Macro Expansion Metrics (--macro-metrics)
 

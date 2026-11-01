@@ -1468,8 +1468,18 @@ fn public_check_runs_default_proof_audit_after_ordinary_check() {
     // #2506: the ordinary pass accepts the declared return; the default proof
     // audit, as in plain `--check-only`, rejects it for the selected definition.
     let project_namespaces = HashSet::from(["app.main".to_owned()]);
-    let _entries = prepare_snapshot_entries(snapshot.clone());
+    let entries = prepare_snapshot_entries(snapshot.clone());
     let _strict = StrictTypesReset::enabled();
+    // The ordinary pass alone accepts the definition, so a public-check
+    // failure below can only come from the proof audit.
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "as-number", &warnings, &CallStackList::default())
+      .expect("the ordinary pass accepts a declared return");
+    assert!(
+      warnings.borrow().is_empty(),
+      "unexpected ordinary warnings: {:?}",
+      warnings.borrow()
+    );
     let error = public_api_check::run(
       &calcit::cli_args::CheckPublicCommand {
         ns: vec!["app.main".to_owned()],
