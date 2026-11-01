@@ -616,11 +616,27 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     ("sequence-value", "quote $ def sequence-value $ [] 12 false :block", false),
     ("pair-value", "quote $ def pair-value $ [] 12 false", false),
     ("pair-value", "quote $ def pair-value $ [] 12 |ready |extra", false),
+    (
+      "app.collection-shadow/nested-values",
+      "quote $ def nested-values $ [] 12 :block |sans",
+      true,
+    ),
+    (
+      "app.collection-shadow/nested-values",
+      "quote $ def nested-values $ [] false 'bad",
+      false,
+    ),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.snapshot();
     fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).unwrap();
-    let target = format!("app.collection-value/{name}");
+    let target = if name.contains('/') {
+      name.to_owned()
+    } else {
+      format!("app.collection-value/{name}")
+    };
+    let (namespace, _) = target.rsplit_once('/').unwrap();
+    let probe = format!("{namespace}/probe!");
     let operations = serde_json::json!([
       ["config", "set", "target", "native"],
       [
@@ -645,16 +661,16 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
       [
         "edit",
         "def",
-        "app.collection-value/probe!",
+        &probe,
         "--input-format",
         "cirru",
         "--code",
-        format!("quote $ defn probe! () (identity {name}) &unit")
+        format!("quote $ defn probe! () (identity {target}) &unit")
       ],
       [
         "edit",
         "schema",
-        "app.collection-value/probe!",
+        &probe,
         "--input-format",
         "cirru",
         "--code",
@@ -686,15 +702,10 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     let output_directory = directory.0.join("checked-js");
     for mode in [
       vec!["--check-only"],
-      vec!["--check-only", "--ns", "app.collection-value"],
+      vec!["--check-only", "--ns", namespace],
       vec!["--emit-path", output_directory.to_str().unwrap(), "js"],
     ] {
-      let mut args = vec![
-        "--init-fn",
-        "app.collection-value/probe!",
-        "--reload-fn",
-        "app.collection-value/probe!",
-      ];
+      let mut args = vec!["--init-fn", &probe, "--reload-fn", &probe];
       args.extend(mode);
       let output = run_calcit(&snapshot, &args);
       assert_eq!(

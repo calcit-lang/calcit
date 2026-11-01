@@ -1658,8 +1658,14 @@ fn collection_literal_matches(
       _ => return None,
     };
     let member = union.checked_members().ok()?.into_iter().find(|member| member.kind == kind)?;
-    Some(match union.definition_ref().and_then(|reference| reference.rsplit_once('/')) {
-      Some((namespace, _)) => super::resolve_namespace_type_refs_for_body(member.annotation, namespace),
+    let namespace = member.declaring_namespace.as_deref().or_else(|| {
+      union
+        .definition_ref()
+        .and_then(|reference| reference.rsplit_once('/'))
+        .map(|(ns, _)| ns)
+    });
+    Some(match namespace {
+      Some(namespace) => super::resolve_namespace_type_refs_for_body(member.annotation.clone(), namespace),
       None => member.annotation,
     })
   });

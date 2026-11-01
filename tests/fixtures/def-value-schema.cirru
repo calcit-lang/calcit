@@ -777,6 +777,28 @@
             :tags $ #{} :callback-container-shape :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-shape
+    'app.collection-shadow $ %{} 'FileEntry
+      :defs $ {}
+        'NestedSequence $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion NestedSequence app.collection-value/Sequence Tag
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |nested-union-keeps-member-namespace)
+            :code $ quote $ match nested-values
+              (List items)
+                assert= ([] 12 :block |sans) items
+              _ $ raise |Expected-nested-list-member
+            :tags $ #{} :collection-value-contract
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar Bool Symbol
+          :examples $ []
+          :schema $ quote UnionDef
+        'nested-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def nested-values ([] 12 :block |sans)
+          :examples $ []
+          :schema $ quote app.collection-shadow/NestedSequence
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.collection-shadow
     'app.collection-value $ %{} 'FileEntry
       :defs $ {}
         'Pair $ %{} 'CodeEntry (:doc |)
