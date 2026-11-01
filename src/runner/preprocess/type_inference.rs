@@ -1153,6 +1153,12 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(inferred);
   }
   if ns == calcit::CORE_NS
+    && def == "dissoc-in"
+    && let Some(inferred) = infer_core_dissoc_in_return_type(call_expr, scope_types)
+  {
+    return Some(inferred);
+  }
+  if ns == calcit::CORE_NS
     && def == "update"
     && let Some(receiver_type) = call_expr.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
     && receiver_type.resolve_to_struct().is_some()
@@ -1605,6 +1611,34 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
   }
 
   Some(core_get_in_result_type(current_type))
+}
+
+/// `dissoc-in` on a Map keeps the root Map contract when the literal path is
+/// non-empty. A one-step path is `dissoc`. A longer path re-associates the
+/// existing first key with the nested result: a missing key reaches `dissoc`
+/// or `assoc` on nil, which raises, so a returned value always stores the
+/// nested result under a key already present in the Map. The nested result
+/// must therefore be proven for the value type: an open `Dynamic` value, or a
+/// nested Map handled by the same rule. Other payload families, dynamic paths
+/// and the empty path keep the open public contract.
+fn infer_core_dissoc_in_return_type(call_expr: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if call_expr.len() != 3 {
+    return None;
+  }
+  let base_type = resolve_type_value(call_expr.get(1)?, scope_types)?;
+  let path_items = extract_literal_list_items(call_expr.get(2)?)?;
+  dissoc_in_preserves_map(base_type.as_ref(), path_items.len()).then_some(base_type)
+}
+
+fn dissoc_in_preserves_map(current_type: &CalcitTypeAnnotation, path_len: usize) -> bool {
+  let CalcitTypeAnnotation::Map(_, value_type) = current_type else {
+    return false;
+  };
+  match path_len {
+    0 => false,
+    1 => true,
+    _ => matches!(value_type.as_ref(), CalcitTypeAnnotation::Dynamic) || dissoc_in_preserves_map(value_type.as_ref(), path_len - 1),
+  }
 }
 
 /// Public `get-in` reports absence and shape failures through `PathError`.
@@ -5613,6 +5647,58 @@ mod tests {
     );
     assert!(fully_typed_literal_lookup_path(user_type.as_ref(), &empty_path, &ScopeTypes::new()).is_none());
     assert!(fully_typed_literal_assoc_path(user_type.as_ref(), &empty_path).is_none());
+  }
+
+  #[test]
+  fn dissoc_in_keeps_known_map_root() {
+    let dynamic_map = Arc::new(CalcitTypeAnnotation::Map(tag_annotation("tag"), calcit::DYNAMIC_TYPE.clone()));
+    let nested_map = Arc::new(CalcitTypeAnnotation::Map(
+      tag_annotation("tag"),
+      Arc::new(CalcitTypeAnnotation::Map(
+        Arc::new(CalcitTypeAnnotation::String),
+        Arc::new(CalcitTypeAnnotation::Number),
+      )),
+    ));
+    let list_payload_map = Arc::new(CalcitTypeAnnotation::Map(
+      tag_annotation("tag"),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    ));
+    let path = |items: Vec<Calcit>| proc_call(CalcitProc::List, items);
+    let dissoc_in = |base: Arc<CalcitTypeAnnotation>, path: Calcit| {
+      let call = CalcitList::from(&[symbol("dissoc-in"), local("data", base), path] as &[Calcit]);
+      infer_core_dissoc_in_return_type(&call, &ScopeTypes::new())
+    };
+    let groups = Calcit::Tag(EdnTag::from("groups"));
+    let id = local("id", Arc::new(CalcitTypeAnnotation::String));
+
+    assert_eq!(
+      dissoc_in(dynamic_map.clone(), path(vec![groups.clone(), id.clone()])),
+      Some(dynamic_map.clone()),
+      "re-associating a Dynamic payload keeps Map<Tag, Dynamic>"
+    );
+    assert_eq!(
+      dissoc_in(dynamic_map.clone(), path(vec![groups.clone()])),
+      Some(dynamic_map.clone()),
+      "a one-step path is dissoc on the Map"
+    );
+    assert_eq!(
+      dissoc_in(nested_map.clone(), path(vec![groups.clone(), id.clone()])),
+      Some(nested_map.clone()),
+      "a nested Map payload keeps its own Map contract"
+    );
+    assert!(
+      dissoc_in(list_payload_map, path(vec![groups.clone(), Calcit::Number(0.0)])).is_none(),
+      "a List payload stays on the open contract"
+    );
+    assert!(dissoc_in(dynamic_map.clone(), path(vec![])).is_none(), "the empty path stays open");
+    assert!(
+      dissoc_in(
+        dynamic_map,
+        local("path", Arc::new(CalcitTypeAnnotation::List(tag_annotation("tag"))))
+      )
+      .is_none(),
+      "a dynamic path stays open"
+    );
   }
 
   #[test]

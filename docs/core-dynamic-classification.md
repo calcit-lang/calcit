@@ -179,7 +179,7 @@
 | `calcit.core/dissoc` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | #2187：旧门面只接受 List 或 Map，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:dissoc`、`&map:dissoc` 的精确合同，泛型接收者改用 `.dissoc` 方法。 |
 | `calcit.core/dissoc` | `schema.rest` | unresolved | compiler-specialized-contracts | retain-reviewed | #2187：旧门面只接受 List 或 Map，不存在诚实的泛型 `T -> T` 关系；已知接收者降到 `&list:dissoc`、`&map:dissoc` 的精确合同，泛型接收者改用 `.dissoc` 方法。 |
 | `calcit.core/dissoc-in` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | #2187：沿嵌套路径逐层读取并用 `assoc` / `dissoc` 重建，路径中途的容器类型无法由公开合同关联到输入；需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。 |
-| `calcit.core/dissoc-in` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | #2187：沿嵌套路径逐层读取并用 `assoc` / `dissoc` 重建，路径中途的容器类型无法由公开合同关联到输入；需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。 |
+| `calcit.core/dissoc-in` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | #2187 / #2506：已知 `Map<K,V>` 接收者配非空字面量路径、且每层载荷为 `Dynamic` 或同规则的 Map 时，预处理保留 `Map<K,V>`；其他接收者、空路径或动态路径的中间容器无法由公开合同关联到输入，需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。 |
 | `calcit.core/do` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/do` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/each` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Known List and Set receivers specialize callbacks to the member type, while Map callbacks receive the honest heterogeneous runtime pair; focused mismatch regressions cover all three families. |
