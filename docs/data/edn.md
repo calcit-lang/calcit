@@ -173,11 +173,14 @@ defn restore-store (raw)
   if (struct? raw)
     struct-match raw
       Store store $ Result :ok store
-      _ other $ try-decode-map-as (.to-map other) Store
+      _ other $ if
+        = :Store $ &struct:get-name other
+        try-decode-map-as (.to-map other) Store
+        Result :err |expected-a-Store-record
     try-decode-map-as raw Store
 ```
 
-`struct-match` 只匹配本地 `Store` 定义构造的值，这时返回原对象，`identical?` 仍然成立。其他 Struct 走 `.to-map` 后按字段重新检查并构造新的本地值，字段不合法时得到 `:err` 和出错路径。普通 Map 直接解码。只用 `struct-match` 时，解析出来的 Struct 会落到兜底分支而无法恢复；只按名字判断则会把未检查的字段当成可信数据。
+`struct-match` 只匹配本地 `Store` 定义构造的值，这时返回原对象，`identical?` 仍然成立。其他 Struct 先按 `&struct:get-name` 筛掉名字不是 `Store` 的记录，名字只是 wire 数据里的标记，见 [Struct 名称](../features/structs.md)；剩下的走 `.to-map` 后按字段重新检查并构造新的本地值，字段不合法时得到 `:err` 和出错路径。普通 Map 直接解码。只用 `struct-match` 时，解析出来的 Struct 会落到兜底分支而无法恢复；只按名字判断则会把未检查的字段当成可信数据。
 
 ## Choosing Cirru EDN or JSON
 
