@@ -69,7 +69,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
   - `union-unknown-member` / `union-tag-pattern` / `union-type-pattern-on-dynamic`：模式名不在 union 中、union 上写 Tag 模式、非 union 值上写类型模式，报 `E_UNION_MATCH_PATTERN`；
   - `union-predicate`：union 值上调用 `string?`，报 `E_UNION_PREDICATE`；
   - `union-literal-eq`：union 值与字面量比较，报 `E_UNION_LITERAL_EQ`；
-  - `union-str` / `union-method`：union 值未拆解就 `str` 或调用方法，报 `E_UNION_REQUIRES_MATCH`；
+  - `union-str` / `union-method` / `union-postfix-method`：union 值未拆解就 `str` 或调用方法（含后缀写法 `(v .count)`），报 `E_UNION_REQUIRES_MATCH`；
   - `union-to-string` / `union-member-not-in-union`：union 传给成员类型、非成员类型传给 union，报 `W_FN_ARG_TYPE_MISMATCH`；
   - `union-dynamic-to-union`：Dynamic 直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`；
   - `union-where-bound`：union 不满足 `:where` trait 约束，报 `W_GENERIC_WHERE_BOUND_MISMATCH`。

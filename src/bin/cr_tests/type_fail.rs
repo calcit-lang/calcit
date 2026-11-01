@@ -4644,6 +4644,7 @@ fn strict_type_fail_union_rules_report_stable_codes() {
       ("calcit/type-fail/union-literal-eq.cirru", "E_UNION_LITERAL_EQ"),
       ("calcit/type-fail/union-str.cirru", "E_UNION_REQUIRES_MATCH"),
       ("calcit/type-fail/union-method.cirru", "E_UNION_REQUIRES_MATCH"),
+      ("calcit/type-fail/union-postfix-method.cirru", "E_UNION_REQUIRES_MATCH"),
       ("calcit/type-fail/union-to-string.cirru", "W_FN_ARG_TYPE_MISMATCH"),
       ("calcit/type-fail/union-member-not-in-union.cirru", "W_FN_ARG_TYPE_MISMATCH"),
       ("calcit/type-fail/union-dynamic-to-union.cirru", "E_CALL_ARGUMENT_UNPROVEN"),

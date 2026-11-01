@@ -4527,6 +4527,8 @@ fn preprocess_list_call(
         // `:tag` is a normal argument like `(list :a)` or `(f :a)`.
       }
       Calcit::Method(method_name, method_kind) => {
+        // Postfix `(v .method)` on a union value must fail before typed lowering.
+        union_types::reject_union_method_receiver(method_name, &head_form, scope_types, call_stack)?;
         // Only handle Invoke kinds (regular Calcit method calls)
         if matches!(method_kind, calcit::MethodKind::Invoke(_))
           && let Some(type_info) = resolve_type_value(&head_form, scope_types)

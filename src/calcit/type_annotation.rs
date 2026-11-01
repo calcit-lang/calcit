@@ -4805,6 +4805,8 @@ impl CalcitTypeAnnotation {
         });
       }
       (Self::TypeVar(_), _) | (_, Self::TypeVar(_)) => return None,
+      // A slot resolves later through its own relation arm.
+      (_, Self::TypeSlot(_)) => return None,
       _ => {}
     }
     let relate = |actual: &Self, expected: &Self, bindings: &mut TypeBindings| match mode {
@@ -11407,6 +11409,14 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       }
       if let Some(nominal) = expected.resolve_to_enum() {
         return matches!(value, Calcit::Enum(actual) if actual.sum_type.as_ref().is_some_and(|actual| actual.same_nominal_definition(&nominal)));
+      }
+      // A union admits any value that matches one of its members.
+      if let Some(union_def) = expected.resolve_to_union() {
+        return union_def.checked_members().is_ok_and(|members| {
+          members
+            .iter()
+            .any(|member| value_matches_type_annotation(value, member.annotation.as_ref()))
+        });
       }
       let nominal_match = match value {
         Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),

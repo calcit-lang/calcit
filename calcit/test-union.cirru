@@ -30,6 +30,11 @@
           :code $ quote $ defenum Shape (:circle 'Number) (:square 'Number)
           :examples $ []
           :schema $ quote EnumDef
+        'Style $ %{} 'CodeEntry
+          :doc "|A struct field typed as a union accepts any member at runtime."
+          :code $ quote $ defstruct Style (:width 'CssValue)
+          :examples $ []
+          :schema $ quote StructDef
         'css-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn css-text (v)
             match v
@@ -86,6 +91,8 @@
               describe-all $ [] |a $ Shape :square 2
             assert= |other $ text-only 1
             assert= |s $ text-only |s
+            assert= |12px $ css-text $ :width (Style :width 12)
+            assert= |auto $ css-text $ :width (Style :width |auto)
             println "|Union tests passed"
             , &unit
           :examples $ []

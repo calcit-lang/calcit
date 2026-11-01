@@ -20,6 +20,7 @@ pub const DEFINITION_HEADS: &[&str] = &[
   "defmacro",
   "defstruct",
   "defenum",
+  "defunion",
   "deftrait",
   "defimpl",
   "defref",
