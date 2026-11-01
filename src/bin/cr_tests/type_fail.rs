@@ -2081,6 +2081,45 @@ fn default_proof_accepts_explicit_dynamic_schemas() {
   });
 }
 
+/// #2499: callback parameters are contravariant at the strict Dynamic/nominal
+/// boundary, including rest parameters. A callback accepting Dynamic (fixed or
+/// rest) fits a slot that only passes FsPath; the reverse directions, a rest-only
+/// FsPath callback in a fixed Dynamic slot, a Dynamic result and a wrong arity
+/// stay rejected.
+#[test]
+fn strict_callback_parameters_are_contravariant_at_the_nominal_boundary() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/callback-contravariance-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    run_check_only(&load_fixture_entries(fixture)).expect("open fixed and rest callbacks must satisfy FsPath callback slots");
+    for (entry, detail) in [
+      ("reverse", "`fn(dynamic) -> unit`"),
+      ("result", "-> dynamic` data"),
+      ("reverse-rest", "`fn(& dynamic) -> unit`"),
+      ("rest-for-fixed", "`fn(& type calcit.core/FsPath) -> unit` data"),
+    ] {
+      let err = run_check_only(&load_fixture_entries_with_entry(fixture, Some(entry)))
+        .expect_err(&format!("{entry} must fail strict check-only"));
+      assert!(err.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "{entry}: unexpected error: {err}");
+      assert!(err.contains(detail), "{entry} should mention `{detail}`: {err}");
+    }
+
+    let entries = load_fixture_entries_with_entry(fixture, Some("arity"));
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("a wrong callback arity is reported as a diagnostic");
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("fn(dynamic, dynamic)")),
+      "open parameters must not excuse a wrong arity: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
 #[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
