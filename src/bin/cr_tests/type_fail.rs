@@ -1432,6 +1432,71 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
 }
 
 #[test]
+fn public_check_runs_default_proof_audit_after_ordinary_check() {
+  run_with_large_stack(|| {
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot
+      .entries
+      .get_mut(snapshot::DEFAULT_ENTRY_NAME)
+      .expect("default entry")
+      .target = Some(snapshot::SnapshotTarget::Node);
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defn main! () &unit\n\n",
+      "defn reload! () &unit\n\n",
+      "defn as-number (x) x",
+    ))
+    .expect("public-check snippet should parse");
+    let fn_schema = |arg_types, return_type| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    file.defs.get_mut("main!").expect("main entry").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("reload!").expect("reload entry").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    file.defs.get_mut("as-number").expect("unproven entry").schema =
+      fn_schema(vec![calcit::calcit::DYNAMIC_TYPE.clone()], CalcitTypeAnnotation::Number);
+    snapshot.files.insert("app.main".to_owned(), file);
+
+    // #2506: the ordinary pass accepts the declared return; the default proof
+    // audit, as in plain `--check-only`, rejects it for the selected definition.
+    let project_namespaces = HashSet::from(["app.main".to_owned()]);
+    let entries = prepare_snapshot_entries(snapshot.clone());
+    let _strict = StrictTypesReset::enabled();
+    // The ordinary pass alone accepts the definition, so a public-check
+    // failure below can only come from the proof audit.
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "as-number", &warnings, &CallStackList::default())
+      .expect("the ordinary pass accepts a declared return");
+    assert!(
+      warnings.borrow().is_empty(),
+      "unexpected ordinary warnings: {:?}",
+      warnings.borrow()
+    );
+    let error = public_api_check::run(
+      &calcit::cli_args::CheckPublicCommand {
+        ns: vec!["app.main".to_owned()],
+        format: "json".to_owned(),
+        deps: false,
+        summary_only: false,
+      },
+      &snapshot,
+      &project_namespaces,
+      None,
+    )
+    .expect_err("public check must run the default proof audit");
+    assert!(error.contains("2 passed"), "unexpected public-check outcome: {error}");
+  });
+}
+
+#[test]
 fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
   run_with_large_stack(|| {
     builtins::effects::init_effects_states();
@@ -4605,5 +4670,21 @@ fn strict_type_fail_union_rules_report_stable_codes() {
         assert!(err.contains(code), "{fixture} should report {code}: {err}");
       }
     }
+  });
+}
+
+#[test]
+fn proof_dissoc_in_keeps_known_map_root() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    // #2506: a non-empty literal path keeps the Map root when every nested
+    // result is an open Dynamic payload or another Map under the same rule.
+    let kept = load_fixture_entries("calcit/type-fail/dissoc-in-map-root.cirru");
+    run_check_only(&kept).expect("dissoc-in on a known Map root proves the declared Map return");
+
+    // A List payload is outside the rule and keeps the open public contract.
+    let open = load_fixture_entries("calcit/type-fail/dissoc-in-list-payload.cirru");
+    let err = run_check_only(&open).expect_err("a List payload must not be claimed by the Map rule");
+    assert!(err.contains("E_FN_RETURN_UNPROVEN"), "unexpected dissoc-in proof error: {err}");
   });
 }

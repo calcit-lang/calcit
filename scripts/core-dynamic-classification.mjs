@@ -187,7 +187,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "dissoc-in|schema.return",
-    "#2187：沿嵌套路径逐层读取并用 `assoc` / `dissoc` 重建，路径中途的容器类型无法由公开合同关联到输入；需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。",
+    "#2187 / #2506：已知 `Map<K,V>` 接收者配非空字面量路径、且每层载荷为 `Dynamic` 或同规则的 Map 时，预处理保留 `Map<K,V>`；其他接收者、空路径或动态路径的中间容器无法由公开合同关联到输入，需要保留类型时对已知容器逐层使用 `.dissoc` / `.assoc` 方法。",
   ],
   [
     "apply|schema.return",
