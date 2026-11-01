@@ -66,6 +66,8 @@ pub enum CalcitProc {
   NativeStructNew,
   #[strum(serialize = "&enum-def:new")]
   NativeEnumNew,
+  #[strum(serialize = "&union-def:new")]
+  NativeUnionNew,
   #[strum(serialize = "&trait::new")]
   NativeTraitNew,
   #[strum(serialize = "&impl::new")]
@@ -1227,6 +1229,10 @@ impl CalcitProc {
       }),
       NativeEnumNew => Some(ProcTypeSignature {
         return_type: some_tag("enum-def"),
+        arg_types: vec![some_tag("tag"), variadic_dynamic()],
+      }),
+      NativeUnionNew => Some(ProcTypeSignature {
+        return_type: some_tag("union-def"),
         arg_types: vec![some_tag("tag"), variadic_dynamic()],
       }),
       NativeTraitNew => Some(ProcTypeSignature {

@@ -713,7 +713,7 @@ const scenarios = [
     , |replace
     , |app.main/main!
     , |--path
-    , |@40.1
+    , |@41.1
     , |--code
     quote false`,
       "--dry-run",

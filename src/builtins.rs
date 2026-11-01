@@ -396,6 +396,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeEnumDefinition => meta::enum_definition(args),
     NativeStructNew => structs::new_struct(args),
     NativeEnumNew => structs::new_enum(args),
+    NativeUnionNew => structs::new_union(args),
     NativeTraitNew => meta::trait_new(args),
     NativeImplNew => structs::new_impl(args),
     NativeImplOrigin => meta::impl_origin(args),

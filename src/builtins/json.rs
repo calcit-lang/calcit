@@ -135,6 +135,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::Recur(..)
     | Calcit::StructDef(..)
     | Calcit::EnumDef(..)
+    | Calcit::UnionDef(..)
     | Calcit::Trait(..)
     | Calcit::Impl(..)
     | Calcit::Proc(..)

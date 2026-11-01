@@ -11,6 +11,7 @@ mod source_replay;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
+mod union_types;
 
 use crate::calcit::NullableOrigin;
 use js_ffi::*;
@@ -4526,6 +4527,8 @@ fn preprocess_list_call(
         // `:tag` is a normal argument like `(list :a)` or `(f :a)`.
       }
       Calcit::Method(method_name, method_kind) => {
+        // Postfix `(v .method)` on a union value must fail before typed lowering.
+        union_types::reject_union_method_receiver(method_name, &head_form, scope_types, call_stack)?;
         // Only handle Invoke kinds (regular Calcit method calls)
         if matches!(method_kind, calcit::MethodKind::Invoke(_))
           && let Some(type_info) = resolve_type_value(&head_form, scope_types)
@@ -5470,6 +5473,11 @@ fn preprocess_list_call(
           );
         }
 
+        if let Calcit::Method(method_name, _) = &head_form
+          && let Some(receiver) = processed_args.first()
+        {
+          union_types::reject_union_method_receiver(method_name, receiver, scope_types, call_stack)?;
+        }
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form
           && let Some(receiver) = processed_args.first()
@@ -5597,6 +5605,8 @@ fn preprocess_list_call(
             call_stack,
           )?;
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
+          union_types::reject_union_value_use(call_head, &processed_args, scope_types, call_stack)?;
+          union_types::check_union_declaration(call_head, &processed_args, file_ns, call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
           reject_or_warn_on_js_nullish_predicate_mismatch(
@@ -6271,6 +6281,7 @@ fn preprocess_known_function_call(
     check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
     reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
+    union_types::reject_union_value_use(&head_form, &current_args, scope_types, call_stack)?;
     warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name, check_warnings);
     warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns, call_stack);
     reject_or_warn_on_js_nullish_predicate_mismatch(
@@ -12777,6 +12788,24 @@ fn process_match(
   // and payload typing. Applied generic arguments are kept so a matched payload
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
+  if let Some(union_def) = inferred_match_type.as_deref().and_then(union_types::union_of_type) {
+    return union_types::lower_union_match(&union_def, &value_form, args, ctx);
+  }
+  if union_types::has_type_pattern(args) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "type patterns such as `(String s)` need a value whose static type is a defunion; this value has type {}",
+        inferred_match_type
+          .as_deref()
+          .map(|annotation| annotation.to_brief_string())
+          .unwrap_or_else(|| "unknown".to_owned())
+      ),
+      "E_UNION_MATCH_PATTERN",
+      ctx.call_stack,
+      args.first().and_then(|value| value.get_location()),
+    ));
+  }
   let explicitly_open_match = explicit_open::reads_explicitly_open_local(&value_form);
   let enum_match = inferred_match_type.and_then(|t| match t.as_ref() {
     CalcitTypeAnnotation::EnumValue(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
@@ -13832,6 +13861,13 @@ pub fn preprocess_defn(
           Some(definition_location.clone()),
         )?;
         reject_strict_bare_container_public_schema(
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        union_types::reject_inline_union_schema(
           ctx.file_ns,
           def_name.as_ref(),
           &def_schema,

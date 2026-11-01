@@ -87,6 +87,7 @@ calcit eval "echo |done"
 - **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
 - **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `Point :x 1 :y 2`
 - **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
+- **Unions**: `defunion CssValue 'String 'Number`，只能用 `match v ((String s) ..) ((Number n) ..)` 拆解，见 [Unions](features/unions.md)
 - **Refs**: `ref 0` - mutable references
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
@@ -280,6 +281,7 @@ assert-type f $ quote $ Fn T (-> T) (:generics T)
 ### Enum Operations
 
 - `defenum` - define a named enum
+- `defunion` - define a closed untagged union of known types
 - `%::` - create a named enum value, or an anonymous value with `%:: _ ...`
 - `::` - shorthand for an anonymous enum value
 - `&enum:nth` - access the variant tag or payload by index

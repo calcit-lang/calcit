@@ -4628,6 +4628,54 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
   });
 }
 
+/// Each `defunion` rule rejects its fixture with a stable code: member
+/// restrictions, exhaustive type-pattern `match`, no predicate or literal
+/// narrowing, no methods or stringification, no Dynamic into a union, and
+/// no inline `Union` in schemas.
+#[test]
+fn strict_type_fail_union_rules_report_stable_codes() {
+  run_with_large_stack(|| {
+    let cases = [
+      ("calcit/type-fail/union-not-exhaustive.cirru", "E_UNION_MATCH_NOT_EXHAUSTIVE"),
+      ("calcit/type-fail/union-unknown-member.cirru", "E_UNION_MATCH_PATTERN"),
+      ("calcit/type-fail/union-tag-pattern.cirru", "E_UNION_MATCH_PATTERN"),
+      ("calcit/type-fail/union-type-pattern-on-dynamic.cirru", "E_UNION_MATCH_PATTERN"),
+      ("calcit/type-fail/union-predicate.cirru", "E_UNION_PREDICATE"),
+      ("calcit/type-fail/union-literal-eq.cirru", "E_UNION_LITERAL_EQ"),
+      ("calcit/type-fail/union-str.cirru", "E_UNION_REQUIRES_MATCH"),
+      ("calcit/type-fail/union-method.cirru", "E_UNION_REQUIRES_MATCH"),
+      ("calcit/type-fail/union-postfix-method.cirru", "E_UNION_REQUIRES_MATCH"),
+      ("calcit/type-fail/union-to-string.cirru", "W_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-member-not-in-union.cirru", "W_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-dynamic-to-union.cirru", "E_CALL_ARGUMENT_UNPROVEN"),
+      ("calcit/type-fail/union-member-dynamic.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-member-option.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-member-dup-kind.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-dup-pattern-name.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-unused-invalid.cirru", "E_UNION_MEMBER_INVALID"),
+      ("calcit/type-fail/union-inline.cirru", "E_UNION_INLINE"),
+      ("calcit/type-fail/union-where-bound.cirru", "W_GENERIC_WHERE_BOUND_MISMATCH"),
+    ];
+    let _strict = StrictTypesReset::enabled();
+    for (fixture, code) in cases {
+      let entries = load_fixture_entries(fixture);
+      if code.starts_with("W_") {
+        let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+        // A warning-level rule may still stop compilation; only the collected codes matter here.
+        let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+        let warnings = warnings.borrow();
+        assert!(
+          warnings.iter().any(|warning| warning.code() == Some(code)),
+          "{fixture} should report {code}: {warnings:?}"
+        );
+      } else {
+        let err = run_check_only(&entries).expect_err(fixture);
+        assert!(err.contains(code), "{fixture} should report {code}: {err}");
+      }
+    }
+  });
+}
+
 #[test]
 fn proof_dissoc_in_keeps_known_map_root() {
   run_with_large_stack(|| {

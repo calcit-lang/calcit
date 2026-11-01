@@ -3549,6 +3549,13 @@
             -> $ Set T
             :generics T
           :tags $ #{} :builtin :internal
+        '&union-def:new $ %{} 'CodeEntry
+          :doc "|Create the runtime value of a defunion from its name and member type forms."
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            &union-def:new :CssValue 'String 'Number
+          :schema $ quote $ Fn Tag (-> UnionDef)
+          :tags $ #{} :builtin :internal
         '&wait-ms $ %{} 'CodeEntry
           :doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
@@ -6793,6 +6800,16 @@
           :examples $ []
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
+        'defunion $ %{} 'CodeEntry
+          :doc "|定义闭合的无标签联合类型：(defunion Name 'MemberA 'MemberB ...)。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :code $ quote $ defmacro defunion (name & members)
+            assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
+            assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
+            quasiquote $ &union-def:new (~ $ turn-tag name) ~@members
+          :examples $ [] $ quote (; defunion CssValue 'String 'Number)
+          :schema $ quote $ Macro Syntax & Syntax
+            -> $ Expr UnionDef
+          :tags $ #{} :macro :type
         'deref $ %{} 'CodeEntry
           :doc "|Reads Ref<T> without erasing its payload type. Prefer receiver syntax `.deref` in user code; custom host or nominal dereference behavior belongs to a typed method implementation."
           :code $ quote $ defn deref (*a) (&atom:deref *a)

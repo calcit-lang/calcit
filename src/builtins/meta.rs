@@ -111,6 +111,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Struct { .. } => Ok(Calcit::tag("struct")),
     StructDef { .. } => Ok(Calcit::tag("struct-def")),
     EnumDef { .. } => Ok(Calcit::tag("enum-def")),
+    UnionDef { .. } => Ok(Calcit::tag("union-def")),
     Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
     Macro { .. } => Ok(Calcit::tag("macro")),
     Fn { .. } => Ok(Calcit::tag("fn")),
