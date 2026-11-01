@@ -4562,3 +4562,19 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
     assert_eq!(error.code.as_deref(), Some("E_ASSERT_TYPE_MISMATCH"), "{error}");
   });
 }
+
+#[test]
+fn proof_dissoc_in_keeps_known_map_root() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    // #2506: a non-empty literal path keeps the Map root when every nested
+    // result is an open Dynamic payload or another Map under the same rule.
+    let kept = load_fixture_entries("calcit/type-fail/dissoc-in-map-root.cirru");
+    run_check_only(&kept).expect("dissoc-in on a known Map root proves the declared Map return");
+
+    // A List payload is outside the rule and keeps the open public contract.
+    let open = load_fixture_entries("calcit/type-fail/dissoc-in-list-payload.cirru");
+    let err = run_check_only(&open).expect_err("a List payload must not be claimed by the Map rule");
+    assert!(err.contains("E_FN_RETURN_UNPROVEN"), "unexpected dissoc-in proof error: {err}");
+  });
+}
