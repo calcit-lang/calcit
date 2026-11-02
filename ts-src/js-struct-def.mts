@@ -1,7 +1,7 @@
 import { CalcitSymbol, CalcitTag, canonicalizeTagPairs, toString, _$n__$e_ } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
-import { CalcitEnumDef } from "./js-enum-def.mjs";
+import { CalcitEnumDef, PayloadValidator } from "./js-enum-def.mjs";
 import { CalcitStructValue, fieldsEqual } from "./js-struct-value.mjs";
 import { register_core_enum } from "./js-core-enum-value.mjs";
 import { typeFormIdentity } from "./js-type-form.mjs";
@@ -80,14 +80,19 @@ export class CalcitStructDef {
 }
 
 /** Bind nominal definitions like native, preserving an alias's existing identity. */
-export function bind_struct_definition(value: CalcitValue, definitionRef: string, fieldValidators: FieldValidator[] | null = null): CalcitValue {
+export function bind_struct_definition(
+  value: CalcitValue,
+  definitionRef: string,
+  fieldValidators: FieldValidator[] | null = null,
+  payloadValidators: Record<string, (PayloadValidator | null)[]> | null = null
+): CalcitValue {
   if (value instanceof CalcitStructDef && value.definitionRef == null) {
     return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators, value.generics, value.whereBounds, value.fieldDefaults);
   }
   if (value instanceof CalcitEnumDef && value.prototype.structRef.definitionRef == null) {
     const prototype = value.prototype;
     const structRef = bind_struct_definition(prototype.structRef, definitionRef) as CalcitStructDef;
-    const bound = new CalcitEnumDef(new CalcitStructValue(prototype.name, prototype.fields, prototype.values, structRef));
+    const bound = new CalcitEnumDef(new CalcitStructValue(prototype.name, prototype.fields, prototype.values, structRef), payloadValidators);
     if (definitionRef.startsWith("calcit.core/")) register_core_enum(definitionRef, bound);
     return bound;
   }

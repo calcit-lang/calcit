@@ -2876,6 +2876,17 @@ export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...ext
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
   }
 
+  // Payloads are checked to their leaves, as native `%::` does.
+  const validators = enumPrototype instanceof CalcitEnumDef ? enumPrototype.payloadValidators?.[tagValue.value] : undefined;
+  if (validators != null) {
+    for (let idx = 0; idx < extra.length; idx++) {
+      const validator = validators[idx];
+      if (validator != null && !validator(extra[idx])) {
+        throw new Error(`Enum \`${proto.name.value}::${tagValue.value}\` payload ${idx + 1} does not match its declared type: ${toString(extra[idx], true)}`);
+      }
+    }
+  }
+
   return new CalcitEnumValue(tag, extra, enumPrototype as CalcitEnumDef);
 };
 

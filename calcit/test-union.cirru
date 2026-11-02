@@ -64,6 +64,20 @@
           :code $ quote $ defstruct Style (:width CssValue)
           :examples $ []
           :schema $ quote StructDef
+        'CellPatch $ %{} 'CodeEntry
+          :doc "|Enum payloads are checked to their leaves when the enum value is built."
+          :code $ quote $ defenum CellPatch (:set Cells)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |payload-elements-validate)
+            :code $ quote $ do
+              assert= |accepted $ try
+                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 2) |accepted
+                fn (e) |rejected
+              assert= |rejected $ try
+                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 |bad) |accepted
+                fn (e) |rejected
+            :tags $ #{} :union :unit
         'StylePatch $ %{} 'CodeEntry
           :doc "|An enum payload typed by a union written with its short name."
           :code $ quote $ defenum StylePatch (:width CssValue) (:reset)
@@ -235,6 +249,11 @@
           :examples $ []
           :schema $ quote $ Fn Scale
             -> $ List Number
+        'erased-cells $ %{} 'CodeEntry
+          :doc "|Restores a value from a type-erased cache without checking it, so `%::` has to."
+          :code $ quote $ defn erased-cells (x) (unsafe-coerce x 'Cells)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Cells) (:features :erased-cache)
         'segment-raw $ %{} 'CodeEntry
           :doc "|Hands a value over as open data, as a route table read from a Dynamic list would."
           :code $ quote $ defn segment-raw (x) x

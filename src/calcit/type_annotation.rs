@@ -10633,6 +10633,42 @@ mod tests {
   }
 
   #[test]
+  fn runtime_container_checks_walk_their_elements() {
+    use CalcitTypeAnnotation as T;
+    let numbers = T::List(Arc::new(T::Number));
+    let good = Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let mixed = Calcit::from(vec![Calcit::Number(1.0), Calcit::Str("bad".into())]);
+    assert!(value_matches_type_annotation(&good, &numbers));
+    assert!(!value_matches_type_annotation(&mixed, &numbers));
+    // Open element types accept any content.
+    assert!(value_matches_type_annotation(&mixed, &T::List(Arc::new(T::Dynamic))));
+    // Nested containers are checked to the leaves.
+    let nested = T::List(Arc::new(numbers.clone()));
+    assert!(value_matches_type_annotation(&Calcit::from(vec![good.clone()]), &nested));
+    assert!(!value_matches_type_annotation(
+      &Calcit::from(vec![good.clone(), mixed.clone()]),
+      &nested
+    ));
+
+    let tag_numbers = T::Map(Arc::new(T::Tag), Arc::new(T::Number));
+    let entries = |value: Calcit| Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::tag("a"), value));
+    assert!(value_matches_type_annotation(&entries(Calcit::Number(1.0)), &tag_numbers));
+    assert!(!value_matches_type_annotation(&entries(Calcit::Str("x".into())), &tag_numbers));
+    let wrong_key = Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::Number(1.0), Calcit::Number(1.0)));
+    assert!(!value_matches_type_annotation(&wrong_key, &tag_numbers));
+
+    let strings = T::Set(Arc::new(T::String));
+    assert!(value_matches_type_annotation(
+      &Calcit::Set(rpds::HashTrieSet::new_sync().insert(Calcit::Str("a".into()))),
+      &strings
+    ));
+    assert!(!value_matches_type_annotation(
+      &Calcit::Set(rpds::HashTrieSet::new_sync().insert(Calcit::Number(1.0))),
+      &strings
+    ));
+  }
+
+  #[test]
   fn generic_bindings_do_not_synthesize_nullable_types() {
     let var = Arc::<str>::from("T");
     let mut nil_first = TypeBindings::new();
@@ -11376,6 +11412,7 @@ impl CalcitFnTypeAnnotation {
 
 /// Check if a runtime `Calcit` value matches the expected `CalcitTypeAnnotation`.
 /// Used for runtime type validation when creating structs (`%{}`) and enums (`%::`).
+/// `List`, `Set` and `Map` are checked element by element; `Ref` only by kind.
 /// Returns `true` if the value is compatible with the declared type.
 /// `Dynamic` types always match. `Nil` matches legacy Optional and JS-nullish boundary types.
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
@@ -11391,15 +11428,32 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::String => matches!(value, Calcit::Str(_)),
     CalcitTypeAnnotation::Symbol => matches!(value, Calcit::Symbol { .. }),
     CalcitTypeAnnotation::Tag => matches!(value, Calcit::Tag(_)),
-    CalcitTypeAnnotation::List(_) => matches!(value, Calcit::List(_)),
+    // Containers are checked element by element: a `List Number` holding a
+    // string is a mismatch. Open element types skip the walk.
+    CalcitTypeAnnotation::List(item) => match value {
+      Calcit::List(xs) => runtime_open_type(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
+      _ => false,
+    },
     CalcitTypeAnnotation::Tuple(items) => match value {
       Calcit::List(xs) => {
         xs.len() == items.len() && xs.iter().zip(items.iter()).all(|(x, item)| value_matches_type_annotation(x, item))
       }
       _ => false,
     },
-    CalcitTypeAnnotation::Map(_, _) => matches!(value, Calcit::Map(_)),
-    CalcitTypeAnnotation::Set(_) => matches!(value, Calcit::Set(_)),
+    CalcitTypeAnnotation::Map(key, item) => match value {
+      Calcit::Map(xs) => {
+        (runtime_open_type(key) && runtime_open_type(item))
+          || xs
+            .iter()
+            .all(|(k, v)| value_matches_type_annotation(k, key) && value_matches_type_annotation(v, item))
+      }
+      _ => false,
+    },
+    CalcitTypeAnnotation::Set(item) => match value {
+      Calcit::Set(xs) => runtime_open_type(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
+      _ => false,
+    },
+    // A Ref's content can change after this check, so only the kind is checked.
     CalcitTypeAnnotation::Ref(_) => matches!(value, Calcit::Ref(..)),
     CalcitTypeAnnotation::Buffer => matches!(value, Calcit::Buffer(_)),
     CalcitTypeAnnotation::CirruQuote => matches!(value, Calcit::CirruQuote(_)),
@@ -11513,6 +11567,14 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     }
     CalcitTypeAnnotation::JsObject => true, // opaque external data, allow any
   }
+}
+
+/// Element types that every runtime value satisfies, so a container walk can be skipped.
+fn runtime_open_type(annotation: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    annotation,
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::JsObject
+  )
 }
 
 fn infer_runtime_struct_applied_args(struct_def: &CalcitStructDef, values: &[Calcit]) -> Vec<Arc<CalcitTypeAnnotation>> {

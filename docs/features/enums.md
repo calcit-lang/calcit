@@ -137,6 +137,13 @@ When you annotate an enum payload with a struct type, `%::` validates both the v
 泛型实参则保留调用方提供的类型：声明中的 `T` 被替换成实际类型以后，不会再按 Enum 的命名空间重新解释。
 未声明的类型名仍不能凭同名或相同字段获得名义类型证明。
 
+### 构造时的 payload 检查
+
+构造 enum 值时，每个 payload 都会按声明类型做运行时检查，native 和 JS 两个后端行为一致。
+`List`、`Set`、`Map` 会逐个检查元素，嵌套容器和 union 成员会一直检查到最内层，所以声明为 `List Number` 的 payload 里混入字符串会直接报错。
+`Ref` 只检查种类，因为它的内容之后还会变化；`Dynamic` 和泛型参数位置不做检查。
+这项检查主要防住绕过静态检查的值，比如经 `unsafe-coerce` 从类型擦除的缓存中恢复的数据；静态检查能证明的调用不受影响。
+
 ## Creating Instances
 
 Call the enum definition with the variant tag and then the payload values:
