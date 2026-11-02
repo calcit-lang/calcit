@@ -3170,7 +3170,11 @@ pub fn render_cirru_inline(node: &Cirru) -> String {
 
 /// The first subtree where `before` and `after` differ, as (written, migrated).
 fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a Cirru, &'a Cirru)> {
+  let quote_head =
+    |node: &Cirru| matches!(node, Cirru::List(xs) if matches!(xs.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote"));
   match (before, after) {
+    // A bare compound type such as `(List Number)` became `(quote (List Number))`.
+    _ if quote_head(after) && !quote_head(before) => Some((before, after)),
     (Cirru::List(xs), Cirru::List(ys)) if xs.len() == ys.len() => xs.iter().zip(ys).find_map(|(x, y)| first_rewritten_form(x, y)),
     _ if before == after => None,
     _ => Some((before, after)),
@@ -4806,6 +4810,14 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
         rewritten[index] = Cirru::List(next_field);
       }
     }
+    // `defunion` members are bare type slots after the name.
+    Some("defunion") if items.len() >= 3 => {
+      for index in 2..items.len() {
+        let (next, count) = canonicalize_type_expression(&items[index]);
+        rewritten[index] = next;
+        changed += count;
+      }
+    }
     Some("deftrait") if items.len() >= 3 => {
       for index in 2..items.len() {
         let Cirru::List(entry) = &items[index] else { continue };
@@ -5001,6 +5013,17 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
           }
         }
         *slot = Cirru::List(next_entry);
+      }
+    }
+    // Every `defunion` slot after the name is a member type. A bare compound
+    // member such as `(Map Tag Number)` would be evaluated as a call by the JS
+    // backend, so it gets the same quoted spelling as struct fields.
+    Some("defunion") if items.len() >= 3 => {
+      for slot in rewritten.iter_mut().skip(2) {
+        if let Some(compact) = compact_type_form(slot) {
+          *slot = compact;
+          changed += 1;
+        }
       }
     }
     _ => {}
@@ -6392,6 +6415,19 @@ mod tests {
         "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
         "defenum Shape (:some 'T $ quote $ List T) (:none)",
       ),
+      // A bare compound union member would be called as a function on JS.
+      (
+        "defunion TextStyle String (Map Tag Number)",
+        "defunion TextStyle String $ quote $ Map Tag Number",
+      ),
+      (
+        "defunion Cells 'String (List Number)",
+        "defunion Cells 'String $ quote $ List Number",
+      ),
+      (
+        "defunion Cells String $ :: 'List 'Number",
+        "defunion Cells String $ quote $ List Number",
+      ),
       (
         "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
         "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
@@ -6402,8 +6438,22 @@ mod tests {
       assert_eq!(migrated, parse_one(expected), "{source}");
       assert!(count > 0, "{source}");
     }
+    // Loading names the whole bare member and its quoted spelling.
+    for (source, written) in [
+      (
+        "defunion TextStyle String (Map Tag Number)",
+        "`Map Tag Number`; write `quote $ Map Tag Number`",
+      ),
+      ("defunion Cells String (List Number)", "`List Number`; write `quote $ List Number`"),
+    ] {
+      let err = check_code_type_syntax(&parse_one(source), "mini.main/U", "calcit.cirru").expect_err(source);
+      assert!(err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains(written), "{source}: {err}");
+    }
     // Value references, partial hints and quoted data keep their written shape.
     for source in [
+      "defunion CssValue String Number",
+      "defunion CssValue 'String 'Number",
+      "defunion Cells String $ quote $ List Number",
       "assert-type xs $ :: 'List Person",
       "hint-fn $ {} $ :args ([] 'A)",
       "hint-fn $ {} (:async false)",
