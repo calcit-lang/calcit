@@ -577,7 +577,9 @@ impl DataShapeNode {
       (Self::Struct { nominal, .. }, Calcit::Struct(value)) => {
         Arc::ptr_eq(&value.struct_ref, nominal) || value.struct_ref.same_nominal_definition(nominal)
       }
-      (Self::Enum { nominal, .. }, Calcit::Enum(value)) => value
+      // `decode-map-as` builds an open shape where `Option T` is a `MapOption`;
+      // a union member of that kind still matches an `Option` value.
+      (Self::Enum { nominal, .. } | Self::MapOption { nominal, .. }, Calcit::Enum(value)) => value
         .sum_type
         .as_ref()
         .is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.same_nominal_definition(nominal)),
