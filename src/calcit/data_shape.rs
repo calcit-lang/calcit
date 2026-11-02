@@ -328,7 +328,8 @@ impl DataShapeGraph {
       let path = match node {
         DataShapeNode::Struct { nominal_path, .. }
         | DataShapeNode::Enum { nominal_path, .. }
-        | DataShapeNode::MapOption { nominal_path, .. } => nominal_path,
+        | DataShapeNode::MapOption { nominal_path, .. }
+        | DataShapeNode::Union { nominal_path, .. } => nominal_path,
         _ => continue,
       };
       if let Some(path) = path
@@ -1063,6 +1064,26 @@ fn update_nominal_fingerprint(
 mod tests {
   use super::*;
   use crate::calcit::{CalcitEnumValue, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructValue, CalcitTrait};
+
+  #[test]
+  fn nominal_paths_include_union_targets() {
+    // A union of builtin members has no struct/enum node, so the union itself
+    // must be reported for compiled decoders to be invalidated on reload.
+    let graph = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::Union {
+          name: Arc::from("Scale"),
+          nominal_path: Some((Arc::from("tests.shape-union"), Arc::from("Scale"))),
+          members: vec![1, 2],
+        },
+        DataShapeNode::Number,
+        DataShapeNode::List(1),
+      ],
+    )
+    .expect("union graph");
+    assert_eq!(graph.nominal_paths(), vec![(Arc::from("tests.shape-union"), Arc::from("Scale"))]);
+  }
 
   #[test]
   fn field_write_cache_reuses_live_annotations_and_invalidates_on_reload() {
