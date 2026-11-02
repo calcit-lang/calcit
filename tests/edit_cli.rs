@@ -2180,6 +2180,13 @@ fn edit_ns_transaction_preserves_metadata_and_commits_namespaces_atomically() {
     &run_calcit(&snapshot, &["edit", "def", "app.extra/value", "--code", "quote $ def value 1"]),
     "add second namespace definition",
   );
+  // Modern mutation commands cannot create this retained legacy root field.
+  let mut legacy = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let cirru_edn::Edn::Map(root) = &mut legacy else {
+    panic!("Snapshot fixture must be a map");
+  };
+  root.insert_key("version", cirru_edn::Edn::Str("0.0.1".into()));
+  fs::write(&snapshot, format!("\n{}", cirru_edn::format(&legacy, true).unwrap())).unwrap();
   let before = fs::read(&snapshot).unwrap();
   let namespaces = ["app.main", "app.extra"];
   let operations_for = |source: &Path| {
@@ -2199,6 +2206,13 @@ fn edit_ns_transaction_preserves_metadata_and_commits_namespaces_atomically() {
   let unchanged_report: serde_json::Value = serde_json::from_slice(&unchanged.stdout).unwrap();
   assert_eq!(unchanged_report["changed"], false);
   assert_eq!(fs::read(&snapshot).unwrap(), before);
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "transaction", "--code", r#"[["edit","format"]]"#]),
+    "an explicit format transaction still canonicalizes retained legacy source",
+  );
+  assert_ne!(fs::read(&snapshot).unwrap(), before);
+  let before = fs::read(&snapshot).unwrap();
 
   let reference = directory.0.join("reference.cirru");
   fs::copy(&snapshot, &reference).unwrap();
