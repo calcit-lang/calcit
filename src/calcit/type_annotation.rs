@@ -10657,6 +10657,11 @@ mod tests {
     let wrong_key = Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::Number(1.0), Calcit::Number(1.0)));
     assert!(!value_matches_type_annotation(&wrong_key, &tag_numbers));
 
+    let number_ref = T::Ref(Arc::new(T::Number));
+    let cell = |value: Calcit| Calcit::Ref(Arc::from("deep-check"), Arc::new(std::sync::Mutex::new((value, HashMap::new()))));
+    assert!(value_matches_type_annotation(&cell(Calcit::Number(1.0)), &number_ref));
+    assert!(!value_matches_type_annotation(&cell(Calcit::Str("x".into())), &number_ref));
+
     let strings = T::Set(Arc::new(T::String));
     assert!(value_matches_type_annotation(
       &Calcit::Set(rpds::HashTrieSet::new_sync().insert(Calcit::Str("a".into()))),
@@ -11412,7 +11417,7 @@ impl CalcitFnTypeAnnotation {
 
 /// Check if a runtime `Calcit` value matches the expected `CalcitTypeAnnotation`.
 /// Used for runtime type validation when creating structs (`%{}`) and enums (`%::`).
-/// `List`, `Set` and `Map` are checked element by element; `Ref` only by kind.
+/// `List`, `Set` and `Map` are checked element by element, a `Ref` by its current content.
 /// Returns `true` if the value is compatible with the declared type.
 /// `Dynamic` types always match. `Nil` matches legacy Optional and JS-nullish boundary types.
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
@@ -11453,8 +11458,11 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       Calcit::Set(xs) => runtime_open_type(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
       _ => false,
     },
-    // A Ref's content can change after this check, so only the kind is checked.
-    CalcitTypeAnnotation::Ref(_) => matches!(value, Calcit::Ref(..)),
+    // A Ref is checked by its current content, like decoders and JS validators do.
+    CalcitTypeAnnotation::Ref(item) => match value {
+      Calcit::Ref(_, cell) => runtime_open_type(item) || cell.lock().is_ok_and(|guard| value_matches_type_annotation(&guard.0, item)),
+      _ => false,
+    },
     CalcitTypeAnnotation::Buffer => matches!(value, Calcit::Buffer(_)),
     CalcitTypeAnnotation::CirruQuote => matches!(value, Calcit::CirruQuote(_)),
     CalcitTypeAnnotation::AnonymousEnum => matches!(value, Calcit::Enum(_)),

@@ -78,6 +78,19 @@
                 do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 |bad) |accepted
                 fn (e) |rejected
             :tags $ #{} :union :unit
+        'Nest $ %{} 'CodeEntry
+          :doc "|A payload that refers back to its own enum is checked once the enum is defined."
+          :code $ quote $ defenum Nest (:leaf Number)
+            :many $ quote $ List Nest
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |recursive-payload-validates)
+            :code $ quote $ assert= 2
+              match
+                Nest :many $ [] (Nest :leaf 1) (Nest :many $ [] (Nest :leaf 2))
+                (:many xs) (count xs)
+                (:leaf _) 0
+            :tags $ #{} :union :unit
         'StylePatch $ %{} 'CodeEntry
           :doc "|An enum payload typed by a union written with its short name."
           :code $ quote $ defenum StylePatch (:width CssValue) (:reset)
