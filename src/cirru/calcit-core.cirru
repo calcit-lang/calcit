@@ -2515,7 +2515,8 @@
             %{} 'TestEntry (:name |visits-original-pairs-once-in-order)
               :code $ quote $ let
                   source $ &{} :a 1 :b 2 :c 3
-                  seen $ ref $ &map:to-list (&{})
+                  seen $ ref $ assert-type ([])
+                    quote $ List (List Dynamic)
                 let
                     filtered $ &map:filter source $ fn (pair)
                       swap! seen $ fn (items) (&list:append items pair)
@@ -2662,7 +2663,7 @@
               raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn (List Dynamic) (-> U)
+            Fn (Tuple K V) (-> U)
             -> $ List U
             :generics K V U
           :tags $ #{} :internal
@@ -2681,14 +2682,23 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            -> $ List $ List Dynamic
+            -> $ List $ Tuple K V
             :generics K V
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-map-pairs-directly)
-            :code $ quote $ assert=
-              [] $ [] :a 1
-              &map:to-list $ &{} :a 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-map-pairs-directly)
+              :code $ quote $ assert=
+                [] $ [] :a 1
+                &map:to-list $ &{} :a 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-key-and-value-types)
+              :code $ quote $ let
+                  entries $ &map:to-list $ &{} :a 1
+                assert-type entries $ quote $ List (Tuple Tag Number)
+                let[] (k v) (&list:nth entries 0)
+                  assert= 2 $ &+ v 1
+                  assert= |a $ to-string k
+              :tags $ #{} :core :unit
         '&map:vals $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -12930,11 +12940,11 @@
               assert= "|([] '+ 1 2)" $ to-lispy-string $ quote (+ 1 2)
             :tags $ #{} :core :unit
         'to-pairs $ %{} 'CodeEntry
-          :doc "|把 Map 转为无序的 Set<List>，每个 List 是包含键和值的两个槽位。与 Map.to-list 不同，外层是 Set；键和值可能具有不同类型，当前同质 List 仅保留开放槽位，读取具体内容前仍需窄化。可通过 .to-pairs 调用，再用集合方法操作；返回值不是 Enum。"
+          :doc "|把 Map 转为无序的 Set，每个条目是 `Tuple K V`：运行时是包含键和值的两个元素的 List，类型上分别保留键和值的类型。与 Map.to-list 不同，外层是 Set。可通过 .to-pairs 调用，再用集合方法操作；返回值不是 Enum。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            -> $ Set $ List Dynamic
+            -> $ Set $ Tuple K V
             :generics K V
           :tags $ #{} :builtin :internal
           :tests $ []
@@ -12946,7 +12956,7 @@
             %{} 'TestEntry (:name |exposes-list-shaped-entries)
               :code $ quote $ let
                   ps $ to-pairs $ &{} :a 1 :b 2
-                assert-type ps $ quote $ Set (List Dynamic)
+                assert-type ps $ quote $ Set (Tuple Tag Number)
                 assert= 2 $ .len ps
                 assert= 2 $ .len $ .unwrap
                   .first $ .to-list ps

@@ -1,6 +1,22 @@
 
 {}
   :migrations $ []
+    {} (:family |definitions) (:version |0.35.0) (:issue |#2538)
+      :reason "|map_entries_are_two-item_lists_at_runtime;_the_schema_now_keeps_K_and_V_as_Tuple_K_V"
+      :before $ {} (:declaration nil)
+        :name 'calcit.core/to-pairs
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set $ :: 'List 'Dynamic
+      :after $ {} (:declaration nil)
+        :name 'calcit.core/to-pairs
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set $ :: 'Tuple 'K 'V
     {} (:family |definitions) (:version |0.33.0) (:issue |#2233)
       :reason "|legacy_Optional<T>_was_removed;_the_nil_join_argument_is_now_a_plain_type_variable"
       :before $ {} (:declaration nil)
