@@ -21,6 +21,7 @@ use std::sync::Arc;
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof, free_type_variable_names};
+use crate::calcit::union_def::UnionMemberKind;
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -1637,6 +1638,71 @@ pub(crate) fn detect_return_type_hint_from_processed_body(processed_body: &[Calc
   crate::calcit::DYNAMIC_TYPE.clone()
 }
 
+/// Visit literal members under their expected contracts before a lossy join.
+fn collection_literal_matches(
+  expr: &Calcit,
+  expected: &CalcitTypeAnnotation,
+  mut matches: impl FnMut(&Calcit, &CalcitTypeAnnotation) -> bool,
+) -> Option<bool> {
+  let Calcit::List(items) = expr else { return None };
+  let mut expected = expected;
+  while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = expected {
+    expected = inner;
+  }
+  let union_member = expected.resolve_to_union().and_then(|union| {
+    let kind = match items.first()? {
+      Calcit::Proc(CalcitProc::List) => UnionMemberKind::List,
+      Calcit::Proc(CalcitProc::Set) => UnionMemberKind::Set,
+      Calcit::Proc(CalcitProc::Ref) => UnionMemberKind::Ref,
+      Calcit::Proc(CalcitProc::NativeMap) => UnionMemberKind::Map,
+      _ => return None,
+    };
+    union
+      .checked_members()
+      .ok()?
+      .into_iter()
+      .find(|member| member.kind == kind)
+      .map(|member| member.annotation)
+  });
+  if let Some(member) = &union_member {
+    expected = member.as_ref();
+  }
+  match (items.first(), expected) {
+    (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))
+    | (Some(Calcit::Proc(CalcitProc::Set)), CalcitTypeAnnotation::Set(member)) => {
+      Some(items.iter().skip(1).all(|value| matches(value, member)))
+    }
+    (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::Tuple(slots)) => {
+      Some(items.len() - 1 == slots.len() && items.iter().skip(1).zip(slots.iter()).all(|(value, slot)| matches(value, slot)))
+    }
+    (Some(Calcit::Proc(CalcitProc::Ref)), CalcitTypeAnnotation::Ref(inner)) if items.len() == 2 => {
+      Some(matches(items.get(1).unwrap(), inner))
+    }
+    (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value)) if (items.len() - 1).is_multiple_of(2) => Some(
+      (1..items.len())
+        .step_by(2)
+        .all(|index| matches(items.get(index).unwrap(), key) && matches(items.get(index + 1).unwrap(), value)),
+    ),
+    _ => None,
+  }
+}
+
+/// Reject known member contradictions without treating open evidence as proof.
+pub(super) fn expression_has_known_mismatch(expr: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
+  fn check(expr: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes, depth: usize) -> bool {
+    if depth > 128 {
+      return false;
+    }
+    if let Some(compatible) = collection_literal_matches(expr, expected, |value, contract| !check(value, contract, scope, depth + 1)) {
+      return !compatible;
+    }
+    resolve_type_value(expr, scope).is_some_and(|actual| {
+      actual.prove_with_bindings(expected, &mut HashMap::new()).is_mismatch() && !expression_is_proven_for(expr, expected, scope, false)
+    })
+  }
+  check(expr, expected, scope, 0)
+}
+
 /// Check independent exits and literal members before a lossy synthesized join.
 /// Evidence is local to the expected contract; inferred annotations stay intact.
 /// Open generic contracts continue through the existing substitution checker.
@@ -1777,45 +1843,10 @@ pub(super) fn expression_is_proven_for(
       if expected.contains_type_var() && !empty_family {
         return false;
       }
-      if let Calcit::List(items) = expr {
-        // A nullish wrapper admits an independently proved container, not a
-        // conversion from an inferred nil join. Promise adoption belongs to the whole
-        // async return only; collection members are ordinary stored values.
-        let mut literal_expected = expected;
-        while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = literal_expected {
-          literal_expected = inner;
-        }
-        match (items.first(), literal_expected) {
-          (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))
-          | (Some(Calcit::Proc(CalcitProc::Set)), CalcitTypeAnnotation::Set(member)) => {
-            // A known empty constructor has no members that can violate this
-            // same-family contract. An open container is not an empty literal.
-            return items
-              .iter()
-              .skip(1)
-              .all(|value| self.check(value, member, scope, aliases, false, depth + 1));
-          }
-          // A literal proves a tuple position by position; its length is the arity.
-          (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::Tuple(slots)) => {
-            return items.len() - 1 == slots.len()
-              && items
-                .iter()
-                .skip(1)
-                .zip(slots.iter())
-                .all(|(value, slot)| self.check(value, slot, scope, aliases, false, depth + 1));
-          }
-          // A fresh Ref has no other aliases yet, so its initial value decides it.
-          (Some(Calcit::Proc(CalcitProc::Ref)), CalcitTypeAnnotation::Ref(inner)) if items.len() == 2 => {
-            return self.check(items.get(1).unwrap(), inner, scope, aliases, false, depth + 1);
-          }
-          (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value)) if (items.len() - 1).is_multiple_of(2) => {
-            return (1..items.len()).step_by(2).all(|index| {
-              self.check(items.get(index).unwrap(), key, scope, aliases, false, depth + 1)
-                && self.check(items.get(index + 1).unwrap(), value, scope, aliases, false, depth + 1)
-            });
-          }
-          _ => {}
-        }
+      if let Some(proven) = collection_literal_matches(expr, expected, |value, contract| {
+        self.check(value, contract, scope, aliases, false, depth + 1)
+      }) {
+        return proven;
       }
       let Some(actual) = resolve_type_value(expr, scope) else {
         return false;

@@ -7,8 +7,8 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-union.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-union.main $ %{} 'FileEntry
       :defs $ {}
         'AliasValue $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion AliasValue test-union.main/PointAlias test-union.main/ShapeAlias String
@@ -40,6 +40,17 @@
           :code $ quote $ def PointAlias Point
           :examples $ []
           :schema $ quote StructDef
+        'Scale $ %{} 'CodeEntry
+          :doc "|A scale: one factor for both axes, or one per axis."
+          :code $ quote $ defunion Scale Number
+            quote $ List Number
+          :examples $ []
+          :schema $ quote UnionDef
+        'Segment $ %{} 'CodeEntry
+          :doc "|A route pattern segment: literal text or a parameter name (respo-router)."
+          :code $ quote $ defunion Segment String Symbol
+          :examples $ []
+          :schema $ quote UnionDef
         'Shape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Shape (:circle Number) (:square Number)
           :examples $ []
@@ -141,6 +152,25 @@
             assert= |s $ text-only |s
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
+            assert= ([] 2 2)
+              scale-xy $ read-scale 2
+            assert= ([] 1 3)
+              scale-xy $ read-scale $ [] 1 3
+            assert= false $ scale-decodes? |x
+            assert= false $ scale-decodes? $ [] 1 |a
+            assert= true $ scale-decodes? 1
+            assert= "|point 1" $ describe $ read-geo
+              {} (:x 1) (:y 2)
+            assert= "|circle 3" $ describe $ read-geo (Shape :circle 3)
+            assert= |plain $ describe $ read-geo |plain
+            assert= ([] 4 5)
+              scale-xy $ parse-cirru-edn-as "|[] 4 5" Scale
+            assert= ([] 6 6)
+              scale-xy $ parse-cirru-edn-as "|do 6" Scale
+            assert= "|point 7" $ describe $ parse-cirru-edn-as "|%{} :Point (:x 7) (:y 0)" Geo
+            assert= true $ .err? $ try-parse-cirru-edn-as "|do :a" Scale
+            assert= |text:home $ segment-text $ decode-map-as (segment-raw |home) Segment
+            assert= |param:id $ segment-text $ decode-map-as (segment-raw 'id) Segment
             println "|Union tests passed"
             , &unit
           :examples $ []
@@ -150,6 +180,56 @@
             if (> n 0) (Point :x n :y 2) |none
           :examples $ []
           :schema $ quote $ Fn Number (-> Geo)
+        'read-geo $ %{} 'CodeEntry
+          :doc "|Checked decode into a union whose members include a struct and an enum."
+          :code $ quote $ defn read-geo (raw) (decode-map-as raw Geo)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Geo)
+          :tests $ [] $ %{} 'TestEntry (:name |map-decodes-to-struct-member)
+            :code $ quote $ do
+              assert= "|point 1" $ describe $ read-geo
+                {} (:x 1) (:y 2)
+              assert= "|circle 3" $ describe $ read-geo (Shape :circle 3)
+              assert= |plain $ describe $ read-geo |plain
+            :tags $ #{} :union :unit
+        'read-scale $ %{} 'CodeEntry (:doc "|Checked decode of open data into a union.")
+          :code $ quote $ defn read-scale (raw) (decode-map-as raw Scale)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Scale)
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-each-member)
+            :code $ quote $ do
+              assert= ([] 2 2)
+                scale-xy $ read-scale 2
+              assert= ([] 1 3)
+                scale-xy $ read-scale $ [] 1 3
+            :tags $ #{} :union :unit
+        'scale-decodes? $ %{} 'CodeEntry
+          :doc "|A member kind that matches but holds the wrong elements still fails."
+          :code $ quote $ defn scale-decodes? (raw)
+            .ok? $ try-decode-map-as raw Scale
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool)
+        'scale-xy $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn scale-xy (s)
+            match s
+              (Number n) ([] n n)
+              (List xs) xs
+          :examples $ []
+          :schema $ quote $ Fn Scale
+            -> $ List Number
+        'segment-raw $ %{} 'CodeEntry
+          :doc "|Hands a value over as open data, as a route table read from a Dynamic list would."
+          :code $ quote $ defn segment-raw (x) x
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'segment-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn segment-text (s)
+            match s
+              (String t) (str |text: t)
+              (Symbol p)
+                str |param: $ to-string p
+          :examples $ []
+          :schema $ quote $ Fn Segment (-> String)
         'text-only $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn text-only (v)
             match v
@@ -159,3 +239,96 @@
           :schema $ quote $ Fn CssValue (-> String)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-union.main
+    'test-union.member-origin $ %{} 'FileEntry
+      :defs $ {}
+        'GenericCell $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct GenericCell ([] T) (:value T)
+          :examples $ []
+          :schema $ quote StructDef
+        'GenericMembers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion GenericMembers Scalar
+            quote $ GenericCell Number
+            quote $ GenericPacket Number
+          :examples $ []
+        'GenericPacket $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum GenericPacket ([] T) (:payload T)
+          :examples $ []
+          :schema $ quote EnumDef
+        'Inner $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Inner String
+            quote $ List Scalar
+          :examples $ []
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar String Number Tag
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-union.member-origin
+    'test-union.member-shadow $ %{} 'FileEntry
+      :defs $ {}
+        'Outer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Outer test-union.member-origin/Inner Tag
+          :examples $ []
+          :tests $ []
+            %{} 'TestEntry (:name |nested-members-keep-declaration-namespace)
+              :code $ quote $ do
+                match
+                  decode-map-as ([] 12 :block |sans) Outer
+                  (List items)
+                    assert= ([] 12 :block |sans) items
+                  _ $ raise |Expected-list-from-nested-union
+                match (parse-cirru-edn-as "|[] 12 :block |sans" Outer)
+                  (List items)
+                    assert= ([] 12 :block |sans) items
+                  _ $ raise |Expected-list-from-nested-union
+                match
+                  try-decode-map-as ([] false 'bad) Outer
+                  (:err error) &unit
+                  (:ok value) (raise |Accepted-shadowed-invalid-member)
+                match (try-parse-cirru-edn-as "|[] false 'bad" Outer)
+                  (:err error) &unit
+                  (:ok value) (raise |Accepted-shadowed-invalid-member)
+              :tags $ #{} :union :unit
+            %{} 'TestEntry
+              :name |applied-generic-members-keep-declaration-scope-and-payload-types
+              :code $ quote $ do
+                assert=
+                  format-cirru-edn $ test-union.member-origin/GenericCell :value 12
+                  format-cirru-edn $ parse-cirru-edn-as "|%{} :GenericCell (:value 12)" test-union.member-origin/GenericMembers
+                assert=
+                  format-cirru-edn $ test-union.member-origin/GenericPacket :payload 12
+                  format-cirru-edn $ parse-cirru-edn-as "|%:: :GenericPacket :payload 12" test-union.member-origin/GenericMembers
+                assert= true $ match
+                  try-decode-map-as
+                    {} $ :value 12
+                    , test-union.member-origin/GenericMembers
+                  (:ok value) true
+                  (:err error) false
+                assert= true $ match
+                  try-decode-map-as (test-union.member-origin/GenericPacket :payload 12) test-union.member-origin/GenericMembers
+                  (:ok value) true
+                  (:err error) false
+                assert= true $ match
+                  try-decode-map-as
+                    {} $ :value |bad
+                    , test-union.member-origin/GenericMembers
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match
+                  try-decode-map-as (test-union.member-origin/GenericPacket :payload |bad) test-union.member-origin/GenericMembers
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-parse-cirru-edn-as "|%{} :GenericCell (:value |bad)" test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-parse-cirru-edn-as "|%:: :GenericPacket :payload |bad" test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+                assert= true $ match (try-decode-map-as false test-union.member-origin/GenericMembers)
+                  (:err error) true
+                  (:ok value) false
+              :tags $ #{} :union :unit
+        'Scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Scalar Bool Symbol
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-union.member-shadow

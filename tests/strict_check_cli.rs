@@ -599,6 +599,157 @@ fn immutable_value_schemas_reject_contradictions_before_codegen() {
 }
 
 #[test]
+fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy() {
+  // Invalid initializers cannot execute attached tests; valid mixed values
+  // replay as collection-value-contract on native/JS in the shared runner.
+  for (name, source, accepted) in [
+    ("style", "quote $ def style $ {} (:width open-value) (:display :block)", true),
+    ("style", "quote $ def style $ {} (:width open-value) (:display false)", false),
+    ("style", "quote $ def style $ {} (:width false) (:display :block)", false),
+    ("style", "quote $ def style $ {} (12 |bad-key) (:display :block)", false),
+    ("values", "quote $ def values $ [] 12 false :block", false),
+    ("members", "quote $ def members $ #{} 12 false :block", false),
+    ("nested", "quote $ def nested $ {} (:items $ [] 12 false :block)", false),
+    ("sequence-value", "quote $ def sequence-value $ [] 12 |ready :block", true),
+    ("sequence-value", "quote $ def sequence-value $ [] open-value :block", true),
+    ("sequence-value", "quote $ def sequence-value $ [] open-value false", false),
+    ("sequence-value", "quote $ def sequence-value $ [] 12 false :block", false),
+    ("pair-value", "quote $ def pair-value $ [] 12 false", false),
+    ("pair-value", "quote $ def pair-value $ [] 12 |ready |extra", false),
+    ("ref-value", "quote $ def ref-value $ ref $ [] 12 :block |sans", true),
+    ("ref-value", "quote $ def ref-value $ ref $ [] 12 false :block", false),
+    (
+      "app.collection-shadow/nested-values",
+      "quote $ def nested-values $ [] 12 :block |sans",
+      true,
+    ),
+    (
+      "app.collection-shadow/nested-values",
+      "quote $ def nested-values $ [] false 'bad",
+      false,
+    ),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).unwrap();
+    let target = if name.contains('/') {
+      name.to_owned()
+    } else {
+      format!("app.collection-value/{name}")
+    };
+    let (namespace, _) = target.rsplit_once('/').unwrap();
+    let probe = format!("{namespace}/probe!");
+    let operations = serde_json::json!([
+      ["config", "set", "target", "native"],
+      [
+        "edit",
+        "def",
+        "app.collection-value/ref-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def ref-value $ ref $ [] 12 :block |sans"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.collection-value/ref-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote (Ref (List app.collection-value/Scalar))"
+      ],
+      [
+        "edit",
+        "def",
+        "app.collection-value/open-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def open-value 12"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.collection-value/open-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote Dynamic"
+      ],
+      ["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", source],
+      [
+        "edit",
+        "def",
+        &probe,
+        "--input-format",
+        "cirru",
+        "--code",
+        format!("quote $ defn probe! () (identity {target}) &unit")
+      ],
+      [
+        "edit",
+        "schema",
+        &probe,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn (-> Unit)"
+      ]
+    ])
+    .to_string();
+    let preview = run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+    );
+    assert_success(&preview, "preview collection initializer fixture");
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "transaction",
+          "--code",
+          &operations,
+          "--expect-revision",
+          preview["scoped_revision"].as_str().unwrap(),
+        ],
+      ),
+      "apply guarded collection fixture",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let output_directory = directory.0.join("checked-js");
+    for mode in [
+      vec!["--check-only"],
+      vec!["--check-only", "--ns", namespace],
+      vec!["--emit-path", output_directory.to_str().unwrap(), "js"],
+    ] {
+      let mut args = vec!["--init-fn", &probe, "--reload-fn", &probe];
+      args.extend(mode);
+      let output = run_calcit(&snapshot, &args);
+      assert_eq!(
+        output.status.success(),
+        accepted,
+        "{target}: {source}\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+      );
+      if !accepted {
+        let report = format!(
+          "{}{}",
+          String::from_utf8_lossy(&output.stdout),
+          String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(report.contains("E_SCHEMA_DEF_MISMATCH") && report.contains(&target), "{report}");
+        assert!(!output_directory.join(format!("{namespace}.mjs")).exists());
+      }
+      assert_eq!(fs::read(&snapshot).unwrap(), original);
+    }
+  }
+}
+
+#[test]
 fn immutable_value_schema_check_does_not_execute_the_initializer() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

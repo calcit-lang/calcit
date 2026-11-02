@@ -19,6 +19,7 @@ mod syntax_name;
 mod thunk;
 pub(crate) mod type_annotation;
 pub(crate) mod type_expr;
+pub(crate) mod type_refs;
 pub mod union_def;
 
 use core::cmp::Ord;

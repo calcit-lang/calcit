@@ -95,8 +95,26 @@ defn describe (g)
 - union 可以传给成员更多的 union，`Label`（String、Point）可以传给 `Geo`（Point、Shape、String）。
 - union 可以传给 `Dynamic` 位置和无约束的泛型参数，所以可以放进 `List Geo` 再用 `.map` 处理。
 - union 不能直接传给某个成员类型，也不满足任何 `:where` trait 约束，会报类型不匹配，要先 `match`。
-- Dynamic 不能直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`，要先经过受检的解码得到具体类型。
+- Dynamic 不能直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`，要先经过受检的解码，见下一节。
 - 没有期望类型时不推断 union，`if b 1 |a` 的推断结果保持不变。
+
+## 从 Dynamic 解码
+
+`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as` 都接受所有成员均可构建受检数据形状的 union 作为目标类型，结果类型就是这个 union：
+
+```cirru.no-check
+defunion Scale Number $ quote (List Number)
+
+defn read-scale (props)
+  hint-fn $ Fn (Map Tag Dynamic) (-> Scale)
+  decode-map-as (.unwrap-or (get props :scale) 1) Scale
+```
+
+解码先按运行时种类选出成员，再按该成员完整解码，所以 `[] 1 |a` 会选中 `List Number` 成员并在 `$[1]` 处报错，而不是被当成别的成员。没有种类相符的成员时，错误会列出全部成员，例如 `expected union :Scale (number | list), got string`。 成员内的短类型名及嵌套 union 名使用各自的原始声明命名空间；展平和解码保留完整类型参数，例如 `Cell Number` 的字段及 `Packet Number` 的 payload 都继续检查为 Number。
+
+`decode-map-as` 会把 map 解码成 struct：输入是 map 时，先试 union 里的 `Map` 成员，再依次试 struct 成员。`parse-cirru-edn-as` 的输入里 struct 写成 `%{} :Point …`，按名字选成员。
+
+受检解码要求每个成员都支持数据形状；含 `Tuple` 或 `Fn` 成员的 union 在构建解码器时即报错，不依输入选择跳过不支持的成员。WASM 后端目前不支持 union 目标的解码，和其他受检解码器一样只在 Native 与 JS 上可用。
 
 ## 不允许的用法
 
