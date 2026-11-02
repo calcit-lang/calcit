@@ -2051,6 +2051,12 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // hint expression itself returns Nil; it never wraps a function value.
         Calcit::Syntax(CalcitSyntax::HintFn, _) => Some(tag_annotation("nil")),
 
+        // A quoted symbol literal such as `'b` evaluates to that Symbol value
+        // on every backend, so it is literal evidence for `Symbol`.
+        Calcit::Syntax(CalcitSyntax::Quote, _) if xs.len() == 2 && matches!(xs.get(1), Some(Calcit::Symbol { .. })) => {
+          Some(Arc::new(CalcitTypeAnnotation::Symbol))
+        }
+
         // &let expression: infer from final expression (last element)
         Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
           // &let has format: (&let (binding) body...)

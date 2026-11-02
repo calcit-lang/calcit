@@ -47,6 +47,8 @@ defunion Label String Point
 - core 的 `Option U`，用来表示“这个位置的值可以缺失”，例如可选的子节点；
 - 另一个 union，会被展开成它的成员。
 
+Symbol 字面量 `'team-id` 推断为 `Symbol`，所以在 `defunion RouteSegment String Symbol Tag` 下，`[] |team 'team-id :id` 可以直接作为 `List RouteSegment` 传入，不需要运行时解码。
+
 成员按运行时种类区分，每种种类至多出现一次：一个 union 里只能有一个 List（或 Tuple）成员、一个 Map 成员、一个 Fn 成员，struct 和 enum 按定义区分。这样运行时只需浅层判断就能选出唯一成员。
 
 下列成员会报 `E_UNION_MEMBER_INVALID`：
