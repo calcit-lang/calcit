@@ -13644,6 +13644,17 @@ pub fn preprocess_defn(
       let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
       let body_fn_hint_location = hint_location(body_fn_hint_source.as_ref());
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
+      if let Some(signature) = &body_fn_hint
+        && let Some(reason) = calcit::decode_boundary_shape_error(&CalcitTypeAnnotation::Fn(signature.clone()))
+      {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          reason,
+          "E_DECODE_BOUNDARY_SHAPE",
+          ctx.call_stack,
+          body_fn_hint_location.clone(),
+        ));
+      }
       if let Some(signature) = &body_fn_hint {
         ensure_annotation_slot_representatives(
           ctx.file_ns,

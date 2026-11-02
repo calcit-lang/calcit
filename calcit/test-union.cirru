@@ -28,6 +28,13 @@
           :code $ quote $ defunion Geo Point Shape String
           :examples $ []
           :schema $ quote UnionDef
+        'Json $ %{} 'CodeEntry
+          :doc "|A recursive union: lists and maps hold Json values again."
+          :code $ quote $ defunion Json String Number Bool
+            quote $ List Json
+            quote $ Map String Json
+          :examples $ []
+          :schema $ quote UnionDef
         'Label $ %{} 'CodeEntry (:doc "|Every member of Label is also a member of Geo.")
           :code $ quote $ defunion Label String Point
           :examples $ []
@@ -101,6 +108,12 @@
               assert= |12px $ patch-text $ StylePatch :width 12
               assert= |auto $ patch-text $ StylePatch :width |auto
             :tags $ #{} :union :unit
+        'Tree $ %{} 'CodeEntry
+          :doc "|A tree of numbers; the union refers to itself inside its List member."
+          :code $ quote $ defunion Tree Number
+            quote $ List Tree
+          :examples $ []
+          :schema $ quote UnionDef
         'cells-total $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cells-total (c)
             match c
@@ -171,6 +184,26 @@
           :code $ quote $ defn describe-label (l) (describe l)
           :examples $ []
           :schema $ quote $ Fn Label (-> String)
+        'json-size $ %{} 'CodeEntry (:doc "|Counts every node of a Json value.")
+          :code $ quote $ defn json-size (j)
+            match j
+              (List xs)
+                foldl xs 1 $ fn (acc x)
+                  &+ acc $ json-size x
+              (Map m)
+                foldl (&map:vals m) 1 $ fn (acc x)
+                  &+ acc $ json-size x
+              _ 1
+          :examples $ []
+          :schema $ quote $ Fn Json (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |walks-nested-members)
+            :code $ quote $ do
+              assert= 1 $ json-size |a
+              assert= 5 $ json-size $ {} (|a 1)
+                |b $ [] |x true
+              assert= 5 $ json-size $ parse-cirru-edn-as "|{} (|a 1) (|b $ [] |x true)" Json
+              assert= true $ .err? $ try-parse-cirru-edn-as "|{} (|a $ [] :tag)" Json
+            :tags $ #{} :union :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing union...")
             assert= |12px $ css-text 12
@@ -190,6 +223,9 @@
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
             assert= |12px $ patch-text $ StylePatch :width 12
+            assert= 10 $ tree-total $ [] 1 ([] 2 3)
+              [] $ [] 4
+            assert= 5 $ json-size $ [] |a ([] 1 false)
             assert= ([] 2 2)
               scale-xy $ read-scale 2
             assert= ([] 1 3)
@@ -287,6 +323,22 @@
               _ |other
           :examples $ []
           :schema $ quote $ Fn CssValue (-> String)
+        'tree-total $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tree-total (t)
+            match t
+              (Number n) n
+              (List xs)
+                foldl xs 0 $ fn (acc x)
+                  &+ acc $ tree-total x
+          :examples $ []
+          :schema $ quote $ Fn Tree (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |sums-nested-lists)
+            :code $ quote $ do
+              assert= 5 $ tree-total 5
+              assert= 10 $ tree-total $ [] 1 ([] 2 3)
+                [] $ [] 4
+              assert= 6 $ tree-total $ parse-cirru-edn-as "|[] 1 ([] 2 ([] 3))" Tree
+            :tags $ #{} :union :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-union.main
     'test-union.member-origin $ %{} 'FileEntry

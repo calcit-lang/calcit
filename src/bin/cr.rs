@@ -3582,6 +3582,57 @@ mod tests {
   }
 
   #[test]
+  fn analyze_weak_types_marks_decode_boundary_inputs() {
+    let fn_schema = |return_type: Arc<CalcitTypeAnnotation>| {
+      CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
+        return_type,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::from([cirru_edn::EdnTag::new(calcit::calcit::DECODE_BOUNDARY_FEATURE)])),
+      }))
+    };
+    let entry = snapshot::CodeEntry {
+      doc: "".to_owned(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: list(vec![
+        leaf("defn"),
+        leaf("read-n"),
+        list(vec![leaf("x")]),
+        list(vec![leaf("if"), list(vec![leaf("number?"), leaf("x")]), leaf("x"), leaf("0")]),
+      ]),
+      schema: fn_schema(Arc::new(CalcitTypeAnnotation::Number)).into(),
+      ffi: None,
+    };
+    let row = type_coverage::analyze_weak_types_entry("app.main", "read-n", &entry, &type_coverage::WeakTypeKind::all())
+      .expect("the Dynamic input stays visible");
+    let input = row
+      .occurrences
+      .iter()
+      .find(|occurrence| occurrence.path == "schema.args.0")
+      .expect("schema.args.0 is reported");
+    assert_eq!(input.intent, type_coverage::WeakTypeIntent::IntentionalDecode);
+    assert!(
+      row
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.intent != type_coverage::WeakTypeIntent::Unresolved),
+      "{:?}",
+      row.occurrences
+    );
+
+    // The marker never applies to a function that still returns Dynamic.
+    let shape = fn_schema(calcit::calcit::DYNAMIC_TYPE.clone());
+    let reason = calcit::calcit::decode_boundary_shape_error(&shape).expect("Dynamic return is rejected");
+    assert!(reason.contains("concrete return type"), "{reason}");
+  }
+
+  #[test]
   fn analyze_weak_types_marks_dynamic_ffi_boundaries_as_intentional() {
     let entry = snapshot::CodeEntry {
       doc: "".to_owned(),

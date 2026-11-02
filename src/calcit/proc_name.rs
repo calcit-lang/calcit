@@ -564,6 +564,11 @@ fn set_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Set(inner))
 }
 
+/// A map entry as a two-slot tuple, `Tuple K V`.
+fn map_entry_tuple() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![type_var("K"), type_var("V")])))
+}
+
 fn list_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::List(inner))
 }
@@ -1074,11 +1079,11 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("V"))],
       }),
       ToPairs => Some(ProcTypeSignature {
-        return_type: set_of(list_of(dynamic_tag())),
+        return_type: set_of(map_entry_tuple()),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapToList => Some(ProcTypeSignature {
-        return_type: list_of(list_of(dynamic_tag())),
+        return_type: list_of(map_entry_tuple()),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapFoldKv => Some(ProcTypeSignature {

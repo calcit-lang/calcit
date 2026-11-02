@@ -265,6 +265,9 @@ pub enum WeakTypeIntent {
   JsFfiNonHost,
   IntentionalMacroSyntax,
   IntentionalTypeSlotDynamic,
+  /// Dynamic input of a function whose schema declares `:decode-boundary`:
+  /// a reviewed place that checks open data into a concrete type.
+  IntentionalDecode,
   ExplicitUnsafe,
   DeclaredUnit,
 }
@@ -277,6 +280,7 @@ impl WeakTypeIntent {
       Self::JsFfiNonHost => "js-ffi-non-host",
       Self::IntentionalMacroSyntax => "intentional-macro-syntax",
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
+      Self::IntentionalDecode => "intentional-decode",
       Self::ExplicitUnsafe => "explicit-unsafe",
       Self::DeclaredUnit => "declared-unit",
     }
@@ -289,6 +293,7 @@ impl WeakTypeIntent {
       Self::JsFfiNonHost,
       Self::IntentionalMacroSyntax,
       Self::IntentionalTypeSlotDynamic,
+      Self::IntentionalDecode,
       Self::ExplicitUnsafe,
       Self::DeclaredUnit,
     ])
@@ -783,6 +788,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       "js-ffi-non-host" => WeakTypeIntent::JsFfiNonHost,
       "intentional-macro-syntax" => WeakTypeIntent::IntentionalMacroSyntax,
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
+      "intentional-decode" => WeakTypeIntent::IntentionalDecode,
       "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
       "declared-optional" => {
@@ -792,7 +798,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       }
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, explicit-unsafe, declared-unit"
         ));
       }
     };
@@ -801,7 +807,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, explicit-unsafe, declared-unit"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, explicit-unsafe, declared-unit"
         .to_owned(),
     );
   }
@@ -986,6 +992,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax {
     return "This Dynamic is an explicit open expression boundary inside a strict MacroSignature. Narrow the Expr semantic type when the macro contract guarantees more, but do not replace the phase-aware signature with whole-Dynamic.";
   }
+  if occurrence.intent == WeakTypeIntent::IntentionalDecode {
+    return "This Dynamic is the input of a reviewed `:decode-boundary` function. Keep the function small: check the value and return a concrete type, and cover rejected inputs with tests.";
+  }
   if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
     return "This slot intentionally resolves to Dynamic for the selected entry. Keep that boundary documented and narrow or validate the value before typed code relies on it.";
   }
@@ -1027,6 +1036,10 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   "Replace `:dynamic` with a concrete schema, a declared type variable, or a trait-bounded variable; mark `:features $ #{} :js-ffi` only for an intentional JS or native FFI boundary."
 }
 
+fn schema_has_feature(annotation: &CalcitTypeAnnotation, feature: &str) -> bool {
+  matches!(annotation, CalcitTypeAnnotation::Fn(fn_annot) if fn_annot.features.iter().any(|tag| tag.ref_str() == feature))
+}
+
 fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<CalcitTypeAnnotation>) -> Vec<String> {
   let annotation = schema.as_ref();
   let mut issues = validate_def_vs_schema(ns, def_name, code, annotation);
@@ -1050,10 +1063,15 @@ fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<Calc
     return issues;
   }
 
+  let has_decode_boundary = schema_has_feature(annotation, calcit::calcit::DECODE_BOUNDARY_FEATURE);
   let mut occurrences = vec![];
   scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
   for occurrence in occurrences {
-    if (has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic)
+    let decode_input = has_decode_boundary
+      && occurrence.kind == WeakTypeKind::SchemaDynamic
+      && (occurrence.path.starts_with("schema.args.") || occurrence.path.starts_with("schema.rest"));
+    if decode_input
+      || (has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic)
       || occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax
     {
       continue;
@@ -1698,6 +1716,20 @@ pub fn analyze_weak_types_entry(
         } else {
           WeakTypeIntent::JsFfiNonHost
         };
+      }
+    }
+  }
+  // A reviewed decode boundary keeps its Dynamic input and the open values its
+  // body checks; they are reported apart from unresolved Dynamic.
+  if schema_has_feature(entry.schema.as_ref(), calcit::calcit::DECODE_BOUNDARY_FEATURE) {
+    for occurrence in &mut occurrences {
+      let decode_position = match occurrence.kind {
+        WeakTypeKind::SchemaDynamic => occurrence.path.starts_with("schema.args.") || occurrence.path.starts_with("schema.rest"),
+        WeakTypeKind::CodeDynamic => true,
+        _ => false,
+      };
+      if decode_position && occurrence.intent == WeakTypeIntent::Unresolved {
+        occurrence.intent = WeakTypeIntent::IntentionalDecode;
       }
     }
   }
@@ -2381,12 +2413,13 @@ pub(crate) fn run_weak_types_report_with_rows(
   );
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} explicit-unsafe={} declared-unit={}",
+    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} intentional-decode={} explicit-unsafe={} declared-unit={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
     intent_count.get("js-ffi-non-host").copied().unwrap_or(0),
     intent_count.get("intentional-macro-syntax").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
+    intent_count.get("intentional-decode").copied().unwrap_or(0),
     intent_count.get("explicit-unsafe").copied().unwrap_or(0),
     intent_count.get("declared-unit").copied().unwrap_or(0)
   );
@@ -3811,6 +3844,7 @@ pub(crate) fn format_weak_types_json_with_rows(
     "js-ffi-non-host",
     "intentional-macro-syntax",
     "intentional-type-slot-dynamic",
+    "intentional-decode",
     "explicit-unsafe",
     "declared-unit",
   ] {
