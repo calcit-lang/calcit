@@ -3240,12 +3240,21 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(type_value.clone());
   }
-  // MapToList exposes each heterogeneous key/value pair as an open two-item
-  // list, while preserving the outer collection shape.
-  if matches!(proc, CalcitProc::NativeMapToList) {
-    return Some(Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::List(
-      calcit::DYNAMIC_TYPE.clone(),
-    )))));
+  // Map entries are two-item lists at runtime, so a known `Map K V` yields
+  // `Tuple K V` entries; an unknown receiver keeps open two-item lists.
+  if matches!(proc, CalcitProc::NativeMapToList | CalcitProc::ToPairs) {
+    let entry = match xs.get(1).and_then(|first_arg| resolve_type_value(first_arg, scope_types)) {
+      Some(type_value) => match type_value.as_ref() {
+        CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![key.clone(), value.clone()]))),
+        _ => Arc::new(CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone())),
+      },
+      None => Arc::new(CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone())),
+    };
+    return Some(Arc::new(if matches!(proc, CalcitProc::ToPairs) {
+      CalcitTypeAnnotation::Set(entry)
+    } else {
+      CalcitTypeAnnotation::List(entry)
+    }));
   }
   if matches!(proc, CalcitProc::NativeSetToList)
     && let Some(first_arg) = xs.get(1)
