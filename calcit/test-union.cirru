@@ -32,6 +32,12 @@
           :code $ quote $ defunion Label String Point
           :examples $ []
           :schema $ quote UnionDef
+        'MaybeGeo $ %{} 'CodeEntry
+          :doc "|A Geo, or an Option of one, as optional child arguments are."
+          :code $ quote $ defunion MaybeGeo Geo
+            quote $ Option Geo
+          :examples $ []
+          :schema $ quote UnionDef
         'Point $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
@@ -134,6 +140,23 @@
           :code $ quote $ defn describe-label (l) (describe l)
           :examples $ []
           :schema $ quote $ Fn Label (-> String)
+        'describe-maybe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn describe-maybe (& items)
+            map items $ fn (item)
+              match item
+                (Option o)
+                  .unwrap-or (.map o describe) |absent
+                _ |present
+          :examples $ []
+          :schema $ quote $ Fn & MaybeGeo
+            -> $ List String
+          :tests $ [] $ %{} 'TestEntry (:name |option-member-matches-separately)
+            :code $ quote $ do
+              assert= ([] |present |plain |absent |absent)
+                describe-maybe |a (Option :some |plain) (Option :none) (nil->option nil)
+              assert= ([] "|point 1")
+                describe-maybe $ Option :some $ Point :x 1 :y 2
+            :tags $ #{} :union :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing union...")
             assert= |12px $ css-text 12
@@ -152,6 +175,9 @@
             assert= |s $ text-only |s
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
+            assert= ([] |present |absent "|circle 2")
+              describe-maybe (Point :x 1 :y 1) (Option :none)
+                Option :some $ Shape :circle 2
             assert= ([] 2 2)
               scale-xy $ read-scale 2
             assert= ([] 1 3)

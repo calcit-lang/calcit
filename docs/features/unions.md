@@ -44,6 +44,7 @@ defunion Label String Point
 - 内置值类型：`Bool`、`Number`、`String`、`Tag`、`Symbol`、`Buffer`、`CirruQuote`；
 - 写全元素类型的容器与函数：`List Number`、`Map Tag String`、`Set Tag`、`Ref Number`、`Fn Number (-> String)`、Tuple；
 - 具名 struct、具名 enum；
+- core 的 `Option U`，用来表示“这个位置的值可以缺失”，例如可选的子节点；
 - 另一个 union，会被展开成它的成员。
 
 成员按运行时种类区分，每种种类至多出现一次：一个 union 里只能有一个 List（或 Tuple）成员、一个 Map 成员、一个 Fn 成员，struct 和 enum 按定义区分。这样运行时只需浅层判断就能选出唯一成员。
@@ -53,7 +54,7 @@ defunion Label String Point
 - 任何深度的 `Dynamic`，包括裸 `List`、`Map`、`Fn`，以及 `Map Tag Dynamic`；
 - `Nil` / `Unit`、`Never`、数值细化类型；
 - 类型变量：第一版 union 不带类型参数，也不能引用自己；
-- core 的 `Option` / `Result`：缺失写成 union 外面的 `Option CssValue`；
+- core 的 `Result`；
 - 匿名 enum / struct、trait、`JsObject`；
 - 两个运行时种类相同的成员；
 - 两个模式名相同的成员，例如来自不同命名空间的同名 struct。
@@ -88,6 +89,25 @@ defn describe (g)
 - struct / enum 的构造器别名及导入名也可以作为模式，按已有名义定义身份解析。别名与原定义覆盖同一成员，不能各写一个分支；同字段的其他定义不会因此成为成员。
 - 分支要覆盖全部成员，否则报 `E_UNION_MATCH_NOT_EXHAUSTIVE`；`_` 可以兜住剩下的成员，所有成员都已覆盖时 `_` 会得到一条不可达警告。
 - 分支里的绑定带着成员的具体类型，后续方法调用和字段访问照常检查。
+
+## Option 成员
+
+`Option U` 和其他 enum 成员一样按运行时种类区分，一个 union 至多一个 Option 成员。它适合“几种值之一，或者没有”的变长参数，例如元素函数的子节点：
+
+```cirru.no-check
+defunion Node Element Component
+defunion Child Node $ quote (Option Node)
+
+defn child-text (c)
+  hint-fn $ Fn Child (-> String)
+  match c
+    (Option o) $ .unwrap-or (.map o node-text) |
+    _ |present
+```
+
+- `match` 用 `(Option o)` 拆出 Option 值，`o` 的类型是 `Option Node`，之后照常 `.map`、`.unwrap-or` 或 `match o (:some x) …`；
+- `Option Element` 这类更窄的 Option 可以传给 `Option Node` 成员；
+- 普通值不会被自动包成 Option，裸 `nil` 传给 union 位置仍然报类型不匹配，要先写 `nil->option`。
 
 ## 值的流向
 

@@ -238,12 +238,11 @@ impl CalcitUnionDef {
             .definition_ref()
             .cloned()
             .unwrap_or_else(|| Arc::from(enum_def.name().ref_str()));
-          if matches!(
-            reference.as_ref(),
-            "calcit.core/Option" | "calcit.core/Result" | "Option" | "Result"
-          ) {
-            return reject("Option and Result stay outside unions; write `Option U` for absence");
+          if matches!(reference.as_ref(), "calcit.core/Result" | "Result") {
+            return reject("Result stays outside unions; return `Result T E` around the union instead");
           }
+          // `Option U` is an ordinary enum member: its runtime kind is the Option
+          // definition, so plain values never get wrapped and nil stays rejected.
           let definition = path.or_else(|| reference.rsplit_once('/').map(|(ns, def)| (Arc::from(ns), Arc::from(def))));
           if definition.is_none() {
             return reject("anonymous enums have no definition to test at runtime");
