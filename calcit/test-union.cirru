@@ -163,13 +163,21 @@
           :examples $ []
           :schema $ quote $ Fn & MaybeGeo
             -> $ List String
-          :tests $ [] $ %{} 'TestEntry (:name |option-member-matches-separately)
-            :code $ quote $ do
-              assert= ([] |present |plain |absent |absent)
-                describe-maybe |a (Option :some |plain) (Option :none) (nil->option nil)
-              assert= ([] "|point 1")
-                describe-maybe $ Option :some $ Point :x 1 :y 2
-            :tags $ #{} :union :unit
+          :tests $ []
+            %{} 'TestEntry (:name |option-member-matches-separately)
+              :code $ quote $ do
+                assert= ([] |present |plain |absent |absent)
+                  describe-maybe |a (Option :some |plain) (Option :none) (nil->option nil)
+                assert= ([] "|point 1")
+                  describe-maybe $ Option :some $ Point :x 1 :y 2
+              :tags $ #{} :union :unit
+            %{} 'TestEntry (:name |option-member-decodes-from-open-data)
+              :code $ quote $ do
+                assert= ([] |absent)
+                  describe-maybe $ decode-map-as (segment-raw $ Option :none) MaybeGeo
+                assert= ([] |plain)
+                  describe-maybe $ decode-map-as (segment-raw $ Option :some |plain) MaybeGeo
+              :tags $ #{} :union :unit
         'json-size $ %{} 'CodeEntry (:doc "|Counts every node of a Json value.")
           :code $ quote $ defn json-size (j)
             match j

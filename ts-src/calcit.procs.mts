@@ -2284,7 +2284,9 @@ const union_member_matches = (node: DataShapeNode, input: any, byIdentity: boole
     case "struct":
       return input instanceof CalcitStructValue &&
         (byIdentity ? same_nominal_struct(input.structRef, node.nominal) : input.name.value === node.nominal.name.value);
+    // `decode-map-as` builds an open shape where `Option T` is a `map-option` node.
     case "enum":
+    case "map-option":
       return input instanceof CalcitEnumValue && input.enumPrototype != null &&
         (byIdentity ? same_nominal_enum(input.enumPrototype, node.nominal) : enum_prototype_name(input.enumPrototype) === node.nominal.name());
     default: return false;
