@@ -10679,6 +10679,25 @@ mod tests {
       &Calcit::from(vec![callables.clone()]),
       &T::List(Arc::new(T::List(Arc::new(T::DynFn))))
     ));
+    // The nested container still has to be a list, and map keys are still checked.
+    assert!(!value_matches_type_annotation(
+      &Calcit::from(vec![Calcit::Number(1.0)]),
+      &T::List(Arc::new(T::List(Arc::new(T::DynFn))))
+    ));
+    let number_callables = T::Map(Arc::new(T::Number), Arc::new(T::DynFn));
+    let keyed = |key: Calcit| Calcit::Map(rpds::HashTrieMap::new_sync().insert(key, Calcit::tag("name")));
+    assert!(value_matches_type_annotation(
+      &Calcit::from(vec![keyed(Calcit::Number(1.0))]),
+      &T::List(Arc::new(number_callables.clone()))
+    ));
+    assert!(!value_matches_type_annotation(
+      &Calcit::from(vec![keyed(Calcit::Str("a".into()))]),
+      &T::List(Arc::new(number_callables.clone()))
+    ));
+    assert!(!value_matches_type_annotation(
+      &Calcit::from(vec![Calcit::Number(1.0)]),
+      &T::List(Arc::new(number_callables))
+    ));
   }
 
   #[test]
@@ -11449,7 +11468,11 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     },
     CalcitTypeAnnotation::Tuple(items) => match value {
       Calcit::List(xs) => {
-        xs.len() == items.len() && xs.iter().zip(items.iter()).all(|(x, item)| value_matches_type_annotation(x, item))
+        xs.len() == items.len()
+          && xs
+            .iter()
+            .zip(items.iter())
+            .all(|(x, item)| runtime_walk_skips(item) || value_matches_type_annotation(x, item))
       }
       _ => false,
     },
@@ -11610,19 +11633,15 @@ fn runtime_open_type(annotation: &CalcitTypeAnnotation) -> bool {
 
 /// Element types that the container walk leaves to static checking, because the
 /// runtime matcher is narrower than the static rule: core values can satisfy a
-/// trait, and tags can stand in for `Fn`. Containers of these keep the old
-/// kind-only check.
+/// trait, and tags can stand in for `Fn`. Elements of these types are not checked;
+/// the container's own kind still is.
 fn runtime_walk_skips(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) | CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => {
       true
     }
-    CalcitTypeAnnotation::List(item)
-    | CalcitTypeAnnotation::Set(item)
-    | CalcitTypeAnnotation::Ref(item)
-    | CalcitTypeAnnotation::Nullable(item, _) => runtime_walk_skips(item),
-    CalcitTypeAnnotation::Map(key, item) => runtime_walk_skips(key) || runtime_walk_skips(item),
-    CalcitTypeAnnotation::Tuple(items) => items.iter().any(|item| runtime_walk_skips(item)),
+    // Nested containers still check their own kind and apply this rule to their own elements.
+    CalcitTypeAnnotation::Nullable(item, _) => runtime_walk_skips(item),
     other => runtime_open_type(other),
   }
 }
