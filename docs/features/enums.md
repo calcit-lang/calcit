@@ -141,7 +141,8 @@ When you annotate an enum payload with a struct type, `%::` validates both the v
 
 构造 enum 值时，每个 payload 都会按声明类型做运行时检查，native 和 JS 两个后端行为一致。
 `List`、`Set`、`Map` 会逐个检查元素，嵌套容器和 union 成员会一直检查到最内层，所以声明为 `List Number` 的 payload 里混入字符串会直接报错。
-`Ref` 检查构造时它当前保存的值；`Dynamic` 和泛型参数位置不做检查。
+`Ref` 检查构造时它当前保存的值，一个保存着自己的 ref 再次遇到时直接视为通过；`Dynamic` 和泛型参数位置不做检查。
+元素类型是函数或 trait 的容器只检查容器种类，因为 tag 也能当函数用，核心类型也能满足 trait，这些交给静态检查。
 这项检查主要防住绕过静态检查的值，比如经 `unsafe-coerce` 从类型擦除的缓存中恢复的数据；静态检查能证明的调用不受影响。
 
 ## Creating Instances

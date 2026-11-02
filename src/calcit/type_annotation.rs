@@ -10671,6 +10671,14 @@ mod tests {
       &Calcit::Set(rpds::HashTrieSet::new_sync().insert(Calcit::Number(1.0))),
       &strings
     ));
+
+    // Tags can stand in for functions, so a list of callables keeps the kind-only check.
+    let callables = Calcit::from(vec![Calcit::tag("name")]);
+    assert!(value_matches_type_annotation(&callables, &T::List(Arc::new(T::DynFn))));
+    assert!(value_matches_type_annotation(
+      &Calcit::from(vec![callables.clone()]),
+      &T::List(Arc::new(T::List(Arc::new(T::DynFn))))
+    ));
   }
 
   #[test]
@@ -11436,7 +11444,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     // Containers are checked element by element: a `List Number` holding a
     // string is a mismatch. Open element types skip the walk.
     CalcitTypeAnnotation::List(item) => match value {
-      Calcit::List(xs) => runtime_open_type(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
+      Calcit::List(xs) => runtime_walk_skips(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
       _ => false,
     },
     CalcitTypeAnnotation::Tuple(items) => match value {
@@ -11447,27 +11455,34 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     },
     CalcitTypeAnnotation::Map(key, item) => match value {
       Calcit::Map(xs) => {
-        (runtime_open_type(key) && runtime_open_type(item))
+        let (skip_key, skip_item) = (runtime_walk_skips(key), runtime_walk_skips(item));
+        (skip_key && skip_item)
           || xs
             .iter()
-            .all(|(k, v)| value_matches_type_annotation(k, key) && value_matches_type_annotation(v, item))
+            .all(|(k, v)| (skip_key || value_matches_type_annotation(k, key)) && (skip_item || value_matches_type_annotation(v, item)))
       }
       _ => false,
     },
     CalcitTypeAnnotation::Set(item) => match value {
-      Calcit::Set(xs) => runtime_open_type(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
+      Calcit::Set(xs) => runtime_walk_skips(item) || xs.iter().all(|x| value_matches_type_annotation(x, item)),
       _ => false,
     },
     // A Ref is checked by its current content, like decoders and JS validators do.
     CalcitTypeAnnotation::Ref(item) => match value {
       Calcit::Ref(_, cell) => {
-        if runtime_open_type(item) {
-          true
-        } else {
-          // Clone the content and release the lock before recursing, so a nested Ref cannot re-lock it.
-          let current = cell.lock().ok().map(|guard| guard.0.clone());
-          current.is_some_and(|inner| value_matches_type_annotation(&inner, item))
+        if runtime_walk_skips(item) {
+          return true;
         }
+        // A ref can hold itself, for example through a union with a `Ref` member.
+        // Meeting the same ref under the same annotation again is accepted, which
+        // keeps the check finite.
+        let key = Arc::as_ptr(cell) as *const () as usize;
+        let Some(_visit) = RefVisit::enter(key, item) else {
+          return true;
+        };
+        // Clone the content and release the lock before recursing, so a nested Ref cannot re-lock it.
+        let current = cell.lock().ok().map(|guard| guard.0.clone());
+        current.is_some_and(|inner| value_matches_type_annotation(&inner, item))
       }
       _ => false,
     },
@@ -11591,6 +11606,55 @@ fn runtime_open_type(annotation: &CalcitTypeAnnotation) -> bool {
     annotation,
     CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::JsObject
   )
+}
+
+/// Element types that the container walk leaves to static checking, because the
+/// runtime matcher is narrower than the static rule: core values can satisfy a
+/// trait, and tags can stand in for `Fn`. Containers of these keep the old
+/// kind-only check.
+fn runtime_walk_skips(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) | CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => {
+      true
+    }
+    CalcitTypeAnnotation::List(item)
+    | CalcitTypeAnnotation::Set(item)
+    | CalcitTypeAnnotation::Ref(item)
+    | CalcitTypeAnnotation::Nullable(item, _) => runtime_walk_skips(item),
+    CalcitTypeAnnotation::Map(key, item) => runtime_walk_skips(key) || runtime_walk_skips(item),
+    CalcitTypeAnnotation::Tuple(items) => items.iter().any(|item| runtime_walk_skips(item)),
+    other => runtime_open_type(other),
+  }
+}
+
+thread_local! {
+  /// Refs being checked on this thread, with the annotation each is checked against.
+  static RUNTIME_REF_VISITS: RefCell<Vec<(usize, CalcitTypeAnnotation)>> = const { RefCell::new(Vec::new()) };
+}
+
+struct RefVisit;
+
+impl RefVisit {
+  /// Returns `None` when this ref is already being checked against `annotation`.
+  fn enter(key: usize, annotation: &CalcitTypeAnnotation) -> Option<Self> {
+    RUNTIME_REF_VISITS.with(|visits| {
+      let mut visits = visits.borrow_mut();
+      if visits.iter().any(|(k, a)| *k == key && a == annotation) {
+        None
+      } else {
+        visits.push((key, annotation.clone()));
+        Some(RefVisit)
+      }
+    })
+  }
+}
+
+impl Drop for RefVisit {
+  fn drop(&mut self) {
+    RUNTIME_REF_VISITS.with(|visits| {
+      visits.borrow_mut().pop();
+    });
+  }
 }
 
 fn infer_runtime_struct_applied_args(struct_def: &CalcitStructDef, values: &[Calcit]) -> Vec<Arc<CalcitTypeAnnotation>> {
