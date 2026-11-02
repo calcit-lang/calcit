@@ -4729,7 +4729,7 @@ fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
 }
 
 fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  canonicalize_code_type_syntax_in(node, true)
+  canonicalize_code_type_syntax_in(node, true, false)
 }
 
 /// Heads whose second argument is a decode or cast target type. `edit format`
@@ -4747,8 +4747,8 @@ fn is_decoder_type_head(head: Option<&str>) -> bool {
 }
 
 /// `decoders` turns on decoder target migration; it is switched off inside
-/// `quote`, whose data is not code.
-fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
+/// `quote`, whose data is not code. `quoted` is true below a `quote` head.
+fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool, quoted: bool) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
   };
@@ -4757,10 +4757,11 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
     _ => None,
   });
   let nested_decoders = decoders && head != Some("quote");
+  let nested_quoted = quoted || head == Some("quote");
   let mut rewritten = Vec::with_capacity(items.len());
   let mut changed = 0;
   for item in items {
-    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders);
+    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders, nested_quoted);
     rewritten.push(next);
     changed += count;
   }
@@ -4810,9 +4811,19 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
         rewritten[index] = Cirru::List(next_field);
       }
     }
-    // `defunion` members are bare type slots after the name.
-    Some("defunion") if items.len() >= 3 => {
+    // `defunion` members are bare type slots after the name; a quoted
+    // `defunion` form is data and keeps its written shape.
+    Some("defunion") if !quoted && items.len() >= 3 => {
       for index in 2..items.len() {
+        // A bare compound member such as `(List Item)` is already compact
+        // syntax; quoting it keeps nominal arguments like `Item` spellable.
+        if crate::calcit::type_expr::is_compact_payload(&items[index])
+          && crate::calcit::type_expr::desugar_type_expr(&items[index]).is_ok()
+        {
+          rewritten[index] = Cirru::List(vec![Cirru::leaf("quote"), items[index].clone()]);
+          changed += 1;
+          continue;
+        }
         let (next, count) = canonicalize_type_expression(&items[index]);
         rewritten[index] = next;
         changed += count;
@@ -5036,7 +5047,7 @@ fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 }
 
 fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
-  let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders);
+  let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders, false);
   let (compact, count) = compact_code_type_syntax(&canonical);
   (compact, legacy + count)
 }
@@ -6428,6 +6439,8 @@ mod tests {
         "defunion Cells String $ :: 'List 'Number",
         "defunion Cells String $ quote $ List Number",
       ),
+      // A nominal argument stays a type reference inside the quoted member.
+      ("defunion Cells String (List Item)", "defunion Cells String $ quote $ List Item"),
       (
         "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
         "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
@@ -6454,6 +6467,7 @@ mod tests {
       "defunion CssValue String Number",
       "defunion CssValue 'String 'Number",
       "defunion Cells String $ quote $ List Number",
+      "quote $ defunion U String (List Number)",
       "assert-type xs $ :: 'List Person",
       "hint-fn $ {} $ :args ([] 'A)",
       "hint-fn $ {} (:async false)",
