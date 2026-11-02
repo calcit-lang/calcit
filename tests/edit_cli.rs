@@ -2170,6 +2170,110 @@ fn edit_ns_json(snapshot: &Path, namespace: &str, view: &Path, extra: &[&str]) -
   run_calcit(snapshot, &args)
 }
 
+#[test]
+fn edit_ns_transaction_preserves_metadata_and_commits_namespaces_atomically() {
+  // Namespace views and filesystem rollback are CLI contracts, not language semantics.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.extra"]), "add second namespace");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "def", "app.extra/value", "--code", "quote $ def value 1"]),
+    "add second namespace definition",
+  );
+  // Modern mutation commands cannot create this retained legacy root field.
+  let mut legacy = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let cirru_edn::Edn::Map(root) = &mut legacy else {
+    panic!("Snapshot fixture must be a map");
+  };
+  root.insert_key("version", cirru_edn::Edn::Str("0.0.1".into()));
+  fs::write(&snapshot, format!("\n{}", cirru_edn::format(&legacy, true).unwrap())).unwrap();
+  let before = fs::read(&snapshot).unwrap();
+  let namespaces = ["app.main", "app.extra"];
+  let operations_for = |source: &Path| {
+    serde_json::Value::Array(
+      namespaces
+        .iter()
+        .map(|namespace| serde_json::json!(["edit", "ns", namespace, "--code", query_ns_view(source, namespace)]))
+        .collect(),
+    )
+    .to_string()
+  };
+  let unchanged = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations_for(&snapshot), "--format", "json"],
+  );
+  assert_success(&unchanged, "unchanged namespace transaction");
+  let unchanged_report: serde_json::Value = serde_json::from_slice(&unchanged.stdout).unwrap();
+  assert_eq!(unchanged_report["changed"], false);
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "transaction", "--code", r#"[["edit","format"]]"#]),
+    "an explicit format transaction still canonicalizes retained legacy source",
+  );
+  assert_ne!(fs::read(&snapshot).unwrap(), before);
+  let before = fs::read(&snapshot).unwrap();
+
+  let reference = directory.0.join("reference.cirru");
+  fs::copy(&snapshot, &reference).unwrap();
+  for args in [
+    vec!["edit", "doc", "app.main/main!", "updated namespace metadata"],
+    vec!["edit", "schema", "app.main/main!", "--add-feature", "js-ffi"],
+    vec!["edit", "ffi", "app.main/main!", "--code", "{} (:backend :js) (:target :node)"],
+    vec!["edit", "tags", "app.main/main!", "public"],
+    vec!["edit", "add-test", "app.main/main!", "smoke", "--code", "quote $ assert= 2 2"],
+    vec!["edit", "add-example", "app.main/main!", "--code", "quote $ main!"],
+    vec!["edit", "def", "app.extra/value", "--overwrite", "--code", "quote $ def value 2"],
+  ] {
+    assert_success(
+      &run_calcit(&reference, &args),
+      "prepare changed namespace data through public editors",
+    );
+  }
+  let operations = operations_for(&reference);
+  let revision = transaction_scope(&snapshot, &operations);
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "namespace dry-run must not write");
+  let mut invalid: serde_json::Value = serde_json::from_str(&operations).unwrap();
+  invalid[1][4] = serde_json::json!("{}");
+  let failed = run_calcit(&snapshot, &["edit", "transaction", "--code", &invalid.to_string()]);
+  assert!(!failed.status.success());
+  assert!(String::from_utf8_lossy(&failed.stderr).contains("Transaction operation 2 failed"));
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before,
+    "later invalid namespace must roll back the first"
+  );
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "doc", "app.main/main!", "external change"]),
+    "change a previewed definition",
+  );
+  let external = fs::read(&snapshot).unwrap();
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--expect-revision", &revision],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Definition conflict"));
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    external,
+    "stale namespace views must preserve external edits"
+  );
+
+  let refreshed = transaction_scope(&snapshot, &operations);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--expect-revision", &refreshed],
+    ),
+    "commit both namespace views",
+  );
+  for namespace in namespaces {
+    assert_eq!(query_ns_view(&snapshot, namespace), query_ns_view(&reference, namespace));
+  }
+}
+
 fn definition_statuses(report: &serde_json::Value) -> std::collections::BTreeMap<String, String> {
   report["definitions"]
     .as_array()

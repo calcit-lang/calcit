@@ -587,6 +587,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "tags"
           | "add-ns"
           | "rm-ns"
+          | "ns"
           | "imports"
           | "add-import"
           | "rm-import"
@@ -688,27 +689,35 @@ where
 
   let staged_path = staged.path().to_string_lossy();
   let staged_snapshot = load_snapshot(&staged_path)?;
-  let rendered_content = render_snapshot_content(&staged_snapshot)?;
-  let staged_content = if preserve_untouched_schemas
-    && !operations
-      .iter()
-      .any(|operation| operation.first().is_some_and(|group| group == "edit") && operation.get(1).is_some_and(|name| name == "format"))
-  {
-    restore_untouched_schema_forms(&original_content, &rendered_content, &staged_snapshot, &staged_path, operations)?
+  let staged_units = super::snapshot_scope::snapshot_units(&staged_snapshot)?;
+  // Namespace views describe semantic edits, not a request to canonicalize
+  // retained root fields or source layout. Explicit format/schema commands
+  // keep their existing canonicalization behavior.
+  let unchanged_namespace_views = operations
+    .iter()
+    .all(|operation| operation.first().is_some_and(|group| group == "edit") && operation.get(1).is_some_and(|name| name == "ns"))
+    && original_units.as_ref().is_some_and(|units| units == &staged_units);
+  let staged_content = if unchanged_namespace_views {
+    original_content.clone()
   } else {
-    rendered_content
+    let rendered_content = render_snapshot_content(&staged_snapshot)?;
+    if preserve_untouched_schemas
+      && !operations.iter().any(|operation| {
+        operation.first().is_some_and(|group| group == "edit") && operation.get(1).is_some_and(|name| name == "format")
+      })
+    {
+      restore_untouched_schema_forms(&original_content, &rendered_content, &staged_snapshot, &staged_path, operations)?
+    } else {
+      rendered_content
+    }
   };
   staged.write_and_sync(staged_content.as_bytes(), "transaction snapshot")?;
 
   let new_revision = snapshot_content_revision(&staged_content);
   let changed = original_content != staged_content;
-  let touched = match &original_units {
-    Some(units) => Some((
-      units,
-      super::snapshot_scope::changed_units(units, &super::snapshot_scope::snapshot_units(&staged_snapshot)?),
-    )),
-    None => None,
-  };
+  let touched = original_units
+    .as_ref()
+    .map(|units| (units, super::snapshot_scope::changed_units(units, &staged_units)));
   if let (Some(guarded), Some((_, touched))) = (&guarded_units, &touched) {
     let unguarded = touched.iter().filter(|unit| !guarded.contains(*unit)).cloned().collect::<Vec<_>>();
     if !unguarded.is_empty() {
