@@ -288,6 +288,8 @@ Agent 仍应串行写入，使用独立 worktree/Snapshot 做并行开发，使�
 
 仅修改 Snapshot 的 `edit ffi` 元数据可与 `edit schema` 和 tree 修改一起进入事务。这不会将外部 JavaScript 文件纳入事务或写入文件；`edit ffi --file` 只读取输入，然后更新 Snapshot。
 
+`edit ns` 也可以与其他 Snapshot 修改放在同一事务中。多个 namespace 视图会一起校验和提交；后续视图无效或 revision 冲突时，前面的修改也不会写回原文件。`--file` 只读取视图输入。
+
 The primary input format is a Cirru EDN list of CLI argument lists. Each inner list is exactly the argument sequence that would follow the snapshot path in an ordinary command. A `quote` value can be embedded directly after `--code`, so multiline Calcit code remains structured rather than escaped inside a string:
 
 ```cirru.no-check
@@ -399,6 +401,19 @@ calcit query ns app.main --format cirru > .calcit/snippets/app.main.cirru
 calcit edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run --format edn   # 读取 :scoped-revision
 calcit edit ns app.main --file .calcit/snippets/app.main.cirru --expect-revision 'scope:def:app.main/f@md5:...'
 calcit --check-only
+```
+
+保存多个命名空间时，把各条 `edit ns` 放入同一个 operation 文件，再统一 dry-run 和提交：
+
+```cirru.no-check
+[]
+  [] |edit |ns |app.main |--file |.calcit/snippets/app.main.cirru
+  [] |edit |ns |app.util |--file |.calcit/snippets/app.util.cirru
+```
+
+```bash
+calcit edit transaction --file .calcit/snippets/save-namespaces.cirru --dry-run --format edn
+calcit edit transaction --file .calcit/snippets/save-namespaces.cirru --expect-revision '<scoped-revision>'
 ```
 
 ### Managing Namespaces

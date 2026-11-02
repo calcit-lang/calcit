@@ -587,6 +587,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "tags"
           | "add-ns"
           | "rm-ns"
+          | "ns"
           | "imports"
           | "add-import"
           | "rm-import"
