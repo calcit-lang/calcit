@@ -37,7 +37,7 @@ defunion Geo Point Shape String
 defunion Label String Point
 ```
 
-类型名成员和 `defstruct` 字段一样直接写裸符号；带参数的复合类型目前仍写 quote，例如 `defunion Cells String $ quote (List Number)`。旧写法 `'String` 仍可使用，`calcit edit format` 会改为 `String`。
+类型名成员和 `defstruct` 字段一样直接写裸符号；带参数的复合类型目前仍写 quote，例如 `defunion Cells String $ quote (List Number)`。旧写法 `'String` 仍可使用，`calcit edit format` 会改为 `String`。复合成员不能裸写成 `(Map Tag Number)`，加载 Snapshot 时会报 `E_LEGACY_TYPE_SYNTAX`（JS 后端会把它当作函数调用），`calcit edit format` 会补上 quote。
 
 成员可以是：
 
