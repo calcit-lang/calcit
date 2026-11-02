@@ -11460,7 +11460,15 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     },
     // A Ref is checked by its current content, like decoders and JS validators do.
     CalcitTypeAnnotation::Ref(item) => match value {
-      Calcit::Ref(_, cell) => runtime_open_type(item) || cell.lock().is_ok_and(|guard| value_matches_type_annotation(&guard.0, item)),
+      Calcit::Ref(_, cell) => {
+        if runtime_open_type(item) {
+          true
+        } else {
+          // Clone the content and release the lock before recursing, so a nested Ref cannot re-lock it.
+          let current = cell.lock().ok().map(|guard| guard.0.clone());
+          current.is_some_and(|inner| value_matches_type_annotation(&inner, item))
+        }
+      }
       _ => false,
     },
     CalcitTypeAnnotation::Buffer => matches!(value, Calcit::Buffer(_)),
