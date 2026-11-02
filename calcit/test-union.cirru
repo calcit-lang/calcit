@@ -64,6 +64,16 @@
           :code $ quote $ defstruct Style (:width CssValue)
           :examples $ []
           :schema $ quote StructDef
+        'StylePatch $ %{} 'CodeEntry
+          :doc "|An enum payload typed by a union written with its short name."
+          :code $ quote $ defenum StylePatch (:width CssValue) (:reset)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |short-union-payload-validates)
+            :code $ quote $ do
+              assert= |12px $ patch-text $ StylePatch :width 12
+              assert= |auto $ patch-text $ StylePatch :width |auto
+            :tags $ #{} :union :unit
         'cells-total $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cells-total (c)
             match c
@@ -152,6 +162,7 @@
             assert= |s $ text-only |s
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
+            assert= |12px $ patch-text $ StylePatch :width 12
             assert= ([] 2 2)
               scale-xy $ read-scale 2
             assert= ([] 1 3)
@@ -175,6 +186,13 @@
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'patch-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn patch-text (p)
+            match p
+              (:width w) (css-text w)
+              (:reset) |reset
+          :examples $ []
+          :schema $ quote $ Fn StylePatch (-> String)
         'pick $ %{} 'CodeEntry (:doc "|Both branches check against the declared union.")
           :code $ quote $ defn pick (n)
             if (> n 0) (Point :x n :y 2) |none

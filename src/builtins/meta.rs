@@ -73,6 +73,17 @@ pub(crate) fn advance_gensym_index(file_ns: &str, delta: usize) {
 /// Runs `f` with the current-compiling-def context set to `ns/def`.
 /// Restores the previous context on return (supports reentrant calls).
 /// Also resets the gensym counter for this def so gensym sequences are always stable.
+/// Resolve short type names against the namespace of the declaration that wrote them.
+fn qualify_in_definition_namespace(
+  annotation: Arc<CalcitTypeAnnotation>,
+  definition_ref: Option<&Arc<str>>,
+) -> Arc<CalcitTypeAnnotation> {
+  match definition_ref.and_then(|reference| reference.rsplit_once('/')) {
+    Some((ns, _)) => crate::calcit::type_refs::qualify_namespace_type_refs(annotation, ns),
+    None => annotation,
+  }
+}
+
 pub fn with_compiling_def<R, E>(ns: &str, def: &str, f: impl FnOnce() -> Result<R, E>) -> Result<R, E> {
   let prev = CURRENT_COMPILING_DEF.with(|cell| cell.borrow_mut().take());
   let key = format!("{ns}/{def}");
@@ -553,6 +564,9 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             }
             // Validate payload types against enum variant type annotations
             for (idx, (payload, expected_type)) in xs.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+              // Payload types are written in the enum's own namespace, so a short
+              // name such as `Key` must resolve there, not at the call site.
+              let expected_type = &qualify_in_definition_namespace(expected_type.clone(), enum_proto.definition_ref());
               if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
                 && !value_matches_type_annotation(payload, expected_type)
               {
@@ -622,6 +636,9 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             }
             // Validate payload types against enum variant type annotations
             for (idx, (payload, expected_type)) in xs.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+              // Payload types are written in the enum's own namespace, so a short
+              // name such as `Key` must resolve there, not at the call site.
+              let expected_type = &qualify_in_definition_namespace(expected_type.clone(), enum_proto.definition_ref());
               if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
                 && !value_matches_type_annotation(payload, expected_type)
               {
