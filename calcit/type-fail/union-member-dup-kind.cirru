@@ -22,7 +22,7 @@
           :code $ quote $ defenum Shape (:circle 'Number) (:square 'Number)
           :examples $ []
         'Uu $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion Uu (:: 'List 'String) (:: 'List 'Number)
+          :code $ quote $ defunion Uu (quote (List String)) (quote (List Number))
           :examples $ []
         'f $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn f (v)

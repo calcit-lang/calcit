@@ -199,6 +199,20 @@ calcit calcit.cirru analyze weak-types --only coverage --deps --summary-only --f
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. Inside such a `defn`, a schema position whose parameter never appears in a host operation (`.-field`, `.!method`, `js-get`, `js/...`, `new`, `js-cast`, `unsafe-coerce` and the other JavaScript syntax procs), directly or through `let` bindings, is reported as `js-ffi-non-host` instead; the same applies to a return whose tail expressions do not come from a host operation. These are usually Calcit props, states or callbacks that only pass through the adapter. `js-ffi-non-host` is listed under `review_required` in `calcit fix --workflow strict`, and the quality gate counts it like `intentional-js-ffi`, so existing baselines are unchanged. Calls into another adapter, imported JS module functions and external-object methods written as `.method` are not followed. A strict `MacroSignature` classifies `Dynamic` nested specifically inside `Expr<...>` inputs or expansion as `intentional-macro-syntax`: the phase-aware syntax contract remains checked, while the semantic value is deliberately open. Whole-Dynamic macro schemas, `Dynamic` expansions, and `Definition<Dynamic>` remain unresolved. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. These intent classes do not hide locations or remove schema-Dynamic coverage inventory; they separate reviewed boundary choices from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
 
+### 解码边界 `:decode-boundary`
+
+把开放数据检查成具体类型的函数，参数必须是 Dynamic，例如：
+
+```cirru.no-check
+defn read-coord-key (x)
+  hint-fn $ Fn Dynamic (-> CoordKey) (:features :decode-boundary)
+  decode-map-as x CoordKey
+```
+
+schema 声明 `:features :decode-boundary` 后，`analyze weak-types` 把参数（含 rest 参数）里的 Dynamic 和函数体里的 code-dynamic 归到 `intentional-decode`，不再计入 `unresolved`；位置仍然列出，`--intent intentional-decode` 可以单独查看。质量门禁的 unresolved 计数同样不包括它们，`calcit fix --workflow strict` 把它们列为保留的边界。
+
+这个标记只能用在函数 schema 上：参数里至少有一个位置含 Dynamic，返回类型不含 Dynamic。加载 Snapshot 时检查，不符合时报 `E_DECODE_BOUNDARY_SHAPE`。返回值仍是 Dynamic 的函数没有完成解码，应该先写出具体返回类型。
+
 For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.

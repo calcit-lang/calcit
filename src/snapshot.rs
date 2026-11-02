@@ -649,6 +649,14 @@ mod tags_serde {
 const BARE_TUPLE_SCHEMA_ERROR: &str = "`Tuple` needs its element types, such as `Tuple Number String`.";
 
 fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  let annotation = parse_loaded_schema_annotation_form(value, owner)?;
+  match crate::calcit::decode_boundary_shape_error(&annotation) {
+    Some(reason) => Err(format!("[E_DECODE_BOUNDARY_SHAPE] {owner}: {reason}")),
+    None => Ok(annotation),
+  }
+}
+
+fn parse_loaded_schema_annotation_form(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
   if matches!(value, Edn::Nil) {
     return Ok(DYNAMIC_TYPE.clone());
   }
@@ -3170,7 +3178,11 @@ pub fn render_cirru_inline(node: &Cirru) -> String {
 
 /// The first subtree where `before` and `after` differ, as (written, migrated).
 fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a Cirru, &'a Cirru)> {
+  let quote_head =
+    |node: &Cirru| matches!(node, Cirru::List(xs) if matches!(xs.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote"));
   match (before, after) {
+    // A bare compound type such as `(List Number)` became `(quote (List Number))`.
+    _ if quote_head(after) && !quote_head(before) => Some((before, after)),
     (Cirru::List(xs), Cirru::List(ys)) if xs.len() == ys.len() => xs.iter().zip(ys).find_map(|(x, y)| first_rewritten_form(x, y)),
     _ if before == after => None,
     _ => Some((before, after)),
@@ -4725,7 +4737,7 @@ fn canonicalize_struct_field_type(entry: &[Cirru]) -> (Cirru, usize) {
 }
 
 fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  canonicalize_code_type_syntax_in(node, true)
+  canonicalize_code_type_syntax_in(node, true, false)
 }
 
 /// Heads whose second argument is a decode or cast target type. `edit format`
@@ -4743,8 +4755,8 @@ fn is_decoder_type_head(head: Option<&str>) -> bool {
 }
 
 /// `decoders` turns on decoder target migration; it is switched off inside
-/// `quote`, whose data is not code.
-fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
+/// `quote`, whose data is not code. `quoted` is true below a `quote` head.
+fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool, quoted: bool) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
   };
@@ -4753,10 +4765,11 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
     _ => None,
   });
   let nested_decoders = decoders && head != Some("quote");
+  let nested_quoted = quoted || head == Some("quote");
   let mut rewritten = Vec::with_capacity(items.len());
   let mut changed = 0;
   for item in items {
-    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders);
+    let (next, count) = canonicalize_code_type_syntax_in(item, nested_decoders, nested_quoted);
     rewritten.push(next);
     changed += count;
   }
@@ -4804,6 +4817,24 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usi
           changed += count;
         }
         rewritten[index] = Cirru::List(next_field);
+      }
+    }
+    // `defunion` members are bare type slots after the name; a quoted
+    // `defunion` form is data and keeps its written shape.
+    Some("defunion") if !quoted && items.len() >= 3 => {
+      for index in 2..items.len() {
+        // A bare compound member such as `(List Item)` is already compact
+        // syntax; quoting it keeps nominal arguments like `Item` spellable.
+        if crate::calcit::type_expr::is_compact_payload(&items[index])
+          && crate::calcit::type_expr::desugar_type_expr(&items[index]).is_ok()
+        {
+          rewritten[index] = Cirru::List(vec![Cirru::leaf("quote"), items[index].clone()]);
+          changed += 1;
+          continue;
+        }
+        let (next, count) = canonicalize_type_expression(&items[index]);
+        rewritten[index] = next;
+        changed += count;
       }
     }
     Some("deftrait") if items.len() >= 3 => {
@@ -5003,6 +5034,17 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
         *slot = Cirru::List(next_entry);
       }
     }
+    // Every `defunion` slot after the name is a member type. A bare compound
+    // member such as `(Map Tag Number)` would be evaluated as a call by the JS
+    // backend, so it gets the same quoted spelling as struct fields.
+    Some("defunion") if items.len() >= 3 => {
+      for slot in rewritten.iter_mut().skip(2) {
+        if let Some(compact) = compact_type_form(slot) {
+          *slot = compact;
+          changed += 1;
+        }
+      }
+    }
     _ => {}
   }
   (Cirru::List(rewritten), changed)
@@ -5013,7 +5055,7 @@ fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 }
 
 fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
-  let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders);
+  let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders, false);
   let (compact, count) = compact_code_type_syntax(&canonical);
   (compact, legacy + count)
 }
@@ -6210,6 +6252,21 @@ mod tests {
       assert!(error.contains("element types"), "error: {error}");
     }
 
+    // `:decode-boundary` loads only on a function from Dynamic input to a concrete return.
+    let decoder = |text: &str| Edn::Quote(parse_one(text));
+    parse_loaded_schema_annotation(&decoder("Fn Dynamic (-> Number) (:features :decode-boundary)"), "tests/read-n")
+      .expect("a decode boundary loads");
+    for (text, reason) in [
+      ("Fn Number (-> Number) (:features :decode-boundary)", "contains Dynamic"),
+      ("Fn Dynamic (-> Dynamic) (:features :decode-boundary)", "concrete return type"),
+    ] {
+      let error = parse_loaded_schema_annotation(&decoder(text), "tests/read-n").expect_err(text);
+      assert!(
+        error.contains("E_DECODE_BOUNDARY_SHAPE") && error.contains(reason),
+        "{text}: {error}"
+      );
+    }
+
     let nested_legacy = parse_one(":: 'List 'Record");
     let error = validate_schema_for_write(&nested_legacy).expect_err("nested legacy data type names must be rejected on write");
     assert!(error.contains("'Struct"), "nested error should point to 'Struct: {error}");
@@ -6392,6 +6449,21 @@ mod tests {
         "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
         "defenum Shape (:some 'T $ quote $ List T) (:none)",
       ),
+      // A bare compound union member would be called as a function on JS.
+      (
+        "defunion TextStyle String (Map Tag Number)",
+        "defunion TextStyle String $ quote $ Map Tag Number",
+      ),
+      (
+        "defunion Cells 'String (List Number)",
+        "defunion Cells 'String $ quote $ List Number",
+      ),
+      (
+        "defunion Cells String $ :: 'List 'Number",
+        "defunion Cells String $ quote $ List Number",
+      ),
+      // A nominal argument stays a type reference inside the quoted member.
+      ("defunion Cells String (List Item)", "defunion Cells String $ quote $ List Item"),
       (
         "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
         "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
@@ -6402,8 +6474,23 @@ mod tests {
       assert_eq!(migrated, parse_one(expected), "{source}");
       assert!(count > 0, "{source}");
     }
+    // Loading names the whole bare member and its quoted spelling.
+    for (source, written) in [
+      (
+        "defunion TextStyle String (Map Tag Number)",
+        "`Map Tag Number`; write `quote $ Map Tag Number`",
+      ),
+      ("defunion Cells String (List Number)", "`List Number`; write `quote $ List Number`"),
+    ] {
+      let err = check_code_type_syntax(&parse_one(source), "mini.main/U", "calcit.cirru").expect_err(source);
+      assert!(err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains(written), "{source}: {err}");
+    }
     // Value references, partial hints and quoted data keep their written shape.
     for source in [
+      "defunion CssValue String Number",
+      "defunion CssValue 'String 'Number",
+      "defunion Cells String $ quote $ List Number",
+      "quote $ defunion U String (List Number)",
       "assert-type xs $ :: 'List Person",
       "hint-fn $ {} $ :args ([] 'A)",
       "hint-fn $ {} (:async false)",

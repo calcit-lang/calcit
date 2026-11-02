@@ -896,6 +896,54 @@ impl From<&FingerVec<Calcit>> for Calcit {
 }
 
 pub const CORE_NS: &str = "calcit.core";
+
+/// Schema feature marking a reviewed decode boundary: a function that takes
+/// open Dynamic input and returns a concrete type (#2541).
+pub const DECODE_BOUNDARY_FEATURE: &str = "decode-boundary";
+
+/// Why a schema may not declare `:decode-boundary`, if it may not: the marker
+/// needs a function whose parameters contain Dynamic and whose return does not.
+pub fn decode_boundary_shape_error(annotation: &CalcitTypeAnnotation) -> Option<String> {
+  fn contains_dynamic(annotation: &CalcitTypeAnnotation) -> bool {
+    use CalcitTypeAnnotation as T;
+    match annotation {
+      T::Dynamic | T::DynFn => true,
+      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Nullable(inner, _) | T::Variadic(inner) => contains_dynamic(inner),
+      T::Map(key, value) => contains_dynamic(key) || contains_dynamic(value),
+      T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) | T::Tuple(args) => args.iter().any(|arg| contains_dynamic(arg)),
+      T::Fn(signature) => {
+        signature.arg_types.iter().any(|arg| contains_dynamic(arg))
+          || signature.rest_type.as_ref().is_some_and(|rest| contains_dynamic(rest))
+          || contains_dynamic(&signature.return_type)
+      }
+      _ => false,
+    }
+  }
+  let declares =
+    |features: &std::collections::HashSet<cirru_edn::EdnTag>| features.iter().any(|tag| tag.ref_str() == DECODE_BOUNDARY_FEATURE);
+  match annotation {
+    CalcitTypeAnnotation::Fn(signature) if declares(&signature.features) => {
+      let dynamic_input = signature.arg_types.iter().any(|arg| contains_dynamic(arg))
+        || signature.rest_type.as_ref().is_some_and(|rest| contains_dynamic(rest));
+      if !dynamic_input {
+        Some(
+          "`:decode-boundary` needs a parameter that contains Dynamic; a function with only concrete inputs decodes nothing".to_owned(),
+        )
+      } else if contains_dynamic(&signature.return_type) {
+        Some(format!(
+          "`:decode-boundary` needs a concrete return type, but the return `{}` still contains Dynamic",
+          signature.return_type.to_brief_string()
+        ))
+      } else {
+        None
+      }
+    }
+    CalcitTypeAnnotation::Macro(signature) if declares(&signature.features) => {
+      Some("`:decode-boundary` applies to function schemas, not macros".to_owned())
+    }
+    _ => None,
+  }
+}
 pub const CALCIT_INTERNAL_NS: &str = "calcit.internal";
 pub const BUILTIN_IMPLS_ENTRY: &str = "&init-builtin-impls!";
 pub const GEN_NS: &str = "calcit.gen";
