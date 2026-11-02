@@ -77,6 +77,60 @@
           :code $ quote $ defstruct Style (:width CssValue)
           :examples $ []
           :schema $ quote StructDef
+        'CellPatch $ %{} 'CodeEntry
+          :doc "|Enum payloads are checked to their leaves when the enum value is built."
+          :code $ quote $ defenum CellPatch (:set Cells)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |payload-elements-validate)
+            :code $ quote $ do
+              assert= |accepted $ try
+                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 2) |accepted
+                fn (e) |rejected
+              assert= |rejected $ try
+                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 |bad) |accepted
+                fn (e) |rejected
+            :tags $ #{} :union :unit
+        'Loop $ %{} 'CodeEntry
+          :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
+          :code $ quote $ defunion Loop Number
+            quote $ Ref Loop
+          :examples $ []
+          :schema $ quote UnionDef
+        'LoopBox $ %{} 'CodeEntry
+          :doc "|Checking a payload that holds a self-holding ref stops at the cycle."
+          :code $ quote $ defenum LoopBox (:hold Loop)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |self-holding-ref-validates)
+            :code $ quote $ assert= |accepted
+              try
+                do (%:: LoopBox :hold $ erased-loop $ self-holding-ref) |accepted
+                fn (e) |rejected
+            :tags $ #{} :union :unit
+        'Nest $ %{} 'CodeEntry
+          :doc "|A payload that refers back to its own enum is checked once the enum is defined."
+          :code $ quote $ defenum Nest (:leaf Number)
+            :many $ quote $ List Nest
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |recursive-payload-validates)
+            :code $ quote $ assert= 2
+              match
+                Nest :many $ [] (Nest :leaf 1) (Nest :many $ [] (Nest :leaf 2))
+                (:many xs) (count xs)
+                (:leaf _) 0
+            :tags $ #{} :union :unit
+        'StylePatch $ %{} 'CodeEntry
+          :doc "|An enum payload typed by a union written with its short name."
+          :code $ quote $ defenum StylePatch (:width CssValue) (:reset)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |short-union-payload-validates)
+            :code $ quote $ do
+              assert= |12px $ patch-text $ StylePatch :width 12
+              assert= |auto $ patch-text $ StylePatch :width |auto
+            :tags $ #{} :union :unit
         'Tree $ %{} 'CodeEntry
           :doc "|A tree of numbers; the union refers to itself inside its List member."
           :code $ quote $ defunion Tree Number
@@ -216,6 +270,7 @@
             assert= |s $ text-only |s
             assert= |12px $ css-text $ :width (Style :width 12)
             assert= |auto $ css-text $ :width (Style :width |auto)
+            assert= |12px $ patch-text $ StylePatch :width 12
             assert= ([] |present |absent "|circle 2")
               describe-maybe (Point :x 1 :y 1) (Option :none)
                 Option :some $ Shape :circle 2
@@ -245,6 +300,13 @@
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'patch-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn patch-text (p)
+            match p
+              (:width w) (css-text w)
+              (:reset) |reset
+          :examples $ []
+          :schema $ quote $ Fn StylePatch (-> String)
         'pick $ %{} 'CodeEntry (:doc "|Both branches check against the declared union.")
           :code $ quote $ defn pick (n)
             if (> n 0) (Point :x n :y 2) |none
@@ -287,6 +349,25 @@
           :examples $ []
           :schema $ quote $ Fn Scale
             -> $ List Number
+        'erased-cells $ %{} 'CodeEntry
+          :doc "|Restores a value from a type-erased cache without checking it, so `%::` has to."
+          :code $ quote $ defn erased-cells (x) (unsafe-coerce x 'Cells)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Cells) (:features :erased-cache)
+        'erased-loop $ %{} 'CodeEntry
+          :doc "|Restores a Loop from a type-erased cache without checking it, so `%::` has to."
+          :code $ quote $ defn erased-loop (x) (unsafe-coerce x 'Loop)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Loop) (:features :erased-cache)
+        'self-holding-ref $ %{} 'CodeEntry
+          :doc "|Builds a ref whose content is the ref itself."
+          :code $ quote $ defn self-holding-ref ()
+            let
+                r $ ref $ segment-raw 0
+              reset! r $ segment-raw r
+              segment-raw r
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'segment-raw $ %{} 'CodeEntry
           :doc "|Hands a value over as open data, as a route table read from a Dynamic list would."
           :code $ quote $ defn segment-raw (x) x

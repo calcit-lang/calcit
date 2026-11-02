@@ -1454,7 +1454,7 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
 fn struct_field_validators_to_js(ns: &str, def: &str, imports: &RefCell<ImportsDict>) -> Result<String, String> {
   let reference = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]));
   let Some(nominal) = reference.resolve_to_struct() else {
-    return Ok(String::new());
+    return enum_payload_validators_to_js(&reference, ns, imports);
   };
   let owner_ns = nominal
     .definition_ref
@@ -1477,6 +1477,44 @@ fn struct_field_validators_to_js(ns: &str, def: &str, imports: &RefCell<ImportsD
     String::new()
   } else {
     format!(", [{}]", validators.join(", "))
+  })
+}
+
+/// `, null, {tag: [validator | null, ...]}` checking enum payloads deeply at
+/// `%::`, like native construction; empty when no payload has a checkable type.
+fn enum_payload_validators_to_js(reference: &CalcitTypeAnnotation, ns: &str, imports: &RefCell<ImportsDict>) -> Result<String, String> {
+  let Some(nominal) = reference.resolve_to_enum() else {
+    return Ok(String::new());
+  };
+  let owner_ns = nominal
+    .definition_ref()
+    .and_then(|path| path.rsplit_once('/'))
+    .map_or(ns, |(ns, _)| ns);
+  let mut variants = vec![];
+  for variant in nominal.variants() {
+    let mut validators = Vec::with_capacity(variant.arity());
+    for payload in variant.payload_types() {
+      let graph = match payload.as_ref() {
+        CalcitTypeAnnotation::Dynamic => None,
+        _ => DataShapeGraph::build_open(payload, owner_ns).ok(),
+      };
+      validators.push(match graph {
+        Some(graph) => format!(
+          "(value) => {}validate_data_shape(value, {})",
+          get_proc_prefix(ns),
+          data_shape_graph_to_js(&graph, ns, imports)?
+        ),
+        None => String::from("null"),
+      });
+    }
+    if validators.iter().any(|validator| validator != "null") {
+      variants.push(format!("{}: [{}]", wrap_js_str(variant.tag.ref_str()), validators.join(", ")));
+    }
+  }
+  Ok(if variants.is_empty() {
+    String::new()
+  } else {
+    format!(", null, {{{}}}", variants.join(", "))
   })
 }
 

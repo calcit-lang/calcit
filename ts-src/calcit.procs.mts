@@ -2191,6 +2191,8 @@ const same_nominal_enum = (actual: CalcitEnumDef, expected: CalcitEnumDef): bool
 /** Validate existing data without the decoder's map conversion or Option lifting. */
 export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): boolean {
   if (graph.version !== 3) throw new Error(`validate-data-shape expected ABI version 3, got ${graph.version}`);
+  // A ref can hold itself. Meeting the same ref at the same node again is accepted, which keeps the check finite.
+  const visiting = new Map<CalcitRef, Set<number>>();
   const check = (value: CalcitValue, nodeId: number, depth: number): boolean => {
     if (depth > 1024) return false;
     const node = graph.nodes[nodeId];
@@ -2215,7 +2217,21 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
       case "set": return value instanceof CalcitSet && value.values().every(item => check(item, node.inner, depth + 1));
       case "map": return (value instanceof CalcitMap || value instanceof CalcitSliceMap) && value.pairs().every(([key, item]) =>
         check(key, node.key, depth + 1) && check(item, node.value, depth + 1));
-      case "ref": return value instanceof CalcitRef && check(value.value, node.inner, depth + 1);
+      case "ref": {
+        if (!(value instanceof CalcitRef)) return false;
+        let seen = visiting.get(value);
+        if (seen?.has(node.inner)) return true;
+        if (seen == null) {
+          seen = new Set();
+          visiting.set(value, seen);
+        }
+        seen.add(node.inner);
+        try {
+          return check(value.value, node.inner, depth + 1);
+        } finally {
+          seen.delete(node.inner);
+        }
+      }
       case "struct": return value instanceof CalcitStructValue && same_nominal_struct(value.structRef, node.nominal) &&
         value.values.length === node.fields.length && node.fields.every(([name, child], idx) =>
           value.fields[idx]?.value === name && check(value.values[idx], child, depth + 1));
@@ -2876,6 +2892,17 @@ export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...ext
     }
   } else {
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
+  }
+
+  // Payloads are checked to their leaves, as native `%::` does.
+  const validators = enumPrototype instanceof CalcitEnumDef ? enumPrototype.payloadValidators?.[tagValue.value] : undefined;
+  if (validators != null) {
+    for (let idx = 0; idx < extra.length; idx++) {
+      const validator = validators[idx];
+      if (validator != null && !validator(extra[idx])) {
+        throw new Error(`Enum \`${proto.name.value}::${tagValue.value}\` payload ${idx + 1} does not match its declared type: ${toString(extra[idx], true)}`);
+      }
+    }
   }
 
   return new CalcitEnumValue(tag, extra, enumPrototype as CalcitEnumDef);
