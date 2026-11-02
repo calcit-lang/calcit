@@ -649,6 +649,14 @@ mod tags_serde {
 const BARE_TUPLE_SCHEMA_ERROR: &str = "`Tuple` needs its element types, such as `Tuple Number String`.";
 
 fn parse_loaded_schema_annotation(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
+  let annotation = parse_loaded_schema_annotation_form(value, owner)?;
+  match crate::calcit::decode_boundary_shape_error(&annotation) {
+    Some(reason) => Err(format!("[E_DECODE_BOUNDARY_SHAPE] {owner}: {reason}")),
+    None => Ok(annotation),
+  }
+}
+
+fn parse_loaded_schema_annotation_form(value: &Edn, owner: &str) -> Result<Arc<CalcitTypeAnnotation>, String> {
   if matches!(value, Edn::Nil) {
     return Ok(DYNAMIC_TYPE.clone());
   }
@@ -6208,6 +6216,21 @@ mod tests {
     for loaded in [Edn::Quote(Cirru::Leaf(Arc::from("Tuple"))), Edn::enum_value("Tuple", vec![])] {
       let error = parse_loaded_schema_annotation(&loaded, "tests/pair").expect_err("bare Tuple must not load");
       assert!(error.contains("element types"), "error: {error}");
+    }
+
+    // `:decode-boundary` loads only on a function from Dynamic input to a concrete return.
+    let decoder = |text: &str| Edn::Quote(parse_one(text));
+    parse_loaded_schema_annotation(&decoder("Fn Dynamic (-> Number) (:features :decode-boundary)"), "tests/read-n")
+      .expect("a decode boundary loads");
+    for (text, reason) in [
+      ("Fn Number (-> Number) (:features :decode-boundary)", "contains Dynamic"),
+      ("Fn Dynamic (-> Dynamic) (:features :decode-boundary)", "concrete return type"),
+    ] {
+      let error = parse_loaded_schema_annotation(&decoder(text), "tests/read-n").expect_err(text);
+      assert!(
+        error.contains("E_DECODE_BOUNDARY_SHAPE") && error.contains(reason),
+        "{text}: {error}"
+      );
     }
 
     let nested_legacy = parse_one(":: 'List 'Record");
