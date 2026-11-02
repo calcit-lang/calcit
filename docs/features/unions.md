@@ -52,7 +52,8 @@ defunion Label String Point
 
 - 任何深度的 `Dynamic`，包括裸 `List`、`Map`、`Fn`，以及 `Map Tag Dynamic`；
 - `Nil` / `Unit`、`Never`、数值细化类型；
-- 类型变量：第一版 union 不带类型参数，也不能引用自己；
+- 类型变量：第一版 union 不带类型参数；
+- 把自己直接列为成员，或者只经过其他 union 绕回自己，例如 `defunion A String A`；
 - core 的 `Option` / `Result`：缺失写成 union 外面的 `Option CssValue`；
 - 匿名 enum / struct、trait、`JsObject`；
 - 两个运行时种类相同的成员；
@@ -61,6 +62,30 @@ defunion Label String Point
 这些规则在 `defunion` 声明处就会检查，即使还没有代码用到这个类型。
 
 schema 里不能内联写 `Union A B`，会报 `E_UNION_INLINE`，必须先用 `defunion` 起名。
+
+## 递归 union
+
+union 可以在成员类型内部引用自己，用来描述树形数据：
+
+```cirru.no-check
+defunion Tree Number $ quote (List Tree)
+defunion Json String Number Bool
+  quote $ List Json
+  quote $ Map String Json
+
+defn tree-total (t)
+  hint-fn $ Fn Tree (-> Number)
+  match t
+    (Number n) n
+    (List xs) $ foldl xs 0 $ fn (acc x) (&+ acc (tree-total x))
+```
+
+- 自引用要放在 `List`、`Map`、`Set` 等容器的元素位置，或者成员 struct 的字段里（`defunion Doc String Section`，`Section` 的 `:children` 是 `List Doc`），这样每一层都有一个具体的值；
+- 有期望类型时，`[] 1 ([] 2 3)` 这样的嵌套字面量直接按 `Tree` 检查；
+- 运行时判断只看外层种类；受检解码（`parse-cirru-edn-as` 等）会逐层解码，错误给出出错的位置；
+- 直接把自己当成员（`defunion A String A`）或者只经过其他 union 绕回自己，展开不会终止，报 `E_UNION_MEMBER_INVALID`。
+
+struct 字段同样可以引用自己所在的 struct，例如 `defstruct Node (:data Number) (:children $ quote (Map Tag Node))`。
 
 ## 用 match 拆解
 

@@ -179,7 +179,8 @@ impl CalcitUnionDef {
         let nested_name = nested.display_name();
         if visiting.contains(&nested_name) {
           return Err(format!(
-            "defunion {} refers to itself through {nested_name}; recursive unions are not supported yet",
+            "defunion {} lists {nested_name} as a member, which leads back to itself without reaching a value; \
+             a union may refer to itself only inside a member type such as `List {nested_name}` or `Map String {nested_name}`",
             self.display_name()
           ));
         }
