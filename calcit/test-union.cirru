@@ -14,6 +14,24 @@
           :code $ quote $ defunion AliasValue test-union.main/PointAlias test-union.main/ShapeAlias String
           :examples $ []
           :schema $ quote UnionDef
+        'CellPatch $ %{} 'CodeEntry
+          :doc "|Enum payloads are checked to their leaves when the enum value is built."
+          :code $ quote $ defenum CellPatch (:set Cells)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |payload-elements-validate)
+            :code $ quote $ do
+              assert= |accepted $ try
+                do
+                  %:: CellPatch :set $ erased-cells $ segment-raw ([] 1 2)
+                  , |accepted
+                fn (e) |rejected
+              assert= |rejected $ try
+                do
+                  %:: CellPatch :set $ erased-cells $ segment-raw ([] 1 |bad)
+                  , |accepted
+                fn (e) |rejected
+            :tags $ #{} :union :unit
         'Cells $ %{} 'CodeEntry
           :doc "|A member written as a compound type, which keeps its quote."
           :code $ quote $ defunion Cells String
@@ -39,12 +57,45 @@
           :code $ quote $ defunion Label String Point
           :examples $ []
           :schema $ quote UnionDef
+        'Loop $ %{} 'CodeEntry
+          :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
+          :code $ quote $ defunion Loop Number
+            quote $ Ref Loop
+          :examples $ []
+          :schema $ quote UnionDef
+        'LoopBox $ %{} 'CodeEntry
+          :doc "|Checking a payload that holds a self-holding ref stops at the cycle."
+          :code $ quote $ defenum LoopBox (:hold Loop)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |self-holding-ref-validates)
+            :code $ quote $ assert= |accepted
+              try
+                do
+                  %:: LoopBox :hold $ erased-loop $ self-holding-ref
+                  , |accepted
+                fn (e) |rejected
+            :tags $ #{} :union :unit
         'MaybeGeo $ %{} 'CodeEntry
           :doc "|A Geo, or an Option of one, as optional child arguments are."
           :code $ quote $ defunion MaybeGeo Geo
             quote $ Option Geo
           :examples $ []
           :schema $ quote UnionDef
+        'Nest $ %{} 'CodeEntry
+          :doc "|A payload that refers back to its own enum is checked once the enum is defined."
+          :code $ quote $ defenum Nest (:leaf Number)
+            :many $ quote $ List Nest
+          :examples $ []
+          :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |recursive-payload-validates)
+            :code $ quote $ assert= 2
+              match
+                Nest :many $ [] (Nest :leaf 1)
+                  Nest :many $ [] $ Nest :leaf 2
+                (:many xs) (count xs)
+                (:leaf _) 0
+            :tags $ #{} :union :unit
         'Point $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:x Number) (:y Number)
           :examples $ []
@@ -53,6 +104,11 @@
           :code $ quote $ def PointAlias Point
           :examples $ []
           :schema $ quote StructDef
+        'RouteSegment $ %{} 'CodeEntry
+          :doc "|A route pattern segment: literal text, a Symbol parameter, or a Tag parameter."
+          :code $ quote $ defunion RouteSegment String Symbol Tag
+          :examples $ []
+          :schema $ quote UnionDef
         'Scale $ %{} 'CodeEntry
           :doc "|A scale: one factor for both axes, or one per axis."
           :code $ quote $ defunion Scale Number
@@ -77,50 +133,6 @@
           :code $ quote $ defstruct Style (:width CssValue)
           :examples $ []
           :schema $ quote StructDef
-        'CellPatch $ %{} 'CodeEntry
-          :doc "|Enum payloads are checked to their leaves when the enum value is built."
-          :code $ quote $ defenum CellPatch (:set Cells)
-          :examples $ []
-          :schema $ quote EnumDef
-          :tests $ [] $ %{} 'TestEntry (:name |payload-elements-validate)
-            :code $ quote $ do
-              assert= |accepted $ try
-                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 2) |accepted
-                fn (e) |rejected
-              assert= |rejected $ try
-                do (%:: CellPatch :set $ erased-cells $ segment-raw $ [] 1 |bad) |accepted
-                fn (e) |rejected
-            :tags $ #{} :union :unit
-        'Loop $ %{} 'CodeEntry
-          :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
-          :code $ quote $ defunion Loop Number
-            quote $ Ref Loop
-          :examples $ []
-          :schema $ quote UnionDef
-        'LoopBox $ %{} 'CodeEntry
-          :doc "|Checking a payload that holds a self-holding ref stops at the cycle."
-          :code $ quote $ defenum LoopBox (:hold Loop)
-          :examples $ []
-          :schema $ quote EnumDef
-          :tests $ [] $ %{} 'TestEntry (:name |self-holding-ref-validates)
-            :code $ quote $ assert= |accepted
-              try
-                do (%:: LoopBox :hold $ erased-loop $ self-holding-ref) |accepted
-                fn (e) |rejected
-            :tags $ #{} :union :unit
-        'Nest $ %{} 'CodeEntry
-          :doc "|A payload that refers back to its own enum is checked once the enum is defined."
-          :code $ quote $ defenum Nest (:leaf Number)
-            :many $ quote $ List Nest
-          :examples $ []
-          :schema $ quote EnumDef
-          :tests $ [] $ %{} 'TestEntry (:name |recursive-payload-validates)
-            :code $ quote $ assert= 2
-              match
-                Nest :many $ [] (Nest :leaf 1) (Nest :many $ [] (Nest :leaf 2))
-                (:many xs) (count xs)
-                (:leaf _) 0
-            :tags $ #{} :union :unit
         'StylePatch $ %{} 'CodeEntry
           :doc "|An enum payload typed by a union written with its short name."
           :code $ quote $ defenum StylePatch (:width CssValue) (:reset)
@@ -228,10 +240,24 @@
             %{} 'TestEntry (:name |option-member-decodes-from-open-data)
               :code $ quote $ do
                 assert= ([] |absent)
-                  describe-maybe $ decode-map-as (segment-raw $ Option :none) MaybeGeo
+                  describe-maybe $ decode-map-as
+                    segment-raw $ Option :none
+                    , MaybeGeo
                 assert= ([] |plain)
-                  describe-maybe $ decode-map-as (segment-raw $ Option :some |plain) MaybeGeo
+                  describe-maybe $ decode-map-as
+                    segment-raw $ Option :some |plain
+                    , MaybeGeo
               :tags $ #{} :union :unit
+        'erased-cells $ %{} 'CodeEntry
+          :doc "|Restores a value from a type-erased cache without checking it, so `%::` has to."
+          :code $ quote $ defn erased-cells (x) (unsafe-coerce x 'Cells)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Cells) (:features :erased-cache)
+        'erased-loop $ %{} 'CodeEntry
+          :doc "|Restores a Loop from a type-erased cache without checking it, so `%::` has to."
+          :code $ quote $ defn erased-loop (x) (unsafe-coerce x 'Loop)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Loop) (:features :erased-cache)
         'json-size $ %{} 'CodeEntry (:doc "|Counts every node of a Json value.")
           :code $ quote $ defn json-size (j)
             match j
@@ -349,25 +375,24 @@
           :examples $ []
           :schema $ quote $ Fn Scale
             -> $ List Number
-        'erased-cells $ %{} 'CodeEntry
-          :doc "|Restores a value from a type-erased cache without checking it, so `%::` has to."
-          :code $ quote $ defn erased-cells (x) (unsafe-coerce x 'Cells)
+        'segment-kinds $ %{} 'CodeEntry
+          :doc "|Symbol literals are inferred as Symbol, so a literal pattern list such as ([] |team 'team-id :id) is checked as List RouteSegment."
+          :code $ quote $ defn segment-kinds (segments)
+            map segments $ fn (s)
+              match s
+                (String _) |text
+                (Symbol _) |param
+                (Tag _) |tag
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Cells) (:features :erased-cache)
-        'erased-loop $ %{} 'CodeEntry
-          :doc "|Restores a Loop from a type-erased cache without checking it, so `%::` has to."
-          :code $ quote $ defn erased-loop (x) (unsafe-coerce x 'Loop)
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Loop) (:features :erased-cache)
-        'self-holding-ref $ %{} 'CodeEntry
-          :doc "|Builds a ref whose content is the ref itself."
-          :code $ quote $ defn self-holding-ref ()
-            let
-                r $ ref $ segment-raw 0
-              reset! r $ segment-raw r
-              segment-raw r
-          :examples $ []
-          :schema $ quote $ Fn (-> Dynamic)
+          :schema $ quote $ Fn (List RouteSegment)
+            -> $ List String
+          :tests $ [] $ %{} 'TestEntry (:name |symbol-literal-is-route-segment)
+            :code $ quote $ do
+              assert= ([] |text |param |tag)
+                segment-kinds $ [] |team 'team-id :id
+              assert= ([] |param)
+                segment-kinds $ [] 'id
+            :tags $ #{} :union :unit
         'segment-raw $ %{} 'CodeEntry
           :doc "|Hands a value over as open data, as a route table read from a Dynamic list would."
           :code $ quote $ defn segment-raw (x) x
@@ -381,6 +406,14 @@
                 str |param: $ to-string p
           :examples $ []
           :schema $ quote $ Fn Segment (-> String)
+        'self-holding-ref $ %{} 'CodeEntry (:doc "|Builds a ref whose content is the ref itself.")
+          :code $ quote $ defn self-holding-ref ()
+            let
+                r $ ref $ segment-raw 0
+              reset! r $ segment-raw r
+              segment-raw r
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'text-only $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn text-only (v)
             match v
