@@ -4770,8 +4770,10 @@ impl CalcitTypeAnnotation {
   /// Relation rules for `defunion` types, or `None` when neither side is a union.
   ///
   /// A member type flows into its union, and a union flows into a union that
-  /// has all of its members. A union flows nowhere else except Dynamic and
-  /// unconstrained type variables: its value must be taken apart with `match`.
+  /// has all of its members. A union also flows into a nullable destination
+  /// of a type it flows into (`JsNullish<U>`). It flows nowhere else except
+  /// Dynamic and unconstrained type variables: its value must be taken apart
+  /// with `match`.
   #[inline]
   fn union_relation(&self, expected: &Self, bindings: &mut TypeBindings, mode: PlainRelationMode) -> Option<TypeProof> {
     // Cheap shape check first: only zero-argument references can name a union.
@@ -4849,7 +4851,12 @@ impl CalcitTypeAnnotation {
         }
         result
       }
-      (Some(_), None) => Mismatch,
+      // A union value is a value of its own type, so it lifts into a nullable
+      // destination of that type like any other `T` into `JsNullish<T>`.
+      (Some(_), None) => match expected {
+        Self::Nullable(inner, _) => relate(self, inner.as_ref(), bindings),
+        _ => Mismatch,
+      },
       (None, Some(expected)) => into_union(self, &expected, bindings),
       (None, None) => unreachable!("checked above"),
     })
