@@ -3183,7 +3183,7 @@ mod tests {
       dynamic_row
         .schema_issues
         .iter()
-        .any(|issue| issue.contains("[W_SCHEMA_DYNAMIC]") && issue.contains("schema.item") && issue.contains(":: :ref")),
+        .any(|issue| issue.contains("[W_SCHEMA_DYNAMIC]") && issue.contains("schema.item") && issue.contains("quote $ Ref T")),
       "dynamic ref should carry an actionable issue: {:?}",
       dynamic_row.schema_issues
     );

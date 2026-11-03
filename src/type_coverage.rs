@@ -1016,24 +1016,24 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "Bind this slot in the selected entry with `calcit config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only when this is a documented open boundary.";
   }
   if occurrence.detail.contains("legacy-any") {
-    return "Migrate legacy `:any` to canonical `:dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
+    return "Migrate legacy `:any` to `Dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
   }
   if occurrence.kind == WeakTypeKind::CodeDynamic {
-    return "Replace this `:dynamic` slot with a concrete type; use a declared type variable when input and output types are related, or a trait plus `:where` when only a capability is required. Keep dynamic only at a documented boundary.";
+    return "Replace this `Dynamic` with a concrete type; use a declared type variable when input and output types are related, or a trait plus `:where` when only a capability is required. Keep `Dynamic` only at a documented boundary.";
   }
   if occurrence.detail.contains("ref-item") {
-    return "Replace bare `:ref` with `:: :ref <value-type>`; use a declared type variable for a polymorphic ref, or a named enum for intentionally heterogeneous state.";
+    return "Replace a bare `Ref` with `quote $ Ref T`; use a declared type variable for a polymorphic ref, or a named enum for intentionally heterogeneous state.";
   }
   if occurrence.detail.contains("list-item") {
-    return "Replace bare `:list` with `:: :list <item-type>`; use a declared type variable for a homogeneous polymorphic list, or a named enum for heterogeneous items.";
+    return "Replace a bare `List` with `quote $ List T`; use a declared type variable for a homogeneous polymorphic list, or a named enum for heterogeneous items.";
   }
   if occurrence.detail.contains("set-item") {
-    return "Replace bare `:set` with `:: :set <item-type>` and choose a concrete type or a declared type variable.";
+    return "Replace a bare `Set` with `quote $ Set T` and choose a concrete type or a declared type variable.";
   }
   if occurrence.detail.contains("map-key") || occurrence.detail.contains("map-value") {
-    return "Use `:: :map <key-type> <value-type>` and replace each unresolved slot with a concrete type or a declared type variable.";
+    return "Use `quote $ Map K V` and replace each unresolved slot with a concrete type or a declared type variable.";
   }
-  "Replace `:dynamic` with a concrete schema, a declared type variable, or a trait-bounded variable; mark `:features $ #{} :js-ffi` only for an intentional JS or native FFI boundary."
+  "Replace `Dynamic` with a concrete type, a declared type variable, or a trait-bounded variable; add `(:features :js-ffi)` to the `Fn` schema only for an intentional JS or native FFI boundary."
 }
 
 fn schema_has_feature(annotation: &CalcitTypeAnnotation, feature: &str) -> bool {
