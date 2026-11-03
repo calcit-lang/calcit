@@ -798,8 +798,8 @@ fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), St
 fn version_command_replacement(value: &str, snapshot_file: &str) -> String {
   let deps_path = deps_path_for_snapshot(snapshot_file);
   match value {
-    v @ ("patch" | "minor" | "major") => format!("`caps version bump {v} {deps_path}`"),
-    v => format!("`caps version set {v} {deps_path}`"),
+    v @ ("patch" | "minor" | "major") => format!("`caps {deps_path} version bump {v}`"),
+    v => format!("`caps {deps_path} version set {v}`"),
   }
 }
 
@@ -1017,7 +1017,7 @@ mod tests {
     };
     let err = handle_set(&opts, "/missing-project/calcit.cirru").expect_err("version migration should always fail explicitly");
     assert!(
-      err.contains("caps version bump patch /missing-project/deps.cirru"),
+      err.contains("caps /missing-project/deps.cirru version bump patch"),
       "unexpected error: {err}"
     );
   }
