@@ -1020,6 +1020,16 @@ mod tests {
       err.contains("caps /missing-project/deps.cirru version bump patch"),
       "unexpected error: {err}"
     );
+    let set_opts = ConfigSetCommand {
+      entry: None,
+      key: "version".to_owned(),
+      value: "2.0.0".to_owned(),
+    };
+    let err = handle_set(&set_opts, "/missing-project/calcit.cirru").expect_err("version migration should always fail explicitly");
+    assert!(
+      err.contains("caps /missing-project/deps.cirru version set 2.0.0"),
+      "unexpected error: {err}"
+    );
   }
 
   #[test]
