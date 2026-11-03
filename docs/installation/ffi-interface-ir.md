@@ -150,6 +150,9 @@ lifetime contract. A nested macro-kind function annotation is not a runtime
 callback and continues to use `E_FFI_IR_UNSUPPORTED_TYPE`; a macro raw binding
 uses `E_FFI_IR_UNSUPPORTED_SCHEMA`. Other types outside the portable subset
 continue to use `E_FFI_IR_UNSUPPORTED_TYPE`.
+A local `defunion` is also reported as `E_FFI_IR_UNSUPPORTED_TYPE` (not as a
+missing declaration): v3 has no union representation, so match the union in a
+handwritten adapter and pass a member type across the raw binding.
 
 Declaration IDs follow the resolved nominal Struct/Enum name, not necessarily
 the snapshot binding that stores the base definition. This supports the normal
@@ -178,6 +181,8 @@ untyped `DynFn` callback，因为 v3 尚未定义 ownership、线程亲和性与
 `E_FFI_IR_UNSUPPORTED_TYPE`；macro raw binding 使用
 `E_FFI_IR_UNSUPPORTED_SCHEMA`。其他超出 portable subset 的类型仍使用
 `E_FFI_IR_UNSUPPORTED_TYPE`。
+本地 `defunion` 同样报 `E_FFI_IR_UNSUPPORTED_TYPE`，而不是“声明缺失”：v3 还没有
+union 表示，应在手写 adapter 里 match union，再把成员类型交给 raw binding。
 
 Declaration ID 以解析出的 nominal Struct/Enum 名称为准，不强制等于保存 base
 definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Foo ...` 与

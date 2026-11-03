@@ -302,30 +302,34 @@ enum LocalTypeDeclaration {
     namespace: String,
     nominal: CalcitEnumDef,
   },
+  /// A `defunion` declaration. Interface IR v3 has no union representation,
+  /// so it is only indexed to report "unsupported" instead of "missing".
+  Union { id: String, source_id: String, namespace: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalTypeDeclarationKind {
   Struct,
   Enum,
+  Union,
 }
 
 impl LocalTypeDeclaration {
   fn id(&self) -> &str {
     match self {
-      Self::Struct { id, .. } | Self::Enum { id, .. } => id,
+      Self::Struct { id, .. } | Self::Enum { id, .. } | Self::Union { id, .. } => id,
     }
   }
 
   fn namespace(&self) -> &str {
     match self {
-      Self::Struct { namespace, .. } | Self::Enum { namespace, .. } => namespace,
+      Self::Struct { namespace, .. } | Self::Enum { namespace, .. } | Self::Union { namespace, .. } => namespace,
     }
   }
 
   fn source_id(&self) -> &str {
     match self {
-      Self::Struct { source_id, .. } | Self::Enum { source_id, .. } => source_id,
+      Self::Struct { source_id, .. } | Self::Enum { source_id, .. } | Self::Union { source_id, .. } => source_id,
     }
   }
 
@@ -333,6 +337,7 @@ impl LocalTypeDeclaration {
     match self {
       Self::Struct { .. } => LocalTypeDeclarationKind::Struct,
       Self::Enum { .. } => LocalTypeDeclarationKind::Enum,
+      Self::Union { .. } => LocalTypeDeclarationKind::Union,
     }
   }
 
@@ -340,6 +345,7 @@ impl LocalTypeDeclaration {
     match self {
       Self::Struct { nominal, .. } => nominal.generics.as_ref(),
       Self::Enum { nominal, .. } => nominal.generics(),
+      Self::Union { .. } => &[],
     }
   }
 }
@@ -409,6 +415,24 @@ fn resolve_local_declaration<'a>(
       candidates.extend(found);
     }
   }
+  if expected_kind.is_none()
+    && !candidates.is_empty()
+    && candidates
+      .iter()
+      .all(|candidate| candidate.kind() == LocalTypeDeclarationKind::Union)
+  {
+    let id = candidates[0].id();
+    return Err(Box::new(diagnostic(
+      definition,
+      path,
+      "E_FFI_IR_UNSUPPORTED_TYPE",
+      format!(
+        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}` at `{path}`; the declaration exists, but unions are not part of the IR yet."
+      ),
+      "Keep union-typed values behind a handwritten adapter: match the union in Calcit and pass a generator-safe member type or a declared local Struct/Enum across the generated binding.",
+    )));
+  }
+  candidates.retain(|candidate| candidate.kind() != LocalTypeDeclarationKind::Union);
   if let Some(kind) = expected_kind {
     candidates.retain(|candidate| candidate.kind() == kind);
   }
@@ -555,6 +579,7 @@ fn nominal_type(
   Ok(match kind {
     LocalTypeDeclarationKind::Struct => FfiTypeIr::Struct { id, arguments: converted },
     LocalTypeDeclarationKind::Enum => FfiTypeIr::Enum { id, arguments: converted },
+    LocalTypeDeclarationKind::Union => unreachable!("union declarations are rejected in resolve_local_declaration"),
   })
 }
 
@@ -762,6 +787,25 @@ fn cirru_may_define_nominal_type(code: &Cirru) -> bool {
   }
 }
 
+/// Name of a `defunion` declaration, read from source without evaluating it.
+fn cirru_union_name(code: &Cirru) -> Option<&str> {
+  let Cirru::List(items) = code else {
+    return None;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return None;
+  };
+  match head.rsplit('/').next().unwrap_or(head) {
+    "defunion" => match items.get(1) {
+      Some(Cirru::Leaf(name)) => Some(name.as_ref()),
+      _ => None,
+    },
+    "def" => items.get(2).and_then(cirru_union_name),
+    "quote" => items.get(1).and_then(cirru_union_name),
+    _ => None,
+  }
+}
+
 fn local_nominal_id(namespace: &str, name: &str) -> String {
   let name = normalized_type_name(name);
   if name.contains('/') {
@@ -775,6 +819,15 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
   let mut declarations = BTreeMap::new();
   for (namespace, file) in &snapshot.files {
     for (definition, entry) in &file.defs {
+      if let Some(name) = cirru_union_name(&entry.code) {
+        let source = LocalTypeDeclaration::Union {
+          id: local_nominal_id(namespace, name),
+          source_id: format!("{namespace}/{definition}"),
+          namespace: namespace.clone(),
+        };
+        declarations.entry(source.id().to_owned()).or_insert_with(Vec::new).push(source);
+        continue;
+      }
       if !cirru_may_define_nominal_type(&entry.code) {
         continue;
       }
@@ -927,6 +980,13 @@ fn convert_declaration(
         Err(diagnostics)
       }
     }
+    LocalTypeDeclaration::Union { id, .. } => Err(vec![diagnostic(
+      owner_definition,
+      format!("declarations.{id}"),
+      "E_FFI_IR_UNSUPPORTED_TYPE",
+      format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}`."),
+      "Keep union-typed values behind a handwritten adapter.",
+    )]),
   }
 }
 
@@ -2490,6 +2550,38 @@ mod tests {
       report.interface.definitions[0].signature.as_ref().expect("supported signature").parameters[0].type_ir,
       FfiTypeIr::Struct { ref id, ref arguments } if id == "test.ffi/Person" && arguments.is_empty()
     ));
+  }
+
+  #[test]
+  fn named_union_is_reported_as_unsupported_not_missing() {
+    let value = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Value"), Arc::new(vec![])));
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("Value", data_entry("defunion Value String Number")),
+        (
+          "read-value",
+          function_entry(vec![value], Arc::new(CalcitTypeAnnotation::String), native_metadata("read_value")),
+        ),
+      ]),
+      None,
+    )
+    .expect("inventory union-typed signature");
+
+    assert_eq!(report.summary.unsupported, 1);
+    let codes = diagnostic_codes(&report);
+    assert!(codes.contains("E_FFI_IR_UNSUPPORTED_TYPE"), "unexpected diagnostics: {codes:?}");
+    assert!(
+      !codes.contains("E_FFI_IR_DECLARATION_MISSING"),
+      "union must not be reported as missing: {codes:?}"
+    );
+    assert!(
+      report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("named union `test.ffi/Value`")),
+      "diagnostic should name the union: {:?}",
+      report.diagnostics
+    );
   }
 
   #[test]
