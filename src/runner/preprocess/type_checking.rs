@@ -2131,7 +2131,8 @@ pub(super) fn callback_tail_tuple_evidence(
   Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
 }
 
-/// Positional tuple evidence for a callback literal's final `[]` expression.
+/// Positional tuple evidence for an unhinted callback literal's final `[]`
+/// expression.
 pub(super) fn callback_tail_tuple(
   callback: &Calcit,
   expected_return: &CalcitTypeAnnotation,
@@ -2139,6 +2140,13 @@ pub(super) fn callback_tail_tuple(
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let Calcit::List(callback) = callback else { return None };
   if !matches!(callback.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return None;
+  }
+  // A `hint-fn` signature declares the return type explicitly; keep it so the
+  // contract check can still report e.g. `-> List Dynamic` against a Tuple.
+  // Preprocessing also inserts generated hints, which do not count.
+  let explicit_hint = |form: &Calcit| matches!(form, Calcit::List(items) if matches!(items.call_kind(), crate::calcit::CalcitCallKind::TypedFnHint(_, false)));
+  if callback.iter().skip(3).any(explicit_hint) {
     return None;
   }
   let tail = callback
