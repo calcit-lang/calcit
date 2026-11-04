@@ -1207,12 +1207,6 @@ pub fn lookup_def_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
     Some(e) => e,
     None => return DYNAMIC_TYPE.clone(),
   };
-  if ns == crate::calcit::CORE_NS
-    && crate::calcit::preview_0_35_types_enabled()
-    && let Some(schema) = crate::calcit::preview_0_35_core_schema(def, &entry.schema)
-  {
-    return schema;
-  }
   entry.schema.clone()
 }
 
@@ -1449,15 +1443,6 @@ impl Drop for CompiledProgramCheckpoint {
 
 pub(crate) fn checkpoint_compiled_program() -> CompiledProgramCheckpoint {
   CompiledProgramCheckpoint(clone_existing_compiled_program())
-}
-
-/// Drop the compiled definitions of the namespaces `clear` matches, so a
-/// preview check recompiles them. Pair it with a checkpoint to get the cache back.
-pub(crate) fn clear_compiled_namespaces(clear: impl Fn(&str) -> bool) {
-  PROGRAM_COMPILED_DATA_STATE
-    .write()
-    .expect("write compiled program data")
-    .retain(|ns, _| !clear(ns));
 }
 
 /// Install one explicitly named source namespace for an isolated compiler test.
