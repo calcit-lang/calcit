@@ -2736,13 +2736,8 @@ const encode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
   const node: any = graph.nodes[nodeId];
   if (node == null) map_encode_error(path, `invalid data shape node #${nodeId}`);
   switch (node.kind) {
-    case "map-option": {
-      if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null || !same_nominal_enum(input.enumPrototype, node.nominal)) {
-        return map_encode_error(path, `expected Option, got ${typed_edn_kind(input)}`);
-      }
-      if (input.extra.length === 1) return encode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1);
-      return input;
-    }
+    case "map-option":
+      return encode_runtime_option(graph, node, input, false, path, depth);
     case "struct": {
       if (!(input instanceof CalcitStructValue) || !same_nominal_struct(input.structRef, node.nominal)) {
         return map_encode_error(path, `expected struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
@@ -2751,7 +2746,9 @@ const encode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       node.fields.forEach(([field, child]: [string, number], idx: number) => {
         if (input.fields[idx]?.value !== field) map_encode_error(path, `struct :${node.nominal.name.value} field #${idx} does not match :${field}`);
         const value = input.values[idx];
-        if (graph.nodes[child]?.kind === "map-option" && value instanceof CalcitEnumValue && value.extra.length === 0) return;
+        if (graph.nodes[child]?.kind === "map-option" && value instanceof CalcitEnumValue && value.extra.length === 0 && value.tag instanceof CalcitTag && value.tag.value === "none") {
+          return;
+        }
         entries.push(newTag(field), encode_runtime_map_node(graph, child, value, `${path}.${field}`, depth + 1));
       });
       return new CalcitSliceMap(entries);
@@ -2807,11 +2804,33 @@ const encode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
     case "union": {
       let firstError: unknown = null;
       for (const member of node.members as number[]) {
+        let encoded: any;
         try {
-          return encode_runtime_map_node(graph, member, input, path, depth + 1);
+          const memberNode: any = graph.nodes[member];
+          // A bare payload would be read as another member; keep the Option value.
+          encoded = memberNode?.kind === "map-option"
+            ? encode_runtime_option(graph, memberNode, input, true, path, depth)
+            : encode_runtime_map_node(graph, member, input, path, depth + 1);
         } catch (error) {
           firstError ??= error;
+          continue;
         }
+        // The decoder tries members in this order and keeps the first that fits;
+        // an earlier fit would turn the value into another member.
+        const exact = node.members.filter((candidate: number) => union_member_matches(graph.nodes[candidate], encoded, true));
+        const fallback = encoded instanceof CalcitMap || encoded instanceof CalcitSliceMap
+          ? node.members.filter((candidate: number) => graph.nodes[candidate]?.kind === "struct" && !exact.includes(candidate))
+          : [];
+        for (const candidate of [...exact, ...fallback]) {
+          if (candidate === member) return encoded;
+          try {
+            decode_runtime_map_node(graph, candidate, encoded, path, depth + 1);
+            break;
+          } catch {
+            // this member does not read the encoded value
+          }
+        }
+        return map_encode_error(path, "the encoded value would decode as another union member; the union has members that share one shape");
       }
       throw firstError ?? new Error(`encode-map-as failed at ${path}: value matches no union member`);
     }
@@ -2825,22 +2844,22 @@ const encode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
   }
 };
 
+/** `Option :some x` encodes as `x`, unless `keep` is set or `x` encodes to an Option the decoder would read as this one. */
+const encode_runtime_option = (graph: DataShapeGraph, node: any, input: any, keep: boolean, path: string, depth: number): any => {
+  if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null || !same_nominal_enum(input.enumPrototype, node.nominal)) {
+    return map_encode_error(path, `expected Option, got ${typed_edn_kind(input)}`);
+  }
+  const tag = input.tag instanceof CalcitTag ? input.tag.value : null;
+  if (tag === "none" && input.extra.length === 0) return input;
+  if (tag !== "some" || input.extra.length !== 1) return map_encode_error(path, "invalid Option value");
+  const encoded = encode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1);
+  const readsAsOption = encoded instanceof CalcitEnumValue && encoded.enumPrototype != null && same_nominal_enum(encoded.enumPrototype, node.nominal);
+  return keep || readsAsOption ? new CalcitEnumValue(input.tag as CalcitTag, [encoded], input.enumPrototype) : encoded;
+};
+
 export let encode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
   if (graph.version !== 3) throw new Error(`encode-map-as expected data shape ABI version 3, got ${graph.version}`);
-  const encoded = encode_runtime_map_node(graph, graph.root, value, "$", 0);
-  // Two struct members of a union may read the same map; make sure the decoder recovers the value.
-  if ((graph.nodes as any[]).some((node) => node?.kind === "union")) {
-    let same = false;
-    try {
-      same = _$n__$e_(decode_runtime_map_node(graph, graph.root, encoded, "$", 0), value);
-    } catch {
-      same = false;
-    }
-    if (!same) {
-      map_encode_error("$", "the encoded value would not decode back to the same value; a union has members that share one map shape");
-    }
-  }
-  return encoded as CalcitValue;
+  return encode_runtime_map_node(graph, graph.root, value, "$", 0) as CalcitValue;
 };
 
 const json_to_calcit = (value: any): CalcitValue => {

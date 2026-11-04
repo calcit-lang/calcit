@@ -74,7 +74,7 @@
             :code $ quote $ do
               assert= ({} $ :text |a)
                 encode-map-as (LabelA :text |a) LabelText
-              assert= "|encode-map-as failed at $: the encoded value would not decode back to the same value; a union has members that share one map shape" $ try
+              assert= "|encode-map-as failed at $: the encoded value would decode as another union member; the union has members that share one shape" $ try
                 do
                   encode-map-as (LabelB :text |b) LabelText
                   , |unexpected-success
@@ -450,6 +450,21 @@
               assert= |plain $ round-trip-geo |plain
               assert= (Option :none)
                 decode-map-as (encode-map-as (Option :none) MaybeGeo) MaybeGeo
+              let
+                  some-point $ Option :some $ Point :x 1 :y 2
+                  nested $ Option :some $ Option :none
+                assert= some-point $ decode-map-as (encode-map-as some-point MaybeGeo) MaybeGeo
+                assert= nested $ decode-map-as
+                  encode-map-as nested $ quote $ Option MaybeGeo
+                  quote $ Option MaybeGeo
+              let[] (cell geo)
+                decode-map-as
+                  encode-map-as
+                    [] (ref 3) |plain
+                    quote $ Tuple (Ref Number) Geo
+                  quote $ Tuple (Ref Number) Geo
+                assert= 3 $ deref cell
+                assert= |plain geo
             :tags $ #{} :union :unit
         'scale-decodes? $ %{} 'CodeEntry
           :doc "|A member kind that matches but holds the wrong elements still fails."

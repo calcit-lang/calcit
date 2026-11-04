@@ -4,7 +4,8 @@
 //! and turned into the plain shape `decode-map-as` reads back: Structs become
 //! tag-keyed maps, `Option :some x` struct fields store `x` and `Option :none`
 //! fields are left out. Enums keep their nominal value, as the decoder expects
-//! them. Every result satisfies `decode-map-as (encode-map-as x T) T == x`.
+//! them. Decoding the result gives back an equal value; a typed `Ref` is
+//! rebuilt around its encoded content, so only its identity differs.
 
 use std::sync::Arc;
 
@@ -16,21 +17,7 @@ const MAX_ENCODE_DEPTH: usize = 1024;
 
 pub(crate) fn encode_map(shape: &DataShapeGraph, input: &Calcit) -> Result<Calcit, DataShapeValueError> {
   shape.validate_value(input)?;
-  let encoded = MapEncoder { shape }.encode_node(shape.root, input, "$", 0)?;
-  // Union members are picked by runtime kind; two struct members can both read
-  // the same map, so confirm the decoder recovers the original value.
-  if shape.nodes.iter().any(|node| matches!(node, DataShapeNode::Union { .. })) {
-    match crate::data::edn_decode::decode_map(shape, &encoded) {
-      Ok(decoded) if decoded == *input => {}
-      _ => {
-        return Err(DataShapeValueError::at(
-          "$",
-          "the encoded value would not decode back to the same value; a union has members that share one map shape",
-        ));
-      }
-    }
-  }
-  Ok(encoded)
+  MapEncoder { shape }.encode_node(shape.root, input, "$", 0)
 }
 
 struct MapEncoder<'a> {
@@ -46,12 +33,7 @@ impl MapEncoder<'_> {
       return Err(DataShapeValueError::at(path, format!("invalid data shape node #{node_id}")));
     };
     match (node, input) {
-      (DataShapeNode::MapOption { inner, .. }, Calcit::Enum(option)) => match option.extra.as_slice() {
-        [item] => self.encode_node(*inner, item, path, depth + 1),
-        // Outside a struct field there is no slot to leave out; the decoder
-        // accepts the `Option :none` value itself.
-        _ => Ok(input.to_owned()),
-      },
+      (DataShapeNode::MapOption { .. }, Calcit::Enum(option)) => self.encode_option(node_id, option, false, path, depth),
       (DataShapeNode::List(inner), Calcit::List(items)) => {
         let mut values = Vec::with_capacity(items.len());
         for (idx, item) in items.iter().enumerate() {
@@ -131,7 +113,25 @@ impl MapEncoder<'_> {
           .into_iter()
           .find(|member| self.shape.validate_node_value(*member, input, path, depth + 1).is_ok())
           .ok_or_else(|| DataShapeValueError::at(path, "value matches no union member"))?;
-        self.encode_node(member, input, path, depth + 1)
+        let encoded = match (self.shape.nodes.get(member), input) {
+          // A bare payload would be read as another member; keep the Option value.
+          (Some(DataShapeNode::MapOption { .. }), Calcit::Enum(option)) => self.encode_option(member, option, true, path, depth)?,
+          _ => self.encode_node(member, input, path, depth + 1)?,
+        };
+        // The decoder tries members in this order and keeps the first that
+        // fits; an earlier fit would turn the value into another member.
+        for candidate in self.shape.union_candidates(members, &encoded, true) {
+          if candidate == member {
+            return Ok(encoded);
+          }
+          if crate::data::edn_decode::decode_map_node(self.shape, candidate, &encoded).is_ok() {
+            break;
+          }
+        }
+        Err(DataShapeValueError::at(
+          path,
+          "the encoded value would decode as another union member; the union has members that share one shape",
+        ))
       }
       (DataShapeNode::Ref(inner), Calcit::Ref(_, value_and_listeners)) => {
         let inner_value = value_and_listeners
@@ -149,5 +149,36 @@ impl MapEncoder<'_> {
       // Scalars, Dynamic leaves and shapes already checked by `validate_value`.
       _ => Ok(input.to_owned()),
     }
+  }
+
+  /// `Option :some x` encodes as `x`, unless `keep` is set or `x` encodes to an
+  /// Option value itself, which the decoder would read as this Option.
+  /// Outside a struct field there is no slot to leave out, so `Option :none`
+  /// stays as the value the decoder accepts.
+  fn encode_option(
+    &self,
+    node_id: usize,
+    option: &CalcitEnumValue,
+    keep: bool,
+    path: &str,
+    depth: usize,
+  ) -> Result<Calcit, DataShapeValueError> {
+    let Some(DataShapeNode::MapOption { nominal, inner, .. }) = self.shape.nodes.get(node_id) else {
+      return Err(DataShapeValueError::at(path, format!("invalid Option shape node #{node_id}")));
+    };
+    let [item] = option.extra.as_slice() else {
+      return Ok(Calcit::Enum(option.to_owned()));
+    };
+    let encoded = self.encode_node(*inner, item, path, depth + 1)?;
+    let reads_as_option = matches!(&encoded, Calcit::Enum(value)
+      if value.sum_type.as_ref().is_some_and(|actual| Arc::ptr_eq(actual, nominal) || actual.same_nominal_definition(nominal)));
+    if keep || reads_as_option {
+      return Ok(Calcit::Enum(CalcitEnumValue {
+        tag: option.tag.clone(),
+        extra: vec![encoded].into(),
+        sum_type: option.sum_type.clone(),
+      }));
+    }
+    Ok(encoded)
   }
 }

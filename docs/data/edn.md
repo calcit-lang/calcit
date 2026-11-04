@@ -178,7 +178,7 @@ defn user-to-wire (user)
 ; => ({} (:name |Ada) (:role (%:: Role :admin)))
 ```
 
-Write the result out with `format-cirru-edn` or `to-js-data`. A value whose type is known not to match the target fails during preprocessing with `E_ENCODE_MAP_AS_TYPE_MISMATCH`; an open (`Dynamic`) value is checked when the expression runs. When two struct members of a union have the same fields, the decoder could not tell their maps apart, so `encode-map-as` raises an error instead of producing a map that decodes to the other member.
+Write the result out with `format-cirru-edn` or `to-js-data`. A value whose type is known not to match the target fails during preprocessing with `E_ENCODE_MAP_AS_TYPE_MISMATCH`; an open (`Dynamic`) value is checked when the expression runs. When two members of a union would read the same encoded value, for example two structs with the same fields, `encode-map-as` raises an error instead of producing data that decodes as the other member. An `Option :some` payload that is itself an Option, or an Option member of a union, keeps its `Option` wrapper so the decoder reads it back unchanged. A typed `Ref` is rebuilt around its encoded content, so after a round trip it is a new ref with an equal value.
 
 The raising and Result-returning typed syntaxes are available for native execution and JavaScript code generation. The current WASM backend does not yet support typed EDN decoding.
 
