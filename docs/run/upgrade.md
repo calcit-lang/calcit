@@ -24,6 +24,18 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.2 `W_BROAD_TYPE` 提示调用点传入的具体类型（#2566）
+
+仍是 Notes。函数 `:schema` 参数里的裸 `Enum` / `Struct`，若本次检查到达的调用都传同一个具体类型，提示会直接说出来：
+
+```text
+[W_BROAD_TYPE] [Warn] bare `Enum` in :schema accepts any enum … Every call this check reached passes `app.schema/Op` at arg 1. @app.main/dispatch!
+  hint: write `app.schema/Op` at arg 1 of `app.main/dispatch!`, then run the definition `:tests` too: calls the check does not reach are not counted
+```
+
+回调参数（如 `d!` 的 `Fn Enum (-> Unit)`）按函数体里对它的调用统计，位置写作 `arg 1 → arg 1`。传入多种类型时列出全部，建议 union 或 `:generics`；
+有调用传入匿名 `::` 值、Dynamic 或本身就是裸类型的值时不给候选。定义 `:tests` 里的调用不在统计里，改完需要跑测试确认。
+
 ## 0.35.0 类型参数里的复合类型可以不写 quote（#2581）
 
 `assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数只能放类型，

@@ -2053,12 +2053,17 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
   for hit in snapshot::collect_broad_type_hits(snapshot, project_namespaces) {
     // Coordinates of examples and tests do not point into the definition code.
     let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
-    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
-      hit.message(),
-      calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
-      Some(snapshot::BROAD_TYPE_WARNING.to_owned()),
-      None,
-    ));
+    // Checked call sites may name the concrete type of a `:schema` slot.
+    let slot = hit.schema_slot.as_deref().map(|path| (hit.ns.as_str(), hit.def.as_str(), path));
+    runner::preprocess::push_broad_type_advisory(
+      LocatedWarning::new_with_detail(
+        hit.message(),
+        calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
+        Some(snapshot::BROAD_TYPE_WARNING.to_owned()),
+        None,
+      ),
+      slot,
+    );
   }
 }
 

@@ -280,6 +280,11 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 [W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `Dynamic` only where the boundary is intentionally open. @app.main/on-op @3.1.1
 ```
 
+函数 `:schema` 里参数位置的裸 `Enum` / `Struct`（包括回调参数的参数，如 `Fn (Fn Enum (-> Unit)) …`）会参考本次检查到达的调用点：
+所有调用都传同一个具体类型时，提示末尾说明并在 hint 里给出 `write `app.schema/Op` at arg 1 of …`；调用传了几种具体类型时列出它们，
+建议改用 union 或 `:generics`；没有被检查到的调用，或有调用传入的值本身就是裸类型、`::` 匿名 enum、Dynamic 时，不给候选。
+统计只覆盖从入口检查到的调用，定义 `:tests` 里的调用不算，所以改完要连同 `:tests` 一起跑。裸 `Fn` 不给候选签名。
+
 定义级 `:schema` 写的是定义值自身的种类：`defstruct` 为 `StructDef`，`defenum` 为 `EnumDef`，`deftrait` 为 `Trait`。
 `deftrait` 的 `Trait` 不提示；`defstruct` / `defenum` 的 `:schema` 写成 `Enum` 或 `Struct` 时，提示改为对应的种类。
 

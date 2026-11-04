@@ -4749,3 +4749,56 @@ fn proof_dissoc_in_keeps_known_map_root() {
     assert!(err.contains("E_FN_RETURN_UNPROVEN"), "unexpected dissoc-in proof error: {err}");
   });
 }
+
+/// #2566: a bare `Enum` / `Struct` schema slot names the type every checked
+/// call passes, lists several types, and stays unchanged without calls.
+#[test]
+fn broad_type_notes_name_the_type_checked_calls_pass() {
+  run_with_large_stack(|| {
+    let path = "tests/fixtures/broad-type-candidates.cirru";
+    let content = fs::read_to_string(path).expect("read fixture");
+    let data = cirru_edn::parse(&content).expect("parse fixture");
+    let snapshot = snapshot::load_snapshot_data(&data, path).expect("load fixture");
+    let namespaces = HashSet::from(["broad-type-candidates.main".to_owned()]);
+    let _ = runner::preprocess::take_advisories();
+    super::push_broad_type_advisories(&snapshot, &namespaces);
+    let entries = prepare_snapshot_entries(snapshot);
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("fixture should preprocess");
+
+    let notes = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some("W_BROAD_TYPE"))
+      .map(|advisory| (advisory.location().def.to_string(), advisory.hint().map(str::to_owned)))
+      .collect::<Vec<_>>();
+    let hint = |def: &str| {
+      notes
+        .iter()
+        .find(|(name, _)| name == def)
+        .unwrap_or_else(|| panic!("no note for {def}: {notes:?}"))
+        .1
+        .clone()
+    };
+    let unique = |def: &str, place: &str, name: &str| {
+      let hint = hint(def).unwrap_or_else(|| panic!("no hint for {def}: {notes:?}"));
+      assert!(
+        hint.starts_with(&format!(
+          "write `broad-type-candidates.main/{name}` at {place} of `broad-type-candidates.main/{def}`"
+        )),
+        "{hint}"
+      );
+    };
+    unique("dispatch!", "arg 1", "Op");
+    unique("show-point", "arg 1", "Point");
+    // Calls of the `d!` parameter inside the body; passing `dispatch!`, which
+    // itself accepts any enum, neither names nor rules out a type.
+    unique("on-click", "arg 1 → arg 1", "Op");
+    let mixed = hint("mixed!").expect("mixed! lists its types");
+    assert!(
+      mixed.contains("`broad-type-candidates.main/Msg`, `broad-type-candidates.main/Op`") && mixed.contains(":generics"),
+      "{mixed}"
+    );
+    assert_eq!(hint("unused!"), None, "{notes:?}");
+  });
+}
