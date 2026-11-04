@@ -32,7 +32,7 @@ Use `defstruct` to declare a named type with typed fields:
 defstruct Point (:x Number) (:y Number)
 ```
 
-每个字段写成 `(:field-name type)`。类型名直接写裸符号，如 `Number`、`String`、`Bool`、`Tag`、`Dynamic`（不限类型）或已声明的 `Point`。`defstruct` 不会把类型名当表达式求值，所以同名的局部绑定不会影响字段类型。带参数的复合类型目前仍写 quote，如 `quote $ List String`、`quote $ Map Tag Number`。
+每个字段写成 `(:field-name type)`。类型名直接写裸符号，如 `Number`、`String`、`Bool`、`Tag`、`Dynamic`（不限类型）或已声明的 `Point`。`defstruct` 不会把类型名当表达式求值，所以同名的局部绑定不会影响字段类型。带参数的复合类型同样直接写，如 `:tags $ List String`、`:scores $ Map Tag Number`；注意保留 `$` 或括号，`(:tags List String)` 会被读成类型 `List` 加默认值 `String`。旧写法 `quote $ List String` 仍可使用，`calcit edit format` 会去掉 quote。
 
 旧写法 `'Number` 仍然可用，`calcit edit format` 会把它改为 `Number`，见[升级手册](../run/upgrade.md)。
 
@@ -43,7 +43,7 @@ defstruct Person (:name String) (:age Number) (:position Tag)
 ### 字段类型的声明来源
 
 字段中的类型名按 `defstruct` 所在 namespace 及其显式 import 解析，而不是按调用者解析。
-例如 `Database` 声明 `:users $ quote $ Map String User` 时，其他 namespace 通过普通 import
+例如 `Database` 声明 `:users $ Map String User` 时，其他 namespace 通过普通 import
 构造、读取或更新该字段，仍使用声明处的 `User`；调用者自己也定义了 `User`，不代表两者可以互换。
 这个规则同样覆盖 `Option` 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
 不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
@@ -71,7 +71,7 @@ defstruct Person (:name String) (:age Number) (:position Tag)
 
 ## Generic Structs
 
-`defstruct` 可以在类型名后接泛型参数列表。泛型参数和字段类型一样直接写名字（`[] T`），在 schema 里用 `quote $ TypeName …` 套用具体类型。
+`defstruct` 可以在类型名后接泛型参数列表。泛型参数和字段类型一样直接写名字（`[] T`），在字段类型和 `assert-type` 里直接写 `Box Number` 套用具体类型。
 
 ```cirru
 let
@@ -80,7 +80,7 @@ let
       hint-fn $ Fn (Box T) (-> T) (:generics T)
       :value box
     b $ Box :value 1
-  assert-type b $ quote $ Box Number
+  assert-type b $ Box Number
   assert= 1 $ keep b
 ```
 
@@ -110,7 +110,7 @@ let
       :value T
     box $ ShownBox :value 1
     item $ :value box
-  assert-type box $ quote $ ShownBox Number
+  assert-type box $ ShownBox Number
   assert= |1 $ item .debug
 ```
 
@@ -144,7 +144,7 @@ declared as `Option<T>` may be omitted; the constructor inserts the nominal
 
 ```cirru
 let
-    Config $ defstruct Config (:host String) (:port Number 8080) (:debug? Bool false) (:tags (quote $ List String) ([]))
+    Config $ defstruct Config (:host String) (:port Number 8080) (:debug? Bool false) (:tags (List String) ([]))
     config $ Config :host |localhost
   assert= 8080 $ :port config
   assert= false $ :debug? config
@@ -395,7 +395,7 @@ Define a trait with `deftrait`, implement it with `defimpl`, and attach it to a 
 ```cirru
 let
     BirdTrait $ deftrait BirdTrait
-      .show $ quote $ Fn T (-> Nil)
+      .show $ Fn T (-> Nil)
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdImpl BirdTrait
       .show $ fn (self)

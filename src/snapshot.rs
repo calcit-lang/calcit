@@ -4688,14 +4688,11 @@ fn canonicalize_type_expression(node: &Cirru) -> (Cirru, usize) {
   {
     return (node.clone(), 0);
   }
-  // A bare compact type in a position that still needs the quote, such as
-  // `Fn T (-> String)` in a `deftrait` method, only gains the quote; reading it
-  // as an implicit `::` constructor would suggest the retired spelling.
-  if let Cirru::List(items) = node
-    && items.first().and_then(canonical_schema_symbol_from_cirru).is_some()
-    && crate::calcit::type_expr::is_bare_compact_payload(node)
-  {
-    return (Cirru::List(vec![Cirru::leaf("quote"), node.clone()]), 1);
+  // A bare compact type such as `List Number` is source syntax too (#2581,
+  // #2582); reading it as an implicit `::` constructor would rewrite it into
+  // the retired spelling.
+  if crate::calcit::type_expr::is_bare_compact_payload(node) {
+    return (node.clone(), 0);
   }
   if let Some(canonical) = canonicalize_legacy_type_leaf(node) {
     return (canonical, 1);
@@ -4857,8 +4854,12 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool, quoted: bool) 
     // `defunion` form is data and keeps its written shape.
     Some("defunion") if !quoted && items.len() >= 3 => {
       for index in 2..items.len() {
-        // A bare compound member such as `(List Item)` is already compact
-        // syntax; quoting it keeps nominal arguments like `Item` spellable.
+        // A bare compound member such as `(List Item)` is compact syntax and
+        // stays as written (#2582).
+        if crate::calcit::type_expr::is_bare_compact_payload(&items[index]) {
+          continue;
+        }
+        // A lowercase qualified head reads as a call, so it gains the quote.
         if crate::calcit::type_expr::is_compact_payload(&items[index])
           && crate::calcit::type_expr::desugar_type_expr(&items[index]).is_ok()
         {
@@ -5118,7 +5119,93 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
 /// migration that loading enforces, including the quoted type names of data
 /// declarations that 0.35.0 removes (#2516).
 fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  migrate_code_type_syntax(node)
+  let (migrated, count) = migrate_code_type_syntax(node);
+  let (unquoted, compound) = unquote_compound_types(&migrated);
+  (unquoted, count + compound)
+}
+
+/// The payload of `quote $ <compound type>` when it can be written bare, such
+/// as `List Number`; `None` for other forms.
+fn unquote_compound_type(node: &Cirru) -> Option<Cirru> {
+  let Cirru::List(items) = node else { return None };
+  match items.as_slice() {
+    [Cirru::Leaf(head), payload]
+      if head.as_ref() == "quote"
+        && crate::calcit::type_expr::is_bare_compact_payload(payload)
+        && crate::calcit::type_expr::desugar_type_expr(payload).is_ok() =>
+    {
+      Some(payload.to_owned())
+    }
+    _ => None,
+  }
+}
+
+/// Drop the quote from compound types in every position that only holds a
+/// type (#2581, #2582): `assert-type xs $ quote $ List Number` becomes
+/// `assert-type xs $ List Number`, and the same for `unsafe-coerce`, decoder
+/// targets, `defstruct` field types, `defenum` payloads, `defunion` members
+/// and `deftrait` method types. Only `calcit edit format` runs this; loading
+/// still accepts the quoted spelling.
+pub fn unquote_compound_types(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  // Quoted data is not code.
+  if head == Some("quote") {
+    return (node.clone(), 0);
+  }
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = unquote_compound_types(item);
+    rewritten.push(next);
+    changed += count;
+  }
+  let mut unquote = |slot: &mut Cirru| {
+    if let Some(bare) = unquote_compound_type(slot) {
+      *slot = bare;
+      changed += 1;
+    }
+  };
+  match head {
+    Some("assert-type" | "unsafe-coerce") if rewritten.len() >= 3 => unquote(&mut rewritten[2]),
+    _ if is_decoder_type_head(head) && rewritten.len() == 3 => unquote(&mut rewritten[2]),
+    Some("defunion") if rewritten.len() >= 3 => rewritten.iter_mut().skip(2).for_each(unquote),
+    Some(kind @ ("defstruct" | "defenum" | "deftrait")) if rewritten.len() >= 3 => {
+      let mut member = |entry: &mut Vec<Cirru>| {
+        let tagged = matches!(entry.first(), Some(Cirru::Leaf(key)) if key.starts_with([':', '.']));
+        let range = match (kind, entry.len()) {
+          ("defstruct", 2 | 3) if tagged => 1..2,
+          ("defenum", len) if tagged => 1..len,
+          ("deftrait", 2) if tagged => 1..2,
+          ("deftrait", 3) if is_cirru_leaf(entry.first(), "[]") => 2..3,
+          _ => return,
+        };
+        for index in range {
+          unquote(&mut entry[index]);
+        }
+      };
+      for slot in rewritten.iter_mut().skip(2) {
+        let Cirru::List(entry) = slot else { continue };
+        // Members may also be wrapped in one `{}` form: `defstruct Box $ {} (:items …)`.
+        if is_cirru_leaf(entry.first(), "{}") {
+          for inner in entry.iter_mut().skip(1) {
+            if let Cirru::List(wrapped) = inner {
+              member(wrapped);
+            }
+          }
+        } else {
+          member(entry);
+        }
+      }
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
 }
 
 /// Drop the quote from the type names in `defstruct`, `defenum` and
@@ -6574,21 +6661,16 @@ mod tests {
         "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
         "defenum Shape (:some T $ quote $ List T) (:none)",
       ),
-      // A bare compound union member would be called as a function on JS.
+      // A lowercase qualified head reads as a call, so the member gains a quote.
       (
-        "defunion TextStyle String (Map Tag Number)",
-        "defunion TextStyle String $ quote $ Map Tag Number",
+        "defunion Boxed String (app.lib/box Number)",
+        "defunion Boxed String $ quote $ app.lib/box Number",
       ),
-      (
-        "defunion Cells 'String (List Number)",
-        "defunion Cells String $ quote $ List Number",
-      ),
+      ("defunion Cells 'String (List Number)", "defunion Cells String (List Number)"),
       (
         "defunion Cells String $ :: 'List 'Number",
         "defunion Cells String $ quote $ List Number",
       ),
-      // A nominal argument stays a type reference inside the quoted member.
-      ("defunion Cells String (List Item)", "defunion Cells String $ quote $ List Item"),
       (
         "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
         "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
@@ -6599,24 +6681,18 @@ mod tests {
       assert_eq!(migrated, parse_one(expected), "{source}");
       assert!(count > 0, "{source}");
     }
-    // Loading names the whole bare member and its quoted spelling.
-    for (source, written) in [
-      (
-        "defunion TextStyle String (Map Tag Number)",
-        "`Map Tag Number` without a quote; data declarations and trait methods still need `quote $ Map Tag Number`",
-      ),
-      (
-        "defunion Cells String (List Number)",
-        "`List Number` without a quote; data declarations and trait methods still need `quote $ List Number`",
-      ),
-    ] {
-      let err = check_code_type_syntax(&parse_one(source), "mini.main/U", "calcit.cirru").expect_err(source);
-      assert!(err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains(written), "{source}: {err}");
-    }
     // Value references, partial hints and quoted data keep their written shape.
     for source in [
       "defunion CssValue String Number",
       "defunion Cells String $ quote $ List Number",
+      // Bare compound types are source syntax in every type position (#2581, #2582).
+      "defunion Cells String (List Item)",
+      "defunion TextStyle String (Map Tag Number)",
+      "defstruct Box (:items $ List Number) (:tags (List String) ([]))",
+      "defenum Shape (:some T $ List T) (:none)",
+      "deftrait Show $ .show $ Fn T (-> String) (:generics T)",
+      "assert-type xs $ List Number",
+      "decode-map-as raw $ Map Tag Number",
       "quote $ defunion U String (List Number)",
       "assert-type xs $ :: 'List Person",
       "hint-fn $ {} $ :args ([] 'A)",
@@ -6625,6 +6701,64 @@ mod tests {
     ] {
       let node = parse_one(source);
       assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
+    }
+  }
+
+  #[test]
+  fn format_unquotes_compound_types_in_type_positions() {
+    let cases = [
+      ("assert-type xs $ quote $ List Number", "assert-type xs $ List Number"),
+      (
+        "unsafe-coerce v $ quote $ Fn Number (-> Number)",
+        "unsafe-coerce v $ Fn Number (-> Number)",
+      ),
+      ("decode-map-as raw $ quote $ Map Tag Number", "decode-map-as raw $ Map Tag Number"),
+      (
+        "defstruct Box (:items $ quote $ List Number) (:tags (quote $ List String) ([]))",
+        "defstruct Box (:items $ List Number) (:tags (List String) ([]))",
+      ),
+      (
+        "defenum Shape (:some T $ quote $ List T) (:none)",
+        "defenum Shape (:some T $ List T) (:none)",
+      ),
+      ("defunion Cells String $ quote (List Number)", "defunion Cells String (List Number)"),
+      (
+        "defstruct Box $ {} (:items $ quote $ List Number) (:size Number)",
+        "defstruct Box $ {} (:items $ List Number) (:size Number)",
+      ),
+      (
+        "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
+        "deftrait Show $ .show $ Fn T (-> String) (:generics T)",
+      ),
+    ];
+    for (source, expected) in cases {
+      let (formatted, count) = format_code_type_syntax(&parse_one(source));
+      assert_eq!(formatted, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+      // Loading accepts both spellings.
+      assert!(
+        check_code_type_syntax(&parse_one(source), "mini.main/f", "calcit.cirru").is_ok(),
+        "{source}"
+      );
+      assert!(
+        check_code_type_syntax(&parse_one(expected), "mini.main/f", "calcit.cirru").is_ok(),
+        "{expected}"
+      );
+    }
+    // Quoted data, values, struct defaults and lowercase qualified heads keep their quotes.
+    for source in [
+      "quote $ assert-type xs $ quote $ List Number",
+      "defunion Boxed String $ quote $ app.lib/box Number",
+      "macroexpand $ quote $ List Number",
+      "defstruct Box (:items $ quote $ List Number) (:raw Dynamic (quote $ List Number))",
+    ] {
+      let node = parse_one(source);
+      let (formatted, _) = format_code_type_syntax(&node);
+      assert!(
+        render_cirru_inline(&formatted).contains("quote"),
+        "{source}: {}",
+        render_cirru_inline(&formatted)
+      );
     }
   }
 

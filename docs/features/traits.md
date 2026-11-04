@@ -30,7 +30,7 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 
 ## Quick Recipes
 
-- **Define Trait**: `deftrait MyTrait $ .method $ quote $ Fn …`
+- **Define Trait**: `deftrait MyTrait $ .method $ Fn …`
 - **Implement Trait**: `defimpl MyImpl MyTrait .method (fn (x) ...)`
 - **Attach to Struct**: `impl-traits MyStruct MyImpl`
 - **Call Method**: `instance .method` (receiver-first; `.method instance` remains compatible)
@@ -41,7 +41,7 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 Use `deftrait` to define a trait and its method signatures (including type annotations).
 
 ```cirru
-deftrait MyFoo $ .foo $ quote $ Fn T (-> String) (:generics T)
+deftrait MyFoo $ .foo $ Fn T (-> String) (:generics T)
 ```
 
 普通 trait 的完整方法签名使用具体类型或显式声明的泛型；方法参数、返回值、容器和嵌套回调中的 `Dynamic` 沿用现有的拒绝规则。`deftrait` 中静态声明的这些签名会在预处理阶段报告定义位置。未提供完整合同的 `'Fn` 仍保留既有动态方法语义；需要保留输入、存储与返回之间的类型关系时，优先使用泛型合同。
@@ -53,7 +53,7 @@ Use `defimpl` to create a nominal impl value for a trait.
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
@@ -80,7 +80,7 @@ Examples:
 let
     PersonA0 $ defstruct PersonA $ :name String
     MyFooA $ deftrait MyFooA $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     MyFooImplA $ defimpl MyFooImplA MyFooA $ .foo
       fn (p) (assert-type p PersonA0)
         str-spaced |foo $ :name p
@@ -96,7 +96,7 @@ let
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
     ImplB $ defimpl ImplB MyFoo $ :: .foo
       fn (p) (assert-type p Person0)
@@ -155,7 +155,7 @@ Syntax:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     StructDef0 $ defstruct StructDef $ :name String
     ImplA $ defimpl ImplA MyFoo $ .foo
       fn (p) (assert-type p StructDef0)
@@ -178,7 +178,7 @@ let
 do (; struct example)
   let
       MyFoo $ deftrait MyFoo
-        .foo $ quote $ Fn T (-> String) (:generics T)
+        .foo $ Fn T (-> String) (:generics T)
       Person0 $ defstruct Person (:name String)
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p) (assert-type p Person0)
@@ -189,7 +189,7 @@ do (; struct example)
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
-        .describe $ quote $ Fn T (-> String) (:generics T)
+        .describe $ Fn T (-> String) (:generics T)
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
           match x
@@ -252,9 +252,9 @@ Example with two traits sharing the same method name:
 ```cirru.no-check
 let
     MyZapA $ deftrait MyZapA
-      .zap $ quote $ Fn T (-> String) (:generics T)
+      .zap $ Fn T (-> String) (:generics T)
     MyZapB $ deftrait MyZapB
-      .zap $ quote $ Fn T (-> String) (:generics T)
+      .zap $ Fn T (-> String) (:generics T)
     MyZapAImpl $ defimpl MyZapAImpl MyZapA
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB
@@ -289,7 +289,7 @@ You can also inspect impl origins directly when validating trait dispatch:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     Shape0 $ defenum Shape $ :point Number Number
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (t)
@@ -309,10 +309,10 @@ let
 子句头是 Symbol `requires`，与 Tag 形式的成员键区分；旧写法 `('requires Parent)` 仍然接受。
 
 ```cirru.no-check
-deftrait Labeled $ .label $ quote $ Fn Labeled $ -> String
+deftrait Labeled $ .label $ Fn Labeled $ -> String
 
 deftrait Greeting (requires Labeled)
-  .greeting $ quote $ Fn Greeting (-> String)
+  .greeting $ Fn Greeting (-> String)
 
 def Greeter $ impl-traits
   defstruct Greeter $ :name String
@@ -337,7 +337,7 @@ Notes:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
+      Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)

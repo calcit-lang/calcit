@@ -6646,7 +6646,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |reads-payload-types-as-type-syntax)
             :code $ quote $ let
                 bare $ defenum Shape ([] T) (:circle Number)
-                  :poly $ quote $ List Number
+                  :poly $ List Number
                   :tagged T String
                   :none
                 quoted $ defenum Shape ([] T) (:circle Number)
@@ -6863,8 +6863,8 @@
                     {} $ T Debug
                     :value T
                     :count Number 0
-                    :items $ quote $ List Item
-                    :table $ quote $ Map String (List Number)
+                    :items $ List Item
+                    :table $ Map String (List Number)
                   quoted $ defstruct Box ([] T)
                     {} $ T Debug
                     :value T
@@ -6875,7 +6875,7 @@
                 assert= 0 $ :count $ bare :value |a :items ([]) :table ({})
               :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
-          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ quote $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
+          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
@@ -6955,7 +6955,7 @@
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'defunion $ %{} 'CodeEntry
-          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型写 quote，如 `quote $ List Number`。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型可以直接写，如 `List Number`（旧的 `quote $ List Number` 写法仍然可用）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
@@ -6968,7 +6968,7 @@
           :tags $ #{} :macro :type
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
-                bare $ defunion Cell String $ quote (List Number)
+                bare $ defunion Cell String (List Number)
                 quoted $ defunion Cell String $ quote (List Number)
               assert= quoted bare
             :tags $ #{} :core :unit
