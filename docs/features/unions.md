@@ -37,7 +37,7 @@ defunion Geo Point Shape String
 defunion Label String Point
 ```
 
-类型名成员和 `defstruct` 字段一样直接写裸符号；带参数的复合类型目前仍写 quote，例如 `defunion Cells String $ quote (List Number)`。旧写法 `'String` 仍可使用，`calcit edit format` 会改为 `String`。复合成员不能裸写成 `(Map Tag Number)`，加载 Snapshot 时会报 `E_LEGACY_TYPE_SYNTAX`（JS 后端会把它当作函数调用），`calcit edit format` 会补上 quote。
+成员和 `defstruct` 字段一样直接写类型，带参数的复合类型也不写 quote，例如 `defunion Cells String (List Number)`。旧写法 `'String`、`quote $ List Number` 仍可使用，`calcit edit format` 会改为不带 quote 的写法。表头是小写限定名（如 `app.lib/box`）的复合成员与函数调用写法相同，仍写 `quote $ …`。
 
 成员可以是：
 
@@ -71,10 +71,10 @@ schema 里不能内联写 `Union A B`，会报 `E_UNION_INLINE`，必须先用 `
 union 可以在成员类型内部引用自己，用来描述树形数据：
 
 ```cirru.no-check
-defunion Tree Number $ quote (List Tree)
+defunion Tree Number (List Tree)
 defunion Json String Number Bool
-  quote $ List Json
-  quote $ Map String Json
+  List Json
+  Map String Json
 
 defn tree-total (t)
   hint-fn $ Fn Tree (-> Number)
@@ -88,7 +88,7 @@ defn tree-total (t)
 - 运行时判断只看外层种类；受检解码（`parse-cirru-edn-as` 等）会逐层解码，错误给出出错的位置；
 - 直接把自己当成员（`defunion A String A`）或者只经过其他 union 绕回自己，展开不会终止，报 `E_UNION_MEMBER_INVALID`。
 
-struct 字段同样可以引用自己所在的 struct，例如 `defstruct Node (:data Number) (:children $ quote (Map Tag Node))`。
+struct 字段同样可以引用自己所在的 struct，例如 `defstruct Node (:data Number) (:children (Map Tag Node))`。
 
 ## 用 match 拆解
 
@@ -123,7 +123,7 @@ defn describe (g)
 
 ```cirru.no-check
 defunion Node Element Component
-defunion Child Node $ quote (Option Node)
+defunion Child Node (Option Node)
 
 defn child-text (c)
   hint-fn $ Fn Child (-> String)
@@ -151,7 +151,7 @@ defn child-text (c)
 `decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as` 都接受所有成员均可构建受检数据形状的 union 作为目标类型，结果类型就是这个 union：
 
 ```cirru.no-check
-defunion Scale Number $ quote (List Number)
+defunion Scale Number (List Number)
 
 defn read-scale (props)
   hint-fn $ Fn (Map Tag Dynamic) (-> Scale)
@@ -164,7 +164,7 @@ defn read-scale (props)
 
 受检解码要求每个成员都支持数据形状；含 `Fn` 成员的 union 在构建解码器时即报错，不依输入选择跳过不支持的成员。WASM 后端目前不支持 union 目标的解码，和其他受检解码器一样只在 Native 与 JS 上可用。
 
-`Tuple` 成员按 list 种类选中，再检查长度和每个位置的类型，例如 `defunion TripleInput Number $ quote $ Tuple Number Number Number` 接受数字或恰好三个数字的 list，两项或四项的 list 返回解码错误。
+`Tuple` 成员按 list 种类选中，再检查长度和每个位置的类型，例如 `defunion TripleInput Number $ Tuple Number Number Number` 接受数字或恰好三个数字的 list，两项或四项的 list 返回解码错误。
 
 ## 不允许的用法
 

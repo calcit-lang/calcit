@@ -76,13 +76,37 @@ fn desugar_quoted_compact_type(node: &Cirru) -> Option<Result<Cirru, String>> {
 /// source-level reader of trait and enum declarations see one shape.
 fn desugar_compact_definition_types(ys: &[Cirru]) -> Option<Result<Vec<Cirru>, String>> {
   let head = match ys.first() {
-    Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "deftrait" | "defenum") => head.as_ref(),
+    Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "deftrait" | "defenum" | "defstruct" | "defunion") => head.as_ref(),
     _ => return None,
   };
   let mut rewritten = ys.to_owned();
   let mut changed = false;
+  // `defstruct` fields and `defunion` members written bare, such as
+  // `(:items (List Number))`, read as the quoted form the macros expect, so a
+  // compound type is never evaluated as a call (#2582).
+  let quote_bare = |node: &mut Cirru| -> bool {
+    if crate::calcit::type_expr::is_bare_compact_payload(node) {
+      *node = Cirru::List(vec![Cirru::leaf("quote"), node.to_owned()]);
+      true
+    } else {
+      false
+    }
+  };
+  if head == "defunion" {
+    for member in rewritten.iter_mut().skip(2) {
+      changed |= quote_bare(member);
+    }
+    return changed.then_some(Ok(rewritten));
+  }
   for entry in rewritten.iter_mut().skip(2) {
     let Cirru::List(items) = entry else { continue };
+    if head == "defstruct" {
+      // `(:field type default?)`: only the type slot.
+      if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.starts_with(':')) && matches!(items.len(), 2 | 3) {
+        changed |= quote_bare(&mut items[1]);
+      }
+      continue;
+    }
     let type_indexes: Vec<usize> = match head {
       "deftrait" => match items.as_slice() {
         [Cirru::Leaf(bracket), _, _] if bracket.as_ref() == "[]" => vec![2],
@@ -93,6 +117,10 @@ fn desugar_compact_definition_types(ys: &[Cirru]) -> Option<Result<Vec<Cirru>, S
       _ => vec![],
     };
     for index in type_indexes {
+      // A bare compound type reads the same as its quoted spelling (#2582).
+      if crate::calcit::type_expr::is_bare_compact_payload(&items[index]) {
+        items[index] = Cirru::List(vec![Cirru::leaf("quote"), items[index].to_owned()]);
+      }
       if let Some(result) = desugar_quoted_compact_type(&items[index]) {
         match result {
           Ok(canonical) => items[index] = canonical,

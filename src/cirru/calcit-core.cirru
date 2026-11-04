@@ -6646,7 +6646,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |reads-payload-types-as-type-syntax)
             :code $ quote $ let
                 bare $ defenum Shape ([] T) (:circle Number)
-                  :poly $ quote $ List Number
+                  :poly $ List Number
                   :tagged T String
                   :none
                 quoted $ defenum Shape ([] T) (:circle Number)
@@ -6863,8 +6863,8 @@
                     {} $ T Debug
                     :value T
                     :count Number 0
-                    :items $ quote $ List Item
-                    :table $ quote $ Map String (List Number)
+                    :items $ List Item
+                    :table $ Map String (List Number)
                   quoted $ defstruct Box ([] T)
                     {} $ T Debug
                     :value T
@@ -6875,7 +6875,7 @@
                 assert= 0 $ :count $ bare :value |a :items ([]) :table ({})
               :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
-          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ quote $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
+          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `deftrait Shape $ .draw $ Fn Shape (-> Unit)`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
@@ -6968,7 +6968,7 @@
           :tags $ #{} :macro :type
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
-                bare $ defunion Cell String $ quote (List Number)
+                bare $ defunion Cell String (List Number)
                 quoted $ defunion Cell String $ quote (List Number)
               assert= quoted bare
             :tags $ #{} :core :unit
