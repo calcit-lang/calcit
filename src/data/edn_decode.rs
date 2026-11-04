@@ -193,6 +193,19 @@ impl MapDecoder<'_> {
         }
         Ok(Calcit::List(Arc::new(CalcitList::Vector(values))))
       }
+      DataShapeNode::Tuple(slots) => {
+        let Calcit::List(items) = input else {
+          return Err(map_kind_mismatch(path, "tuple", input));
+        };
+        if items.len() != slots.len() {
+          return Err(tuple_length_error(path, slots.len(), items.len()));
+        }
+        let mut values = Vec::with_capacity(items.len());
+        for (idx, (slot, item)) in slots.iter().zip(items.iter()).enumerate() {
+          values.push(self.decode_node(*slot, item, &format!("{path}[{idx}]"), depth + 1)?);
+        }
+        Ok(Calcit::List(Arc::new(CalcitList::Vector(values))))
+      }
       DataShapeNode::Set(inner) => {
         let Calcit::Set(items) = input else {
           return Err(map_kind_mismatch(path, "set", input));
@@ -467,6 +480,19 @@ impl Decoder<'_> {
         }
         _ => Err(kind_mismatch(path, "list", input)),
       },
+      DataShapeNode::Tuple(slots) => match input {
+        Edn::List(items) => {
+          if items.0.len() != slots.len() {
+            return Err(tuple_length_error(path, slots.len(), items.0.len()));
+          }
+          let mut values = Vec::with_capacity(slots.len());
+          for (idx, (slot, item)) in slots.iter().zip(items.0.iter()).enumerate() {
+            values.push(self.decode_node(*slot, item, &format!("{path}[{idx}]"), depth + 1)?);
+          }
+          Ok(Calcit::List(Arc::new(CalcitList::Vector(values))))
+        }
+        _ => Err(kind_mismatch(path, "tuple", input)),
+      },
       DataShapeNode::Set(inner) => match input {
         Edn::Set(items) => {
           let mut values = rpds::HashTrieSet::new_sync();
@@ -647,7 +673,7 @@ fn edn_matches_kind(node: &DataShapeNode, input: &Edn) -> bool {
     (DataShapeNode::Tag, Edn::Tag(_)) => true,
     (DataShapeNode::Buffer, Edn::Buffer(_)) => true,
     (DataShapeNode::CirruQuote, Edn::Quote(_)) => true,
-    (DataShapeNode::List(_), Edn::List(_)) => true,
+    (DataShapeNode::List(_) | DataShapeNode::Tuple(_), Edn::List(_)) => true,
     (DataShapeNode::Set(_), Edn::Set(_)) => true,
     (DataShapeNode::Map { .. }, Edn::Map(_)) => true,
     (DataShapeNode::Ref(_), Edn::Atom(_)) => true,
@@ -657,6 +683,10 @@ fn edn_matches_kind(node: &DataShapeNode, input: &Edn) -> bool {
     }
     _ => false,
   }
+}
+
+fn tuple_length_error(path: &str, expected: usize, actual: usize) -> EdnDecodeError {
+  EdnDecodeError::at(path, format!("expected tuple of {expected} items, got {actual}"))
 }
 
 fn kind_mismatch(path: &str, expected: &str, actual: &Edn) -> EdnDecodeError {

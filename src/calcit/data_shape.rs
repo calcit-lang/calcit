@@ -119,6 +119,7 @@ fn needs_deep_field_check(target: &CalcitTypeAnnotation) -> bool {
   matches!(
     target,
     CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
       | CalcitTypeAnnotation::Map(_, _)
       | CalcitTypeAnnotation::Set(_)
       | CalcitTypeAnnotation::Ref(_)
@@ -166,6 +167,9 @@ pub(crate) enum DataShapeNode {
     inner: usize,
   },
   List(usize),
+  /// A fixed-length `Tuple`, stored at runtime as an ordinary list whose
+  /// length and position types are checked.
+  Tuple(Vec<usize>),
   Set(usize),
   Map {
     key: usize,
@@ -399,6 +403,18 @@ impl DataShapeGraph {
         }
         Ok(())
       }
+      DataShapeNode::Tuple(items) => {
+        let Calcit::List(values) = value else {
+          return Err(shape_kind_mismatch(path, "tuple", value));
+        };
+        if values.len() != items.len() {
+          return Err(tuple_length_mismatch(path, items.len(), values.len()));
+        }
+        for (idx, (child, item)) in items.iter().zip(values.iter()).enumerate() {
+          self.validate_node_value(*child, item, &format!("{path}[{idx}]"), depth + 1)?;
+        }
+        Ok(())
+      }
       DataShapeNode::Set(inner) => {
         let Calcit::Set(values) = value else {
           return Err(shape_kind_mismatch(path, "set", value));
@@ -570,7 +586,7 @@ impl DataShapeNode {
       (Self::Tag, Calcit::Tag(_)) => true,
       (Self::Buffer, Calcit::Buffer(_)) => true,
       (Self::CirruQuote, Calcit::CirruQuote(_)) => true,
-      (Self::List(_), Calcit::List(_)) => true,
+      (Self::List(_) | Self::Tuple(_), Calcit::List(_)) => true,
       (Self::Set(_), Calcit::Set(_)) => true,
       (Self::Map { .. }, Calcit::Map(_)) => true,
       (Self::Ref(_), Calcit::Ref(..)) => true,
@@ -591,6 +607,7 @@ impl DataShapeNode {
     match self {
       Self::Dynamic => vec![],
       Self::List(inner) | Self::Set(inner) | Self::Ref(inner) => vec![*inner],
+      Self::Tuple(items) => items.clone(),
       Self::MapOption { inner, .. } => vec![*inner],
       Self::Map { key, value } => vec![*key, *value],
       Self::Struct { fields, .. } => fields.iter().map(|(_, node)| *node).collect(),
@@ -615,6 +632,7 @@ impl DataShapeNode {
       Self::CirruQuote => "cirru-quote",
       Self::MapOption { .. } => "Option",
       Self::List(_) => "list",
+      Self::Tuple(_) => "tuple",
       Self::Set(_) => "set",
       Self::Map { .. } => "map",
       Self::Ref(_) => "ref",
@@ -623,6 +641,10 @@ impl DataShapeNode {
       Self::Union { .. } => "union",
     }
   }
+}
+
+pub(crate) fn tuple_length_mismatch(path: &str, expected: usize, actual: usize) -> DataShapeValueError {
+  DataShapeValueError::at(path, format!("expected tuple of {expected} items, got {actual}"))
 }
 
 fn shape_kind_mismatch(path: &str, expected: &str, actual: &Calcit) -> DataShapeValueError {
@@ -663,9 +685,13 @@ impl GraphBuilder {
         let inner = self.build_type(inner, default_ns)?;
         Ok(self.push(DataShapeNode::Set(inner)))
       }
-      CalcitTypeAnnotation::Tuple(_) => Err(unsupported_type(
-        "Tuple is not a decode target yet; decode a List and read its positions with `let[]`",
-      )),
+      CalcitTypeAnnotation::Tuple(slots) => {
+        let mut items = Vec::with_capacity(slots.len());
+        for slot in slots.iter() {
+          items.push(self.build_type(slot, default_ns)?);
+        }
+        Ok(self.push(DataShapeNode::Tuple(items)))
+      }
       CalcitTypeAnnotation::Map(key, value) => {
         let key = self.build_type(key, default_ns)?;
         let value = self.build_type(value, default_ns)?;
@@ -1000,6 +1026,10 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
         hasher.update(format!("inner:{inner};").as_bytes());
       }
       DataShapeNode::List(inner) => hasher.update(format!("list:{inner};").as_bytes()),
+      DataShapeNode::Tuple(items) => {
+        let items = items.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+        hasher.update(format!("tuple:{items};").as_bytes())
+      }
       DataShapeNode::Set(inner) => hasher.update(format!("set:{inner};").as_bytes()),
       DataShapeNode::Map { key, value } => hasher.update(format!("map:{key}:{value};").as_bytes()),
       DataShapeNode::Ref(inner) => hasher.update(format!("ref:{inner};").as_bytes()),
