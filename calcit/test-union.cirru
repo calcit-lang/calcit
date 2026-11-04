@@ -149,6 +149,10 @@
             quote $ List Tree
           :examples $ []
           :schema $ quote UnionDef
+        'TripleInput $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion TripleInput Number
+            quote $ Tuple Number Number Number
+          :examples $ []
         'cells-total $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cells-total (c)
             match c
@@ -371,6 +375,30 @@
                 scale-xy $ read-scale 2
               assert= ([] 1 3)
                 scale-xy $ read-scale $ [] 1 3
+            :tags $ #{} :union :unit
+        'read-triple $ %{} 'CodeEntry
+          :doc "|Checked decode into a union with a fixed-length Tuple member (#2557)."
+          :code $ quote $ defn read-triple (raw)
+            match (decode-map-as raw TripleInput)
+              (Number n) ([] n n n)
+              (Tuple t) t
+          :examples $ []
+          :schema $ quote $ Fn Dynamic
+            -> $ Tuple Number Number Number
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-tuple-member)
+            :code $ quote $ do
+              assert= ([] 2 2 2) (read-triple 2)
+              assert= ([] 1 2 3)
+                read-triple $ [] 1 2 3
+              let[] (x y z)
+                read-triple $ [] 4 5 6
+                assert= 15 $ + x y z
+              assert= false $ .ok? $ try-decode-map-as ([] 1 2) TripleInput
+              assert= false $ .ok? $ try-decode-map-as ([] 1 2 3 4) TripleInput
+              assert= false $ .ok? $ try-decode-map-as ([] 1 :b 3) TripleInput
+              assert= ([] 1 |a)
+                parse-cirru-edn-as "|[] 1 |a" $ quote $ Tuple Number String
+              assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1" $ quote $ Tuple Number String
             :tags $ #{} :union :unit
         'scale-decodes? $ %{} 'CodeEntry
           :doc "|A member kind that matches but holds the wrong elements still fails."

@@ -4322,6 +4322,52 @@ fn legacy_decoder_target_type_is_an_advisory() {
 }
 
 #[test]
+fn legacy_quoted_declaration_types_are_check_notes() {
+  let mut file = snapshot::create_file_from_snippet(
+    "defstruct Point (:x 'Number) (:y Number)\n\ndefenum Shape (:circle 'Number) (:none)\n\ndefunion Input 'String Number\n\ndefstruct Box (:items $ quote $ List Number)\n\ndefunion Pair String $ quote $ List Number\n\ndefn main! () $ let\n    Local $ defstruct Local (:v 'String)\n  , Local",
+  )
+  .expect("test snippet should parse");
+  // `edit format` keeps tests as written, so the notes skip them too.
+  file.defs.get_mut("main!").expect("main! def").tests.push(snapshot::TestEntry {
+    name: "legacy".into(),
+    code: cirru_parser::parse("defunion T 'String Number").expect("test code")[0].to_owned(),
+    tags: HashSet::new(),
+  });
+  let mut snapshot = snapshot::Snapshot::default();
+  snapshot.files.insert("app.main".to_owned(), file);
+  let namespaces = HashSet::from(["app.main".to_owned()]);
+
+  let hits = snapshot::collect_legacy_quoted_declaration_hits(&snapshot, &namespaces);
+  let messages = hits.iter().map(|hit| hit.message()).collect::<Vec<_>>();
+  // Bare names and compound `quote $ List Number` types are already canonical.
+  assert_eq!(hits.len(), 4, "{messages:?}");
+  let rewritten = hits.iter().map(|hit| hit.rewritten.as_str()).collect::<Vec<_>>();
+  assert_eq!(
+    rewritten,
+    [
+      "defstruct Point (:x Number) (:y Number)",
+      "defenum Shape (:circle Number) (:none)",
+      "defunion Input String Number",
+      "defstruct Local (:v String)",
+    ],
+    "{messages:?}"
+  );
+  assert!(
+    hits.iter().all(|hit| !hit.coord.is_empty()),
+    "each note points at its declaration form"
+  );
+  assert!(
+    messages.iter().all(|message| message.contains("calcit <snapshot> edit format")),
+    "{messages:?}"
+  );
+
+  // After `edit format` the notes are gone.
+  snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
+  let left = snapshot::collect_legacy_quoted_declaration_hits(&snapshot, &namespaces);
+  assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
 fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/option-nil-host-position.cirru");

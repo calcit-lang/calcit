@@ -50,6 +50,19 @@ related:
 - map 回调参数改为 `Tuple K V`（#2561）不在本次预告范围内。
 - 0.34.6 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数，不触发预告。
 
+## 0.34.6 声明宏里带 quote 的类型名报告提示，0.35.0 删除（#2563）
+
+`defstruct` / `defenum` / `defunion` 里带 quote 的类型名（`'Number`、`[] 'T`）在 0.34.x 仍然可用，0.35.0 起删除。
+从 0.34.6 开始，检查时对这类写法报告非阻塞的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示，给出定义位置和改写后的声明：
+
+```text
+[W_LEGACY_QUOTED_DECLARATION_TYPE] [Warn] app.schema/Point quotes 1 type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). Write `defstruct Point (:x Number) (:y Number)`, or run `calcit <snapshot> edit format` to migrate the Snapshot @app.schema/Point
+```
+
+范围是项目自身的定义代码和 examples，与 `calcit edit format` 改写的范围相同，所以运行一次 `edit format` 后提示就会消失。
+复合类型 `quote $ List Number` 不报。`:tests` 不报，因为 `edit format` 不改测试；升级到 0.35.0 前需要手动改。
+提示不会让严格检查失败。
+
 ## 0.34.0 `defstruct` / `defenum` / `defunion` 的类型名不再写 quote（#2516）
 
 这三个声明宏里的类型名现在直接写裸符号，不再需要 `'`：
@@ -69,7 +82,7 @@ defstruct Box ([] T)
 
 行为变化：以前裸写的 `Number` 报 ``unknown `Number` ``，裸写的 `Point` 会被当成变量求值，作用域里有同名局部绑定时取到错误的值；现在两者都是类型名。
 
-旧写法 `'Number`、`[] 'T` 在 0.34.x 仍然可用，下一个非 patch 版本删除。迁移命令：
+旧写法 `'Number`、`[] 'T` 在 0.34.x 仍然可用，0.35.0 删除；0.34.6 起检查时报告 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示。迁移命令：
 
 ```bash
 calcit <snapshot> edit format

@@ -609,12 +609,17 @@ fn run_cli() -> Result<(), String> {
   }
 
   if cli_args.check_only && cli_args.incremental {
-    let (mut snapshot, input_cache, _) =
+    let (mut snapshot, input_cache, project_namespaces) =
       analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
     input_cache.ensure_complete()?;
     apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
     let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
+    // Read from the Snapshot itself, so a cached check reports them too.
+    let legacy_declaration_notes = legacy_quoted_declaration_notes(&snapshot, &project_namespaces);
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
+      for note in &legacy_declaration_notes {
+        runner::preprocess::push_advisory(note.clone());
+      }
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
       let builtin_warnings = RefCell::new(Vec::new());
       runner::preprocess::ensure_ns_def_compiled(
@@ -638,6 +643,14 @@ fn run_cli() -> Result<(), String> {
         "✓".green(),
         format!("{} preprocessed (cached)", entries.reload_fn).dimmed()
       );
+      if !legacy_declaration_notes.is_empty() {
+        eprintln!(
+          "\n{} ({} notes, the check still passes)",
+          "Notes:".yellow(),
+          legacy_declaration_notes.len()
+        );
+        LocatedWarning::print_list(&legacy_declaration_notes);
+      }
       println!("\n{}", "✓ Check passed (cached)".green().bold());
     }
     print!("{}", stats.human_line());
@@ -990,6 +1003,7 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
   detect_preview_0_35_sources(&snapshot, &project_namespaces);
+  push_legacy_quoted_declaration_advisories(&snapshot, &project_namespaces);
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
   }
@@ -2145,6 +2159,31 @@ fn detect_preview_0_35_sources(snapshot: &snapshot::Snapshot, project_namespaces
   PREVIEW_0_35_SOURCES_USED.store(used, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Report quoted type names in `defstruct` / `defenum` / `defunion` as check
+/// notes ahead of their removal in 0.35.0 (#2563). `calcit edit format`
+/// rewrites them.
+fn push_legacy_quoted_declaration_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  for note in legacy_quoted_declaration_notes(snapshot, project_namespaces) {
+    runner::preprocess::push_advisory(note);
+  }
+}
+
+fn legacy_quoted_declaration_notes(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Vec<LocatedWarning> {
+  snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces)
+    .into_iter()
+    .map(|hit| {
+      // Coordinates of examples do not point into the definition code.
+      let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
+      LocatedWarning::new_with_detail(
+        hit.message(),
+        calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
+        Some(snapshot::LEGACY_QUOTED_DECLARATION_TYPE_WARNING.to_owned()),
+        None,
+      )
+    })
+    .collect()
+}
+
 /// Native runs and JS codegen prove the entries before compiling them
 /// ordinarily (#2121). An ordinary failure is left to the run or codegen that
 /// follows, which reports it as before (including JS build-error artifacts).
@@ -3134,6 +3173,120 @@ mod tests {
     assert!(
       type_coverage::analyze_weak_types_entry("app.main", "Point", &entry, &type_coverage::WeakTypeKind::all()).is_none(),
       "defstruct should not receive a false schema-dynamic hit"
+    );
+  }
+
+  #[test]
+  fn weak_types_data_dynamic_reports_declaration_members_only_when_selected() {
+    let data_only = std::collections::BTreeSet::from([type_coverage::WeakTypeKind::DataDynamic]);
+    let details = |entry: &snapshot::CodeEntry| -> Vec<(String, String)> {
+      type_coverage::analyze_weak_types_entry("app.main", "Decl", entry, &data_only)
+        .map(|row| row.occurrences.into_iter().map(|o| (o.detail, o.path)).collect())
+        .unwrap_or_default()
+    };
+
+    let record = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("Box"),
+        list(vec![leaf("[]"), leaf("T")]),
+        list(vec![leaf(":value"), leaf("T")]),
+        list(vec![leaf(":meta"), list(vec![leaf("Map"), leaf("Tag"), leaf("Dynamic")])]),
+        list(vec![leaf(":name"), leaf("String")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&record),
+      vec![("data-dynamic:struct-field:meta".to_owned(), "code@4.1.2".to_owned())]
+    );
+    assert!(
+      type_coverage::analyze_weak_types_entry("app.main", "Box", &record, &type_coverage::WeakTypeKind::all()).is_none(),
+      "data-dynamic must stay out of the default report"
+    );
+
+    let sum = code_entry(
+      list(vec![
+        leaf("defenum"),
+        leaf("Msg"),
+        list(vec![leaf(":none")]),
+        list(vec![leaf(":raw"), leaf("Number"), leaf("Dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&sum),
+      vec![("data-dynamic:enum-payload:raw".to_owned(), "code@3.2".to_owned())]
+    );
+
+    let union = code_entry(
+      list(vec![
+        leaf("defunion"),
+        leaf("Cell"),
+        leaf("Number"),
+        list(vec![leaf("List"), leaf("Dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&union),
+      vec![("data-dynamic:union-member:1".to_owned(), "code@3.1".to_owned())]
+    );
+
+    let function = code_entry(
+      list(vec![leaf("defn"), leaf("f"), list(vec![leaf("x")]), leaf("Dynamic")]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert!(details(&function).is_empty(), "only data declarations are scanned");
+    assert!(type_coverage::parse_weak_type_kinds("data-dynamic").is_ok());
+
+    // The collector behind the CLI must record the opt-in kind, and leave it
+    // out when `--only` does not name it.
+    let mut snapshot = snapshot::Snapshot {
+      package: "app".to_owned(),
+      ..snapshot::Snapshot::default()
+    };
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      snapshot::FileInSnapShot {
+        ns: snapshot::NsEntry {
+          doc: String::new(),
+          code: list(vec![leaf("ns"), leaf("app.main")]),
+        },
+        defs: std::collections::HashMap::from([("Box".to_owned(), record)]),
+      },
+    );
+    let options = |only: Option<&str>| WeakTypesCommand {
+      ns: Some("app.main".to_owned()),
+      ns_prefix: None,
+      only: only.map(str::to_owned),
+      coverage_level: None,
+      intent: None,
+      format: "human".to_owned(),
+      deps: false,
+      ffi_evidence: false,
+      schema_evidence: false,
+      summary_only: false,
+      incremental: false,
+    };
+    let rows = type_coverage::collect_weak_type_rows(&options(Some("data-dynamic")), &snapshot).expect("rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].occurrences[0].detail, "data-dynamic:struct-field:meta");
+    let default_rows = type_coverage::collect_weak_type_rows(&options(None), &snapshot).expect("rows");
+    assert!(default_rows.is_empty(), "default rows: {default_rows:?}");
+
+    // Legacy `:dynamic` keeps its default `code-dynamic` count and is also listed by data-dynamic.
+    let legacy = code_entry(
+      list(vec![leaf("defstruct"), leaf("Old"), list(vec![leaf(":a"), leaf(":dynamic")])]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    let default_kinds = type_coverage::analyze_weak_types_entry("app.main", "Old", &legacy, &type_coverage::WeakTypeKind::all())
+      .map(|row| row.occurrences.into_iter().map(|o| o.kind).collect::<Vec<_>>())
+      .unwrap_or_default();
+    assert_eq!(default_kinds, vec![type_coverage::WeakTypeKind::CodeDynamic]);
+    assert_eq!(
+      details(&legacy),
+      vec![("data-dynamic:struct-field:a".to_owned(), "code@2.1".to_owned())]
     );
   }
 

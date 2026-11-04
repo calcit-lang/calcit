@@ -207,6 +207,8 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
         // budget so intentional adapters remain visible without being folded
         // into unresolved inference failures.
         WeakTypeKind::UnsafeCoerce => metrics.unsafe_coerce += 1,
+        // Opt-in report only; legacy budgets keep their baselines.
+        WeakTypeKind::DataDynamic => continue,
       }
       match occurrence.intent {
         WeakTypeIntent::Unresolved => metrics.unresolved += 1,

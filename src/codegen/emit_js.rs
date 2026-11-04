@@ -1407,6 +1407,10 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
         format!("{{kind:\"map-option\",nominal:{nominal},inner:{inner}}}")
       }
       DataShapeNode::List(inner) => format!("{{kind:\"list\",inner:{inner}}}"),
+      DataShapeNode::Tuple(items) => {
+        let items = items.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+        format!("{{kind:\"tuple\",items:[{items}]}}")
+      }
       DataShapeNode::Set(inner) => format!("{{kind:\"set\",inner:{inner}}}"),
       DataShapeNode::Map { key, value } => format!("{{kind:\"map\",key:{key},value:{value}}}"),
       DataShapeNode::Ref(inner) => format!("{{kind:\"ref\",inner:{inner}}}"),

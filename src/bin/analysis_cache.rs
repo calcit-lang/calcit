@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli_handlers;
 use crate::type_coverage::{self, TypeCoverageRow, WeakTypeKind, WeakTypeRow};
 
-const CACHE_SCHEMA_VERSION: u32 = 1;
+const CACHE_SCHEMA_VERSION: u32 = 2;
 const CACHE_FILE: &str = "analysis-cache-v1.cirru";
 const INPUT_CACHE_SCHEMA_VERSION: u32 = 2;
 const INPUT_CACHE_FILE: &str = "analysis-input-cache-v2.cirru";
@@ -1234,7 +1234,7 @@ pub(crate) fn collect_weak_types(
       global_reason.as_deref(),
       cached.is_some_and(|item| item.weak_types_ready),
     ));
-    let row = type_coverage::analyze_weak_types_entry(namespace, definition, entry, &WeakTypeKind::all());
+    let row = type_coverage::analyze_weak_types_entry(namespace, definition, entry, &WeakTypeKind::collected());
     let record = cache.definitions.entry(id).or_insert_with(|| CachedDefinition {
       revision: revision.clone(),
       check_types: None,

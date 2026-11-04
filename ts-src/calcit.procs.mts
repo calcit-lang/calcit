@@ -2161,6 +2161,7 @@ type DataShapeNode =
   | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
   | { kind: "numeric"; target: string }
   | { kind: "list" | "set" | "ref"; inner: number }
+  | { kind: "tuple"; items: number[] }
   | { kind: "map"; key: number; value: number }
   | { kind: "map-option"; nominal: CalcitEnumDef; inner: number }
   | { kind: "struct"; nominal: CalcitStructDef; fields: Array<[string, number]> }
@@ -2213,6 +2214,11 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
         if (!(value instanceof CalcitList || value instanceof CalcitSliceList)) return false;
         for (const item of value.items()) if (!check(item, node.inner, depth + 1)) return false;
         return true;
+      }
+      case "tuple": {
+        if (!(value instanceof CalcitList || value instanceof CalcitSliceList)) return false;
+        const items = Array.from(value.items());
+        return items.length === node.items.length && node.items.every((child, idx) => check(items[idx], child, depth + 1));
       }
       case "set": return value instanceof CalcitSet && value.values().every(item => check(item, node.inner, depth + 1));
       case "map": return (value instanceof CalcitMap || value instanceof CalcitSliceMap) && value.pairs().every(([key, item]) =>
@@ -2293,7 +2299,8 @@ const union_member_matches = (node: DataShapeNode, input: any, byIdentity: boole
     case "tag": return input instanceof CalcitTag;
     case "buffer": return input instanceof Uint8Array;
     case "cirru-quote": return input instanceof CalcitCirruQuote;
-    case "list": return input instanceof CalcitList || input instanceof CalcitSliceList;
+    case "list":
+    case "tuple": return input instanceof CalcitList || input instanceof CalcitSliceList;
     case "set": return input instanceof CalcitSet || input instanceof TypedEdnSetView;
     case "map": return input instanceof CalcitMap || input instanceof CalcitSliceMap;
     case "ref": return input instanceof CalcitRef;
@@ -2392,6 +2399,18 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
         decode_typed_edn_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1, fail)
       );
       return new CalcitSliceList(values);
+    }
+    case "tuple": {
+      if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
+        return fail(path, `expected tuple, got ${typed_edn_kind(input)}`);
+      }
+      const items = Array.from(input.items());
+      if (items.length !== node.items.length) {
+        return fail(path, `expected tuple of ${node.items.length} items, got ${items.length}`);
+      }
+      return new CalcitSliceList(node.items.map((child, idx) =>
+        decode_typed_edn_node(graph, child, items[idx], `${path}[${idx}]`, depth + 1, fail)
+      ));
     }
     case "set": {
       if (!(input instanceof CalcitSet || input instanceof TypedEdnSetView)) {
@@ -2618,6 +2637,16 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
         return map_decode_error(path, `expected list, got ${typed_edn_kind(input)}`);
       }
       return new CalcitSliceList(Array.from(input.items()).map((value, idx) => decode_runtime_map_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1)));
+    }
+    case "tuple": {
+      if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
+        return map_decode_error(path, `expected tuple, got ${typed_edn_kind(input)}`);
+      }
+      const items = Array.from(input.items());
+      if (items.length !== node.items.length) {
+        return map_decode_error(path, `expected tuple of ${node.items.length} items, got ${items.length}`);
+      }
+      return new CalcitSliceList(node.items.map((child, idx) => decode_runtime_map_node(graph, child, items[idx], `${path}[${idx}]`, depth + 1)));
     }
     case "set": {
       if (!(input instanceof CalcitSet || input instanceof TypedEdnSetView)) {
