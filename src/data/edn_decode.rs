@@ -58,8 +58,9 @@ pub(crate) fn decode_map(shape: &DataShapeGraph, input: &Calcit) -> Result<Calci
 }
 
 /// Decode `input` against one node of `shape`, as a union member is tried.
-pub(crate) fn decode_map_node(shape: &DataShapeGraph, node_id: usize, input: &Calcit) -> Result<Calcit, EdnDecodeError> {
-  MapDecoder { shape }.decode_node(node_id, input, "$", 0)
+/// `depth` is where the member sits, so the nesting limit matches a full decode.
+pub(crate) fn decode_map_node(shape: &DataShapeGraph, node_id: usize, input: &Calcit, depth: usize) -> Result<Calcit, EdnDecodeError> {
+  MapDecoder { shape }.decode_node(node_id, input, "$", depth)
 }
 
 struct MapDecoder<'a> {

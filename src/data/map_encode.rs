@@ -124,7 +124,7 @@ impl MapEncoder<'_> {
           if candidate == member {
             return Ok(encoded);
           }
-          if crate::data::edn_decode::decode_map_node(self.shape, candidate, &encoded).is_ok() {
+          if crate::data::edn_decode::decode_map_node(self.shape, candidate, &encoded, depth + 1).is_ok() {
             break;
           }
         }

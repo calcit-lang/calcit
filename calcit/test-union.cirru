@@ -81,6 +81,13 @@
                 fn (message)
                   hint-fn $ Fn String $ -> String
                   , message
+              assert= "|encode-map-as failed at $[0]: the encoded value would decode as another union member; the union has members that share one shape" $ try
+                do
+                  encode-map-as ([] (LabelB :text |b) 1) $ quote $ Tuple LabelText Number
+                  , |unexpected-success
+                fn (message)
+                  hint-fn $ Fn String $ -> String
+                  , message
             :tags $ #{} :union :unit
         'Loop $ %{} 'CodeEntry
           :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
