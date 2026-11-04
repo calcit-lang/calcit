@@ -59,6 +59,7 @@ use type_rewriting::{
   try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
 };
 
+use cirru_parser::Cirru;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -790,10 +791,30 @@ thread_local! {
   /// Source expressions in tail position of a function whose declared result is
   /// `JsNullish`. Other expressions in that function remain business code.
   static HOST_NULLISH_RETURN_FORMS: RefCell<HashSet<usize>> = RefCell::new(HashSet::new());
-  /// One entry per form being preprocessed, innermost last: whether it hands
-  /// arguments to a JS host, whether the current argument is `JsNullish`, and
-  /// the identity of the source form for tail-position checks.
-  static HOST_SINK_FRAMES: RefCell<Vec<(bool, bool, usize)>> = const { RefCell::new(Vec::new()) };
+  /// One entry per form being preprocessed, innermost last.
+  static HOST_SINK_FRAMES: RefCell<Vec<HostSinkFrameState>> = const { RefCell::new(Vec::new()) };
+}
+
+struct HostSinkFrameState {
+  /// The form hands its arguments to a JS host.
+  is_sink: bool,
+  /// The argument being preprocessed fills a `JsNullish` parameter.
+  arg_host_nullish: bool,
+  /// The source form, for tail-position checks by identity.
+  form: Calcit,
+}
+
+impl HostSinkFrameState {
+  fn source_ptr(&self) -> usize {
+    match &self.form {
+      Calcit::List(items) => Arc::as_ptr(items) as usize,
+      _ => 0,
+    }
+  }
+
+  fn takes_host_value(&self) -> bool {
+    self.is_sink || self.arg_host_nullish
+  }
 }
 
 struct HostSinkFrame;
@@ -804,11 +825,13 @@ impl HostSinkFrame {
       return None;
     };
     let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
-    let source_form = match expr {
-      Calcit::List(items) => Arc::as_ptr(items) as usize,
-      _ => 0,
-    };
-    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push((is_sink, false, source_form)));
+    HOST_SINK_FRAMES.with(|frames| {
+      frames.borrow_mut().push(HostSinkFrameState {
+        is_sink,
+        arg_host_nullish: false,
+        form: expr.to_owned(),
+      })
+    });
     Some(Self)
   }
 
@@ -817,7 +840,7 @@ impl HostSinkFrame {
   fn mark_current_sink() {
     HOST_SINK_FRAMES.with(|frames| {
       if let Some(top) = frames.borrow_mut().last_mut() {
-        top.0 = true;
+        top.is_sink = true;
       }
     });
   }
@@ -827,7 +850,7 @@ impl HostSinkFrame {
   fn set_current_arg_host_nullish(host_nullish: bool) {
     HOST_SINK_FRAMES.with(|frames| {
       if let Some(top) = frames.borrow_mut().last_mut() {
-        top.1 = host_nullish;
+        top.arg_host_nullish = host_nullish;
       }
     });
   }
@@ -894,20 +917,60 @@ fn is_js_nullish_param(expected: &Arc<CalcitTypeAnnotation>) -> bool {
   matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost))
 }
 
-/// Whether the form currently being preprocessed is a direct argument of a
-/// host call. The innermost frame is that form itself; its parent consumes it.
+/// Whether the value of the form currently being preprocessed goes to a JS
+/// host: it is an argument of a host call or of a `JsNullish` parameter, or a
+/// result branch of an `if`/`match`/`let`/`do` that is such an argument.
+/// The innermost frame is the form itself. An ordinary call in between, such
+/// as `str`, consumes the value, so the form is no longer at the boundary.
 fn current_form_feeds_host() -> bool {
   HOST_SINK_FRAMES.with(|frames| {
     let frames = frames.borrow();
-    frames.len() >= 2 && {
-      let (is_sink, arg_host_nullish, _) = frames[frames.len() - 2];
-      is_sink || arg_host_nullish
+    let Some((current, ancestors)) = frames.split_last() else {
+      return false;
+    };
+    let Some(consumer_index) = ancestors.iter().rposition(HostSinkFrameState::takes_host_value) else {
+      return false;
+    };
+    if consumer_index + 1 == ancestors.len() {
+      return true;
     }
+    let Calcit::List(items) = &ancestors[consumer_index].form else {
+      return false;
+    };
+    let mut result_forms = HashSet::new();
+    for argument in items.iter().skip(1) {
+      collect_tail_return_forms(argument, &mut result_forms);
+    }
+    // Every form between the consumer and the current one must pass its
+    // value through unchanged: it is a result position of the form outside
+    // it, or the macro expansion of that form, such as `let` → `&let`.
+    let mut outer: Option<&HostSinkFrameState> = None;
+    for frame in ancestors[consumer_index + 1..].iter().chain(std::iter::once(current)) {
+      let in_result_position = result_forms.contains(&frame.source_ptr());
+      // A form written inside the outer one is a sub-expression, such as a
+      // `let` binding value, not its expansion.
+      let expands_outer = outer.is_some_and(|outer| !contains_form_ptr(&outer.form, frame.source_ptr()));
+      if !in_result_position && !expands_outer {
+        return false;
+      }
+      collect_tail_return_forms(&frame.form, &mut result_forms);
+      outer = Some(frame);
+    }
+    true
   })
 }
 
+fn contains_form_ptr(form: &Calcit, ptr: usize) -> bool {
+  match form {
+    Calcit::List(items) => items
+      .iter()
+      .any(|item| matches!(item, Calcit::List(child) if Arc::as_ptr(child) as usize == ptr) || contains_form_ptr(item, ptr)),
+    _ => false,
+  }
+}
+
 fn current_form_is_host_nullish_return() -> bool {
-  let source_form = HOST_SINK_FRAMES.with(|frames| frames.borrow().last().map(|(_, _, source)| *source));
+  let source_form = HOST_SINK_FRAMES.with(|frames| frames.borrow().last().map(HostSinkFrameState::source_ptr));
   source_form.is_some_and(|source| HOST_NULLISH_RETURN_FORMS.with(|forms| forms.borrow().contains(&source)))
 }
 
@@ -1061,13 +1124,21 @@ fn collect_tail_return_forms(expr: &Calcit, forms: &mut HashSet<usize>) {
     return;
   };
   forms.insert(Arc::as_ptr(items) as usize);
-  match items.first() {
-    Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+  // Source forms still spell `if`/`match` as symbols before preprocessing.
+  let head = match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) => "if",
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => "match",
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => "&let",
+    Some(Calcit::Symbol { sym, .. }) => sym.as_ref(),
+    _ => return,
+  };
+  match head {
+    "if" => {
       for branch in items.iter().skip(2) {
         collect_tail_return_forms(branch, forms);
       }
     }
-    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+    "match" => {
       for branch in items.iter().skip(2) {
         if let Calcit::List(pair) = branch
           && pair.len() == 2
@@ -1076,20 +1147,8 @@ fn collect_tail_return_forms(expr: &Calcit, forms: &mut HashSet<usize>) {
         }
       }
     }
-    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
-      if items.len() > 2
-        && let Some(body) = items.get(items.len() - 1)
-      {
-        collect_tail_return_forms(body, forms);
-      }
-    }
-    Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "let" | "do") => {
-      if items.len() > 2
-        && let Some(body) = items.get(items.len() - 1)
-      {
-        collect_tail_return_forms(body, forms);
-      }
-    }
+    "&let" | "let" if items.len() > 2 => collect_tail_return_forms(&items[items.len() - 1], forms),
+    "do" if items.len() > 1 => collect_tail_return_forms(&items[items.len() - 1], forms),
     _ => {}
   }
 }
@@ -8940,13 +8999,158 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
 /// An advisory until the ecosystem stops erasing Options; the check and the
 /// runner still pass so upgrading does not break existing libraries.
 fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
-  let message = format!("[Warn] {shape} turns an Option back into nil in {file_ns}; {OPTION_ERASED_GUIDANCE}");
+  let rewrite = option_erasure_rewrite(&location);
+  let message = match &rewrite {
+    Some(_) => format!(
+      "[Warn] {shape} turns an Option back into nil in {file_ns}; its consumer only tests the value, so a `match` on the Option gives the same results for Some nil, Some false and None and still evaluates the fallback only when it is needed (see hint)"
+    ),
+    None => format!("[Warn] {shape} turns an Option back into nil in {file_ns}; {OPTION_ERASED_GUIDANCE}"),
+  };
   push_advisory(LocatedWarning::new_with_detail(
     message,
     location,
     Some("W_OPTION_ERASED_TO_NIL".to_owned()),
-    None,
+    rewrite,
   ));
+}
+
+/// A rewrite of the consumer of an Option erased to nil that keeps every
+/// result, offered only for consumers that merely test the value: `or`,
+/// `if`, `nil?` and `non-nil?`. `C (.unwrap-or x nil)` becomes
+/// `match x ((:some v) C[v]) ((:none) C[nil])`, where `C[nil]` is simplified
+/// (`or nil d` is `d`, `if nil a b` is `b`). The consumer evaluates the
+/// erased value first, so the order of evaluation is unchanged, and any
+/// fallback stays in a branch that runs only when the original would run it.
+fn option_erasure_rewrite(location: &NodeLocation) -> Option<String> {
+  let code = program::lookup_def_code(&location.ns, &location.def)?;
+  // Forms from the definition root down to the reported node.
+  let mut chain = vec![code];
+  for index in location.coord.iter() {
+    let Calcit::List(items) = chain.last()? else { break };
+    let child = items.get(*index as usize)?.to_owned();
+    chain.push(child);
+  }
+  let erasure_index = chain
+    .iter()
+    .rposition(|form| is_unwrap_or_nil_form(form) || is_none_nil_match(form))?;
+  let erased = &chain[erasure_index];
+  let consumer = chain.get(erasure_index.checked_sub(1)?)?;
+  let Calcit::List(consumer_items) = consumer else { return None };
+  // The erased value must be the tested argument.
+  if !consumer_items.get(1).is_some_and(|item| same_form(item, erased)) {
+    return None;
+  }
+  // Loaded source already resolves core procs and syntax, such as `nil?`.
+  let head = match consumer_items.first()? {
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Syntax(syntax, _) => syntax.as_ref().to_owned(),
+    Calcit::Proc(proc) => proc.as_ref().to_owned(),
+    _ => return None,
+  };
+  let rest = consumer_items.iter().skip(2).map(calcit_source_cirru).collect::<Option<Vec<_>>>()?;
+  let leaf = |value: &str| Cirru::Leaf(Arc::from(value));
+  let call = |head: &str, args: Vec<Cirru>| Cirru::List(std::iter::once(leaf(head)).chain(args).collect());
+  // What the consumer makes of a payload `v`, and of the nil it got for None.
+  let consume = |value: Cirru| -> Option<(Cirru, Cirru)> {
+    match (head.as_str(), rest.as_slice()) {
+      ("or", [fallback]) => Some((call("or", vec![value, fallback.to_owned()]), fallback.to_owned())),
+      ("or", fallbacks @ [_, _, ..]) => Some((
+        call("or", std::iter::once(value).chain(fallbacks.iter().cloned()).collect()),
+        call("or", fallbacks.to_vec()),
+      )),
+      ("if", [then_branch, else_branch]) => Some((
+        call("if", vec![value, then_branch.to_owned(), else_branch.to_owned()]),
+        else_branch.to_owned(),
+      )),
+      ("nil?", []) => Some((call("nil?", vec![value]), leaf("true"))),
+      ("non-nil?", []) => Some((call("non-nil?", vec![value]), leaf("false"))),
+      _ => None,
+    }
+  };
+  let (subject, binding, payload) = erased_option_parts(erased)?;
+  // The consumer's other arguments move into the `:some` branch, so the
+  // payload name must not capture a name they use.
+  let rest_symbols = rest.iter().flat_map(cirru_leaves).collect::<HashSet<_>>();
+  let binding = match binding {
+    Some(name) if rest_symbols.contains(name.as_str()) => return None,
+    Some(name) => name,
+    None => std::iter::once("v".to_owned())
+      .chain((1..).map(|n| format!("v{n}")))
+      .find(|name| !rest_symbols.contains(name.as_str()))?,
+  };
+  let (some_body, none_body) = consume(payload.unwrap_or_else(|| leaf(&binding)))?;
+  let rewrite = Cirru::List(vec![
+    leaf("match"),
+    subject,
+    Cirru::List(vec![Cirru::List(vec![leaf(":some"), leaf(&binding)]), some_body]),
+    Cirru::List(vec![Cirru::List(vec![leaf(":none")]), none_body]),
+  ]);
+  let before = cirru_parser::format_expr_one_liner(&calcit_source_cirru(consumer)?).ok()?;
+  let after = cirru_parser::format_expr_one_liner(&rewrite).ok()?;
+  Some(format!("rewrite `{before}` as `{after}`"))
+}
+
+/// `match x ((:some v) body) ((:none) nil)` with exactly these two branches.
+fn is_none_nil_match(form: &Calcit) -> bool {
+  let Calcit::List(items) = form else { return false };
+  items.len() == 4
+    && is_match_form_head(items.first())
+    && items.iter().skip(2).filter(|branch| is_none_nil_branch(branch)).count() == 1
+    && items.iter().skip(2).any(|branch| some_branch_parts(branch).is_some())
+}
+
+fn is_match_form_head(head: Option<&Calcit>) -> bool {
+  match head {
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => true,
+    Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "match",
+    _ => false,
+  }
+}
+
+/// The binding name and body of a `(:some v) body` branch.
+fn some_branch_parts(branch: &Calcit) -> Option<(String, &Calcit)> {
+  let Calcit::List(pair) = branch else { return None };
+  let Calcit::List(pattern) = pair.first()? else { return None };
+  if pair.len() != 2 || pattern.len() != 2 || !matches!(pattern.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "some") {
+    return None;
+  }
+  let Some(Calcit::Symbol { sym, .. }) = pattern.get(1) else {
+    return None;
+  };
+  Some((sym.to_string(), pair.get(1)?))
+}
+
+/// The Option subject, the payload name a `match` binds, and the value its
+/// `:some` branch produces. `.unwrap-or` produces the payload itself.
+fn erased_option_parts(erased: &Calcit) -> Option<(Cirru, Option<String>, Option<Cirru>)> {
+  let Calcit::List(items) = erased else { return None };
+  if is_match_form_head(items.first()) {
+    let (name, body) = items.iter().skip(2).find_map(some_branch_parts)?;
+    return Some((calcit_source_cirru(items.get(1)?)?, Some(name), Some(calcit_source_cirru(body)?)));
+  }
+  // `.unwrap-or x nil`, `option:unwrap-or x nil` or the postfix `x .unwrap-or nil`.
+  let postfix = matches!(items.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == ".unwrap-or")
+    || matches!(items.get(1), Some(Calcit::Method(name, _)) if name.as_ref() == "unwrap-or");
+  let subject = if postfix { items.first()? } else { items.get(1)? };
+  Some((calcit_source_cirru(subject)?, None, None))
+}
+
+fn calcit_source_cirru(form: &Calcit) -> Option<Cirru> {
+  crate::data::cirru::calcit_to_cirru(form).ok()
+}
+
+fn cirru_leaves(node: &Cirru) -> Vec<String> {
+  match node {
+    Cirru::Leaf(leaf) => vec![leaf.to_string()],
+    Cirru::List(items) => items.iter().flat_map(cirru_leaves).collect(),
+  }
+}
+
+fn same_form(a: &Calcit, b: &Calcit) -> bool {
+  match (a, b) {
+    (Calcit::List(x), Calcit::List(y)) => Arc::ptr_eq(x, y) || x == y,
+    _ => a == b,
+  }
 }
 
 const OPTION_ERASED_GUIDANCE: &str = "keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. nil may still be passed directly to a JS host call or a `JsNullish` parameter, or returned from a function declared to return `JsNullish`";

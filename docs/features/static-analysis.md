@@ -265,10 +265,21 @@ definition. The note names the call site that expanded it, or the number of
 call sites and the first of them; when the body has several such forms, it
 gives their number and points at the first. A form written by the caller and
 passed through a macro stays on the caller.
-Core and dependency macros, direct JavaScript host arguments, `JsNullish` parameters,
-and tail-return expressions in functions that declare a `JsNullish` return are
-not reported. A `JsNullish` return does not exempt business erasures in local
-binding initializers or other non-tail expressions. For now the report is a
+Core and dependency macros, JavaScript host arguments, arguments for `JsNullish`
+parameters, and tail-return expressions in functions that declare a `JsNullish`
+return are not reported. A host or `JsNullish` argument may reach its position
+through result branches: an `if` / `match` branch, the tail of a `let` / `do`,
+or a macro expansion such as `->`, so `js/f $ if c (.unwrap-or x nil) 0` is
+quiet. A call in between consumes the nil first, so `js/f $ str (.unwrap-or x nil)`
+still reports, and neither a `:js-ffi` feature nor a `JsNullish` return exempts
+business erasures in local binding initializers or other non-tail expressions.
+
+When the erased value is only tested, by `or`, `if`, `nil?` or `non-nil?`, the
+note's hint gives a `match` that keeps every result:
+`or (.unwrap-or x nil) d` becomes `match x ((:some v) (or v d)) ((:none) d)`.
+It returns the same value for Some, Some nil, Some false and None, and still
+evaluates the fallback only when the original would. Other consumers get no
+hint, because no rewrite keeps their result without a decision by the author. For now the report is a
 note: `--check-only` lists it and still passes, and it becomes a blocking
 warning once the ecosystem libraries have migrated.
 

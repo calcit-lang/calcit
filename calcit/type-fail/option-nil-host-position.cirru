@@ -67,6 +67,10 @@
               to-native-postfix m
               to-nullish-param $ {} $ :a 1
               to-plain-param $ {} $ :a 1
+              to-host-via-branch m true
+              to-host-via-let m
+              to-host-via-thread m
+              wrapped-before-host m
               , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -120,6 +124,28 @@
               (:none) nil
           :examples $ []
           :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
+        'to-host-via-branch $ %{} 'CodeEntry
+          :doc "|A result branch of an `if` that is the host argument is a host position."
+          :code $ quote $ defn to-host-via-branch (m c)
+            js/console.log $ if c
+              .unwrap-or (get m :a) nil
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) Bool (-> Dynamic) (:features :js-ffi)
+        'to-host-via-let $ %{} 'CodeEntry
+          :doc "|The tail of a `let` that is the host argument is a host position."
+          :code $ quote $ defn to-host-via-let (m)
+            js/console.log $ let
+                k 1
+              .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
+        'to-host-via-thread $ %{} 'CodeEntry
+          :doc "|A threading macro that expands to the erasure itself still passes it to the host."
+          :code $ quote $ defn to-host-via-thread (m)
+            js/console.log $ -> (get m :a) (.unwrap-or nil)
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
         'to-native-method $ %{} 'CodeEntry
           :doc "|A native method call argument is a host position."
           :code $ quote $ defn to-native-method (m)
@@ -150,5 +176,11 @@
               (:none) nil
           :examples $ []
           :schema $ quote $ Fn (Map Tag Number) (-> Unit)
+        'wrapped-before-host $ %{} 'CodeEntry
+          :doc "|An ordinary call between the erasure and the host consumes the nil first."
+          :code $ quote $ defn wrapped-before-host (m)
+            js/console.log $ str $ .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
       :ns $ %{} 'NsEntry (:doc "|Option-to-nil host position fixture.")
         :code $ quote $ ns type-fail-option-nil-host-position.main

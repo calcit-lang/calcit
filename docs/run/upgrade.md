@@ -24,6 +24,13 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.2 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
+
+仍是 Notes，不影响检查结论；0.36.0 计划改为阻塞（#2124），先用这一版清理。
+
+- 免报按值实际去向判断：作为 JS 宿主调用或 `JsNullish` 形参的实参时免报，经过 `if` / `match` 分支、`let` / `do` 尾部或 `->` 这类宏展开到达也算，例如 `js/console.log $ if c (.unwrap-or x nil) 0`。中间被普通调用消费（`js/f $ str (.unwrap-or x nil)`）或绑定到局部时照常报告。
+- 被擦除的值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，hint 给出保持结果的 `match` 改写，例如 `or (.unwrap-or x nil) d` → `match x ((:some v) (or v d)) ((:none) d)`。Some、Some nil、Some false、None 的结果和 fallback 的求值次数都不变，可以直接替换；其他用法没有 hint，需要作者决定默认值或改为传递 Option。
+
 ## 0.35.0 类型参数里的复合类型可以不写 quote（#2581）
 
 `assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数只能放类型，
