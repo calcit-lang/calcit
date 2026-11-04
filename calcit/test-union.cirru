@@ -326,6 +326,17 @@
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'nullable-css-values $ %{} 'CodeEntry
+          :doc "|A union value lifts into JsNullish of the same union, also inside an immutable Map (#2559)."
+          :code $ quote $ defn nullable-css-values (xs) xs
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag CssValue)
+            -> $ Map Tag $ JsNullish CssValue
+          :tests $ [] $ %{} 'TestEntry (:name |union-lifts-into-js-nullish)
+            :code $ quote $ assert=
+              {} (:width 1) (:color |red)
+              nullable-css-values $ {} (:width 1) (:color |red)
+            :tags $ #{} :union :unit
         'patch-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn patch-text (p)
             match p

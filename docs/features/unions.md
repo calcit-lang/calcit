@@ -141,6 +141,7 @@ defn child-text (c)
 - 成员类型的值可以传给 union 位置，`|a` 和 `1` 都可以传给 `CssValue`。
 - union 可以传给成员更多的 union，`Label`（String、Point）可以传给 `Geo`（Point、Shape、String）。
 - union 可以传给 `Dynamic` 位置和无约束的泛型参数，所以可以放进 `List Geo` 再用 `.map` 处理。
+- union 可以传给同一个 union 的 JS 可空位置 `JsNullish Geo`，不可变 `Map`/`List`/`Set` 里也一样，例如 `Map Tag Geo` 可以传给 `Map Tag (JsNullish Geo)`；`Ref` 仍然不变。
 - union 不能直接传给某个成员类型，也不满足任何 `:where` trait 约束，会报类型不匹配，要先 `match`。
 - Dynamic 不能直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`，要先经过受检的解码，见下一节。
 - 没有期望类型时不推断 union，`if b 1 |a` 的推断结果保持不变。
