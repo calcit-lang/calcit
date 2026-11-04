@@ -164,7 +164,7 @@ defn read-scale (props)
 
 受检解码要求每个成员都支持数据形状；含 `Fn` 成员的 union 在构建解码器时即报错，不依输入选择跳过不支持的成员。WASM 后端目前不支持 union 目标的解码，和其他受检解码器一样只在 Native 与 JS 上可用。
 
-`Tuple` 成员按 list 种类选中，再检查长度和每个位置的类型，例如 `defunion TripleInput Number (Tuple Number Number Number)` 接受数字或恰好三个数字的 list，两项或四项的 list 返回解码错误。
+`Tuple` 成员按 list 种类选中，再检查长度和每个位置的类型，例如 `defunion TripleInput Number $ quote $ Tuple Number Number Number` 接受数字或恰好三个数字的 list，两项或四项的 list 返回解码错误。
 
 ## 不允许的用法
 

@@ -119,6 +119,7 @@ fn needs_deep_field_check(target: &CalcitTypeAnnotation) -> bool {
   matches!(
     target,
     CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
       | CalcitTypeAnnotation::Map(_, _)
       | CalcitTypeAnnotation::Set(_)
       | CalcitTypeAnnotation::Ref(_)
