@@ -24,6 +24,13 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.0 类型参数里的复合类型可以不写 quote（#2581）
+
+`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数只能放类型，
+复合类型现在可以直接写成 `assert-type xs $ List Number`、`decode-map-as raw $ Map Tag Number`。原来的 `quote $ List Number`
+照常可用，不需要迁移。表头最后一段以小写开头的限定名（如 `app.lib/box`）仍写 quote。`defstruct`、`defenum`、`defunion`、
+`deftrait` 里的复合类型暂时仍写 `quote $ …`，漏写时加载报 `E_LEGACY_TYPE_SYNTAX`，提示补上 quote。
+
 ## 0.35.0 删除声明宏里带 quote 的类型名（#2516）
 
 `defstruct` / `defenum` / `defunion` 里带 quote 的类型名（`'Number`、`quote Number`、泛型参数 `[] 'T`、约束 `{} $ 'T Debug`）不再接受。
@@ -352,7 +359,7 @@ calcit <snapshot> edit format
 里的类型改为 `quote $ List Number`，把 `hint-fn` 改为不带 quote 的 `hint-fn $ Fn String (-> Number)`
 （只标记异步时为 `hint-fn Async`）。值引用（如 `:: 'List Person`）和只写部分字段的 hint 保持原样。
 `calcit edit schema` 等编辑命令仍接受旧写法，写回时存为精简写法，并提示 `W_LEGACY_TYPE_SYNTAX`。
-漏写 quote 的 `assert-type xs (List String)` 现在报 `E_TYPE_EXPR_SYNTAX`，改为 `assert-type xs $ quote $ List String`。
+（0.35.0 起这些类型参数里的复合类型也可以不写 quote，见上文 #2581。）
 
 `calcit query type`、`query type-at`、`query schema`、`query def`、`query peek`、`query defs --signatures` 和 `query context`
 也用精简写法显示类型，例如 `List Number`、`Fn String $ -> Number`，JSON 里的 `canonical_type`、`inferred_type`、

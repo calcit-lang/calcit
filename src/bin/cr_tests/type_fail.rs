@@ -4598,8 +4598,8 @@ fn type_fail_compact_type_expr_reports_syntax_errors() {
       ("assert-type ([] 1) $ quote $ List number", "`number` is not a type name"),
       ("assert-type ([] 1) $ quote $ list Number", "`list` is not a type name"),
       ("assert-type 1 $ quote $ Fn Number", "needs a return clause"),
-      // Without its quote a type application reads as a call; report it instead of widening to Dynamic.
-      ("assert-type ([] |a) (List String)", "write `quote $ List String`"),
+      // A bare type application is read as a compact type, with the same grammar checks.
+      ("assert-type ([] 1) $ List number", "`number` is not a type name"),
     ] {
       let entries = load_snippet_entries(code);
       let warnings = RefCell::new(vec![]);
@@ -4614,6 +4614,13 @@ fn type_fail_compact_type_expr_reports_syntax_errors() {
     let warnings = RefCell::new(vec![]);
     let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
       .expect_err("a compact List type keeps its element type");
+    assert!(error.to_string().contains("E_ASSERT_TYPE_MISMATCH"), "unexpected error: {error}");
+
+    // Without its quote the type keeps the same element check (#2581).
+    let entries = load_snippet_entries("assert-type ([] |a) $ List Number");
+    let warnings = RefCell::new(vec![]);
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("a bare List type keeps its element type");
     assert!(error.to_string().contains("E_ASSERT_TYPE_MISMATCH"), "unexpected error: {error}");
   });
 }

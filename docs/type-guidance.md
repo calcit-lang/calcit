@@ -20,30 +20,31 @@ Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间
 
 ## 精简类型表达式
 
-类型位置可以用 `quote $ …` 写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价：
+类型位置可以写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价。`assert-type`、`unsafe-coerce`、`js-cast`、
+`parse-cirru-edn-as`、`decode-map-as` 的类型参数和 `hint-fn` 只能放类型，复合类型直接裸写；`quote $ …` 写法同样可用：
 
 ```cirru
 let
     xs $ [] 1 2 3
     pick $ fn (x) x
-  assert-type xs $ quote $ List Number
-  assert-type pick $ quote $ Fn T (-> T) (:generics T)
+  assert-type xs $ List Number
+  assert-type pick $ Fn T (-> T) (:generics T)
   println $ count xs
 ```
 
 嵌套回调、泛型和约束按子句分行：
 
 ```cirru.no-check
-assert-type table $ quote $ Map String (List app.schema/Item)
-assert-type map-fn $ quote $ Fn C
+assert-type table $ Map String (List app.schema/Item)
+assert-type map-fn $ Fn C
   Fn T $ -> U
   -> Dynamic
   :generics C T U
   :where $ C Mappable
 ```
 
-可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
-字段类型、`defenum` 载荷类型、`deftrait` 方法类型，`hint-fn` 的整个签名（`hint-fn $ Fn Number (-> String) (:async)`；
+可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数（可裸写），`defstruct`
+字段类型、`defenum` 载荷类型、`deftrait` 方法类型（复合类型目前仍写 `quote $ …`），`hint-fn` 的整个签名（`hint-fn $ Fn Number (-> String) (:async)`；
 只标记异步时写 `hint-fn Async`，或 `hint-fn $ Async (:features :js-ffi)`），
 以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 的 `:schema` 也以这种写法保存，例如
 `:schema $ quote $ Fn String (-> Number)`，单个类型名保存为 `:schema $ quote Dynamic`。检查器和各后端读到的类型相同。
@@ -98,6 +99,7 @@ calcit eval 'assert-type ([] 1) $ quote $ List number'
 ### 限制
 
 - 小写叶子、`'x`、tag 类型和裸 `->` 不属于精简写法，会报错。
+- 裸写时类型表头的最后一段须以大写字母开头；小写的限定名（如 `app.lib/box`）与函数调用写法相同，仍写 `quote $ …`。
 - `.`、`=`、`forall` 留给将来的类型运算符；`:generics` 中的列表项和参数化 trait 约束暂不支持。
 - `assert-type` 的值引用（如 `:: 'List Person`，`Person` 是局部绑定）仍用规范形式。
 

@@ -15383,19 +15383,11 @@ fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Res
   })
 }
 
-/// Expand a compact `quote $ Fn …` type expression into its canonical form so
-/// later passes and backends only see one shape. Other forms are returned as-is.
+/// Expand a compact type expression, written bare as `List Number` or quoted
+/// as `quote $ List Number`, into its canonical form so later passes and
+/// backends only see one shape. Other forms are returned as-is.
 pub(super) fn desugar_compact_type_form(form: &Calcit, ctx: &PreprocessContext) -> Result<Calcit, CalcitErr> {
-  match crate::calcit::type_expr::desugar_quoted_form(form) {
-    None if let Some(payload) = crate::calcit::type_expr::unquoted_compact_form(form) => {
-      Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        format!("type expression `{payload}` needs a quote in this position; write `quote $ {payload}`"),
-        "E_TYPE_EXPR_SYNTAX",
-        ctx.call_stack,
-        form.get_location().or_else(|| crate::calcit::type_expr::first_location(form)),
-      ))
-    }
+  match crate::calcit::type_expr::desugar_quoted_form(form).or_else(|| crate::calcit::type_expr::desugar_bare_form(form)) {
     None => Ok(form.to_owned()),
     Some(Ok(canonical)) => Ok(canonical),
     Some(Err(message)) => Err(CalcitErr::use_msg_stack_location_with_code(
