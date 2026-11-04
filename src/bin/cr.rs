@@ -2135,27 +2135,34 @@ fn preview_0_35_advisories(entries: &ProgramEntries) -> Vec<LocatedWarning> {
 /// Mark whether project definitions mention `&map:diff-triple` or a Cirru list
 /// conversion, so `--check-only` runs the 0.35.0 return type preview only then.
 fn detect_preview_0_35_sources(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
-  fn mentions(node: &cirru_parser::Cirru) -> bool {
+  /// `loose` also accepts `.to-list`, whose receiver the scan cannot see.
+  fn mentions(node: &cirru_parser::Cirru, loose: bool) -> bool {
     match node {
-      cirru_parser::Cirru::Leaf(leaf) => matches!(
-        leaf.strip_prefix("calcit.core/").unwrap_or(leaf),
+      cirru_parser::Cirru::Leaf(leaf) => match leaf.strip_prefix("calcit.core/").unwrap_or(leaf) {
         "&map:diff-triple"
-          | ".diff-triple"
-          | ".to-list"
-          | "cirru-quote:to-list"
-          | "&cirru-quote:to-list"
-          | "parse-cirru-list"
-          | ".parse-cirru-list"
-          | "try-parse-cirru-list"
-      ),
-      cirru_parser::Cirru::List(items) => items.iter().any(mentions),
+        | ".diff-triple"
+        | "cirru-quote:to-list"
+        | "&cirru-quote:to-list"
+        | "parse-cirru-list"
+        | ".parse-cirru-list"
+        | "try-parse-cirru-list" => true,
+        ".to-list" => loose,
+        _ => false,
+      },
+      cirru_parser::Cirru::List(items) => items.iter().any(|item| mentions(item, loose)),
     }
   }
-  let used = project_namespaces
+  // A library wrapper around one of these APIs changes its inferred return
+  // type too, so libraries are scanned as well. `.to-list` is common on Maps
+  // and Sets, so in libraries only the unambiguous names count.
+  let used = snapshot
+    .files
     .iter()
-    .filter(|ns| ns.as_str() != calcit::calcit::CORE_NS)
-    .filter_map(|ns| snapshot.files.get(ns))
-    .any(|file| file.defs.values().any(|entry| mentions(&entry.code)));
+    .filter(|(ns, _)| ns.as_str() != calcit::calcit::CORE_NS)
+    .any(|(ns, file)| {
+      let loose = project_namespaces.contains(ns.as_str());
+      file.defs.values().any(|entry| mentions(&entry.code, loose))
+    });
   PREVIEW_0_35_SOURCES_USED.store(used, std::sync::atomic::Ordering::Relaxed);
 }
 
