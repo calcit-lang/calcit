@@ -13,7 +13,7 @@
         'Label $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Label
             impl-traits
-              defstruct Label $ :value 'String
+              defstruct Label $ :value String
               , LabelRenderImpl
           :examples $ []
           :schema $ quote StructDef
@@ -73,7 +73,7 @@
                       reset! trace $ append @trace |method
                       , |wrong
                   Item $ impl-traits
-                    defstruct Item $ :n 'Number
+                    defstruct Item $ :n Number
                     , implementation
                   change $ fn (data)
                     hint-fn $ Fn Dynamic $ -> Dynamic

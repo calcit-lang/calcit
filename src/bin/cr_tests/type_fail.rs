@@ -193,7 +193,7 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
       ),
     ] {
       let snippet = format!(
-        "let\n    Draft $ defstruct Draft (:ready? 'Bool) (:maybe $ :: Option 'Number)\n    drafts $ {{}} $ |a $ Draft :ready? false :maybe (Option :some 1)\n  match (get drafts |a)\n    (:some draft) $ {update}\n    (:none) &unit"
+        "let\n    Draft $ defstruct Draft (:ready? Bool) (:maybe $ :: Option 'Number)\n    drafts $ {{}} $ |a $ Draft :ready? false :maybe (Option :some 1)\n  match (get drafts |a)\n    (:some draft) $ {update}\n    (:none) &unit"
       );
       let entries = load_snippet_entries(&snippet);
       let warnings = RefCell::new(vec![]);
@@ -336,7 +336,7 @@ fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let collect = |access: &str| -> Vec<(Option<String>, String)> {
-      let snippet = format!("let\n    Ev $ defstruct Ev (:type 'Tag)\n    ev $ Ev :type :create\n  {access}");
+      let snippet = format!("let\n    Ev $ defstruct Ev (:type Tag)\n    ev $ Ev :type :create\n  {access}");
       let entries = load_snippet_entries(&snippet);
       let warnings = RefCell::new(vec![]);
       runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
@@ -503,7 +503,7 @@ fn strict_map_list_kv_preserves_key_value_and_result_types() {
 #[test]
 fn self_referential_enum_type_ref_validation_is_finite() {
   run_with_large_stack(|| {
-    let entries = load_snippet_entries("defenum Tree (:leaf 'Number) (:branch Tree)\ndefn main! ()\n  Tree :branch $ Tree :leaf 1");
+    let entries = load_snippet_entries("defenum Tree (:leaf Number) (:branch Tree)\ndefn main! ()\n  Tree :branch $ Tree :leaf 1");
 
     run_check_only(&entries).expect("self-referential enum payload validation must not recurse while rebuilding Tree");
   });
@@ -4322,15 +4322,14 @@ fn legacy_decoder_target_type_is_an_advisory() {
 }
 
 #[test]
-fn legacy_quoted_declaration_types_are_check_notes() {
+fn legacy_quoted_declaration_types_are_rejected() {
   let mut file = snapshot::create_file_from_snippet(
     "defstruct Point (:x 'Number) (:y Number)\n\ndefenum Shape (:circle 'Number) (:none)\n\ndefunion Input 'String Number\n\ndefstruct Box (:items $ quote $ List Number)\n\ndefunion Pair String $ quote $ List Number\n\ndefn main! () $ let\n    Local $ defstruct Local (:v 'String)\n  , Local",
   )
   .expect("test snippet should parse");
-  // `edit format` keeps tests as written, so the notes skip them too.
   file.defs.get_mut("main!").expect("main! def").tests.push(snapshot::TestEntry {
     name: "legacy".into(),
-    code: cirru_parser::parse("defunion T 'String Number").expect("test code")[0].to_owned(),
+    code: cirru_parser::parse("do $ defunion T 'String Number").expect("test code")[0].to_owned(),
     tags: HashSet::new(),
   });
   let mut snapshot = snapshot::Snapshot::default();
@@ -4340,7 +4339,7 @@ fn legacy_quoted_declaration_types_are_check_notes() {
   let hits = snapshot::collect_legacy_quoted_declaration_hits(&snapshot, &namespaces);
   let messages = hits.iter().map(|hit| hit.message()).collect::<Vec<_>>();
   // Bare names and compound `quote $ List Number` types are already canonical.
-  assert_eq!(hits.len(), 4, "{messages:?}");
+  assert_eq!(hits.len(), 5, "{messages:?}");
   let rewritten = hits.iter().map(|hit| hit.rewritten.as_str()).collect::<Vec<_>>();
   assert_eq!(
     rewritten,
@@ -4349,19 +4348,22 @@ fn legacy_quoted_declaration_types_are_check_notes() {
       "defenum Shape (:circle Number) (:none)",
       "defunion Input String Number",
       "defstruct Local (:v String)",
+      "defunion T String Number",
     ],
     "{messages:?}"
   );
   assert!(
     hits.iter().all(|hit| !hit.coord.is_empty()),
-    "each note points at its declaration form"
+    "each hit points at its declaration form"
   );
   assert!(
-    messages.iter().all(|message| message.contains("calcit <snapshot> edit format")),
+    messages
+      .iter()
+      .all(|message| message.contains("E_LEGACY_TYPE_SYNTAX") && message.contains("calcit <snapshot> edit format")),
     "{messages:?}"
   );
 
-  // After `edit format` the notes are gone.
+  // `edit format` rewrites all of them, tests included.
   snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let left = snapshot::collect_legacy_quoted_declaration_hits(&snapshot, &namespaces);
   assert!(left.is_empty(), "{left:?}");
@@ -4531,7 +4533,7 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
     for source in [
       "let\n    good $ fn (xs)\n      hint-fn $ Fn Enum (-> Tag)\n      &enum:nth xs 0\n  good $ :: :ns |demo",
       "&enum:nth (Option :some 1) 1",
-      "&enum:nth (%:: (defenum E (:a 'Number)) :a 1) 1",
+      "&enum:nth (%:: (defenum E (:a Number)) :a 1) 1",
     ] {
       let accepted = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);

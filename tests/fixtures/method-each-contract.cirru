@@ -9,7 +9,7 @@
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'Res $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Res (:kind 'Tag) (:id 'String)
+          :code $ quote $ defstruct Res (:kind Tag) (:id String)
           :examples $ []
           :schema $ quote StructDef
         'check-all $ %{} 'CodeEntry (:doc |)

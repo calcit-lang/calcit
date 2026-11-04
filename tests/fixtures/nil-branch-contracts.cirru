@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'P $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct P (:age 'Number) (:name 'String)
+          :code $ quote $ defstruct P (:age Number) (:name String)
           :examples $ []
           :schema $ quote StructDef
         'case-arg-defn $ %{} 'CodeEntry (:doc |)

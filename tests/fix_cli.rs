@@ -5655,7 +5655,7 @@ fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
     ("Op", "defenum Op (:clear)", "EnumDef"),
     (
       "Props",
-      "defstruct Props ([] 'T)\n  :callback $ quote $ Fn\n    Fn T $ -> Unit\n    -> Unit",
+      "defstruct Props ([] T)\n  :callback $ quote $ Fn\n    Fn T $ -> Unit\n    -> Unit",
       "StructDef",
     ),
     (
@@ -5665,7 +5665,7 @@ fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
     ),
     (
       "Wrapper",
-      "defstruct Wrapper ([] 'T)\n  :props $ quote $ app.main/Props T",
+      "defstruct Wrapper ([] T)\n  :props $ quote $ app.main/Props T",
       "StructDef",
     ),
     (
@@ -9475,7 +9475,7 @@ fn core_result_method_rule_keeps_open_and_shadowed_receivers_for_review() {
         "def",
         "fix-command.main/Result",
         "--code",
-        "quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)",
+        "quote $ defenum Result ([] T E) (:ok T) (:err E)",
       ],
     ),
     "install local Result enum",

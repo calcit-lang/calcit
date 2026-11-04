@@ -614,12 +614,8 @@ fn run_cli() -> Result<(), String> {
     input_cache.ensure_complete()?;
     apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
     let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
-    // Read from the Snapshot itself, so a cached check reports them too.
-    let legacy_declaration_notes = legacy_quoted_declaration_notes(&snapshot, &project_namespaces);
+    reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
-      for note in &legacy_declaration_notes {
-        runner::preprocess::push_advisory(note.clone());
-      }
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
       let builtin_warnings = RefCell::new(Vec::new());
       runner::preprocess::ensure_ns_def_compiled(
@@ -643,14 +639,6 @@ fn run_cli() -> Result<(), String> {
         "✓".green(),
         format!("{} preprocessed (cached)", entries.reload_fn).dimmed()
       );
-      if !legacy_declaration_notes.is_empty() {
-        eprintln!(
-          "\n{} ({} notes, the check still passes)",
-          "Notes:".yellow(),
-          legacy_declaration_notes.len()
-        );
-        LocatedWarning::print_list(&legacy_declaration_notes);
-      }
       println!("\n{}", "✓ Check passed (cached)".green().bold());
     }
     print!("{}", stats.human_line());
@@ -1003,7 +991,7 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
   detect_preview_0_35_sources(&snapshot, &project_namespaces);
-  push_legacy_quoted_declaration_advisories(&snapshot, &project_namespaces);
+  reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
   }
@@ -2166,29 +2154,14 @@ fn detect_preview_0_35_sources(snapshot: &snapshot::Snapshot, project_namespaces
   PREVIEW_0_35_SOURCES_USED.store(used, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Report quoted type names in `defstruct` / `defenum` / `defunion` as check
-/// notes ahead of their removal in 0.35.0 (#2563). `calcit edit format`
-/// rewrites them.
-fn push_legacy_quoted_declaration_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
-  for note in legacy_quoted_declaration_notes(snapshot, project_namespaces) {
-    runner::preprocess::push_advisory(note);
+/// Quoted type names in `defstruct` / `defenum` / `defunion` were removed in
+/// 0.35.0 (#2516). Loading a Snapshot file already rejects them; this covers
+/// code that skips that check, such as `eval` snippets.
+fn reject_legacy_quoted_declarations(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
+  match snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces).first() {
+    Some(hit) => Err(hit.message()),
+    None => Ok(()),
   }
-}
-
-fn legacy_quoted_declaration_notes(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Vec<LocatedWarning> {
-  snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces)
-    .into_iter()
-    .map(|hit| {
-      // Coordinates of examples do not point into the definition code.
-      let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
-      LocatedWarning::new_with_detail(
-        hit.message(),
-        calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
-        Some(snapshot::LEGACY_QUOTED_DECLARATION_TYPE_WARNING.to_owned()),
-        None,
-      )
-    })
-    .collect()
 }
 
 /// Native runs and JS codegen prove the entries before compiling them

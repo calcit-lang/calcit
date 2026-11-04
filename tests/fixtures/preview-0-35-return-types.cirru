@@ -14,10 +14,13 @@
           :code $ quote $ defn count-rows (xs) (count xs)
           :examples $ []
           :schema $ quote $ Fn (List Dynamic) (-> Number)
-        'main! $ %{} 'CodeEntry (:doc "|把 diff-triple 结果整体传给 List 参数在 0.35.0 会报错；按位置读取和 Cirru 行列表传给 List Dynamic 仍然合法。")
+        'main! $ %{} 'CodeEntry
+          :doc "|把 diff-triple 结果整体传给 List 参数在 0.35.0 会报错；按位置读取和 Cirru 行列表传给 List Dynamic 仍然合法。"
           :code $ quote $ defn main! ()
             let
-                triple $ &map:diff-triple ({} (|a 1)) ({} (|b 2))
+                triple $ &map:diff-triple
+                  {} $ |a 1
+                  {} $ |b 2
                 rows $ parse-cirru-list "|a b"
               println (count-rows triple) (&list:nth triple 0) (count triple) (count-rows rows)
           :examples $ []

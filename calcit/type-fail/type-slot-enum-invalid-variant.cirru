@@ -14,7 +14,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Action $ %{} 'CodeEntry (:doc "|Enum used for type-slot binding")
-          :code $ quote $ defenum Action (:add 'String) (:remove 'String) (:clear)
+          :code $ quote $ defenum Action (:add String) (:remove String) (:clear)
           :examples $ []
           :schema $ quote EnumDef
         'legacy-main! $ %{} 'CodeEntry (:doc |)

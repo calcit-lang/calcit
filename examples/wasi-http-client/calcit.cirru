@@ -15,40 +15,40 @@
     %{} 'FileEntry
       :defs $ {}
         'HttpBody $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum HttpBody (:empty) (:text 'String) (:bytes 'Buffer)
+          :code $ quote $ defenum HttpBody (:empty) (:text String) (:bytes Buffer)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'HttpError $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum HttpError (:capability-denied 'String) (:unsupported 'String) (:invalid-request 'String) (:transport 'String) (:response-too-large 'UInt64)
+          :code $ quote $ defenum HttpError (:capability-denied String) (:unsupported String) (:invalid-request String) (:transport String) (:response-too-large UInt64)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'HttpHeader $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpHeader (:name 'String) (:value 'Buffer)
+          :code $ quote $ defstruct HttpHeader (:name String) (:value Buffer)
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'HttpMethod $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum HttpMethod (:get) (:head) (:post) (:put) (:patch) (:delete) (:options)
           :examples $ []
-          :schema $ :: 'EnumDef
+          :schema $ quote EnumDef
         'HttpRequest $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpRequest (:method 'component-wasm-async-import.starter/HttpMethod) (:url 'String)
-            :headers $ :: 'List 'component-wasm-async-import.starter/HttpHeader
-            :body 'component-wasm-async-import.starter/HttpBody
-            :max-response-bytes 'UInt64
+          :code $ quote $ defstruct HttpRequest (:method component-wasm-async-import.starter/HttpMethod) (:url String)
+            :headers $ quote $ List component-wasm-async-import.starter/HttpHeader
+            :body component-wasm-async-import.starter/HttpBody
+            :max-response-bytes UInt64
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'HttpResponse $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpResponse (:status 'UInt16)
-            :headers $ :: 'List 'component-wasm-async-import.starter/HttpHeader
-            :body 'component-wasm-async-import.starter/HttpBody
+          :code $ quote $ defstruct HttpResponse (:status UInt16)
+            :headers $ quote $ List component-wasm-async-import.starter/HttpHeader
+            :body component-wasm-async-import.starter/HttpBody
           :examples $ []
-          :schema $ :: 'StructDef
+          :schema $ quote StructDef
         'call-host-http-request $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export call-host-http-request (request) (host-http-request request)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:async true)
-            :args $ [] 'component-wasm-async-import.starter/HttpRequest
-            :return $ :: 'Result 'component-wasm-async-import.starter/HttpResponse 'component-wasm-async-import.starter/HttpError
+          :schema $ quote $ Fn component-wasm-async-import.starter/HttpRequest
+            -> $ Result component-wasm-async-import.starter/HttpResponse component-wasm-async-import.starter/HttpError
+            :async
           :tests $ []
             %{} 'TestEntry (:name |keeps-bounded-http-contract)
               :code $ quote $ match (number->uint64 1024)
@@ -105,18 +105,16 @@
         'host-http-request $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-import host-http-request (request) |calcit:wasi-http/client |request
           :examples $ []
-          :schema $ :: 'Fn $ {} (:async true)
-            :args $ [] 'component-wasm-async-import.starter/HttpRequest
-            :return $ :: 'Result 'component-wasm-async-import.starter/HttpResponse 'component-wasm-async-import.starter/HttpError
+          :schema $ quote $ Fn component-wasm-async-import.starter/HttpRequest
+            -> $ Result component-wasm-async-import.starter/HttpResponse component-wasm-async-import.starter/HttpError
+            :async
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
+          :schema $ quote $ Fn (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns component-wasm-async-import.starter

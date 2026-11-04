@@ -1,3 +1,4 @@
+
 {}
   :about "|Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`."
   :package |app
@@ -12,8 +13,8 @@
       :ns $ %{} 'NsEntry (:doc "|Namespace without definitions")
         :code $ quote $ ns app.empty
     'app.macros $ %{} 'FileEntry
-      :defs $ {}
-        'twice $ %{} 'CodeEntry (:doc |)
+      :defs $ {} $ 'twice
+        %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro twice (x)
             quasiquote $ &+ ~x ~x
           :examples $ []
@@ -24,7 +25,7 @@
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'Point $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Point (:x 'Number)
+          :code $ quote $ defstruct Point (:x Number)
           :examples $ []
           :schema $ quote StructDef
         'double $ %{} 'CodeEntry (:doc "|Twice the input")
@@ -38,14 +39,14 @@
           :code $ quote $ defn main! () (double 21)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
-        'read-point $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn read-point (raw) (decode-map-as raw 'app.main/Point)
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> app.main/Point)
         'qualified-macro $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn qualified-macro () (app.macros/twice 1)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
+        'read-point $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-point (raw) (decode-map-as raw 'app.main/Point)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> app.main/Point)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

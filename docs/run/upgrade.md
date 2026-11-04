@@ -24,6 +24,21 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.0 删除声明宏里带 quote 的类型名（#2516）
+
+`defstruct` / `defenum` / `defunion` 里带 quote 的类型名（`'Number`、`quote Number`、泛型参数 `[] 'T`、约束 `{} $ 'T Debug`）不再接受。
+加载 Snapshot 时报错，`eval` 片段在检查前报错：
+
+```text
+[E_LEGACY_TYPE_SYNTAX] app.schema/Point quotes the type name `'Number` in a data declaration; 0.35.0 removed this spelling (#2516). Write `Number` instead, or run `calcit calcit.cirru edit format` to migrate the Snapshot.
+```
+
+改法：运行一次 `calcit <snapshot> edit format`。从 0.35.0 起它也改写 `:tests` 里的声明（0.34.6 的 `edit format` 不改测试）。
+复合类型 `quote $ List Number` 本来就是当前写法，不受影响。
+
+依赖库同样在加载时检查，所以还在用旧写法的类库要先在类库仓库里运行 `edit format` 并发布新版本，项目才能升级到 0.35.0。
+0.34.6 的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示随之删除。
+
 ## 0.34.6 预告 0.35.0 收紧的 core 返回类型（#2564）
 
 0.35.0 会收紧两组 core 返回类型：

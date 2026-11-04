@@ -3177,6 +3177,16 @@ pub fn render_cirru_inline(node: &Cirru) -> String {
 }
 
 /// The first subtree where `before` and `after` differ, as (written, migrated).
+/// `'Number` or `quote Number`: the declared type spelling 0.35.0 removes.
+fn is_quoted_type_name(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(value) => value.starts_with('\''),
+    Cirru::List(items) => {
+      items.len() == 2 && matches!(&items[0], Cirru::Leaf(head) if head.as_ref() == "quote") && matches!(&items[1], Cirru::Leaf(_))
+    }
+  }
+}
+
 fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a Cirru, &'a Cirru)> {
   let quote_head =
     |node: &Cirru| matches!(node, Cirru::List(xs) if matches!(xs.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote"));
@@ -3190,6 +3200,13 @@ fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a 
 }
 
 fn legacy_type_syntax_error(owner: &str, path: &str, written: &Cirru, migrated: &Cirru) -> String {
+  if is_quoted_type_name(written) {
+    return format!(
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} quotes the type name `{}` in a data declaration; 0.35.0 removed this spelling (#2516). Write `{}` instead, or run `calcit {path} edit format` to migrate the Snapshot.",
+      render_cirru_inline(written),
+      render_cirru_inline(migrated)
+    );
+  }
   format!(
     "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} uses the retired `::`/`{{}}` type syntax `{}`; write `{}` instead, or run `calcit {path} edit format` to migrate the Snapshot.",
     render_cirru_inline(written),
@@ -5057,7 +5074,9 @@ fn migrate_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
   let (canonical, legacy) = canonicalize_code_type_syntax_in(node, decoders, false);
   let (compact, count) = compact_code_type_syntax(&canonical);
-  (compact, legacy + count)
+  // Quoted type names in data declarations are retired since 0.35.0 (#2516).
+  let (unquoted, quoted) = unquote_declaration_types(&compact);
+  (unquoted, legacy + count + quoted)
 }
 
 /// The compact spelling of a legacy decode or cast target type, such as
@@ -5073,12 +5092,10 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
 }
 
 /// The full `calcit edit format` rewrite of one code tree: the legacy type
-/// migration that loading enforces, then dropping quotes from declared member
-/// types, which loading still accepts in both spellings.
+/// migration that loading enforces, including the quoted type names of data
+/// declarations that 0.35.0 removes (#2516).
 fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  let (migrated, legacy) = migrate_code_type_syntax(node);
-  let (unquoted, count) = unquote_declaration_types(&migrated);
-  (unquoted, legacy + count)
+  migrate_code_type_syntax(node)
 }
 
 /// Drop the quote from the type names in `defstruct`, `defenum` and
@@ -5190,10 +5207,6 @@ fn unquote_member_slot(kind: &str, slot: &Cirru, first_slot: bool) -> (Cirru, us
   (slot.clone(), 0)
 }
 
-/// Code of the check note for quoted type names in `defstruct`, `defenum` and
-/// `defunion`, the spelling 0.35.0 removes (#2516, #2563).
-pub const LEGACY_QUOTED_DECLARATION_TYPE_WARNING: &str = "W_LEGACY_QUOTED_DECLARATION_TYPE";
-
 /// A data declaration that still quotes its type names, such as
 /// `defstruct Point (:x 'Number)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5218,16 +5231,15 @@ impl LegacyQuotedDeclarationHit {
       format!(" ({})", self.place)
     };
     format!(
-      "[Warn] {}/{}{place} quotes {} type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). \
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {}/{}{place} quotes {} type name(s) in a data declaration; 0.35.0 removed this spelling (#2516). \
        Write `{}`, or run `calcit <snapshot> edit format` to migrate the Snapshot",
       self.ns, self.def, self.count, self.rewritten
     )
   }
 }
 
-/// Find the `defstruct` / `defenum` / `defunion` forms in project definitions
-/// and examples that `calcit edit format` would unquote. Tests are skipped
-/// because `edit format` keeps them as written.
+/// Find the `defstruct` / `defenum` / `defunion` forms in project definitions,
+/// examples and tests that `calcit edit format` would unquote.
 pub fn collect_legacy_quoted_declaration_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<LegacyQuotedDeclarationHit> {
   fn walk(node: &Cirru, coord: &mut Vec<u16>, found: &mut Vec<(Vec<u16>, usize, String)>) {
     let Cirru::List(items) = node else { return };
@@ -5260,8 +5272,9 @@ pub fn collect_legacy_quoted_declaration_hits(snapshot: &Snapshot, namespaces: &
     defs.sort();
     for def in defs {
       let entry = &file.defs[def];
-      let codes =
-        std::iter::once((String::new(), &entry.code)).chain(entry.examples.iter().map(|example| ("example".to_owned(), example)));
+      let codes = std::iter::once((String::new(), &entry.code))
+        .chain(entry.examples.iter().map(|example| ("example".to_owned(), example)))
+        .chain(entry.tests.iter().map(|test| (format!("test `{}`", test.name), &test.code)));
       for (place, code) in codes {
         let mut found = vec![];
         walk(code, &mut vec![], &mut found);
@@ -5318,8 +5331,6 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
         changed += count;
       }
       entry.examples = rewritten_examples;
-      // Tests keep the quoted spelling as written: they exercise the old
-      // syntax that 0.34.x still accepts.
       for test in entry.tests.iter_mut() {
         let (code, count) = migrate_code_type_syntax(&test.code);
         test.code = code;
@@ -6538,7 +6549,7 @@ mod tests {
       ),
       (
         "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
-        "defenum Shape (:some 'T $ quote $ List T) (:none)",
+        "defenum Shape (:some T $ quote $ List T) (:none)",
       ),
       // A bare compound union member would be called as a function on JS.
       (
@@ -6547,7 +6558,7 @@ mod tests {
       ),
       (
         "defunion Cells 'String (List Number)",
-        "defunion Cells 'String $ quote $ List Number",
+        "defunion Cells String $ quote $ List Number",
       ),
       (
         "defunion Cells String $ :: 'List 'Number",
@@ -6579,7 +6590,6 @@ mod tests {
     // Value references, partial hints and quoted data keep their written shape.
     for source in [
       "defunion CssValue String Number",
-      "defunion CssValue 'String 'Number",
       "defunion Cells String $ quote $ List Number",
       "quote $ defunion U String (List Number)",
       "assert-type xs $ :: 'List Person",
@@ -6656,7 +6666,7 @@ mod tests {
       ),
       (
         "nil",
-        "(defenum main! (:ok 'Enum) (:done $ :: Fn Number (-> Unit)))",
+        "(defenum main! (:ok Enum) (:done $ :: Fn Number (-> Unit)))",
         vec![("", vec![2, 1], "Enum", None)],
       ),
       (
@@ -6667,19 +6677,19 @@ mod tests {
       // Members wrapped in one `{}` form; the struct default `:enum` is a value.
       (
         "nil",
-        "(defstruct main! $ {} (:kind 'Enum :enum) (:size 'Number))",
+        "(defstruct main! $ {} (:kind Enum :enum) (:size Number))",
         vec![("", vec![2, 1, 1], "Enum", None)],
       ),
       (
         "nil",
-        "(defenum main! $ {} (:ok 'Struct))",
+        "(defenum main! $ {} (:ok Struct))",
         vec![("", vec![2, 1, 1], "Struct", None)],
       ),
       // A `deftrait` keeps `Trait` as its definition kind.
       ("$ quote Trait", "(deftrait main! (.run $ :: Fn main! (-> Unit)))", vec![]),
       (
         "$ quote Enum",
-        "(defstruct main! (:name 'String))",
+        "(defstruct main! (:name String))",
         vec![(":schema", vec![], "Enum", Some("StructDef"))],
       ),
     ];
@@ -6694,7 +6704,7 @@ mod tests {
     for code in [
       "(defn main! (x) (assert-type x $ quote $ List Number) (hint-fn $ Fn Number (-> String)) x)",
       "(defn main! () (quote $ assert-type x 'Enum))",
-      "(defstruct main! (:kind 'Tag :enum) (:on-change $ :: Fn String (-> Unit)))",
+      "(defstruct main! (:kind Tag :enum) (:on-change $ :: Fn String (-> Unit)))",
       "(defn main! (raw) (decode-map-as raw $ quote $ List mini/Item))",
     ] {
       assert_eq!(hits_for("nil", code), vec![], "{code}");

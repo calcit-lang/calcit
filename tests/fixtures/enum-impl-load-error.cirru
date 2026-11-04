@@ -14,7 +14,7 @@
           :code $ quote $ def %Atom (impl-traits AtomState HookAtomImpl)
           :examples $ []
         'AtomState $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum AtomState (:atom 'Number)
+          :code $ quote $ defenum AtomState (:atom Number)
           :examples $ []
           :schema $ quote EnumDef
         'HookAtomImpl $ %{} 'CodeEntry (:doc |)

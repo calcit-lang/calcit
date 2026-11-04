@@ -11,15 +11,15 @@
     %{} 'FileEntry
       :defs $ {}
         'HttpBody $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum HttpBody (:empty) (:text 'String) (:bytes 'Buffer)
+          :code $ quote $ defenum HttpBody (:empty) (:text String) (:bytes Buffer)
           :examples $ []
           :schema $ quote EnumDef
         'HttpError $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum HttpError (:capability-denied 'String) (:unsupported 'String) (:invalid-request 'String) (:transport 'String) (:response-too-large 'UInt64)
+          :code $ quote $ defenum HttpError (:capability-denied String) (:unsupported String) (:invalid-request String) (:transport String) (:response-too-large UInt64)
           :examples $ []
           :schema $ quote EnumDef
         'HttpHeader $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpHeader (:name 'String) (:value 'Buffer)
+          :code $ quote $ defstruct HttpHeader (:name String) (:value Buffer)
           :examples $ []
           :schema $ quote StructDef
         'HttpMethod $ %{} 'CodeEntry (:doc |)
@@ -27,16 +27,16 @@
           :examples $ []
           :schema $ quote EnumDef
         'HttpRequest $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpRequest (:method 'component-wasm-async-import.main/HttpMethod) (:url 'String)
+          :code $ quote $ defstruct HttpRequest (:method component-wasm-async-import.main/HttpMethod) (:url String)
             :headers $ quote $ List component-wasm-async-import.main/HttpHeader
-            :body 'component-wasm-async-import.main/HttpBody
-            :max-response-bytes 'UInt64
+            :body component-wasm-async-import.main/HttpBody
+            :max-response-bytes UInt64
           :examples $ []
           :schema $ quote StructDef
         'HttpResponse $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct HttpResponse (:status 'UInt16)
+          :code $ quote $ defstruct HttpResponse (:status UInt16)
             :headers $ quote $ List component-wasm-async-import.main/HttpHeader
-            :body 'component-wasm-async-import.main/HttpBody
+            :body component-wasm-async-import.main/HttpBody
           :examples $ []
           :schema $ quote StructDef
         'call-host-combine $ %{} 'CodeEntry (:doc |)

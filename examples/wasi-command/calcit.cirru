@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Manifest $ %{} 'CodeEntry (:doc "|小型配置清单：具名、启用状态与版本号。")
-          :code $ quote $ defstruct Manifest (:name 'String) (:enabled 'Bool) (:revision 'Int32)
+          :code $ quote $ defstruct Manifest (:name String) (:enabled Bool) (:revision Int32)
           :examples $ []
           :schema $ quote StructDef
         'decode-manifest $ %{} 'CodeEntry (:doc "|把 Cirru EDN 文本明确解码为 Manifest；非法结构返回 Result 错误。")

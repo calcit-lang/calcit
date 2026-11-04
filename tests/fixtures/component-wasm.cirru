@@ -11,23 +11,23 @@
     'component-wasm.main $ %{} 'FileEntry
       :defs $ {}
         'Event $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Event (:idle) (:named 'String) (:moved 'Number 'Number) (:profile 'component-wasm.main/Profile)
+          :code $ quote $ defenum Event (:idle) (:named String) (:moved Number Number) (:profile component-wasm.main/Profile)
           :examples $ []
           :schema $ quote EnumDef
         'NumericScalars $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NumericScalars (:i8 'Int8) (:u8 'UInt8) (:i16 'Int16) (:u16 'UInt16) (:i32 'Int32) (:u32 'UInt32) (:i64 'Int64) (:u64 'UInt64) (:f32 'Float32) (:f64 'Float64)
+          :code $ quote $ defstruct NumericScalars (:i8 Int8) (:u8 UInt8) (:i16 Int16) (:u16 UInt16) (:i32 Int32) (:u32 UInt32) (:i64 Int64) (:u64 UInt64) (:f32 Float32) (:f64 Float64)
           :examples $ []
           :schema $ quote StructDef
         'Profile $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Profile (:active 'Bool) (:name 'String)
+          :code $ quote $ defstruct Profile (:active Bool) (:name String)
             :scores $ quote $ List Number
-            :stats 'component-wasm.main/ProfileStats
+            :stats component-wasm.main/ProfileStats
             :maybe-name $ quote $ Option String
             :outcome $ quote $ Result (List Number) String
           :examples $ []
           :schema $ quote StructDef
         'ProfileStats $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ProfileStats (:score 'Number)
+          :code $ quote $ defstruct ProfileStats (:score Number)
           :examples $ []
           :schema $ quote StructDef
         'add-one $ %{} 'CodeEntry (:doc |)
@@ -397,7 +397,7 @@
     'component-wasm.other $ %{} 'FileEntry
       :defs $ {} $ 'ProfileStats
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ProfileStats (:score 'Number)
+          :code $ quote $ defstruct ProfileStats (:score Number)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)

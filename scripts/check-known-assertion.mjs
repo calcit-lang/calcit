@@ -593,7 +593,7 @@ try {
         runRecursive("query", "def", "app.main/main!", "--format", "edn");
         const operations = [
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
-            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value 'Number\n    Other $ defstruct LocalPayload $ :value 'Number\n    read $ fn (record)\n      hint-fn $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
+            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value Number\n    Other $ defstruct LocalPayload $ :value Number\n    read $ fn (record)\n      hint-fn $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
             "quote $ Fn (-> Number)"],
         ];
@@ -1140,10 +1140,10 @@ try {
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
           "quote $ Fn (-> $ Result (List FsPath) String)"],
         ["edit", "def", "app.main/NumberPath", "--input-format", "cirru", "--code",
-          "quote $ def NumberPath $ defstruct NumberPath (:value 'Number)"],
+          "quote $ def NumberPath $ defstruct NumberPath (:value Number)"],
         ["edit", "schema", "app.main/NumberPath", "--input-format", "cirru", "--code", "quote 'StructDef"],
         ["edit", "def", "app.main/DirectoryChild", "--input-format", "cirru", "--code",
-          "quote $ def DirectoryChild $ defstruct DirectoryChild (:value 'String)"],
+          "quote $ def DirectoryChild $ defstruct DirectoryChild (:value String)"],
         ["edit", "schema", "app.main/DirectoryChild", "--input-format", "cirru", "--code", "quote 'StructDef"],
       ];
       const directoryNegativeOps = [];
@@ -3727,13 +3727,13 @@ try {
         "quote $ calcit.constructor-wrappers :as wrappers");
       for (const [name, code, schema] of [
         ["RecursiveNode", "defenum RecursiveNode (:element 'calcit.assert-evidence/RecursiveElement) (:component 'calcit.assert-evidence/RecursiveComponent)", "'EnumDef"],
-        ["RecursivePair", "defstruct RecursivePair (:key 'Dynamic) (:node 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+        ["RecursivePair", "defstruct RecursivePair (:key Dynamic) (:node calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["RecursiveElement", "defstruct RecursiveElement (:children $ :: 'List 'calcit.assert-evidence/RecursivePair)", "'StructDef"],
         ["RecursiveComponent", "defstruct RecursiveComponent (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["RecursiveSignal", "defenum RecursiveSignal ([] 'T) (:idle) (:data 'T)", "'EnumDef"],
         ["RecursiveSignalHolder", "defstruct RecursiveSignalHolder (:signal $ :: 'calcit.assert-evidence/RecursiveSignal 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["make-open-signal", "defn make-open-signal () $ RecursiveSignal :data 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'calcit.assert-evidence/RecursiveSignal 'Dynamic)"],
-        ["RecursiveCell", "defstruct RecursiveCell ([] 'T) (:value 'T)", "'StructDef"],
+        ["RecursiveCell", "defstruct RecursiveCell ([] T) (:value T)", "'StructDef"],
         ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
         ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
         ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
