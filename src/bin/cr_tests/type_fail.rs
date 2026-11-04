@@ -4393,12 +4393,14 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
     // `let` tail or a macro expansion (#2565); the `:js-ffi` feature alone
     // does not exempt a nil tested by business code, bound to a local,
     // `set!` on a local, passed to an ordinary parameter or consumed by an
-    // ordinary call before the host sees it.
+    // ordinary call before the host sees it. A local function named `do` is
+    // such an ordinary call; a postfix receiver is a host value like an argument.
     assert_eq!(
       erased,
       [
         "bound-in-ffi",
         "business-in-ffi",
+        "local-do-before-host",
         "local-set-in-ffi",
         "to-plain-param",
         "wrapped-before-host"
@@ -4447,6 +4449,31 @@ fn option_erased_to_nil_suggests_rewrites_that_keep_results() {
       ],
       "{advisories:?}"
     );
+  });
+}
+
+/// #2565: the rewrite reads `or` as the core macro; a local `or` gets none,
+/// and so does an `if` without an else branch, whose rewrite would keep a
+/// `(:none) nil` branch.
+#[test]
+fn option_erased_to_nil_rewrites_only_core_consumers() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    or $ fn (a b)\n      hint-fn $ Fn Dynamic Dynamic (-> Dynamic)\n      , b\n    local-or $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      or (.unwrap-or (get m :a) nil) 1\n    bare-if $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      if (.unwrap-or (get m :a) nil) |yes\n  [] local-or bare-if",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("erasing an Option to nil should preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let hints = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .map(|advisory| advisory.hint().map(str::to_owned))
+      .collect::<Vec<_>>();
+    assert_eq!(hints, [None, None], "{advisories:?}");
   });
 }
 

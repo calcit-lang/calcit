@@ -279,7 +279,12 @@ note's hint gives a `match` that keeps every result:
 `or (.unwrap-or x nil) d` becomes `match x ((:some v) (or v d)) ((:none) d)`.
 It returns the same value for Some, Some nil, Some false and None, and still
 evaluates the fallback only when the original would. Other consumers get no
-hint, because no rewrite keeps their result without a decision by the author. For now the report is a
+hint, because no rewrite keeps their result without a decision by the author.
+No hint is given either for an `if` without an else branch (its rewrite would
+keep a `(:none) nil` branch), for a fallback that reads the name the `match`
+binds in its `:some` branch, or when `or`, `if`, `do` or `let` is a local or
+project binding rather than the core form; such a local call also consumes the
+value, so it is not a result position for the host exemption. For now the report is a
 note: `--check-only` lists it and still passes, and it becomes a blocking
 warning once the ecosystem libraries have migrated.
 

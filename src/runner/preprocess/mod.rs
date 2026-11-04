@@ -802,6 +802,9 @@ struct HostSinkFrameState {
   arg_host_nullish: bool,
   /// The source form, for tail-position checks by identity.
   form: Calcit,
+  /// The head is not a local or project binding that shadows a core form of
+  /// the same name, such as a local function called `do` or `or`.
+  head_is_core: bool,
 }
 
 impl HostSinkFrameState {
@@ -820,16 +823,25 @@ impl HostSinkFrameState {
 struct HostSinkFrame;
 
 impl HostSinkFrame {
-  fn enter(expr: &Calcit) -> Option<Self> {
+  fn enter(expr: &Calcit, scope_defs: &HashSet<Arc<str>>) -> Option<Self> {
     let Calcit::List(xs) = expr else {
       return None;
     };
     let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
+    let head_is_core = match xs.first() {
+      Some(Calcit::Symbol { sym, info, .. }) => {
+        !scope_defs.contains(sym)
+          && (CalcitSyntax::is_valid(sym)
+            || program::resolve_type_name_in_ns(&info.at_ns, sym).is_some_and(|(target, _)| target.as_ref() == calcit::CORE_NS))
+      }
+      _ => true,
+    };
     HOST_SINK_FRAMES.with(|frames| {
       frames.borrow_mut().push(HostSinkFrameState {
         is_sink,
         arg_host_nullish: false,
         form: expr.to_owned(),
+        head_is_core,
       })
     });
     Some(Self)
@@ -937,13 +949,14 @@ fn current_form_feeds_host() -> bool {
     let Calcit::List(items) = &ancestors[consumer_index].form else {
       return false;
     };
-    let mut result_forms = HashSet::new();
-    for argument in items.iter().skip(1) {
-      collect_tail_return_forms(argument, &mut result_forms);
-    }
+    // A postfix native call passes its receiver, item zero, to the host too.
+    let first_value = usize::from(!is_postfix_native_call(items));
+    let mut result_forms = items.iter().skip(first_value).filter_map(list_ptr).collect::<HashSet<_>>();
     // Every form between the consumer and the current one must pass its
     // value through unchanged: it is a result position of the form outside
     // it, or the macro expansion of that form, such as `let` → `&let`.
+    // Each form is a frame of its own, so its head is classified with the
+    // bindings in scope where it is written.
     let mut outer: Option<&HostSinkFrameState> = None;
     for frame in ancestors[consumer_index + 1..].iter().chain(std::iter::once(current)) {
       let in_result_position = result_forms.contains(&frame.source_ptr());
@@ -953,10 +966,34 @@ fn current_form_feeds_host() -> bool {
       if !in_result_position && !expands_outer {
         return false;
       }
-      collect_tail_return_forms(&frame.form, &mut result_forms);
+      if frame.head_is_core
+        && let Calcit::List(frame_items) = &frame.form
+      {
+        result_forms.extend(tail_result_children(frame_items).into_iter().filter_map(list_ptr));
+      }
       outer = Some(frame);
     }
     true
+  })
+}
+
+fn list_ptr(form: &Calcit) -> Option<usize> {
+  match form {
+    Calcit::List(items) => Some(Arc::as_ptr(items) as usize),
+    _ => None,
+  }
+}
+
+/// Whether the source form `form`, while it is being preprocessed, has a head
+/// that is the core form of its name rather than a local or project binding.
+fn source_form_head_is_core(form: &Calcit) -> Option<bool> {
+  HOST_SINK_FRAMES.with(|frames| {
+    frames
+      .borrow()
+      .iter()
+      .rev()
+      .find(|frame| same_form(&frame.form, form))
+      .map(|frame| frame.head_is_core)
   })
 }
 
@@ -1124,32 +1161,35 @@ fn collect_tail_return_forms(expr: &Calcit, forms: &mut HashSet<usize>) {
     return;
   };
   forms.insert(Arc::as_ptr(items) as usize);
+  for child in tail_result_children(items) {
+    collect_tail_return_forms(child, forms);
+  }
+}
+
+/// The items of an `if`, `match`, `let`, `&let` or `do` form whose value is
+/// the value of the form.
+fn tail_result_children(items: &CalcitList) -> Vec<&Calcit> {
   // Source forms still spell `if`/`match` as symbols before preprocessing.
   let head = match items.first() {
     Some(Calcit::Syntax(CalcitSyntax::If, _)) => "if",
     Some(Calcit::Syntax(CalcitSyntax::Match, _)) => "match",
     Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => "&let",
     Some(Calcit::Symbol { sym, .. }) => sym.as_ref(),
-    _ => return,
+    _ => return vec![],
   };
   match head {
-    "if" => {
-      for branch in items.iter().skip(2) {
-        collect_tail_return_forms(branch, forms);
-      }
-    }
-    "match" => {
-      for branch in items.iter().skip(2) {
-        if let Calcit::List(pair) = branch
-          && pair.len() == 2
-        {
-          collect_tail_return_forms(&pair[1], forms);
-        }
-      }
-    }
-    "&let" | "let" if items.len() > 2 => collect_tail_return_forms(&items[items.len() - 1], forms),
-    "do" if items.len() > 1 => collect_tail_return_forms(&items[items.len() - 1], forms),
-    _ => {}
+    "if" => items.iter().skip(2).collect(),
+    "match" => items
+      .iter()
+      .skip(2)
+      .filter_map(|branch| match branch {
+        Calcit::List(pair) if pair.len() == 2 => pair.get(1),
+        _ => None,
+      })
+      .collect(),
+    "&let" | "let" if items.len() > 2 => items.get(items.len() - 1).into_iter().collect(),
+    "do" if items.len() > 1 => items.get(items.len() - 1).into_iter().collect(),
+    _ => vec![],
   }
 }
 
@@ -3197,7 +3237,7 @@ pub fn preprocess_expr(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let _host_sink_frame = HostSinkFrame::enter(expr);
+  let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
   let processed = if matches!(expr, Calcit::List(_)) && proof_error_recovery_active() {
@@ -8959,10 +8999,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
 /// this covers the open (Dynamic) payload that accepts nil as a default. Exempt
 /// only an actual host sink or a tail expression returned as `JsNullish`.
 fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str, call_stack: &CallStackList) {
-  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
+  if args.len() != 2 || !matches!(args.get(1), Some(Calcit::Nil)) {
     return;
   }
-  if args.len() != 2 || !matches!(args.get(1), Some(Calcit::Nil)) {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
     return;
   }
   let Some(receiver) = args.first() else {
@@ -9038,6 +9078,10 @@ fn option_erasure_rewrite(location: &NodeLocation) -> Option<String> {
   let Calcit::List(consumer_items) = consumer else { return None };
   // The erased value must be the tested argument.
   if !consumer_items.get(1).is_some_and(|item| same_form(item, erased)) {
+    return None;
+  }
+  // A local or project function named `or` would compute something else.
+  if source_form_head_is_core(consumer) != Some(true) {
     return None;
   }
   // Loaded source already resolves core procs and syntax, such as `nil?`.

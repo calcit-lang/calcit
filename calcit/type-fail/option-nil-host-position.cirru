@@ -71,9 +71,21 @@
               to-host-via-let m
               to-host-via-thread m
               wrapped-before-host m
+              local-do-before-host m
+              to-postfix-receiver-via-branch m true
               , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'local-do-before-host $ %{} 'CodeEntry
+          :doc "|A local function named `do` is an ordinary call, not the core form."
+          :code $ quote $ defn local-do-before-host (m)
+            let
+                do $ fn (a b)
+                  hint-fn $ Fn Dynamic Dynamic (-> String)
+                  str b
+              js/console.log $ do 1 $ .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -146,6 +158,12 @@
             js/console.log $ -> (get m :a) (.unwrap-or nil)
           :examples $ []
           :schema $ quote $ Fn (Map Tag Dynamic) (-> Dynamic) (:features :js-ffi)
+        'to-postfix-receiver-via-branch $ %{} 'CodeEntry
+          :doc "|The receiver of a postfix native call goes to the host, also through an `if` branch."
+          :code $ quote $ defn to-postfix-receiver-via-branch (m flag)
+            (if flag (.unwrap-or (get m :a) nil) |none) .!toString
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag Dynamic) Bool (-> Dynamic) (:features :js-ffi)
         'to-native-method $ %{} 'CodeEntry
           :doc "|A native method call argument is a host position."
           :code $ quote $ defn to-native-method (m)
