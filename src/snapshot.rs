@@ -5176,18 +5176,30 @@ pub fn unquote_compound_types(node: &Cirru) -> (Cirru, usize) {
     _ if is_decoder_type_head(head) && rewritten.len() == 3 => unquote(&mut rewritten[2]),
     Some("defunion") if rewritten.len() >= 3 => rewritten.iter_mut().skip(2).for_each(unquote),
     Some(kind @ ("defstruct" | "defenum" | "deftrait")) if rewritten.len() >= 3 => {
-      for slot in rewritten.iter_mut().skip(2) {
-        let Cirru::List(entry) = slot else { continue };
+      let mut member = |entry: &mut Vec<Cirru>| {
         let tagged = matches!(entry.first(), Some(Cirru::Leaf(key)) if key.starts_with([':', '.']));
         let range = match (kind, entry.len()) {
           ("defstruct", 2 | 3) if tagged => 1..2,
           ("defenum", len) if tagged => 1..len,
           ("deftrait", 2) if tagged => 1..2,
           ("deftrait", 3) if is_cirru_leaf(entry.first(), "[]") => 2..3,
-          _ => continue,
+          _ => return,
         };
         for index in range {
           unquote(&mut entry[index]);
+        }
+      };
+      for slot in rewritten.iter_mut().skip(2) {
+        let Cirru::List(entry) = slot else { continue };
+        // Members may also be wrapped in one `{}` form: `defstruct Box $ {} (:items …)`.
+        if is_cirru_leaf(entry.first(), "{}") {
+          for inner in entry.iter_mut().skip(1) {
+            if let Cirru::List(wrapped) = inner {
+              member(wrapped);
+            }
+          }
+        } else {
+          member(entry);
         }
       }
     }
@@ -6710,6 +6722,10 @@ mod tests {
         "defenum Shape (:some T $ List T) (:none)",
       ),
       ("defunion Cells String $ quote (List Number)", "defunion Cells String (List Number)"),
+      (
+        "defstruct Box $ {} (:items $ quote $ List Number) (:size Number)",
+        "defstruct Box $ {} (:items $ List Number) (:size Number)",
+      ),
       (
         "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
         "deftrait Show $ .show $ Fn T (-> String) (:generics T)",

@@ -6955,7 +6955,7 @@
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'defunion $ %{} 'CodeEntry
-          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型写 quote，如 `quote $ List Number`。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型可以直接写，如 `List Number`（旧的 `quote $ List Number` 写法仍然可用）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
