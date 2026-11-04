@@ -11414,7 +11414,59 @@ pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str
   let traits = trait_list_from_type(receiver);
   let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
   let contract = static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref(), None);
-  with_strict_dispatch_status(receiver, method_name, impls.as_deref(), contract)
+  let contract = with_strict_dispatch_status(receiver, method_name, impls.as_deref(), contract);
+  with_tuple_receiver_status(receiver, method_name, impls.as_deref(), contract)
+}
+
+/// A Tuple receiver dispatches through the List implementation, but it only
+/// satisfies the trait bounds that keep its arity (`satisfies_trait_bound`).
+/// When the selected method's trait is not one of them, a trait-typed view
+/// would claim `Self = Tuple ...`, which neither a `:where` bound nor the
+/// direct call agrees with. Report the List view a homogeneous tuple is
+/// checked with, and leave a heterogeneous tuple open.
+fn with_tuple_receiver_status(
+  receiver: &CalcitTypeAnnotation,
+  method_name: &str,
+  impls: Option<&[Arc<CalcitImpl>]>,
+  contract: StaticMethodContract,
+) -> StaticMethodContract {
+  let CalcitTypeAnnotation::Tuple(slots) = receiver else {
+    return contract;
+  };
+  let Some(impls) = impls else {
+    return contract;
+  };
+  let bare_name = method_name.trim_start_matches('.');
+  let ImplMethodResolution::Selected(candidate) = resolve_impl_method(receiver, impls, bare_name) else {
+    return contract;
+  };
+  let Some(trait_def) = candidate.impl_value.origin() else {
+    return contract;
+  };
+  if receiver.is_proven_for(&CalcitTypeAnnotation::Trait(trait_def.clone())) {
+    return contract;
+  }
+  let trait_name = trait_def.name.ref_str();
+  let Some(item) = CalcitTypeAnnotation::homogeneous_tuple_item(slots) else {
+    return StaticMethodContract::open_with_definition(
+      format!(
+        "a heterogeneous Tuple does not satisfy `{trait_name}`; `.{bare_name}` only applies to the List view of a tuple whose slots share one type"
+      ),
+      contract.definition,
+    );
+  };
+  let list_view = CalcitTypeAnnotation::List(item.clone());
+  let list_impls = get_impls_from_type(&list_view);
+  let mut list_contract = static_method_contract_with_impls(&list_view, method_name, None, list_impls.as_deref(), None);
+  let note = format!(
+    "Tuple does not satisfy `{trait_name}`, so a `:where` bound on it fails; `.{bare_name}` resolves through the List implementation and its types are those of {}",
+    list_view.describe()
+  );
+  list_contract.detail = Some(match list_contract.detail.take() {
+    Some(previous) => format!("{note}; {previous}"),
+    None => note,
+  });
+  list_contract
 }
 
 /// Only suggest a same-named core function whose first parameter can take the
@@ -11485,6 +11537,7 @@ pub fn static_method_contracts(receiver: &CalcitTypeAnnotation) -> Option<Vec<(S
       .map(|descriptor| {
         let contract = static_method_contract_with_impls(receiver, &descriptor.name, traits.as_deref(), impls.as_deref(), None);
         let contract = with_strict_dispatch_status(receiver, &descriptor.name, impls.as_deref(), contract);
+        let contract = with_tuple_receiver_status(receiver, &descriptor.name, impls.as_deref(), contract);
         (descriptor, contract)
       })
       .collect(),

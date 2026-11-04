@@ -1668,6 +1668,35 @@ mod type_query_tests {
   }
 
   #[test]
+  fn tuple_method_query_matches_trait_bound_checking() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    // #2558: Tuple does not satisfy `Add`, so `.add` must not claim `Self = Tuple`.
+    let homogeneous = parse_type_annotation_query("Tuple Number Number Number").expect("tuple should parse");
+    let add = runner::preprocess::static_method_contract(&homogeneous, ".add");
+    assert_eq!(add.status, "proven", "{add:?}");
+    let list_number = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number));
+    assert_eq!(add.return_type.as_deref(), Some(&list_number), "{add:?}");
+    assert!(
+      add
+        .arg_types
+        .as_ref()
+        .is_some_and(|args| args.iter().all(|arg| arg.as_ref() == &list_number)),
+      "{add:?}"
+    );
+    assert!(add.detail.as_deref().is_some_and(|detail| detail.contains("`Add`")), "{add:?}");
+
+    let heterogeneous = parse_type_annotation_query("Tuple Number String").expect("tuple should parse");
+    let add = runner::preprocess::static_method_contract(&heterogeneous, ".add");
+    assert_eq!(add.status, "open", "{add:?}");
+
+    // Traits a tuple does satisfy keep their tuple-typed view.
+    assert_eq!(runner::preprocess::static_method_contract(&homogeneous, ".count").status, "proven");
+  }
+
+  #[test]
   fn predicate_method_query_distinguishes_index_key_and_value_origins() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
