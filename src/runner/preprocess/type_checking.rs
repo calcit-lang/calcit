@@ -725,6 +725,7 @@ where
       } else {
         actual_type
       };
+      let actual_type = callback_tail_tuple_evidence(arg, &actual_type, expected_type, ctx.scope_types).unwrap_or(actual_type);
       let deferred_callback_generics = super::all_output_only_callback_generics(ctx.generics, ctx.expected_types);
       let mask_unbound_callback_result = expected_type.resolve_to_nonoptional_fn().is_some()
         && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
@@ -2101,6 +2102,74 @@ fn refined_generic_return_is_proven(
   })
 }
 
+/// A callback whose final expression is a `[]` literal of the expected tuple
+/// arity returns that tuple positionally, e.g. `fn (pair) ([] k v)` passed to
+/// `&map:map` proves `Tuple K2 V2` instead of the joined `List`. Only the
+/// return slot changes; parameters keep their inferred types (#2561).
+pub(super) fn callback_tail_tuple_evidence(
+  arg: &Calcit,
+  actual_type: &Arc<CalcitTypeAnnotation>,
+  expected_type: &CalcitTypeAnnotation,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (CalcitTypeAnnotation::Fn(expected), CalcitTypeAnnotation::Fn(actual), Calcit::List(callback)) =
+    (expected_type, actual_type.as_ref(), arg)
+  else {
+    return None;
+  };
+  if !matches!(callback.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _)))
+    || !matches!(
+      actual.return_type.as_ref(),
+      CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic
+    )
+  {
+    return None;
+  }
+  let return_type = callback_tail_tuple(arg, expected.return_type.as_ref(), scope_types)?;
+  let mut signature = actual.as_ref().clone();
+  signature.return_type = return_type;
+  Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
+}
+
+/// Positional tuple evidence for an unhinted callback literal's final `[]`
+/// expression.
+pub(super) fn callback_tail_tuple(
+  callback: &Calcit,
+  expected_return: &CalcitTypeAnnotation,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let Calcit::List(callback) = callback else { return None };
+  if !matches!(callback.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return None;
+  }
+  // A `hint-fn` signature declares the return type explicitly; keep it so the
+  // contract check can still report e.g. `-> List Dynamic` against a Tuple.
+  // Preprocessing also inserts generated hints, which do not count.
+  let explicit_hint = |form: &Calcit| matches!(form, Calcit::List(items) if matches!(items.call_kind(), crate::calcit::CalcitCallKind::TypedFnHint(_, false)));
+  if callback.iter().skip(3).any(explicit_hint) {
+    return None;
+  }
+  let tail = callback
+    .iter()
+    .skip(3)
+    .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+    .last()?;
+  tuple_literal_evidence(result_tail(tail), expected_return, scope_types)
+}
+
+/// The expression whose value a `&let` chain returns, so
+/// `let[] (k v) pair $ [] k v` still exposes its final pair literal.
+fn result_tail(mut expr: &Calcit) -> &Calcit {
+  while let Calcit::List(items) = expr
+    && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)))
+    && items.len() > 2
+    && let Some(last) = items.get(items.len() - 1)
+  {
+    expr = last;
+  }
+  expr
+}
+
 /// Check function return type matches declared return_type.
 /// Positional evidence for a `[]` literal checked against a tuple, recursing
 /// into nested tuple slots; other slots use ordinary inference.
@@ -2223,7 +2292,7 @@ pub(crate) fn check_function_return_type(
   };
   // A heterogeneous literal infers as a List; against a declared tuple return,
   // its positions are the evidence, so generic slots keep their binders.
-  let actual_type = tuple_literal_evidence(last_expr, declared_return_type, scope_types).unwrap_or(actual_type);
+  let actual_type = tuple_literal_evidence(result_tail(last_expr), declared_return_type, scope_types).unwrap_or(actual_type);
 
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
@@ -2707,9 +2776,12 @@ mod tests {
     let CalcitTypeAnnotation::Fn(map_predicate) = map_specialized[1].as_ref() else {
       panic!("map filter predicate should be a function");
     };
+    // Map entries reach the predicate as `Tuple K V` (#2561).
     assert!(matches!(
       map_predicate.arg_types.as_slice(),
-      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Tuple(slots)
+        if matches!(slots.as_slice(), [key, value]
+          if matches!(key.as_ref(), CalcitTypeAnnotation::Tag) && matches!(value.as_ref(), CalcitTypeAnnotation::Number)))
     ));
     assert!(matches!(map_predicate.return_type.as_ref(), CalcitTypeAnnotation::Bool));
 
@@ -2770,13 +2842,16 @@ mod tests {
     let CalcitTypeAnnotation::Fn(mapper) = map_specialized[1].as_ref() else {
       panic!("map mapper should be a function");
     };
+    // The mapper takes the `Tuple K V` entry and returns a `Tuple K2 V2` pair (#2561).
     assert!(matches!(
       mapper.arg_types.as_slice(),
-      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+      [arg] if matches!(arg.as_ref(), CalcitTypeAnnotation::Tuple(slots)
+        if matches!(slots.as_slice(), [key, value]
+          if matches!(key.as_ref(), CalcitTypeAnnotation::Tag) && matches!(value.as_ref(), CalcitTypeAnnotation::Number)))
     ));
     assert!(matches!(
       mapper.return_type.as_ref(),
-      CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+      CalcitTypeAnnotation::Tuple(slots) if slots.len() == 2
     ));
   }
 

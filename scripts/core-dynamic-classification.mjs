@@ -330,26 +330,6 @@ const reviewedPublicBoundaryPositions = new Map([
     "The pair callback receives heterogeneous key/value slots from a homogeneous List; its value stays open while the callback result is preserved by generic R.",
   ],
   [
-    "&map:filter|schema.args.1.args.0.item",
-    "The internal Map pair callback receives heterogeneous key/value slots in a List; keep the open item explicit until tuple or named pair typing can preserve both independent parameters.",
-  ],
-  [
-    "&map:map|schema.args.1.args.0.item",
-    "The Map pair callback receives heterogeneous key/value slots in a List; the open item stays explicit until tuple or named pair typing can preserve both independent parameters.",
-  ],
-  [
-    "&map:map|schema.args.1.return.item",
-    "The callback returns a heterogeneous [key value] pair; a homogeneous List item cannot prove independent key and value types, so the pair slots stay open and are stored by &map:assoc.",
-  ],
-  [
-    "&map:map|schema.return.key",
-    "The mapped Map's key comes from callback pairs whose slot types are open; claiming a free generic key would certify a relation the pair contract cannot prove.",
-  ],
-  [
-    "&map:map|schema.return.value",
-    "The mapped Map's value comes from callback pairs whose slot types are open; claiming a free generic value would certify a relation the pair contract cannot prove.",
-  ],
-  [
     "format-cirru|schema.args.0.item",
     "The formatter consumes recursively heterogeneous Cirru syntax nodes; the missing recursive leaf-or-list union is retained as a reviewed presentation boundary.",
   ],

@@ -3380,10 +3380,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       filter_warnings.iter().any(|warning| {
-        warning.message().contains("arg 2 expects type `fn(list<dynamic>) -> :bool`")
+        warning.message().contains("arg 2 expects type `fn(tuple<:tag, :number>) -> :bool`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
-      "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
+      "Map filters should pass each entry as a `Tuple K V` predicate argument (#2561): {filter_warnings:?}"
     );
     assert!(
       filter_warnings.iter().any(|warning| {
@@ -3459,10 +3459,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       map_warnings.iter().any(|warning| {
         warning
           .message()
-          .contains("arg 2 expects type `fn(list<dynamic>) -> list<dynamic>`")
+          .contains("arg 2 expects type `fn(tuple<:tag, :number>) -> tuple<'K2, 'V2>`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
-      "Map mappers should consume and return heterogeneous List pairs: {map_warnings:?}"
+      "Map mappers should consume a `Tuple K V` entry and return a `Tuple K2 V2` pair (#2561): {map_warnings:?}"
     );
     let fold_warnings = warnings
       .iter()

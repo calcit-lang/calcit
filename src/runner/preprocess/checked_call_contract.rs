@@ -539,10 +539,13 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
-    ("filter", T::Map(_, _)) => Some(CheckedCallContract {
+    ("filter", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![
         receiver_type.clone(),
-        fn_type(vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))], Arc::new(T::Bool)),
+        fn_type(
+          vec![Arc::new(T::Tuple(Arc::new(vec![key_type.clone(), value_type.clone()])))],
+          Arc::new(T::Bool),
+        ),
       ]),
       return_type: receiver_type,
       lowering: Some(CheckedCallLowering::CoreDef("&map:filter")),
@@ -576,11 +579,26 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: None,
       })
     }
-    ("map", T::Map(_, _)) => {
-      let pair_type = Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()));
+    ("map", T::Map(key_type, value_type)) => {
+      // Entries arrive as `Tuple K V` and the callback returns `Tuple K2 V2` (#2561).
+      let pair_type = Arc::new(T::Tuple(Arc::new(vec![key_type.clone(), value_type.clone()])));
+      let callback = args.get(1)?;
+      let open_output = Arc::new(T::Tuple(Arc::new(vec![
+        Arc::new(T::TypeVar(Arc::from("K2"))),
+        Arc::new(T::TypeVar(Arc::from("V2"))),
+      ])));
+      let output_type = mapper_output_type(callback, scope_types, std::slice::from_ref(&pair_type), "MapOutput");
+      let output_type = match output_type.as_ref() {
+        T::Tuple(slots) if slots.len() == 2 => output_type,
+        _ => super::type_checking::callback_tail_tuple(callback, &open_output, scope_types).unwrap_or(open_output),
+      };
+      let return_type = match output_type.as_ref() {
+        T::Tuple(slots) if slots.len() == 2 && !output_type.contains_type_var() => Arc::new(T::Map(slots[0].clone(), slots[1].clone())),
+        _ => Arc::new(T::Map(crate::calcit::DYNAMIC_TYPE.clone(), crate::calcit::DYNAMIC_TYPE.clone())),
+      };
       Some(CheckedCallContract {
-        expected_types: Some(vec![receiver_type, fn_type(vec![pair_type.clone()], pair_type)]),
-        return_type: Arc::new(T::Map(crate::calcit::DYNAMIC_TYPE.clone(), crate::calcit::DYNAMIC_TYPE.clone())),
+        expected_types: Some(vec![receiver_type, fn_type(vec![pair_type], output_type)]),
+        return_type,
         lowering: Some(CheckedCallLowering::CoreDef("&map:map")),
       })
     }
