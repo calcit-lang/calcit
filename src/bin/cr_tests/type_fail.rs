@@ -4357,7 +4357,7 @@ fn legacy_quoted_declaration_types_are_check_notes() {
     "each note points at its declaration form"
   );
   assert!(
-    messages.iter().all(|message| message.contains("calcit edit format")),
+    messages.iter().all(|message| message.contains("calcit <snapshot> edit format")),
     "{messages:?}"
   );
 

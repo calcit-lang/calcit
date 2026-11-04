@@ -30,7 +30,7 @@ related:
 从 0.34.6 开始，检查时对这类写法报告非阻塞的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示，给出定义位置和改写后的声明：
 
 ```text
-[W_LEGACY_QUOTED_DECLARATION_TYPE] [Warn] app.schema/Point quotes 1 type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). Write `defstruct Point (:x Number) (:y Number)`, or run `calcit edit format` to migrate the Snapshot @app.schema/Point
+[W_LEGACY_QUOTED_DECLARATION_TYPE] [Warn] app.schema/Point quotes 1 type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). Write `defstruct Point (:x Number) (:y Number)`, or run `calcit <snapshot> edit format` to migrate the Snapshot @app.schema/Point
 ```
 
 范围是项目自身的定义代码和 examples，与 `calcit edit format` 改写的范围相同，所以运行一次 `edit format` 后提示就会消失。

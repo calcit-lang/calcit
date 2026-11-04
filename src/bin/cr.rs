@@ -609,12 +609,17 @@ fn run_cli() -> Result<(), String> {
   }
 
   if cli_args.check_only && cli_args.incremental {
-    let (mut snapshot, input_cache, _) =
+    let (mut snapshot, input_cache, project_namespaces) =
       analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
     input_cache.ensure_complete()?;
     apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
     let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
+    // Read from the Snapshot itself, so a cached check reports them too.
+    let legacy_declaration_notes = legacy_quoted_declaration_notes(&snapshot, &project_namespaces);
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
+      for note in &legacy_declaration_notes {
+        runner::preprocess::push_advisory(note.clone());
+      }
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
       let builtin_warnings = RefCell::new(Vec::new());
       runner::preprocess::ensure_ns_def_compiled(
@@ -638,6 +643,14 @@ fn run_cli() -> Result<(), String> {
         "✓".green(),
         format!("{} preprocessed (cached)", entries.reload_fn).dimmed()
       );
+      if !legacy_declaration_notes.is_empty() {
+        eprintln!(
+          "\n{} ({} notes, the check still passes)",
+          "Notes:".yellow(),
+          legacy_declaration_notes.len()
+        );
+        LocatedWarning::print_list(&legacy_declaration_notes);
+      }
       println!("\n{}", "✓ Check passed (cached)".green().bold());
     }
     print!("{}", stats.human_line());
@@ -2065,16 +2078,25 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
 /// notes ahead of their removal in 0.35.0 (#2563). `calcit edit format`
 /// rewrites them.
 fn push_legacy_quoted_declaration_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
-  for hit in snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces) {
-    // Coordinates of examples do not point into the definition code.
-    let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
-    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
-      hit.message(),
-      calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
-      Some(snapshot::LEGACY_QUOTED_DECLARATION_TYPE_WARNING.to_owned()),
-      None,
-    ));
+  for note in legacy_quoted_declaration_notes(snapshot, project_namespaces) {
+    runner::preprocess::push_advisory(note);
   }
+}
+
+fn legacy_quoted_declaration_notes(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Vec<LocatedWarning> {
+  snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces)
+    .into_iter()
+    .map(|hit| {
+      // Coordinates of examples do not point into the definition code.
+      let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
+      LocatedWarning::new_with_detail(
+        hit.message(),
+        calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
+        Some(snapshot::LEGACY_QUOTED_DECLARATION_TYPE_WARNING.to_owned()),
+        None,
+      )
+    })
+    .collect()
 }
 
 /// Native runs and JS codegen prove the entries before compiling them

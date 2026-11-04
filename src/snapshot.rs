@@ -5219,7 +5219,7 @@ impl LegacyQuotedDeclarationHit {
     };
     format!(
       "[Warn] {}/{}{place} quotes {} type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). \
-       Write `{}`, or run `calcit edit format` to migrate the Snapshot",
+       Write `{}`, or run `calcit <snapshot> edit format` to migrate the Snapshot",
       self.ns, self.def, self.count, self.rewritten
     )
   }
