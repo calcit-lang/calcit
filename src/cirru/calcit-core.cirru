@@ -4664,6 +4664,12 @@
                 assert-type xs $ quote $ List Number
                 assert= 3 $ xs .fold 0 +
               :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |proven-bare-list-payload)
+              :code $ quote $ let
+                  xs $ [] 1 2
+                assert-type xs $ List Number
+                assert= 3 $ xs .fold 0 +
+              :tags $ #{} :assert-boundary :unit
             %{} 'TestEntry (:name |preserves-concrete-evidence)
               :code $ quote $ let
                   x 3
@@ -6474,6 +6480,19 @@
                   first $ decode-map-as ([] |abc)
                     quote $ List String
                   , |
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |decodes-bare-compound-type)
+              :code $ quote $ do
+                assert= |abc $ option:unwrap-or
+                  first $ decode-map-as ([] |abc) $ List String
+                  , |
+                assert= "|decode-map-as failed at $[1]: expected number, got string" $ try
+                  do
+                    decode-map-as ([] 1 |wrong) $ List Number
+                    , |unexpected-success
+                  fn (message)
+                    hint-fn $ Fn String $ -> String
+                    , message
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-operation-and-nested-error-path)
               :code $ quote $ do

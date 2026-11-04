@@ -3200,6 +3200,13 @@ fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a 
 }
 
 fn legacy_type_syntax_error(owner: &str, path: &str, written: &Cirru, migrated: &Cirru) -> String {
+  if *migrated == Cirru::List(vec![Cirru::leaf("quote"), written.clone()]) {
+    return format!(
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} writes the compound type `{}` without a quote; data declarations and trait methods still need `{}`, or run `calcit {path} edit format` to migrate the Snapshot.",
+      render_cirru_inline(written),
+      render_cirru_inline(migrated)
+    );
+  }
   if is_quoted_type_name(written) {
     return format!(
       "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} quotes the type name `{}` in a data declaration; 0.35.0 removed this spelling (#2516). Write `{}` instead, or run `calcit {path} edit format` to migrate the Snapshot.",
@@ -4681,6 +4688,15 @@ fn canonicalize_type_expression(node: &Cirru) -> (Cirru, usize) {
   {
     return (node.clone(), 0);
   }
+  // A bare compact type in a position that still needs the quote, such as
+  // `Fn T (-> String)` in a `deftrait` method, only gains the quote; reading it
+  // as an implicit `::` constructor would suggest the retired spelling.
+  if let Cirru::List(items) = node
+    && items.first().and_then(canonical_schema_symbol_from_cirru).is_some()
+    && crate::calcit::type_expr::is_bare_compact_payload(node)
+  {
+    return (Cirru::List(vec![Cirru::leaf("quote"), node.clone()]), 1);
+  }
   if let Some(canonical) = canonicalize_legacy_type_leaf(node) {
     return (canonical, 1);
   }
@@ -4792,7 +4808,8 @@ fn canonicalize_code_type_syntax_in(node: &Cirru, decoders: bool, quoted: bool) 
   }
 
   match head {
-    Some("assert-type" | "unsafe-coerce") if items.len() >= 3 => {
+    // A bare compact type such as `List Number` is already the source syntax.
+    Some("assert-type" | "unsafe-coerce") if items.len() >= 3 && !crate::calcit::type_expr::is_bare_compact_payload(&items[2]) => {
       let (next, count) = canonicalize_type_expression(&items[2]);
       rewritten[2] = next;
       changed += count;
@@ -5083,6 +5100,12 @@ fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
 /// `quote $ List Dynamic` for `:: 'List 'Dynamic`; `None` when the form is
 /// already compact or names a value reference.
 pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
+  if let Cirru::List(items) = node
+    && items.first().and_then(canonical_schema_symbol_from_cirru).is_some()
+    && crate::calcit::type_expr::is_bare_compact_payload(node)
+  {
+    return None;
+  }
   let (canonical, legacy) = canonicalize_type_expression(node);
   match compact_type_form(&canonical) {
     Some(compact) => Some(compact),
@@ -6580,9 +6603,12 @@ mod tests {
     for (source, written) in [
       (
         "defunion TextStyle String (Map Tag Number)",
-        "`Map Tag Number`; write `quote $ Map Tag Number`",
+        "`Map Tag Number` without a quote; data declarations and trait methods still need `quote $ Map Tag Number`",
       ),
-      ("defunion Cells String (List Number)", "`List Number`; write `quote $ List Number`"),
+      (
+        "defunion Cells String (List Number)",
+        "`List Number` without a quote; data declarations and trait methods still need `quote $ List Number`",
+      ),
     ] {
       let err = check_code_type_syntax(&parse_one(source), "mini.main/U", "calcit.cirru").expect_err(source);
       assert!(err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains(written), "{source}: {err}");

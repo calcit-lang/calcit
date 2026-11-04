@@ -106,7 +106,35 @@ pub(crate) fn desugar_quoted_form(form: &Calcit) -> Option<Result<Calcit, String
   if !is_quote_head || list.len() != 2 {
     return None;
   }
-  let payload = list.get(1)?;
+  desugar_payload_form(list.get(1)?)
+}
+
+/// Expand a compact type expression written without `quote`, such as
+/// `(List Number)` in `assert-type xs $ List Number`. Only a list whose head
+/// ends in an uppercase name is read this way, since a lowercase qualified head
+/// like `app.lib/box` is spelled the same as a function call. Returns `None`
+/// for any other form.
+pub(crate) fn desugar_bare_form(form: &Calcit) -> Option<Result<Calcit, String>> {
+  unquoted_compact_form(form)?;
+  desugar_payload_form(form)
+}
+
+/// Whether `payload` is a compact type expression that can be written without
+/// `quote` in a position that only holds a type (see `desugar_bare_form`).
+pub(crate) fn is_bare_compact_payload(payload: &Cirru) -> bool {
+  let Cirru::List(items) = payload else {
+    return false;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return false;
+  };
+  let name = head.rsplit_once('/').map_or(head.as_ref(), |(_, def)| def);
+  is_compact_payload(payload) && is_uppercase_name(name) && desugar_type_expr(payload).is_ok()
+}
+
+/// Shared by the quoted and bare spellings: expand a compact payload list into
+/// the canonical code form, keeping the source location of its first symbol.
+fn desugar_payload_form(payload: &Calcit) -> Option<Result<Calcit, String>> {
   if !matches!(payload, Calcit::List(_)) {
     return None;
   }
