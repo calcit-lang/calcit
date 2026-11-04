@@ -380,7 +380,6 @@ const scenarios = [
       for (const [name, returns] of [
         [".parse-json", "type calcit.core/Result<dynamic, string>"],
         [".parse-cirru-edn", "type calcit.core/Result<dynamic, string>"],
-        [".parse-cirru-list", "type calcit.core/Result<list, string>"],
       ]) {
         const method = result.data.methods.find(method => method.name === name);
         assert.equal(method?.status, "open");
@@ -389,6 +388,10 @@ const scenarios = [
         assert.ok(!Object.hasOwn(method, "call_types"), "open schema must not become closed call evidence");
         assert.match(method.detail, /unproven/);
       }
+      // Since 0.35.0 Cirru rows are `List CirruNode` (#2556), a closed result.
+      const rows = result.data.methods.find(method => method.name === ".parse-cirru-list");
+      assert.equal(rows?.status, "proven");
+      assert.match(rows.return_type, /CirruNode/);
       const closed = result.data.methods.find(method => method.name === ".parse-float");
       assert.equal(closed?.status, "proven");
       assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
