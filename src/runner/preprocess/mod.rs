@@ -8138,6 +8138,8 @@ fn check_struct_method_args(
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      let actual_type =
+        type_checking::callback_tail_tuple_evidence(arg, &actual_type, expected_type, scope_types).unwrap_or(actual_type);
       // Compare types
       if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.substitute_type_vars(&bindings).describe();

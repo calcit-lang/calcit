@@ -2502,7 +2502,7 @@
                   , acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn (List Dynamic) (-> Bool)
+            Fn (Tuple K V) (-> Bool)
             -> $ Map K V
             :generics K V
           :tags $ #{} :internal
@@ -2521,7 +2521,7 @@
               :code $ quote $ let
                   source $ &{} :a 1 :b 2 :c 3
                   seen $ ref $ assert-type ([])
-                    quote $ List (List Dynamic)
+                    quote $ List $ Tuple Tag Number
                 let
                     filtered $ &map:filter source $ fn (pair)
                       swap! seen $ fn (items) (&list:append items pair)
@@ -2533,6 +2533,15 @@
               :code $ quote $ assert= (&{})
                 &map:filter (&{})
                   fn (pair) (raise "|Unexpected predicate on empty Map")
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |passes-typed-entry-tuples)
+              :code $ quote $ let
+                  kept $ &map:filter (&{} :a 1 :b 2)
+                    fn (pair)
+                      let[] (key value) pair
+                        and (tag? key) (> value 1)
+                assert-type kept $ quote $ Map Tag Number
+                assert= (&{} :b 2) kept
               :tags $ #{} :core :lexical-binder :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter-kv (xs f)
@@ -2622,9 +2631,10 @@
           :tags $ #{} :builtin :internal
         '&map:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map (xs f)
-            &map:fold-kv xs ({})
+            &map:fold-kv xs
+              assert-type ({}) $ quote $ Map K2 V2
               fn (acc key value)
-                hint-fn $ Fn (Map Dynamic Dynamic) K V $ -> (Map Dynamic Dynamic)
+                hint-fn $ Fn (Map K2 V2) K V $ -> (Map K2 V2)
                 &let
                   result $ f $ [] key value
                   assert "|expected pair returned when mapping hashmap" $ and (list? result)
@@ -2632,10 +2642,10 @@
                   &map:assoc acc (&list:nth result 0) (&list:nth result 1)
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn (List Dynamic)
-              -> $ List Dynamic
-            -> $ Map Dynamic Dynamic
-            :generics K V
+            Fn (Tuple K V)
+              -> $ Tuple K2 V2
+            -> $ Map K2 V2
+            :generics K V K2 V2
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |maps-map-pairs-directly)
@@ -2657,6 +2667,15 @@
                         , :b :c
                       &list:nth pair 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |infers-result-keys-and-values-from-the-pair)
+              :code $ quote $ let
+                  renamed $ &map:map (&{} :a 1 :b 2)
+                    fn (pair)
+                      let[] (key value) pair
+                        [] (&str:concat key |!) (+ value 0.5)
+                assert-type renamed $ quote $ Map String Number
+                assert= (&{} |:a! 1.5 |:b! 2.5) renamed
+              :tags $ #{} :core :lexical-binder :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map-list (xs f)
             if (map? xs)

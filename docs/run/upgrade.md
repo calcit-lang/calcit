@@ -47,6 +47,28 @@ related:
 0.34.6 的 `W_0_35_RETURN_TYPE_PREVIEW` 预告检查在 0.35.0 删除：新类型已经是默认类型，原来报成提示的问题现在是普通类型错误。
 0.34.6 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数。
 
+## 0.35.0 Map 的 `filter` / `map` 回调接收 `Tuple K V`（#2561）
+
+`filter` / `.filter` / `&map:filter` 和 `map` / `.map` / `&map:map` 作用在 Map 上时，回调参数是 `Tuple K V`，不再是 `List Dynamic`，和 `&map:to-list`、`map-list` 一致。
+`map` 的回调返回 `Tuple K2 V2`，结果类型是 `Map K2 V2`；以前结果是 `Map Dynamic Dynamic`。
+
+```cirru
+map (&{} :a 1) $ fn (pair)
+  let[] (k v) pair
+    [] (to-string k) (+ v 1)
+; => Map String Number
+```
+
+回调最后一个表达式是 `[] k v` 字面量时（包括包在 `let` / `let[]` 里的情况），检查器按位置推出 `Tuple K2 V2`，不需要写 `hint-fn`。运行时的值不变。
+
+会报错的写法：回调显式声明为 `Fn (List Dynamic) …` 或 `Fn (List String) …`，或 `map` 回调返回一个只知道是 `List` 的值（例如另一个函数的结果）。
+
+```text
+[W_FN_ARG_TYPE_MISMATCH] [Warn] Function `calcit.core/map` arg 2 expects type `fn(tuple<:tag, :number>) -> tuple<'K2, 'V2>`, but got `fn(list<dynamic>) -> list<dynamic>` ...
+```
+
+改法：把回调参数写成 `Tuple K V`（或去掉 `hint-fn` 让检查器推断），用 `let[]` / `&list:nth` 读取；`map` 回调最后返回 `[] key value`，或声明返回 `Tuple K2 V2`。
+
 ## 0.34.6 预告 0.35.0 收紧的 core 返回类型（#2564）
 
 0.34.6 的 `--check-only` 在项目用到上面这些函数时，会按 0.35.0 的类型再检查一遍，把新增的问题报告为非阻塞的 `W_0_35_RETURN_TYPE_PREVIEW` 提示。
