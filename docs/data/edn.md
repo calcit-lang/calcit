@@ -52,7 +52,7 @@ let
 
 `.parse-cirru`、`.parse-cirru-list`、`.parse-cirru-edn` 和 `.parse-json` 都是推荐的 checked 接收者方法；`try-parse-*` 是可按名称查询或作为函数值使用的具名形式，并非另一套首选语义。解析失败的信息位于 `Result` 的 `:err` 分支。旧的 `parse-*`/`json-parse` 抛错入口与 checked 形式不等价，不能直接自动改写调用。
 
-`.parse-cirru` 的成功值是闭合的 `CirruQuote`；`.parse-cirru-list` 的成功值是递归的 String/List 语法数据，目前以 `List<Dynamic>` 表达，不是 `CirruQuote`。两者都要求 String 输入，旧的 `parse-cirru-list` 底层调用也会在严格检查阶段拒绝 Number 等非 String。Cirru EDN 和 JSON 的数据形状开放，普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
+`.parse-cirru` 的成功值是闭合的 `CirruQuote`；`.parse-cirru-list` 的成功值是递归的 String/List 语法数据，从 0.35.0 起类型为 `List CirruNode`（`calcit.core/CirruNode` 是 `String` 与 `List CirruNode` 的递归 union），不是 `CirruQuote`。两者都要求 String 输入，旧的 `parse-cirru-list` 底层调用也会在严格检查阶段拒绝 Number 等非 String。Cirru EDN 和 JSON 的数据形状开放，普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
 
 已有的 `CirruQuote` 值用接收者方法按根节点形状读取，形状不匹配时返回 `:none`，不抛错：
 
@@ -60,7 +60,7 @@ let
 | --- | --- | --- |
 | `.list?` | `CirruQuote -> Bool` | 根节点是否为 list |
 | `.leaf?` | `CirruQuote -> Bool` | 根节点是否为 leaf |
-| `.to-list` | `CirruQuote -> Option<List<Dynamic>>` | list 根按原树递归转换，叶子保持原 token 文本；leaf 根为 `:none` |
+| `.to-list` | `CirruQuote -> Option<List<CirruNode>>` | list 根按原树递归转换，叶子保持原 token 文本；leaf 根为 `:none` |
 | `.leaf-text` | `CirruQuote -> Option<String>` | leaf 根返回原 token 文本，不解析前导冒号或竖线；list 根为 `:none` |
 
 `.to-list` 的 `:some` 值与同一文本 `.parse-cirru-list` 的 `:ok` 值结构相同，因此“解析新文本”和“转换已保存的 CirruQuote”得到同一种数据：

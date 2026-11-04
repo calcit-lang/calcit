@@ -350,14 +350,6 @@ const reviewedPublicBoundaryPositions = new Map([
     "The mapped Map's value comes from callback pairs whose slot types are open; claiming a free generic value would certify a relation the pair contract cannot prove.",
   ],
   [
-    "&cirru-quote:to-list|schema.return.item",
-    "CirruQuote converts to a recursively heterogeneous syntax tree whose leaf-or-list union is not expressible; consumers must parse or narrow nodes before ordinary typed processing.",
-  ],
-  [
-    "cirru-quote:to-list|schema.return.type-arg.0.item",
-    "The .to-list method returns the same recursively heterogeneous syntax rows as .parse-cirru-list; the missing recursive leaf-or-list union is retained, and consumers narrow nodes before typed processing.",
-  ],
-  [
     "format-cirru|schema.args.0.item",
     "The formatter consumes recursively heterogeneous Cirru syntax nodes; the missing recursive leaf-or-list union is retained as a reviewed presentation boundary.",
   ],
@@ -372,10 +364,6 @@ const reviewedPublicBoundaryPositions = new Map([
   [
     "&str:concat|schema.args.1",
     "The internal concatenation primitive renders each operand with the same universal string conversion as str; Dynamic is the honest presentation input, and only the String result carries evidence.",
-  ],
-  [
-    "&map:diff-triple|schema.return.item",
-    "The result is a heterogeneous [drop-keys new-diff common-triples] triple of a Set, a Map and a List; a homogeneous List item cannot express the three slot types, so callers narrow each slot.",
   ],
   [
     "str|schema.args.0",

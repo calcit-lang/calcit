@@ -1,6 +1,22 @@
 
 {}
   :migrations $ []
+    {} (:family |definitions) (:version |0.35.0) (:issue |#2556)
+      :reason "|Cirru_rows_are_strings_or_nested_lists_at_runtime;_the_schema_now_names_them_with_the_recursive_CirruNode_union"
+      :before $ {} (:declaration nil)
+        :failure "|文本语法失败返回_String_err，成功返回开放_List"
+        :name 'calcit.core/try-parse-cirru-list
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'String
+          :return $ :: 'Result (:: 'List 'Dynamic) 'String
+      :after $ {} (:declaration nil)
+        :failure "|文本语法失败返回_String_err，成功返回开放_List"
+        :name 'calcit.core/try-parse-cirru-list
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'String
+          :return $ :: 'Result (:: 'List 'CirruNode) 'String
     {} (:family |definitions) (:version |0.35.0) (:issue |#2538)
       :reason "|map_entries_are_two-item_lists_at_runtime;_the_schema_now_keeps_K_and_V_as_Tuple_K_V"
       :before $ {} (:declaration nil)
