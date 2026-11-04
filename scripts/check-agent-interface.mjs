@@ -392,6 +392,8 @@ const scenarios = [
       const rows = result.data.methods.find(method => method.name === ".parse-cirru-list");
       assert.equal(rows?.status, "proven");
       assert.match(rows.return_type, /CirruNode/);
+      assert.deepEqual(rows.parameter_types, []);
+      assert.ok(rows.call_types, "proven rows must export call types");
       const closed = result.data.methods.find(method => method.name === ".parse-float");
       assert.equal(closed?.status, "proven");
       assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);

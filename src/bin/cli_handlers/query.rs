@@ -1821,6 +1821,8 @@ mod type_query_tests {
       "{:?}",
       rows.return_type
     );
+    assert_eq!(rows.parameter_types, Some(vec![]));
+    assert!(rows.call_types.is_some(), "proven rows must export call types");
     let missing = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::String, ".missing-method");
     assert_eq!(missing.status, "open");
     assert!(missing.arg_types.is_none());

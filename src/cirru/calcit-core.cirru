@@ -2447,6 +2447,7 @@
                   common $ &list:nth triple 2
                 assert= (#{} :b) (&list:nth triple 0)
                 assert= (&{} :c 3) (&list:nth triple 1)
+                assert= ([] :a 1 2) (&list:nth common 0)
                 if (list? common)
                   assert= 1 $ count common
                   raise |expected-common-list
