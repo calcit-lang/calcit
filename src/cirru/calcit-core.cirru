@@ -2672,9 +2672,9 @@
                   renamed $ &map:map (&{} :a 1 :b 2)
                     fn (pair)
                       let[] (key value) pair
-                        [] (&str:concat key |!) (+ value 0.5)
-                assert-type renamed $ quote $ Map String Number
-                assert= (&{} |:a! 1.5 |:b! 2.5) renamed
+                        [] value key
+                assert-type renamed $ quote $ Map Number Tag
+                assert= (&{} 1 :a 2 :b) renamed
               :tags $ #{} :core :lexical-binder :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map-list (xs f)
