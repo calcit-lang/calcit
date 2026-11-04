@@ -92,8 +92,7 @@
             loop
                 remaining values
                 index 0
-                seen $ assert-type ([])
-                  quote $ List Number
+                seen $ assert-type ([]) (List Number)
               if (empty? remaining) (count seen)
                 recur (rest remaining) (inc index) (append seen index)
           :examples $ []

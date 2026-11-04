@@ -23,8 +23,8 @@
           :schema $ quote Impl
         'Renderable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Renderable
-            .render $ quote $ Fn T String (-> String) (:generics T)
-            .identity $ quote $ Fn T U (-> U) (:generics T U)
+            .render $ Fn T String (-> String) (:generics T)
+            .identity $ Fn T U (-> U) (:generics T U)
           :examples $ []
           :schema $ quote Trait
         'checked-count $ %{} 'CodeEntry (:doc |)

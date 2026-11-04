@@ -20,10 +20,10 @@
           :schema $ quote StructDef
         'Profile $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Profile (:active Bool) (:name String)
-            :scores $ quote $ List Number
+            :scores $ List Number
             :stats component-wasm.main/ProfileStats
-            :maybe-name $ quote $ Option String
-            :outcome $ quote $ Result (List Number) String
+            :maybe-name $ Option String
+            :outcome $ Result (List Number) String
           :examples $ []
           :schema $ quote StructDef
         'ProfileStats $ %{} 'CodeEntry (:doc |)

@@ -25,9 +25,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'Uu $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion Uu
-            quote $ List String
-            quote $ List Number
+          :code $ quote $ defunion Uu (List String) (List Number)
           :examples $ []
         'f $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn f (v)

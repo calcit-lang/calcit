@@ -12,20 +12,20 @@
       :defs $ {}
         'TestArray $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestArray (:length 'Number) (:0 'Dynamic) (:1 'Dynamic) (:2 'Dynamic)
-            .0 $ quote $ Fn test-js.main/TestArray (-> Dynamic)
-            .2 $ quote $ Fn test-js.main/TestArray (-> Dynamic)
+            .0 $ Fn test-js.main/TestArray $ -> Dynamic
+            .2 $ Fn test-js.main/TestArray $ -> Dynamic
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
           :schema $ quote Trait
         'TestConsole $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestConsole
-            .log $ quote $ Fn test-js.main/TestConsole Dynamic (-> Unit)
+            .log $ Fn test-js.main/TestConsole Dynamic $ -> Unit
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
           :schema $ quote Trait
         'TestDate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestDate
-            .now $ quote $ Fn test-js.main/TestDate (-> Number)
+            .now $ Fn test-js.main/TestDate $ -> Number
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
           :schema $ quote Trait
@@ -36,7 +36,7 @@
           :schema $ quote Trait
         'TestObject $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestObject (:a 'Dynamic) (:a-b 'Dynamic) (:b 'Dynamic) (:c 'Dynamic)
-            .f $ quote $ Fn test-js.main/TestObject (-> Dynamic)
+            .f $ Fn test-js.main/TestObject $ -> Dynamic
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :writable $ #{} :a :a-b :b
@@ -48,8 +48,8 @@
           :schema $ quote Trait
         'TestStringChain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait TestStringChain
-            .upper $ quote $ Fn test-js.main/TestStringChain (-> test-js.main/TestStringChain)
-            .lower $ quote $ Fn test-js.main/TestStringChain (-> String)
+            .upper $ Fn test-js.main/TestStringChain $ -> test-js.main/TestStringChain
+            .lower $ Fn test-js.main/TestStringChain $ -> String
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :names $ {} (:lower |toLowerCase) (:upper |toUpperCase)

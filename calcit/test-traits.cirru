@@ -23,7 +23,7 @@
           :schema $ quote Impl
         'CounterOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait CounterOps
-            .next $ quote $ Fn test-traits.external/Counter (-> test-traits.external/Counter)
+            .next $ Fn test-traits.external/Counter $ -> test-traits.external/Counter
           :examples $ [] $ quote CounterOps
           :schema $ quote Trait
         'CounterOpsImpl $ %{} 'CodeEntry (:doc |)
@@ -134,7 +134,7 @@
           :schema $ quote Impl
         'AliasFirstOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait AliasFirstOps
-            .read-value $ quote $ Fn test-traits.main/AliasSharedBase (-> Number)
+            .read-value $ Fn test-traits.main/AliasSharedBase $ -> Number
           :examples $ []
           :schema $ quote Trait
         'AliasGeneric $ %{} 'CodeEntry (:doc |)
@@ -163,7 +163,7 @@
           :schema $ quote Impl
         'AliasGenericOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait AliasGenericOps
-            .read-value $ quote $ Fn test-traits.main/AliasSharedBase
+            .read-value $ Fn test-traits.main/AliasSharedBase
               Fn Number $ -> R
               -> R
               :generics R
@@ -226,7 +226,7 @@
           :schema $ quote Impl
         'ExplicitContainsOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait ExplicitContainsOps
-            .contains? $ quote $ Fn Self Number (-> Bool) (:generics Self)
+            .contains? $ Fn Self Number (-> Bool) (:generics Self)
           :examples $ []
           :schema $ quote Trait
         'ExplicitContainsTrueImpl $ %{} 'CodeEntry (:doc |)
@@ -257,7 +257,7 @@
           :schema $ quote StructDef
         'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
           :code $ quote $ deftrait Greeting (requires Labeled)
-            .greeting $ quote $ Fn test-traits.main/Greeting (-> String)
+            .greeting $ Fn test-traits.main/Greeting $ -> String
           :examples $ []
           :schema $ quote Trait
           :tests $ []
@@ -299,7 +299,7 @@
             :tags $ #{} :struct-origin :unit
         'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
           :code $ quote $ deftrait Labeled
-            .label $ Fn test-traits.main/Labeled (-> String)
+            .label $ Fn test-traits.main/Labeled $ -> String
           :examples $ []
           :schema $ quote Trait
         'LabeledImpl $ %{} 'CodeEntry (:doc |)
@@ -390,7 +390,7 @@
           :schema $ quote EnumDef
         'OpenContainsOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait OpenContainsOps
-            .contains? $ quote $ Fn Enum Number (-> Bool)
+            .contains? $ Fn Enum Number $ -> Bool
           :examples $ []
           :schema $ quote Trait
         'OpenContainsTrueImpl $ %{} 'CodeEntry (:doc |)
@@ -475,7 +475,7 @@
           :schema $ quote Impl
         'RestBoxOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait RestBoxOps
-            .sum $ quote $ Fn test-traits.main/RestBox String & Number (-> Number)
+            .sum $ Fn test-traits.main/RestBox String & Number $ -> Number
           :examples $ []
           :schema $ quote Trait
         'ResultBox $ %{} 'CodeEntry (:doc |)
@@ -507,8 +507,7 @@
           :schema $ quote Impl
         'ResultBoxOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait ResultBoxOps
-            .find $ quote $ Fn test-traits.main/ResultBox String
-              -> $ Option Number
+            .find $ Fn test-traits.main/ResultBox String $ -> (Option Number)
           :examples $ []
           :schema $ quote Trait
         'add-with-trait $ %{} 'CodeEntry (:doc |)
@@ -1635,18 +1634,16 @@
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
             let
                 opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none)
-                  quote $ Option Number
+                opt-none $ assert-type (Option :none) (Option Number)
                 res-ok $ Result :ok 1
-                res-err $ assert-type (Result :err |oops)
-                  quote $ Result Number String
+                res-err $ assert-type (Result :err |oops) (Result Number String)
                 step $ fn (x)
                   hint-fn $ Fn Number $ -> Number
                   inc x
-              assert-type opt-some $ quote $ Option Number
-              assert-type opt-none $ quote $ Option Number
-              assert-type res-ok $ quote $ Result Number String
-              assert-type res-err $ quote $ Result Number String
+              assert-type opt-some $ Option Number
+              assert-type opt-none $ Option Number
+              assert-type res-ok $ Result Number String
+              assert-type res-err $ Result Number String
               assert= (Option :some 2) (opt-some .map step)
               assert= (Option :none) (opt-none .map step)
               assert= (Result :ok 2) (res-ok .map step)
@@ -1655,11 +1652,9 @@
                 opt-some .map $ fn (x) (inc x)
             let
                 opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none)
-                  quote $ Option Number
+                opt-none $ assert-type (Option :none) (Option Number)
                 res-ok $ Result :ok 1
-                res-err $ assert-type (Result :err |oops)
-                  quote $ Result Number String
+                res-err $ assert-type (Result :err |oops) (Result Number String)
                 to-some $ fn (x)
                   hint-fn $ Fn Number $ -> (Option Number)
                   Option :some $ inc x
@@ -1683,8 +1678,7 @@
                 res-err .unwrap-or 9
                 , .round
               assert= 9 $
-                  assert-type (Option :none)
-                    quote $ Option Number
+                  assert-type (Option :none) (Option Number)
                   , .unwrap-or 9
                 , .round
               assert= (Result :ok 2) (res-ok .and-then to-ok)
@@ -1694,9 +1688,8 @@
             let
                 open-map $ assert-type
                   {} (:a 1) (:b |x)
-                  quote $ Map Tag Dynamic
-                open-list $ assert-type ([] 1 |x)
-                  quote $ List Dynamic
+                  Map Tag Dynamic
+                open-list $ assert-type ([] 1 |x) (List Dynamic)
                 present $ get open-map :a
               do
                 assert= (Option :some 1) present
@@ -1768,7 +1761,7 @@
             -> $ Expr Bool
         'trait-listener-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn trait-listener-host (value)
-            unsafe-coerce value $ quote $ Fn test-traits.main/MyFoo (-> Unit)
+            unsafe-coerce value $ Fn test-traits.main/MyFoo $ -> Unit
           :examples $ []
           :schema $ quote $ Fn Dynamic
             -> $ Fn test-traits.main/MyFoo $ -> Unit
@@ -1785,7 +1778,7 @@
       :defs $ {}
         'Greeting $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Greeting
-            .greeting $ quote $ Fn test-traits.metadata/Greeting (-> String)
+            .greeting $ Fn test-traits.metadata/Greeting $ -> String
           :examples $ []
           :schema $ quote Trait
         'GreetingAlias $ %{} 'CodeEntry (:doc |)

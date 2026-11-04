@@ -46,7 +46,7 @@
           :schema $ quote Impl
         'ResultTrait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait ResultTrait
-            .dummy $ quote $ Fn T (-> Unit) (:generics T)
+            .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
         'ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
@@ -229,10 +229,10 @@
                   none-value $ %:: Maybe1 :none
                   pair-value $ %:: Duo :pair 1 |hi
                   swapped-value $ %:: Duo :swapped |hi 1
-                assert-type some-num $ quote $ Maybe1 Number
-                assert-type none-value $ quote $ Maybe1 Dynamic
-                assert-type pair-value $ quote $ Duo Number String
-                assert-type swapped-value $ quote $ Duo Number String
+                assert-type some-num $ Maybe1 Number
+                assert-type none-value $ Maybe1 Dynamic
+                assert-type pair-value $ Duo Number String
+                assert-type swapped-value $ Duo Number String
                 assert= (Option :some 1)
                   unwrap-maybe $ %:: Maybe1 :some 1
                 assert= (Option :none)
@@ -263,8 +263,7 @@
                       str-spaced |swapped (right .debug) (left .debug)
               println "|Testing generic enum where-bounds..."
               assert= |1 $ render-maybe $ %:: Maybe1 :some 1
-              assert= |none $ render-maybe $ assert-type (Maybe1 :none)
-                quote $ Maybe1 Number
+              assert= |none $ render-maybe $ assert-type (Maybe1 :none) (Maybe1 Number)
               assert= (str-spaced |pair |1 |hi)
                 render-duo $ %:: Duo :pair 1 |hi
               assert= (str-spaced |swapped |hi |1)
@@ -328,8 +327,8 @@
                     some-value $ %:: ShownMaybe :some 1
                   let
                       none-value $ %:: ShownMaybe :none
-                    assert-type box $ quote $ ShownBox Number
-                    assert-type some-value $ quote $ ShownMaybe Number
+                    assert-type box $ ShownBox Number
+                    assert-type some-value $ ShownMaybe Number
                     assert= |1 $ match some-value
                       (:some item) (item .debug)
                       (:none) |none
@@ -362,7 +361,7 @@
       :defs $ {}
         'ContentNode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum ContentNode (:text String) (:pair ContentNode ContentNode)
-            :list $ quote $ List ContentNode
+            :list $ List ContentNode
           :examples $ []
           :schema $ quote EnumDef
         'Envelope $ %{} 'CodeEntry (:doc |)

@@ -28,14 +28,14 @@
           :schema $ quote EnumDef
         'HttpRequest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HttpRequest (:method component-wasm-async-import.main/HttpMethod) (:url String)
-            :headers $ quote $ List component-wasm-async-import.main/HttpHeader
+            :headers $ List component-wasm-async-import.main/HttpHeader
             :body component-wasm-async-import.main/HttpBody
             :max-response-bytes UInt64
           :examples $ []
           :schema $ quote StructDef
         'HttpResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct HttpResponse (:status UInt16)
-            :headers $ quote $ List component-wasm-async-import.main/HttpHeader
+            :headers $ List component-wasm-async-import.main/HttpHeader
             :body component-wasm-async-import.main/HttpBody
           :examples $ []
           :schema $ quote StructDef

@@ -28,7 +28,7 @@
           :schema $ quote StructDef
         'OuterLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OuterLike ([] Db)
-            :reel $ quote $ app.applied-model/ReelLike Db
+            :reel $ app.applied-model/ReelLike Db
           :examples $ []
           :schema $ quote StructDef
         'PairLike $ %{} 'CodeEntry (:doc |)
@@ -41,7 +41,7 @@
           :schema $ quote StructDef
         'ReelLike $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ReelLike ([] Db) (:base Db) (:db Db)
-            :records $ quote $ List (List Dynamic)
+            :records $ List $ List Dynamic
             :merged? Bool
           :examples $ []
           :schema $ quote StructDef
@@ -151,14 +151,14 @@
       :defs $ {}
         'CoreNominalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CoreNominalBox
-            :maybe $ quote $ Option Number
-            :qualified $ quote $ calcit.core/Option Number
-            :outcome $ quote $ Result Number String
+            :maybe $ Option Number
+            :qualified $ calcit.core/Option Number
+            :outcome $ Result Number String
           :examples $ []
           :schema $ quote StructDef
         'NilBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NilBox (:none Nil)
-            :host $ quote $ JsNullish Number
+            :host $ JsNullish Number
           :examples $ []
           :schema $ quote StructDef
         'NumBox $ %{} 'CodeEntry (:doc |)

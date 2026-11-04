@@ -30,15 +30,15 @@
       :defs $ {}
         'CounterHost $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait CounterHost (:total 'Number)
-            .add! $ quote $ Fn CounterHost Number (-> Number)
+            .add! $ Fn CounterHost Number $ -> Number
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
             :names $ {} $ :total |total-value
           :schema $ quote Trait
         'RestHost $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait RestHost
-            .emit $ quote $ Fn RestHost & String (-> String)
-            .prefix $ quote $ Fn RestHost String & String (-> String)
+            .emit $ Fn RestHost & String $ -> String
+            .prefix $ Fn RestHost String & String $ -> String
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
           :schema $ quote Trait

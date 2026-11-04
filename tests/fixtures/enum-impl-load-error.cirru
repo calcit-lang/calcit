@@ -23,7 +23,7 @@
           :schema $ quote Impl
         'HookAtomOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait HookAtomOps
-            .deref $ quote $ Fn app.core/AtomState (-> Dynamic)
+            .deref $ Fn app.core/AtomState $ -> Dynamic
           :examples $ []
           :schema $ quote Trait
         'deref-atom $ %{} 'CodeEntry (:doc |)
