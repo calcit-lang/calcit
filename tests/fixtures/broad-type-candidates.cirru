@@ -41,6 +41,10 @@
             partly-anonymous! $ :: :ping
             on-click dispatch!
             on-shadowed dispatch!
+            spread-op! $ %:: Op :reset
+            let
+                ops $ [] (%:: Op :add 1)
+              spread-op! & ops
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -77,6 +81,10 @@
           :code $ quote $ defn show-point (p) &unit
           :examples $ []
           :schema $ quote $ Fn Struct (-> Unit)
+        'spread-op! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn spread-op! (op) &unit
+          :examples $ []
+          :schema $ quote $ Fn Enum (-> Unit)
         'unused! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unused! (op) &unit
           :examples $ []

@@ -4812,5 +4812,7 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
     assert_eq!(hint("unused!"), None, "{notes:?}");
     // One call passes `Op`, another an anonymous `::` value: no candidate.
     assert_eq!(hint("partly-anonymous!"), None, "{notes:?}");
+    // A spread the check cannot expand fills the slot with unknown values.
+    assert_eq!(hint("spread-op!"), None, "{notes:?}");
   });
 }
