@@ -2072,11 +2072,17 @@ const PREVIEW_0_35_WARNING: &str = "W_0_35_RETURN_TYPE_PREVIEW";
 /// so every diagnostic of the recheck is new.
 fn preview_0_35_advisories(entries: &ProgramEntries) -> Vec<LocatedWarning> {
   let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-  let (init_result, reload_result) = runner::preprocess::with_preview_0_35_types(|| compile_entries(entries, &warnings));
+  // Both entries are compiled even when the first fails, so a reload-only
+  // regression under the new types is reported too.
+  let results = runner::preprocess::with_preview_0_35_types(|| {
+    let call_stack = CallStackList::default();
+    [(&entries.init_ns, &entries.init_def), (&entries.reload_ns, &entries.reload_def)]
+      .map(|(ns, def)| runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &call_stack))
+  });
   // Advisories from the recheck repeat the ordinary ones.
   drop(runner::preprocess::take_advisories());
   let mut found = warnings.into_inner();
-  for failure in [Some(init_result), reload_result].into_iter().flatten().filter_map(Result::err) {
+  for failure in results.into_iter().filter_map(Result::err) {
     found.extend(failure.warnings.iter().cloned());
     if let Some(location) = failure.location.as_deref() {
       found.push(LocatedWarning::new_with_detail(
@@ -2088,7 +2094,12 @@ fn preview_0_35_advisories(entries: &ProgramEntries) -> Vec<LocatedWarning> {
     }
   }
   let mut notes: Vec<LocatedWarning> = vec![];
-  for warning in found {
+  // Libraries are rechecked so their inferred return types follow the new
+  // core types, but only the project's own code is reported.
+  for warning in found
+    .into_iter()
+    .filter(|warning| runner::preprocess::is_project_namespace(&warning.location().ns))
+  {
     let original = warning.message().trim_start_matches("[Warn] ");
     let code = warning.code().map(|code| format!("{code}: ")).unwrap_or_default();
     let note = LocatedWarning::new_with_detail(
@@ -2113,8 +2124,9 @@ fn detect_preview_0_35_sources(snapshot: &snapshot::Snapshot, project_namespaces
   fn mentions(node: &cirru_parser::Cirru) -> bool {
     match node {
       cirru_parser::Cirru::Leaf(leaf) => matches!(
-        leaf.as_ref(),
+        leaf.strip_prefix("calcit.core/").unwrap_or(leaf),
         "&map:diff-triple"
+          | ".diff-triple"
           | ".to-list"
           | "cirru-quote:to-list"
           | "&cirru-quote:to-list"

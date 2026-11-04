@@ -65,3 +65,13 @@ fn projects_without_the_changed_apis_get_no_preview() {
   assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
   assert!(preview_notes(&output).is_empty());
 }
+
+#[test]
+fn method_spelling_of_diff_triple_also_triggers_the_preview() {
+  let snippet = "let\n    rows $ fn (xs)\n      hint-fn $ Fn (List Dynamic) (-> Number)\n      count xs\n    triple $ .diff-triple ({} (|a 1)) ({} (|b 2))\n  rows triple\n";
+  let output = run_calcit(&["eval", "--stdin"], Some(snippet));
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  let notes = preview_notes(&output);
+  assert_eq!(notes.len(), 1, "{notes:?}");
+  assert!(notes[0].contains("tuple<set<string>"), "{notes:?}");
+}

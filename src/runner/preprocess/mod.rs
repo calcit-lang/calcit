@@ -445,7 +445,7 @@ pub fn with_default_proof<R>(f: impl FnOnce() -> R) -> R {
   with_assertion_proof(f)
 }
 
-/// Recompile project namespaces under the 0.35.0 core return types (#2564)
+/// Recompile non-core namespaces under the 0.35.0 core return types (#2564)
 /// and restore the ordinary compiled program afterwards. The preview is a check only:
 /// nothing compiled inside it is kept for runs or codegen.
 pub fn with_preview_0_35_types<R>(f: impl FnOnce() -> R) -> R {
@@ -457,9 +457,10 @@ pub fn with_preview_0_35_types<R>(f: impl FnOnce() -> R) -> R {
   }
   let _compiled_checkpoint = program::checkpoint_compiled_program();
   let _slot_checkpoint = calcit::checkpoint_type_slot_declarations();
-  // Core and library definitions keep their compiled form: call sites read
-  // core return types from the schema, which the preview replaces.
-  program::clear_compiled_namespaces(|ns| ns != calcit::CORE_NS && should_emit_project_source_lint(ns));
+  // Core definitions keep their compiled form: call sites read core return
+  // types from the schema, which the preview replaces. Project and library
+  // definitions are recompiled so inferred return types follow the new types.
+  program::clear_compiled_namespaces(|ns| ns != calcit::CORE_NS);
   calcit::set_preview_0_35_types(true);
   let _restore = Restore;
   f()
@@ -773,6 +774,11 @@ pub fn push_advisory(advisory: LocatedWarning) {
 pub fn take_advisories() -> Vec<LocatedWarning> {
   MACRO_ERASURE_SITES.lock().expect("lock macro erasure sites").clear();
   std::mem::take(&mut *ADVISORIES.lock().expect("lock advisories"))
+}
+
+/// Whether `ns` belongs to the checked project rather than a dependency.
+pub fn is_project_namespace(ns: &str) -> bool {
+  ns != calcit::CORE_NS && should_emit_project_source_lint(ns)
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
