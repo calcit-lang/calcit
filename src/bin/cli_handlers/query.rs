@@ -1790,7 +1790,7 @@ mod type_query_tests {
   }
 
   #[test]
-  fn open_parse_method_queries_retain_declared_results_without_call_proof() {
+  fn parse_method_queries_keep_open_results_open_and_prove_cirru_rows() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
     prepare_program_for_type_query_on_cli_stack(snapshot);
@@ -1802,7 +1802,6 @@ mod type_query_tests {
     for (name, result) in [
       (".parse-json", "type calcit.core/Result<dynamic, string>"),
       (".parse-cirru-edn", "type calcit.core/Result<dynamic, string>"),
-      (".parse-cirru-list", "type calcit.core/Result<list, string>"),
     ] {
       let method = methods.iter().find(|method| method.name == name).expect("parse method");
       assert_eq!(method.status, "open");
@@ -1811,6 +1810,17 @@ mod type_query_tests {
       assert!(method.call_types.is_none(), "declared open types do not prove a closed call");
       assert!(render_context_method(method).contains(&format!("() -> {result}")));
     }
+    // Since 0.35.0 the Cirru rows are `List CirruNode` (#2556), so the result is closed.
+    let rows = methods
+      .iter()
+      .find(|method| method.name == ".parse-cirru-list")
+      .expect("parse method");
+    assert_eq!(rows.status, "proven");
+    assert!(
+      rows.return_type.as_deref().is_some_and(|result| result.contains("CirruNode")),
+      "{:?}",
+      rows.return_type
+    );
     let missing = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::String, ".missing-method");
     assert_eq!(missing.status, "open");
     assert!(missing.arg_types.is_none());

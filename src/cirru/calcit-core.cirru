@@ -262,7 +262,8 @@
           :doc "|internal function for converting Cirru quote to list; not a public entry, use the CirruQuote .to-list method (Option<List>) or .leaf-text (Option<String>) instead.\nSyntax: (&cirru-quote:to-list quote)\nParams: quote (cirru-quote)\nReturns: list for list roots, converting the tree recursively and keeping leaves as token strings\nRaises a type error for a leaf root since 0.33.0; earlier versions returned the token String although the schema says List"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn CirruQuote (-> List)
+          :schema $ quote $ Fn CirruQuote
+            -> $ List CirruNode
           :tags $ #{} :builtin :internal
         '&cirru-type $ %{} 'CodeEntry
           :doc "|internal function for getting Cirru type\nSyntax: (&cirru-type cirru-node)\nParams: cirru-node (cirru quote)\nReturns: keyword (:leaf or :list)\nReturns type of Cirru node, either :leaf for atoms or :list for expressions"
@@ -2419,7 +2420,7 @@
               &map:diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
             :tags $ #{} :core :unit
         '&map:diff-triple $ %{} 'CodeEntry
-          :doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: list\nReturns a list of three elements:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times."
+          :doc "|Single-pass map diff returning [drop-keys new-diff common-triples].\nSyntax: (&map:diff-triple a b)\nParams: a (map), b (map)\nReturns: Tuple (Set K) (Map K W) (List (Tuple K V W)) since 0.35.0 (#2549); a list before\nThe three slots:\n  - drop-keys: set of keys in `a` but not in `b`\n  - new-diff: map of entries in `b` but not in `a`\n  - common-triples: list of [k va vb] for every key present in both maps\n\nMore efficient than calling &map:diff-keys, &map:diff-new, and &map:common-keys separately,\nas it only traverses both maps twice instead of 3+ times."
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
@@ -2434,7 +2435,10 @@
                 new-diff $ &list:nth triple 1
                 common-triples $ &list:nth triple 2
               [] drop-keys new-diff common-triples
-          :schema $ quote $ Fn (Map K V) (Map K W) (-> List) (:generics K V W)
+          :schema $ quote $ Fn (Map K V) (Map K W)
+            -> $ Tuple (Set K) (Map K W)
+              List $ Tuple K V W
+            :generics K V W
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |returns-diff-sets-and-common-triples)
             :code $ quote $ do
@@ -3868,7 +3872,7 @@
           :schema $ quote Trait
           :tags $ #{} :trait
         'CirruNode $ %{} 'CodeEntry
-          :doc "|A Cirru tree as plain data: a leaf is its token String, a list is a List of nodes. 0.35.0 uses it as the element type of CirruQuote .to-list and .parse-cirru-list results (#2556)."
+          :doc "|A Cirru tree as plain data: a leaf is its token String, a list is a List of nodes. Since 0.35.0 it is the element type of CirruQuote .to-list and .parse-cirru-list results (#2556)."
           :code $ quote $ defunion CirruNode String
             quote $ List CirruNode
           :examples $ []
@@ -5330,7 +5334,7 @@
               Option :none
           :examples $ []
           :schema $ quote $ Fn CirruQuote
-            -> $ Option $ List Dynamic
+            -> $ Option $ List CirruNode
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |converts-list-roots-only)
@@ -11698,7 +11702,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ List Dynamic
+            -> $ List CirruNode
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |returns-nested-text-lines)
             :code $ quote $ do
@@ -11706,7 +11710,7 @@
                 [] $ [] |a |b
                 parse-cirru-list "|a b"
               assert-type (parse-cirru-list "|a b")
-                quote $ List Dynamic
+                quote $ List CirruNode
             :tags $ #{} :core :unit
         'parse-float $ %{} 'CodeEntry
           :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
@@ -13354,7 +13358,7 @@
               char-from-code 41
               , .parse-cirru-list
           :schema $ quote $ Fn String
-            -> $ Result (List Dynamic) String
+            -> $ Result (List CirruNode) String
           :tests $ []
             %{} 'TestEntry (:name |result-method-contract)
               :code $ quote $ do
