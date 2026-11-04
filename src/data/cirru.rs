@@ -141,6 +141,7 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
       "try-parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, ns.into())),
       "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, ns.into())),
       "try-decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, ns.into())),
+      "encode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::EncodeMapAs, ns.into())),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // anonymous enum constructor syntax

@@ -157,6 +157,29 @@ Unlike the closed text decoder, `decode-map-as` permits an explicitly declared `
 
 Use `try-decode-map-as value TypeExpr` when a host value may legitimately fail validation. It returns `Result<T,String>` and preserves paths such as `$.friends[2].age` in the error payload. `decode-map-as` remains available for compatibility and for boundaries where invalid input should abort immediately.
 
+### Encoding typed values: `encode-map-as`
+
+`encode-map-as value TypeExpr` goes the other way (since 0.35.1, #2562). It takes a value that already has the declared type and returns the open shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`:
+
+- a Struct becomes a tag-keyed Map, field by field;
+- an `Option :some x` struct field stores `x`, and an `Option :none` field is left out, which the decoder reads back as `Option :none`;
+- Enum values keep their nominal form with encoded payloads; List, Tuple, Set, Map and union members are encoded by their declared shape.
+
+```cirru.no-check
+defstruct User (:name String)
+  :email $ quote $ Option String
+  :role Role
+
+defn user-to-wire (user)
+  hint-fn $ Fn User (-> Dynamic)
+  encode-map-as user User
+
+; (user-to-wire (%{} User (:name |Ada) (:email $ Option :none) (:role $ Role :admin)))
+; => ({} (:name |Ada) (:role (%:: Role :admin)))
+```
+
+Write the result out with `format-cirru-edn` or `to-js-data`. A value whose type is known not to match the target fails during preprocessing with `E_ENCODE_MAP_AS_TYPE_MISMATCH`; an open (`Dynamic`) value is checked when the expression runs. When two struct members of a union have the same fields, the decoder could not tell their maps apart, so `encode-map-as` raises an error instead of producing a map that decodes to the other member.
+
 The raising and Result-returning typed syntaxes are available for native execution and JavaScript code generation. The current WASM backend does not yet support typed EDN decoding.
 
 Map and Set iteration order is not a semantic guarantee. The formatter applies a stable order for readable, reproducible output; callers must not use that order as application data.

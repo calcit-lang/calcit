@@ -126,6 +126,7 @@ const openDataBoundaries = new Set([
   "data-definition-where-form?",
   "data-view",
   "decode-map-as",
+  "encode-map-as",
   "json-parse",
   "parse-cirru-edn",
   "parse-cirru-list",

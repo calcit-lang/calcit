@@ -664,6 +664,7 @@ pub fn handle_syntax(
     TryParseCirruEdnAs => syntax::try_parse_cirru_edn_as(nodes, scope, file_ns, call_stack),
     DecodeMapAs => syntax::decode_map_as(nodes, scope, file_ns, call_stack),
     TryDecodeMapAs => syntax::try_decode_map_as(nodes, scope, file_ns, call_stack),
+    EncodeMapAs => syntax::encode_map_as(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
     Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }

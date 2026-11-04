@@ -221,7 +221,7 @@ impl fmt::Display for DataShapeError {
 }
 
 impl DataShapeValueError {
-  fn at(path: impl Into<String>, message: impl Into<String>) -> Self {
+  pub(crate) fn at(path: impl Into<String>, message: impl Into<String>) -> Self {
     Self {
       path: path.into(),
       message: message.into(),
