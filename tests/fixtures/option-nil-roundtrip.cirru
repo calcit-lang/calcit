@@ -32,7 +32,7 @@
       :defs $ {}
         'Other $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Other
-            defenum Other (:some 'Dynamic) (:none)
+            defenum Other (:some Dynamic) (:none)
           :examples $ []
           :schema $ quote EnumDef
         'match-value $ %{} 'CodeEntry (:doc |)

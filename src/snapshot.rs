@@ -5190,6 +5190,97 @@ fn unquote_member_slot(kind: &str, slot: &Cirru, first_slot: bool) -> (Cirru, us
   (slot.clone(), 0)
 }
 
+/// Code of the check note for quoted type names in `defstruct`, `defenum` and
+/// `defunion`, the spelling 0.35.0 removes (#2516, #2563).
+pub const LEGACY_QUOTED_DECLARATION_TYPE_WARNING: &str = "W_LEGACY_QUOTED_DECLARATION_TYPE";
+
+/// A data declaration that still quotes its type names, such as
+/// `defstruct Point (:x 'Number)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyQuotedDeclarationHit {
+  pub ns: String,
+  pub def: String,
+  /// Empty for the definition code, `example` for an example.
+  pub place: String,
+  /// Path of the declaration form inside the code or example.
+  pub coord: Vec<u16>,
+  /// How many type names the form quotes.
+  pub count: usize,
+  /// The form as `calcit edit format` writes it, on one line.
+  pub rewritten: String,
+}
+
+impl LegacyQuotedDeclarationHit {
+  pub fn message(&self) -> String {
+    let place = if self.place.is_empty() {
+      String::new()
+    } else {
+      format!(" ({})", self.place)
+    };
+    format!(
+      "[Warn] {}/{}{place} quotes {} type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). \
+       Write `{}`, or run `calcit edit format` to migrate the Snapshot",
+      self.ns, self.def, self.count, self.rewritten
+    )
+  }
+}
+
+/// Find the `defstruct` / `defenum` / `defunion` forms in project definitions
+/// and examples that `calcit edit format` would unquote. Tests are skipped
+/// because `edit format` keeps them as written.
+pub fn collect_legacy_quoted_declaration_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<LegacyQuotedDeclarationHit> {
+  fn walk(node: &Cirru, coord: &mut Vec<u16>, found: &mut Vec<(Vec<u16>, usize, String)>) {
+    let Cirru::List(items) = node else { return };
+    match items.first() {
+      Some(Cirru::Leaf(head)) if head.as_ref() == "quote" => {}
+      Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum" | "defunion") => {
+        let (unquoted, count) = unquote_declaration_types(node);
+        if count > 0 {
+          found.push((coord.clone(), count, render_cirru_inline(&unquoted)));
+        }
+      }
+      _ => {
+        for (index, item) in items.iter().enumerate() {
+          coord.push(index as u16);
+          walk(item, coord, found);
+          coord.pop();
+        }
+      }
+    }
+  }
+  let mut hits = vec![];
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let entry = &file.defs[def];
+      let codes =
+        std::iter::once((String::new(), &entry.code)).chain(entry.examples.iter().map(|example| ("example".to_owned(), example)));
+      for (place, code) in codes {
+        let mut found = vec![];
+        walk(code, &mut vec![], &mut found);
+        for (coord, count, rewritten) in found {
+          hits.push(LegacyQuotedDeclarationHit {
+            ns: ns.to_owned(),
+            def: def.to_owned(),
+            place: place.clone(),
+            coord,
+            count,
+            rewritten,
+          });
+        }
+      }
+    }
+  }
+  hits
+}
+
 /// `'Number` → `Number`; `None` for forms that are already bare and for
 /// compound types, which keep their quote for now.
 fn unquote_declared_type(node: &Cirru) -> Option<Cirru> {

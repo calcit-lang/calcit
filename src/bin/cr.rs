@@ -989,6 +989,7 @@ fn run_cli() -> Result<(), String> {
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
+  push_legacy_quoted_declaration_advisories(&snapshot, &project_namespaces);
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
   }
@@ -2055,6 +2056,22 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
       hit.message(),
       calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
       Some(snapshot::BROAD_TYPE_WARNING.to_owned()),
+      None,
+    ));
+  }
+}
+
+/// Report quoted type names in `defstruct` / `defenum` / `defunion` as check
+/// notes ahead of their removal in 0.35.0 (#2563). `calcit edit format`
+/// rewrites them.
+fn push_legacy_quoted_declaration_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  for hit in snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces) {
+    // Coordinates of examples do not point into the definition code.
+    let coord = if hit.place.is_empty() { hit.coord.clone() } else { vec![] };
+    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
+      hit.message(),
+      calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
+      Some(snapshot::LEGACY_QUOTED_DECLARATION_TYPE_WARNING.to_owned()),
       None,
     ));
   }
