@@ -774,6 +774,15 @@ where
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }
+    } else {
+      // An argument of unknown type cannot confirm a candidate.
+      super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &crate::calcit::DYNAMIC_TYPE);
+    }
+  }
+  if !complete_arguments {
+    // Slots filled by an unexpanded spread are unknown too.
+    for (idx, expected_type) in ctx.expected_types.iter().enumerate().skip(ctx.args.len()) {
+      super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &crate::calcit::DYNAMIC_TYPE);
     }
   }
 
@@ -1339,8 +1348,8 @@ pub(crate) fn check_local_fn_call_arg_types(
 
   // Calling a parameter of the current function, such as a `d!` callback,
   // tells what that parameter's own parameters receive.
-  let _broad_slot_owner =
-    super::broad_type_evidence::defn_param_index(call_info.file_ns, call_info.def_name, &local.sym).and_then(|index| {
+  let _broad_slot_owner = super::broad_type_evidence::defn_param_index(call_info.file_ns, call_info.def_name, &local.sym, local_type)
+    .and_then(|index| {
       super::broad_type_evidence::CallOwnerScope::enter(call_info.file_ns, call_info.def_name, vec![SchemaSlotStep::Arg(index)])
     });
   check_resolved_fn_call_arg_types(head_form, &fn_annot, &local.sym, args, scope_types, call_info, check_warnings);

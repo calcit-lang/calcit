@@ -75,8 +75,10 @@ pub(super) fn take_call_owner() -> Option<SlotKey> {
   CALL_OWNER.with(|cell| cell.borrow_mut().take())
 }
 
-/// The position of `param` among the parameters of the `defn` `ns/def`.
-pub(super) fn defn_param_index(ns: &str, def: &str, param: &str) -> Option<usize> {
+/// The position of `param` among the parameters of the `defn` `ns/def`,
+/// when the called local is that parameter: a `let` binding that shadows it
+/// with another type is a different function.
+pub(super) fn defn_param_index(ns: &str, def: &str, param: &str, local_type: &CalcitTypeAnnotation) -> Option<usize> {
   use crate::calcit::Calcit;
   let Calcit::List(items) = crate::program::lookup_def_code(ns, def)? else {
     return None;
@@ -85,19 +87,20 @@ pub(super) fn defn_param_index(ns: &str, def: &str, param: &str) -> Option<usize
     return None;
   }
   let Some(Calcit::List(params)) = items.get(2) else { return None };
-  let names = params
+  // Only parameters before a rest or optional marker keep a fixed position.
+  let index = params
     .iter()
-    .map(|param| match param {
-      Calcit::Symbol { sym, .. } => Some(sym.clone()),
+    .map_while(|param| match param {
+      Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?") => Some(sym.clone()),
       Calcit::Local(local) => Some(local.sym.clone()),
       _ => None,
     })
-    .collect::<Option<Vec<_>>>()?;
-  // A rest or optional marker shifts positions; leave those signatures alone.
-  if names.iter().any(|name| matches!(name.as_ref(), "&" | "?")) {
+    .position(|name| name.as_ref() == param)?;
+  let schema = crate::program::lookup_def_schema(ns, def);
+  let CalcitTypeAnnotation::Fn(signature) = schema.as_ref() else {
     return None;
-  }
-  names.iter().position(|name| name.as_ref() == param)
+  };
+  (signature.arg_types.get(index)?.as_ref() == local_type).then_some(index)
 }
 
 /// Records what argument `index` of a call passes into each broad part of

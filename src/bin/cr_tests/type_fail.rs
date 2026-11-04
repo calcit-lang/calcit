@@ -4766,6 +4766,15 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
       .expect("fixture should preprocess");
+    // The fixture itself adds no blocking warnings; the test harness does
+    // not register host effects such as `eprintln` used by core macros.
+    let blocking = warnings
+      .borrow()
+      .iter()
+      .filter(|warning| warning.location().ns.as_ref() == "broad-type-candidates.main")
+      .map(LocatedWarning::to_string)
+      .collect::<Vec<_>>();
+    assert!(blocking.is_empty(), "{blocking:?}");
 
     let notes = runner::preprocess::take_advisories()
       .into_iter()
@@ -4800,5 +4809,7 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
       "{mixed}"
     );
     assert_eq!(hint("unused!"), None, "{notes:?}");
+    // One call passes `Op`, another an anonymous `::` value: no candidate.
+    assert_eq!(hint("partly-anonymous!"), None, "{notes:?}");
   });
 }
