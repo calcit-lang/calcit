@@ -991,6 +991,22 @@ fn gen_call_code(
           }
           _ => Err(format!("decode-map-as expected a value and a type expression, got: {body}")),
         },
+        CalcitSyntax::EncodeMapAs => match (body.first(), body.get(1)) {
+          (Some(value), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
+            let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {
+              Some(graph) => graph,
+              None => {
+                let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+                Arc::new(DataShapeGraph::build_open(target.as_ref(), ns).map_err(|error| error.to_string())?)
+              }
+            };
+            let graph_code = data_shape_graph_to_js(graph.as_ref(), ns, file_imports)?;
+            let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
+            let call_code = format!("{}encode_map_as({value_code}, {graph_code})", get_proc_prefix(ns));
+            Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
+          }
+          _ => Err(format!("encode-map-as expected a value and a type expression, got: {body}")),
+        },
         CalcitSyntax::TryDecodeMapAs => match (body.first(), body.get(1)) {
           (Some(value), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
             let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {

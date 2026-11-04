@@ -442,6 +442,13 @@ function classify(entry) {
       rationale: "The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch.",
     };
   }
+  if (name === "encode-map-as") {
+    return {
+      owner: "open-data-boundaries",
+      decision: "retain-reviewed",
+      rationale: "The encoder takes a type expression and produces open wire data from a typed value; the result leaves the typed program and is read back through decode-map-as.",
+    };
+  }
   if (openDataBoundaries.has(name)) {
     return {
       owner: "open-data-boundaries",

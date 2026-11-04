@@ -7576,6 +7576,60 @@
                 assert= true $ empty? $ []
                 assert= false $ empty? $ [] 1
               :tags $ #{} :core :unit
+        'encode-map-as $ %{} 'CodeEntry
+          :doc "||Encode a typed value into the open data shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`. Syntax: (encode-map-as value TypeExpr). Structs become tag-keyed maps; an `Option :some x` struct field stores `x` and an `Option :none` field is left out. Enum values keep their nominal form with encoded payloads; lists, tuples, sets, maps and union members are encoded by their declared shape. The value must already have the declared type: a known mismatch is rejected during preprocessing with E_ENCODE_MAP_AS_TYPE_MISMATCH, and a union whose members share one map shape fails at runtime instead of encoding ambiguously. Use `format-cirru-edn` or `to-js-data` on the result to write it out. Native and JavaScript support this syntax; WASM does not."
+          :code $ quote $ def encode-map-as &runtime-implementation
+          :examples $ []
+            quote $ assert=
+              {} (:code 200) (:message |ok)
+                :body $ {} $ :kind :json
+              encode-map-as
+                %{} RuntimeMapResponse (:code 200)
+                  :message $ Option :some |ok
+                  :body $ {} $ :kind :json
+                  :meta $ Option :none
+                , RuntimeMapResponse
+          :schema $ quote $ Fn T Dynamic (-> Dynamic) (:generics T)
+          :tags $ #{} :builtin :internal :meta :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |round-trips-struct-and-option)
+              :code $ quote $ do
+                let
+                    full $ %{} RuntimeMapResponse (:code 202)
+                      :message $ Option :some |ok
+                      :body $ {} $ :kind :json
+                      :meta $ Option :some $ %{} RuntimeMapMeta (:kind :nested)
+                    missing $ %{} RuntimeMapResponse (:code 204) (:message $ Option :none)
+                      :body $ {} $ :kind :json
+                      :meta $ Option :none
+                  assert=
+                    {} (:code 202) (:message |ok)
+                      :body $ {} $ :kind :json
+                      :meta $ {} $ :kind :nested
+                    encode-map-as full RuntimeMapResponse
+                  assert=
+                    {} (:code 204)
+                      :body $ {} $ :kind :json
+                    encode-map-as missing RuntimeMapResponse
+                  assert= full $ decode-map-as (encode-map-as full RuntimeMapResponse) RuntimeMapResponse
+                  assert= missing $ decode-map-as (encode-map-as missing RuntimeMapResponse) RuntimeMapResponse
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |encodes-structs-inside-enum-payloads)
+              :code $ quote $ do
+                let
+                    meta $ %{} RuntimeMapMeta (:kind :nested)
+                    ok $ Result :ok meta
+                    rows $ [] meta meta
+                  assert= (Result :ok $ {} $ :kind :nested)
+                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
+                  assert= ok $ decode-map-as
+                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
+                    quote $ Result RuntimeMapMeta String
+                  assert= ([] ({} $ :kind :nested) ({} $ :kind :nested))
+                    encode-map-as rows $ quote $ List RuntimeMapMeta
+                  assert= (Option :none)
+                    encode-map-as (Option :none) $ quote $ Option RuntimeMapMeta
+              :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
           :code $ quote &runtime-implementation

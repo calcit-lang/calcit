@@ -4830,6 +4830,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_decode_map_as(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::EncodeMapAs => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_encode_map_as(name, name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_traits(name, name_ns, &args, &mut ctx)
@@ -13429,7 +13433,11 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
     && matches!(
       items.first(),
       Some(Calcit::Syntax(
-        CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+        CalcitSyntax::ParseCirruEdnAs
+          | CalcitSyntax::TryParseCirruEdnAs
+          | CalcitSyntax::DecodeMapAs
+          | CalcitSyntax::TryDecodeMapAs
+          | CalcitSyntax::EncodeMapAs,
         _
       ))
     )
@@ -15639,6 +15647,68 @@ pub fn preprocess_decode_map_as(
     value_form,
     type_form.to_owned(),
     decoder.into_calcit_handle(),
+  ]))
+}
+
+/// `encode-map-as value Type` (#2562): the value must already have the
+/// declared type; the result is the open shape `decode-map-as` reads back.
+pub fn preprocess_encode_map_as(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  if let Some(lowered) = preprocess_lowered_decoder_form(head, head_ns, args, ctx)? {
+    return Ok(lowered);
+  }
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!("{head} expected a value and a type expression, got {}", args.len()),
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
+  let value_form = preprocess_expr(
+    args.first().expect("validated encode-map-as value"),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let source_type_form = &desugar_decoder_type_form(head.as_ref(), args, ctx)?;
+  let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
+  let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
+  if type_checking::expression_has_known_mismatch(&value_form, &target, ctx.scope_types) {
+    let actual = resolve_type_value(&value_form, ctx.scope_types)
+      .map(|actual| actual.to_brief_string())
+      .unwrap_or_else(|| "unknown".to_owned());
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "{head} encodes a value of the declared type, but the value has type `{actual}` and the target is `{}`",
+        target.to_brief_string()
+      ),
+      "E_ENCODE_MAP_AS_TYPE_MISMATCH",
+      ctx.call_stack,
+      value_form.get_location().or_else(|| source_type_form.get_location()),
+    ));
+  }
+  let encoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("{head} cannot derive a runtime map encoder: {error}"),
+      ctx.call_stack,
+      source_type_form.get_location(),
+    )
+  })?;
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    value_form,
+    type_form.to_owned(),
+    encoder.into_calcit_handle(),
   ]))
 }
 

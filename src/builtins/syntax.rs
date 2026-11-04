@@ -938,6 +938,54 @@ pub fn try_decode_map_as(
   }
 }
 
+/// `encode-map-as value Type`, the inverse of `decode-map-as` (#2562).
+pub fn encode_map_as(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 && expr.len() != 3 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "encode-map-as expected a value and a type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+  let input = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let shape = match expr.get(2) {
+    Some(handle) => crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(handle).ok_or_else(|| {
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        "encode-map-as received an invalid internal data shape".to_owned(),
+        call_stack,
+        expr.get(1).and_then(Calcit::get_location),
+      )
+    })?,
+    None => {
+      let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
+      Arc::new(
+        crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), file_ns).map_err(|error| {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Type,
+            format!("encode-map-as cannot derive a runtime map encoder: {error}"),
+            call_stack,
+            expr.get(1).and_then(Calcit::get_location),
+          )
+        })?,
+      )
+    }
+  };
+  crate::data::map_encode::encode_map(shape.as_ref(), &input).map_err(|error| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("encode-map-as failed at {}: {}", error.path, error.message),
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    )
+  })
+}
+
 pub fn assert_traits(
   expr: &CalcitListView<'_>,
   scope: &CalcitScope,

@@ -7214,9 +7214,11 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         }
       }
       CalcitSyntax::TryParseCirruEdnAs => edn_parse::emit_try_parse_cirru_edn_as(ctx, &args_list),
-      CalcitSyntax::JsCast | CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
-        Err(format!("{syn} is not yet supported in WASM codegen"))
-      }
+      CalcitSyntax::JsCast
+      | CalcitSyntax::ParseCirruEdnAs
+      | CalcitSyntax::DecodeMapAs
+      | CalcitSyntax::TryDecodeMapAs
+      | CalcitSyntax::EncodeMapAs => Err(format!("{syn} is not yet supported in WASM codegen")),
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
       CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
       CalcitSyntax::Reset => {

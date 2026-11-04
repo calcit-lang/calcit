@@ -57,6 +57,38 @@
           :code $ quote $ defunion Label String Point
           :examples $ []
           :schema $ quote UnionDef
+        'LabelA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct LabelA (:text String)
+          :examples $ []
+          :schema $ quote StructDef
+        'LabelB $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct LabelB (:text String)
+          :examples $ []
+          :schema $ quote StructDef
+        'LabelText $ %{} 'CodeEntry
+          :doc "|Two struct members with one map shape: encode-map-as must refuse what decode-map-as cannot tell apart (#2562)."
+          :code $ quote $ defunion LabelText LabelA LabelB
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |encode-rejects-ambiguous-struct-members)
+            :code $ quote $ do
+              assert= ({} $ :text |a)
+                encode-map-as (LabelA :text |a) LabelText
+              assert= "|encode-map-as failed at $: the encoded value would decode as another union member; the union has members that share one shape" $ try
+                do
+                  encode-map-as (LabelB :text |b) LabelText
+                  , |unexpected-success
+                fn (message)
+                  hint-fn $ Fn String $ -> String
+                  , message
+              assert= "|encode-map-as failed at $[0]: the encoded value would decode as another union member; the union has members that share one shape" $ try
+                do
+                  encode-map-as ([] (LabelB :text |b) 1) $ quote $ Tuple LabelText Number
+                  , |unexpected-success
+                fn (message)
+                  hint-fn $ Fn String $ -> String
+                  , message
+            :tags $ #{} :union :unit
         'Loop $ %{} 'CodeEntry
           :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
           :code $ quote $ defunion Loop Number
@@ -326,6 +358,13 @@
             assert= true $ .err? $ try-parse-cirru-edn-as "|do :a" Scale
             assert= |text:home $ segment-text $ decode-map-as (segment-raw |home) Segment
             assert= |param:id $ segment-text $ decode-map-as (segment-raw 'id) Segment
+            assert= (Point :x 1 :y 2)
+              round-trip-geo $ Point :x 1 :y 2
+            assert= (Shape :circle 3)
+              round-trip-geo $ Shape :circle 3
+            assert= |plain $ round-trip-geo |plain
+            assert= ({} (:x 1) (:y 2))
+              encode-map-as (Point :x 1 :y 2) Geo
             println "|Union tests passed"
             , &unit
           :examples $ []
@@ -400,6 +439,39 @@
                 parse-cirru-edn-as "|[] 1 |a" $ quote $ Tuple Number String
               assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1"
                 quote $ Tuple Number String
+            :tags $ #{} :union :unit
+        'round-trip-geo $ %{} 'CodeEntry
+          :doc "|encode-map-as is the inverse of decode-map-as for each union member (#2562)."
+          :code $ quote $ defn round-trip-geo (g)
+            decode-map-as (encode-map-as g Geo) Geo
+          :examples $ []
+          :schema $ quote $ Fn Geo (-> Geo)
+          :tests $ [] $ %{} 'TestEntry (:name |round-trips-each-member)
+            :code $ quote $ do
+              assert= (Point :x 1 :y 2)
+                round-trip-geo $ Point :x 1 :y 2
+              assert= ({} (:x 1) (:y 2))
+                encode-map-as (Point :x 1 :y 2) Geo
+              assert= (Shape :circle 3)
+                round-trip-geo $ Shape :circle 3
+              assert= |plain $ round-trip-geo |plain
+              assert= (Option :none)
+                decode-map-as (encode-map-as (Option :none) MaybeGeo) MaybeGeo
+              let
+                  some-point $ Option :some $ Point :x 1 :y 2
+                  nested $ Option :some $ Option :none
+                assert= some-point $ decode-map-as (encode-map-as some-point MaybeGeo) MaybeGeo
+                assert= nested $ decode-map-as
+                  encode-map-as nested $ quote $ Option MaybeGeo
+                  quote $ Option MaybeGeo
+              let[] (cell geo)
+                decode-map-as
+                  encode-map-as
+                    [] (ref 3) |plain
+                    quote $ Tuple (Ref Number) Geo
+                  quote $ Tuple (Ref Number) Geo
+                assert= 3 $ deref cell
+                assert= |plain geo
             :tags $ #{} :union :unit
         'scale-decodes? $ %{} 'CodeEntry
           :doc "|A member kind that matches but holds the wrong elements still fails."
