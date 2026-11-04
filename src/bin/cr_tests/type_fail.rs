@@ -4804,6 +4804,8 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
     unique("on-click", "arg 1 → arg 1", "Op");
     // A `let` that rebinds `d!` to another function of the same type is not the parameter.
     unique("on-shadowed", "arg 1 → arg 1", "Op");
+    // A Respo-style `defcomp` keeps the `defn` parameter list.
+    unique("comp-button", "arg 1 → arg 1", "Op");
     let mixed = hint("mixed!").expect("mixed! lists its types");
     assert!(
       mixed.contains("`broad-type-candidates.main/Msg`, `broad-type-candidates.main/Op`") && mixed.contains(":generics"),

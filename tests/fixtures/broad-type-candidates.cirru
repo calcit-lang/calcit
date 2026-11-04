@@ -26,6 +26,19 @@
           :code $ quote $ defstruct Point (:x Number)
           :examples $ []
           :schema $ quote StructDef
+        'comp-button $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defcomp comp-button (d!)
+            d! $ %:: Op :reset
+          :examples $ []
+          :schema $ quote $ Fn
+            Fn Enum $ -> Unit
+            -> Unit
+        'defcomp $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro defcomp (comp-name params & body)
+            quasiquote $ defn ~comp-name ~params ~@body
+          :examples $ []
+          :schema $ quote $ Macro SyntaxSymbol SyntaxList & Syntax
+            -> $ Definition Fn
         'dispatch! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dispatch! (op) &unit
           :examples $ []
@@ -41,6 +54,7 @@
             partly-anonymous! $ :: :ping
             on-click dispatch!
             on-shadowed dispatch!
+            comp-button dispatch!
             spread-op! $ %:: Op :reset
             let
                 ops $ [] (%:: Op :add 1)

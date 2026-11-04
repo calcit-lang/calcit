@@ -75,7 +75,7 @@ pub(super) fn take_call_owner() -> Option<SlotKey> {
   CALL_OWNER.with(|cell| cell.borrow_mut().take())
 }
 
-/// The position of `param` among the parameters of the `defn` `ns/def`,
+/// The position of `param` among the parameters of the `defn` (or `defcomp`) `ns/def`,
 /// when the called local is that parameter: a `let` binding that shadows it
 /// with another type is a different function.
 pub(super) fn defn_param_index(ns: &str, def: &str, param: &str, local_type: &CalcitTypeAnnotation) -> Option<usize> {
@@ -83,7 +83,8 @@ pub(super) fn defn_param_index(ns: &str, def: &str, param: &str, local_type: &Ca
   let Calcit::List(items) = crate::program::lookup_def_code(ns, def)? else {
     return None;
   };
-  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defn") {
+  // `defcomp` expands to a `defn` with the same parameter list.
+  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "defn" | "defcomp")) {
     return None;
   }
   let Some(Calcit::List(params)) = items.get(2) else { return None };
