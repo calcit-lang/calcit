@@ -231,6 +231,10 @@ pub enum WeakTypeKind {
   CodeDynamic,
   CodeNil,
   UnsafeCoerce,
+  /// `Dynamic` in a struct field, enum payload or union member. Reported only
+  /// when selected with `--only data-dynamic`, so default reports and existing
+  /// gates keep their counts.
+  DataDynamic,
 }
 
 impl WeakTypeKind {
@@ -241,7 +245,16 @@ impl WeakTypeKind {
       Self::CodeDynamic => "code-dynamic",
       Self::CodeNil => "code-nil",
       Self::UnsafeCoerce => "unsafe-coerce",
+      Self::DataDynamic => "data-dynamic",
     }
+  }
+
+  /// Every kind the analysis records. `all()` is the default filter and leaves
+  /// out the opt-in `data-dynamic` kind.
+  pub fn collected() -> BTreeSet<Self> {
+    let mut kinds = Self::all();
+    kinds.insert(Self::DataDynamic);
+    kinds
   }
 
   pub fn all() -> BTreeSet<Self> {
@@ -759,9 +772,10 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
       "code-dynamic" => WeakTypeKind::CodeDynamic,
       "code-nil" => WeakTypeKind::CodeNil,
       "unsafe-coerce" => WeakTypeKind::UnsafeCoerce,
+      "data-dynamic" => WeakTypeKind::DataDynamic,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce; or exactly one view: coverage, dynamic-method, deprecated-call"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic; or exactly one view: coverage, dynamic-method, deprecated-call"
         ));
       }
     };
@@ -770,7 +784,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
 
   if selected.is_empty() {
     return Err(
-      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce"
+      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic"
         .to_owned(),
     );
   }
@@ -976,7 +990,80 @@ fn scan_schema_dynamic_annotation(
   }
 }
 
+fn is_dynamic_type_leaf(text: &str) -> bool {
+  matches!(text, "Dynamic" | "'Dynamic" | ":dynamic" | ":any")
+}
+
+fn collect_dynamic_leaves(node: &Cirru, path: &mut Vec<usize>, found: &mut Vec<Vec<usize>>) {
+  match node {
+    Cirru::Leaf(text) if is_dynamic_type_leaf(text) => found.push(path.clone()),
+    Cirru::Leaf(_) => {}
+    Cirru::List(items) => {
+      for (idx, item) in items.iter().enumerate() {
+        path.push(idx);
+        collect_dynamic_leaves(item, path, found);
+        path.pop();
+      }
+    }
+  }
+}
+
+/// `Dynamic` written in the member types of a `defstruct`, `defenum` or
+/// `defunion` (#2553). Generic parameter lists such as `([] T)` are skipped.
+fn scan_data_declaration_dynamic(code: &Cirru, occurrences: &mut Vec<WeakTypeOccurrence>) {
+  let Cirru::List(items) = code else {
+    return;
+  };
+  let Some(Cirru::Leaf(head)) = items.first() else {
+    return;
+  };
+  let head = head.as_ref();
+  if !matches!(head, "defstruct" | "defenum" | "defunion") {
+    return;
+  }
+  for (idx, item) in items.iter().enumerate().skip(2) {
+    let mut found = vec![];
+    let label = match (head, item) {
+      ("defunion", _) => {
+        let mut path = vec![idx];
+        collect_dynamic_leaves(item, &mut path, &mut found);
+        format!("union-member:{}", idx - 2)
+      }
+      (_, Cirru::List(parts)) => {
+        let Some(Cirru::Leaf(name)) = parts.first() else {
+          continue;
+        };
+        if !name.starts_with(':') {
+          continue;
+        }
+        for (part_idx, part) in parts.iter().enumerate().skip(1) {
+          let mut path = vec![idx, part_idx];
+          collect_dynamic_leaves(part, &mut path, &mut found);
+        }
+        let member = name.trim_start_matches(':');
+        if head == "defstruct" {
+          format!("struct-field:{member}")
+        } else {
+          format!("enum-payload:{member}")
+        }
+      }
+      _ => continue,
+    };
+    for path in found {
+      push_weak_type_occurrence(
+        occurrences,
+        WeakTypeKind::DataDynamic,
+        weak_type_detail(WeakTypeKind::DataDynamic, &label),
+        format_cirru_path("code", &path),
+      );
+    }
+  }
+}
+
 fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
+  if occurrence.kind == WeakTypeKind::DataDynamic {
+    return "Give this field, payload or union member a concrete type; use a type parameter on the declaration when the content varies by use, or a union when it takes a few known shapes. Keep `Dynamic` only for data that is checked at a documented decode boundary.";
+  }
   if occurrence.kind == WeakTypeKind::UnsafeCoerce {
     if occurrence.unsafe_evidence.as_ref().is_some_and(|evidence| !evidence.js_ffi_feature) {
       return "Declare `:features $ #{} :js-ffi` on this adapter first, then keep the assertion narrow, validate or normalize untrusted runtime data before application code consumes it, and add positive and negative runtime-contract tests.";
@@ -1698,6 +1785,10 @@ pub fn analyze_weak_types_entry(
     &mut occurrences,
   );
 
+  if selected.contains(&WeakTypeKind::DataDynamic) {
+    scan_data_declaration_dynamic(&entry.code, &mut occurrences);
+  }
+
   occurrences.retain(|occurrence| selected.contains(&occurrence.kind));
 
   let has_js_ffi_feature = match entry.schema.as_ref() {
@@ -1861,7 +1952,7 @@ pub fn collect_weak_type_rows(options: &WeakTypesCommand, snapshot: &snapshot::S
       include_dependencies: options.deps,
     },
     |namespace, definition, entry| {
-      if let Some(row) = analyze_weak_types_entry(namespace, definition, entry, &WeakTypeKind::all()) {
+      if let Some(row) = analyze_weak_types_entry(namespace, definition, entry, &WeakTypeKind::collected()) {
         rows.push(row);
       }
     },
@@ -2411,6 +2502,10 @@ pub(crate) fn run_weak_types_report_with_rows(
     kind_count.get("code-nil").copied().unwrap_or(0),
     kind_count.get("unsafe-coerce").copied().unwrap_or(0)
   );
+  // Opt-in kind: printed only when it has hits, so the default line is unchanged.
+  if let Some(count) = kind_count.get("data-dynamic") {
+    let _ = writeln!(out, "- data-dynamic hits: {count}");
+  }
   let _ = writeln!(
     out,
     "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} intentional-decode={} explicit-unsafe={} declared-unit={}",
@@ -2621,7 +2716,11 @@ pub(crate) fn run_weak_types_report_with_rows(
     "code-dynamic",
     "code-nil",
     "unsafe-coerce",
+    "data-dynamic",
   ] {
+    if kind == "data-dynamic" && !detail_count.contains_key(kind) {
+      continue;
+    }
     let _ = writeln!(out, "  - {kind}");
     if let Some(items) = detail_count.get(kind) {
       for (detail, count) in items {

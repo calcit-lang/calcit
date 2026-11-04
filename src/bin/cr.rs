@@ -3044,6 +3044,120 @@ mod tests {
   }
 
   #[test]
+  fn weak_types_data_dynamic_reports_declaration_members_only_when_selected() {
+    let data_only = std::collections::BTreeSet::from([type_coverage::WeakTypeKind::DataDynamic]);
+    let details = |entry: &snapshot::CodeEntry| -> Vec<(String, String)> {
+      type_coverage::analyze_weak_types_entry("app.main", "Decl", entry, &data_only)
+        .map(|row| row.occurrences.into_iter().map(|o| (o.detail, o.path)).collect())
+        .unwrap_or_default()
+    };
+
+    let record = code_entry(
+      list(vec![
+        leaf("defstruct"),
+        leaf("Box"),
+        list(vec![leaf("[]"), leaf("T")]),
+        list(vec![leaf(":value"), leaf("T")]),
+        list(vec![leaf(":meta"), list(vec![leaf("Map"), leaf("Tag"), leaf("Dynamic")])]),
+        list(vec![leaf(":name"), leaf("String")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&record),
+      vec![("data-dynamic:struct-field:meta".to_owned(), "code@4.1.2".to_owned())]
+    );
+    assert!(
+      type_coverage::analyze_weak_types_entry("app.main", "Box", &record, &type_coverage::WeakTypeKind::all()).is_none(),
+      "data-dynamic must stay out of the default report"
+    );
+
+    let sum = code_entry(
+      list(vec![
+        leaf("defenum"),
+        leaf("Msg"),
+        list(vec![leaf(":none")]),
+        list(vec![leaf(":raw"), leaf("Number"), leaf("Dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&sum),
+      vec![("data-dynamic:enum-payload:raw".to_owned(), "code@3.2".to_owned())]
+    );
+
+    let union = code_entry(
+      list(vec![
+        leaf("defunion"),
+        leaf("Cell"),
+        leaf("Number"),
+        list(vec![leaf("List"), leaf("Dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert_eq!(
+      details(&union),
+      vec![("data-dynamic:union-member:1".to_owned(), "code@3.1".to_owned())]
+    );
+
+    let function = code_entry(
+      list(vec![leaf("defn"), leaf("f"), list(vec![leaf("x")]), leaf("Dynamic")]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    assert!(details(&function).is_empty(), "only data declarations are scanned");
+    assert!(type_coverage::parse_weak_type_kinds("data-dynamic").is_ok());
+
+    // The collector behind the CLI must record the opt-in kind, and leave it
+    // out when `--only` does not name it.
+    let mut snapshot = snapshot::Snapshot {
+      package: "app".to_owned(),
+      ..snapshot::Snapshot::default()
+    };
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      snapshot::FileInSnapShot {
+        ns: snapshot::NsEntry {
+          doc: String::new(),
+          code: list(vec![leaf("ns"), leaf("app.main")]),
+        },
+        defs: std::collections::HashMap::from([("Box".to_owned(), record)]),
+      },
+    );
+    let options = |only: Option<&str>| WeakTypesCommand {
+      ns: Some("app.main".to_owned()),
+      ns_prefix: None,
+      only: only.map(str::to_owned),
+      coverage_level: None,
+      intent: None,
+      format: "human".to_owned(),
+      deps: false,
+      ffi_evidence: false,
+      schema_evidence: false,
+      summary_only: false,
+      incremental: false,
+    };
+    let rows = type_coverage::collect_weak_type_rows(&options(Some("data-dynamic")), &snapshot).expect("rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].occurrences[0].detail, "data-dynamic:struct-field:meta");
+    let default_rows = type_coverage::collect_weak_type_rows(&options(None), &snapshot).expect("rows");
+    assert!(default_rows.is_empty(), "default rows: {default_rows:?}");
+
+    // Legacy `:dynamic` keeps its default `code-dynamic` count and is also listed by data-dynamic.
+    let legacy = code_entry(
+      list(vec![leaf("defstruct"), leaf("Old"), list(vec![leaf(":a"), leaf(":dynamic")])]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    let default_kinds = type_coverage::analyze_weak_types_entry("app.main", "Old", &legacy, &type_coverage::WeakTypeKind::all())
+      .map(|row| row.occurrences.into_iter().map(|o| o.kind).collect::<Vec<_>>())
+      .unwrap_or_default();
+    assert_eq!(default_kinds, vec![type_coverage::WeakTypeKind::CodeDynamic]);
+    assert_eq!(
+      details(&legacy),
+      vec![("data-dynamic:struct-field:a".to_owned(), "code@2.1".to_owned())]
+    );
+  }
+
+  #[test]
   fn type_coverage_skips_generic_and_where_declarations_as_struct_fields() {
     let entry = code_entry(
       list(vec![
