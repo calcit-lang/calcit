@@ -3867,6 +3867,19 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+        'CirruNode $ %{} 'CodeEntry
+          :doc "|A Cirru tree as plain data: a leaf is its token String, a list is a List of nodes. 0.35.0 uses it as the element type of CirruQuote .to-list and .parse-cirru-list results (#2556)."
+          :code $ quote $ defunion CirruNode String
+            quote $ List CirruNode
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-parsed-cirru-rows)
+            :code $ quote $ do
+              assert= ([] $ [] |a ([] |b |c) ([]))
+                decode-map-as (parse-cirru-list "|a (b c) ()") $ quote $ List CirruNode
+              assert= false $ result:ok?
+                try-decode-map-as ([] |a 1) $ quote $ List CirruNode
+            :tags $ #{} :core :unit
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
           :code $ quote $ deftrait Compare

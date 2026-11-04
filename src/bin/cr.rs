@@ -1002,6 +1002,7 @@ fn run_cli() -> Result<(), String> {
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
+  detect_preview_0_35_sources(&snapshot, &project_namespaces);
   push_legacy_quoted_declaration_advisories(&snapshot, &project_namespaces);
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
@@ -2074,6 +2075,97 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
   }
 }
 
+/// Set when project code mentions an API whose return type 0.35.0 narrows.
+static PREVIEW_0_35_SOURCES_USED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Code of the notes from the 0.35.0 return type preview (#2564).
+const PREVIEW_0_35_WARNING: &str = "W_0_35_RETURN_TYPE_PREVIEW";
+
+/// Recheck the entries under the 0.35.0 core return types and report each
+/// diagnostic as a note at the same place. Only a passing check runs this,
+/// so every diagnostic of the recheck is new.
+fn preview_0_35_advisories(entries: &ProgramEntries) -> Vec<LocatedWarning> {
+  let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+  // Both entries are compiled even when the first fails, so a reload-only
+  // regression under the new types is reported too.
+  let results = runner::preprocess::with_preview_0_35_types(|| {
+    let call_stack = CallStackList::default();
+    [(&entries.init_ns, &entries.init_def), (&entries.reload_ns, &entries.reload_def)]
+      .map(|(ns, def)| runner::preprocess::ensure_ns_def_compiled(ns, def, &warnings, &call_stack))
+  });
+  // Advisories from the recheck repeat the ordinary ones.
+  drop(runner::preprocess::take_advisories());
+  let mut found = warnings.into_inner();
+  for failure in results.into_iter().filter_map(Result::err) {
+    found.extend(failure.warnings.iter().cloned());
+    if let Some(location) = failure.location.as_deref() {
+      found.push(LocatedWarning::new_with_detail(
+        failure.msg.clone(),
+        location.clone(),
+        failure.code.clone(),
+        None,
+      ));
+    }
+  }
+  let mut notes: Vec<LocatedWarning> = vec![];
+  // Libraries are rechecked so their inferred return types follow the new
+  // core types, but only the project's own code is reported.
+  for warning in found
+    .into_iter()
+    .filter(|warning| runner::preprocess::is_project_namespace(&warning.location().ns))
+  {
+    let original = warning.message().trim_start_matches("[Warn] ");
+    let code = warning.code().map(|code| format!("{code}: ")).unwrap_or_default();
+    let note = LocatedWarning::new_with_detail(
+      format!(
+        "[Warn] 0.35.0 preview: {code}{original}\n  0.35.0 narrows `&map:diff-triple` to `Tuple (Set K) (Map K W) (List (Tuple K V W))` and CirruQuote `.to-list` / `.parse-cirru-list` rows to `List CirruNode`. \
+         Read tuple slots with `&list:nth` or `let[]` and widen or retype the parameter; see docs/run/upgrade.md"
+      ),
+      warning.location().clone(),
+      Some(PREVIEW_0_35_WARNING.to_owned()),
+      None,
+    );
+    if !notes.contains(&note) {
+      notes.push(note);
+    }
+  }
+  notes
+}
+
+/// Mark whether project definitions mention `&map:diff-triple` or a Cirru list
+/// conversion, so `--check-only` runs the 0.35.0 return type preview only then.
+fn detect_preview_0_35_sources(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  /// `loose` also accepts `.to-list`, whose receiver the scan cannot see.
+  fn mentions(node: &cirru_parser::Cirru, loose: bool) -> bool {
+    match node {
+      cirru_parser::Cirru::Leaf(leaf) => match leaf.strip_prefix("calcit.core/").unwrap_or(leaf) {
+        "&map:diff-triple"
+        | ".diff-triple"
+        | "cirru-quote:to-list"
+        | "&cirru-quote:to-list"
+        | "parse-cirru-list"
+        | ".parse-cirru-list"
+        | "try-parse-cirru-list" => true,
+        ".to-list" => loose,
+        _ => false,
+      },
+      cirru_parser::Cirru::List(items) => items.iter().any(|item| mentions(item, loose)),
+    }
+  }
+  // A library wrapper around one of these APIs changes its inferred return
+  // type too, so libraries are scanned as well. `.to-list` is common on Maps
+  // and Sets, so in libraries only the unambiguous names count.
+  let used = snapshot
+    .files
+    .iter()
+    .filter(|(ns, _)| ns.as_str() != calcit::calcit::CORE_NS)
+    .any(|(ns, file)| {
+      let loose = project_namespaces.contains(ns.as_str());
+      file.defs.values().any(|entry| mentions(&entry.code, loose))
+    });
+  PREVIEW_0_35_SOURCES_USED.store(used, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Report quoted type names in `defstruct` / `defenum` / `defunion` as check
 /// notes ahead of their removal in 0.35.0 (#2563). `calcit edit format`
 /// rewrites them.
@@ -2123,13 +2215,22 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   }
 
   let (mut init_result, mut reload_result) = compile_entries(entries, check_warnings);
-  let advisories = runner::preprocess::take_advisories();
+  let mut advisories = runner::preprocess::take_advisories();
   // The proof audit runs only after the ordinary check passes, so ordinary
   // rejections keep their own diagnostics and the audit adds the rest (#2121).
   if prove && runner::preprocess::default_proof_enabled() && entries_passed(&init_result, &reload_result, check_warnings) {
     (init_result, reload_result) = prove_entries(entries, check_warnings);
     // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
     drop(runner::preprocess::take_advisories());
+  }
+  // A passing project that calls an API whose return type 0.35.0 narrows is
+  // checked once more under the new types; what that adds becomes notes (#2564).
+  // Only a reported check pays for it, not the preflight of a run or codegen.
+  if emit_output
+    && PREVIEW_0_35_SOURCES_USED.load(std::sync::atomic::Ordering::Relaxed)
+    && entries_passed(&init_result, &reload_result, check_warnings)
+  {
+    advisories.extend(preview_0_35_advisories(entries));
   }
 
   // preprocess init_fn
