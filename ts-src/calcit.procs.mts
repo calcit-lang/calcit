@@ -2859,6 +2859,9 @@ const encode_runtime_option = (graph: DataShapeGraph, node: any, input: any, kee
 
 export let encode_map_as = (value: CalcitValue, graph: DataShapeGraph): CalcitValue => {
   if (graph.version !== 3) throw new Error(`encode-map-as expected data shape ABI version 3, got ${graph.version}`);
+  if (typeof graph.fingerprint !== "string" || graph.fingerprint.length === 0) {
+    throw new Error("encode-map-as expected a non-empty data shape fingerprint");
+  }
   return encode_runtime_map_node(graph, graph.root, value, "$", 0) as CalcitValue;
 };
 
