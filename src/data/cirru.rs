@@ -76,33 +76,81 @@ fn desugar_quoted_compact_type(node: &Cirru) -> Option<Result<Cirru, String>> {
 /// source-level reader of trait and enum declarations see one shape.
 fn desugar_compact_definition_types(ys: &[Cirru]) -> Option<Result<Vec<Cirru>, String>> {
   let head = match ys.first() {
-    Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "deftrait" | "defenum") => head.as_ref(),
+    Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "deftrait" | "defenum" | "defstruct" | "defunion") => head.as_ref(),
     _ => return None,
   };
   let mut rewritten = ys.to_owned();
   let mut changed = false;
+  // `defstruct` fields and `defunion` members written bare, such as
+  // `(:items (List Number))`, read as the quoted form the macros expect, so a
+  // compound type is never evaluated as a call (#2582).
+  let quote_bare = |node: &mut Cirru| -> bool {
+    if crate::calcit::type_expr::is_bare_compact_payload(node) {
+      *node = Cirru::List(vec![Cirru::leaf("quote"), node.to_owned()]);
+      true
+    } else {
+      false
+    }
+  };
+  if head == "defunion" {
+    for member in rewritten.iter_mut().skip(2) {
+      changed |= quote_bare(member);
+    }
+    return changed.then_some(Ok(rewritten));
+  }
   for entry in rewritten.iter_mut().skip(2) {
     let Cirru::List(items) = entry else { continue };
-    let type_indexes: Vec<usize> = match head {
-      "deftrait" => match items.as_slice() {
-        [Cirru::Leaf(bracket), _, _] if bracket.as_ref() == "[]" => vec![2],
-        [_, _] => vec![1],
-        _ => vec![],
-      },
-      _ if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.starts_with(':')) => (1..items.len()).collect(),
-      _ => vec![],
-    };
-    for index in type_indexes {
-      if let Some(result) = desugar_quoted_compact_type(&items[index]) {
-        match result {
-          Ok(canonical) => items[index] = canonical,
-          Err(message) => return Some(Err(message)),
+    // Members may also be wrapped in one `{}` form: `defstruct Box $ {} (:items $ List Number)`.
+    if matches!(items.first(), Some(Cirru::Leaf(brace)) if brace.as_ref() == "{}") {
+      for inner in items.iter_mut().skip(1) {
+        if let Cirru::List(member) = inner
+          && matches!(member.first(), Some(Cirru::Leaf(tag)) if tag.starts_with([':', '.']))
+        {
+          match desugar_definition_member(head, member, &quote_bare) {
+            Ok(member_changed) => changed |= member_changed,
+            Err(message) => return Some(Err(message)),
+          }
         }
-        changed = true;
       }
+      continue;
+    }
+    match desugar_definition_member(head, items, &quote_bare) {
+      Ok(member_changed) => changed |= member_changed,
+      Err(message) => return Some(Err(message)),
     }
   }
   changed.then_some(Ok(rewritten))
+}
+
+/// Normalizes the type slots of one `defstruct`, `defenum` or `deftrait`
+/// member entry; returns whether anything changed.
+fn desugar_definition_member(head: &str, items: &mut [Cirru], quote_bare: &impl Fn(&mut Cirru) -> bool) -> Result<bool, String> {
+  if head == "defstruct" {
+    // `(:field type default?)`: only the type slot.
+    if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.starts_with(':')) && matches!(items.len(), 2 | 3) {
+      return Ok(quote_bare(&mut items[1]));
+    }
+    return Ok(false);
+  }
+  let type_indexes: Vec<usize> = match head {
+    "deftrait" => match &*items {
+      [Cirru::Leaf(bracket), _, _] if bracket.as_ref() == "[]" => vec![2],
+      [_, _] => vec![1],
+      _ => vec![],
+    },
+    _ if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.starts_with(':')) => (1..items.len()).collect(),
+    _ => vec![],
+  };
+  let mut changed = false;
+  for index in type_indexes {
+    // A bare compound type reads the same as its quoted spelling (#2582).
+    changed |= quote_bare(&mut items[index]);
+    if let Some(result) = desugar_quoted_compact_type(&items[index]) {
+      items[index] = result?;
+      changed = true;
+    }
+  }
+  Ok(changed)
 }
 
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
@@ -496,6 +544,31 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))));
     assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
     assert!(matches!(items.get(2), Some(Calcit::Tag(_))));
+  }
+
+  #[test]
+  fn wrapped_bare_definition_members_read_as_quoted() {
+    let parse = |source: &str| {
+      let tree = cirru_parser::parse(source).expect("parse cirru").remove(0);
+      calcit_to_cirru(&code_to_calcit(&tree, "tests.ns", "demo", vec![]).expect("read definition")).expect("render definition")
+    };
+    let cases = [
+      (
+        "defstruct Box $ {} (:items $ List Number) (:size Number)",
+        "defstruct Box $ {} (:items $ quote $ List Number) (:size Number)",
+      ),
+      (
+        "defenum Shape $ {} (:some $ List Number) (:none)",
+        "defenum Shape $ {} (:some $ quote $ List Number) (:none)",
+      ),
+      (
+        "deftrait Show $ {} (.show $ Fn T (-> String) (:generics T))",
+        "deftrait Show $ {} (.show $ quote $ Fn T (-> String) (:generics T))",
+      ),
+    ];
+    for (bare, quoted) in cases {
+      assert_eq!(parse(bare), parse(quoted), "{bare}");
+    }
   }
 
   #[test]

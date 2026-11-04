@@ -24,12 +24,26 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.35.0 类型参数里的复合类型可以不写 quote（#2581）
+## 0.35.0 复合类型可以不写 quote（#2581、#2582）
 
-`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数只能放类型，
-复合类型现在可以直接写成 `assert-type xs $ List Number`、`decode-map-as raw $ Map Tag Number`。原来的 `quote $ List Number`
-照常可用，不需要迁移。表头最后一段以小写开头的限定名（如 `app.lib/box`）仍写 quote。`defstruct`、`defenum`、`defunion`、
-`deftrait` 里的复合类型暂时仍写 `quote $ …`，漏写时加载报 `E_LEGACY_TYPE_SYNTAX`，提示补上 quote。
+只能放类型的位置，复合类型现在可以直接写：
+
+```cirru.no-check
+assert-type xs $ List Number
+decode-map-as raw $ Map Tag Number
+defstruct Box (:items $ List Number)
+defenum Shape (:some $ List Number) (:none)
+defunion Cells String (List Number)
+deftrait Show $ .show $ Fn T (-> String) (:generics T)
+```
+
+覆盖 `assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数，以及
+`defstruct` 字段类型、`defenum` 载荷、`defunion` 成员和 `deftrait` 方法类型。两种写法读出的类型和生成的 JS 相同，原来的
+`quote $ List Number` 照常可用；`calcit edit format` 会把它们改成不带 quote 的写法（附带的 `:tests` 保持原样）。
+表头最后一段以小写开头的限定名（如 `app.lib/box`）与函数调用写法相同，仍写 quote。
+
+注意保留 `$` 或括号：`defenum Shape (:some List Number)` 是两个 payload `List`、`Number`；
+`defstruct Box (:items List Number)` 是类型 `List` 加默认值 `Number`，加载时报默认值错误。
 
 ## 0.35.0 删除声明宏里带 quote 的类型名（#2516）
 
@@ -124,7 +138,7 @@ defstruct Box ([] T)
 
 覆盖的位置是 `defstruct` 字段类型、`defenum` 变体 payload、`defunion` 成员，以及 `defstruct` / `defenum` 的泛型参数和 `{}` 约束里的类型变量。struct 字段默认值仍是普通字面量。
 
-带参数的复合类型目前仍然写 quote，例如 `:tags $ quote $ List String`、`defunion Cells String $ quote (List Number)`。不带 quote 的 `(List String)` 和以前一样在 Snapshot 加载时报 `E_LEGACY_TYPE_SYNTAX`。复合类型是否去掉 quote，等确认没有歧义后再定。
+带参数的复合类型当时仍然写 quote，例如 `:tags $ quote $ List String`；0.35.0 起可以不写，见上文 #2582。
 
 行为变化：以前裸写的 `Number` 报 ``unknown `Number` ``，裸写的 `Point` 会被当成变量求值，作用域里有同名局部绑定时取到错误的值；现在两者都是类型名。
 
@@ -359,7 +373,7 @@ calcit <snapshot> edit format
 里的类型改为 `quote $ List Number`，把 `hint-fn` 改为不带 quote 的 `hint-fn $ Fn String (-> Number)`
 （只标记异步时为 `hint-fn Async`）。值引用（如 `:: 'List Person`）和只写部分字段的 hint 保持原样。
 `calcit edit schema` 等编辑命令仍接受旧写法，写回时存为精简写法，并提示 `W_LEGACY_TYPE_SYNTAX`。
-（0.35.0 起这些类型参数里的复合类型也可以不写 quote，见上文 #2581。）
+（0.35.0 起复合类型也可以不写 quote，见上文 #2581、#2582。）
 
 `calcit query type`、`query type-at`、`query schema`、`query def`、`query peek`、`query defs --signatures` 和 `query context`
 也用精简写法显示类型，例如 `List Number`、`Fn String $ -> Number`，JSON 里的 `canonical_type`、`inferred_type`、

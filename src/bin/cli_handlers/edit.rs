@@ -326,7 +326,7 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
   }
   if canonicalized_type_forms > 0 {
     println!(
-      "{} Canonicalized {canonicalized_type_forms} legacy tag-based type form(s) to quoted symbols",
+      "{} Rewrote {canonicalized_type_forms} type form(s) to the current type syntax",
       "✓".green()
     );
   }

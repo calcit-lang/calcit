@@ -299,7 +299,7 @@
             :tags $ #{} :struct-origin :unit
         'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
           :code $ quote $ deftrait Labeled
-            .label $ quote $ Fn test-traits.main/Labeled (-> String)
+            .label $ Fn test-traits.main/Labeled (-> String)
           :examples $ []
           :schema $ quote Trait
         'LabeledImpl $ %{} 'CodeEntry (:doc |)

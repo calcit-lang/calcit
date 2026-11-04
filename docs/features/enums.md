@@ -34,7 +34,7 @@ let
 
 Variants with payloads:
 
-payload 的类型名与 `defstruct` 字段相同，直接写 `Number`、`Point` 这样的裸符号；带参数的复合类型目前仍写 quote，如 `quote $ List Number`。旧写法 `'Number` 仍然可用，`calcit edit format` 会改为 `Number`。
+payload 的类型名与 `defstruct` 字段相同，直接写 `Number`、`Point` 这样的裸符号；带参数的复合类型同样直接写，如 `(:items $ List Number)`；注意保留 `$` 或括号，`(:items List Number)` 是两个 payload `List` 和 `Number`。旧写法 `quote $ List Number` 仍可使用，`calcit edit format` 会去掉 quote。旧写法 `'Number` 仍然可用，`calcit edit format` 会改为 `Number`。
 
 ```cirru
 let
@@ -61,15 +61,15 @@ let
 
 ## Generic Enums
 
-`defenum` 可以在类型名后接泛型参数列表。泛型参数直接写名字（`[] T E`），旧写法 `[] 'T 'E` 在 0.34.x 仍可使用，`calcit edit format` 会去掉 quote。在 schema、断言和复合 payload 里用 `quote $ TypeName …` 套用具体类型。
+`defenum` 可以在类型名后接泛型参数列表。泛型参数直接写名字（`[] T E`），旧写法 `[] 'T 'E` 在 0.34.x 仍可使用，`calcit edit format` 会去掉 quote。在断言和复合 payload 里直接写 `ResultX Number String` 套用具体类型。
 
 ```cirru
 let
     ResultX $ defenum ResultX ([] T E) (:ok T) (:err E)
     ok $ ResultX :ok 1
     err $ ResultX :err |oops
-  assert-type ok $ quote $ ResultX Number String
-  assert-type err $ quote $ ResultX Number String
+  assert-type ok $ ResultX Number String
+  assert-type err $ ResultX Number String
   assert= 1 $ &enum:nth ok 1
   assert= |oops $ &enum:nth err 1
 ```
@@ -88,7 +88,7 @@ let
       :none
     some-val $ ShownMaybe :some 1
     none-val $ ShownMaybe :none
-  assert-type some-val $ quote $ ShownMaybe Number
+  assert-type some-val $ ShownMaybe Number
   assert= |1 $ match some-val
     (:some item) (&trait-call Debug :debug item)
     (:none) |none
@@ -119,10 +119,10 @@ Applied generic structs also work in enum payloads:
 let
     Box $ defstruct Box ([] T) (:value T)
     Wrapped $ defenum Wrapped ([] T)
-      :box $ quote $ Box T
+      :box $ Box T
       :empty
     value $ Wrapped :box $ %{} Box (:value 1)
-  assert-type value $ quote $ Wrapped Number
+  assert-type value $ Wrapped Number
   assert= 1 $ match value
     (:box boxed) (:value boxed)
     (:empty) 0
@@ -368,7 +368,7 @@ defenum Shape (:point :number :number) (:circle :number)
 defstruct Box ([] T) (:value T)
 
 defenum Wrapped ([] T)
-  :box $ quote $ Box T
+  :box $ Box T
   :empty
 
 ; (:none) means no payload
