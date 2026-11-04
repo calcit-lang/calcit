@@ -598,7 +598,7 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
       "write trait through the public editor",
     );
   };
-  write_trait("quote $ deftrait MobileInfo (:any $ quote $ Fn (-> Bool))");
+  write_trait("quote $ deftrait MobileInfo (:any $ Fn (-> Bool))");
   assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "strict trait fixture");
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonicalize trait fixture");
   let original = fs::read(&snapshot).unwrap();
@@ -626,8 +626,8 @@ fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
   // The editor rejects the retired `:any` tag, so plant it in the file the way
   // an older Snapshot carries it; only `edit format` still reads it.
   let source = fs::read_to_string(&snapshot).unwrap();
-  assert!(source.contains(":any $ quote $ Fn (-> Bool)"), "{source}");
-  fs::write(&snapshot, source.replacen(":any $ quote $ Fn (-> Bool)", ":any :any", 1)).unwrap();
+  assert!(source.contains(":any $ Fn $ -> Bool"), "{source}");
+  fs::write(&snapshot, source.replacen(":any $ Fn $ -> Bool", ":any :any", 1)).unwrap();
   let rejected = run_calcit(&snapshot, &weak_args);
   assert!(!rejected.status.success(), "strict load must reject the retired tag");
   assert!(String::from_utf8_lossy(&rejected.stderr).contains("E_LEGACY_TYPE_SYNTAX"));

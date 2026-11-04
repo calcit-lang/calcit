@@ -20,8 +20,8 @@ Calcit 的类型规则处于表层语言与 macro 展开后的 typed core 之间
 
 ## 精简类型表达式
 
-类型位置可以写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价。`assert-type`、`unsafe-coerce`、`js-cast`、
-`parse-cirru-edn-as`、`decode-map-as` 的类型参数和 `hint-fn` 只能放类型，复合类型直接裸写；`quote $ …` 写法同样可用：
+类型位置可以写精简类型表达式，它与 `:: 'Fn $ {} …` 形式等价。只能放类型的位置，复合类型直接裸写；
+`quote $ …` 写法同样可用，`calcit edit format` 会去掉 quote：
 
 ```cirru
 let
@@ -43,8 +43,8 @@ assert-type map-fn $ Fn C
   :where $ C Mappable
 ```
 
-可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数（可裸写），`defstruct`
-字段类型、`defenum` 载荷类型、`deftrait` 方法类型（复合类型目前仍写 `quote $ …`），`hint-fn` 的整个签名（`hint-fn $ Fn Number (-> String) (:async)`；
+可用位置：`assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as` 的类型参数，`defstruct`
+字段类型、`defenum` 载荷类型、`defunion` 成员、`deftrait` 方法类型，`hint-fn` 的整个签名（`hint-fn $ Fn Number (-> String) (:async)`；
 只标记异步时写 `hint-fn Async`，或 `hint-fn $ Async (:features :js-ffi)`），
 以及 `calcit edit schema --code 'quote $ Fn String $ -> Number'`。Snapshot 的 `:schema` 也以这种写法保存，例如
 `:schema $ quote $ Fn String (-> Number)`，单个类型名保存为 `:schema $ quote Dynamic`。检查器和各后端读到的类型相同。
@@ -72,7 +72,7 @@ quote $ Macro (Expr T)
 解码与转换的目标类型（`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as`、`try-parse-cirru-edn-as`、`js-cast`
 的第二个参数）里的旧写法在加载时不报错，检查时报告非阻塞的 `W_LEGACY_TYPE_SYNTAX` 提示，并给出精简写法；
 `edit format` 与其他位置一样把它们改写，例如 `decode-map-as raw $ :: 'List 'Dynamic` 改为
-`decode-map-as raw $ quote $ List Dynamic`，`parse-cirru-edn-as text :number` 改为 `parse-cirru-edn-as text 'Number`。
+`decode-map-as raw $ List Dynamic`，`parse-cirru-edn-as text :number` 改为 `parse-cirru-edn-as text 'Number`。
 
 ```bash
 calcit app.cirru edit schema app.main/f --code "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
