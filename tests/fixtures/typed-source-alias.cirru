@@ -11,7 +11,7 @@
     'fix-command.alias-evidence $ %{} 'FileEntry
       :defs $ {}
         'AliasBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AliasBase (:value 'Number)
+          :code $ quote $ defstruct AliasBase (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'AliasEnriched $ %{} 'CodeEntry (:doc |)
@@ -27,7 +27,7 @@
           :examples $ []
           :schema $ quote Impl
         'ChoiceBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum ChoiceBase (:value 'Number)
+          :code $ quote $ defenum ChoiceBase (:value Number)
           :examples $ []
           :schema $ quote EnumDef
         'ChoiceEnriched $ %{} 'CodeEntry (:doc |)
@@ -35,11 +35,11 @@
           :examples $ []
           :schema $ quote EnumDef
         'OtherBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OtherBase (:value 'Number)
+          :code $ quote $ defstruct OtherBase (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'OtherChoice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum OtherChoice (:value 'Number)
+          :code $ quote $ defenum OtherChoice (:value Number)
           :examples $ []
           :schema $ quote EnumDef
         'apply-alias $ %{} 'CodeEntry (:doc |)
@@ -268,7 +268,7 @@
     'fix-command.other-side $ %{} 'FileEntry
       :defs $ {}
         'AliasBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AliasBase (:value 'Number)
+          :code $ quote $ defstruct AliasBase (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'state-alias $ %{} 'CodeEntry (:doc |)

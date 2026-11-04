@@ -14,8 +14,8 @@
           :doc "|Bundle indentation-based Calcit source files into a runnable snapshot."
           :code $ quote $ defn main! ()
             let
-                CodeEntry $ defstruct CodeEntry (:doc 'String) (:code 'Dynamic) (:examples 'List)
-                FileEntry $ defstruct FileEntry (:ns CodeEntry) (:defs 'Map)
+                CodeEntry $ defstruct CodeEntry (:doc String) (:code Dynamic) (:examples List)
+                FileEntry $ defstruct FileEntry (:ns CodeEntry) (:defs Map)
                 make-code-entry $ fn (form)
                   %{} CodeEntry (:doc |) (:code form)
                     :examples $ []

@@ -398,7 +398,8 @@
               assert= false $ .ok? $ try-decode-map-as ([] 1 :b 3) TripleInput
               assert= ([] 1 |a)
                 parse-cirru-edn-as "|[] 1 |a" $ quote $ Tuple Number String
-              assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1" $ quote $ Tuple Number String
+              assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1"
+                quote $ Tuple Number String
             :tags $ #{} :union :unit
         'scale-decodes? $ %{} 'CodeEntry
           :doc "|A member kind that matches but holds the wrong elements still fails."

@@ -28,7 +28,7 @@
     'app.migration $ %{} 'FileEntry
       :defs $ {}
         'TraversalBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct TraversalBox (:value 'Number)
+          :code $ quote $ defstruct TraversalBox (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'active-error $ %{} 'CodeEntry (:doc |)
@@ -323,7 +323,7 @@
         'struct-probe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn struct-probe ()
             let
-                Person $ defstruct Person $ :name 'String
+                Person $ defstruct Person $ :name String
               nil? $ &struct:definition $ Person :name |Ada
           :examples $ []
           :schema $ quote $ Fn (-> Bool)

@@ -21,7 +21,7 @@
           :code $ quote $ def Plugin (impl-traits Plugin0 PluginImpl)
           :examples $ []
         'Plugin0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Plugin0 (:item 'Number)
+          :code $ quote $ defenum Plugin0 (:item Number)
           :examples $ []
           :schema $ quote EnumDef
         'PluginImpl $ %{} 'CodeEntry (:doc |)

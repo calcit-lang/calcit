@@ -31,7 +31,7 @@
         'Widget $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Widget
             impl-traits
-              defstruct Widget $ :name 'String
+              defstruct Widget $ :name String
               , ChildImpl
           :examples $ []
           :schema $ quote StructDef

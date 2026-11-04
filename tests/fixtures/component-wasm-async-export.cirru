@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'WideResult $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct WideResult (:v00 'Number) (:v01 'Number) (:v02 'Number) (:v03 'Number) (:v04 'Number) (:v05 'Number) (:v06 'Number) (:v07 'Number) (:v08 'Number) (:v09 'Number) (:v10 'Number) (:v11 'Number) (:v12 'Number) (:v13 'Number) (:v14 'Number) (:v15 'Number) (:v16 'Number)
+          :code $ quote $ defstruct WideResult (:v00 Number) (:v01 Number) (:v02 Number) (:v03 Number) (:v04 Number) (:v05 Number) (:v06 Number) (:v07 Number) (:v08 Number) (:v09 Number) (:v10 Number) (:v11 Number) (:v12 Number) (:v13 Number) (:v14 Number) (:v15 Number) (:v16 Number)
           :examples $ []
           :schema $ quote StructDef
         'echo-result $ %{} 'CodeEntry (:doc |)

@@ -80,7 +80,7 @@
     'app.schema $ %{} 'FileEntry
       :defs $ {}
         'Story $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Story (:title 'String)
+          :code $ quote $ defstruct Story (:title String)
           :examples $ []
           :schema $ quote StructDef
         'decode-story $ %{} 'CodeEntry (:doc |)

@@ -27,7 +27,7 @@ const fieldMethod = typeQuery.data.methods.find((method) => method.name === ".co
 assert.equal(fieldMethod?.status, "proven", "Agent method discovery must prove the Struct field contract");
 assert.deepEqual(fieldMethod.parameter_types, ["tag"]);
 assert.equal(fieldMethod.return_type, "bool");
-const invalid = "let ((Point (defstruct Point (:x 'Number))) (point (%{} Point (:x 1)))) (point .contains-field? |x)";
+const invalid = "let ((Point (defstruct Point (:x Number))) (point (%{} Point (:x 1)))) (point .contains-field? |x)";
 const mismatch = spawnSync(binary, ["src/cirru/calcit-core.cirru", "eval", invalid], { encoding: "utf8" });
 assert.notEqual(mismatch.status, 0, "String field names must fail strict type checking");
 assert.match(mismatch.stderr, /W_METHOD_ARG_TYPE_MISMATCH/);

@@ -2185,9 +2185,9 @@ mod tests {
       &snapshot(vec![
         (
           "Metrics",
-          data_entry("defstruct Metrics (:small 'Int8) (:samples (:: 'List 'Float32))"),
+          data_entry("defstruct Metrics (:small Int8) (:samples (:: 'List 'Float32))"),
         ),
-        ("Packet", data_entry("defenum Packet (:data Metrics 'UInt64) (:error 'String)")),
+        ("Packet", data_entry("defenum Packet (:data Metrics UInt64) (:error String)")),
         (
           "roundtrip",
           component_function_entry(
@@ -2708,7 +2708,7 @@ mod tests {
   fn prefers_a_local_declaration_over_the_unqualified_core_capability_name() {
     let report = export_snapshot(
       &snapshot(vec![
-        ("FfiTask", data_entry("defstruct FfiTask (:id 'String)")),
+        ("FfiTask", data_entry("defstruct FfiTask (:id String)")),
         (
           "read-task",
           function_entry(
@@ -2734,7 +2734,7 @@ mod tests {
   fn rejects_declaration_type_argument_arity_mismatch() {
     let report = export_snapshot(
       &snapshot(vec![
-        ("Box", data_entry("defstruct Box ('T) (:value 'T)")),
+        ("Box", data_entry("defstruct Box (T) (:value T)")),
         (
           "read-box",
           function_entry(
@@ -2757,7 +2757,7 @@ mod tests {
   fn preserves_generic_declaration_parameters_with_monomorphic_application() {
     let report = export_snapshot(
       &snapshot(vec![
-        ("Box", data_entry("defstruct Box ('T) (:value 'T)")),
+        ("Box", data_entry("defstruct Box (T) (:value T)")),
         (
           "read-box",
           function_entry(

@@ -12,7 +12,7 @@
     %{} 'FileEntry
       :defs $ {}
         'User $ %{} 'CodeEntry (:doc "|Record type used for bind-type fixture")
-          :code $ quote $ defstruct User (:name 'String)
+          :code $ quote $ defstruct User (:name String)
           :examples $ []
           :schema $ quote StructDef
         'main! $ %{} 'CodeEntry

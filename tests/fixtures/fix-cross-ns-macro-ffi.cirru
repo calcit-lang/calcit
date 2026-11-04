@@ -18,7 +18,7 @@
             :names $ {} $ :select! |select
           :schema $ quote Trait
         'Effect $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Effect (:name 'Tag) (:coord 'List) (:args 'List) (:method 'Fn)
+          :code $ quote $ defstruct Effect (:name Tag) (:coord List) (:args List) (:method Fn)
           :examples $ []
           :schema $ quote StructDef
         'defeffect $ %{} 'CodeEntry (:doc |)
