@@ -159,6 +159,7 @@ function desugarCompact(node) {
 }
 
 // Member types of defstruct/defenum/defunion may be written bare since #2516
+// and compound ones since #2582
 // (`Number`, `(List Number)`); compare them in the quoted spelling.
 function quoteDeclaredType(node) {
   if (typeof node === "string") return /^[A-Z]/.test(node) || /^[\w.-]+\/[A-Z]/.test(node) ? `'${node}` : node;
@@ -170,6 +171,16 @@ function quoteDeclarationTypes(node) {
   if (!Array.isArray(node)) return node;
   const [head, name, ...slots] = node;
   if (head === "defunion") return [head, name, ...slots.map(quoteDeclaredType)];
+  // deftrait method types may be written bare since #2582: `.show $ Fn T (-> String)`.
+  if (head === "deftrait") {
+    const method = entry => {
+      if (!Array.isArray(entry)) return entry;
+      if (entry.length === 2 && typeof entry[0] === "string" && entry[0].startsWith(".")) return [entry[0], quoteDeclaredType(entry[1])];
+      if (entry.length === 3 && entry[0] === "[]") return [entry[0], entry[1], quoteDeclaredType(entry[2])];
+      return entry;
+    };
+    return [head, name, ...slots.map(slot => (Array.isArray(slot) && slot[0] === "{}" ? slot.map((entry, i) => (i === 0 ? entry : method(entry))) : method(slot)))];
+  }
   if (head !== "defstruct" && head !== "defenum") return node;
   const member = entry => {
     const last = head === "defstruct" ? Math.min(2, entry.length) : entry.length;
@@ -225,7 +236,8 @@ function contract(row, family, nominalNames = new Map(), variables = new Set()) 
     return children;
   };
   if (publicContract.declaration) publicContract.declaration = { quote: normalize(canonicalTypeSyntax(quoteDeclarationTypes(publicContract.declaration.quote))) };
-  if (publicContract.schema) publicContract.schema = { quote: normalize(canonicalTypeSyntax(publicContract.schema.quote, true)) };
+  // Trait method types may be written bare since #2582; compare them in the quoted spelling.
+  if (publicContract.schema) publicContract.schema = { quote: normalize(canonicalTypeSyntax(quoteDeclaredType(publicContract.schema.quote), true)) };
   if (publicContract.parameters) publicContract.parameters = publicContract.parameters.map(item => ({ quote: normalize(item.quote) }));
   if (publicContract.rest) publicContract.rest = { quote: normalize(publicContract.rest.quote) };
   if (publicContract.returns) publicContract.returns = { quote: normalize(publicContract.returns.quote) };
