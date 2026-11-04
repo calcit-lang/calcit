@@ -46,7 +46,7 @@ related:
 说明：
 
 - 预告只在 `--check-only` 输出时运行，`run`、`js` 等命令的预检不运行；`--all-defs`、`--ns`、`--format json` 的检查暂不包含预告。
-- 是否运行预告按名字判断：项目或依赖库的定义里出现 `&map:diff-triple`、`parse-cirru-list`、`cirru-quote:to-list` 等名字就会重查；项目代码里的 `.to-list` 也算，即使接收者是普通 Map 或 Set、最后不产生提示（依赖库里的 `.to-list` 不算）。
+- 是否运行预告按名字判断：项目或依赖库的定义里出现 `&map:diff-triple`、`parse-cirru-list`、`cirru-quote:to-list` 等名字就会重查；项目代码里的 `.to-list` 也算，即使接收者是普通 Map 或 Set、最后不产生提示（依赖库里的 `.to-list` 不算）。判断看的是展开前的源码，宏在展开时才生成的这些名字不会触发预告，升级到 0.35.0 后由正式检查报出。
 - 预告会把项目和依赖库的命名空间按新类型再检查一遍（core 不重查），release 构建下 Respo 约多 1.3 秒，依赖较多的 Error Viewer 约多 2 秒；提示只报项目自身的代码。
 - map 回调参数改为 `Tuple K V`（#2561）不在本次预告范围内。
 - 0.34.6 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数，不触发预告。
