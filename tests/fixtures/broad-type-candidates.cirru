@@ -40,6 +40,7 @@
             partly-anonymous! $ %:: Op :reset
             partly-anonymous! $ :: :ping
             on-click dispatch!
+            on-shadowed dispatch!
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -52,6 +53,18 @@
             d! $ %:: Op :add 1
             d! $ %:: Op :reset
             , &unit
+          :examples $ []
+          :schema $ quote $ Fn
+            Fn Enum $ -> Unit
+            -> Unit
+        'on-shadowed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn on-shadowed (d!)
+            d! $ %:: Op :reset
+            let
+                d! $ fn (m)
+                  hint-fn $ Fn Enum (-> Unit)
+                  , &unit
+              d! $ %:: Msg :text |a
           :examples $ []
           :schema $ quote $ Fn
             Fn Enum $ -> Unit

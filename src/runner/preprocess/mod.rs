@@ -14096,6 +14096,11 @@ pub fn preprocess_defn(
         }
         recur_param_types = parameters;
       }
+      // Only the definition's own parameters, not those of a nested `fn`,
+      // collect call-site evidence for its `W_BROAD_TYPE` notes.
+      if info.at_ns.as_ref() == ctx.file_ns && info.at_def.as_ref() == def_name.as_ref() {
+        body_types.mark_defn_parameters(&param_symbols);
+      }
       let mut proof_bindings = proof_provenance::BindingScope::new();
       for parameter in &zs {
         proof_bindings.bind(parameter, None, &body_types);

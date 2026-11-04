@@ -1348,7 +1348,11 @@ pub(crate) fn check_local_fn_call_arg_types(
 
   // Calling a parameter of the current function, such as a `d!` callback,
   // tells what that parameter's own parameters receive.
-  let _broad_slot_owner = super::broad_type_evidence::defn_param_index(call_info.file_ns, call_info.def_name, &local.sym, local_type)
+  // A `let`, pattern or nested `fn` that rebinds the name is another binding.
+  let _broad_slot_owner = scope_types
+    .is_defn_parameter(&local.sym)
+    .then(|| super::broad_type_evidence::defn_param_index(call_info.file_ns, call_info.def_name, &local.sym, local_type))
+    .flatten()
     .and_then(|index| {
       super::broad_type_evidence::CallOwnerScope::enter(call_info.file_ns, call_info.def_name, vec![SchemaSlotStep::Arg(index)])
     });

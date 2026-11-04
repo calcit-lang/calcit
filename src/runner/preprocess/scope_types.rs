@@ -2,7 +2,7 @@
 //! Effects revoke refinements, not the independently established binding types.
 
 use std::borrow::Borrow;
-use std::collections::{HashMap, hash_map};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -19,6 +19,9 @@ pub struct ScopeTypes {
   refinements: HashMap<Arc<str>, Option<Annotation>>,
   generics: HashMap<Arc<str>, Arc<str>>,
   generic_capabilities: Option<Arc<HashMap<Arc<str>, Annotation>>>,
+  /// Names that still refer to the parameters of the enclosing top-level
+  /// `defn`; any later binding of the name drops it.
+  defn_parameters: HashSet<Arc<str>>,
 }
 
 impl ScopeTypes {
@@ -33,10 +36,12 @@ impl ScopeTypes {
       refinements: HashMap::new(),
       generics: HashMap::new(),
       generic_capabilities: None,
+      defn_parameters: HashSet::new(),
     }
   }
 
   pub fn insert(&mut self, name: Arc<str>, annotation: Annotation) -> Option<Annotation> {
+    self.defn_parameters.remove(&name);
     self.parameter_shadowed_types.remove(&name);
     self.refinements.remove(&name);
     self.values.insert(name, annotation)
@@ -44,6 +49,7 @@ impl ScopeTypes {
 
   /// Value parameters do not redeclare a captured nominal type alias.
   pub(super) fn shadow_parameter(&mut self, name: &Arc<str>) {
+    self.defn_parameters.remove(name);
     if let Some(annotation) = self.type_reference(name).filter(|annotation| {
       matches!(
         annotation.as_ref(),
@@ -56,8 +62,19 @@ impl ScopeTypes {
   }
 
   pub(super) fn bind_parameter(&mut self, name: Arc<str>, annotation: Annotation) {
+    self.defn_parameters.remove(&name);
     self.refinements.remove(&name);
     self.values.insert(name, annotation);
+  }
+
+  /// Marks `names` as the parameters of the top-level `defn` being checked.
+  pub(super) fn mark_defn_parameters(&mut self, names: &[Arc<str>]) {
+    self.defn_parameters = names.iter().cloned().collect();
+  }
+
+  /// Whether `name` still refers to a parameter of the top-level `defn`.
+  pub(super) fn is_defn_parameter(&self, name: &str) -> bool {
+    self.defn_parameters.contains(name)
   }
 
   pub(super) fn type_reference(&self, name: &str) -> Option<&Annotation> {
@@ -222,11 +239,13 @@ impl ScopeTypes {
   where
     Arc<str>: Borrow<Q>,
   {
+    self.defn_parameters.remove(name);
     self.refinements.remove(name);
     self.values.remove(name)
   }
 
   pub fn clear(&mut self) {
+    self.defn_parameters.clear();
     self.values.clear();
     self.parameter_shadowed_types.clear();
     self.refinements.clear();
@@ -256,6 +275,7 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
       refinements: HashMap::new(),
       generics: HashMap::new(),
       generic_capabilities: None,
+      defn_parameters: HashSet::new(),
     }
   }
 }

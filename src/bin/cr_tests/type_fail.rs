@@ -4781,13 +4781,12 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
       .filter(|advisory| advisory.code() == Some("W_BROAD_TYPE"))
       .map(|advisory| (advisory.location().def.to_string(), advisory.hint().map(str::to_owned)))
       .collect::<Vec<_>>();
+    // A `hint-fn` inside a body adds its own note without a slot; the
+    // schema's note is the one that can carry a candidate.
     let hint = |def: &str| {
-      notes
-        .iter()
-        .find(|(name, _)| name == def)
-        .unwrap_or_else(|| panic!("no note for {def}: {notes:?}"))
-        .1
-        .clone()
+      let mut own = notes.iter().filter(|(name, _)| name == def).peekable();
+      assert!(own.peek().is_some(), "no note for {def}: {notes:?}");
+      own.find_map(|(_, hint)| hint.clone())
     };
     let unique = |def: &str, place: &str, name: &str| {
       let hint = hint(def).unwrap_or_else(|| panic!("no hint for {def}: {notes:?}"));
@@ -4803,6 +4802,8 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
     // Calls of the `d!` parameter inside the body; passing `dispatch!`, which
     // itself accepts any enum, neither names nor rules out a type.
     unique("on-click", "arg 1 → arg 1", "Op");
+    // A `let` that rebinds `d!` to another function of the same type is not the parameter.
+    unique("on-shadowed", "arg 1 → arg 1", "Op");
     let mixed = hint("mixed!").expect("mixed! lists its types");
     assert!(
       mixed.contains("`broad-type-candidates.main/Msg`, `broad-type-candidates.main/Op`") && mixed.contains(":generics"),
