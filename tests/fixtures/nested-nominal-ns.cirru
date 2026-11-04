@@ -15,7 +15,7 @@
     'quatrefoil.repro $ %{} 'FileEntry
       :defs $ {}
         'State $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct State (:y 'Number)
+          :code $ quote $ defstruct State (:y Number)
           :examples $ []
           :schema $ quote StructDef
         'main! $ %{} 'CodeEntry (:doc |)
@@ -60,11 +60,11 @@
     'quatrefoil.types $ %{} 'FileEntry
       :defs $ {}
         'State $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct State (:x 'Number)
+          :code $ quote $ defstruct State (:x Number)
           :examples $ []
           :schema $ quote StructDef
         'T $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct T (:v 'Number)
+          :code $ quote $ defstruct T (:v Number)
           :examples $ []
           :schema $ quote StructDef
         'apply-t $ %{} 'CodeEntry (:doc |)

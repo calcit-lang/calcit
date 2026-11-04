@@ -14,11 +14,11 @@
           :doc "|Synchronize a compact snapshot into a detailed calcit.cirru snapshot."
           :code $ quote $ defn main! ()
             let
-                Leaf $ defstruct Leaf (:at 'Number) (:by 'String) (:text 'String)
-                Expr $ defstruct Expr (:at 'Number) (:by 'String) (:data 'Map)
-                CodeEntry $ defstruct CodeEntry (:code 'Dynamic) (:doc 'String) (:examples 'List)
-                NsEntry $ defstruct NsEntry (:code 'Dynamic) (:doc 'String)
-                FileEntry $ defstruct FileEntry (:defs 'Map) (:ns 'Dynamic)
+                Leaf $ defstruct Leaf (:at Number) (:by String) (:text String)
+                Expr $ defstruct Expr (:at Number) (:by String) (:data Map)
+                CodeEntry $ defstruct CodeEntry (:code Dynamic) (:doc String) (:examples List)
+                NsEntry $ defstruct NsEntry (:code Dynamic) (:doc String)
+                FileEntry $ defstruct FileEntry (:defs Map) (:ns Dynamic)
                 quote->data $ fn (node)
                   if (.leaf? node) (&cirru-quote:leaf-text node) (&cirru-quote:to-list node)
                 code->detail $ fn (node now recur-fn)

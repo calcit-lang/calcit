@@ -385,7 +385,7 @@ try {
       // the wrong family or a concrete seed still cannot specialize the return.
       const boxOperations = JSON.stringify([
         ["edit", "def", "app.main/FieldBox", "--input-format", "cirru", "--code",
-          "quote $ defstruct FieldBox ([] 'T 'S) (:items $ quote $ List T) (:seed 'S)"],
+          "quote $ defstruct FieldBox ([] T S) (:items $ quote $ List T) (:seed S)"],
         ["edit", "schema", "app.main/FieldBox", "--input-format", "cirru", "--code", "quote $ :: 'StructDef"],
       ]);
       const boxPreview = JSON.parse(runMapper("edit", "transaction", "--code", boxOperations, "--dry-run", "--format", "json"));
@@ -530,9 +530,9 @@ try {
       const recursiveOperations = [
         ["edit", "add-ns", "app.declared"],
         ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.declared :as declared"],
-        ["edit", "def", "app.declared/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value 'Number)"],
-        ["edit", "def", "app.main/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value 'Number)"],
-        ["edit", "def", "app.declared/Envelope", "--input-format", "cirru", "--code", "quote $ defenum Envelope (:record 'Payload)"],
+        ["edit", "def", "app.declared/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value Number)"],
+        ["edit", "def", "app.main/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value Number)"],
+        ["edit", "def", "app.declared/Envelope", "--input-format", "cirru", "--code", "quote $ defenum Envelope (:record Payload)"],
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! ()\n  declared/Envelope :record $ Payload :value 7"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
@@ -593,7 +593,7 @@ try {
         runRecursive("query", "def", "app.main/main!", "--format", "edn");
         const operations = [
           ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
-            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value 'Number\n    Other $ defstruct LocalPayload $ :value 'Number\n    read $ fn (record)\n      hint-fn $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
+            "quote $ defn main! () $ let\n    Payload $ defstruct LocalPayload $ :value Number\n    Other $ defstruct LocalPayload $ :value Number\n    read $ fn (record)\n      hint-fn $ Fn Payload (-> Number)\n      :value record\n  read $ Other :value 7"],
           ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
             "quote $ Fn (-> Number)"],
         ];
@@ -1140,10 +1140,10 @@ try {
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
           "quote $ Fn (-> $ Result (List FsPath) String)"],
         ["edit", "def", "app.main/NumberPath", "--input-format", "cirru", "--code",
-          "quote $ def NumberPath $ defstruct NumberPath (:value 'Number)"],
+          "quote $ def NumberPath $ defstruct NumberPath (:value Number)"],
         ["edit", "schema", "app.main/NumberPath", "--input-format", "cirru", "--code", "quote 'StructDef"],
         ["edit", "def", "app.main/DirectoryChild", "--input-format", "cirru", "--code",
-          "quote $ def DirectoryChild $ defstruct DirectoryChild (:value 'String)"],
+          "quote $ def DirectoryChild $ defstruct DirectoryChild (:value String)"],
         ["edit", "schema", "app.main/DirectoryChild", "--input-format", "cirru", "--code", "quote 'StructDef"],
       ];
       const directoryNegativeOps = [];
@@ -1196,7 +1196,7 @@ try {
       const guardedMatchOps = [
         ["config", "set", "reload-fn", "app.main/main!"],
         ["edit", "def", "app.main/GuardedRecord", "--input-format", "cirru", "--code",
-          "quote $ defstruct GuardedRecord (:value 'Number)"],
+          "quote $ defstruct GuardedRecord (:value Number)"],
         ["edit", "schema", "app.main/GuardedRecord", "--input-format", "cirru", "--code", "quote 'StructDef"],
         ["edit", "def", "app.main/read-guarded", "--input-format", "cirru", "--code",
           "quote $ defn read-guarded (value) (struct-match value (GuardedRecord current current) (_ other (raise |Wrong-struct)))"],
@@ -2917,7 +2917,7 @@ try {
       run("edit", "schema", "calcit.data-view-replay/number-only", "--input-format", "cirru", "--code",
         "quote $ Fn Number (-> Number)");
       run("edit", "def", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code",
-        "quote $ defstruct RequiredNumber (:value 'Number)");
+        "quote $ defstruct RequiredNumber (:value Number)");
       run("edit", "schema", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code", "quote 'StructDef");
       for (const [label, body, diagnostic] of [
         ["wrong-scalar", "match (data-view |text) ((:string value) (number-only value)) (_ 0)", /W_FN_ARG_TYPE_MISMATCH/],
@@ -2947,7 +2947,7 @@ try {
         ["map-return", "update ({} (:n 1)) :n (fn (x) |wrong)"],
         ["list-return", "update ([] 1 2) 0 (fn (x) |wrong)"],
         ["list-index", "update ([] 1 2) |wrong inc"],
-        ["struct-return", "let ((Point (defstruct Point (:n 'Number))) (p (Point :n 1))) (update p :n $ fn (x) |wrong)"],
+        ["struct-return", "let ((Point (defstruct Point (:n Number))) (p (Point :n 1))) (update p :n $ fn (x) |wrong)"],
       ]) {
         run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn rejected () (${body}) &unit`);
@@ -3687,7 +3687,7 @@ try {
         }
       }
       run("edit", "def", "calcit.assert-evidence/WriteState", "--input-format", "cirru", "--code",
-        "quote $ defstruct WriteState (:count 'Number) (:label 'String)");
+        "quote $ defstruct WriteState (:count Number) (:label String)");
       run("edit", "def", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
         "quote $ defn write-count (state incoming) (state .assoc :count incoming)");
       run("edit", "schema", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
@@ -3715,7 +3715,7 @@ try {
       // This is the shared Respo #194 boundary, not a consumer-specific rule (#1553).
       run("edit", "add-ns", "calcit.constructor-wrappers");
       run("edit", "def", "calcit.constructor-wrappers/ImportedShape", "--input-format", "cirru", "--code",
-        "quote $ defstruct ImportedShape (:left 'Number) (:right 'Number)");
+        "quote $ defstruct ImportedShape (:left Number) (:right Number)");
       run("edit", "schema", "calcit.constructor-wrappers/ImportedShape", "--input-format", "cirru", "--code", "quote 'StructDef");
       for (const [name, expression] of [["empty-tree", "Option :none"], ["open-tree", "Option :some 1"]]) {
         run("edit", "def", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
@@ -3726,14 +3726,14 @@ try {
       run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
         "quote $ calcit.constructor-wrappers :as wrappers");
       for (const [name, code, schema] of [
-        ["RecursiveNode", "defenum RecursiveNode (:element 'calcit.assert-evidence/RecursiveElement) (:component 'calcit.assert-evidence/RecursiveComponent)", "'EnumDef"],
-        ["RecursivePair", "defstruct RecursivePair (:key 'Dynamic) (:node 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+        ["RecursiveNode", "defenum RecursiveNode (:element calcit.assert-evidence/RecursiveElement) (:component calcit.assert-evidence/RecursiveComponent)", "'EnumDef"],
+        ["RecursivePair", "defstruct RecursivePair (:key Dynamic) (:node calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["RecursiveElement", "defstruct RecursiveElement (:children $ :: 'List 'calcit.assert-evidence/RecursivePair)", "'StructDef"],
         ["RecursiveComponent", "defstruct RecursiveComponent (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
-        ["RecursiveSignal", "defenum RecursiveSignal ([] 'T) (:idle) (:data 'T)", "'EnumDef"],
+        ["RecursiveSignal", "defenum RecursiveSignal ([] T) (:idle) (:data T)", "'EnumDef"],
         ["RecursiveSignalHolder", "defstruct RecursiveSignalHolder (:signal $ :: 'calcit.assert-evidence/RecursiveSignal 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["make-open-signal", "defn make-open-signal () $ RecursiveSignal :data 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'calcit.assert-evidence/RecursiveSignal 'Dynamic)"],
-        ["RecursiveCell", "defstruct RecursiveCell ([] 'T) (:value 'T)", "'StructDef"],
+        ["RecursiveCell", "defstruct RecursiveCell ([] T) (:value T)", "'StructDef"],
         ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
         ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
         ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
@@ -4302,7 +4302,7 @@ try {
       const bindingModule = await import(pathToFileURL(join(bindingOutput, "app.binding-proof.mjs")).href);
       bindingModule.replay_$x_();
       run("edit", "def", "app.binding-proof/RequiredValue", "--input-format", "cirru", "--code",
-        "quote $ defstruct RequiredValue (:value 'app.binding-proof/Value)");
+        "quote $ defstruct RequiredValue (:value app.binding-proof/Value)");
       run("edit", "schema", "app.binding-proof/RequiredValue", "--input-format", "cirru", "--code", "quote 'StructDef");
       run("edit", "def", "app.binding-proof/RequiredOption", "--input-format", "cirru", "--code",
         "quote $ defstruct RequiredOption (:value $ quote $ Option String)");
@@ -4365,7 +4365,7 @@ try {
       ]) {
         await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
         run("edit", "def", "fix-command.main/Unrendered", "--input-format", "cirru", "--code",
-          "quote $ defstruct Unrendered (:n 'Number)");
+          "quote $ defstruct Unrendered (:n Number)");
         run("edit", "def", "fix-command.main/rejected-body-hint", "--input-format", "cirru", "--code", body);
         run("edit", "schema", "fix-command.main/rejected-body-hint", "--input-format", "cirru", "--code", schema);
         run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
@@ -4558,7 +4558,7 @@ try {
       ]) {
         await copyFile("tests/fixtures/count-contract.cirru", snapshot);
         run("edit", "def", "fix-command.main/Point", "--input-format", "cirru", "--code",
-          "quote $ defstruct Point (:x 'Number)");
+          "quote $ defstruct Point (:x Number)");
         run("edit", "def", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",
           `quote $ defn rejected-map (xs) (${body})`);
         run("edit", "schema", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",

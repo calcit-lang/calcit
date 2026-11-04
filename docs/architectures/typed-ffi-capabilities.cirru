@@ -11,7 +11,7 @@
       :schema $ quote StructDef
       :code $ quote
         def FfiTask $ impl-traits
-          defstruct FfiTask $ :raw 'Dynamic
+          defstruct FfiTask $ :raw Dynamic
           , FfiTaskOpsImpl
     'calcit.core/FfiTaskOps $ {}
       :mode :ensure
@@ -63,7 +63,7 @@
       :schema $ quote StructDef
       :code $ quote
         def FfiResponse $ impl-traits
-          defstruct FfiResponse $ :raw 'Dynamic
+          defstruct FfiResponse $ :raw Dynamic
           , FfiResponseOpsImpl
     'calcit.core/FfiResponseOps $ {}
       :mode :ensure

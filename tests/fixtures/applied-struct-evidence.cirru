@@ -11,11 +11,11 @@
     'app.applied-data $ %{} 'FileEntry
       :defs $ {}
         'DbA $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct DbA (:value 'Number)
+          :code $ quote $ defstruct DbA (:value Number)
           :examples $ []
           :schema $ quote StructDef
         'DbB $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct DbB (:value 'String)
+          :code $ quote $ defstruct DbB (:value String)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
@@ -23,16 +23,16 @@
     'app.applied-model $ %{} 'FileEntry
       :defs $ {}
         'ClosedLike $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ClosedLike ([] 'Db) (:base 'Db) (:db 'Db)
+          :code $ quote $ defstruct ClosedLike ([] Db) (:base Db) (:db Db)
           :examples $ []
           :schema $ quote StructDef
         'OuterLike $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OuterLike ([] 'Db)
+          :code $ quote $ defstruct OuterLike ([] Db)
             :reel $ quote $ app.applied-model/ReelLike Db
           :examples $ []
           :schema $ quote StructDef
         'PairLike $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct PairLike ([] 'Key 'Payload) (:key 'Key) (:payload 'Payload)
+          :code $ quote $ defstruct PairLike ([] Key Payload) (:key Key) (:payload Payload)
           :examples $ []
           :schema $ quote StructDef
         'ReelAlias $ %{} 'CodeEntry (:doc |)
@@ -40,9 +40,9 @@
           :examples $ []
           :schema $ quote StructDef
         'ReelLike $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ReelLike ([] 'Db) (:base 'Db) (:db 'Db)
+          :code $ quote $ defstruct ReelLike ([] Db) (:base Db) (:db Db)
             :records $ quote $ List (List Dynamic)
-            :merged? 'Bool
+            :merged? Bool
           :examples $ []
           :schema $ quote StructDef
         'keep-db $ %{} 'CodeEntry (:doc |)
@@ -157,12 +157,12 @@
           :examples $ []
           :schema $ quote StructDef
         'NilBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NilBox (:none 'Nil)
+          :code $ quote $ defstruct NilBox (:none Nil)
             :host $ quote $ JsNullish Number
           :examples $ []
           :schema $ quote StructDef
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny 'Int8) (:wide 'UInt16) (:single 'Float32)
+          :code $ quote $ defstruct NumBox (:small Int8) (:tiny Int8) (:wide UInt16) (:single Float32)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)
@@ -170,11 +170,11 @@
     'app.foreign-nominal $ %{} 'FileEntry
       :defs $ {}
         'Option $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Option (:none) (:some 'Number)
+          :code $ quote $ defenum Option (:none) (:some Number)
           :examples $ []
           :schema $ quote EnumDef
         'Result $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
           :schema $ quote EnumDef
       :ns $ %{} 'NsEntry (:doc |)

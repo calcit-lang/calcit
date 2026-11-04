@@ -40,7 +40,7 @@
     'js-global-shadow.schema $ %{} 'FileEntry
       :defs $ {} $ 'Element
         %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Element (:name 'String)
+          :code $ quote $ defstruct Element (:name String)
           :examples $ []
           :schema $ quote StructDef
       :ns $ %{} 'NsEntry (:doc |)

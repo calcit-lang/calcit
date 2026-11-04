@@ -2521,7 +2521,7 @@
               :code $ quote $ let
                   source $ &{} :a 1 :b 2 :c 3
                   seen $ ref $ assert-type ([])
-                    quote $ List (List Dynamic)
+                    quote $ List $ List Dynamic
                 let
                     filtered $ &map:filter source $ fn (pair)
                       swap! seen $ fn (items) (&list:append items pair)
@@ -3880,10 +3880,12 @@
           :schema $ quote UnionDef
           :tests $ [] $ %{} 'TestEntry (:name |decodes-parsed-cirru-rows)
             :code $ quote $ do
-              assert= ([] $ [] |a ([] |b |c) ([]))
-                decode-map-as (parse-cirru-list "|a (b c) ()") $ quote $ List CirruNode
-              assert= false $ result:ok?
-                try-decode-map-as ([] |a 1) $ quote $ List CirruNode
+              assert=
+                [] $ [] |a ([] |b |c) ([])
+                decode-map-as (parse-cirru-list "|a (b c) ()")
+                  quote $ List CirruNode
+              assert= false $ result:ok? $ try-decode-map-as ([] |a 1)
+                quote $ List CirruNode
             :tags $ #{} :core :unit
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
@@ -5421,7 +5423,7 @@
           :schema $ quote $ Fn T (-> Bool) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |narrows-checked-quote-constructor)
             :code $ quote $ let
-                QuoteBox $ defstruct QuoteBox $ :code 'CirruQuote
+                QuoteBox $ defstruct QuoteBox $ :code CirruQuote
                 construct $ fn (value)
                   hint-fn $ Fn Dynamic $ -> Struct
                   if (cirru-quote? value) (QuoteBox :code value) (raise "|Expected CirruQuote")
@@ -6609,9 +6611,9 @@
                   :poly $ quote $ List Number
                   :tagged T String
                   :none
-                quoted $ defenum Shape ([] 'T) (:circle 'Number)
+                quoted $ defenum Shape ([] T) (:circle Number)
                   :poly $ quote $ List Number
-                  :tagged 'T 'String
+                  :tagged T String
                   :none
               assert= quoted bare
               assert= 2 $ match (bare :circle 2)
@@ -6825,10 +6827,10 @@
                     :count Number 0
                     :items $ quote $ List Item
                     :table $ quote $ Map String (List Number)
-                  quoted $ defstruct Box ([] 'T)
-                    {} $ 'T Debug
-                    :value 'T
-                    :count 'Number 0
+                  quoted $ defstruct Box ([] T)
+                    {} $ T Debug
+                    :value T
+                    :count Number 0
                     :items $ quote $ List Item
                     :table $ quote $ Map String (List Number)
                 assert= quoted bare
@@ -6929,7 +6931,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
                 bare $ defunion Cell String $ quote (List Number)
-                quoted $ defunion Cell 'String $ quote (List Number)
+                quoted $ defunion Cell String $ quote (List Number)
               assert= quoted bare
             :tags $ #{} :core :unit
         'deref $ %{} 'CodeEntry

@@ -15,11 +15,11 @@
           :examples $ []
           :schema $ quote $ Ref Number
         'FixPerson $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct FixPerson (:name 'String) (:age 'Number)
+          :code $ quote $ defstruct FixPerson (:name String) (:age Number)
           :examples $ []
           :schema $ quote StructDef
         'FixPersonChoice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum FixPersonChoice (:person 'fix-command.main/FixPerson) (:none)
+          :code $ quote $ defenum FixPersonChoice (:person fix-command.main/FixPerson) (:none)
           :examples $ []
           :schema $ quote EnumDef
         'defaulted-struct-field $ %{} 'CodeEntry (:doc |)

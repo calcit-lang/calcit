@@ -11,11 +11,11 @@
     %{} 'FileEntry
       :defs $ {}
         'Message $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Message (:empty) (:pair 'String 'Number)
+          :code $ quote $ defenum Message (:empty) (:pair String Number)
           :examples $ []
           :schema $ quote EnumDef
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
+          :code $ quote $ defstruct Person (:name String) (:age Number)
           :examples $ []
           :schema $ quote StructDef
         'checked-core-alias-count $ %{} 'CodeEntry (:doc |)

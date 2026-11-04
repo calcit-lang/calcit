@@ -395,7 +395,7 @@ fn malformed_struct_match_reports_the_pattern_without_log_capability_noise() {
     ("_ other", "struct-match expected (StructDef binding & body) or (_ binding & body)"),
     ("()", "struct-match expected (StructDef binding & body) or (_ binding & body)"),
   ] {
-    let snippet = format!("let\n    Tiny $ defstruct Tiny $ :value 'Number\n  struct-match (Tiny :value 1)\n    {arm}");
+    let snippet = format!("let\n    Tiny $ defstruct Tiny $ :value Number\n  struct-match (Tiny :value 1)\n    {arm}");
     let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
       .current_dir(&directory.0)
       .args(["--tips-level", "none", "eval", &snippet])
