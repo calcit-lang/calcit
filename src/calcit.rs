@@ -58,7 +58,9 @@ pub use fns::{ParamShape, ParamShapeToken, compare_param_shapes, validate_defini
 pub use list::{CalcitCallKind, CalcitList, CalcitListView, CalcitNumberBinaryOp};
 pub use local::CalcitLocal;
 pub use proc_failure::ProcFailure;
-pub use proc_name::{CalcitProc, ProcArity, ProcTypeSignature};
+pub use proc_name::{
+  CalcitProc, ProcArity, ProcTypeSignature, preview_0_35_core_schema, preview_0_35_types_enabled, set_preview_0_35_types,
+};
 pub use struct_value::CalcitStructValue;
 pub use sum_type::{CalcitEnumDef, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};

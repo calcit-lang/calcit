@@ -445,6 +445,26 @@ pub fn with_default_proof<R>(f: impl FnOnce() -> R) -> R {
   with_assertion_proof(f)
 }
 
+/// Recompile project namespaces under the 0.35.0 core return types (#2564)
+/// and restore the ordinary compiled program afterwards. The preview is a check only:
+/// nothing compiled inside it is kept for runs or codegen.
+pub fn with_preview_0_35_types<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore;
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      calcit::set_preview_0_35_types(false);
+    }
+  }
+  let _compiled_checkpoint = program::checkpoint_compiled_program();
+  let _slot_checkpoint = calcit::checkpoint_type_slot_declarations();
+  // Core and library definitions keep their compiled form: call sites read
+  // core return types from the schema, which the preview replaces.
+  program::clear_compiled_namespaces(|ns| ns != calcit::CORE_NS && should_emit_project_source_lint(ns));
+  calcit::set_preview_0_35_types(true);
+  let _restore = Restore;
+  f()
+}
+
 static DEFAULT_PROOF_AUDIT: AtomicBool = AtomicBool::new(true);
 
 /// `--no-proof-audit` keeps strict diagnostics but skips the default audit,

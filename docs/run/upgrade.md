@@ -24,6 +24,32 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.34.6 预告 0.35.0 收紧的 core 返回类型（#2564）
+
+0.35.0 会收紧两组 core 返回类型：
+
+- `&map:diff-triple` 返回 `Tuple (Set K) (Map K W) (List (Tuple K V W))`，不再是开放的 `List`（#2549）。
+- CirruQuote `.to-list` 返回 `Option (List CirruNode)`，`.parse-cirru-list` / `parse-cirru-list` 的结果是 `List CirruNode`，不再是 `List Dynamic`（#2556）。
+  `calcit.core/CirruNode` 是 0.34.6 新增的递归 union：`defunion CirruNode String $ quote $ List CirruNode`，现在就可以用作 `decode-map-as` 的目标或参数类型。
+
+运行时的值不变，变的只是检查器看到的类型。从 0.34.6 开始，项目代码用到这些函数、并且 `--check-only` 通过时，
+检查器会按 0.35.0 的类型再检查一遍项目自身的命名空间，把新增的问题报告为非阻塞的 `W_0_35_RETURN_TYPE_PREVIEW` 提示：
+
+```text
+[W_0_35_RETURN_TYPE_PREVIEW] [Warn] 0.35.0 preview: W_FN_ARG_TYPE_MISMATCH: Function `app.diff/count-rows` arg 1 expects type `list`, but got `tuple<set<string>, map<string, number>, list<tuple<string, number, number>>>` ...
+```
+
+仍然合法、不会报提示的写法：`&list:nth triple 0`、`count triple`，以及把 `List CirruNode` 传给 `List Dynamic` 参数。
+会报提示的写法：把 `&map:diff-triple` 的结果整体传给 `List` / `List Dynamic` 参数或交给 `map`，把 `List CirruNode` 传给 `List String` 这类更具体的参数。
+改法：按位置读取 Tuple（`&list:nth` 或 `let[]`），把参数类型改成 Tuple 或 `List CirruNode`，需要字符串列表时先 `decode-map-as`。
+
+说明：
+
+- 预告只在 `--check-only` 输出时运行，`run`、`js` 等命令的预检不运行；`--all-defs`、`--ns`、`--format json` 的检查暂不包含预告。
+- 预告多一次项目命名空间的检查，Respo 上约多 1.3 秒（release 构建）。
+- map 回调参数改为 `Tuple K V`（#2561）不在本次预告范围内。
+- 0.34.6 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数，不触发预告。
+
 ## 0.34.0 `defstruct` / `defenum` / `defunion` 的类型名不再写 quote（#2516）
 
 这三个声明宏里的类型名现在直接写裸符号，不再需要 `'`：

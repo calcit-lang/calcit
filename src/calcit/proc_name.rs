@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use strum::IntoEnumIterator;
@@ -630,7 +631,34 @@ impl CalcitProc {
   /// Get the type signature for this proc if available
   /// Returns None for procs without type annotations
   pub fn get_type_signature(&self) -> Option<&'static ProcTypeSignature> {
+    if preview_0_35_types_enabled()
+      && let Some(signature) = PREVIEW_0_35_PROC_TYPE_SIGNATURES.get(self)
+    {
+      return Some(signature);
+    }
     PROC_TYPE_SIGNATURES.get(self)
+  }
+
+  /// The 0.35.0 return types previewed by `--check-only` (#2564): `&map:diff-triple`
+  /// returns a fixed Tuple (#2549) and the Cirru list conversions return
+  /// `List CirruNode` (#2556).
+  fn build_preview_0_35_type_signature(&self) -> Option<ProcTypeSignature> {
+    use CalcitProc::*;
+    match self {
+      NativeMapDiffTriple => Some(ProcTypeSignature {
+        return_type: map_diff_triple_tuple(),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("W"))],
+      }),
+      ParseCirruList => Some(ProcTypeSignature {
+        return_type: list_of(cirru_node()),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeCirruQuoteToList => Some(ProcTypeSignature {
+        return_type: list_of(cirru_node()),
+        arg_types: vec![some_tag("cirru-quote")],
+      }),
+      _ => None,
+    }
   }
 
   fn build_type_signature(&self) -> Option<ProcTypeSignature> {
@@ -1591,6 +1619,70 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
     .filter_map(|proc| proc.build_type_signature().map(|signature| (proc, signature)))
     .collect()
 });
+
+static PREVIEW_0_35_PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = LazyLock::new(|| {
+  CalcitProc::iter()
+    .filter_map(|proc| proc.build_preview_0_35_type_signature().map(|signature| (proc, signature)))
+    .collect()
+});
+
+static PREVIEW_0_35_TYPES: AtomicBool = AtomicBool::new(false);
+
+/// Switch the 0.35.0 core return types on for one preview check (#2564).
+pub fn set_preview_0_35_types(enabled: bool) {
+  PREVIEW_0_35_TYPES.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether the 0.35.0 core return types are being previewed.
+pub fn preview_0_35_types_enabled() -> bool {
+  PREVIEW_0_35_TYPES.load(Ordering::Relaxed)
+}
+
+/// The 0.35.0 schema of a core definition whose return type the preview
+/// changes (#2564), built from its current schema; `None` for the others.
+pub fn preview_0_35_core_schema(def: &str, schema: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitTypeAnnotation>> {
+  /// `List Dynamic` → `List CirruNode`, also inside `Option` / `Result`.
+  fn cirru_rows(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic) => list_of(cirru_node()),
+      CalcitTypeAnnotation::TypeRef(name, args) => Arc::new(CalcitTypeAnnotation::TypeRef(
+        name.clone(),
+        Arc::new(args.iter().map(cirru_rows).collect()),
+      )),
+      _ => annotation.clone(),
+    }
+  }
+  let CalcitTypeAnnotation::Fn(signature) = schema.as_ref() else {
+    return None;
+  };
+  let return_type = match def {
+    "&map:diff-triple" => map_diff_triple_tuple(),
+    "&cirru-quote:to-list" | "cirru-quote:to-list" | "parse-cirru-list" | "try-parse-cirru-list" => cirru_rows(&signature.return_type),
+    _ => return None,
+  };
+  let mut next = signature.as_ref().clone();
+  next.return_type = return_type;
+  Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(next))))
+}
+
+/// `calcit.core/CirruNode`, the recursive `String | List CirruNode` union.
+pub(crate) fn cirru_node() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/CirruNode"), Arc::new(vec![])))
+}
+
+/// `Tuple (Set K) (Map K W) (List (Tuple K V W))`: dropped keys, added
+/// entries and the entries both maps share.
+pub(crate) fn map_diff_triple_tuple() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+    set_of(type_var("K")),
+    map_of(type_var("K"), type_var("W")),
+    list_of(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+      type_var("K"),
+      type_var("V"),
+      type_var("W"),
+    ])))),
+  ])))
+}
 
 #[cfg(test)]
 mod tests {
