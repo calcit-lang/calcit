@@ -273,7 +273,7 @@ let
 
 Two helpers are useful when debugging trait + method dispatch:
 
-- `&methods-of` returns a list of available method names (strings, including the leading dot).
+- `&methods-of` returns a list of the available methods as method values, typed `List Fn`. Compare them with method literals (`includes? (&methods-of xs) .add`) or by printed name (`= (str m) |.add`); they are not strings. A callback over the list can leave its parameter unannotated, since it is inferred as `Fn`.
 - `&inspect-methods` prints impl records and methods to stderr, and returns the value unchanged.
 - `impl-origin` 返回 trait 来源 `Option<Trait>`；内建方法集合返回 `Option :none`。
 

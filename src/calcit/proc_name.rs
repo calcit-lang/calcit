@@ -690,8 +690,10 @@ impl CalcitProc {
         return_type: some_tag("unit"),
         arg_types: vec![variadic_dynamic()],
       }),
+      // Method values are callable (native `Calcit::Method`, JS invoke
+      // closures), so the honest element type is a function (#2534).
       NativeMethodsOf => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(Arc::new(CalcitTypeAnnotation::DynFn)),
         arg_types: vec![dynamic_tag()],
       }),
       NativeInspectMethods => Some(ProcTypeSignature {

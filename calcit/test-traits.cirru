@@ -1610,6 +1610,9 @@
               assert= true $ includes? ms .add
               assert= true $ includes? ms .count
               assert= true $ includes? ms .includes?
+              ; "elements are method values (typed `List Fn`, #2534), compared by value or by their printed name"
+              assert= true $ any? ms $ fn (m)
+                = (str m) |.add
               ; "`&inspect-methods`" returns the original value unchanged
               assert= xs $ &inspect-methods xs |list
             let

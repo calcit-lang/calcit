@@ -328,7 +328,7 @@ assert-type f $ quote $ Fn T (-> T) (:generics T)
 - `impl-traits` - attach impl records to a struct/enum definition (user impls: later impls override earlier ones for same method name)
 - `.method` - normal method dispatch
 - `&trait-call` - explicit trait method call: `&trait-call Trait :method receiver & args`
-- `&methods-of` - list runtime-available methods (strings including leading dot)
+- `&methods-of` - list runtime-available methods as method values (`List Fn`; compare with `.name` literals or `str`)
 - `&inspect-methods` - print impl/method resolution to stderr, returns the value unchanged
 - `assert-traits` - runtime check that a value implements a trait, returns the value unchanged
 
