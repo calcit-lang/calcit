@@ -6629,6 +6629,21 @@ mod tests {
   }
 
   #[test]
+  fn loading_leaves_malformed_bare_types_to_the_type_parser() {
+    // `List number` is a bare compact type with a grammar error; preprocessing
+    // reports it as `E_TYPE_EXPR_SYNTAX`, so loading must not read it as legacy syntax.
+    for source in [
+      "assert-type xs $ List number",
+      "unsafe-coerce v $ Fn Number -> Number",
+      "decode-map-as raw $ Map Tag number",
+    ] {
+      let node = parse_one(source);
+      assert_eq!(migrate_code_type_syntax(&node), (node.clone(), 0), "{source}");
+      assert!(check_code_type_syntax(&node, "mini.main/f", "calcit.cirru").is_ok(), "{source}");
+    }
+  }
+
+  #[test]
   fn format_migrates_decoder_targets_but_loading_accepts_them() {
     let cases = [
       ("decode-map-as raw $ :: 'List 'Dynamic", "decode-map-as raw $ quote $ List Dynamic"),

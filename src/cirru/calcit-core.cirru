@@ -13225,6 +13225,11 @@
                     (:ok _) (raise "|parsing does not validate nested payload types")
                 (:err message) (raise message)
               :tags $ #{} :parse-boundary :unit
+            %{} 'TestEntry (:name |decodes-bare-compound-type)
+              :code $ quote $ do
+                assert= true $ result:ok? $ try-decode-map-as ([] |abc) $ List String
+                assert= true $ result:err? $ try-decode-map-as ([] 1 |wrong) $ List Number
+              :tags $ #{} :unit
             %{} 'TestEntry (:name |decoded-ref-keeps-original-alias-open)
               :code $ quote $ let
                   original $ ref $ parse-cirru-edn "|do 1"

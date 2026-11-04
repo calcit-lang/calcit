@@ -119,8 +119,10 @@ pub(crate) fn desugar_bare_form(form: &Calcit) -> Option<Result<Calcit, String>>
   desugar_payload_form(form)
 }
 
-/// Whether `payload` is a compact type expression that can be written without
-/// `quote` in a position that only holds a type (see `desugar_bare_form`).
+/// Whether `payload` is written as a bare compact type expression: a list whose
+/// head ends in an uppercase name (see `desugar_bare_form`). Grammar errors
+/// inside it are left to the type-expression parser, so `List number` still
+/// reports `E_TYPE_EXPR_SYNTAX` instead of reading as a legacy form.
 pub(crate) fn is_bare_compact_payload(payload: &Cirru) -> bool {
   let Cirru::List(items) = payload else {
     return false;
@@ -129,7 +131,7 @@ pub(crate) fn is_bare_compact_payload(payload: &Cirru) -> bool {
     return false;
   };
   let name = head.rsplit_once('/').map_or(head.as_ref(), |(_, def)| def);
-  is_compact_payload(payload) && is_uppercase_name(name) && desugar_type_expr(payload).is_ok()
+  is_compact_payload(payload) && is_uppercase_name(name)
 }
 
 /// Shared by the quoted and bare spellings: expand a compact payload list into
