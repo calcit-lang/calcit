@@ -17,7 +17,7 @@
           :schema $ quote Impl
         'EnumMetadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait EnumMetadata
-            .dummy $ quote $ Fn T (-> Unit) (:generics T)
+            .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
         'NamedCallback $ %{} 'CodeEntry (:doc |)
@@ -65,7 +65,7 @@
           :schema $ quote Impl
         'StructMetadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait StructMetadata
-            .dummy $ quote $ Fn T (-> Unit) (:generics T)
+            .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
         'add-numbers $ %{} 'CodeEntry (:doc |)
@@ -85,9 +85,8 @@
           :code $ quote $ defn compact-type-exprs (text)
             let
                 pick $ fn (x) x
-                typed-pick $ assert-type pick $ quote
-                  Fn T (-> T) (:generics T)
-                items $ parse-cirru-edn-as text $ quote (List Number)
+                typed-pick $ assert-type pick $ Fn T (-> T) (:generics T)
+                items $ parse-cirru-edn-as text $ List Number
               &+ (typed-pick 1) (count items)
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
@@ -269,9 +268,8 @@
             assert= true $ result:err? $ number->float32 0.1
             assert= (Result :ok 0.1) (number->float64 0.1)
             assert= ([] 127)
-              parse-cirru-edn-as "|[] 127" $ quote $ List Int8
-            assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128"
-              quote $ List Int8
+              parse-cirru-edn-as "|[] 127" $ List Int8
+            assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (List Int8)
             do true
           :examples $ []
           :schema $ quote $ Fn (-> Bool)

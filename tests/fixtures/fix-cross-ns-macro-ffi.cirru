@@ -12,7 +12,7 @@
       :defs $ {}
         'DomElement $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait DomElement
-            .select! $ quote $ Fn defprobe.macros/DomElement (-> Unit)
+            .select! $ Fn defprobe.macros/DomElement $ -> Unit
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
             :names $ {} $ :select! |select

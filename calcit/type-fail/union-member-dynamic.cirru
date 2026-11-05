@@ -25,8 +25,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'Uu $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion Uu String
-            quote $ List Dynamic
+          :code $ quote $ defunion Uu String (List Dynamic)
           :examples $ []
         'f $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn f (v)

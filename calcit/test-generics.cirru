@@ -16,7 +16,7 @@
           :schema $ quote StructDef
         'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
           :code $ quote $ defstruct Holder ([] T)
-            :box $ quote $ Box T
+            :box $ Box T
           :examples $ []
           :schema $ quote StructDef
         'Node $ %{} 'CodeEntry (:doc |)
@@ -59,8 +59,8 @@
                 s $ id2 |hi
                 debugged-n $ debug-id 1
                 debugged-s $ debug-id |hi
-              assert-type id2 $ quote $ Fn T (-> T) (:generics T)
-              assert-type debug-id $ quote $ Fn T (-> String) (:generics T)
+              assert-type id2 $ Fn T (-> T) (:generics T)
+              assert-type debug-id $ Fn T (-> String) (:generics T)
                 :where $ T Debug
               assert-type n 'Number
               assert-type s 'String

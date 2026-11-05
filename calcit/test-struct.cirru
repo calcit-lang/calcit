@@ -53,15 +53,13 @@
           :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox ([] T) (:value T)
-            :count $ quote $ Option Number
+            :count $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'DefaultFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DefaultFields (:host String) (:port Number 8080) (:label String |guest) (:mode Tag :read) (:secure? Bool false)
-            :tags
-              quote $ List String
-              []
-            :proxy $ quote $ Option String
+            :tags (List String) ([])
+            :proxy $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |omitted-fields-take-declared-defaults)
@@ -74,7 +72,7 @@
             :tags $ #{} :struct-defaults :unit
         'DefaultOnly $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DefaultOnly (:size Number 12)
-            :hint $ quote $ Option String
+            :hint $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |local-definition-fills-empty-container-defaults)
@@ -167,10 +165,10 @@
               :tags $ #{} :collection-proof
         'NullableLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableLiteralStore
-            :items $ quote $ List (JsNullish Number)
-            :unique $ quote $ Set (JsNullish Number)
-            :nested $ quote $ Map Tag
-              List $ Map Tag $ JsNullish Number
+            :items $ List $ JsNullish Number
+            :unique $ Set $ JsNullish Number
+            :nested $ Map Tag $ List
+              Map Tag $ JsNullish Number
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |nested-literal-members)
@@ -186,9 +184,8 @@
             :tags $ #{} :collection-proof
         'NullableNumberStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableNumberStore
-            :values $ quote $ Map Tag (JsNullish Number)
-            :nested $ quote $ List
-              Map Tag $ JsNullish Number
+            :values $ Map Tag $ JsNullish Number
+            :nested $ List $ Map Tag (JsNullish Number)
           :examples $ []
           :schema $ quote StructDef
           :tests $ []
@@ -221,8 +218,8 @@
               :tags $ #{} :collection-proof
         'OptionFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionFields
-            :count $ quote $ Option Number
-            :label $ quote $ Option String
+            :count $ Option Number
+            :label $ Option String
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
@@ -367,7 +364,7 @@
             let
                 values $ assert-type
                   {} (:present 7) (:absent nil)
-                  quote $ Map Tag $ JsNullish Number
+                  Map Tag $ JsNullish Number
                 alias values
               NullableNumberStore :values alias :nested $ [] alias
           :examples $ []
@@ -385,8 +382,7 @@
         'collect-unique-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collect-unique-proof (names)
             let
-                initial $ assert-type (#{})
-                  quote $ Set String
+                initial $ assert-type (#{}) (Set String)
               fold names initial $ fn (days name)
                 .union days $ #{} name
           :examples $ []
@@ -415,8 +411,7 @@
             :tags $ #{} :struct-defaults :unit
         'empty-list-proof $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-list-proof ()
-            assert-type ([])
-              quote $ List String
+            assert-type ([]) (List String)
           :examples $ []
           :schema $ quote $ Fn
             -> $ List String
@@ -438,7 +433,7 @@
                   initial $ #{}
                   alias initial
                 if flag alias $ #{}
-              quote $ Set String
+              Set String
           :examples $ []
           :schema $ quote $ Fn Bool
             -> $ Set String

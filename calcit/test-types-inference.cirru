@@ -25,19 +25,19 @@
           :schema $ quote StructDef
         'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackEnvelope ([] T)
-            :holder $ quote $ test-types-inference.main/CallbackHolder T
+            :holder $ test-types-inference.main/CallbackHolder T
           :examples $ []
           :schema $ quote StructDef
         'CallbackHolder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct CallbackHolder ([] T)
-            :callback $ quote $ Fn
+            :callback $ Fn
               Fn T $ -> Number
               -> Number
           :examples $ []
           :schema $ quote StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EmptyFieldBox ([] T S)
-            :items $ quote $ List T
+            :items $ List T
             :seed S
           :examples $ []
           :schema $ quote StructDef
@@ -47,9 +47,9 @@
           :schema $ quote StructDef
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
-            :number $ quote $ Option Number
-            :text $ quote $ Option String
-            :result $ quote $ Result Number String
+            :number $ Option Number
+            :text $ Option String
+            :result $ Result Number String
           :examples $ []
           :schema $ quote StructDef
         'Outcome $ %{} 'CodeEntry (:doc |)
@@ -69,7 +69,7 @@
           :schema $ quote EnumDef
         'SliceReceiver $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct SliceReceiver (:n Number)
-            :end $ quote $ Option Number
+            :end $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
@@ -1256,9 +1256,9 @@
                 expected-number $ Option :none
                 expected-text $ Option :none
                 expected-result $ Result :ok 1
-              assert-type expected-number $ quote $ Option Number
-              assert-type expected-text $ quote $ Option String
-              assert-type expected-result $ quote $ Result Number String
+              assert-type expected-number $ Option Number
+              assert-type expected-text $ Option String
+              assert-type expected-result $ Result Number String
               and
                 = expected-number $ :number fields
                 = expected-text $ :text fields
@@ -1398,7 +1398,7 @@
                     if (> v 1)
                       %:: MapEntryDecision :keep (str k |!) (* v 10)
                       %:: MapEntryDecision :drop
-              assert-type output $ quote $ Map String Number
+              assert-type output $ Map String Number
               &inspect-type output
           :examples $ []
           :schema $ quote $ Fn (-> Nil)
@@ -1582,14 +1582,14 @@
             let
                 opt-some $ Option :some 10
                 opt-none $ Option :none
-              assert-type opt-some $ quote $ Option Number
-              assert-type opt-none $ quote $ Option Number
+              assert-type opt-some $ Option Number
+              assert-type opt-none $ Option Number
               &inspect-type opt-some
               &inspect-type opt-none
             let
                 xs $ [] 1 2
                 empty-xs $ empty xs
-              assert-type empty-xs $ quote $ List Number
+              assert-type empty-xs $ List Number
               &inspect-type empty-xs
             let
                 tail $ rest |abc
@@ -1598,8 +1598,8 @@
             let
                 first-char $ &str:first |abc
                 missing-first $ &str:first |
-              assert-type first-char $ quote $ Option String
-              assert-type missing-first $ quote $ Option String
+              assert-type first-char $ Option String
+              assert-type missing-first $ Option String
               &inspect-type first-char
               &inspect-type missing-first
             let
@@ -1607,10 +1607,10 @@
                 string-first $ first |abc
                 empty-list-first $ first $ []
                 empty-str-first $ first |
-              assert-type list-first $ quote $ Option Number
-              assert-type string-first $ quote $ Option String
-              assert-type empty-list-first $ quote $ Option Dynamic
-              assert-type empty-str-first $ quote $ Option String
+              assert-type list-first $ Option Number
+              assert-type string-first $ Option String
+              assert-type empty-list-first $ Option Dynamic
+              assert-type empty-str-first $ Option String
               &inspect-type list-first
               &inspect-type string-first
               &inspect-type empty-list-first
@@ -1618,15 +1618,15 @@
             let
                 list-last $ last $ [] 1 2 3
                 empty-list-last $ last $ []
-              assert-type list-last $ quote $ Option Number
-              assert-type empty-list-last $ quote $ Option Dynamic
+              assert-type list-last $ Option Number
+              assert-type empty-list-last $ Option Dynamic
               &inspect-type list-last
               &inspect-type empty-list-last
             let
                 nth-char $ &str:nth |abc 1
                 missing-char $ &str:nth |abc 9
-              assert-type nth-char $ quote $ Option String
-              assert-type missing-char $ quote $ Option String
+              assert-type nth-char $ Option String
+              assert-type missing-char $ Option String
               &inspect-type nth-char
               &inspect-type missing-char
             let
@@ -1640,8 +1640,8 @@
               assert= (Option :none) miss-index
               assert-type raw-hit-index 'Number
               assert-type raw-miss-index 'Number
-              assert-type hit-index $ quote $ Option Number
-              assert-type miss-index $ quote $ Option Number
+              assert-type hit-index $ Option Number
+              assert-type miss-index $ Option Number
               &inspect-type raw-hit-index
               &inspect-type raw-miss-index
               &inspect-type hit-index
@@ -1651,8 +1651,8 @@
                 parsed-bad $ parse-float |oops
               assert= (Result :ok 1.5) parsed-ok
               assert= (Result :err |oops) parsed-bad
-              assert-type parsed-ok $ quote $ Result Number String
-              assert-type parsed-bad $ quote $ Result Number String
+              assert-type parsed-ok $ Result Number String
+              assert-type parsed-bad $ Result Number String
               &inspect-type parsed-ok
               &inspect-type parsed-bad
             let
@@ -1663,10 +1663,10 @@
                 found-index $ find-index ([] 1 2 3)
                   fn (x) (> x 1)
                 missing-index $ index-of ([] 1 2 3) 9
-              assert-type found $ quote $ Option Number
-              assert-type missing $ quote $ Option Number
-              assert-type found-index $ quote $ Option Number
-              assert-type missing-index $ quote $ Option Number
+              assert-type found $ Option Number
+              assert-type missing $ Option Number
+              assert-type found-index $ Option Number
+              assert-type missing-index $ Option Number
               &inspect-type found
               &inspect-type missing
               &inspect-type found-index
@@ -1680,12 +1680,12 @@
                 list-max $ .max $ [] 1 2 3
                 set-min $ .min $ #{} 1 2 3
                 string-index $ .find-index |abc |b
-              assert-type last-hit $ quote $ Option Number
-              assert-type last-index $ quote $ Option Number
-              assert-type last-position $ quote $ Option Number
-              assert-type list-max $ quote $ Option Number
-              assert-type set-min $ quote $ Option Number
-              assert-type string-index $ quote $ Option Number
+              assert-type last-hit $ Option Number
+              assert-type last-index $ Option Number
+              assert-type last-position $ Option Number
+              assert-type list-max $ Option Number
+              assert-type set-min $ Option Number
+              assert-type string-index $ Option Number
               &inspect-type last-hit
               &inspect-type last-index
               &inspect-type last-position
@@ -1702,11 +1702,11 @@
                 map-miss $ get
                   {} $ :a 1
                   , :b
-              assert-type list-hit $ quote $ Option Number
-              assert-type list-miss $ quote $ Option Number
-              assert-type string-hit $ quote $ Option String
-              assert-type map-hit $ quote $ Option Number
-              assert-type map-miss $ quote $ Option Number
+              assert-type list-hit $ Option Number
+              assert-type list-miss $ Option Number
+              assert-type string-hit $ Option String
+              assert-type map-hit $ Option Number
+              assert-type map-miss $ Option Number
               &inspect-type list-hit
               &inspect-type list-miss
               &inspect-type string-hit
@@ -1727,9 +1727,9 @@
               assert=
                 Result :err $ PathError :missing
                 , nil-nested
-              assert-type nested-hit $ quote $ Result Number PathError
-              assert-type nested-miss $ quote $ Result Dynamic PathError
-              assert-type nil-nested $ quote $ Result Dynamic PathError
+              assert-type nested-hit $ Result Number PathError
+              assert-type nested-miss $ Result Dynamic PathError
+              assert-type nil-nested $ Result Dynamic PathError
               &inspect-type nested-hit
               &inspect-type nested-miss
               &inspect-type nil-nested
@@ -1739,11 +1739,11 @@
           :code $ quote $ defn test-list-inference ()
             let
                 nested $ [] ([] 1 2) ([] 3)
-              assert-type nested $ quote $ List (List Number)
+              assert-type nested $ List $ List Number
               &inspect-type nested
               let
                   inner $ &list:nth nested 0
-                assert-type inner $ quote $ List Number
+                assert-type inner $ List Number
                 &inspect-type inner
               let
                   val $ &list:nth ([] 1 2 3) 0
@@ -1752,7 +1752,7 @@
               let
                   xs $ [] 1 2 3
                   rest-xs $ rest xs
-                assert-type rest-xs $ quote $ List Number
+                assert-type rest-xs $ List Number
                 &inspect-type rest-xs
           :examples $ []
           :schema $ quote $ Fn (-> Nil)
@@ -1826,7 +1826,7 @@
           :code $ quote $ defn test-map-inference ()
             let
                 m $ {}
-              assert-type m $ quote $ Map String Number
+              assert-type m $ Map String Number
               let
                   m2 $ &map:assoc m |b 2
                   m3 $ &map:dissoc m2 |a
@@ -1835,7 +1835,7 @@
                 &inspect-type m2
                 &inspect-type m3
                 &inspect-type m4
-                assert-type m5 $ quote $ Map String Number
+                assert-type m5 $ Map String Number
                 &inspect-type m5
           :examples $ []
           :schema $ quote $ Fn (-> Nil)
@@ -1843,7 +1843,7 @@
           :code $ quote $ defn test-ref-inference ()
             let
                 r $ ref 1
-              assert-type r $ quote $ Ref Number
+              assert-type r $ Ref Number
               let
                   x $ &atom:deref r
                 assert-type x 'Number
@@ -1855,7 +1855,7 @@
           :code $ quote $ defn test-set-inference ()
             let
                 s $ #{}
-              assert-type s $ quote $ Set Number
+              assert-type s $ Set Number
               let
                   xs $ &set:to-list s
                 &inspect-type s
@@ -1985,15 +1985,15 @@
             :tags $ #{} :unit
         'ShadowFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ShadowFields
-            :option $ quote $ test-types-inference.shadow/Option Number
-            :other-option $ quote $ test-types-inference.shadow/Option Number
+            :option $ test-types-inference.shadow/Option Number
+            :other-option $ test-types-inference.shadow/Option Number
             :result test-types-inference.shadow/Result
             :other-result test-types-inference.shadow/Result
           :examples $ []
           :schema $ quote StructDef
         'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn foreign-option-is-nil (value)
-            assert-type value $ quote $ Option Number
+            assert-type value $ Option Number
             nil? value
           :examples $ []
           :schema $ quote $ Fn (test-types-inference.shadow/Option Number) (-> Bool)
@@ -2006,7 +2006,7 @@
             let
                 expected-option $ :other-option fields
                 expected-result $ :other-result fields
-              assert-type expected-option $ quote $ Option Number
+              assert-type expected-option $ Option Number
               assert-type expected-result 'Result
               and
                 = expected-option $ :option fields

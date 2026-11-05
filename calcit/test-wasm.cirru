@@ -50,7 +50,7 @@
           :schema $ quote StructDef
         'PointScore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait PointScore
-            .score $ quote $ Fn test-wasm.main/PointValue (-> Number)
+            .score $ Fn test-wasm.main/PointValue $ -> Number
           :examples $ []
           :schema $ quote Trait
         'PointScoreImpl $ %{} 'CodeEntry (:doc |)

@@ -34,8 +34,7 @@
             :tags $ #{} :union :unit
         'Cells $ %{} 'CodeEntry
           :doc "|A member written as a compound type, which keeps its quote."
-          :code $ quote $ defunion Cells String
-            quote $ List Number
+          :code $ quote $ defunion Cells String (List Number)
           :examples $ []
           :schema $ quote UnionDef
         'CssValue $ %{} 'CodeEntry (:doc "|A style value: text or a number of pixels.")
@@ -48,9 +47,7 @@
           :schema $ quote UnionDef
         'Json $ %{} 'CodeEntry
           :doc "|A recursive union: lists and maps hold Json values again."
-          :code $ quote $ defunion Json String Number Bool
-            quote $ List Json
-            quote $ Map String Json
+          :code $ quote $ defunion Json String Number Bool (List Json) (Map String Json)
           :examples $ []
           :schema $ quote UnionDef
         'Label $ %{} 'CodeEntry (:doc "|Every member of Label is also a member of Geo.")
@@ -72,7 +69,8 @@
           :schema $ quote UnionDef
           :tests $ [] $ %{} 'TestEntry (:name |encode-rejects-ambiguous-struct-members)
             :code $ quote $ do
-              assert= ({} $ :text |a)
+              assert=
+                {} $ :text |a
                 encode-map-as (LabelA :text |a) LabelText
               assert= "|encode-map-as failed at $: the encoded value would decode as another union member; the union has members that share one shape" $ try
                 do
@@ -83,7 +81,9 @@
                   , message
               assert= "|encode-map-as failed at $[0]: the encoded value would decode as another union member; the union has members that share one shape" $ try
                 do
-                  encode-map-as ([] (LabelB :text |b) 1) $ quote $ Tuple LabelText Number
+                  encode-map-as
+                    [] (LabelB :text |b) 1
+                    quote $ Tuple LabelText Number
                   , |unexpected-success
                 fn (message)
                   hint-fn $ Fn String $ -> String
@@ -91,8 +91,7 @@
             :tags $ #{} :union :unit
         'Loop $ %{} 'CodeEntry
           :doc "|A union whose `Ref` member points back to itself, so a ref may hold itself."
-          :code $ quote $ defunion Loop Number
-            quote $ Ref Loop
+          :code $ quote $ defunion Loop Number (Ref Loop)
           :examples $ []
           :schema $ quote UnionDef
         'LoopBox $ %{} 'CodeEntry
@@ -110,14 +109,13 @@
             :tags $ #{} :union :unit
         'MaybeGeo $ %{} 'CodeEntry
           :doc "|A Geo, or an Option of one, as optional child arguments are."
-          :code $ quote $ defunion MaybeGeo Geo
-            quote $ Option Geo
+          :code $ quote $ defunion MaybeGeo Geo (Option Geo)
           :examples $ []
           :schema $ quote UnionDef
         'Nest $ %{} 'CodeEntry
           :doc "|A payload that refers back to its own enum is checked once the enum is defined."
           :code $ quote $ defenum Nest (:leaf Number)
-            :many $ quote $ List Nest
+            :many $ List Nest
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |recursive-payload-validates)
@@ -143,8 +141,7 @@
           :schema $ quote UnionDef
         'Scale $ %{} 'CodeEntry
           :doc "|A scale: one factor for both axes, or one per axis."
-          :code $ quote $ defunion Scale Number
-            quote $ List Number
+          :code $ quote $ defunion Scale Number (List Number)
           :examples $ []
           :schema $ quote UnionDef
         'Segment $ %{} 'CodeEntry
@@ -177,13 +174,11 @@
             :tags $ #{} :union :unit
         'Tree $ %{} 'CodeEntry
           :doc "|A tree of numbers; the union refers to itself inside its List member."
-          :code $ quote $ defunion Tree Number
-            quote $ List Tree
+          :code $ quote $ defunion Tree Number (List Tree)
           :examples $ []
           :schema $ quote UnionDef
         'TripleInput $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion TripleInput Number
-            quote $ Tuple Number Number Number
+          :code $ quote $ defunion TripleInput Number (Tuple Number Number Number)
           :examples $ []
         'cells-total $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cells-total (c)
@@ -363,7 +358,8 @@
             assert= (Shape :circle 3)
               round-trip-geo $ Shape :circle 3
             assert= |plain $ round-trip-geo |plain
-            assert= ({} (:x 1) (:y 2))
+            assert=
+              {} (:x 1) (:y 2)
               encode-map-as (Point :x 1 :y 2) Geo
             println "|Union tests passed"
             , &unit
@@ -450,13 +446,16 @@
             :code $ quote $ do
               assert= (Point :x 1 :y 2)
                 round-trip-geo $ Point :x 1 :y 2
-              assert= ({} (:x 1) (:y 2))
+              assert=
+                {} (:x 1) (:y 2)
                 encode-map-as (Point :x 1 :y 2) Geo
               assert= (Shape :circle 3)
                 round-trip-geo $ Shape :circle 3
               assert= |plain $ round-trip-geo |plain
               assert= (Option :none)
-                decode-map-as (encode-map-as (Option :none) MaybeGeo) MaybeGeo
+                decode-map-as
+                  encode-map-as (Option :none) MaybeGeo
+                  , MaybeGeo
               let
                   some-point $ Option :some $ Point :x 1 :y 2
                   nested $ Option :some $ Option :none
@@ -558,17 +557,14 @@
           :examples $ []
           :schema $ quote StructDef
         'GenericMembers $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion GenericMembers Scalar
-            quote $ GenericCell Number
-            quote $ GenericPacket Number
+          :code $ quote $ defunion GenericMembers Scalar (GenericCell Number) (GenericPacket Number)
           :examples $ []
         'GenericPacket $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum GenericPacket ([] T) (:payload T)
           :examples $ []
           :schema $ quote EnumDef
         'Inner $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion Inner String
-            quote $ List Scalar
+          :code $ quote $ defunion Inner String (List Scalar)
           :examples $ []
         'Scalar $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Scalar String Number Tag

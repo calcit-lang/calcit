@@ -2538,8 +2538,7 @@
               :code $ quote $ let
                   kept $ &map:filter (&{} :a 1 :b 2)
                     fn (pair)
-                      let[] (key value) pair
-                        and (tag? key) (> value 1)
+                      let[] (key value) pair $ and (tag? key) (> value 1)
                 assert-type kept $ quote $ Map Tag Number
                 assert= (&{} :b 2) kept
               :tags $ #{} :core :lexical-binder :unit
@@ -2632,7 +2631,7 @@
         '&map:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map (xs f)
             &map:fold-kv xs
-              assert-type ({}) $ quote $ Map K2 V2
+              assert-type ({}) (Map K2 V2)
               fn (acc key value)
                 hint-fn $ Fn (Map K2 V2) K V $ -> (Map K2 V2)
                 &let
@@ -2671,8 +2670,7 @@
               :code $ quote $ let
                   renamed $ &map:map (&{} :a 1 :b 2)
                     fn (pair)
-                      let[] (key value) pair
-                        [] value key
+                      let[] (key value) pair $ [] value key
                 assert-type renamed $ quote $ Map Number Tag
                 assert= (&{} 1 :a 2 :b) renamed
               :tags $ #{} :core :lexical-binder :unit
@@ -3887,14 +3885,13 @@
           :tags $ #{} :builtin :internal :syntax
         'Add $ %{} 'CodeEntry (:doc "|Core trait: Add")
           :code $ quote $ deftrait Add
-            .add $ quote $ Fn T T (-> T) (:generics T)
+            .add $ Fn T T (-> T) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'CirruNode $ %{} 'CodeEntry
           :doc "|A Cirru tree as plain data: a leaf is its token String, a list is a List of nodes. Since 0.35.0 it is the element type of CirruQuote .to-list and .parse-cirru-list results (#2556)."
-          :code $ quote $ defunion CirruNode String
-            quote $ List CirruNode
+          :code $ quote $ defunion CirruNode String (List CirruNode)
           :examples $ []
           :schema $ quote UnionDef
           :tests $ [] $ %{} 'TestEntry (:name |decodes-parsed-cirru-rows)
@@ -3909,27 +3906,27 @@
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
           :code $ quote $ deftrait Compare
-            .compare $ quote $ Fn T T (-> Number) (:generics T)
+            .compare $ Fn T T (-> Number) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Contains $ %{} 'CodeEntry
           :doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。"
           :code $ quote $ deftrait Contains
-            .contains? $ quote $ Fn T K (-> Bool) (:generics T K)
+            .contains? $ Fn T K (-> Bool) (:generics T K)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'ContainsField $ %{} 'CodeEntry
           :doc "|Struct 字段存在性 trait：仅接受 Tag 字段名，返回 Bool；与旧 Contains 的跨类型命题区分。"
           :code $ quote $ deftrait ContainsField
-            .contains-field? $ quote $ Fn Struct Tag (-> Bool)
+            .contains-field? $ Fn Struct Tag $ -> Bool
           :examples $ []
           :schema $ quote Trait
         'ContainsIndex $ %{} 'CodeEntry
           :doc "|Enum 位置存在性 trait：索引必须是非负有限整数；与旧 Contains 的宽松范围判断不同。"
           :code $ quote $ deftrait ContainsIndex
-            .contains-index? $ quote $ Fn Enum Number (-> Bool)
+            .contains-index? $ Fn Enum Number $ -> Bool
           :examples $ []
           :schema $ quote Trait
         'ControlFlow $ %{} 'CodeEntry
@@ -3943,16 +3940,16 @@
           :tags $ #{} :data
         'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote $ deftrait Countable
-            .count $ quote $ Fn T (-> Number) (:generics T)
+            .count $ Fn T (-> Number) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Data $ %{} 'CodeEntry
           :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
           :code $ quote $ defenum Data (:nil) (:bool Bool) (:number Number) (:string String) (:tag Tag) (:symbol Symbol)
-            :list $ quote $ List Dynamic
-            :map $ quote $ Map Dynamic Dynamic
-            :set $ quote $ Set Dynamic
+            :list $ List Dynamic
+            :map $ Map Dynamic Dynamic
+            :set $ Set Dynamic
             :fn Dynamic
             :enum Dynamic
             :struct Dynamic
@@ -3964,26 +3961,26 @@
         'Debug $ %{} 'CodeEntry
           :doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation."
           :code $ quote $ deftrait Debug
-            .debug $ quote $ Fn T (-> String) (:generics T)
+            .debug $ Fn T (-> String) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Deserialize $ %{} 'CodeEntry (:doc "|Core trait: Deserialize")
           :code $ quote $ deftrait Deserialize
-            .deserialize $ quote $ Fn String (-> T) (:generics T)
+            .deserialize $ Fn String (-> T) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Emptyable $ %{} 'CodeEntry
           :doc "|产生与接收者保持同一类型的空值。Self 是方法自身声明的接收者泛型，不是新语法；泛型函数通过 Emptyable 约束调用 .empty。内建实现覆盖 Number、String、List、Map、Set。"
           :code $ quote $ deftrait Emptyable
-            .empty $ quote $ Fn Self (-> Self) (:generics Self)
+            .empty $ Fn Self (-> Self) (:generics Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Eq $ %{} 'CodeEntry (:doc "|Core trait: Eq")
           :code $ quote $ deftrait Eq
-            .eq? $ quote $ Fn T T (-> Bool) (:generics T)
+            .eq? $ Fn T T (-> Bool) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3999,8 +3996,8 @@
         'FfiResponseOps $ %{} 'CodeEntry
           :doc "|Internal method contract for native async response capabilities."
           :code $ quote $ deftrait FfiResponseOps
-            .resolve! $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
-            .reject! $ quote $ Fn FfiResponse T (-> Unit) (:generics T)
+            .resolve! $ Fn FfiResponse T (-> Unit) (:generics T)
+            .reject! $ Fn FfiResponse T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :internal :trait
@@ -4022,8 +4019,8 @@
         'FfiTaskOps $ %{} 'CodeEntry
           :doc "|Internal method contract for native async task capabilities."
           :code $ quote $ deftrait FfiTaskOps
-            .cancel! $ quote $ Fn FfiTask (-> Unit)
-            .cancel-with! $ quote $ Fn FfiTask T (-> Unit) (:generics T)
+            .cancel! $ Fn FfiTask $ -> Unit
+            .cancel-with! $ Fn FfiTask T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :internal :trait
@@ -4044,15 +4041,13 @@
           :tags $ #{} :core :data
         'FsPathOps $ %{} 'CodeEntry (:doc "|Internal method contract for FsPath values.")
           :code $ quote $ deftrait FsPathOps
-            .read-text $ quote $ Fn FsPath
-              -> $ Result String String
-            .write-text! $ quote $ Fn FsPath String
-              -> $ Result Unit String
-            .read-dir $ quote $ Fn FsPath
-              -> $ Result (List FsPath) String
-            .walk-dir $ quote $ Fn FsPath
-              -> $ Result (List FsPath) String
-            .to-string $ quote $ Fn FsPath (-> String)
+            .read-text $ Fn FsPath $ -> (Result String String)
+            .write-text! $ Fn FsPath String $ -> (Result Unit String)
+            .read-dir $ Fn FsPath $ ->
+              Result (List FsPath) String
+            .walk-dir $ Fn FsPath $ ->
+              Result (List FsPath) String
+            .to-string $ Fn FsPath $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :internal :trait
@@ -4063,14 +4058,14 @@
           :tags $ #{} :internal :trait-impl
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote $ deftrait Len
-            .len $ quote $ Fn T (-> Number) (:generics T)
+            .len $ Fn T (-> Number) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'ListDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-list: none, or a head element with the remaining list."
           :code $ quote $ defenum ListDestruct ([] T)
-            :some T $ quote $ List T
+            :some T $ List T
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4078,7 +4073,7 @@
         'MapDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-map: none, or a key, value, and remaining map."
           :code $ quote $ defenum MapDestruct ([] K V)
-            :some K V $ quote $ Map K V
+            :some K V $ Map K V
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4100,13 +4095,13 @@
           :tags $ #{} :data
         'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote $ deftrait Mappable
-            .map $ quote $ Fn T Fn (-> T) (:generics T)
+            .map $ Fn T Fn (-> T) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Multiply $ %{} 'CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote $ deftrait Multiply
-            .multiply $ quote $ Fn T T (-> T) (:generics T)
+            .multiply $ Fn T T (-> T) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4156,19 +4151,19 @@
           :tags $ #{} :trait-impl
         'OptionOps $ %{} 'CodeEntry (:doc "|Internal method contract for Option values.")
           :code $ quote $ deftrait OptionOps
-            .some? $ quote $ Fn (Option T) (-> Bool) (:generics T)
-            .none? $ quote $ Fn (Option T) (-> Bool) (:generics T)
-            .unwrap $ quote $ Fn (Option T) (-> T) (:generics T)
-            .unwrap-or $ quote $ Fn (Option T) T (-> T) (:generics T)
-            .and-then $ quote $ Fn (Option T)
+            .some? $ Fn (Option T) (-> Bool) (:generics T)
+            .none? $ Fn (Option T) (-> Bool) (:generics T)
+            .unwrap $ Fn (Option T) (-> T) (:generics T)
+            .unwrap-or $ Fn (Option T) T (-> T) (:generics T)
+            .and-then $ Fn (Option T)
               Fn T $ -> $ Option U
               -> $ Option U
               :generics T U
-            .or-else $ quote $ Fn (Option T)
+            .or-else $ Fn (Option T)
               Fn $ -> $ Option T
               -> $ Option T
               :generics T
-            .fold $ quote $ Fn (Option T)
+            .fold $ Fn (Option T)
               Fn $ -> U
               Fn T $ -> U
               -> U
@@ -4244,18 +4239,18 @@
           :tags $ #{} :trait-impl
         'ResultOps $ %{} 'CodeEntry (:doc "|Internal method contract for Result values.")
           :code $ quote $ deftrait ResultOps
-            .ok? $ quote $ Fn (Result T E) (-> Bool) (:generics T E)
-            .err? $ quote $ Fn (Result T E) (-> Bool) (:generics T E)
-            .unwrap-or $ quote $ Fn (Result T E) T (-> T) (:generics T E)
-            .and-then $ quote $ Fn (Result T E)
+            .ok? $ Fn (Result T E) (-> Bool) (:generics T E)
+            .err? $ Fn (Result T E) (-> Bool) (:generics T E)
+            .unwrap-or $ Fn (Result T E) T (-> T) (:generics T E)
+            .and-then $ Fn (Result T E)
               Fn T $ -> $ Result U E
               -> $ Result U E
               :generics T U E
-            .map-err $ quote $ Fn (Result T E)
+            .map-err $ Fn (Result T E)
               Fn E $ -> F
               -> $ Result T F
               :generics T E F
-            .or-else $ quote $ Fn (Result T E)
+            .or-else $ Fn (Result T E)
               Fn $ -> $ Result T E
               -> $ Result T E
               :generics T E
@@ -4273,22 +4268,22 @@
           :schema $ quote Struct
         'RuntimeMapResponse $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct RuntimeMapResponse (:code Number)
-            :message $ quote $ Option String
+            :message $ Option String
             :body Dynamic
-            :meta $ quote $ Option RuntimeMapMeta
+            :meta $ Option RuntimeMapMeta
           :examples $ []
           :schema $ quote Struct
           :tags $ #{} :data :internal
         'Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote $ deftrait Serialize
-            .serialize $ quote $ Fn T (-> String) (:generics T)
+            .serialize $ Fn T (-> String) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'SetDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-set: none, or an element with the remaining set."
           :code $ quote $ defenum SetDestruct ([] T)
-            :some T $ quote $ Set T
+            :some T $ Set T
             :none
           :examples $ []
           :schema $ quote Enum
@@ -4296,14 +4291,14 @@
         'Show $ %{} 'CodeEntry
           :doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl."
           :code $ quote $ deftrait Show
-            .show $ quote $ Fn T (-> String) (:generics T)
+            .show $ Fn T (-> String) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Sliceable $ %{} 'CodeEntry
           :doc "|切片保持 receiver 类型的能力。slice 方法接收 receiver、Number 起点、Option<Number> 终点并返回原 receiver 类型；省略末尾 Option 自动补 none。List/String 使用内部适配器，自定义实现显式匹配 some/none，不需要 Countable。"
           :code $ quote $ deftrait Sliceable
-            .slice $ quote $ Fn T Number (Option Number) (-> T) (:generics T)
+            .slice $ Fn T Number (Option Number) (-> T) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4322,7 +4317,7 @@
         'ToString $ %{} 'CodeEntry
           :doc "|标量转文本的类型契约；与 Show 的用户展示、Debug 的诊断表示不同。仅有明确实现的值支持 .to-string。"
           :code $ quote $ deftrait ToString
-            .to-string $ quote $ Fn T (-> String) (:generics T)
+            .to-string $ Fn T (-> String) (:generics T)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -6484,11 +6479,11 @@
             %{} 'TestEntry (:name |decodes-bare-compound-type)
               :code $ quote $ do
                 assert= |abc $ option:unwrap-or
-                  first $ decode-map-as ([] |abc) $ List String
+                  first $ decode-map-as ([] |abc) (List String)
                   , |
                 assert= "|decode-map-as failed at $[1]: expected number, got string" $ try
                   do
-                    decode-map-as ([] 1 |wrong) $ List Number
+                    decode-map-as ([] 1 |wrong) (List Number)
                     , |unexpected-success
                   fn (message)
                     hint-fn $ Fn String $ -> String
@@ -6864,7 +6859,7 @@
                     :value T
                     :count Number 0
                     :items $ List Item
-                    :table $ Map String (List Number)
+                    :table $ Map String $ List Number
                   quoted $ defstruct Box ([] T)
                     {} $ T Debug
                     :value T
@@ -6968,7 +6963,7 @@
           :tags $ #{} :macro :type
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
-                bare $ defunion Cell String (List Number)
+                bare $ defunion Cell String $ List Number
                 quoted $ defunion Cell String $ quote (List Number)
               assert= quoted bare
             :tags $ #{} :core :unit
@@ -7598,8 +7593,8 @@
         'encode-map-as $ %{} 'CodeEntry
           :doc "||Encode a typed value into the open data shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`. Syntax: (encode-map-as value TypeExpr). Structs become tag-keyed maps; an `Option :some x` struct field stores `x` and an `Option :none` field is left out. Enum values keep their nominal form with encoded payloads; lists, tuples, sets, maps and union members are encoded by their declared shape. The value must already have the declared type: a known mismatch is rejected during preprocessing with E_ENCODE_MAP_AS_TYPE_MISMATCH, and a union whose members share one map shape fails at runtime instead of encoding ambiguously. Use `format-cirru-edn` or `to-js-data` on the result to write it out. Native and JavaScript support this syntax; WASM does not."
           :code $ quote $ def encode-map-as &runtime-implementation
-          :examples $ []
-            quote $ assert=
+          :examples $ [] $ quote
+            assert=
               {} (:code 200) (:message |ok)
                 :body $ {} $ :kind :json
               encode-map-as
@@ -7618,7 +7613,8 @@
                       :message $ Option :some |ok
                       :body $ {} $ :kind :json
                       :meta $ Option :some $ %{} RuntimeMapMeta (:kind :nested)
-                    missing $ %{} RuntimeMapResponse (:code 204) (:message $ Option :none)
+                    missing $ %{} RuntimeMapResponse (:code 204)
+                      :message $ Option :none
                       :body $ {} $ :kind :json
                       :meta $ Option :none
                   assert=
@@ -7636,18 +7632,23 @@
             %{} 'TestEntry (:name |encodes-structs-inside-enum-payloads)
               :code $ quote $ do
                 let
-                    meta $ %{} RuntimeMapMeta (:kind :nested)
+                    meta $ %{} RuntimeMapMeta $ :kind :nested
                     ok $ Result :ok meta
                     rows $ [] meta meta
-                  assert= (Result :ok $ {} $ :kind :nested)
+                  assert=
+                    Result :ok $ {} $ :kind :nested
                     encode-map-as ok $ quote $ Result RuntimeMapMeta String
                   assert= ok $ decode-map-as
                     encode-map-as ok $ quote $ Result RuntimeMapMeta String
                     quote $ Result RuntimeMapMeta String
-                  assert= ([] ({} $ :kind :nested) ({} $ :kind :nested))
+                  assert=
+                    []
+                      {} $ :kind :nested
+                      {} $ :kind :nested
                     encode-map-as rows $ quote $ List RuntimeMapMeta
                   assert= (Option :none)
-                    encode-map-as (Option :none) $ quote $ Option RuntimeMapMeta
+                    encode-map-as (Option :none)
+                      quote $ Option RuntimeMapMeta
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
@@ -13281,8 +13282,8 @@
               :tags $ #{} :parse-boundary :unit
             %{} 'TestEntry (:name |decodes-bare-compound-type)
               :code $ quote $ do
-                assert= true $ result:ok? $ try-decode-map-as ([] |abc) $ List String
-                assert= true $ result:err? $ try-decode-map-as ([] 1 |wrong) $ List Number
+                assert= true $ result:ok? $ try-decode-map-as ([] |abc) (List String)
+                assert= true $ result:err? $ try-decode-map-as ([] 1 |wrong) (List Number)
               :tags $ #{} :unit
             %{} 'TestEntry (:name |decoded-ref-keeps-original-alias-open)
               :code $ quote $ let
@@ -13406,10 +13407,10 @@
           :doc "|把 Cirru EDN 文本解析为编译期推导的闭合类型，返回 Result<T,String>。运行时语法或 shape 错误返回 :err；无效或开放 TypeExpr 在编译期拒绝，不靠目标类型假定 payload 已验证。Native 与 JavaScript 支持闭合 shape；WASM 复用同一 DataShapeGraph，支持 nil、Bool、Number、numeric refinement、bare/quoted String、编译产物已知 tag，以及递归闭合 List、Map、Struct、Enum（含 Option/Result）。WASM Map key 仅支持 nil、Bool、Number/refinement、String、Tag 等标量；集合或 nominal key 以 E_WASM_EDN_MAP_KEY 在代码生成阶段拒绝。Unit shape 可被代码生成接受，但 Cirru EDN 无 Unit 文本表示，非空 Map 的 Unit key 无法成功解码。WASM 输入上限 64 KiB，List 上限 4096 项，Map 上限 2048 项；decoder shape 的嵌套深度上限为 32，超出时以 E_WASM_EDN_DEPTH 在代码生成阶段拒绝。quoted String 支持 formatter 使用的换行、tab、quote 与 backslash escape，String key 按内容查询。超限文本或集合、非法文本、越界数值、未知 tag 和不匹配 nominal payload 返回 :err；开放 shape 或 unsupported target 在编译期明确拒绝，不回退为 Dynamic。语法：try-parse-cirru-edn-as text TypeExpr。"
           :code $ quote $ def try-parse-cirru-edn-as &runtime-implementation
           :examples $ []
-            quote $ try-parse-cirru-edn-as "|[] 1 2" $ quote (List Number)
-            quote $ try-parse-cirru-edn-as "|[] 1 |bad" $ quote (List Number)
+            quote $ try-parse-cirru-edn-as "|[] 1 2" $ List Number
+            quote $ try-parse-cirru-edn-as "|[] 1 |bad" $ List Number
             quote $ match
-              try-parse-cirru-edn-as "|[] 1 |bad" $ quote $ List Number
+              try-parse-cirru-edn-as "|[] 1 |bad" $ List Number
               (:err message)
                 assert= true $ string? message
               (:ok _) false

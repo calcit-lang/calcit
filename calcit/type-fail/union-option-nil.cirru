@@ -11,8 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Cell $ %{} 'CodeEntry (:doc "|An Option member does not admit a bare nil.")
-          :code $ quote $ defunion Cell String
-            quote $ Option Number
+          :code $ quote $ defunion Cell String (Option Number)
           :examples $ []
         'f $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn f (v)

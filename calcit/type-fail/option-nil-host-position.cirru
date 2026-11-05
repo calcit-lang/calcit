@@ -16,7 +16,7 @@
       :defs $ {}
         'HostConsole $ %{} 'CodeEntry (:doc "|An external-object console.")
           :code $ quote $ deftrait HostConsole
-            .log $ quote $ Fn type-fail-option-nil-host-position.main/HostConsole Dynamic (-> Unit)
+            .log $ Fn type-fail-option-nil-host-position.main/HostConsole Dynamic $ -> Unit
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object)
           :schema $ quote Trait
