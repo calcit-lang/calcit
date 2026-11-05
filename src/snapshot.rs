@@ -3443,6 +3443,46 @@ pub struct BroadTypeHit {
   /// Set when the root `:schema` of a `defstruct`/`defenum` names a value
   /// family although the definition value is a definition.
   pub definition_kind: Option<&'static str>,
+  /// Where a `:schema` type sits among function parameters and results,
+  /// when it is reachable that way; call sites are matched against it.
+  pub schema_slot: Option<Vec<SchemaSlotStep>>,
+}
+
+/// One step from a function schema to one of its parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SchemaSlotStep {
+  Arg(usize),
+  Return,
+}
+
+impl std::fmt::Display for SchemaSlotStep {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Arg(index) => write!(f, "arg {}", index + 1),
+      Self::Return => write!(f, "result"),
+    }
+  }
+}
+
+/// Paths of the nodes reachable through function parameters and results,
+/// keyed by node identity inside `root`.
+fn schema_slot_paths(root: &CalcitTypeAnnotation) -> HashMap<usize, Vec<SchemaSlotStep>> {
+  fn walk(node: &CalcitTypeAnnotation, path: &mut Vec<SchemaSlotStep>, out: &mut HashMap<usize, Vec<SchemaSlotStep>>) {
+    out.insert(node as *const CalcitTypeAnnotation as usize, path.clone());
+    if let CalcitTypeAnnotation::Fn(signature) = node {
+      for (index, arg) in signature.arg_types.iter().enumerate() {
+        path.push(SchemaSlotStep::Arg(index));
+        walk(arg, path, out);
+        path.pop();
+      }
+      path.push(SchemaSlotStep::Return);
+      walk(&signature.return_type, path, out);
+      path.pop();
+    }
+  }
+  let mut out = HashMap::new();
+  walk(root, &mut vec![], &mut out);
+  out
 }
 
 impl BroadTypeHit {
@@ -3650,7 +3690,11 @@ pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>
     defs.sort();
     for def in defs {
       let entry = &file.defs[def];
-      let mut push = |place: String, coord: Vec<u16>, family: &'static str, definition_kind: Option<&'static str>| {
+      let mut push = |place: String,
+                      coord: Vec<u16>,
+                      family: &'static str,
+                      definition_kind: Option<&'static str>,
+                      schema_slot: Option<Vec<SchemaSlotStep>>| {
         hits.push(BroadTypeHit {
           ns: ns.to_owned(),
           def: def.to_owned(),
@@ -3658,6 +3702,7 @@ pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>
           coord,
           family,
           definition_kind,
+          schema_slot,
         })
       };
       let codes = std::iter::once((String::new(), &entry.code))
@@ -3667,7 +3712,7 @@ pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>
         let mut found = vec![];
         collect_broad_types_in_code(code, &mut vec![], &mut found);
         for (coord, family) in found {
-          push(place.clone(), coord, family, None);
+          push(place.clone(), coord, family, None, None);
         }
       }
 
@@ -3685,18 +3730,20 @@ pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>
         _ => None,
       };
       let root = entry.schema.as_ref();
+      let slots = schema_slot_paths(root);
       let found = std::cell::RefCell::new(vec![]);
       root.any_component(|annotation| {
         if let Some(family) = broad_annotation_family(annotation) {
-          found.borrow_mut().push((std::ptr::eq(annotation, root), family));
+          let slot = slots.get(&(annotation as *const CalcitTypeAnnotation as usize)).cloned();
+          found.borrow_mut().push((std::ptr::eq(annotation, root), family, slot));
         }
         false
       });
-      for (is_root, family) in found.into_inner() {
+      for (is_root, family, slot) in found.into_inner() {
         match (is_root, definition_kind) {
           (true, Some("Trait")) if family == "Trait" => {}
-          (true, Some(kind)) => push(":schema".to_owned(), vec![], family, Some(kind)),
-          _ => push(":schema".to_owned(), vec![], family, None),
+          (true, Some(kind)) => push(":schema".to_owned(), vec![], family, Some(kind), None),
+          _ => push(":schema".to_owned(), vec![], family, None, slot),
         }
       }
     }
@@ -6899,6 +6946,7 @@ mod tests {
       coord: vec![],
       family: "Enum",
       definition_kind: None,
+      schema_slot: None,
     }
     .message();
     assert!(message.contains("bare `Enum`") && message.contains("Option Number"), "{message}");

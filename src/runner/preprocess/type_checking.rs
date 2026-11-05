@@ -13,6 +13,7 @@
 //! - `detect_return_type_hint_from_processed_body` — extract hint-fn return type
 
 use crate::calcit::NullableOrigin;
+use crate::snapshot::SchemaSlotStep;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -611,6 +612,7 @@ fn check_arg_types_loop<F>(ctx: CheckContext<'_>, make_warning: F)
 where
   F: Fn(usize, &str, &str, String) -> String,
 {
+  let broad_slot_owner = super::broad_type_evidence::take_call_owner();
   let expanded_args;
   let expanded_types;
   let mut complete_arguments = true;
@@ -726,6 +728,7 @@ where
         actual_type
       };
       let actual_type = callback_tail_tuple_evidence(arg, &actual_type, expected_type, ctx.scope_types).unwrap_or(actual_type);
+      super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &actual_type);
       let deferred_callback_generics = super::all_output_only_callback_generics(ctx.generics, ctx.expected_types);
       let mask_unbound_callback_result = expected_type.resolve_to_nonoptional_fn().is_some()
         && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
@@ -771,6 +774,15 @@ where
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }
+    } else {
+      // An argument of unknown type cannot confirm a candidate.
+      super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &crate::calcit::DYNAMIC_TYPE);
+    }
+  }
+  if !complete_arguments {
+    // Slots filled by an unexpanded spread are unknown too.
+    for (idx, expected_type) in ctx.expected_types.iter().enumerate().skip(ctx.args.len()) {
+      super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &crate::calcit::DYNAMIC_TYPE);
     }
   }
 
@@ -1334,6 +1346,16 @@ pub(crate) fn check_local_fn_call_arg_types(
     return;
   };
 
+  // Calling a parameter of the current function, such as a `d!` callback,
+  // tells what that parameter's own parameters receive.
+  // A `let`, pattern or nested `fn` that rebinds the name is another binding.
+  let _broad_slot_owner = scope_types
+    .is_defn_parameter(&local.sym)
+    .then(|| super::broad_type_evidence::defn_param_index(call_info.file_ns, call_info.def_name, &local.sym, local_type))
+    .flatten()
+    .and_then(|index| {
+      super::broad_type_evidence::CallOwnerScope::enter(call_info.file_ns, call_info.def_name, vec![SchemaSlotStep::Arg(index)])
+    });
   check_resolved_fn_call_arg_types(head_form, &fn_annot, &local.sym, args, scope_types, call_info, check_warnings);
 }
 
@@ -1541,6 +1563,7 @@ pub(crate) fn check_user_fn_arg_types(
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
+  let _broad_slot_owner = super::broad_type_evidence::CallOwnerScope::enter(&fn_def_ns, &fn_name, vec![]);
   let equality_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && matches!(fn_name.as_ref(), "=" | "not=" | "/=");
   let list_apply_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "&list:apply";
   let interleave_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "interleave";
