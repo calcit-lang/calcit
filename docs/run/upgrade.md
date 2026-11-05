@@ -24,6 +24,13 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.2 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
+
+仍是 Notes，不影响检查结论；0.36.0 计划改为阻塞（#2124），先用这一版清理。
+
+- 免报按值实际去向判断：作为 JS 宿主调用或 `JsNullish` 形参的实参时免报，经过 `if` / `match` 分支、`let` / `do` 尾部或 `->` 这类宏展开到达也算，例如 `js/console.log $ if c (.unwrap-or x nil) 0`。中间被普通调用消费（`js/f $ str (.unwrap-or x nil)`）或绑定到局部时照常报告。
+- 被擦除的值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，hint 给出保持结果的 `match` 改写，例如 `or (.unwrap-or x nil) d` → `match x ((:some v) (or v d)) ((:none) d)`。Some、Some nil、Some false、None 的结果和 fallback 的求值次数都不变，可以直接替换；其他用法没有 hint，需要作者决定默认值或改为传递 Option。没有 else 分支的 `if`、fallback 引用了 `match` 在 `:some` 分支绑定的同名变量、或 `or` / `if` 是局部或项目里的同名绑定时，也不给 hint；同名的局部 `do` / `let` 是普通调用，经过它到达宿主的值不再免报。
+
 ## 0.35.2 `W_BROAD_TYPE` 提示调用点传入的具体类型（#2566）
 
 仍是 Notes。函数 `:schema` 参数里的裸 `Enum` / `Struct`，若本次检查到达的调用都传同一个具体类型，提示会直接说出来：

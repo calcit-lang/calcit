@@ -11624,16 +11624,57 @@
               , .unwrap-or 0
           :schema $ quote $ Fn (Option T) T (-> T) (:generics T)
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |consumes-open-option-payload)
-            :code $ quote $ let
-                present $ assert-type (Option :some 1)
-                  quote $ Option Dynamic
-                absent $ assert-type (Option :none)
-                  quote $ Option Dynamic
-              do
-                assert= 1 $ option:unwrap-or present 0
-                assert= 0 $ option:unwrap-or absent 0
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |consumes-open-option-payload)
+              :code $ quote $ let
+                  present $ assert-type (Option :some 1)
+                    quote $ Option Dynamic
+                  absent $ assert-type (Option :none)
+                    quote $ Option Dynamic
+                do
+                  assert= 1 $ option:unwrap-or present 0
+                  assert= 0 $ option:unwrap-or absent 0
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |erased-consumer-rewrites-keep-results)
+              :doc "|The rewrites W_OPTION_ERASED_TO_NIL suggests for `or`, `if`, `nil?` and `non-nil?` give the original results for Some, Some nil, Some false and None, and evaluate the fallback exactly as often."
+              :code $ quote $ let
+                  calls $ ref 0
+                  check $ fn (subject expected-calls)
+                    hint-fn $ Fn (Option Dynamic) Number (-> Unit)
+                    reset! calls 0
+                    let
+                        erased $ or (option:unwrap-or subject nil)
+                          do (reset! calls $ inc $ deref calls) 0
+                        erased-calls $ deref calls
+                      reset! calls 0
+                      assert= erased $ match subject
+                        (:some v)
+                          or v $ do (reset! calls $ inc $ deref calls) 0
+                        (:none)
+                          do (reset! calls $ inc $ deref calls) 0
+                      assert= erased-calls $ deref calls
+                      assert= expected-calls erased-calls
+                    assert=
+                      if (option:unwrap-or subject nil) |yes |no
+                      match subject
+                        (:some v) (if v |yes |no)
+                        (:none) |no
+                    assert=
+                      nil? $ option:unwrap-or subject nil
+                      match subject
+                        (:some v) (nil? v)
+                        (:none) true
+                    assert=
+                      non-nil? $ option:unwrap-or subject nil
+                      match subject
+                        (:some v) (non-nil? v)
+                        (:none) false
+                    , &unit
+                check (assert-type (Option :some 1) (quote $ Option Dynamic)) 0
+                check (assert-type (Option :some nil) (quote $ Option Dynamic)) 1
+                check (assert-type (Option :some false) (quote $ Option Dynamic)) 1
+                check (assert-type (Option :none) (quote $ Option Dynamic)) 1
+              :tags $ #{} :core :unit
         'or $ %{} 'CodeEntry
           :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
           :code $ quote $ defmacro or (item & xs)

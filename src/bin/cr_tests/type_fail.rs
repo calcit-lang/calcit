@@ -4389,14 +4389,91 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
     // A `js/` call, native and external-object method calls (prefix and
     // postfix), a host-property `set!`, an argument for a `JsNullish`
     // parameter and a `(:none) nil` branch that is the host argument stay
-    // quiet; the `:js-ffi` feature alone does not exempt a nil tested by
-    // business code, bound to a local, `set!` on a local or passed to an
-    // ordinary parameter.
+    // quiet, and so does a host argument reached through an `if` branch, a
+    // `let` tail or a macro expansion (#2565); the `:js-ffi` feature alone
+    // does not exempt a nil tested by business code, bound to a local,
+    // `set!` on a local, passed to an ordinary parameter or consumed by an
+    // ordinary call before the host sees it. A local function named `do` is
+    // such an ordinary call; a postfix receiver is a host value like an argument.
     assert_eq!(
       erased,
-      ["bound-in-ffi", "business-in-ffi", "local-set-in-ffi", "to-plain-param"],
+      [
+        "bound-in-ffi",
+        "business-in-ffi",
+        "local-do-before-host",
+        "local-set-in-ffi",
+        "to-plain-param",
+        "wrapped-before-host"
+      ],
       "{advisories:?}"
     );
+  });
+}
+
+/// #2565: a consumer that only tests the erased value gets an exact
+/// `match` rewrite in the hint; any other consumer keeps the general advice.
+#[test]
+fn option_erased_to_nil_suggests_rewrites_that_keep_results() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    with-or $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      or (.unwrap-or (get m :a) nil) 1\n    with-if $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> String)\n      if (.unwrap-or (get m :a) nil) |yes |no\n    with-nil $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Bool)\n      nil? $ (get m :a) .unwrap-or nil\n    with-match $ fn (m d)\n      hint-fn $ Fn (Map Tag Dynamic) String (-> Dynamic)\n      or\n        match (get m :a)\n          (:some x) (str x)\n          (:none) nil\n        , d\n    with-capture $ fn (m v)\n      hint-fn $ Fn (Map Tag Dynamic) Dynamic (-> Dynamic)\n      or (.unwrap-or (get m :a) nil) v |z\n    shadowed $ fn (m x)\n      hint-fn $ Fn (Map Tag Dynamic) String (-> Dynamic)\n      or\n        match (get m :a)\n          (:some x) (str x)\n          (:none) nil\n        , x\n    with-str $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> String)\n      str $ .unwrap-or (get m :a) nil\n  [] with-or with-if with-nil with-match with-capture shadowed with-str",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("erasing an Option to nil should preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let hints = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .map(|advisory| advisory.hint().map(str::to_owned))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      hints,
+      [
+        Some("rewrite `or (.unwrap-or (get m :a) nil) 1` as `match (get m :a) ((:some v) (or v 1)) $ (:none) 1`".to_owned()),
+        Some("rewrite `if (.unwrap-or (get m :a) nil) |yes |no` as `match (get m :a) ((:some v) (if v |yes |no)) $ (:none) |no`".to_owned()),
+        Some("rewrite `nil? $ (get m :a) .unwrap-or nil` as `match (get m :a) ((:some v) (nil? v)) $ (:none) true`".to_owned()),
+        Some(
+          "rewrite `or (match (get m :a) ((:some x) (str x)) ((:none) nil)) d` as `match (get m :a) ((:some x) (or (str x) d)) $ (:none) d`"
+            .to_owned()
+        ),
+        // The payload name avoids `v`, which the fallback reads.
+        Some("rewrite `or (.unwrap-or (get m :a) nil) v |z` as `match (get m :a) ((:some v1) (or v1 v |z)) $ (:none) $ or v |z`".to_owned()),
+        // Moving the fallback `x` under `(:some x)` would capture it.
+        None,
+        // `str` turns nil into text, so no rewrite keeps its result.
+        None,
+      ],
+      "{advisories:?}"
+    );
+  });
+}
+
+/// #2565: the rewrite reads `or` as the core macro; a local `or` gets none,
+/// and so does an `if` without an else branch, whose rewrite would keep a
+/// `(:none) nil` branch.
+#[test]
+fn option_erased_to_nil_rewrites_only_core_consumers() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    or $ fn (a b)\n      hint-fn $ Fn Dynamic Dynamic (-> Dynamic)\n      , b\n    local-or $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      or (.unwrap-or (get m :a) nil) 1\n    bare-if $ fn (m)\n      hint-fn $ Fn (Map Tag Dynamic) (-> Dynamic)\n      if (.unwrap-or (get m :a) nil) |yes\n  [] local-or bare-if",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("erasing an Option to nil should preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let hints = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .map(|advisory| advisory.hint().map(str::to_owned))
+      .collect::<Vec<_>>();
+    assert_eq!(hints, [None, None], "{advisories:?}");
   });
 }
 
