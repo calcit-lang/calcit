@@ -2086,11 +2086,11 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
     let check_warnings = RefCell::new(vec![]);
     let (init_result, reload_result) = compile_entries(entries, &check_warnings);
     if !entries_passed(&init_result, &reload_result, &check_warnings) {
-      // Entries that compile with only warnings still run, so a bare broad
-      // type must not slip through behind those warnings (#2504).
-      let compiled = init_result.is_ok() && matches!(reload_result, Some(Ok(())));
+      // A native run starts from `init_fn` alone, so once it compiles a bare
+      // broad type must not slip through behind warnings or a failed
+      // `reload_fn` (#2504).
       let (broad_type_errors, _) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
-      if compiled {
+      if init_result.is_ok() {
         report_broad_type_errors(broad_type_errors)?;
       }
       return Ok(());
