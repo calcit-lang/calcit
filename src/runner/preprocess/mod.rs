@@ -808,12 +808,28 @@ struct HostSinkFrameState {
   arg_host_nullish: bool,
   /// The source form, for tail-position checks by identity.
   form: Calcit,
-  /// The head is not a local or project binding that shadows a core form of
-  /// the same name, such as a local function called `do` or `or`.
-  head_is_core: bool,
+  /// The head symbol is a local binding when the frame was entered. The
+  /// namespace lookup waits until a reader asks, see `head_is_core`.
+  head_is_local: bool,
 }
 
 impl HostSinkFrameState {
+  /// The head is not a local or project binding that shadows a core form of
+  /// the same name, such as a local function called `do` or `or`.
+  fn head_is_core(&self) -> bool {
+    let Calcit::List(xs) = &self.form else {
+      return true;
+    };
+    match xs.first() {
+      Some(Calcit::Symbol { sym, info, .. }) => {
+        !self.head_is_local
+          && (CalcitSyntax::is_valid(sym)
+            || program::resolve_type_name_in_ns(&info.at_ns, sym).is_some_and(|(target, _)| target.as_ref() == calcit::CORE_NS))
+      }
+      _ => true,
+    }
+  }
+
   fn source_ptr(&self) -> usize {
     match &self.form {
       Calcit::List(items) => Arc::as_ptr(items) as usize,
@@ -834,20 +850,13 @@ impl HostSinkFrame {
       return None;
     };
     let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
-    let head_is_core = match xs.first() {
-      Some(Calcit::Symbol { sym, info, .. }) => {
-        !scope_defs.contains(sym)
-          && (CalcitSyntax::is_valid(sym)
-            || program::resolve_type_name_in_ns(&info.at_ns, sym).is_some_and(|(target, _)| target.as_ref() == calcit::CORE_NS))
-      }
-      _ => true,
-    };
+    let head_is_local = matches!(xs.first(), Some(Calcit::Symbol { sym, .. }) if scope_defs.contains(sym));
     HOST_SINK_FRAMES.with(|frames| {
       frames.borrow_mut().push(HostSinkFrameState {
         is_sink,
         arg_host_nullish: false,
         form: expr.to_owned(),
-        head_is_core,
+        head_is_local,
       })
     });
     Some(Self)
@@ -972,7 +981,7 @@ fn current_form_feeds_host() -> bool {
       if !in_result_position && !expands_outer {
         return false;
       }
-      if frame.head_is_core
+      if frame.head_is_core()
         && let Calcit::List(frame_items) = &frame.form
       {
         result_forms.extend(tail_result_children(frame_items).into_iter().filter_map(list_ptr));
@@ -999,7 +1008,7 @@ fn source_form_head_is_core(form: &Calcit) -> Option<bool> {
       .iter()
       .rev()
       .find(|frame| same_form(&frame.form, form))
-      .map(|frame| frame.head_is_core)
+      .map(|frame| frame.head_is_core())
   })
 }
 
