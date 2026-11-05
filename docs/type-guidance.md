@@ -340,7 +340,7 @@ String 的 `.parse-cirru-edn` 返回 `Result<Dynamic,String>`：`:ok` 只说明�
 若数据已经作为开放值保存或传递，再使用 `try-decode-map-as`；它不只接受 Map，也能验证声明的 List 等闭合形状。
 两个入口都返回 `Result<T,String>`，业务必须处理失败，而不是自动插入 unwrap、默认值或 unsafe cast。
 
-反方向用 `encode-map-as value TypeExpr`（0.35.1，#2562）：值必须已经是声明的类型，结果是 `decode-map-as` 能读回的开放形状，
+反方向用 `encode-map-as value TypeExpr`（0.35.0，#2562）：值必须已经是声明的类型，结果是 `decode-map-as` 能读回的开放形状，
 满足 `decode-map-as (encode-map-as x T) T` 等于 `x`。Struct 变成 tag 为 key 的 Map，`Option :some x` 字段写 `x`，
 `Option :none` 字段省略；Enum 保留名义值，只编码 payload。不再需要手写 `user-to-wire` 一类函数，详见 [Cirru EDN](./data/edn.md)。
 

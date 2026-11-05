@@ -24,18 +24,18 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.35.2 显式的宽泛类型 `AnyFn` / `AnyStruct` / `AnyEnum`（#2594）
+## 0.35.0 显式的宽泛类型 `AnyFn` / `AnyStruct` / `AnyEnum`（#2594）
 
 0.36.0 计划把裸 `Fn` / `Struct` / `Enum`（`W_BROAD_TYPE`）改为阻塞（#2504）。确实接受任意函数、任意 struct 或任意 enum 的位置，例如任意参数个数的 memo 回调、对任意 struct 的反射式 diff、承载应用 enum 的库回调，改写成 `AnyFn`、`AnyStruct`、`AnyEnum`。它们与裸写法是同一个类型，改写不改变检查、调用和运行时校验，只是不再报 `W_BROAD_TYPE`。库回调参数写成 `Fn AnyEnum (-> Unit)` 后，下游现有的 `Fn Enum (-> Unit)` 回调照常可传，库和应用不必同步发布。
 
-## 0.35.2 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
+## 0.35.0 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
 
 仍是 Notes，不影响检查结论；0.36.0 计划改为阻塞（#2124），先用这一版清理。
 
 - 免报按值实际去向判断：作为 JS 宿主调用或 `JsNullish` 形参的实参时免报，经过 `if` / `match` 分支、`let` / `do` 尾部或 `->` 这类宏展开到达也算，例如 `js/console.log $ if c (.unwrap-or x nil) 0`。中间被普通调用消费（`js/f $ str (.unwrap-or x nil)`）或绑定到局部时照常报告。
 - 被擦除的值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，hint 给出保持结果的 `match` 改写，例如 `or (.unwrap-or x nil) d` → `match x ((:some v) (or v d)) ((:none) d)`。Some、Some nil、Some false、None 的结果和 fallback 的求值次数都不变，可以直接替换；其他用法没有 hint，需要作者决定默认值或改为传递 Option。没有 else 分支的 `if`、fallback 引用了 `match` 在 `:some` 分支绑定的同名变量、或 `or` / `if` 是局部或项目里的同名绑定时，也不给 hint；同名的局部 `do` / `let` 是普通调用，经过它到达宿主的值不再免报。
 
-## 0.35.2 `W_BROAD_TYPE` 提示调用点传入的具体类型（#2566）
+## 0.35.0 `W_BROAD_TYPE` 提示调用点传入的具体类型（#2566）
 
 仍是 Notes。函数 `:schema` 参数里的裸 `Enum` / `Struct`，若本次检查到达的调用都传同一个具体类型，提示会直接说出来：
 
@@ -77,11 +77,11 @@ deftrait Show $ .show $ Fn T (-> String) (:generics T)
 [E_LEGACY_TYPE_SYNTAX] app.schema/Point quotes the type name `'Number` in a data declaration; 0.35.0 removed this spelling (#2516). Write `Number` instead, or run `calcit calcit.cirru edit format` to migrate the Snapshot.
 ```
 
-改法：运行一次 `calcit <snapshot> edit format`。从 0.35.0 起它也改写 `:tests` 里的声明（0.34.6 的 `edit format` 不改测试）。
+改法：运行一次 `calcit <snapshot> edit format`。从 0.35.0 起它也改写 `:tests` 里的声明（0.34.4 的 `edit format` 不改测试）。
 复合类型 `quote $ List Number` 本来就是当前写法，不受影响。
 
 依赖库同样在加载时检查，所以还在用旧写法的类库要先在类库仓库里运行 `edit format` 并发布新版本，项目才能升级到 0.35.0。
-0.34.6 的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示随之删除。
+0.34.4 的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示随之删除。
 
 ## 0.35.0 `&map:diff-triple` 返回 Tuple，Cirru 列表转换返回 `List CirruNode`（#2549、#2556）
 
@@ -89,7 +89,7 @@ deftrait Show $ .show $ Fn T (-> String) (:generics T)
 
 - `&map:diff-triple` / `.diff-triple` 返回 `Tuple (Set K) (Map K W) (List (Tuple K V W))`，不再是开放的 `List`（#2549）。
 - CirruQuote `.to-list` 返回 `Option (List CirruNode)`，`.parse-cirru-list` 的成功值和 `parse-cirru-list` 的结果是 `List CirruNode`，不再是 `List Dynamic`（#2556）。
-  `calcit.core/CirruNode` 是 0.34.6 新增的递归 union：`defunion CirruNode String $ quote $ List CirruNode`，可以用作 `decode-map-as` 的目标或参数类型。
+  `calcit.core/CirruNode` 是 0.34.4 新增的递归 union：`defunion CirruNode String $ quote $ List CirruNode`，可以用作 `decode-map-as` 的目标或参数类型。
 
 运行时的值不变，变的只是检查器看到的类型。会报错的写法：
 
@@ -103,8 +103,8 @@ deftrait Show $ .show $ Fn T (-> String) (:generics T)
 仍然合法的写法：`&list:nth triple 0`、`count triple`、`let[]` 解构，以及把 `List CirruNode` 传给 `List Dynamic` 参数。
 改法：按位置读取 Tuple（`&list:nth` 或 `let[]`），把参数类型改成 Tuple 或 `List CirruNode`，需要字符串列表时先 `decode-map-as` 或用 `match` 按 union 分支读取。
 
-0.34.6 的 `W_0_35_RETURN_TYPE_PREVIEW` 预告检查在 0.35.0 删除：新类型已经是默认类型，原来报成提示的问题现在是普通类型错误。
-0.34.6 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数。
+0.34.4 的 `W_0_35_RETURN_TYPE_PREVIEW` 预告检查在 0.35.0 删除：新类型已经是默认类型，原来报成提示的问题现在是普通类型错误。
+0.34.4 对 Respo、Recollect、calcit-theme、Calcit Error Viewer 的 main 分支试跑没有命中；Quatrefoil 不使用这些函数。
 
 ## 0.35.0 Map 的 `filter` / `map` 回调接收 `Tuple K V`（#2561）
 
@@ -128,15 +128,15 @@ map (&{} :a 1) $ fn (pair)
 
 改法：把回调参数写成 `Tuple K V`（或去掉 `hint-fn` 让检查器推断），用 `let[]` / `&list:nth` 读取；`map` 回调最后返回 `[] key value`，或声明返回 `Tuple K2 V2`。
 
-## 0.34.6 预告 0.35.0 收紧的 core 返回类型（#2564）
+## 0.34.4 预告 0.35.0 收紧的 core 返回类型（#2564）
 
-0.34.6 的 `--check-only` 在项目用到上面这些函数时，会按 0.35.0 的类型再检查一遍，把新增的问题报告为非阻塞的 `W_0_35_RETURN_TYPE_PREVIEW` 提示。
+0.34.4 的 `--check-only` 在项目用到上面这些函数时，会按 0.35.0 的类型再检查一遍，把新增的问题报告为非阻塞的 `W_0_35_RETURN_TYPE_PREVIEW` 提示。
 预告只在 `--check-only` 输出时运行，按源码里出现的函数名触发。升级到 0.35.0 后预告不再存在，见上一节。
 
-## 0.34.6 声明宏里带 quote 的类型名报告提示，0.35.0 删除（#2563）
+## 0.34.4 声明宏里带 quote 的类型名报告提示，0.35.0 删除（#2563）
 
 `defstruct` / `defenum` / `defunion` 里带 quote 的类型名（`'Number`、`[] 'T`）在 0.34.x 仍然可用，0.35.0 起删除。
-从 0.34.6 开始，检查时对这类写法报告非阻塞的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示，给出定义位置和改写后的声明：
+从 0.34.4 开始，检查时对这类写法报告非阻塞的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示，给出定义位置和改写后的声明：
 
 ```text
 [W_LEGACY_QUOTED_DECLARATION_TYPE] [Warn] app.schema/Point quotes 1 type name(s) in a data declaration; 0.35.0 removes this spelling (#2516). Write `defstruct Point (:x Number) (:y Number)`, or run `calcit <snapshot> edit format` to migrate the Snapshot @app.schema/Point
@@ -165,7 +165,7 @@ defstruct Box ([] T)
 
 行为变化：以前裸写的 `Number` 报 ``unknown `Number` ``，裸写的 `Point` 会被当成变量求值，作用域里有同名局部绑定时取到错误的值；现在两者都是类型名。
 
-旧写法 `'Number`、`[] 'T` 在 0.34.x 仍然可用，0.35.0 删除；0.34.6 起检查时报告 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示。迁移命令：
+旧写法 `'Number`、`[] 'T` 在 0.34.x 仍然可用，0.35.0 删除；0.34.4 起检查时报告 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示。迁移命令：
 
 ```bash
 calcit <snapshot> edit format

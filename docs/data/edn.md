@@ -159,7 +159,7 @@ Use `try-decode-map-as value TypeExpr` when a host value may legitimately fail v
 
 ### Encoding typed values: `encode-map-as`
 
-`encode-map-as value TypeExpr` goes the other way (since 0.35.1, #2562). It takes a value that already has the declared type and returns the open shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`:
+`encode-map-as value TypeExpr` goes the other way (since 0.35.0, #2562). It takes a value that already has the declared type and returns the open shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`:
 
 - a Struct becomes a tag-keyed Map, field by field;
 - an `Option :some x` struct field stores `x`, and an `Option :none` field is left out, which the decoder reads back as `Option :none`;
