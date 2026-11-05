@@ -3715,10 +3715,10 @@ fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static
 /// tests, and `:schema`. A `deftrait` keeps `Trait` as its definition kind.
 pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<BroadTypeHit> {
   let mut hits = vec![];
-  // Core procs that work on any enum or struct keep their broad signatures.
+  // Bundled core namespaces (core procs that work on any enum or struct) keep their broad signatures.
   let mut names: Vec<&String> = namespaces
     .iter()
-    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .filter(|ns| !crate::calcit::is_bundled_core_ns(ns) && snapshot.files.contains_key(*ns))
     .collect();
   names.sort();
   for ns in names {

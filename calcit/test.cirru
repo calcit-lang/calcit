@@ -40,7 +40,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'AtomDerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AtomDerefTrait (.deref 'Fn)
+          :code $ quote $ deftrait AtomDerefTrait (.deref AnyFn)
           :examples $ []
           :schema $ quote Trait
         'Demo $ %{} 'CodeEntry (:doc |)
@@ -52,7 +52,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'DemoGetTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait DemoGetTrait (.get 'Fn)
+          :code $ quote $ deftrait DemoGetTrait (.get AnyFn)
           :examples $ []
           :schema $ quote Trait
         'Deref $ %{} 'CodeEntry (:doc |)
@@ -61,7 +61,7 @@
           :examples $ []
           :schema $ quote Impl
         'DerefTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait DerefTrait (.deref 'Fn)
+          :code $ quote $ deftrait DerefTrait (.deref AnyFn)
           :examples $ []
           :schema $ quote Trait
         'Num $ %{} 'CodeEntry (:doc |)
@@ -80,7 +80,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'NumTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait NumTrait (.inc 'Fn) (.show 'Fn)
+          :code $ quote $ deftrait NumTrait (.inc AnyFn) (.show AnyFn)
           :examples $ []
           :schema $ quote Trait
         'ValueBox $ %{} 'CodeEntry (:doc |)
@@ -384,7 +384,7 @@
                 _ $ do (assert-type a0 NumBox)
                   let
                       a0-tuple a0
-                    assert-type a0-tuple 'Enum
+                    assert-type a0-tuple AnyEnum
                     assert= true $ any? (&enum:impls a0-tuple)
                       fn (impl)
                         = (impl-origin impl) (Option :some NumTrait)

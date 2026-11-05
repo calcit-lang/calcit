@@ -306,8 +306,8 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 ### 限制
 
-- 提示不会让严格检查失败，`edit format` 也不改写：具体类型只有作者知道。
-- `calcit.core` 内部对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不提示。
+- `E_BROAD_TYPE` 让 `--check-only`、严格检查（该定义记为 failed，依赖它的定义记为 blocked）和运行前的预检失败；裸 `Trait` 的 `W_BROAD_TYPE` 只是提示，检查仍通过。`edit format` 不改写这两种写法：具体类型只有作者知道。
+- 内置的 `calcit.core`、`calcit.internal` 等命名空间里对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不报告。
 - `AnyFn` / `AnyStruct` / `AnyEnum` 不约束到某个具体定义，读出的载荷、字段和调用结果仍是 Dynamic；能写出具体类型时仍应写具体类型。
 
 ## 定长元组 `Tuple`

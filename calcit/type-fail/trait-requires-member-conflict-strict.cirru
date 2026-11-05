@@ -16,11 +16,11 @@
     %{} 'FileEntry
       :defs $ {}
         'Child $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Child (requires Parent) (.label 'Fn)
+          :code $ quote $ deftrait Child (requires Parent) (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'Parent $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Parent (.label 'Fn)
+          :code $ quote $ deftrait Parent (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)

@@ -2086,11 +2086,31 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
     let check_warnings = RefCell::new(vec![]);
     let (init_result, reload_result) = compile_entries(entries, &check_warnings);
     if !entries_passed(&init_result, &reload_result, &check_warnings) {
+      // Entries that compile with only warnings still run, so a bare broad
+      // type must not slip through behind those warnings (#2504).
+      let compiled = init_result.is_ok() && matches!(reload_result, Some(Ok(())));
+      let (broad_type_errors, _) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+      if compiled {
+        report_broad_type_errors(broad_type_errors)?;
+      }
       return Ok(());
     }
     // The ordinary entries are compiled now, so the check below only adds the audit.
     check_entries(entries, false, true)
   })
+}
+
+/// Bare broad types are errors since 0.36.0 (#2504).
+fn report_broad_type_errors(broad_type_errors: Vec<LocatedWarning>) -> Result<(), String> {
+  if broad_type_errors.is_empty() {
+    return Ok(());
+  }
+  eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad_type_errors.len());
+  LocatedWarning::print_list(&broad_type_errors);
+  Err(format!(
+    "Found {} bare broad type(s); write the concrete type, or AnyFn / AnyStruct / AnyEnum where any member is intended",
+    broad_type_errors.len()
+  ))
 }
 
 fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Result<(), String> {
@@ -2149,15 +2169,7 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
     return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
 
-  // Bare broad types are errors since 0.36.0 (#2504).
-  if !broad_type_errors.is_empty() {
-    eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad_type_errors.len());
-    LocatedWarning::print_list(&broad_type_errors);
-    return Err(format!(
-      "Found {} bare broad type(s); write the concrete type, or AnyFn / AnyStruct / AnyEnum where any member is intended",
-      broad_type_errors.len()
-    ));
-  }
+  report_broad_type_errors(broad_type_errors)?;
 
   // Advisories never fail the check; they only point at calls that still work.
   if emit_output && !advisories.is_empty() {

@@ -19,7 +19,7 @@
           :examples $ []
           :schema $ quote StructDef
         'DocTrait $ %{} 'CodeEntry (:doc "|Doc smoke trait")
-          :code $ quote $ deftrait DocTrait (.label 'Fn)
+          :code $ quote $ deftrait DocTrait (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'DocTraitImpl $ %{} 'CodeEntry (:doc "|Doc smoke impl")
