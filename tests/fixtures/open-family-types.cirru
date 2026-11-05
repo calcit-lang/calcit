@@ -91,6 +91,8 @@
                     :op $ %:: Op :reset
                 assert= true $ struct? $ checked-assoc holder :callback dec
                 assert= nil $ checked-assoc holder :callback 1
+                assert= nil $ checked-assoc holder :item 1
+                assert= nil $ checked-assoc holder :op 1
               :tags $ #{} :open-family :unit
             %{} 'TestEntry (:name |enum-callbacks-stay-compatible)
               :code $ quote $ let
