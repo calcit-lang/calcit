@@ -618,6 +618,27 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     ("pair-value", "quote $ def pair-value $ [] 12 |ready |extra", false),
     ("ref-value", "quote $ def ref-value $ ref $ [] 12 :block |sans", true),
     ("ref-value", "quote $ def ref-value $ ref $ [] 12 false :block", false),
+    // A merged literal is checked against the receiver's contract too (#2589).
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:width 12) (:display :inline)",
+      true,
+    ),
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:width open-value) (:display :inline)",
+      true,
+    ),
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:display :inline) (:height true)",
+      false,
+    ),
+    (
+      "style",
+      "quote $ def style $ merge base-style $ {} (:width open-value) (:height true)",
+      false,
+    ),
     (
       "app.collection-shadow/nested-values",
       "quote $ def nested-values $ [] 12 :block |sans",
@@ -676,6 +697,24 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
         "cirru",
         "--code",
         "quote Dynamic"
+      ],
+      [
+        "edit",
+        "def",
+        "app.collection-value/base-style",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def base-style $ {} (:display :block)"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.collection-value/base-style",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Map Tag app.collection-value/Scalar"
       ],
       ["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", source],
       [
@@ -741,7 +780,12 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
           String::from_utf8_lossy(&output.stdout),
           String::from_utf8_lossy(&output.stderr)
         );
-        assert!(report.contains("E_SCHEMA_DEF_MISMATCH") && report.contains(&target), "{report}");
+        let expected_text = if source.contains("merge") {
+          "arg 2 expects type `map<tag, type app.collection-value/Scalar>`"
+        } else {
+          "E_SCHEMA_DEF_MISMATCH"
+        };
+        assert!(report.contains(expected_text) && report.contains(&target), "{report}");
         assert!(!output_directory.join(format!("{namespace}.mjs")).exists());
       }
       assert_eq!(fs::read(&snapshot).unwrap(), original);
@@ -1076,6 +1120,56 @@ fn recur_arguments_follow_the_lexical_function_contract() {
     mismatches,
     vec![serde_json::json!([3, 3, 1, 1]), serde_json::json!([3, 3, 2])],
     "report: {report}"
+  );
+}
+
+#[test]
+fn methods_on_a_schema_alias_dispatch_through_the_aliased_type() {
+  // `Coord` is a plain schema alias for `List Number`, so `.rest xs` keeps the
+  // list contract and `recur` accepts it (#2590); unknown methods still fail.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+  let set_schema = |name: &str, code: &str| {
+    let target = format!("app.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target.as_str(), "--code", code]),
+      "edit schema",
+    );
+  };
+  edit_definition(&snapshot, "Coord", "quote $ def Coord $ []", false);
+  set_schema("Coord", "quote $ List Number");
+  edit_definition(
+    &snapshot,
+    "drain",
+    "quote $ defn drain (xs acc) $ if (.empty? xs) acc $ recur (.rest xs) (+ acc (.len xs))",
+    false,
+  );
+  set_schema("drain", "quote $ Fn app.main/Coord Number (-> Number)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ println $ drain ([] 1 2 3) 0", true);
+  edit_schema(&snapshot, "main!", "Unit");
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "methods on a schema alias");
+  let run = run_calcit(&snapshot, &[]);
+  assert_success(&run, "run recursion over a schema alias");
+  assert!(
+    String::from_utf8_lossy(&run.stdout).contains('6'),
+    "{}",
+    String::from_utf8_lossy(&run.stdout)
+  );
+
+  edit_definition(&snapshot, "bad", "quote $ defn bad (xs) $ .no-such-method xs", false);
+  set_schema("bad", "quote $ Fn app.main/Coord (-> Number)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ println $ bad $ [] 1", true);
+  let unknown = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!unknown.status.success(), "unknown method on a schema alias must fail checking");
+  let stderr = String::from_utf8_lossy(&unknown.stderr);
+  let stdout = String::from_utf8_lossy(&unknown.stdout);
+  assert!(
+    stderr.contains("unknown method `.no-such-method` for type app.main/Coord")
+      || stdout.contains("unknown method `.no-such-method` for type app.main/Coord"),
+    "stdout:\n{stdout}\nstderr:\n{stderr}"
   );
 }
 
@@ -1684,6 +1778,22 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
   let message = on_macro["message"].as_str().unwrap();
   assert!(message.contains("in the body of macro `app.main/read-field`"), "{message}");
   assert!(message.contains("expanded at 2 call sites, first at app.main/use-"), "{message}");
+}
+
+#[test]
+fn proven_trait_method_inside_get_survives_the_proof_audit() {
+  // The direct callable generated for `.get-name` has no source code; the
+  // default proof audit must reuse it rather than report it missing (#2598).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/trait-method-in-get.cirru", &snapshot).unwrap();
+  for args in [
+    vec!["--check-only"],
+    vec!["--check-only", "--all-defs"],
+    vec!["--check-only", "--ns", "app.min"],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
+  }
 }
 
 #[test]

@@ -706,6 +706,10 @@ where
             if compatible {
               bindings = candidate;
             }
+            let bound_rest_type = inner_type.substitute_type_vars(&bindings);
+            if has_known_member_mismatch(rest_arg, &bound_rest_type, ctx.scope_types) {
+              ctx.emit_warning(idx + rest_idx + 1, bound_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
+            }
           } else {
             ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
           }
@@ -773,6 +777,11 @@ where
       {
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
+      } else {
+        let bound_expected = expected_type.substitute_type_vars(&bindings);
+        if has_known_member_mismatch(arg, &bound_expected, ctx.scope_types) {
+          ctx.emit_warning(idx + 1, bound_expected.as_ref(), actual_type.as_ref(), &make_warning);
+        }
       }
     } else {
       // An argument of unknown type cannot confirm a candidate.
@@ -789,6 +798,18 @@ where
   if complete_arguments {
     check_generic_trait_bounds(&ctx, &bindings);
   }
+}
+
+/// An accepted argument whose join was open may still hold a literal member
+/// that contradicts the contract, e.g. `{} (:a :x) (:b true)` for
+/// `Map Tag (String | Tag)`: the join is `Map Tag Dynamic`, but `true` is known (#2589).
+fn has_known_member_mismatch(arg: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
+  // Only literal containers carry member evidence that the join dropped. A
+  // spread operand is a whole collection, not one member, so it is skipped.
+  !expected.contains_type_var()
+    && !matches!(arg, Calcit::List(items) if items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))))
+    && collection_literal_matches(arg, expected, |_, _| true).is_some()
+    && expression_has_known_mismatch(arg, expected, scope)
 }
 
 /// Where a call compares or hashes an argument by value.

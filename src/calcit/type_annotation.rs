@@ -4984,6 +4984,26 @@ impl CalcitTypeAnnotation {
     resolve(self, &mut HashSet::new(), 0)
   }
 
+  /// The schema a `TypeRef` names when its definition is a plain schema alias,
+  /// such as `Coord` declared with schema `List Number` (#2590). Nominal
+  /// definitions (structs, enums, unions) carry no such schema and stay `None`.
+  /// Alias chains are followed to the first non-alias schema; a cycle yields `None`.
+  pub(crate) fn resolve_schema_alias(&self) -> Option<Arc<Self>> {
+    let mut visited = HashSet::new();
+    let mut current: Option<Arc<Self>> = None;
+    loop {
+      let node = current.as_deref().unwrap_or(self);
+      let Self::TypeRef(name, args) = node else {
+        return current;
+      };
+      let name = name.trim_start_matches('\'').trim_start_matches(':');
+      if !args.is_empty() || !visited.insert(name.to_owned()) {
+        return None;
+      }
+      current = Some(resolve_type_ref_as_schema(name)?);
+    }
+  }
+
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
       Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
