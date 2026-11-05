@@ -804,8 +804,10 @@ where
 /// that contradicts the contract, e.g. `{} (:a :x) (:b true)` for
 /// `Map Tag (String | Tag)`: the join is `Map Tag Dynamic`, but `true` is known (#2589).
 fn has_known_member_mismatch(arg: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
-  // Only literal containers carry member evidence that the join dropped.
+  // Only literal containers carry member evidence that the join dropped. A
+  // spread operand is a whole collection, not one member, so it is skipped.
   !expected.contains_type_var()
+    && !matches!(arg, Calcit::List(items) if items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))))
     && collection_literal_matches(arg, expected, |_, _| true).is_some()
     && expression_has_known_mismatch(arg, expected, scope)
 }
