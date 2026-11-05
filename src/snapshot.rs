@@ -4317,15 +4317,17 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let parent = path_data.parent().expect("parent path");
   let parent_str = parent.to_str().expect("get path string");
 
+  // Both generated values are string literals, so they carry the String
+  // schema instead of the Dynamic default; tools such as `analyze weak-types`
+  // would otherwise ask users to rewrite definitions they cannot edit (#2576).
+  let string_def = |name: &str, value: &str| {
+    let mut entry = CodeEntry::from_code(vec!["def", name, &format!("|{}", value.escape_default())].into());
+    entry.schema = Arc::new(CalcitTypeAnnotation::String);
+    entry
+  };
   let def_dict: HashMap<String, CodeEntry> = HashMap::from_iter([
-    (
-      "calcit-filename".into(),
-      CodeEntry::from_code(vec!["def", "calcit-filename", &format!("|{}", path.escape_default())].into()),
-    ),
-    (
-      "calcit-dirname".into(),
-      CodeEntry::from_code(vec!["def", "calcit-dirname", &format!("|{}", parent_str.escape_default())].into()),
-    ),
+    ("calcit-filename".into(), string_def("calcit-filename", path)),
+    ("calcit-dirname".into(), string_def("calcit-dirname", parent_str)),
   ]);
 
   FileInSnapShot {
@@ -5703,6 +5705,15 @@ mod tests {
   use super::*;
   use crate::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, SchemaKind};
   use cirru_edn::EdnListView;
+
+  #[test]
+  fn generated_meta_definitions_carry_their_string_schema() {
+    let meta = gen_meta_ns("app.$meta", "project/calcit.cirru");
+    for name in ["calcit-filename", "calcit-dirname"] {
+      let entry = meta.defs.get(name).expect("generated meta definition");
+      assert_eq!(entry.schema.as_ref(), &CalcitTypeAnnotation::String, "{name}");
+    }
+  }
 
   fn parse_one(source: &str) -> Cirru {
     cirru_parser::parse(source)
