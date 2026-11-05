@@ -53,11 +53,21 @@ struct EntryConfigJson {
 #[derive(Debug, Serialize)]
 struct ConfigShowJson {
   package: String,
+  /// Read from the adjacent `deps.cirru`, not from the Snapshot (#2595).
   version: Option<String>,
+  /// Identity of the manifest that `version` came from. The envelope
+  /// `revision` covers only the Snapshot bytes.
+  manifest: Option<ManifestIdentityJson>,
   selected_entry: Option<String>,
   entries: Vec<EntryConfigJson>,
   verification_schema_version: u32,
   verification_profiles: Vec<VerificationProfileJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestIdentityJson {
+  file: &'static str,
+  revision: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,6 +169,7 @@ fn config_show_json(
   Ok(ConfigShowJson {
     package: snapshot.package.clone(),
     version,
+    manifest: None,
     selected_entry: selected_entry.map(str::to_owned),
     entries,
     verification_schema_version: snapshot.verification.schema_version,
@@ -170,6 +181,20 @@ fn snapshot_content_revision(content: &[u8]) -> String {
   let mut hasher = Md5::new();
   hasher.update(content);
   format!("md5:{}", hex::encode(hasher.finalize()))
+}
+
+/// The manifest bytes are hashed like the Snapshot, so a consumer caching
+/// `config show` can tell when only `deps.cirru` changed.
+fn manifest_identity(input_path: &str) -> Result<Option<ManifestIdentityJson>, String> {
+  let deps_path = deps_path_for_snapshot(input_path);
+  match fs::read(&deps_path) {
+    Ok(content) => Ok(Some(ManifestIdentityJson {
+      file: "deps.cirru",
+      revision: snapshot_content_revision(&content),
+    })),
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+    Err(error) => Err(format!("Failed to read {deps_path}: {error}")),
+  }
 }
 
 fn config_error_code(error: &str) -> &'static str {
@@ -326,7 +351,10 @@ fn handle_show(opts: &ConfigShowCommand, input_path: &str) -> Result<(), String>
   let format = config_output_format(&opts.format)?;
   if format != StructuredOutputFormat::Human {
     let (revision, result) = config_json_query(input_path, |snapshot| {
-      config_show_json(&snapshot, opts.entry.as_deref(), package_version_for_snapshot(input_path)?)
+      let manifest = manifest_identity(input_path)?;
+      let mut json = config_show_json(&snapshot, opts.entry.as_deref(), package_version_for_snapshot(input_path)?)?;
+      json.manifest = manifest;
+      Ok(json)
     });
     return emit_config_structured("config.show", revision, result, format);
   }

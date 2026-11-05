@@ -130,6 +130,13 @@ JSON 对应 `schema_version` 等兼容名称。失败仍以非零状态退出。
 `config modules` 会为每个声明路径报告
 `loaded`/`failed` 和解析出的 package。
 
+`config show` 与 `query config` 的数据来自两个文件：入口、modules、type slots 等来自 Snapshot，
+`version` 则读取同目录的 `deps.cirru`。envelope 的 `revision` 只覆盖 Snapshot 字节，只改
+`deps.cirru` 时它保持不变。`data.manifest` 给出读取到的 manifest 身份
+（`file` 为 `deps.cirru`，`revision` 为其字节的 `md5:` 摘要）；没有 `deps.cirru` 时为 `nil`/`null`。
+缓存这份配置的工具应同时比较两个 revision。`edit transaction` 等 Snapshot 原子编辑仍只覆盖 Snapshot，
+项目版本通过 `caps version` 修改（#2595）。
+
 Type slot 优先用配置命令维护，避免直接改 snapshot：
 
 ```bash
