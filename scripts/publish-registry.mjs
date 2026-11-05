@@ -21,7 +21,9 @@ export function validateRelease(tag, sha, release, versions, runs) {
 
 export function publicationBranch(tag) {
   // This is a version-scoped maintenance exception, not a caller override.
-  return /^0\.30\.1(?:-[0-9A-Za-z.-]+)?$/.test(tag) ? "release/0.30.1" : "main";
+  if (/^0\.30\.1(?:-[0-9A-Za-z.-]+)?$/.test(tag)) return "release/0.30.1";
+  if (/^0\.34\.4(?:-[0-9A-Za-z.-]+)?$/.test(tag)) return "release/0.34.x";
+  return "main";
 }
 
 const branchWorkflows = branch => [

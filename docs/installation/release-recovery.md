@@ -10,7 +10,7 @@ gh workflow run publish.yaml --repo calcit-lang/calcit --ref <已有版本>
 workflow、构建源码与发布脚本均来自同一 annotated tag。流程要求：
 
 - Release 已存在且非草稿，预发布标记与版本一致；Cargo/npm 版本和 tag 完全一致。
-- tag 对应的精确提交在发布分支上触发的 Test、GitHub 默认 CodeQL 都成功；通常为 main /「Push on main」，0.30.1 的新预发布和稳定版使用获批的 release/0.30.1 /「Push on release/0.30.1」。版本决定分支，不提供绕过参数；tag 或 PR 上的检查不替代这些记录。
+- tag 对应的精确提交在发布分支上触发的 Test、GitHub 默认 CodeQL 都成功；通常为 main /「Push on main」，0.30.1 的新预发布和稳定版使用获批的 release/0.30.1 /「Push on release/0.30.1」，0.34.4 使用 release/0.34.x /「Push on release/0.34.x」。版本决定分支，不提供绕过参数；tag 或 PR 上的检查不替代这些记录。
 - 原始 `GITHUB_REF` 必须为该 tag，`GITHUB_SHA` 必须等于实际 checkout；main 或其他 ref 在预检阶段拒绝。
 - 原测试、文档验证、标准与无 WASM 资产构建继续执行；没有只发布 npm 的跳过门禁入口。
 - registry 已存在的版本必须属于同一 Git SHA。crate 还须通过 registry checksum 校验，且其 VCS metadata 不得标记 dirty；无法证明时停止，不覆盖。
@@ -35,6 +35,10 @@ registry 会核对 provenance 与签名证书中的源码 ref/SHA；不能从 ma
 ## 0.30.1 维护线
 
 维护者明确批准该版从 `release/0.30.1` 发布，保留已验证的 Option 路径合同，不提前纳入 main 的后续版本改动。该分支从已发布的 alpha.4 建立，只回移本版修复及必要文档/验收；没有减免消费者验证或配对发布要求。分支须保持保护并由默认 CodeQL 覆盖，精确 SHA 上缺少任何必需检查时停止发布。既有 alpha.4 及更早 tag 不移动，恢复仍使用各 tag 自带的原流程。
+
+## 0.34.4 维护线
+
+0.34.4 从 `release/0.34.x` 发布（该分支取自 main 的 bea51bc5，即 0.35.0 破坏性改动之前），让停留在 0.34 的库先拿到工具修正和 0.35.0 预告。规则与 0.30.1 相同：分支须保持保护并由默认 CodeQL 覆盖，tag 所在精确 SHA 上「Test」push 与「Push on release/0.34.x」都成功后才发布。0.35.0 及之后的版本仍从 main 发布。
 
 ## 限制
 

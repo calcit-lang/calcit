@@ -123,12 +123,12 @@ test("missing, stale, failed, pending and non-main workflows cannot authorize pu
   assert.throws(() => validateRelease(tag, sha, release, [tag, tag], [...runs, { ...runs[0], id: 10, conclusion: "failure" }]));
 });
 
-test("only 0.30.1 releases use exact maintenance-branch CI, never main or PR checks", () => {
-  const branch = "release/0.30.1";
+for (const [branch, versions] of [["release/0.30.1", ["0.30.1-alpha.5", "0.30.1"]], ["release/0.34.x", ["0.34.4-alpha.1", "0.34.4"]]]) {
+test(`only ${versions.at(-1)} releases use exact ${branch} CI, never main or PR checks`, () => {
   const maintenanceRuns = runs.map((run, index) => ({
     ...run, head_branch: branch, name: index === 0 ? "Test" : `Push on ${branch}`,
   }));
-  for (const version of ["0.30.1-alpha.5", "0.30.1"]) {
+  for (const version of versions) {
     const metadata = { tagName: version, isDraft: false, isPrerelease: version.includes("-") };
     assert.equal(publicationBranch(version), branch);
     validateRelease(version, sha, metadata, [version, version], maintenanceRuns);
@@ -147,13 +147,14 @@ test("only 0.30.1 releases use exact maintenance-branch CI, never main or PR che
       ...maintenanceRuns, { ...maintenanceRuns[1], id: 10, conclusion: "failure" },
     ]));
   }
-  for (const version of ["0.30.0", "0.30.2", "0.30.10", "0.31.0-alpha.1", "0.32.0"]) {
+  for (const version of ["0.30.0", "0.30.2", "0.30.10", "0.31.0-alpha.1", "0.32.0", "0.34.3", "0.34.5", "0.34.40", "0.35.0"]) {
     assert.equal(publicationBranch(version), "main");
     const metadata = { tagName: version, isDraft: false, isPrerelease: version.includes("-") };
     validateRelease(version, sha, metadata, [version, version], runs);
     assert.throws(() => validateRelease(version, sha, metadata, [version, version], maintenanceRuns));
   }
 });
+}
 
 test("an existing registry version may be skipped only with matching clean source identity", () => {
   verifyPublishedSource({ git: { sha1: sha } }, sha, "crate");

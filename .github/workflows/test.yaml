@@ -3,6 +3,7 @@ on:
     branches:
       - main
       - release/0.30.1
+      - release/0.34.x
   pull_request: {}
 
 name: Test
