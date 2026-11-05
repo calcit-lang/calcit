@@ -10364,6 +10364,10 @@ fn synthesize_nominal_impl_callable(
       examples: vec![],
     },
   );
+  // The generated callable has no source code to re-prove. It was produced
+  // from the impl body in this pass, so an assertion audit must reuse it
+  // instead of looking it up as a missing definition (#2598).
+  mark_audit_proven(target_ns, &synthetic_name);
 
   let def_id = program::ensure_def_id(target_ns, &synthetic_name).0;
   let info = if target_ns == file_ns {
