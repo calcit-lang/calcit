@@ -1495,6 +1495,10 @@ impl LocatedWarning {
     self.hint.as_deref()
   }
 
+  pub fn set_hint(&mut self, hint: String) {
+    self.hint = Some(hint);
+  }
+
   pub fn expected(&self) -> Option<&str> {
     self.expected.as_deref()
   }

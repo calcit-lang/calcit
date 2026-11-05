@@ -1,6 +1,7 @@
 pub use crate::calcit::type_refs::{
   map_schema_references, map_type_references, qualify_namespace_type_refs as resolve_namespace_type_refs_for_body,
 };
+mod broad_type_evidence;
 mod checked_call_contract;
 mod condition_evidence;
 mod explicit_open;
@@ -17,6 +18,7 @@ mod type_rewriting;
 mod union_types;
 
 use crate::calcit::NullableOrigin;
+pub use broad_type_evidence::push_broad_type_advisory;
 use js_ffi::*;
 pub(crate) use js_ffi::{is_host_value_type, trait_is_external_object};
 pub(crate) use recur_tail::non_tail_recur_forms;
@@ -753,7 +755,11 @@ pub fn push_advisory(advisory: LocatedWarning) {
 /// Takes the advisories collected so far, oldest first.
 pub fn take_advisories() -> Vec<LocatedWarning> {
   MACRO_ERASURE_SITES.lock().expect("lock macro erasure sites").clear();
-  std::mem::take(&mut *ADVISORIES.lock().expect("lock advisories"))
+  // Broad-type notes come from loading, so they lead, now told what the
+  // checked calls pass.
+  let mut advisories = broad_type_evidence::take_broad_type_advisories();
+  advisories.extend(std::mem::take(&mut *ADVISORIES.lock().expect("lock advisories")));
+  advisories
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
@@ -14337,6 +14343,11 @@ pub fn preprocess_defn(
           effective_fn_schema = Some(Arc::new(inferred));
         }
         recur_param_types = parameters;
+      }
+      // Only the definition's own parameters, not those of a nested `fn`,
+      // collect call-site evidence for its `W_BROAD_TYPE` notes.
+      if info.at_ns.as_ref() == ctx.file_ns && info.at_def.as_ref() == def_name.as_ref() {
+        body_types.mark_defn_parameters(&param_symbols);
       }
       let mut proof_bindings = proof_provenance::BindingScope::new();
       for parameter in &zs {

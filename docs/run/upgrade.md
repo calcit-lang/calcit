@@ -31,6 +31,18 @@ related:
 - 免报按值实际去向判断：作为 JS 宿主调用或 `JsNullish` 形参的实参时免报，经过 `if` / `match` 分支、`let` / `do` 尾部或 `->` 这类宏展开到达也算，例如 `js/console.log $ if c (.unwrap-or x nil) 0`。中间被普通调用消费（`js/f $ str (.unwrap-or x nil)`）或绑定到局部时照常报告。
 - 被擦除的值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，hint 给出保持结果的 `match` 改写，例如 `or (.unwrap-or x nil) d` → `match x ((:some v) (or v d)) ((:none) d)`。Some、Some nil、Some false、None 的结果和 fallback 的求值次数都不变，可以直接替换；其他用法没有 hint，需要作者决定默认值或改为传递 Option。没有 else 分支的 `if`、fallback 引用了 `match` 在 `:some` 分支绑定的同名变量、或 `or` / `if` 是局部或项目里的同名绑定时，也不给 hint；同名的局部 `do` / `let` 是普通调用，经过它到达宿主的值不再免报。
 
+## 0.35.2 `W_BROAD_TYPE` 提示调用点传入的具体类型（#2566）
+
+仍是 Notes。函数 `:schema` 参数里的裸 `Enum` / `Struct`，若本次检查到达的调用都传同一个具体类型，提示会直接说出来：
+
+```text
+[W_BROAD_TYPE] [Warn] bare `Enum` in :schema accepts any enum … Every call this check reached passes `app.schema/Op` at arg 1. @app.main/dispatch!
+  hint: write `app.schema/Op` at arg 1 of `app.main/dispatch!`, then run the definition `:tests` too: calls the check does not reach are not counted
+```
+
+回调参数（如 `d!` 的 `Fn Enum (-> Unit)`）按函数体里对它的调用统计，位置写作 `arg 1 → arg 1`。传入多种类型时列出全部，建议 union 或 `:generics`；
+有调用传入匿名 `::` 值、Dynamic 或本身就是裸类型的值时不给候选。定义 `:tests` 里的调用不在统计里，改完需要跑测试确认。
+
 ## 0.35.0 复合类型可以不写 quote（#2581、#2582）
 
 只能放类型的位置，复合类型现在可以直接写：
