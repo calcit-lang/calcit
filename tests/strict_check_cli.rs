@@ -618,6 +618,27 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
     ("pair-value", "quote $ def pair-value $ [] 12 |ready |extra", false),
     ("ref-value", "quote $ def ref-value $ ref $ [] 12 :block |sans", true),
     ("ref-value", "quote $ def ref-value $ ref $ [] 12 false :block", false),
+    // A merged literal is checked against the receiver's contract too (#2589).
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:width 12) (:display :inline)",
+      true,
+    ),
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:width open-value) (:display :inline)",
+      true,
+    ),
+    (
+      "style",
+      "quote $ def style $ .merge base-style $ {} (:display :inline) (:height true)",
+      false,
+    ),
+    (
+      "style",
+      "quote $ def style $ merge base-style $ {} (:width open-value) (:height true)",
+      false,
+    ),
     (
       "app.collection-shadow/nested-values",
       "quote $ def nested-values $ [] 12 :block |sans",
@@ -676,6 +697,24 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
         "cirru",
         "--code",
         "quote Dynamic"
+      ],
+      [
+        "edit",
+        "def",
+        "app.collection-value/base-style",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def base-style $ {} (:display :block)"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.collection-value/base-style",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Map Tag app.collection-value/Scalar"
       ],
       ["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", source],
       [
@@ -741,7 +780,12 @@ fn mixed_collection_value_schemas_reject_known_members_and_preserve_open_policy(
           String::from_utf8_lossy(&output.stdout),
           String::from_utf8_lossy(&output.stderr)
         );
-        assert!(report.contains("E_SCHEMA_DEF_MISMATCH") && report.contains(&target), "{report}");
+        let expected_text = if source.contains("merge") {
+          "arg 2 expects type `map<tag, type app.collection-value/Scalar>`"
+        } else {
+          "E_SCHEMA_DEF_MISMATCH"
+        };
+        assert!(report.contains(expected_text) && report.contains(&target), "{report}");
         assert!(!output_directory.join(format!("{namespace}.mjs")).exists());
       }
       assert_eq!(fs::read(&snapshot).unwrap(), original);

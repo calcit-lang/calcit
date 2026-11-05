@@ -143,6 +143,11 @@ wrapper，也不需要把类型放宽为 Dynamic。
 检查不执行初始化器，也不修改运行值。原有开放值策略保留，但其他开放成员不会掩盖
 同一集合内的已知矛盾；接受开放证据不等于证明 Dynamic 已满足具体类型。
 
+作为函数实参的集合字面量同样逐项检查，泛型参数按已绑定的类型代入。例如 `base` 为
+`Map Tag CssValue` 时，`.merge base $ {} (:display :block) (:height true)` 的第二个
+参数报 `W_METHOD_ARG_TYPE_MISMATCH`（函数写法 `merge` 报 `W_FN_ARG_TYPE_MISMATCH`），
+不再因为混合推导成 `Map Tag Dynamic` 而通过（#2589）。
+
 ## 方法接收者与返回证据
 
 类型化方法的接收者关系先由实际接收者证明，再用于检查其余参数与推导结果。
