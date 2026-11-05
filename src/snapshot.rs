@@ -759,6 +759,9 @@ fn parse_zero_payload_schema_wrapper(value: &Edn) -> Option<Arc<CalcitTypeAnnota
   if !view.extra.is_empty() {
     return None;
   }
+  if let Some(open) = CalcitTypeAnnotation::open_family_type(&view.variant) {
+    return Some(open);
+  }
   let canonical = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)?;
   if matches!(canonical, "JsNullish" | "Variadic") {
     return None;
@@ -806,25 +809,30 @@ fn tags_to_edn(tags: &HashSet<EdnTag>) -> Edn {
 
 /// Convert a loaded definition schema annotation into snapshot-style EDN.
 pub fn schema_annotation_to_edn(schema: &CalcitTypeAnnotation) -> Edn {
-  let expression = match schema {
-    CalcitTypeAnnotation::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
-    CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
-    CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
-    // Runtime-resolved nominal types are intentionally persisted as their
-    // broad schema kinds. Their concrete definitions belong to source code,
-    // and serializing only a local name would lose namespace identity.
-    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
-      crate::calcit::Calcit::Tag(tag) => CalcitTypeAnnotation::canonical_type_symbol_name(tag.ref_str())
-        .map(|name| Edn::Symbol(Arc::from(name)))
-        .unwrap_or_else(|| Edn::Symbol(Arc::from("Dynamic"))),
-      _ => Edn::Symbol(Arc::from("Dynamic")),
-    },
-    CalcitTypeAnnotation::StructValue(_) => Edn::Symbol(Arc::from("Struct")),
-    CalcitTypeAnnotation::Struct(..) => Edn::Symbol(Arc::from("Struct")),
-    CalcitTypeAnnotation::Enum(..) => Edn::Symbol(Arc::from("Enum")),
-    CalcitTypeAnnotation::EnumValue(_) => Edn::Symbol(Arc::from("Enum")),
-    CalcitTypeAnnotation::Trait(_) => Edn::Symbol(Arc::from("Trait")),
-    other => other.to_type_edn(),
+  // Checked before the `Custom` arm, which would write `AnyStruct` as `Struct`.
+  let expression = if let Some(name) = schema.open_family_name() {
+    Edn::Symbol(Arc::from(name))
+  } else {
+    match schema {
+      CalcitTypeAnnotation::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
+      CalcitTypeAnnotation::Fn(fn_annot) => fn_annot.to_wrapped_schema_edn(),
+      CalcitTypeAnnotation::Macro(signature) => signature.to_wrapped_schema_edn(),
+      // Runtime-resolved nominal types are intentionally persisted as their
+      // broad schema kinds. Their concrete definitions belong to source code,
+      // and serializing only a local name would lose namespace identity.
+      CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+        crate::calcit::Calcit::Tag(tag) => CalcitTypeAnnotation::canonical_type_symbol_name(tag.ref_str())
+          .map(|name| Edn::Symbol(Arc::from(name)))
+          .unwrap_or_else(|| Edn::Symbol(Arc::from("Dynamic"))),
+        _ => Edn::Symbol(Arc::from("Dynamic")),
+      },
+      CalcitTypeAnnotation::StructValue(_) => Edn::Symbol(Arc::from("Struct")),
+      CalcitTypeAnnotation::Struct(..) => Edn::Symbol(Arc::from("Struct")),
+      CalcitTypeAnnotation::Enum(..) => Edn::Symbol(Arc::from("Enum")),
+      CalcitTypeAnnotation::EnumValue(_) => Edn::Symbol(Arc::from("Enum")),
+      CalcitTypeAnnotation::Trait(_) => Edn::Symbol(Arc::from("Trait")),
+      other => other.to_type_edn(),
+    }
   };
   // A lone EDN symbol in a struct field is parsed as a Cirru quote. Wrap it
   // as a zero-argument type expression so Snapshot serialization remains
@@ -1848,6 +1856,10 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     Cirru::List(items) => items,
     Cirru::Leaf(s) => {
       let tag_name = s.trim_start_matches(':');
+      // `AnyFn`, `AnyStruct` and `AnyEnum` are complete types (#2594).
+      if CalcitTypeAnnotation::open_family_type(s).is_some() {
+        return Ok(());
+      }
       if let Some(canonical) = canonical_schema_symbol_from_cirru(schema) {
         let parameterized = matches!(canonical, "List" | "Map" | "Set" | "Fn" | "Ref");
         if !parameterized {
@@ -6573,6 +6585,26 @@ mod tests {
       validate_schema_for_write(&quote_wrapped).is_err(),
       "quote-wrapped should fail (caller must unwrap)"
     );
+  }
+
+  #[test]
+  fn open_family_schemas_validate_and_keep_their_spelling() {
+    let _guard = crate::program::lock_program_test_state();
+    for name in ["AnyFn", "AnyStruct", "AnyEnum"] {
+      assert!(
+        validate_schema_for_write(&Cirru::leaf(name)).is_ok(),
+        "{name} is a complete root schema"
+      );
+      let annotation = parse_loaded_schema_annotation(&Edn::Symbol(Arc::from(name)), "app.main/value").expect("open family loads");
+      assert_eq!(annotation.open_family_name(), Some(name));
+      let stored = schema_annotation_to_edn(annotation.as_ref());
+      assert_eq!(stored, Edn::enum_value(name, vec![]), "{name} keeps its spelling as a root schema");
+      let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+      entry.schema = annotation;
+      let encoded = rmp_serde::to_vec(&entry).expect("open family schema serializes");
+      let decoded: CodeEntry = rmp_serde::from_slice(&encoded).expect("open family schema deserializes");
+      assert_eq!(decoded.schema.open_family_name(), Some(name), "{name} survives a binary round trip");
+    }
   }
 
   #[test]
