@@ -1687,6 +1687,22 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
 }
 
 #[test]
+fn proven_trait_method_inside_get_survives_the_proof_audit() {
+  // The direct callable generated for `.get-name` has no source code; the
+  // default proof audit must reuse it rather than report it missing (#2598).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/trait-method-in-get.cirru", &snapshot).unwrap();
+  for args in [
+    vec!["--check-only"],
+    vec!["--check-only", "--all-defs"],
+    vec!["--check-only", "--ns", "app.min"],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
+  }
+}
+
+#[test]
 fn referred_union_short_name_is_the_declared_type() {
   // `Tree` imported with `:refer` names `app.model/Tree` in decoder targets,
   // schemas and body hints alike (#2577).
