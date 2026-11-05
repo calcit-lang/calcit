@@ -387,7 +387,7 @@
             %{} 'TestEntry (:name |count-has-one-dispatch-origin)
               :code $ quote $ let
                   count-of $ fn (v)
-                    hint-fn $ Fn Enum $ -> Number
+                    hint-fn $ Fn AnyEnum $ -> Number
                     .count v
                 assert= 3 $ count-of $ %:: _ :point 1 2
                 assert= 2 $ count-of $ Option :some 1
@@ -396,7 +396,7 @@
             %{} 'TestEntry (:name |contains-has-one-dispatch-origin)
               :code $ quote $ let
                   has-index? $ fn (v i)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     .contains? v i
                   point $ %:: _ :point 1 2
                 assert= true $ has-index? point 2
@@ -407,7 +407,7 @@
             %{} 'TestEntry (:name |contains-preserves-number-range)
               :code $ quote $ let
                   has-index? $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     .contains? value index
                   present $ Option :some 1
                   absent $ Option :none
@@ -427,7 +427,7 @@
             %{} 'TestEntry (:name |contains-specializes-generic-number-keys)
               :code $ quote $ let
                   has-index? $ fn (value key)
-                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn AnyEnum K (-> Bool) (:generics K)
                     .contains? value key
                   present $ Option :some 1
                 assert= true $ has-index? present 0
@@ -1432,7 +1432,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ do
-              deftrait DemoTrait $ .show 'Fn
+              deftrait DemoTrait $ .show AnyFn
               &impl::new DemoTrait $ :: .show $ fn (x) x
             quote $ &impl::new :DemoImpl $ [] :show
               fn (x) x
@@ -1443,7 +1443,7 @@
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             do
-              deftrait DemoTrait $ .show 'Fn
+              deftrait DemoTrait $ .show AnyFn
               def DemoImpl $ &impl::new DemoTrait $ :: .show
                 fn (x) x
               fn? $ &impl:get DemoImpl .show
@@ -5445,7 +5445,7 @@
             :code $ quote $ let
                 QuoteBox $ defstruct QuoteBox $ :code CirruQuote
                 construct $ fn (value)
-                  hint-fn $ Fn Dynamic $ -> Struct
+                  hint-fn $ Fn Dynamic $ -> AnyStruct
                   if (cirru-quote? value) (QuoteBox :code value) (raise "|Expected CirruQuote")
               let
                   quoted $ parse-cirru |value
@@ -5872,7 +5872,7 @@
               :code $ quote $ let
                   value $ Option :some 1
                   has-index $ fn (value key)
-                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn AnyEnum K (-> Bool) (:generics K)
                     .contains? value key
                 assert=
                   [] true true true true false false false false false
@@ -5901,56 +5901,56 @@
             %{} 'TestEntry (:name |public-enum-some-zero)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 0
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-one)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-fraction)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :some 1) 1.5
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-end)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :some 1) 2
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-some-negative)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :some 1) -1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-none-zero)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= true $ has-index (Option :none) 0
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-none-one)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains? value index
                 assert= false $ has-index (Option :none) 1
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-generic-index-keeps-number-evidence)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum K (-> Bool) (:generics K)
+                    hint-fn $ Fn AnyEnum K (-> Bool) (:generics K)
                     contains? value index
                   value $ Option :some 1
                 assert= ([] true false false false false)
@@ -5962,7 +5962,7 @@
             %{} 'TestEntry (:name |public-enum-evaluates-receiver-then-key-once)
               :code $ quote $ let
                   has-index $ fn (value index)
-                    hint-fn $ Fn Enum Number $ -> Bool
+                    hint-fn $ Fn AnyEnum Number $ -> Bool
                     contains?
                       do (println |contains-receiver) value
                       do (println |contains-key) index
@@ -5972,14 +5972,14 @@
             %{} 'TestEntry (:name |public-enum-if-retains-nominal)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ Fn Enum Number Bool $ -> Bool
+                    hint-fn $ Fn AnyEnum Number Bool $ -> Bool
                     contains? (if flag value value) index
                 assert= true $ has-index (Option :some 1) 1 true
               :tags $ #{} :public-enum-result-evidence :unit
             %{} 'TestEntry (:name |public-enum-let-retains-nominal)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ Fn Enum Number Bool $ -> Bool
+                    hint-fn $ Fn AnyEnum Number Bool $ -> Bool
                     contains?
                       let
                           copied value
@@ -5990,7 +5990,7 @@
             %{} 'TestEntry (:name |public-enum-shadow-does-not-leak)
               :code $ quote $ let
                   has-index $ fn (value index flag)
-                    hint-fn $ Fn Enum Number Bool $ -> Bool
+                    hint-fn $ Fn AnyEnum Number Bool $ -> Bool
                     do
                       assert= false $ contains?
                         let
@@ -9068,7 +9068,7 @@
                     hint-fn $ Fn Number $ -> Number
                     , x
                   keep $ fn (callback)
-                    hint-fn $ Fn Fn $ -> Fn
+                    hint-fn $ Fn AnyFn $ -> AnyFn
                     , callback
                 assert= 3 $
                   keep pass-number
@@ -9086,7 +9086,7 @@
             %{} 'TestEntry (:name |explicit-unit-return-contract)
               :code $ quote $ let
                   finish $ fn (callback)
-                    hint-fn $ Fn Fn $ -> Unit
+                    hint-fn $ Fn AnyFn $ -> Unit
                     , &unit
                 assert= &unit $ finish $ fn (x) x
               :tags $ #{} :return-boundary
@@ -9175,7 +9175,7 @@
             %{} 'TestEntry (:name |typed-callable-to-open-storage)
               :code $ quote $ let
                   keep $ fn (callback)
-                    hint-fn $ Fn Fn $ -> Fn
+                    hint-fn $ Fn AnyFn $ -> AnyFn
                     , callback
                   identity-number $ fn (x)
                     hint-fn $ Fn Number $ -> Number
@@ -12244,7 +12244,7 @@
               :code $ quote $ let
                   cache $ assert-type
                     ref $ {}
-                    quote $ Ref $ Map Fn Number
+                    quote $ Ref $ Map AnyFn Number
                 reset! cache $ .assoc @cache inc 1
                 reset! cache $ .assoc @cache inc 2
                 assert= (Option :some 2) (.get @cache inc)
@@ -12257,8 +12257,8 @@
               :tags $ #{} :core :reset-proof :types :unit
             %{} 'TestEntry (:name |opaque-function-storage-is-reflexive)
               :code $ quote $ let
-                  cell $ ref $ assert-type inc 'Fn
-                  replacement $ assert-type dec 'Fn
+                  cell $ ref $ assert-type inc AnyFn
+                  replacement $ assert-type dec AnyFn
                 reset! cell replacement
                 assert= true $ fn? @cell
                 assert= true $ = @cell dec
