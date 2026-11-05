@@ -29,7 +29,7 @@
           :examples $ []
           :schema $ quote Impl
         'PluginTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait PluginTrait (.render 'Fn)
+          :code $ quote $ deftrait PluginTrait (.render AnyFn)
           :examples $ []
           :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)

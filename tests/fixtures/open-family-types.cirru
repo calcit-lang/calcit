@@ -100,7 +100,7 @@
               :code $ quote $ let
                   *seen $ ref $ :: :none
                 listen $ fn (op)
-                  hint-fn $ Fn Enum $ -> Unit
+                  hint-fn $ Fn AnyEnum $ -> Unit
                   reset! *seen op
                   , &unit
                 assert= (:: :reset) (deref *seen)

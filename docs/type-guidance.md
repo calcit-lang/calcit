@@ -276,7 +276,7 @@ assert-type store $ quote $ reel.typed/State app.schema/Op app.schema/Store
 defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 ```
 
-确实接受该族任意成员的位置写 `AnyFn`、`AnyStruct`、`AnyEnum`：它们和裸 `Fn`、`Struct`、`Enum` 是同一个类型，检查、调用和运行时字段校验都一样，只是表明这里有意开放，不报 `W_BROAD_TYPE`。
+确实接受该族任意成员的位置写 `AnyFn`、`AnyStruct`、`AnyEnum`：它们和裸 `Fn`、`Struct`、`Enum` 是同一个类型，检查、调用和运行时字段校验都一样，只是表明这里有意开放，不报 `E_BROAD_TYPE`。
 
 ```cirru.no-check
 ; 任意参数个数的回调，例如 memo 辅助函数
@@ -289,11 +289,11 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 库需要把调用方的具体类型原样传回时（如 `reel.typed/State` 的操作类型参数），用 `:generics` 类型变量。类型变量不限定为 enum，可以绑定任意类型，所以它不等价于 `Enum`；只对任意 enum 做底层操作的少数位置会继续得到提示。
 
-检查时这些写法报告非阻塞的 `W_BROAD_TYPE` 提示，范围是项目自身的定义代码、examples、tests 和 `:schema`：
+0.36.0 起检查时裸 `Fn` / `Struct` / `Enum` 报告 `E_BROAD_TYPE` 错误（裸 `Trait` 仍是非阻塞的 `W_BROAD_TYPE`），范围是项目自身的定义代码、examples、tests 和 `:schema`：
 `assert-type`、`unsafe-coerce`、`hint-fn`、解码目标、函数返回标注、`defstruct` 字段、`defenum` 载荷和 `deftrait` 成员。
 
 ```text
-[W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `AnyEnum` where any enum is intended. @app.main/on-op @3.1.1
+[E_BROAD_TYPE] [Error] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `AnyEnum` where any enum is intended. @app.main/on-op @3.1.1
 ```
 
 函数 `:schema` 里参数位置的裸 `Enum` / `Struct`（包括回调参数的参数，如 `Fn (Fn Enum (-> Unit)) …`）会参考本次检查到达的调用点：

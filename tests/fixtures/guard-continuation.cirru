@@ -208,12 +208,12 @@
             let
                 checked f
                 get-value $ fn ()
-                  hint-fn $ Fn $ -> Fn
+                  hint-fn $ Fn $ -> AnyFn
                   , checked
               set! f 1
               get-value
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Fn) (:features :js-ffi)
+          :schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi)
           :tests $ [] $ %{} 'TestEntry
             :name |checked-value-is-independent-of-original-binding
             :code $ quote $ let
@@ -245,7 +245,7 @@
                   callback $ keep-signature $ fn (value)
                     hint-fn $ Fn Number $ -> Number
                     .inc value
-                assert-type callback 'Fn
+                assert-type callback AnyFn
                 reset! mark 1
                 assert= 8 $ callback 7
                 assert= 1 $ deref mark
