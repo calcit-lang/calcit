@@ -1079,6 +1079,56 @@ fn recur_arguments_follow_the_lexical_function_contract() {
   );
 }
 
+#[test]
+fn methods_on_a_schema_alias_dispatch_through_the_aliased_type() {
+  // `Coord` is a plain schema alias for `List Number`, so `.rest xs` keeps the
+  // list contract and `recur` accepts it (#2590); unknown methods still fail.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+  let set_schema = |name: &str, code: &str| {
+    let target = format!("app.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target.as_str(), "--code", code]),
+      "edit schema",
+    );
+  };
+  edit_definition(&snapshot, "Coord", "quote $ def Coord $ []", false);
+  set_schema("Coord", "quote $ List Number");
+  edit_definition(
+    &snapshot,
+    "drain",
+    "quote $ defn drain (xs acc) $ if (.empty? xs) acc $ recur (.rest xs) (+ acc (.len xs))",
+    false,
+  );
+  set_schema("drain", "quote $ Fn app.main/Coord Number (-> Number)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ println $ drain ([] 1 2 3) 0", true);
+  edit_schema(&snapshot, "main!", "Unit");
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "methods on a schema alias");
+  let run = run_calcit(&snapshot, &[]);
+  assert_success(&run, "run recursion over a schema alias");
+  assert!(
+    String::from_utf8_lossy(&run.stdout).contains('6'),
+    "{}",
+    String::from_utf8_lossy(&run.stdout)
+  );
+
+  edit_definition(&snapshot, "bad", "quote $ defn bad (xs) $ .no-such-method xs", false);
+  set_schema("bad", "quote $ Fn app.main/Coord (-> Number)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ println $ bad $ [] 1", true);
+  let unknown = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!unknown.status.success(), "unknown method on a schema alias must fail checking");
+  let stderr = String::from_utf8_lossy(&unknown.stderr);
+  let stdout = String::from_utf8_lossy(&unknown.stdout);
+  assert!(
+    stderr.contains("unknown method `.no-such-method` for type app.main/Coord")
+      || stdout.contains("unknown method `.no-such-method` for type app.main/Coord"),
+    "stdout:\n{stdout}\nstderr:\n{stderr}"
+  );
+}
+
 /// #2521: the bundled core `cirru-quote?` guard narrows a Dynamic argument
 /// before it fills a CirruQuote struct field; a same-named user function does not.
 #[test]
