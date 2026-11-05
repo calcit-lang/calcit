@@ -2872,7 +2872,7 @@ try {
         ["wrong-callback-return", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'Number) (:return 'Number)) 1", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["wrong-callback-arity", [], "NullableEventStore :handlers $ {} $ :click $ fn (left right) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["narrower-callback-input", [], "NullableInputCallbackStore :handlers $ {} $ :click NullableEvent", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
-        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
+        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'AnyFn) (:return 'Dynamic)"],
         ["nullable-elimination", ["values"], "ConcreteNumberStore :values values", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag $ :: 'JsNullish 'Number) (:return 'Dynamic)"],
         ["mutable-widening", ["cell"], "NullableRefStore :cell cell", ":: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Dynamic)"],
       ]) {
