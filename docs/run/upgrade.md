@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.2 显式的宽泛类型 `AnyFn` / `AnyStruct` / `AnyEnum`（#2594）
+
+0.36.0 计划把裸 `Fn` / `Struct` / `Enum`（`W_BROAD_TYPE`）改为阻塞（#2504）。确实接受任意函数、任意 struct 或任意 enum 的位置，例如任意参数个数的 memo 回调、对任意 struct 的反射式 diff、承载应用 enum 的库回调，改写成 `AnyFn`、`AnyStruct`、`AnyEnum`。它们与裸写法是同一个类型，改写不改变检查、调用和运行时校验，只是不再报 `W_BROAD_TYPE`。库回调参数写成 `Fn AnyEnum (-> Unit)` 后，下游现有的 `Fn Enum (-> Unit)` 回调照常可传，库和应用不必同步发布。
+
 ## 0.35.2 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
 
 仍是 Notes，不影响检查结论；0.36.0 计划改为阻塞（#2124），先用这一版清理。
@@ -344,7 +348,7 @@ calcit <snapshot> edit format
 现在检查时报告非阻塞的 `W_BROAD_TYPE` 提示，指出位置并建议写具体类型：
 
 ```text
-[W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `Dynamic` only where the boundary is intentionally open. @app.main/on-op @3.1.1
+[W_BROAD_TYPE] [Warn] bare `Enum` accepts any enum and drops its variants, so payloads read back as Dynamic; name the concrete enum, such as `Option Number` or `app.schema/Action`. Write `AnyEnum` where any enum is intended. @app.main/on-op @3.1.1
 ```
 
 迁移步骤：

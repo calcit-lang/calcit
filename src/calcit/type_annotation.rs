@@ -274,6 +274,16 @@ fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotat
   }
 }
 
+// `AnyFn`, `AnyStruct` and `AnyEnum` (#2594) are the bare family types written
+// on purpose. They parse to these shared nodes, so every relation treats them
+// exactly like `Fn`, `Struct` and `Enum`; the node identity keeps the spelling
+// for serialization and lets `W_BROAD_TYPE` skip them, as `DYNAMIC_TYPE` does
+// for omitted container arguments.
+static ANY_FN_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::DynFn));
+static ANY_STRUCT_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> =
+  LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct")))));
+static ANY_ENUM_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::AnonymousEnum));
+
 /// Try to resolve a TypeRef name (formatted as "ns/def") as a schema-based type alias.
 /// This allows definitions with non-Dynamic schemas to serve as named type aliases.
 fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -2194,6 +2204,30 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// The shared node for `AnyFn`, `AnyStruct` or `AnyEnum`, quoted or not.
+  pub(crate) fn open_family_type(name: &str) -> Option<Arc<Self>> {
+    match name.trim_start_matches('\'') {
+      "AnyFn" => Some(ANY_FN_TYPE.clone()),
+      "AnyStruct" => Some(ANY_STRUCT_TYPE.clone()),
+      "AnyEnum" => Some(ANY_ENUM_TYPE.clone()),
+      _ => None,
+    }
+  }
+
+  /// The source spelling when this node was written as `AnyFn`, `AnyStruct`
+  /// or `AnyEnum`; the type itself equals the bare family.
+  pub fn open_family_name(&self) -> Option<&'static str> {
+    if std::ptr::eq(self, ANY_FN_TYPE.as_ref()) {
+      Some("AnyFn")
+    } else if std::ptr::eq(self, ANY_STRUCT_TYPE.as_ref()) {
+      Some("AnyStruct")
+    } else if std::ptr::eq(self, ANY_ENUM_TYPE.as_ref()) {
+      Some("AnyEnum")
+    } else {
+      None
+    }
+  }
+
   /// Whether a bare type name denotes a builtin type rather than a nominal reference.
   pub(crate) fn is_builtin_type_symbol_name(name: &str) -> bool {
     Self::builtin_type_from_symbol_name(name).is_some()
@@ -3866,6 +3900,9 @@ impl CalcitTypeAnnotation {
     }
 
     if let Some(name) = Self::parse_type_var_form(form) {
+      if let Some(open) = Self::open_family_type(&name) {
+        return open;
+      }
       if let Some(builtin) = Self::builtin_type_from_symbol_name(&name) {
         return Arc::new(builtin);
       }
@@ -3890,6 +3927,9 @@ impl CalcitTypeAnnotation {
     }
 
     if let Calcit::Symbol { sym, .. } = form {
+      if let Some(open) = Self::open_family_type(sym) {
+        return open;
+      }
       if let Some(builtin) = Self::builtin_type_from_symbol_name(sym) {
         return Arc::new(builtin);
       }
@@ -6345,6 +6385,9 @@ impl CalcitTypeAnnotation {
   /// Convert this type annotation to its [`Edn`] representation for schema serialization.
   /// This is the inverse of `parse_fn_schema_from_edn` + `edn_type_to_calcit` + `parse_type_annotation_form`.
   pub fn to_type_edn(&self) -> Edn {
+    if let Some(name) = self.open_family_name() {
+      return Edn::Symbol(Arc::from(name));
+    }
     match self {
       Self::Never => Edn::Tag(EdnTag::from("never")),
       // Simple builtin scalars
