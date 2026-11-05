@@ -15747,8 +15747,13 @@ fn qualify_decoder_type_form(form: &Calcit, file_ns: &str) -> Calcit {
         Some((prefix, _)) if program::lookup_ns_target_in_import(file_ns, prefix).is_none() => return form.to_owned(),
         Some(_) => {}
         // A `:refer`-imported name has the identity of its declaration, like the
-        // schema that names it (#2577). Local definitions keep their own name.
-        None if program::has_def_code(file_ns, bare) || program::lookup_def_target_in_import(file_ns, bare).is_none() => {
+        // schema that names it (#2577). Local definitions and built-in type
+        // names such as `String` keep their own meaning.
+        None
+          if CalcitTypeAnnotation::is_builtin_type_symbol_name(bare)
+            || program::has_def_code(file_ns, bare)
+            || program::lookup_def_target_in_import(file_ns, bare).is_none() =>
+        {
           return form.to_owned();
         }
         None => {}
