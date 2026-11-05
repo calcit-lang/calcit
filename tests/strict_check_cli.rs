@@ -1841,3 +1841,15 @@ fn unrelated_warning_does_not_skip_the_proof_audit_of_other_definitions() {
   // The audit re-checks dependencies, but the ordinary warning is reported once.
   assert_eq!(text.matches("arg 1 expects type `:string`").count(), 1, "{text}");
 }
+
+#[test]
+fn referred_union_short_name_is_the_declared_type() {
+  // `Tree` imported with `:refer` names `app.model/Tree` in decoder targets,
+  // schemas and body hints alike (#2577).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/referred-union-name.cirru", &snapshot).unwrap();
+  for args in [vec!["--check-only"], vec!["--check-only", "--all-defs"]] {
+    assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
+  }
+}

@@ -14169,9 +14169,13 @@ pub fn preprocess_defn(
             declared.as_ref().clone()
           })));
           let actual = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(merged.clone())));
+          // Compare imported names by their declaration: a `:refer`-imported
+          // `Tree` and `fixture.model/Tree` are one type (#2577).
+          let proved_expected = resolve_namespace_type_refs_for_body(expected.clone(), ctx.file_ns);
+          let proved_actual = resolve_namespace_type_refs_for_body(actual.clone(), ctx.file_ns);
           if !declared_scope
-            .call_type_proof(&[], std::slice::from_ref(&expected), std::slice::from_ref(&actual))
-            .prove(&actual, &expected)
+            .call_type_proof(&[], std::slice::from_ref(&proved_expected), std::slice::from_ref(&proved_actual))
+            .prove(&proved_actual, &proved_expected)
             .is_proven()
           {
             return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -15747,11 +15751,20 @@ fn qualify_decoder_type_form(form: &Calcit, file_ns: &str) -> Calcit {
     Calcit::Symbol { sym, info, location } => {
       let quote_prefix = if sym.starts_with('\'') { "'" } else { "" };
       let bare = sym.trim_start_matches('\'');
-      let Some((prefix, _)) = bare.rsplit_once('/') else {
-        return form.to_owned();
-      };
-      if program::lookup_ns_target_in_import(file_ns, prefix).is_none() {
-        return form.to_owned();
+      match bare.rsplit_once('/') {
+        Some((prefix, _)) if program::lookup_ns_target_in_import(file_ns, prefix).is_none() => return form.to_owned(),
+        Some(_) => {}
+        // A `:refer`-imported name has the identity of its declaration, like the
+        // schema that names it (#2577). Local definitions and built-in type
+        // names such as `String` keep their own meaning.
+        None
+          if CalcitTypeAnnotation::is_builtin_type_symbol_name(bare)
+            || program::has_def_code(file_ns, bare)
+            || program::lookup_def_target_in_import(file_ns, bare).is_none() =>
+        {
+          return form.to_owned();
+        }
+        None => {}
       }
       match program::resolve_type_name_in_ns(file_ns, bare) {
         Some((ns, def)) => Calcit::Symbol {
