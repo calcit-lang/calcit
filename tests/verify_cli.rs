@@ -331,6 +331,25 @@ fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   assert!(config.status.success());
   let config_value: serde_json::Value = serde_json::from_slice(&config.stdout).expect("config stdout should contain one JSON value");
   assert_eq!(config_value["data"]["verification_schema_version"], 1);
+  // No deps.cirru beside this snapshot, so no manifest identity (#2595).
+  assert!(config_value["data"]["manifest"].is_null(), "{config_value}");
+  let deps = snapshot.with_file_name("deps.cirru");
+  let mut manifest_revisions = vec![];
+  for version in ["0.9.18", "0.9.99"] {
+    fs::write(&deps, format!("{{}}\n  :version |{version}\n")).unwrap();
+    let output = run_calcit(&snapshot, &["query", "config", "--format", "json"]);
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["version"], version, "{value}");
+    assert_eq!(
+      value["revision"], config_value["revision"],
+      "the envelope revision covers only the Snapshot"
+    );
+    assert_eq!(value["data"]["manifest"]["file"], "deps.cirru", "{value}");
+    manifest_revisions.push(value["data"]["manifest"]["revision"].clone());
+  }
+  assert_ne!(manifest_revisions[0], manifest_revisions[1], "a manifest edit changes its revision");
+  fs::remove_file(&deps).unwrap();
   assert_eq!(config_value["data"]["verification_profiles"][0]["name"], "release");
 
   let human = run_calcit(&snapshot, &["analyze", "verify", "--profile", "release"]);

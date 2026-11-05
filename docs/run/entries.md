@@ -68,6 +68,9 @@ envelope，命令说明与其他日志留在 stderr。选中的入口包含名�
 description、modules、type slots 和 feature policy。未指定入口的 `config show` 按名称排序；入口不存在时
 以非零状态和结构化诊断返回，不会输出部分成功结果。
 
+`config show` 结果中的 `version` 来自 `deps.cirru`，不属于 Snapshot：envelope `revision` 只随 Snapshot
+变化，`data.manifest.revision` 随 manifest 变化。两者的含义见 [project-structure](./project-structure.md)。
+
 `:init-fn` and `:reload-fn` are Calcit definition symbols, written as `'app.main/main!` rather than strings. Existing string-valued entries remain compatible on read and are converted on the next canonical snapshot write.
 
 A named entry is a complete configuration, not a partial override. In particular, it does not inherit the default entry's modules or type slots. Bind a slot for each entry that needs it:
