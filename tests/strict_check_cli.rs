@@ -1685,3 +1685,49 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
   assert!(message.contains("in the body of macro `app.main/read-field`"), "{message}");
   assert!(message.contains("expanded at 2 call sites, first at app.main/use-"), "{message}");
 }
+
+#[test]
+fn unrelated_warning_does_not_skip_the_proof_audit_of_other_definitions() {
+  // `bad-call` has an ordinary argument warning; `bad-map` passes ordinary
+  // checking but has no return proof. Both must be reported (#2591).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/proof-audit-after-warning.cirru", &snapshot).unwrap();
+
+  let output = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(!output.status.success());
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let status = |id: &str| {
+    let row = report["data"]["definitions"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .find(|row| row["definition"] == id)
+      .unwrap_or_else(|| panic!("{id} missing: {report}"));
+    let codes = row["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .filter_map(|diagnostic| diagnostic["code"].as_str().map(str::to_owned))
+      .collect::<Vec<_>>();
+    (row["status"].as_str().unwrap().to_owned(), codes)
+  };
+  assert_eq!(
+    status("app.proof/bad-call"),
+    ("failed".to_owned(), vec!["W_FN_ARG_TYPE_MISMATCH".to_owned()])
+  );
+  assert_eq!(
+    status("app.proof/bad-map"),
+    ("failed".to_owned(), vec!["E_FN_RETURN_UNPROVEN".to_owned()])
+  );
+  assert_eq!(status("app.proof/take-string").0, "passed");
+
+  let output = run_calcit(&snapshot, &["--check-only", "--ns", "app.proof"]);
+  assert!(!output.status.success());
+  let text = String::from_utf8_lossy(&output.stdout);
+  assert!(text.contains("- [failed] app.proof/bad-map (fn)"), "{text}");
+  assert!(text.contains("- [warning] app.proof/bad-call (fn)"), "{text}");
+  assert!(text.contains("source definitions passed: 3;"), "{text}");
+  // The audit re-checks dependencies, but the ordinary warning is reported once.
+  assert_eq!(text.matches("arg 1 expects type `:string`").count(), 1, "{text}");
+}

@@ -320,24 +320,29 @@ pub fn run(
     }
   }
 
-  // Like plain `--check-only`, the default proof audit runs once the ordinary
-  // check passes, so ordinary rejections keep their own diagnostics (#2121).
-  // Without it, a passing public check could miss proof errors that the entry
-  // check reports for the same definitions (#2506).
-  if runner::preprocess::default_proof_enabled()
-    && diagnostics.is_empty()
-    && warnings.borrow().is_empty()
-    && results.iter().any(|row| row.status == "passed")
-    && results.iter().all(|row| matches!(row.status, "passed" | "intrinsic"))
-  {
+  // The default proof audit re-checks the definitions that passed the ordinary
+  // check, so ordinary rejections keep their own diagnostics (#2121). Without
+  // it, a passing public check could miss proof errors that the entry check
+  // reports for the same definitions (#2506). It runs even when another
+  // definition failed: an unrelated warning must not leave an unproven
+  // definition counted as passed (#2591).
+  if runner::preprocess::default_proof_enabled() && preflight_ready && results.iter().any(|row| row.status == "passed") {
     // The audit re-preprocesses the same definitions; macro output from it
     // repeats the ordinary pass, so it stays silent.
     let _silence = crate::ProgramOutputGuard::new(false, true);
-    runner::preprocess::check_with_default_proof(&warnings, || {
+    let audit_warnings = RefCell::new(Vec::new());
+    runner::preprocess::check_with_default_proof(&audit_warnings, || {
       for row in results.iter_mut().filter(|row| row.status == "passed") {
-        row.status = check_definition(&row.namespace, &row.definition, &row.id, &warnings, &mut diagnostics);
+        row.status = check_definition(&row.namespace, &row.definition, &row.id, &audit_warnings, &mut diagnostics);
       }
     });
+    // Re-checked dependencies repeat warnings the ordinary pass already recorded.
+    let mut warnings = warnings.borrow_mut();
+    for warning in audit_warnings.into_inner() {
+      if !warnings.contains(&warning) {
+        warnings.push(warning);
+      }
+    }
   }
 
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));
