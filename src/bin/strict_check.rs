@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use calcit::ProgramEntries;
 use calcit::calcit::{CalcitErr, LocatedWarning};
@@ -448,13 +448,37 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
   let (graph, definitions) = reachable_definitions(entries, all_defs)?;
   let mut results = check_definitions(&graph, &definitions);
   let advisories = runner::preprocess::take_advisories();
-  // Like plain check-only, the proof audit runs once the ordinary check passes,
-  // so ordinary rejections keep their own diagnostics (#2121). One audit covers
-  // the whole check, so shared dependencies are proved once.
-  if runner::preprocess::default_proof_enabled() && results.iter().all(|result| result.status == "passed") {
-    results = runner::preprocess::with_default_proof(|| check_definitions(&graph, &definitions));
-    // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
-    drop(runner::preprocess::take_advisories());
+  // The proof audit re-checks the components that passed the ordinary check,
+  // so ordinary rejections keep their own diagnostics (#2121). It runs even
+  // when another definition failed, so an unrelated warning cannot leave an
+  // unproven definition counted as passed (#2591). One audit covers the
+  // whole check, so shared dependencies are proved once.
+  if runner::preprocess::default_proof_enabled() {
+    let passed = results
+      .iter()
+      .filter(|result| result.status == "passed")
+      .map(|result| result.definition.clone())
+      .collect::<HashSet<_>>();
+    // A passed definition never depends on a failed one (it would be blocked),
+    // so these components are closed under their dependencies.
+    let passed_components = definitions
+      .iter()
+      .filter(|component| component.iter().all(|definition| passed.contains(definition)))
+      .cloned()
+      .collect::<Vec<_>>();
+    if !passed_components.is_empty() {
+      let mut audited = runner::preprocess::with_default_proof(|| check_definitions(&graph, &passed_components))
+        .into_iter()
+        .map(|result| (result.definition.clone(), result))
+        .collect::<HashMap<_, _>>();
+      for result in &mut results {
+        if let Some(audited) = audited.remove(&result.definition) {
+          *result = audited;
+        }
+      }
+      // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
+      drop(runner::preprocess::take_advisories());
+    }
   }
   let summary = CheckSummary {
     total: results.len(),

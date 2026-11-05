@@ -320,24 +320,73 @@ pub fn run(
     }
   }
 
-  // Like plain `--check-only`, the default proof audit runs once the ordinary
-  // check passes, so ordinary rejections keep their own diagnostics (#2121).
-  // Without it, a passing public check could miss proof errors that the entry
-  // check reports for the same definitions (#2506).
-  if runner::preprocess::default_proof_enabled()
-    && diagnostics.is_empty()
-    && warnings.borrow().is_empty()
-    && results.iter().any(|row| row.status == "passed")
-    && results.iter().all(|row| matches!(row.status, "passed" | "intrinsic"))
-  {
+  // The default proof audit re-checks the definitions that passed the ordinary
+  // check, so ordinary rejections keep their own diagnostics (#2121). Without
+  // it, a passing public check could miss proof errors that the entry check
+  // reports for the same definitions (#2506). It runs even when another
+  // definition failed: an unrelated warning must not leave an unproven
+  // definition counted as passed (#2591).
+  if runner::preprocess::default_proof_enabled() && preflight_ready && results.iter().any(|row| row.status == "passed") {
     // The audit re-preprocesses the same definitions; macro output from it
     // repeats the ordinary pass, so it stays silent.
     let _silence = crate::ProgramOutputGuard::new(false, true);
-    runner::preprocess::check_with_default_proof(&warnings, || {
-      for row in results.iter_mut().filter(|row| row.status == "passed") {
-        row.status = check_definition(&row.namespace, &row.definition, &row.id, &warnings, &mut diagnostics);
+    let audit_warnings = RefCell::new(Vec::new());
+    // A cached callee reports "passed" for its own row although its warnings
+    // were recorded through an earlier caller; it is not a passed definition.
+    let warned_definitions = warnings
+      .borrow()
+      .iter()
+      .map(LocatedWarning::as_json)
+      .filter_map(|row| {
+        Some((
+          row["location"]["ns"].as_str()?.to_owned(),
+          row["location"]["def"].as_str()?.to_owned(),
+        ))
+      })
+      .collect::<HashSet<_>>();
+    runner::preprocess::check_with_default_proof(&audit_warnings, || {
+      for row in results
+        .iter_mut()
+        .filter(|row| row.status == "passed" && !warned_definitions.contains(&(row.namespace.clone(), row.definition.clone())))
+      {
+        let mut row_diagnostics = Vec::new();
+        let warning_count = audit_warnings.borrow().len();
+        let status = check_definition(&row.namespace, &row.definition, &row.id, &audit_warnings, &mut row_diagnostics);
+        // Recompiling a dependency that already reported its own warnings
+        // fails again inside it; that failure belongs to the dependency's row.
+        let inside_warned_dependency = |diagnostic: &Value| {
+          diagnostic["location"]["ns"]
+            .as_str()
+            .zip(diagnostic["location"]["def"].as_str())
+            .is_some_and(|(ns, def)| warned_definitions.contains(&(ns.to_owned(), def.to_owned())))
+        };
+        if status == "failed" && row_diagnostics.iter().all(inside_warned_dependency) {
+          continue;
+        }
+        // Likewise, warnings replayed from such a dependency stay on its row.
+        if status == "warning"
+          && audit_warnings.borrow()[warning_count..]
+            .iter()
+            .all(|warning| inside_warned_dependency(&warning.as_json()))
+        {
+          continue;
+        }
+        row.status = status;
+        diagnostics.extend(row_diagnostics);
       }
     });
+    // Re-checked dependencies repeat warnings the ordinary pass already recorded.
+    let mut warnings = warnings.borrow_mut();
+    for warning in audit_warnings.into_inner() {
+      let location = warning.as_json();
+      let in_warned = location["location"]["ns"]
+        .as_str()
+        .zip(location["location"]["def"].as_str())
+        .is_some_and(|(ns, def)| warned_definitions.contains(&(ns.to_owned(), def.to_owned())));
+      if !in_warned && !warnings.contains(&warning) {
+        warnings.push(warning);
+      }
+    }
   }
 
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));

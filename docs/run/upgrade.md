@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.35.1 逐定义报告也做证明审计（#2591）
+
+`--check-only --all-defs` 和 `--check-only --ns` 以前只在所有定义都通过普通检查时才做证明审计，所以一个无关定义的告警会让其他定义的 `E_FN_RETURN_UNPROVEN` 不再出现，这些定义仍计为 passed。现在通过普通检查的定义总会再做审计，未通过的定义保留普通检查的诊断。整体结论不变（原来也是失败），但 passed 计数会变少，迁移统计以新计数为准。
+
 ## 0.35.0 显式的宽泛类型 `AnyFn` / `AnyStruct` / `AnyEnum`（#2594）
 
 0.36.0 计划把裸 `Fn` / `Struct` / `Enum`（`W_BROAD_TYPE`）改为阻塞（#2504）。确实接受任意函数、任意 struct 或任意 enum 的位置，例如任意参数个数的 memo 回调、对任意 struct 的反射式 diff、承载应用 enum 的库回调，改写成 `AnyFn`、`AnyStruct`、`AnyEnum`。它们与裸写法是同一个类型，改写不改变检查、调用和运行时校验，只是不再报 `W_BROAD_TYPE`。库回调参数写成 `Fn AnyEnum (-> Unit)` 后，下游现有的 `Fn Enum (-> Unit)` 回调照常可传，库和应用不必同步发布。
