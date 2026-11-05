@@ -3507,10 +3507,11 @@ impl BroadTypeHit {
       (None, "Trait") => "accepts any trait definition; name the concrete trait",
       _ => "drops the signature, so arguments and results are Dynamic; write it, such as `Fn Number (-> String)`",
     };
-    format!(
-      "[Warn] bare `{}`{place} {advice}. Write `Dynamic` only where the boundary is intentionally open.",
-      self.family
-    )
+    let open = match self.family {
+      "Trait" => "Write `Dynamic` only where the boundary is intentionally open.".to_owned(),
+      family => format!("Write `Any{family}` where any {} is intended.", family.to_lowercase()),
+    };
+    format!("[Warn] bare `{}`{place} {advice}. {open}", self.family)
   }
 }
 
@@ -3659,6 +3660,10 @@ fn collect_broad_types_in_code(node: &Cirru, coord: &mut Vec<u16>, out: &mut Vec
 
 /// The value family that a definition schema's root names, if it is bare.
 fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
+  // `AnyFn`, `AnyStruct` and `AnyEnum` mark the openness as intended (#2594).
+  if annotation.open_family_name().is_some() {
+    return None;
+  }
   match annotation {
     CalcitTypeAnnotation::AnonymousEnum => Some("Enum"),
     CalcitTypeAnnotation::DynFn => Some("Fn"),
@@ -6928,9 +6933,19 @@ mod tests {
       "(defn main! () (quote $ assert-type x 'Enum))",
       "(defstruct main! (:kind Tag :enum) (:on-change $ :: Fn String (-> Unit)))",
       "(defn main! (raw) (decode-map-as raw $ quote $ List mini/Item))",
+      // `AnyFn`, `AnyStruct` and `AnyEnum` are open on purpose (#2594).
+      "(defstruct main! (:callback AnyFn) (:item AnyStruct) (:op AnyEnum))",
+      "(defn main! (f x) (hint-fn $ Fn AnyFn AnyStruct (-> AnyEnum)) (f x))",
     ] {
       assert_eq!(hits_for("nil", code), vec![], "{code}");
     }
+    assert_eq!(
+      hits_for(
+        "$ quote $ Fn AnyFn (Fn AnyEnum (-> Unit)) AnyStruct (-> Unit)",
+        "(defn main! (f d s) (f d s))"
+      ),
+      vec![]
+    );
     // Core procs such as `&enum:assoc` keep their broad signatures even when core is checked as a project.
     let core_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cirru/calcit-core.cirru");
     let core_text = std::fs::read_to_string(&core_path).expect("read calcit-core.cirru");

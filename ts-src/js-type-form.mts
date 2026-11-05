@@ -65,7 +65,9 @@ for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbo
 for (const name of ["CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
 for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
   ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"],
-  ["struct-def", "StructDef"], ["enum-def", "EnumDef"]]) typeNameAliases.set(alias, name);
+  ["struct-def", "StructDef"], ["enum-def", "EnumDef"],
+  // Intentionally open family spellings (#2594) are the bare family types.
+  ["AnyFn", "Fn"], ["AnyStruct", "Struct"], ["AnyEnum", "Enum"]]) typeNameAliases.set(alias, name);
 
 const containerTypeArity = new Map([["List", 1], ["Map", 2], ["Set", 1], ["Ref", 1]]);
 // These constructors require a payload; their bare names are not scalar aliases.
@@ -280,13 +282,16 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
       return requireEvidence ? null : value instanceof CalcitRef;
     case "Fn":
     case "fn":
+    case "AnyFn":
       return typeof value === "function";
     case "Struct":
     case "struct":
+    case "AnyStruct":
     case "record":
       return requireEvidence ? null : isStructValue(value);
     case "Enum":
     case "enum":
+    case "AnyEnum":
     case "tuple":
       return requireEvidence ? null : value instanceof CalcitEnumValue;
   }
