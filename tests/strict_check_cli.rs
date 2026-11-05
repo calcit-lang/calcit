@@ -1795,3 +1795,15 @@ fn proven_trait_method_inside_get_survives_the_proof_audit() {
     assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
   }
 }
+
+#[test]
+fn referred_union_short_name_is_the_declared_type() {
+  // `Tree` imported with `:refer` names `app.model/Tree` in decoder targets,
+  // schemas and body hints alike (#2577).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/referred-union-name.cirru", &snapshot).unwrap();
+  for args in [vec!["--check-only"], vec!["--check-only", "--all-defs"]] {
+    assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
+  }
+}
