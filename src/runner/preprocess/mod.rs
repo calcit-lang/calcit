@@ -11463,6 +11463,9 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
         })
       });
   }
+  if let Some(schema) = type_ref.resolve_schema_alias() {
+    return is_builtin_method_candidate(schema.as_ref(), candidate);
+  }
   let expected_name = match type_ref {
     CalcitTypeAnnotation::List(_) => "&core-list-methods",
     CalcitTypeAnnotation::String => "&core-string-methods",
@@ -11543,6 +11546,11 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
+    // A schema alias such as `Coord` for `List Number` dispatches through the
+    // core impls of the schema it names (#2590).
+    CalcitTypeAnnotation::TypeRef(..) => type_value
+      .resolve_schema_alias()
+      .and_then(|schema| core_impl_list_symbol_from_type_annotation(schema.as_ref())),
     _ => None,
   }
 }
