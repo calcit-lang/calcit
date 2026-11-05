@@ -93,6 +93,8 @@
                 assert= nil $ checked-assoc holder :callback 1
                 assert= nil $ checked-assoc holder :item 1
                 assert= nil $ checked-assoc holder :op 1
+                assert= true $ struct? $ checked-assoc holder :item $ %{} Point $ :x 2
+                assert= true $ struct? $ checked-assoc holder :op $ %:: Op :reset
               :tags $ #{} :open-family :unit
             %{} 'TestEntry (:name |enum-callbacks-stay-compatible)
               :code $ quote $ let

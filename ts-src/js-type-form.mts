@@ -288,12 +288,12 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
     case "struct":
     case "AnyStruct":
     case "record":
-      return requireEvidence ? null : isStructValue(value);
+      return isStructValue(value);
     case "Enum":
     case "enum":
     case "AnyEnum":
     case "tuple":
-      return requireEvidence ? null : value instanceof CalcitEnumValue;
+      return value instanceof CalcitEnumValue;
   }
   // Deep/nominal contracts must use the compiler's resolved validator. A
   // short-name match or an erased generic cannot establish runtime evidence.

@@ -1356,7 +1356,12 @@ fn scalar_field_write_evidence(value: &Calcit, expected: &CalcitTypeAnnotation) 
     | T::Symbol
     | T::Tag
     | T::Buffer
-    | T::CirruQuote => Some(value_matches_type_annotation(value, expected)),
+    | T::CirruQuote
+    // The struct and enum families are open: membership is the whole contract.
+    | T::AnonymousEnum => Some(value_matches_type_annotation(value, expected)),
+    T::Custom(family) if matches!(family.as_ref(), Calcit::Tag(tag) if matches!(tag.ref_str(), "struct" | "record" | "enum" | "tuple")) => {
+      Some(value_matches_type_annotation(value, expected))
+    }
     T::Nullable(inner, _) => {
       if matches!(value, Calcit::Nil) {
         Some(true)
