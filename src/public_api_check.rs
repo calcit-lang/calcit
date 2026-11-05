@@ -350,6 +350,7 @@ pub fn run(
         .filter(|row| row.status == "passed" && !warned_definitions.contains(&(row.namespace.clone(), row.definition.clone())))
       {
         let mut row_diagnostics = Vec::new();
+        let warning_count = audit_warnings.borrow().len();
         let status = check_definition(&row.namespace, &row.definition, &row.id, &audit_warnings, &mut row_diagnostics);
         // Recompiling a dependency that already reported its own warnings
         // fails again inside it; that failure belongs to the dependency's row.
@@ -360,6 +361,14 @@ pub fn run(
             .is_some_and(|(ns, def)| warned_definitions.contains(&(ns.to_owned(), def.to_owned())))
         };
         if status == "failed" && row_diagnostics.iter().all(inside_warned_dependency) {
+          continue;
+        }
+        // Likewise, warnings replayed from such a dependency stay on its row.
+        if status == "warning"
+          && audit_warnings.borrow()[warning_count..]
+            .iter()
+            .all(|warning| inside_warned_dependency(&warning.as_json()))
+        {
           continue;
         }
         row.status = status;
