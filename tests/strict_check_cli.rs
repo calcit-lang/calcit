@@ -969,6 +969,14 @@ fn edit_definition(snapshot: &Path, name: &str, code: &str, overwrite: bool) {
   assert_success(&run_calcit(snapshot, &args), "edit definition");
 }
 
+fn set_schema(snapshot: &Path, name: &str, code: &str) {
+  let target = format!("app.main/{name}");
+  assert_success(
+    &run_calcit(snapshot, &["edit", "schema", target.as_str(), "--code", code]),
+    "edit schema",
+  );
+}
+
 fn edit_schema(snapshot: &Path, name: &str, return_type: &str) {
   let target = format!("app.main/{name}");
   let code = format!("quote $ Fn (-> {return_type})");
@@ -1891,6 +1899,34 @@ fn incremental_check_reports_snapshot_level_diagnostics() {
   assert!(!output.status.success(), "--incremental must fail on a bare broad type");
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(stderr.contains("[E_BROAD_TYPE] [Error]"), "stderr:\n{stderr}");
+}
+
+#[test]
+fn quoted_compound_types_are_a_note_until_edit_format() {
+  // #2583: a summarized note in 0.36.x; `edit format` writes the type bare.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(
+    &snapshot,
+    "xs",
+    "quote $ defn xs () (hint-fn $ Fn (-> (List Number))) (assert-type ([] 1) (quote (List Number)))",
+    false,
+  );
+  set_schema(&snapshot, "xs", "quote $ Fn (-> (List Number))");
+  for args in [&["--check-only"][..], &["--check-only", "--incremental"][..]] {
+    let output = run_calcit(&snapshot, args);
+    assert_success(&output, &args.join(" "));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+      stderr.contains("[W_QUOTED_COMPOUND_TYPE] 1 compound type(s) in 1 definition(s)") && stderr.contains("(first at app.main/xs)"),
+      "{args:?} stderr:\n{stderr}"
+    );
+  }
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "edit format");
+  let output = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&output, "check after edit format");
+  assert!(!String::from_utf8_lossy(&output.stderr).contains("W_QUOTED_COMPOUND_TYPE"));
 }
 
 #[test]
