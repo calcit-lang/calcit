@@ -9,7 +9,7 @@
       :reload-fn 'type-fail-type-slot-enum-invalid-variant.main/reload!
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |type-fail-type-slot-enum-invalid-variant.main/Action
+      :type-slots $ {} $ :dispatch-op 'type-fail-type-slot-enum-invalid-variant.main/Action
   :files $ {} $ 'type-fail-type-slot-enum-invalid-variant.main
     %{} 'FileEntry
       :defs $ {}

@@ -5968,11 +5968,11 @@ const ENTRY_TYPE_SLOTS_FIXTURE: &str = r#"
     :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |app.main/Op
+      :type-slots $ {} $ :dispatch-op 'app.main/Op
     :downloader $ {} (:description |) (:init-fn 'app.dl/main!) (:mode :native) (:reload-fn 'app.dl/main!)
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :job-op |app.dl.jobs/Job
+      :type-slots $ {} $ :job-op 'app.dl.jobs/Job
   :files $ {}
     'app.dl $ %{} 'FileEntry
       :defs $ {}

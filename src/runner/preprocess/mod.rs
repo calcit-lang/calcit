@@ -17308,13 +17308,59 @@ fn reject_strict_unbound_type_slot_schema(
   call_stack: &CallStackList,
   definition_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  if !strict_types_enabled() || !should_emit_project_source_lint(ns) {
+  if calcit::is_bundled_core_ns(ns) {
     return Ok(());
   }
-  let Some((path, slot)) = find_unbound_type_slot_schema(schema, "schema") else {
-    return Ok(());
-  };
-  Err(unbound_type_slot_error(ns, def_name, &path, &slot, call_stack, definition_location))
+  if strict_types_enabled()
+    && should_emit_project_source_lint(ns)
+    && let Some((path, slot)) = find_unbound_type_slot_schema(schema, "schema")
+  {
+    return Err(unbound_type_slot_error(ns, def_name, &path, &slot, call_stack, definition_location));
+  }
+  // Outside strict project source, and for slots bound to `Dynamic`, the slot
+  // is reported but still accepts every value (0.36.x; an error in 0.37.0).
+  for (path, slot, dynamic) in find_open_type_slots_in_schema(schema, "schema") {
+    let message = if dynamic {
+      format!(
+        "{ns}/{def_name} uses type slot `*{slot}` at {path}, but the selected entry binds it to `Dynamic`, which does not count as bound"
+      )
+    } else {
+      format!("{ns}/{def_name} uses type slot `*{slot}` at {path}, but the selected entry does not bind it")
+    };
+    let location = definition_location
+      .clone()
+      .unwrap_or_else(|| NodeLocation::new(Arc::from(ns), Arc::from(def_name), Arc::new(vec![])));
+    push_advisory(LocatedWarning::new_with_detail(
+      message,
+      location,
+      Some(crate::snapshot::UNBOUND_TYPE_SLOT_WARNING.to_owned()),
+      Some(format!(
+        "bind it to a named type with `calcit config set-type-slot :{slot} namespace/definition`; this becomes an error in 0.37.0"
+      )),
+    ));
+  }
+  Ok(())
+}
+
+/// Every distinct type slot in a schema that the selected entry leaves
+/// unbound (`false`) or binds to `Dynamic` (`true`), with its first path.
+fn find_open_type_slots_in_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &str) -> Vec<(String, Arc<str>, bool)> {
+  let mut found: Vec<(String, Arc<str>, bool)> = vec![];
+  find_schema_annotation(annotation, path, &mut |candidate, candidate_path| {
+    if let CalcitTypeAnnotation::TypeSlot(name) = candidate.as_ref()
+      && !found.iter().any(|(_, seen, _)| seen == name)
+    {
+      match calcit::resolve_type_slot(name) {
+        None => found.push((candidate_path.to_owned(), name.clone(), false)),
+        Some(resolved) if matches!(resolved.as_ref(), CalcitTypeAnnotation::Dynamic) => {
+          found.push((candidate_path.to_owned(), name.clone(), true))
+        }
+        Some(_) => {}
+      }
+    }
+    None::<()>
+  });
+  found
 }
 
 /// Render the same missing-entry-binding diagnostic for schema and use sites.
@@ -17351,7 +17397,7 @@ fn unbound_type_slot_error(
   CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry with `calcit config set-type-slot :{slot} namespace/definition`, or explicitly select `:dynamic` only for a reviewed open boundary"
+      "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry to a named type with `calcit config set-type-slot :{slot} namespace/definition`; a `Dynamic` binding is still reported as W_UNBOUND_TYPE_SLOT"
     ),
     "E_UNBOUND_TYPE_SLOT",
     call_stack,

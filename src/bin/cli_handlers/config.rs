@@ -907,12 +907,7 @@ fn find_map_value_mut<'a>(map: &'a mut EdnMapView, key: &str) -> Option<&'a mut 
 fn type_slots_as_edn(type_slots: &HashMap<String, String>) -> Edn {
   let mut slots = EdnMapView::default();
   for (slot, type_path) in type_slots {
-    let value = if type_path == ":dynamic" {
-      Edn::tag("dynamic")
-    } else {
-      Edn::str(type_path.as_str())
-    };
-    slots.insert_key(slot.as_str(), value);
+    slots.insert_key(slot.as_str(), snapshot::type_slot_value_edn(type_path));
   }
   slots.into()
 }
@@ -954,15 +949,16 @@ fn save_type_slots_preserving_snapshot(
 fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) -> Result<(), String> {
   let slot = normalize_type_slot_name(&opts.slot)?;
   let type_path = opts.type_path.trim();
-  if !matches!(type_path, ":dynamic" | "dynamic") {
+  let is_dynamic = matches!(type_path, ":dynamic" | "dynamic" | "Dynamic");
+  if !is_dynamic {
     let Some((ns, def)) = type_path.rsplit_once('/') else {
       return Err(format!(
-        "Type slot binding must use a full `namespace/definition` path or `:dynamic`, got `{type_path}`"
+        "Type slot binding must use a full `namespace/definition` path or `Dynamic`, got `{type_path}`"
       ));
     };
     if ns.is_empty() || def.is_empty() {
       return Err(format!(
-        "Type slot binding must use a full `namespace/definition` path or `:dynamic`, got `{type_path}`"
+        "Type slot binding must use a full `namespace/definition` path or `Dynamic`, got `{type_path}`"
       ));
     }
   }
@@ -970,7 +966,7 @@ fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) ->
   let mut snapshot = load_snapshot(snapshot_file)?;
   let scope = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let configs = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
-  let normalized_type = if type_path == "dynamic" { ":dynamic" } else { type_path };
+  let normalized_type = if is_dynamic { ":dynamic" } else { type_path };
   let previous = configs.type_slots.insert(slot.clone(), normalized_type.to_owned());
   save_type_slots_preserving_snapshot(snapshot_file, opts.entry.as_deref(), &configs.type_slots)?;
 
@@ -988,6 +984,13 @@ fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) ->
       "✓".green(),
       slot.cyan(),
       normalized_type.green()
+    );
+  }
+  if is_dynamic {
+    eprintln!(
+      "{} type slot ':{slot}' bound to Dynamic still counts as unbound ({}); bind it to a named type",
+      "warning:".yellow(),
+      snapshot::UNBOUND_TYPE_SLOT_WARNING
     );
   }
   Ok(())
@@ -1334,6 +1337,6 @@ mod tests {
     let Edn::Map(saved_slots) = configs.get_or_nil("type-slots") else {
       panic!("type slots")
     };
-    assert_eq!(saved_slots.get_or_nil("dispatch-op"), Edn::str("app.schema/Op"));
+    assert_eq!(saved_slots.get_or_nil("dispatch-op"), Edn::Symbol("app.schema/Op".into()));
   }
 }

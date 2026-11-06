@@ -7,7 +7,7 @@
       :reload-fn 'type-fail-type-slot-record-call-arg.main/reload!
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :payload |type-fail-type-slot-record-call-arg.main/User
+      :type-slots $ {} $ :payload 'type-fail-type-slot-record-call-arg.main/User
   :files $ {} $ 'type-fail-type-slot-record-call-arg.main
     %{} 'FileEntry
       :defs $ {}

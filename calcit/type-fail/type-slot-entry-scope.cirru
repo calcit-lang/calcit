@@ -9,14 +9,14 @@
       :reload-fn 'type-fail-type-slot-entry-scope.main/reload!
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |type-fail-type-slot-entry-scope.main/ClientOp
+      :type-slots $ {} $ :dispatch-op 'type-fail-type-slot-entry-scope.main/ClientOp
     :server $ {} (:description |)
       :init-fn 'type-fail-type-slot-entry-scope.main/server-main!
       :mode :native
       :reload-fn 'type-fail-type-slot-entry-scope.main/reload!
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |type-fail-type-slot-entry-scope.main/ServerOp
+      :type-slots $ {} $ :dispatch-op 'type-fail-type-slot-entry-scope.main/ServerOp
   :files $ {} $ 'type-fail-type-slot-entry-scope.main
     %{} 'FileEntry
       :defs $ {}

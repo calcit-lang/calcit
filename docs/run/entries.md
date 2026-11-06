@@ -39,11 +39,11 @@ Here's an example, first lines of a `calcit.cirru` file may look like:
     :default $ {} (:mode :js) (:init-fn 'app.client/main!) (:reload-fn 'app.client/reload!)
       :description "|Interactive browser client"
       :modules $ [] |respo.calcit/ |lilac/ |recollect/ |memof/ |respo-ui.calcit/ |ws-edn.calcit/ |cumulo-util.calcit/ |respo-message.calcit/ |cumulo-reel.calcit/
-      :type-slots $ {} (:dispatch-op |app.schema/ClientOp)
+      :type-slots $ {} (:dispatch-op 'app.schema/ClientOp)
     :server $ {} (:mode :native) (:init-fn 'app.server/main!) (:reload-fn 'app.server/reload!)
       :description "|HTTP and WebSocket server"
       :modules $ [] |lilac/ |recollect/ |memof/ |ws-edn.calcit/ |cumulo-util.calcit/ |cumulo-reel.calcit/ |calcit-wss/ |calcit.std/
-      :type-slots $ {} (:dispatch-op |app.schema/ServerOp)
+      :type-slots $ {} (:dispatch-op 'app.schema/ServerOp)
   :files $ {}
 ```
 

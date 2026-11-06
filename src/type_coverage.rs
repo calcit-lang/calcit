@@ -1100,7 +1100,7 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     };
   }
   if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
-    return "Bind this slot in the selected entry with `calcit config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only when this is a documented open boundary.";
+    return "Bind this slot in the selected entry with `calcit config set-type-slot <slot> <namespace/definition>`; a `Dynamic` binding does not count as bound.";
   }
   if occurrence.detail.contains("legacy-any") {
     return "Migrate legacy `:any` to `Dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
@@ -2569,7 +2569,7 @@ pub(crate) fn run_weak_types_report_with_rows(
     );
     let _ = writeln!(
       out,
-      "- next: bind each slot with `calcit config set-type-slot`, or choose `:dynamic` explicitly for a documented open boundary."
+      "- next: bind each slot with `calcit config set-type-slot` to a named type; a `Dynamic` binding does not count as bound."
     );
   }
   let nil_debt = rows
@@ -4027,7 +4027,7 @@ pub(crate) fn format_weak_types_json_with_rows(
       "phase": "analysis",
       "severity": "warning",
       "message": format!("{unresolved_type_slots} type slot(s) are unbound for the selected entry and therefore accept every value as though they were Dynamic."),
-      "suggestion": "Bind each slot with `calcit config set-type-slot <slot> <namespace/definition>`, or explicitly select `:dynamic` only for a documented open boundary.",
+      "suggestion": "Bind each slot with `calcit config set-type-slot <slot> <namespace/definition>`; a `Dynamic` binding does not count as bound.",
     }));
   }
   if nil_debt > 0 {

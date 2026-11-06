@@ -24,6 +24,22 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.36.x type slot 写成 symbol，并且必须绑定到具名类型
+
+entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。
+
+用到 `*slot` 的定义，要求当前 entry 把 slot 绑定到具名类型。未绑定、或绑定成 `Dynamic` 的 slot，在所有检查模式下都报 `W_UNBOUND_TYPE_SLOT` Notes，依赖库里的定义也算（由应用的 entry 负责绑定）；严格模式下项目自身定义的未绑定 slot 仍是 `E_UNBOUND_TYPE_SLOT` 错误。具名类型内部还含 `Dynamic` 的暂时不报。0.37.0 起 `W_UNBOUND_TYPE_SLOT` 改为错误。
+
+迁移：
+
+```bash
+calcit calcit.cirru edit format
+calcit calcit.cirru config set-type-slot :dispatch-op app.schema/Op
+calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
+```
+
+还没有具体 Op 的库（例如只在 demo 里用 slot 的组件库），给 demo/test entry 定义一个占位的 `defenum`，而不是绑定 `Dynamic`。
+
 ## 0.36.0 裸 `Fn` / `Struct` / `Enum` 改为错误 `E_BROAD_TYPE`（#2504）
 
 项目自身定义里的裸 `Fn`、`Struct`、`Enum`（代码、examples、tests 与 `:schema`）不再是 Notes，而是 `E_BROAD_TYPE` 错误：`--check-only` 失败，`--all-defs` / `--ns` 把写它的定义计为 failed，运行和 JS 编译前的默认证明预检也会拒绝。依赖库里的写法不报，所以下游不必等上游发布。
@@ -2795,7 +2811,7 @@ calcit calcit.cirru config set-type-slot :dispatch-op app.schema/DispatchOp
 calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/TestDispatchOp
 ```
 
-未绑定 slot 会回退到 `:dynamic`，可能让 callback 检查和 method specialization 失去静态证据。升级后应逐 entry 检查，而不是只验证 default。
+未绑定 slot 会回退到 `Dynamic`，可能让 callback 检查和 method specialization 失去静态证据，因此会报 `W_UNBOUND_TYPE_SLOT`（绑定成 `Dynamic` 也一样，0.37.0 起是错误）。升级后应逐 entry 检查，而不是只验证 default。
 
 ### 3.5 旧 schema 与动态类型
 

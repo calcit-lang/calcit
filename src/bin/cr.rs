@@ -792,6 +792,7 @@ fn run_cli() -> Result<(), String> {
   let core_snapshot = calcit::load_core_snapshot()?;
 
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
+  let mut type_slot_spelling_hits: Vec<String> = vec![];
   let mut project_namespaces: HashSet<String> = HashSet::new();
 
   if cli_args.disable_stack {
@@ -898,6 +899,7 @@ fn run_cli() -> Result<(), String> {
     project_namespaces.extend(snapshot.files.keys().cloned());
 
     snapshot.select_entry(cli_args.entry.as_deref())?;
+    type_slot_spelling_hits = snapshot::collect_type_slot_spelling_hits(&data, snapshot.active_entry_name());
     if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
       println!("running entry: {}", snapshot.active_entry_name());
     }
@@ -990,6 +992,7 @@ fn run_cli() -> Result<(), String> {
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
+  push_type_slot_spelling_advisories(&type_slot_spelling_hits, snapshot.active_entry_name());
   reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
@@ -2065,6 +2068,23 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
       ),
       slot,
     );
+  }
+}
+
+/// String-valued type-slot bindings are a legacy spelling; the symbol form
+/// names the type the way schemas do. `edit format` rewrites them.
+fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
+  for hit in hits {
+    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
+      hit.to_owned(),
+      calcit::calcit::NodeLocation::new(
+        Arc::from(format!("entries.{entry_name}")),
+        Arc::from("type-slots"),
+        Arc::new(vec![]),
+      ),
+      Some(snapshot::TYPE_SLOT_STRING_WARNING.to_owned()),
+      Some("run `calcit edit format` to rewrite type-slot bindings as symbols".to_owned()),
+    ));
   }
 }
 
