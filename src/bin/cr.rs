@@ -2117,11 +2117,6 @@ fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespa
   push_broad_type_advisories(snapshot, project_namespaces);
   push_type_slot_spelling_advisories(&raw.type_slots, snapshot.active_entry_name());
   push_fn_rest_spelling_advisory(&raw.fn_rest);
-<<<<<<< HEAD
-  record_open_family_summary(snapshot, project_namespaces);
-}
-
-=======
   push_quoted_compound_type_advisory(&snapshot::collect_quoted_compound_type_hits(snapshot, project_namespaces));
   record_open_family_summary(snapshot, project_namespaces);
 }
@@ -2142,7 +2137,6 @@ fn push_quoted_compound_type_advisory(hits: &[(String, String, usize)]) {
   ));
 }
 
->>>>>>> origin/main
 /// One advisory for all schemas still written with the bare `& T` rest spelling,
 /// located at the first one, so a large library does not flood the notes.
 fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
