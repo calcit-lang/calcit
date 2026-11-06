@@ -618,12 +618,23 @@ impl CallTypeProof {
         }
       }
       if let Some(expected_rest) = &expected_signature.rest_type {
-        let Some(actual_rest) = &actual_signature.rest_type else {
-          return TypeProof::Mismatch;
-        };
-        let proof = callback_proof.prove(&expected_rest.substitute_type_vars(&self.bindings), actual_rest);
-        if !proof.is_proven() {
-          return proof;
+        let expected_rest = expected_rest.substitute_type_vars(&self.bindings);
+        match &actual_signature.rest_type {
+          Some(actual_rest) => {
+            let proof = callback_proof.prove(&expected_rest, actual_rest);
+            if !proof.is_proven() {
+              return proof;
+            }
+          }
+          // #2612: a fixed-arity callable takes the rest values in its extra parameters.
+          None => {
+            for parameter in actual_signature.arg_types.iter().skip(expected_inputs.len()) {
+              let proof = callback_proof.prove(&expected_rest, parameter);
+              if !proof.is_proven() {
+                return proof;
+              }
+            }
+          }
         }
       }
       if !expected_signature.generics.is_empty() {
@@ -10635,7 +10646,7 @@ mod tests {
   }
 
   #[test]
-  fn fixed_arity_function_does_not_satisfy_larger_or_variadic_contract() {
+  fn fixed_arity_function_satisfies_variadic_contract_only_when_it_takes_the_fixed_values() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let actual = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone());
     let binary_expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone(), number.clone()], number.clone());
@@ -10652,7 +10663,28 @@ mod tests {
     }));
 
     assert!(!actual.is_compatible_with(&binary_expected));
-    assert!(!actual.is_compatible_with(&variadic_expected));
+    // #2612: `fn(Number)` takes the fixed Number of `Fn Number & Number` and no rest values.
+    assert!(actual.is_compatible_with(&variadic_expected));
+    assert!(actual.is_proven_for(&variadic_expected));
+    let CalcitTypeAnnotation::Fn(variadic) = &variadic_expected else {
+      unreachable!()
+    };
+    let wider_fixed = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      arg_types: vec![variadic.arg_types[0].clone(), variadic.arg_types[0].clone()],
+      ..variadic.as_ref().clone()
+    }));
+    assert!(
+      !actual.is_compatible_with(&wider_fixed),
+      "one parameter cannot take two fixed values"
+    );
+    let mixed = CalcitTypeAnnotation::from_function_parts(
+      vec![variadic.arg_types[0].clone(), Arc::new(CalcitTypeAnnotation::String)],
+      variadic.return_type.clone(),
+    );
+    assert!(
+      !mixed.is_compatible_with(&variadic_expected),
+      "an extra String parameter does not accept Number rest values"
+    );
   }
 
   #[test]
@@ -11239,6 +11271,11 @@ impl CalcitFnTypeAnnotation {
   fn accepts_call_range(&self, expected: &Self) -> bool {
     let actual = self.call_arity();
     let expected = expected.call_arity();
+    // #2612: a fixed-arity callable may stand in for a variadic contract when it accepts
+    // every fixed argument; how many rest values a call supplies is only known at run time.
+    if let (Some(actual_max), None) = (actual.max, expected.max) {
+      return actual_max >= expected.min;
+    }
     actual.min <= expected.min
       && match (actual.max, expected.max) {
         (None, _) => true,
@@ -11578,15 +11615,13 @@ impl CalcitFnTypeAnnotation {
       }
     }
 
-    // An expected rest contract may invoke the callback with arbitrarily many values, so the
-    // actual callable must have a compatible rest parameter as well.
-    if let Some(expected_rest) = &other.rest_type {
-      let Some(actual_rest) = &self.rest_type else {
-        return false;
-      };
-      if !expected_rest.compatible_with_bindings(actual_rest, &mut staged_bindings) {
-        return false;
-      }
+    // An expected rest contract may invoke the callback with more values. A rest parameter must
+    // accept them all; a fixed-arity callable had its extra parameters checked against the
+    // rest element above (#2612).
+    if let (Some(expected_rest), Some(actual_rest)) = (&other.rest_type, &self.rest_type)
+      && !expected_rest.compatible_with_bindings(actual_rest, &mut staged_bindings)
+    {
+      return false;
     }
 
     if !self
@@ -11618,12 +11653,9 @@ impl CalcitFnTypeAnnotation {
       };
       result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
     }
-    match (&self.rest_type, &other.rest_type) {
-      (Some(actual), Some(expected)) => {
-        result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
-      }
-      (None, Some(_)) => return TypeProof::Mismatch,
-      _ => {}
+    // #2612: a fixed-arity callable had its extra parameters proven against the rest element above.
+    if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
+      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
     }
     result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
     if result.is_proven() {
