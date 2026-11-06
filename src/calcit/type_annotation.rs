@@ -10719,8 +10719,14 @@ mod tests {
       (vec![string.clone(); 3], false),
       (vec![Arc::new(CalcitTypeAnnotation::Number)], false),
       (vec![string.clone(), Arc::new(CalcitTypeAnnotation::Number)], false),
+      // A fixed-arity function fills a variadic slot when it takes the fixed values
+      // and its extra parameters accept the rest element (#2612).
+      (vec![string.clone(), Arc::new(CalcitTypeAnnotation::Variadic(string.clone()))], true),
       (
-        vec![string.clone(), Arc::new(CalcitTypeAnnotation::Variadic(string.clone()))],
+        vec![
+          string.clone(),
+          Arc::new(CalcitTypeAnnotation::Variadic(Arc::new(CalcitTypeAnnotation::Number))),
+        ],
         false,
       ),
     ] {
