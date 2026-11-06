@@ -5305,7 +5305,11 @@ impl CalcitTypeAnnotation {
   /// Only such a tuple may also be used as a `List` of that type.
   pub(crate) fn homogeneous_tuple_item(items: &[Arc<CalcitTypeAnnotation>]) -> Option<&Arc<CalcitTypeAnnotation>> {
     let first = items.first()?;
-    items.iter().all(|item| item == first).then_some(first)
+    // Slots that differ only in a `(:open …)` reason are still the same type.
+    items
+      .iter()
+      .all(|item| item == first || (item.is_proven_for(first) && first.is_proven_for(item)))
+      .then_some(first)
   }
 
   pub fn is_compatible_with(&self, expected: &CalcitTypeAnnotation) -> bool {

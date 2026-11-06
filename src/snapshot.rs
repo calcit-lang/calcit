@@ -1900,6 +1900,8 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     }
   };
 
+  let is_macro_schema = matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::")
+    && raw_items.get(1).and_then(canonical_schema_symbol_from_cirru) == Some("Macro");
   let items: &[Cirru] = if matches!(raw_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "::") {
     let is_function_schema = raw_items
       .get(1)
@@ -2022,7 +2024,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
         ":async" => async_node = Some(val),
-        ":open" => open_node = Some(val),
+        ":open" => {
+          if open_node.is_some() {
+            return Err("`:open` may appear at most once in a `Fn` schema".to_owned());
+          }
+          open_node = Some(val)
+        }
         _ => {}
       }
     }
@@ -2115,6 +2122,10 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     && !matches!(legacy_origin, Cirru::Leaf(value) if matches!(value.as_ref(), ":fn" | ":dynamic"))
   {
     return Err("`:legacy-origin` must be `:fn` or `:dynamic`".to_owned());
+  }
+
+  if open_node.is_some() && is_macro_schema {
+    return Err("`:open` is only allowed on `Fn` schemas, not on `Macro` contracts".to_owned());
   }
 
   if let Some(open) = open_node
@@ -6786,6 +6797,19 @@ mod tests {
       open[1] = Cirru::leaf(":other");
     }
     assert!(validate_schema_for_write(&bogus).is_err(), "unknown open reason: {bogus}");
+    let mut doubled = canonical.clone();
+    if let Cirru::List(items) = &mut doubled
+      && let Some(Cirru::List(map)) = items.last_mut()
+    {
+      map.push(Cirru::List(vec![Cirru::leaf(":open"), Cirru::leaf(":host")]));
+    }
+    assert!(validate_schema_for_write(&doubled).is_err(), "duplicate open reason: {doubled}");
+    let mut on_macro = canonical.clone();
+    if let Cirru::List(items) = &mut on_macro {
+      items[1] = Cirru::leaf("Macro");
+    }
+    let macro_error = validate_schema_for_write(&on_macro).expect_err("open reason on a Macro contract");
+    assert!(macro_error.contains("only allowed on `Fn`"), "{macro_error}");
     let annotation = parse_schema_annotation_for_write(&marked).expect("open schema parses");
     let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
       panic!("expected a Fn schema, got {annotation}")
