@@ -5306,9 +5306,13 @@ impl CalcitTypeAnnotation {
   pub(crate) fn homogeneous_tuple_item(items: &[Arc<CalcitTypeAnnotation>]) -> Option<&Arc<CalcitTypeAnnotation>> {
     let first = items.first()?;
     // Slots that differ only in a `(:open …)` reason are still the same type.
+    if items.iter().all(|item| item == first) {
+      return Some(first);
+    }
+    let first_type = super::type_refs::without_open_reasons(first.clone());
     items
       .iter()
-      .all(|item| item == first || (item.is_proven_for(first) && first.is_proven_for(item)))
+      .all(|item| super::type_refs::without_open_reasons(item.clone()) == first_type)
       .then_some(first)
   }
 

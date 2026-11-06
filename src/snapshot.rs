@@ -6821,6 +6821,18 @@ mod tests {
       "the open reason does not change the type relation"
     );
     assert_ne!(annotation, plain, "the open reason is part of the persisted schema");
+    let with_alias_arg = |open_reason| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Coord"), Arc::new(vec![])))],
+        open_reason,
+        ..signature.as_ref().clone()
+      })))
+    };
+    let slots = [with_alias_arg(Default::default()), with_alias_arg(signature.open_reason)];
+    assert!(
+      CalcitTypeAnnotation::homogeneous_tuple_item(&slots).is_some(),
+      "tuple slots that differ only by an open reason stay homogeneous"
+    );
 
     let stored = schema_annotation_to_edn(annotation.as_ref());
     let reloaded = parse_loaded_schema_annotation(&stored, "app.main/show").expect("stored schema loads");
