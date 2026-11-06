@@ -258,7 +258,7 @@
                   .unwrap-or (.map o describe) |absent
                 _ |present
           :examples $ []
-          :schema $ quote $ Fn & MaybeGeo
+          :schema $ quote $ Fn (& MaybeGeo)
             -> $ List String
           :tests $ []
             %{} 'TestEntry (:name |option-member-matches-separately)

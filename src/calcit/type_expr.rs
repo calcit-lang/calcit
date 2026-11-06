@@ -259,7 +259,9 @@ fn desugar_leaf(name: &str) -> Result<Cirru, String> {
     ));
   }
   if name == "&" {
-    return Err(String::from("`&` is only valid among `Fn` parameters, before the rest type"));
+    return Err(String::from(
+      "`&` is only valid in a `Fn` rest group, written as `(& T)` after the parameters",
+    ));
   }
   if RESERVED_OPERATORS.contains(&name) {
     return Err(format!("`{name}` is reserved for a future type operator"));
@@ -539,6 +541,28 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
   let mut idx = 0;
   while idx < items.len() {
     let item = &items[idx];
+    if let Cirru::List(group) = item
+      && group.first().and_then(leaf_text) == Some("&")
+    {
+      if seen_clause {
+        return Err(format!(
+          "`{kind_name}` rest group `{}` appears after a clause; write parameters and `(& T)` first, then `(-> T)` and other clauses",
+          describe(item)
+        ));
+      }
+      if parts.rest.is_some() {
+        return Err(format!("`{kind_name}` has more than one rest type"));
+      }
+      if group.len() != 2 {
+        return Err(format!(
+          "rest group `{}` must hold exactly one type, such as `(& Number)`",
+          describe(item)
+        ));
+      }
+      parts.rest = Some(desugar_type(&group[1], &scope)?);
+      idx += 1;
+      continue;
+    }
     if let Some(head) = clause_head(item) {
       seen_clause = true;
       if head == "->" {
@@ -695,8 +719,7 @@ fn print_macro(map: &EdnMapView) -> Result<Cirru, String> {
     }
   }
   if let Some(rest) = get("rest") {
-    out.push(Cirru::leaf("&"));
-    out.push(print_type_compact(rest)?);
+    out.push(Cirru::List(vec![Cirru::leaf("&"), print_type_compact(rest)?]));
   }
   let expansion = get("expansion").ok_or_else(|| String::from("macro without expansion"))?;
   out.push(Cirru::List(vec![Cirru::leaf("->"), print_type_compact(expansion)?]));
@@ -732,8 +755,7 @@ fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
     }
   }
   if let Some(rest) = get("rest") {
-    out.push(Cirru::leaf("&"));
-    out.push(print_type_compact(rest)?);
+    out.push(Cirru::List(vec![Cirru::leaf("&"), print_type_compact(rest)?]));
   }
   let ret = get("return")
     .map(print_type_compact)
@@ -840,8 +862,13 @@ mod tests {
       "(:: 'Fn ({} (:args ([] 'C (:: 'Fn ({} (:args ([] 'T)) (:return 'U))))) (:return 'Dynamic) (:generics ([] 'C 'T 'U)) (:where ({} ('C 'Mappable)))))"
     );
     assert_eq!(
-      desugar_text("Fn Number & Number (-> Number)").unwrap(),
+      desugar_text("Fn Number (& Number) (-> Number)").unwrap(),
       "(:: 'Fn ({} (:args ([] 'Number)) (:return 'Number) (:rest 'Number)))"
+    );
+    // The legacy bare `& T` spelling still reads the same; `edit format` prints `(& T)`.
+    assert_eq!(
+      desugar_text("Fn Number & Number (-> Number)").unwrap(),
+      desugar_text("Fn Number (& Number) (-> Number)").unwrap()
     );
     let code = "Fn String\n  -> $ Result String String\n  :async\n  :features :js-ffi\n  :where (T Sliceable Countable)\n  :generics T";
     assert_eq!(
@@ -871,6 +898,10 @@ mod tests {
       ("Fn (-> Number) Number", "after a clause"),
       ("Fn Number (-> Number) (-> String)", "more than one"),
       ("Fn & Number String (-> Unit)", "after the rest type"),
+      ("Fn (& Number) String (-> Unit)", "after the rest type"),
+      ("Fn (& Number) (& String) (-> Unit)", "more than one rest type"),
+      ("Fn (& Number String) (-> Unit)", "exactly one type"),
+      ("Fn (-> Unit) (& Number)", "after a clause"),
       ("Fn (-> Number) :async", "must be written as a list"),
       ("Fn (-> Number) (:effects :fs)", "unknown `Fn` clause `:effects`"),
       ("Fn T (-> T) (:generics t)", "uppercase"),
@@ -902,6 +933,20 @@ mod tests {
     assert!(!is_compact_payload(&parse_one("{} (:args $ [])")));
     assert!(!is_compact_payload(&Cirru::leaf("Number")));
     assert!(!is_compact_payload(&parse_one("f x")));
+  }
+
+  #[test]
+  fn rest_group_is_the_printed_spelling() {
+    for (legacy, grouped) in [
+      ("Fn Number & Number (-> Number)", "Fn Number (& Number) (-> Number)"),
+      (
+        "Macro (Expr Dynamic) & SyntaxList (-> (Expr Dynamic))",
+        "Macro (Expr Dynamic) (& SyntaxList) (-> (Expr Dynamic))",
+      ),
+    ] {
+      let edn = crate::snapshot::schema_cirru_to_edn(desugar_type_expr(&parse_one(legacy)).expect("desugar"));
+      assert_eq!(print_type_compact(&edn).expect("print"), parse_one(grouped), "{legacy}");
+    }
   }
 
   #[test]

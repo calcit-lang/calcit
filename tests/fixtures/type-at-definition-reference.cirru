@@ -21,7 +21,7 @@
                   result $ do $ ~@ body
                 , result
           :examples $ []
-          :schema $ quote $ Macro Syntax Syntax & Syntax
+          :schema $ quote $ Macro Syntax Syntax (& Syntax)
             -> $ Expr Dynamic
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()

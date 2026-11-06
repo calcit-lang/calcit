@@ -10,7 +10,7 @@ snapshot): positional items are required inputs, `& T` is the rest input and
 `(-> T)` is the expansion.
 
 ```cirru
-quote $ Macro SyntaxSymbol (Expr T) & Syntax
+quote $ Macro SyntaxSymbol (Expr T) (& Syntax)
   -> $ Expr T
   :optional SyntaxList
   :generics T
@@ -53,7 +53,7 @@ of the emitted form. For example, a binding macro with one list-shaped syntax
 argument and arbitrary body forms can use:
 
 ```cirru
-quote $ Macro SyntaxList & Syntax (-> (Expr Dynamic))
+quote $ Macro SyntaxList (& Syntax) (-> (Expr Dynamic))
 ```
 
 `Expr<Dynamic>` here is an explicit semantic boundary: the expansion is known

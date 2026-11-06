@@ -609,7 +609,7 @@ Represent variable arguments in `&` parameters:
 ```cirru
 let
     sum $ fn (& xs)
-      hint-fn $ Fn & Number (-> Number)
+      hint-fn $ Fn (& Number) (-> Number)
       .fold xs 0 &+
   sum 1 2 3
 ```
@@ -891,7 +891,7 @@ defn sum (& numbers) (.fold numbers 0 +)
 Schema on the namespace definition:
 
 ```cirru
-quote $ Fn & Number (-> Number)
+quote $ Fn (& Number) (-> Number)
 ```
 
 ## Function Types

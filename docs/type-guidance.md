@@ -52,7 +52,7 @@ assert-type map-fn $ Fn C
 `Macro` 合同同样有精简写法：位置参数是必填参数，`& T` 是剩余参数，`(-> T)` 是展开结果：
 
 ```cirru.no-check
-quote $ Macro (Expr Dynamic) & SyntaxList (-> (Expr Struct))
+quote $ Macro (Expr Dynamic) (& SyntaxList) (-> (Expr Struct))
 quote $ Macro (Expr T)
   -> $ Expr T
   :optional (Expr Dynamic)

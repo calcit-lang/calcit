@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.36.x 变长参数写成 `(& T)` 分组（#2612）
+
+`Fn` / `Macro` 的 rest 参数改为分组写法：`Fn Number (& Number) (-> Number)`，取代 `Fn Number & Number (-> Number)`。旧写法仍能读取，含义不变；Snapshot 里的 `:schema` 还用旧写法时，检查会报一条 `W_FN_REST_SPELLING` Notes，给出数量和第一处位置。运行 `calcit edit format` 会把 schema 改写成 `(& T)`。函数体里 `hint-fn` 的旧写法照常读取，`edit format` 不会改写函数体，需要时手工改。
+
+同一版本起，固定元数函数也可以传给变长参数的函数类型：`fn(Number, Number) -> Number` 满足 `Fn (& Number) (-> Number)`，见 [静态分析](../features/static-analysis.md)。
+
 ## 0.36.x type slot 写成 symbol，并且必须绑定到具名类型
 
 entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。

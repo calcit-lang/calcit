@@ -165,7 +165,7 @@
               quote $ List T
             , values
           :examples $ []
-          :schema $ quote $ Fn & T
+          :schema $ quote $ Fn (& T)
             -> $ List T
             :generics T
           :tests $ []

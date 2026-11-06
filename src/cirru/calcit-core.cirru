@@ -14,7 +14,7 @@
           :doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn & T
+          :schema $ quote $ Fn (& T)
             -> $ Set T
             :generics T
           :tags $ #{} :builtin :internal
@@ -40,7 +40,7 @@
                 Point $ defstruct Point (:x Number) (:y Number)
                 rec $ %{} Point (:x 1) (:y 2)
               assert= 1 $ :x rec
-          :schema $ quote $ Macro (Expr Dynamic) & SyntaxList
+          :schema $ quote $ Macro (Expr Dynamic) (& SyntaxList)
             -> $ Expr Struct
           :tags $ #{} :macro
         '& $ %{} 'CodeEntry
@@ -243,7 +243,7 @@
               quasiquote $ if (&= ~item ~x) ~branch $ ~
                 if (&list:empty? others) default $ quasiquote $ &case ~item ~default ~@others
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic) SyntaxList & SyntaxList
+          :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic) SyntaxList (& SyntaxList)
             -> $ Expr Dynamic
           :tags $ #{} :internal :macro
         '&cirru-nth $ %{} 'CodeEntry
@@ -638,7 +638,8 @@
                 n $ [] 1 2
                 reset! *seen $ append (deref *seen) n
               assert= ([] 1 2) (deref *seen)
-          :schema $ quote $ Macro SyntaxList & (Expr Dynamic)
+          :schema $ quote $ Macro SyntaxList
+            & $ Expr Dynamic
             -> $ Expr Unit
           :tags $ #{} :effect :internal :macro
           :tests $ []
@@ -1522,7 +1523,8 @@
                   &list:slice ~v 1
                 &let () ~@branch2
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic) SyntaxList & (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic) SyntaxList
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :internal :macro
           :tests $ [] $ %{} 'TestEntry
@@ -1615,7 +1617,8 @@
           :doc "|internal function for concatenating lists\nSyntax: (&list:concat list1 list2)\nParams: list1 (list), list2 (list)\nReturns: list\nReturns new list with elements from both lists"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn & (List T)
+          :schema $ quote $ Fn
+            & $ List T
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -2464,7 +2467,7 @@
           :doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Map K V) K & K
+          :schema $ quote $ Fn (Map K V) K (& K)
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
@@ -2743,7 +2746,8 @@
           :doc "|internal function for merging maps\nSyntax: (&merge map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges multiple maps, later values override earlier ones"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Map K V) (Map K V) & (Map K V)
+          :schema $ quote $ Fn (Map K V) (Map K V)
+            & $ Map K V
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
@@ -3147,7 +3151,7 @@
                 prefix $ if head? x0 $ &str:concat "| " x0
               if (&list:empty? xs) prefix $ &str:concat prefix $ &str-spaced false (&list:nth xs 0) & (&list:rest xs)
           :examples $ []
-          :schema $ quote $ Fn Bool String & String (-> String)
+          :schema $ quote $ Fn Bool String (& String) (-> String)
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |nonempty-rest-contract)
             :code $ quote $ do
@@ -3481,7 +3485,7 @@
                         ~@ $ &list:slice pair 2
                       &struct-match-internal ~value $ ~@ $ &list:rest body
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & SyntaxList
+          :schema $ quote $ Macro (Expr Dynamic) (& SyntaxList)
             -> $ Expr Dynamic
           :tags $ #{} :internal :macro
         '&struct:assoc $ %{} 'CodeEntry (:doc "|Associate a declared field on a struct value.")
@@ -3617,7 +3621,7 @@
             quote $ assert= 24 $ * 2 3 4
             quote $ assert= 30 $ * 5 6
             quote $ assert= 1 $ * 1
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |multiplies-variadic-numbers)
             :code $ quote $ assert= 24 (* 1 2 3 4)
             :tags $ #{} :core :unit
@@ -3627,7 +3631,7 @@
           :examples $ []
             quote $ quote $ assert= 6 (+ 1 2 3)
             quote $ quote $ assert= 15 (+ 5 10)
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |adds-variadic-numbers)
             :code $ quote $ assert= 10 (+ 1 2 3 4)
             :tags $ #{} :core :unit
@@ -3637,7 +3641,7 @@
           :examples $ []
             quote $ assert= 5 $ - 10 3 2
             quote $ assert= -5 $ - 5
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |subtracts-and-negates)
             :code $ quote $ do
               assert= 4 $ - 10 1 2 3
@@ -3667,7 +3671,7 @@
           :examples $ []
             quote $ assert= 3 $ -> 1 inc inc
             quote $ assert= 9 $ -> 2 inc (* 3)
-          :schema $ quote $ Macro (Expr Dynamic) & Syntax
+          :schema $ quote $ Macro (Expr Dynamic) (& Syntax)
             -> $ Expr Dynamic
           :tags $ #{} :macro
         '->% $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions")
@@ -3680,7 +3684,8 @@
                     defn %->% (x) ([] '% x)
               quasiquote $ let ~pairs ~tail
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
         '->> $ %{} 'CodeEntry
@@ -3701,7 +3706,7 @@
                   &call-spread recur (append x0 base) & $ &list:rest xs
                   &call-spread recur ([] x0 base) & $ &list:rest xs
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & Syntax
+          :schema $ quote $ Macro (Expr Dynamic) (& Syntax)
             -> $ Expr Dynamic
           :tags $ #{} :macro
         '/ $ %{} 'CodeEntry (:doc |dividing)
@@ -3710,7 +3715,7 @@
           :examples $ []
             quote $ / 12 3 2
             quote $ / 8
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |divides-and-inverts)
             :code $ quote $ do
               assert= 15 $ / 360 2 3 4
@@ -3740,7 +3745,8 @@
           :examples $ []
             quote $ assert= (:: :point 1 2) (: :point 1 2)
             quote $ assert= (:: :name |calcit) (: |name |calcit)
-          :schema $ quote $ Macro Syntax & (Expr Dynamic)
+          :schema $ quote $ Macro Syntax
+            & $ Expr Dynamic
             -> $ Expr Enum
           :tags $ #{} :macro
         ':: $ %{} 'CodeEntry
@@ -3754,7 +3760,7 @@
           :code $ quote $ defmacro ;nil (& _body)
           :examples $ [] $ quote
             assert-type (;nil) (quote Nil)
-          :schema $ quote $ Macro & Syntax
+          :schema $ quote $ Macro (& Syntax)
             -> $ Expr Nil
           :tags $ #{} :macro
         '< $ %{} 'CodeEntry (:doc |)
@@ -3764,7 +3770,7 @@
               &< x $ &list:nth ys 0
               foldl-compare ys x &<
           :examples $ []
-          :schema $ quote $ Fn Number & Number (-> Bool)
+          :schema $ quote $ Fn Number (& Number) (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |compares-ascending-chain)
             :code $ quote $ do
               assert= true $ < 1 2 3 4 5
@@ -3781,7 +3787,7 @@
             quote $ assert= true $ <= 3 5
             quote $ assert= true $ <= 3 3
             quote $ assert= true $ <= 1 2 3 4
-          :schema $ quote $ Fn Number & Number (-> Bool)
+          :schema $ quote $ Fn Number (& Number) (-> Bool)
         '= $ %{} 'CodeEntry
           :doc "|Equality predicate for one or more values of the same static type. Returns true only when every argument is equal, short-circuiting on the first mismatch. Mixed-type callers must normalize values, use a type predicate for category checks, or pattern-match nominal values before comparing."
           :code $ quote $ defn = (x & ys)
@@ -3793,7 +3799,7 @@
             quote $ assert= true $ = 3 3 3
             quote $ assert= false $ = 1 2
             quote $ assert= true $ = ([] 1 2) ([] 1 2)
-          :schema $ quote $ Fn T & T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (& T) (-> Bool) (:generics T)
           :tests $ []
             %{} 'TestEntry (:name |homogeneous-variadic-equality)
               :code $ quote $ do
@@ -3861,7 +3867,7 @@
             quote $ assert= false $ > 3 5
             quote $ assert= true $ > 8 4 2 1
             quote $ assert= false $ > 2 2
-          :schema $ quote $ Fn Number & Number (-> Bool)
+          :schema $ quote $ Fn Number (& Number) (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |compares-descending-chain)
             :code $ quote $ assert= true (> 10 8 6 4)
             :tags $ #{} :core :unit
@@ -3876,7 +3882,7 @@
             quote $ assert= true $ >= 5 3
             quote $ assert= true $ >= 5 5
             quote $ assert= false $ >= 3 5
-          :schema $ quote $ Fn Number & Number (-> Bool)
+          :schema $ quote $ Fn Number (& Number) (-> Bool)
         '? $ %{} 'CodeEntry
           :doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions"
           :code $ quote &runtime-implementation
@@ -4325,7 +4331,7 @@
           :doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn & T
+          :schema $ quote $ Fn (& T)
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -4334,7 +4340,7 @@
             if (&list:empty? xs) (raise "|\\ expects function body")
             quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
-          :schema $ quote $ Macro & Syntax
+          :schema $ quote $ Macro (& Syntax)
             -> $ Expr Fn
           :tags $ #{} :macro
         'abs $ %{} 'CodeEntry (:doc |)
@@ -4412,7 +4418,8 @@
           :examples $ []
             quote $ assert= false $ and true false true
             quote $ assert= |done $ and true |done
-          :schema $ quote $ Macro & (Expr Dynamic)
+          :schema $ quote $ Macro
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -5158,7 +5165,7 @@
                     raise $ str-spaced |case |found |no |matching |pattern |for: ~v
                     , ~@patterns
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & SyntaxList
+          :schema $ quote $ Macro (Expr Dynamic) (& SyntaxList)
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -5460,7 +5467,8 @@
           :examples $ [] $ quote
             assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
-          :schema $ quote $ Fn & (List T)
+          :schema $ quote $ Fn
+            & $ List T
             -> $ List T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |joins-many-lists)
@@ -5499,7 +5507,7 @@
               (&< 2 5) :small
               true :fallback
             quote $ assert= :fallback $ cond (false :branch) (true :fallback)
-          :schema $ quote $ Macro & SyntaxList
+          :schema $ quote $ Macro (& SyntaxList)
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |picks-first-truthy-clause)
@@ -5525,7 +5533,7 @@
               conj ([] 1 2) 3
             quote $ assert= ([] 1 2 3 4)
               conj ([] 1) 2 3 4
-          :schema $ quote $ Fn (List T) T & T
+          :schema $ quote $ Fn (List T) T (& T)
             -> $ List T
             :generics T
           :tests $ []
@@ -6635,7 +6643,7 @@
                                     ~@ normalized
           :examples $ [] $ quote
             defenum Result ([] T E) (:ok T) (:err E)
-          :schema $ quote $ Macro Syntax & SyntaxList
+          :schema $ quote $ Macro Syntax (& SyntaxList)
             -> $ Expr EnumDef
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |reads-payload-types-as-type-syntax)
@@ -6706,7 +6714,7 @@
                           raise $ str-spaced "|defimpl expects .method key, got:" k0
                       quasiquote $ [] ~key ~v0
           :examples $ []
-          :schema $ quote $ Macro Syntax Syntax & Syntax
+          :schema $ quote $ Macro Syntax Syntax (& Syntax)
             -> $ Expr Impl
           :tags $ #{} :macro
         'defmacro $ %{} 'CodeEntry
@@ -6832,7 +6840,7 @@
                                     ~@ normalized
           :examples $ [] $ quote
             defstruct Person (:name String) (:age Number)
-          :schema $ quote $ Macro Syntax & SyntaxList
+          :schema $ quote $ Macro Syntax (& SyntaxList)
             -> $ Expr StructDef
           :tags $ #{} :macro
           :tests $ []
@@ -6927,7 +6935,7 @@
                       [] ~@normalized
                       [] ~@parents
           :examples $ []
-          :schema $ quote $ Macro Syntax & SyntaxList
+          :schema $ quote $ Macro Syntax (& SyntaxList)
             -> $ Expr Trait
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |requires-head-accepts-bare-and-quoted)
@@ -6958,7 +6966,7 @@
               ~ $ turn-tag name
               ~@ $ &list:map members $ fn (m) (data-definition-type-form m)
           :examples $ [] $ quote (; defunion CssValue String Number)
-          :schema $ quote $ Macro Syntax & Syntax
+          :schema $ quote $ Macro Syntax (& Syntax)
             -> $ Expr UnionDef
           :tags $ #{} :macro :type
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
@@ -7166,7 +7174,8 @@
               difference (#{} 1 2 3) (#{} 2 3 4)
             quote $ assert= (#{} 1 2)
               difference (#{} 1 2 3 4) (#{} 3 4 5)
-          :schema $ quote $ Fn (Set T) & (Set T)
+          :schema $ quote $ Fn (Set T)
+            & $ Set T
             -> $ Set T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |subtracts-all-sets)
@@ -7187,7 +7196,7 @@
                   &map:dissoc x (&list:nth args 0) & $ &list:rest args
                 raise "|dissoc expected a List or Map"
           :examples $ []
-          :schema $ quote $ Fn Dynamic & Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Dynamic)
           :tests $ []
             %{} 'TestEntry (:name |removes-multiple-map-keys)
               :code $ quote $ assert= (&{} :d 5)
@@ -7425,7 +7434,8 @@
           :examples $ []
             quote $ assert= 3 $ do (inc 1) (+ 1 2)
             quote $ assert= |world $ do (str |hello) (str |world)
-          :schema $ quote $ Macro & (Expr Dynamic)
+          :schema $ quote $ Macro
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -7504,7 +7514,8 @@
             quote $ assert= 42 $ either nil 42 nil
             quote $ assert= false $ either false true
             quote $ assert= |backup $ either nil nil |backup
-          :schema $ quote $ Macro & (Expr Dynamic)
+          :schema $ quote $ Macro
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-non-nil)
@@ -7800,7 +7811,7 @@
           :code $ quote $ defn exclude (base & xs)
             reduce xs base $ fn (acc item) (&exclude acc item)
           :examples $ []
-          :schema $ quote $ Fn (Set T) & T
+          :schema $ quote $ Fn (Set T) (& T)
             -> $ Set T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |removes-set-members)
@@ -8254,7 +8265,7 @@
               fn (x) (* x 2)
             quote $ filter ([] 1 2 3 4 5)
               fn (n) (> n 2)
-          :schema $ quote $ Macro SyntaxList & Syntax
+          :schema $ quote $ Macro SyntaxList (& Syntax)
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |async-scope-keeps-local-callbacks-sync)
@@ -9738,7 +9749,8 @@
                     quote nil
                   quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
-          :schema $ quote $ Macro & (Expr Dynamic)
+          :schema $ quote $ Macro
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
         'impl-origin $ %{} 'CodeEntry
@@ -9760,7 +9772,7 @@
               if (enum-def? x) (&enum-def:impl-traits x & traits)
                 raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
-          :schema $ quote $ Fn Dynamic & Impl (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic)
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
           :code $ quote $ defn inc (x) (&+ x 1)
           :examples $ []
@@ -9779,7 +9791,7 @@
               include (#{} 1 2) 3 4
             quote $ assert= (#{} 1 2 3)
               include (#{} 1 2) 2 3
-          :schema $ quote $ Fn (Set T) & T
+          :schema $ quote $ Fn (Set T) (& T)
             -> $ Set T
             :generics T
           :tests $ []
@@ -9963,7 +9975,8 @@
           :code $ quote $ defn intersection (base & xs)
             reduce xs base $ fn (acc item) (&set:intersection acc item)
           :examples $ []
-          :schema $ quote $ Fn (Set T) & (Set T)
+          :schema $ quote $ Fn (Set T)
+            & $ Set T
             -> $ Set T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-common-set-members)
@@ -10078,7 +10091,7 @@
               ys $ &list:concat & xs
               quasiquote $ &js-object ~@ys
           :examples $ []
-          :schema $ quote $ Macro & SyntaxList
+          :schema $ quote $ Macro (& SyntaxList)
             -> $ Expr JsObject
             :features :js-ffi
           :tags $ #{} :interop :macro
@@ -10286,7 +10299,7 @@
             quote $ let
                 a 10
               * a a
-          :schema $ quote $ Macro SyntaxList & Syntax
+          :schema $ quote $ Macro SyntaxList (& Syntax)
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -10375,7 +10388,8 @@
           :examples $ []
             quote $ let[] (x y) ([] 1 2) (+ x y)
             quote $ let[] (head & tail) ([] 9 8 7) (count tail)
-          :schema $ quote $ Macro SyntaxList (Expr Dynamic) & (Expr Dynamic)
+          :schema $ quote $ Macro SyntaxList (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |destructures-positional-and-rest-bindings)
@@ -10418,7 +10432,8 @@
               if (empty? xs) total $ recur
                 + total $ first xs
                 rest xs
-          :schema $ quote $ Macro SyntaxList & (Expr Dynamic)
+          :schema $ quote $ Macro SyntaxList
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |preserves-standalone-loop-effects)
@@ -10833,7 +10848,8 @@
                 {} $ :a 1
                 {} $ :b 2
                 {} $ :c 3
-          :schema $ quote $ Fn (Map K V) & (Map K V)
+          :schema $ quote $ Fn (Map K V)
+            & $ Map K V
             -> $ Map K V
             :generics K V
           :tests $ []
@@ -10877,7 +10893,8 @@
           :doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
           :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
           :examples $ []
-          :schema $ quote $ Fn (Map K V) & (Map K V)
+          :schema $ quote $ Fn (Map K V)
+            & $ Map K V
             -> $ Map K V
             :generics K V
           :tests $ [] $ %{} 'TestEntry (:name |keeps-existing-values-for-nil)
@@ -11694,7 +11711,8 @@
             quote $ assert= |done $ or nil |done false
             quote $ assert= nil $ or false nil
             quote $ assert= 2 $ or nil 2 3
-          :schema $ quote $ Macro (Expr Dynamic) & (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -12725,7 +12743,7 @@
             quote $ assert= |abc $ str |a |b |c
             quote $ assert= |123 $ str 1 2 3
             quote $ assert= "|hello world" $ str |hello "| " |world
-          :schema $ quote $ Fn Dynamic & Dynamic (-> String)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String)
           :tests $ []
             %{} 'TestEntry (:name |concats-dynamic-values)
               :code $ quote $ do
@@ -12808,7 +12826,7 @@
           :examples $ []
             quote $ assert= "|a b c" $ str-spaced |a |b |c
             quote $ assert= "|1 2 3" $ str-spaced 1 2 3
-          :schema $ quote $ Fn Dynamic & Dynamic (-> String)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String)
           :tests $ []
             %{} 'TestEntry (:name |joins-non-nil-values)
               :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
@@ -12892,7 +12910,7 @@
                     &assert-then "|expected struct value to match" (struct? ~v#) (&struct-match-internal ~v# ~@body)
                 quasiquote $ &assert-then "|expected struct value to match" (struct? ~value) (&struct-match-internal ~value ~@body)
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & SyntaxList
+          :schema $ quote $ Macro (Expr Dynamic) (& SyntaxList)
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ []
@@ -12962,7 +12980,7 @@
             ; "|call &struct:with"
             quasiquote $ &struct:with ~struct_value $ ~@ (&list:concat & pairs)
           :examples $ []
-          :schema $ quote $ Macro (Expr Struct) & SyntaxList
+          :schema $ quote $ Macro (Expr Struct) (& SyntaxList)
             -> $ Expr Struct
           :tags $ #{} :macro
         'struct? $ %{} 'CodeEntry
@@ -12987,8 +13005,8 @@
           :schema $ quote $ Macro
             Expr $ Ref Dynamic
             Expr Fn
-            , & (Expr Dynamic)
-              -> $ Expr Dynamic
+            & $ Expr Dynamic
+            -> $ Expr Dynamic
           :tags $ #{} :macro :state
           :tests $ [] $ %{} 'TestEntry (:name |expanded-result-is-the-assigned-value)
             :code $ quote $ let
@@ -13592,7 +13610,8 @@
               union (#{} 1 2) (#{} 3 4)
             quote $ assert= (#{} 1 2 3)
               union (#{} 1) (#{} 2) (#{} 3)
-          :schema $ quote $ Fn (Set T) & (Set T)
+          :schema $ quote $ Fn (Set T)
+            & $ Set T
             -> $ Set T
             :generics T
           :tests $ []
@@ -13973,7 +13992,8 @@
           :examples $ []
             quote $ assert= 4 $ when (&> 3 2) (inc 3)
             quote $ assert= nil $ when false (inc 1)
-          :schema $ quote $ Macro (Expr Dynamic) & (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
@@ -13999,7 +14019,8 @@
                 fn (~x)
                   Option :some $ do $ ~@ body
           :examples $ []
-          :schema $ quote $ Macro SyntaxList & (Expr Dynamic)
+          :schema $ quote $ Macro SyntaxList
+            & $ Expr Dynamic
             -> $ Expr $ Option Dynamic
           :tags $ #{} :macro
         'when-not $ %{} 'CodeEntry (:doc |)
@@ -14012,7 +14033,8 @@
               quasiquote $ if (not ~condition)
                 &let () ~@body
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic) & (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
@@ -14054,7 +14076,7 @@
           :examples $ [] $ quote
             with-gensyms (v)
               quasiquote $ &let (~v 1) ~v
-          :schema $ quote $ Macro SyntaxList & Syntax
+          :schema $ quote $ Macro SyntaxList (& Syntax)
             -> $ Expr Dynamic
           :tags $ #{} :macro
         'with-type-slot $ %{} 'CodeEntry
@@ -14125,7 +14147,7 @@
                 not= x ',
               quasiquote $ pairs-map $ chunks ([] ~@xs) 2
           :examples $ []
-          :schema $ quote $ Macro & Syntax
+          :schema $ quote $ Macro (& Syntax)
             -> $ Expr $ Map Dynamic Dynamic
           :tags $ #{} :macro
         '{} $ %{} 'CodeEntry
@@ -14142,7 +14164,7 @@
           :examples $ []
             quote $ {} (:a 1) (:b 2)
             quote $ {} (:name |Alice) (:age 30)
-          :schema $ quote $ Macro & SyntaxList
+          :schema $ quote $ Macro (& SyntaxList)
             -> $ Expr $ Map Dynamic Dynamic
           :tags $ #{} :macro
         '~ $ %{} 'CodeEntry

@@ -93,7 +93,7 @@
         'collect-rest $ %{} 'CodeEntry (:doc "|returns rest list unchanged")
           :code $ quote $ defwasm-export collect-rest (a & xs) xs
           :examples $ []
-          :schema $ quote $ Fn Number & Number
+          :schema $ quote $ Fn Number (& Number)
             -> $ List Number
         'compare-wasm-ascending $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export compare-wasm-ascending (a b) (&- a b)
@@ -261,11 +261,11 @@
           :code $ quote $ defwasm-export sum-rest (a b & xs)
             sum-rest-list (&+ a b) xs
           :examples $ []
-          :schema $ quote $ Fn Number Number & Number (-> Number)
+          :schema $ quote $ Fn Number Number (& Number) (-> Number)
         'sum-rest-forward $ %{} 'CodeEntry (:doc "|forwards a rest list via &call-spread")
           :code $ quote $ defwasm-export sum-rest-forward (a b & xs) (sum-rest a b & xs)
           :examples $ []
-          :schema $ quote $ Fn Number Number & Number (-> Number)
+          :schema $ quote $ Fn Number Number (& Number) (-> Number)
         'sum-rest-list $ %{} 'CodeEntry (:doc "|helper: sums a list via recur")
           :code $ quote $ defwasm-export sum-rest-list (acc xs)
             if (&list:empty? xs) acc $ recur
@@ -2138,7 +2138,8 @@
           :examples $ []
           :schema $ quote $ Fn
             Fn Number $ -> Number
-            , & Number (-> Number)
+            & Number
+            -> Number
         'test-closure-escape $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-closure-escape ()
             escape-callback $ fn (x) (+ x 1)

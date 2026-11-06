@@ -3389,6 +3389,44 @@ fn legacy_optional_hit(owner: &str, form: &Cirru) -> String {
 
 /// Collect legacy `Optional<T>` uses from raw `:files` before schemas are
 /// parsed, so one load reports every definition instead of the first failure.
+/// A `Fn` or `Macro` schema still writes its rest type as a bare `& T` instead
+/// of the `(& T)` group. A warning in 0.36.x; `edit format` rewrites schemas.
+pub const FN_REST_SPELLING_WARNING: &str = "W_FN_REST_SPELLING";
+
+fn has_bare_rest_marker(node: &Cirru) -> bool {
+  let Cirru::List(items) = node else { return false };
+  let callable = matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "Fn" | "Macro"));
+  (callable
+    && items
+      .iter()
+      .skip(1)
+      .any(|item| matches!(item, Cirru::Leaf(text) if text.as_ref() == "&")))
+    || items.iter().any(has_bare_rest_marker)
+}
+
+/// Definitions whose written `:schema` uses the legacy bare `& T` rest spelling,
+/// as sorted `(namespace, definition)` pairs.
+pub fn collect_fn_rest_spelling_hits(data: &Edn) -> Vec<(String, String)> {
+  let mut hits = vec![];
+  let Ok(root) = data.view_map() else { return hits };
+  let files = root.get_or_nil("files");
+  let Ok(files) = files.view_map() else { return hits };
+  for (file_key, file) in files.0.iter() {
+    let Some(Edn::Map(defs)) = ffi_metadata_value(file, "defs") else {
+      continue;
+    };
+    for (def_key, entry) in defs.0.iter() {
+      if let Some(Edn::Quote(payload)) = ffi_metadata_value(entry, "schema")
+        && has_bare_rest_marker(payload)
+      {
+        hits.push((edn_key_text(file_key), edn_key_text(def_key)));
+      }
+    }
+  }
+  hits.sort();
+  hits
+}
+
 fn collect_raw_legacy_optional_hits(files: &Edn) -> Vec<String> {
   let mut hits = vec![];
   let Ok(files) = files.view_map() else { return hits };
@@ -6851,6 +6889,37 @@ mod tests {
       decoded.open_reason.0,
       Some(crate::calcit::FnOpenReason::Reflect),
       "survives a binary round trip"
+    );
+  }
+
+  #[test]
+  fn fn_rest_spelling_hits_find_bare_rest_markers_in_schemas_only() {
+    let data = cirru_edn::parse(
+      r#"{} (:package |app)
+  :files $ {} $ 'app.main $ %{} 'FileEntry
+    :defs $ {}
+      'legacy $ %{} 'CodeEntry (:doc |) (:examples $ [])
+        :code $ quote $ defn legacy (& xs) xs
+        :schema $ quote $ Fn Number & Number (-> Number)
+      'nested $ %{} 'CodeEntry (:doc |) (:examples $ [])
+        :code $ quote $ defn nested (f) f
+        :schema $ quote $ Fn (Fn & String (-> Unit)) (-> Unit)
+      'grouped $ %{} 'CodeEntry (:doc |) (:examples $ [])
+        :code $ quote $ defn grouped (& xs)
+          hint-fn $ Fn & Number (-> Number)
+          , xs
+        :schema $ quote $ Fn (& Number) (-> Number)
+    :ns $ %{} 'NsEntry (:doc |)
+      :code $ quote $ ns app.main
+"#,
+    )
+    .expect("snapshot parses");
+    assert_eq!(
+      collect_fn_rest_spelling_hits(&data),
+      vec![
+        ("app.main".to_owned(), "legacy".to_owned()),
+        ("app.main".to_owned(), "nested".to_owned())
+      ]
     );
   }
 
