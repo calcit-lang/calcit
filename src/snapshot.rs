@@ -114,6 +114,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "where" => Some("where"),
     "features" => Some("features"),
     "async" => Some("async"),
+    "open" => Some("open"),
     "capabilities" => Some("capabilities"),
     _ => None,
   }
@@ -1601,6 +1602,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":where",
   ":features",
   ":async",
+  ":open",
   ":legacy-origin",
 ];
 
@@ -2001,6 +2003,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut where_node: Option<&Cirru> = None;
   let mut features_node: Option<&Cirru> = None;
   let mut async_node: Option<&Cirru> = None;
+  let mut open_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair
@@ -2019,6 +2022,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
         ":async" => async_node = Some(val),
+        ":open" => open_node = Some(val),
         _ => {}
       }
     }
@@ -2111,6 +2115,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     && !matches!(legacy_origin, Cirru::Leaf(value) if matches!(value.as_ref(), ":fn" | ":dynamic"))
   {
     return Err("`:legacy-origin` must be `:fn` or `:dynamic`".to_owned());
+  }
+
+  if let Some(open) = open_node
+    && !matches!(open, Cirru::Leaf(value) if value.starts_with(':') && crate::calcit::FnOpenReason::parse(value).is_some())
+  {
+    return Err("`:open` must be `:reflect`, `:decode` or `:host`".to_owned());
   }
 
   if let Some(async_value) = async_node
@@ -3447,6 +3457,81 @@ pub const BROAD_TYPE_ERROR: &str = "E_BROAD_TYPE";
 /// open spelling, so it stays a non-blocking note.
 pub const BROAD_TRAIT_WARNING: &str = "W_BROAD_TYPE";
 
+pub const OPEN_FAMILY_WARNING: &str = "W_OPEN_FAMILY";
+
+/// Open types written in project `:schema`s outside a reviewed `(:open …)`
+/// signature. Reported as one summary line per check; `analyze weak-types`
+/// lists the individual sites.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OpenFamilyCount {
+  pub any_enum: usize,
+  pub any_fn: usize,
+  pub any_struct: usize,
+  pub dynamic: usize,
+  /// The first definition (in namespace and name order) that has one.
+  pub first: Option<(String, String)>,
+}
+
+impl OpenFamilyCount {
+  pub fn total(&self) -> usize {
+    self.any_enum + self.any_fn + self.any_struct + self.dynamic
+  }
+
+  pub fn message(&self) -> String {
+    format!(
+      "{} open type(s) in project schemas without `(:open …)`: AnyEnum {}, AnyFn {}, AnyStruct {}, Dynamic {}",
+      self.total(),
+      self.any_enum,
+      self.any_fn,
+      self.any_struct,
+      self.dynamic
+    )
+  }
+}
+
+/// Count `AnyEnum` / `AnyFn` / `AnyStruct` / `Dynamic` in the written
+/// `:schema` of project definitions. A `Fn` marked `(:open :reflect)`,
+/// `(:open :decode)` or `(:open :host)` is skipped with everything inside it.
+pub fn collect_open_family_count(snapshot: &Snapshot, namespaces: &HashSet<String>) -> OpenFamilyCount {
+  let mut count = OpenFamilyCount::default();
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| !crate::calcit::is_bundled_core_ns(ns) && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let schema = &file.defs[def].schema;
+      if schema_annotation_is_missing(schema) {
+        continue;
+      }
+      let before = count.total();
+      schema.walk_components(&mut |annotation| {
+        if let CalcitTypeAnnotation::Fn(signature) = annotation
+          && signature.open_reason.0.is_some()
+        {
+          return false;
+        }
+        match annotation.open_family_name() {
+          Some("AnyEnum") => count.any_enum += 1,
+          Some("AnyFn") => count.any_fn += 1,
+          Some("AnyStruct") => count.any_struct += 1,
+          _ if matches!(annotation, CalcitTypeAnnotation::Dynamic) => count.dynamic += 1,
+          _ => {}
+        }
+        true
+      });
+      if count.first.is_none() && count.total() > before {
+        count.first = Some((ns.to_owned(), def.to_owned()));
+      }
+    }
+  }
+  count
+}
+
 /// A bare broad type written in a definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BroadTypeHit {
@@ -4416,6 +4501,7 @@ fn extract_def_name(items: &[Cirru]) -> Option<&str> {
 fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    open_reason: Default::default(),
     runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
@@ -5975,6 +6061,7 @@ mod tests {
   #[test]
   fn code_entry_json_round_trip_preserves_nested_function_schema() {
     let fn_schema = Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
@@ -6683,6 +6770,77 @@ mod tests {
       let decoded: CodeEntry = rmp_serde::from_slice(&encoded).expect("open family schema deserializes");
       assert_eq!(decoded.schema.open_family_name(), Some(name), "{name} survives a binary round trip");
     }
+  }
+
+  #[test]
+  fn fn_open_reason_round_trips_and_leaves_the_type_unchanged() {
+    let _guard = crate::program::lock_program_test_state();
+    let marked = parse_one("Fn AnyEnum (-> String) (:open :reflect)");
+    let canonical = crate::calcit::type_expr::desugar_type_expr(&marked).expect("compact schema desugars");
+    validate_schema_for_write(&canonical).expect("canonical open schema validates");
+    let mut bogus = canonical.clone();
+    if let Cirru::List(items) = &mut bogus
+      && let Some(Cirru::List(map)) = items.last_mut()
+      && let Some(Cirru::List(open)) = map.last_mut()
+    {
+      open[1] = Cirru::leaf(":other");
+    }
+    assert!(validate_schema_for_write(&bogus).is_err(), "unknown open reason: {bogus}");
+    let annotation = parse_schema_annotation_for_write(&marked).expect("open schema parses");
+    let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
+      panic!("expected a Fn schema, got {annotation}")
+    };
+    assert_eq!(signature.open_reason.0, Some(crate::calcit::FnOpenReason::Reflect));
+    let plain = parse_schema_annotation_for_write(&parse_one("Fn AnyEnum (-> String)")).expect("plain schema parses");
+    assert_eq!(annotation, plain, "the open reason does not change the type");
+
+    let stored = schema_annotation_to_edn(annotation.as_ref());
+    let reloaded = parse_loaded_schema_annotation(&stored, "app.main/show").expect("stored schema loads");
+    let CalcitTypeAnnotation::Fn(reloaded) = reloaded.as_ref() else {
+      panic!("expected a Fn schema")
+    };
+    assert_eq!(reloaded.open_reason.0, Some(crate::calcit::FnOpenReason::Reflect));
+    let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+    entry.schema = annotation.clone();
+    let encoded = rmp_serde::to_vec(&entry).expect("schema serializes");
+    let decoded: CodeEntry = rmp_serde::from_slice(&encoded).expect("schema deserializes");
+    let CalcitTypeAnnotation::Fn(decoded) = decoded.schema.as_ref() else {
+      panic!("expected a Fn schema")
+    };
+    assert_eq!(
+      decoded.open_reason.0,
+      Some(crate::calcit::FnOpenReason::Reflect),
+      "survives a binary round trip"
+    );
+  }
+
+  #[test]
+  fn open_family_count_skips_reviewed_signatures() {
+    let _guard = crate::program::lock_program_test_state();
+    let mut snapshot = Snapshot::default();
+    let mut defs = HashMap::new();
+    for (name, schema) in [
+      ("show", "Fn AnyEnum (-> String) (:open :reflect)"),
+      ("dispatch", "Fn AnyEnum (Fn AnyFn $ -> Dynamic) (-> Unit)"),
+      ("plain", "Fn Number (-> String)"),
+    ] {
+      let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+      entry.schema = parse_schema_annotation_for_write(&parse_one(schema)).expect("schema parses");
+      defs.insert(name.to_owned(), entry);
+    }
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      FileInSnapShot {
+        ns: NsEntry {
+          doc: String::new(),
+          code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+        },
+        defs,
+      },
+    );
+    let count = collect_open_family_count(&snapshot, &HashSet::from(["app.main".to_owned()]));
+    assert_eq!((count.any_enum, count.any_fn, count.any_struct, count.dynamic), (1, 1, 0, 1));
+    assert_eq!(count.first, Some(("app.main".to_owned(), "dispatch".to_owned())));
   }
 
   #[test]
@@ -7537,6 +7695,7 @@ mod tests {
     for schema in [
       DYNAMIC_TYPE.clone(),
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -7584,6 +7743,7 @@ mod tests {
       tags: HashSet::new(),
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: std::sync::Arc::new(vec![]),
         where_bounds: std::sync::Arc::new(vec![]),

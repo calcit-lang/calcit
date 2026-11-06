@@ -89,6 +89,7 @@ where
       resolve_trait_bound,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: signature.runtime_arity,
       generics: signature.generics.clone(),
       where_bounds: map_bounds(&signature.where_bounds),

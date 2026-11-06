@@ -993,6 +993,7 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
   push_type_slot_spelling_advisories(&type_slot_spelling_hits, snapshot.active_entry_name());
+  record_open_family_summary(&snapshot, &project_namespaces);
   reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
@@ -2088,6 +2089,29 @@ fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
   }
 }
 
+/// The `W_OPEN_FAMILY` summary for the loaded project, printed once after the
+/// Notes of a plain `--check-only`. It is not an advisory, so it never changes
+/// note counts or structured reports.
+static OPEN_FAMILY_SUMMARY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn record_open_family_summary(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  let count = snapshot::collect_open_family_count(snapshot, project_namespaces);
+  let summary = count.first.as_ref().map(|(ns, def)| {
+    format!(
+      "[{}] {} (first at {ns}/{def})\n  hint: write a concrete type, or mark a reviewed signature with `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+      snapshot::OPEN_FAMILY_WARNING,
+      count.message()
+    )
+  });
+  *OPEN_FAMILY_SUMMARY.lock().expect("lock open family summary") = summary;
+}
+
+fn print_open_family_summary() {
+  if let Some(summary) = OPEN_FAMILY_SUMMARY.lock().expect("lock open family summary").as_ref() {
+    eprintln!("\n{} {summary}", "Open types:".dimmed());
+  }
+}
+
 /// Quoted type names in `defstruct` / `defenum` / `defunion` were removed in
 /// 0.35.0 (#2516). Loading a Snapshot file already rejects them; this covers
 /// code that skips that check, such as `eval` snippets.
@@ -2195,6 +2219,9 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   if emit_output && !advisories.is_empty() {
     eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
     LocatedWarning::print_list(&advisories);
+  }
+  if emit_output {
+    print_open_family_summary();
   }
 
   let duration = Instant::now().duration_since(started_time);
@@ -2616,6 +2643,7 @@ fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
 
 fn generated_zero_arg_fn_schema(return_type: Arc<CalcitTypeAnnotation>, features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    open_reason: Default::default(),
     runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
@@ -2932,6 +2960,7 @@ mod tests {
       None
     };
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -2966,6 +2995,7 @@ mod tests {
       ))
     }));
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -2992,6 +3022,7 @@ mod tests {
   #[test]
   fn type_coverage_uses_schema_for_fn_value_payloads() {
     let schema = CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -3522,6 +3553,7 @@ mod tests {
     let entry = code_entry(
       list(vec![leaf("defn"), leaf("dispatch!"), list(vec![leaf("op")]), leaf("op")]),
       CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -3602,6 +3634,7 @@ mod tests {
         list(vec![leaf("unsafe-coerce"), leaf("js/nanoid"), leaf("'String")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -3759,6 +3792,7 @@ mod tests {
   fn analyze_weak_types_marks_decode_boundary_inputs() {
     let fn_schema = |return_type: Arc<CalcitTypeAnnotation>| {
       CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -3827,6 +3861,7 @@ mod tests {
         leaf("nil"),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -3896,6 +3931,7 @@ mod tests {
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("demo"), list(vec![leaf("value")]), leaf("nil")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -4047,6 +4083,7 @@ mod tests {
         list(vec![leaf("if"), leaf("flag"), leaf("nil"), leaf("nil")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -4083,6 +4120,7 @@ mod tests {
         list(vec![leaf("do"), leaf("nil"), leaf("nil")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -4214,6 +4252,7 @@ mod tests {
       tags: std::collections::HashSet::new(),
       code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -4225,6 +4264,7 @@ mod tests {
         fn_kind: SchemaKind::Fn,
         rest_type: Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(
           calcit::calcit::CalcitFnTypeAnnotation {
+            open_reason: Default::default(),
             runtime_arity: None,
             generics: Arc::new(vec![]),
             where_bounds: Arc::new(vec![]),

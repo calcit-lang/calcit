@@ -11,7 +11,7 @@
 //! ```text
 //! type    := Name | Slot | (Name type+) | fn
 //! fn      := (Fn param* [& type] (-> type) clause*)
-//! clause  := (:generics Var+) | (:where (Var Trait+)+) | (:async) | (:features tag+)
+//! clause  := (:generics Var+) | (:where (Var Trait+)+) | (:async) | (:features tag+) | (:open reason)
 //! ```
 //!
 //! Unqualified names and type variables start with an uppercase letter.
@@ -347,6 +347,7 @@ struct FnParts {
   where_bounds: Option<Vec<(String, Vec<String>)>>,
   is_async: bool,
   features: Option<Vec<Cirru>>,
+  open: Option<Cirru>,
 }
 
 /// Clause heads come either from `->` or from a tag. Anything else is a parameter.
@@ -467,6 +468,21 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
         }
         parts.features = Some(tags);
       }
+      ":open" if kind == Kind::Fn => {
+        if parts.open.is_some() {
+          return Err(String::from("duplicate `:open` clause in `Fn`"));
+        }
+        match body {
+          [Cirru::Leaf(reason)] if crate::calcit::FnOpenReason::parse(reason).is_some() && reason.starts_with(':') => {
+            parts.open = Some(body[0].to_owned());
+          }
+          _ => {
+            return Err(String::from(
+              "`:open` takes one reason: `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+            ));
+          }
+        }
+      }
       ":optional" if kind == Kind::Macro => {
         if parts.optional.is_some() {
           return Err(String::from("duplicate `:optional` clause in `Macro`"));
@@ -493,7 +509,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
       "->" => {}
       _ => {
         return Err(match kind {
-          Kind::Fn => format!("unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async` or `:features`"),
+          Kind::Fn => {
+            format!("unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async`, `:features` or `:open`")
+          }
           Kind::Macro => format!(
             "unknown `Macro` clause `{head}`; expected `(-> T)`, `:optional`, `:capabilities`, `:generics`, `:where` or `:features`"
           ),
@@ -627,6 +645,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
     set.extend(tags);
     map.push(Cirru::List(vec![Cirru::leaf(":features"), Cirru::List(set)]));
   }
+  if let Some(reason) = parts.open {
+    map.push(Cirru::List(vec![Cirru::leaf(":open"), reason]));
+  }
   Ok(Cirru::List(vec![Cirru::leaf("::"), quoted(kind_name), Cirru::List(map)]))
 }
 
@@ -722,6 +743,12 @@ fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
   print_shared_clauses(&get, &mut out)?;
   if matches!(get("async"), Some(Edn::Bool(true))) {
     out.push(Cirru::List(vec![Cirru::leaf(":async")]));
+  }
+  if let Some(Edn::Tag(reason)) = get("open") {
+    out.push(Cirru::List(vec![
+      Cirru::leaf(":open"),
+      Cirru::Leaf(format!(":{}", reason.ref_str()).into()),
+    ]));
   }
   Ok(Cirru::List(out))
 }
@@ -875,6 +902,19 @@ mod tests {
     assert!(!is_compact_payload(&parse_one("{} (:args $ [])")));
     assert!(!is_compact_payload(&Cirru::leaf("Number")));
     assert!(!is_compact_payload(&parse_one("f x")));
+  }
+
+  #[test]
+  fn open_reason_round_trips_through_compact_syntax() {
+    let compact = parse_one("Fn AnyEnum (-> String) (:open :reflect)");
+    let desugared = desugar_type_expr(&compact).expect("desugar");
+    let edn = crate::snapshot::schema_cirru_to_edn(desugared);
+    let Edn::Enum(_) = &edn else {
+      panic!("expected a Fn enum value: {edn}")
+    };
+    assert_eq!(print_type_compact(&edn).expect("print"), compact);
+    assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :other)")).is_err());
+    assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :reflect) (:open :host)")).is_err());
   }
 
   #[test]
