@@ -696,6 +696,15 @@ where
       proof.result(&variable).map(|resolved| (name.clone(), resolved))
     })
     .collect();
+  // A later argument may name a wider type, such as a union, that accepts an
+  // earlier narrower one; start from that common bound instead of letting
+  // the first argument fix the variable (#2608). Argument proof below still
+  // checks variance and invariant references.
+  for name in ctx.generics {
+    if let Some(widened) = proof.widened_input_binding(name) {
+      bindings.insert(name.clone(), widened);
+    }
+  }
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
@@ -1072,7 +1081,7 @@ pub(crate) fn check_proc_arg_types(
 
   // Parameter omission is represented by Proc arity metadata. A nil-joined
   // T? remains a value type here and must accept either T or nil.
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  let mut bindings = proc_widened_peer_bindings(proc, args, &expected_types, scope_types);
 
   for (idx, (arg, expected_type)) in args.iter().zip(expected_types.iter()).enumerate() {
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
@@ -1138,6 +1147,51 @@ pub(crate) fn check_proc_arg_types(
       );
     }
   }
+}
+
+/// Proc signatures name their type variables implicitly. As for function
+/// calls, a later argument of a wider type (such as `Map Tag Scalar` after
+/// `Map Tag Number` for `&merge`) sets the variable to that common bound
+/// instead of the first argument fixing it (#2608). Only bounds that accept
+/// every argument's evidence are used; anything else keeps first-binding order.
+fn proc_widened_peer_bindings(
+  proc: &CalcitProc,
+  args: &CalcitList,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+  scope_types: &ScopeTypes,
+) -> HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> {
+  let generics = crate::calcit::type_annotation::free_type_variable_names(expected_types);
+  if generics.is_empty() {
+    return HashMap::new();
+  }
+  let checks_variadic = proc.checks_variadic_arg_types();
+  let mut pairs = vec![];
+  for (idx, arg) in args.iter().enumerate() {
+    let expected = match expected_types.get(idx).or_else(|| expected_types.last()) {
+      Some(expected) => match expected.as_ref() {
+        CalcitTypeAnnotation::Variadic(inner) if checks_variadic => inner.clone(),
+        CalcitTypeAnnotation::Variadic(_) => break,
+        _ if idx >= expected_types.len() => break,
+        _ => expected.clone(),
+      },
+      None => break,
+    };
+    let Some(actual) = resolve_type_value(arg, scope_types) else {
+      continue;
+    };
+    pairs.push((arg, actual, expected));
+  }
+  let actual_context = pairs.iter().map(|(_, actual, _)| actual.clone()).collect::<Vec<_>>();
+  let mut proof = scope_types.call_type_proof(&generics, expected_types, &actual_context);
+  proof.prepare_inputs(
+    pairs
+      .iter()
+      .filter_map(|(arg, actual, expected)| super::type_inference::generic_input_evidence(arg, actual, expected)),
+  );
+  generics
+    .iter()
+    .filter_map(|name| proof.widened_input_binding(name).map(|bound| (name.clone(), bound)))
+    .collect()
 }
 
 /// Check core arithmetic fn arguments (hardcoded :number for +, -, *, /).

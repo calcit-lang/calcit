@@ -430,6 +430,9 @@ pub(crate) struct CallTypeProof {
   bindings: TypeBindings,
   fresh_names: HashSet<Arc<str>>,
   unresolved_inputs: HashSet<Arc<str>>,
+  /// Fresh variables whose prepared binding is a peer upper bound strictly
+  /// wider than some contributor, such as `Scalar` from `Number` and `Scalar`.
+  widened_inputs: HashSet<Arc<str>>,
   caller_capabilities: Option<Arc<TypeBindings>>,
 }
 
@@ -541,6 +544,7 @@ impl CallTypeProof {
       bindings: TypeBindings::new(),
       fresh_names,
       unresolved_inputs: HashSet::new(),
+      widened_inputs: HashSet::new(),
       caller_capabilities: None,
     }
   }
@@ -601,6 +605,9 @@ impl CallTypeProof {
         }
       }
       if evidence.iter().all(|actual| rigidly_proves(actual, &candidate)) {
+        if evidence.iter().any(|actual| !rigidly_proves(&candidate, actual)) {
+          self.widened_inputs.insert(name.clone());
+        }
         self.bindings.insert(name, candidate);
       } else {
         // Keep unrelated projections available, but no later speculative
@@ -827,6 +834,19 @@ impl CallTypeProof {
       staged.remove(&caller);
       staged.insert(fresh, caller_type);
     }
+  }
+
+  /// The prepared binding of a callee generic when peer inputs widened it
+  /// past an earlier, narrower argument (#2608). Argument-order checks seed
+  /// it so the first argument does not fix the variable to its own type.
+  pub(crate) fn widened_input_binding(&self, name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+    let CalcitTypeAnnotation::TypeVar(fresh) = self.renaming.get(name)?.as_ref() else {
+      return None;
+    };
+    if !self.widened_inputs.contains(fresh) || self.unresolved_inputs.contains(fresh) {
+      return None;
+    }
+    self.bindings.get(fresh).cloned()
   }
 
   pub(crate) fn result(&self, expected: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {

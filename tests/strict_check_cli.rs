@@ -969,6 +969,14 @@ fn edit_definition(snapshot: &Path, name: &str, code: &str, overwrite: bool) {
   assert_success(&run_calcit(snapshot, &args), "edit definition");
 }
 
+fn set_schema(snapshot: &Path, name: &str, code: &str) {
+  let target = format!("app.main/{name}");
+  assert_success(
+    &run_calcit(snapshot, &["edit", "schema", target.as_str(), "--code", code]),
+    "edit schema",
+  );
+}
+
 fn edit_schema(snapshot: &Path, name: &str, return_type: &str) {
   let target = format!("app.main/{name}");
   let code = format!("quote $ Fn (-> {return_type})");
@@ -1851,6 +1859,69 @@ fn referred_union_short_name_is_the_declared_type() {
   fs::copy("tests/fixtures/referred-union-name.cirru", &snapshot).unwrap();
   for args in [vec!["--check-only"], vec!["--check-only", "--all-defs"]] {
     assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
+  }
+}
+
+#[test]
+fn later_union_argument_widens_generic_binding() {
+  // #2608: a later `Map Tag Scalar` sets the shared variable to the union,
+  // so a narrower first literal is accepted in either argument order.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(&snapshot, "Scalar", "quote $ defunion Scalar Number String", false);
+  edit_definition(
+    &snapshot,
+    "merge-maps",
+    "quote $ defn merge-maps (left right) (hint-fn $ Fn (Map Tag V) (Map Tag V) (-> (Map Tag V)) (:generics V)) (&merge left right)",
+    false,
+  );
+  set_schema(
+    &snapshot,
+    "merge-maps",
+    "quote $ Fn (Map Tag V) (Map Tag V) (-> (Map Tag V)) (:generics V)",
+  );
+  edit_definition(
+    &snapshot,
+    "same-ref",
+    "quote $ defn same-ref (a b) (hint-fn $ Fn (Ref V) (Ref V) (-> Bool) (:generics V)) (identical? a b)",
+    false,
+  );
+  set_schema(&snapshot, "same-ref", "quote $ Fn (Ref V) (Ref V) (-> Bool) (:generics V)");
+  let body = |calls: &str| {
+    format!(
+      "quote $ defn main! () (hint-fn $ Fn (-> Unit)) (let ((overrides $ assert-type ({{}} (:color |red)) (Map Tag app.main/Scalar)) (words $ assert-type ({{}} (:a |x)) (Map Tag String)) (r1 $ assert-type (ref 1) (Ref Number)) (r2 $ assert-type (ref 2) (Ref app.main/Scalar))) {calls} &unit)"
+    )
+  };
+  edit_definition(&snapshot, "reload!", "quote $ defn reload! () &unit", true);
+  edit_schema(&snapshot, "reload!", "Unit");
+  let check = |calls: &str| {
+    edit_definition(&snapshot, "main!", &body(calls), true);
+    edit_schema(&snapshot, "main!", "Unit");
+    run_calcit(&snapshot, &["--check-only"])
+  };
+
+  for calls in [
+    "(merge-maps ({} (:width 10)) overrides) (merge-maps overrides ({} (:width 10)))",
+    "(&merge ({} (:width 10)) overrides) (&merge overrides ({} (:width 10)))",
+  ] {
+    assert_success(&check(calls), calls);
+  }
+
+  // Real mismatches and invariant references are still refused.
+  for (calls, code, detail) in [
+    ("(merge-maps ({} (:width 10)) words)", "W_FN_ARG_TYPE_MISMATCH", "map<tag, string>"),
+    (
+      "(&merge ({} (:width 10)) words)",
+      "W_PROC_ARG_TYPE_MISMATCH",
+      "in call at app.main/main!",
+    ),
+    ("(same-ref r1 r2)", "W_FN_ARG_TYPE_MISMATCH", "ref<"),
+  ] {
+    let output = check(calls);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{calls} must fail");
+    assert!(stderr.contains(code) && stderr.contains(detail), "{calls} stderr:\n{stderr}");
   }
 }
 
