@@ -161,6 +161,17 @@ quote $ Fn T (-> String)
 
 Do not use the old tuple form like `:where $ [] (:: 'Show 'T)`.
 
+### Family bounds: any named enum or struct
+
+When a helper works for every enum (or every struct) but the caller's concrete type must flow through, bound a type variable by the family instead of taking `AnyEnum` / `AnyStruct` directly:
+
+```cirru.no-run
+quote $ Fn T T (-> Number) (:generics T)
+  :where $ T AnyEnum
+```
+
+At a call site `T` must bind to a named enum (or, for `AnyStruct`, a named struct). `Dynamic`, the open family type itself, a plain value such as `Number`, or a member of the other family are reported as `W_GENERIC_WHERE_BOUND_MISMATCH`; decode or narrow the value to a concrete type first. Inside the body, a value of type `T` may be passed wherever the family is expected, for example to a reflection helper typed `Fn AnyEnum (-> Number) (:open :reflect)`. The result keeps the caller's type, so `same-enum (%:: Color :red)` is still a `Color`.
+
 ## Keep polymorphic relationships visible
 
 `Dynamic` means that static checking has stopped at that slot. Repeating it in an argument and return position does not say that both positions have the same type:
