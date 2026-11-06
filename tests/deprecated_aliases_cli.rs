@@ -278,6 +278,28 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   collect_codes(&strict_report["data"]["definitions"], &mut codes);
   assert!(!codes.is_empty(), "the kept erasures should be reported as errors");
   assert!(codes.iter().all(|code| code == "E_OPTION_ERASED_TO_NIL"), "{codes:?}");
+  let failed = strict_report["data"]["definitions"]
+    .as_array()
+    .expect("definitions array")
+    .iter()
+    .filter(|item| item["status"] == "failed")
+    .map(|item| item["definition"].as_str().unwrap())
+    .collect::<std::collections::BTreeSet<_>>();
+  // Exactly the erasing definitions fail; the non-erasing ones (and the
+  // `nil-macro-match` replay, which package.json runs on native and JS) pass.
+  assert_eq!(
+    failed,
+    std::collections::BTreeSet::from([
+      "app.other/unwrap-value",
+      "app.roundtrip/match-value",
+      "app.roundtrip/nil-macro-prefix",
+      "app.roundtrip/nil-macro-receiver",
+      "app.roundtrip/read-field",
+      "app.roundtrip/reader-value",
+      "app.roundtrip/threaded-value",
+      "app.roundtrip/unwrap-value",
+    ])
+  );
   let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
   assert!(notes.is_empty(), "{notes:?}");
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
