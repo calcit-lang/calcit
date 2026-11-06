@@ -2422,7 +2422,7 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
 
   mark_async_callable(
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      open_reason: Default::default(),
+      open_reason: fn_annotation.open_reason,
       runtime_arity,
       generics: fn_annotation.generics.clone(),
       where_bounds: fn_annotation.where_bounds.clone(),

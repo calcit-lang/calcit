@@ -1056,7 +1056,8 @@ fn run_cli() -> Result<(), String> {
         .then(|| strict_check::AllDefsScope::from_snapshot(&snapshot, &project_namespaces));
       strict_check::run(&entries, &cli_args.format, all_defs_scope.as_ref())
     } else {
-      run_check_only(&entries)
+      // Only the plain check-only report carries the open-type summary.
+      run_check_only(&entries).inspect(|_| print_open_family_summary())
     }
   } else if let Some(CalcitCommand::Fix(fix_options)) = &cli_args.subcommand {
     eval_once = true;
@@ -2089,8 +2090,8 @@ fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
   }
 }
 
-/// The `W_OPEN_FAMILY` summary for the loaded project, printed once after the
-/// Notes of a plain `--check-only`. It is not an advisory, so it never changes
+/// The `W_OPEN_FAMILY` summary for the loaded project, printed once after a
+/// plain `--check-only` passes. It is not an advisory, so it never changes
 /// note counts or structured reports.
 static OPEN_FAMILY_SUMMARY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
@@ -2220,10 +2221,6 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
     eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
     LocatedWarning::print_list(&advisories);
   }
-  if emit_output {
-    print_open_family_summary();
-  }
-
   let duration = Instant::now().duration_since(started_time);
   if emit_output {
     println!(

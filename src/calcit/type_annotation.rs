@@ -4618,7 +4618,7 @@ impl CalcitTypeAnnotation {
           let return_type = children.remove(0);
           let rest_type = has_rest.then(|| children.remove(0));
           values.push(Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
-            open_reason: Default::default(),
+            open_reason: signature.open_reason,
             runtime_arity: signature.runtime_arity,
             generics: signature.generics.clone(),
             where_bounds: signature.where_bounds.clone(),
@@ -11085,7 +11085,7 @@ pub struct CalcitFnTypeAnnotation {
   /// Schema-only signatures derive their range from fixed/rest/Option slots.
   pub runtime_arity: Option<super::ProcArity>,
   /// Reviewed reason why this signature keeps open types (`(:open :reflect)`).
-  /// It documents intent for open-type accounting and never changes the type.
+  /// It documents intent for open-type accounting; type relations ignore it.
   pub open_reason: FnOpenReasonNote,
 }
 
@@ -11120,18 +11120,12 @@ impl FnOpenReason {
   }
 }
 
-/// The open reason of a signature. Two signatures that differ only here are
-/// the same type, so equality, ordering and hashing ignore it.
-#[derive(Debug, Clone, Copy, Default)]
+/// The open reason of a signature. It is schema metadata: it compares and
+/// persists like the rest of the schema, but type relations never read it and
+/// `CalcitFnTypeAnnotation`'s `Hash` leaves it out, so caches keyed by a type
+/// are shared between marked and unmarked signatures.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FnOpenReasonNote(pub Option<FnOpenReason>);
-
-impl PartialEq for FnOpenReasonNote {
-  fn eq(&self, _other: &Self) -> bool {
-    true
-  }
-}
-
-impl Eq for FnOpenReasonNote {}
 
 impl PartialOrd for CalcitFnTypeAnnotation {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -11161,6 +11155,7 @@ impl Ord for CalcitFnTypeAnnotation {
         right.sort_unstable();
         left.cmp(&right)
       })
+      .then_with(|| self.open_reason.cmp(&other.open_reason))
   }
 }
 

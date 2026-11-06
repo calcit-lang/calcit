@@ -6792,7 +6792,11 @@ mod tests {
     };
     assert_eq!(signature.open_reason.0, Some(crate::calcit::FnOpenReason::Reflect));
     let plain = parse_schema_annotation_for_write(&parse_one("Fn AnyEnum (-> String)")).expect("plain schema parses");
-    assert_eq!(annotation, plain, "the open reason does not change the type");
+    assert!(
+      annotation.is_proven_for(&plain) && plain.is_proven_for(&annotation),
+      "the open reason does not change the type relation"
+    );
+    assert_ne!(annotation, plain, "the open reason is part of the persisted schema");
 
     let stored = schema_annotation_to_edn(annotation.as_ref());
     let reloaded = parse_loaded_schema_annotation(&stored, "app.main/show").expect("stored schema loads");
