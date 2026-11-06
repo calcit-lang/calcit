@@ -390,7 +390,7 @@
         'first-rest-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn first-rest-value (label & values) (first values)
           :examples $ []
-          :schema $ quote $ Fn String & String
+          :schema $ quote $ Fn String (& String)
             -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |no-rest)
@@ -622,7 +622,7 @@
               :generics $ [] 'T 'U
             , others
           :examples $ []
-          :schema $ quote $ Fn C & D
+          :schema $ quote $ Fn C (& D)
             -> $ List D
             :generics D C
           :tests $ []

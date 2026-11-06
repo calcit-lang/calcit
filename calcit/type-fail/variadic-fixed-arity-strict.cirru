@@ -53,27 +53,27 @@
           :code $ quote $ defn needs-lead-and-rest (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn Number & Number $ -> Number
+            Fn Number (& Number) (-> Number)
             -> Unit
         'needs-number-rest $ %{} 'CodeEntry
           :doc "|Slot that may call its callback with any number of Number values."
           :code $ quote $ defn needs-number-rest (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn & Number $ -> Number
+            Fn (& Number) (-> Number)
             -> Unit
         'needs-open-rest-callback $ %{} 'CodeEntry (:doc "|Rest slot that may pass any values.")
           :code $ quote $ defn needs-open-rest-callback (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn & Dynamic $ -> Unit
+            Fn (& Dynamic) (-> Unit)
             -> Unit
         'needs-pair-and-rest $ %{} 'CodeEntry
           :doc "|Slot that always passes two Number values, then any number more."
           :code $ quote $ defn needs-pair-and-rest (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn Number Number & Number $ -> Number
+            Fn Number Number (& Number) (-> Number)
             -> Unit
         'negate $ %{} 'CodeEntry (:doc "|Takes exactly one Number value.")
           :code $ quote $ defn negate (a) (&- 0 a)

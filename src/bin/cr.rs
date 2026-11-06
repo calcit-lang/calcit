@@ -793,6 +793,7 @@ fn run_cli() -> Result<(), String> {
 
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
   let mut type_slot_spelling_hits: Vec<String> = vec![];
+  let mut fn_rest_spelling_hits: Vec<(String, String)> = vec![];
   let mut project_namespaces: HashSet<String> = HashSet::new();
 
   if cli_args.disable_stack {
@@ -900,6 +901,7 @@ fn run_cli() -> Result<(), String> {
 
     snapshot.select_entry(cli_args.entry.as_deref())?;
     type_slot_spelling_hits = snapshot::collect_type_slot_spelling_hits(&data, snapshot.active_entry_name());
+    fn_rest_spelling_hits = snapshot::collect_fn_rest_spelling_hits(&data);
     if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
       println!("running entry: {}", snapshot.active_entry_name());
     }
@@ -993,6 +995,7 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_project_namespaces(&project_namespaces);
   push_broad_type_advisories(&snapshot, &project_namespaces);
   push_type_slot_spelling_advisories(&type_slot_spelling_hits, snapshot.active_entry_name());
+  push_fn_rest_spelling_advisory(&fn_rest_spelling_hits);
   record_open_family_summary(&snapshot, &project_namespaces);
   reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
@@ -2075,6 +2078,21 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
 
 /// String-valued type-slot bindings are a legacy spelling; the symbol form
 /// names the type the way schemas do. `edit format` rewrites them.
+/// One advisory for all schemas still written with the bare `& T` rest spelling,
+/// located at the first one, so a large library does not flood the notes.
+fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
+  let Some((ns, def)) = hits.first() else { return };
+  runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
+    format!(
+      "{} schema(s) write the rest type as a bare `& T`; write it as the group `(& T)`, such as `Fn Number (& Number) (-> Number)` (first at {ns}/{def})",
+      hits.len()
+    ),
+    calcit::calcit::NodeLocation::new(Arc::from(ns.as_str()), Arc::from(def.as_str()), Arc::new(vec![])),
+    Some(snapshot::FN_REST_SPELLING_WARNING.to_owned()),
+    Some("run `calcit edit format` to rewrite schemas with the `(& T)` rest group".to_owned()),
+  ));
+}
+
 fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
   for hit in hits {
     runner::preprocess::push_advisory(LocatedWarning::new_with_detail(

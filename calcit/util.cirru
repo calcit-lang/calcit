@@ -17,7 +17,7 @@
               quasiquote $ do (println "|env: eval") ~@body
               quasiquote $ do $ println "|env: not eval. tests skipped"
           :examples $ []
-          :schema $ quote $ Macro & Syntax
+          :schema $ quote $ Macro (& Syntax)
             -> $ Expr Dynamic
             :capabilities :platform-read
         'inside-js: $ %{} 'CodeEntry (:doc |)
@@ -27,7 +27,7 @@
               quasiquote $ do (println "|env: js") ~@body
               quasiquote $ do $ println "|env: not js. tests skipped"
           :examples $ []
-          :schema $ quote $ Macro & Syntax
+          :schema $ quote $ Macro (& Syntax)
             -> $ Expr Dynamic
             :capabilities :platform-read
         'log-title $ %{} 'CodeEntry (:doc |)

@@ -134,7 +134,7 @@ let
       + a b
     ; Local variadic function
     sum $ fn (& xs)
-      hint-fn $ Fn & Number (-> Number)
+      hint-fn $ Fn (& Number) (-> Number)
       apply + xs
     ; Struct definition
     User $ defstruct User (:name String) (:age Number) (:email String)

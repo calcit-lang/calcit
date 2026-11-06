@@ -34,7 +34,7 @@
                   let[] ~args ~args-var $ let[] ~params ~params-var $ ~
                     quasiquote $ do ~@body
           :examples $ []
-          :schema $ quote $ Macro SyntaxSymbol SyntaxList SyntaxList & Syntax
+          :schema $ quote $ Macro SyntaxSymbol SyntaxList SyntaxList (& Syntax)
             -> $ Definition Fn
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns defprobe.macros

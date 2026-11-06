@@ -254,7 +254,9 @@
         'count-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-rest (first-style & more) (count more)
           :examples $ []
-          :schema $ quote $ Fn (Map Tag Dynamic) & (Map Tag Dynamic) (-> Number)
+          :schema $ quote $ Fn (Map Tag Dynamic)
+            & $ Map Tag Dynamic
+            -> Number
         'count-style $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-style (style) (count style)
           :examples $ []
@@ -3429,7 +3431,7 @@
         'sum-tail $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-tail (first-value & values) (foldl values first-value +)
           :examples $ []
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |known-rest-alias-keeps-arity-spread-and-order)
             :code $ quote $ let
                 total sum-tail

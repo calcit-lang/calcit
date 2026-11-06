@@ -1291,7 +1291,7 @@ mod tests {
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |f $ %{} :CodeEntry (:schema $ quote $ Fn & Dynamic (-> $ List Dynamic))
+        |f $ %{} :CodeEntry (:schema $ quote $ Fn (& Dynamic) (-> $ List Dynamic))
           :code $ quote (defn f (x) x)
       :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
 "#;

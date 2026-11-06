@@ -42,7 +42,7 @@
         'rest-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro rest-id (value & ignored) value
           :examples $ []
-          :schema $ quote $ Macro Syntax & Syntax
+          :schema $ quote $ Macro Syntax (& Syntax)
             -> $ Expr Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

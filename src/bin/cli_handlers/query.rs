@@ -1440,7 +1440,7 @@ mod type_query_tests {
     let annotation = snapshot::parse_schema_annotation_for_write(&schema).expect("strict macro schema");
 
     let displayed = format_query_schema(annotation.as_ref(), true);
-    assert_eq!(displayed, "Macro SyntaxList & Syntax $ -> $ Expr Dynamic");
+    assert_eq!(displayed, "Macro SyntaxList (& Syntax)\n  -> $ Expr Dynamic");
     assert_eq!(
       context_schema(annotation.as_ref()).expect("context schema"),
       Some(displayed.trim().to_owned())

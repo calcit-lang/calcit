@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.36.x 变长参数写成 `(& T)` 分组（#2612）
+
+`Fn` / `Macro` 的 rest 参数改为分组写法：`Fn Number (& Number) (-> Number)`，取代 `Fn Number & Number (-> Number)`。旧写法仍能读取，含义不变；Snapshot 里的 `:schema` 还用旧写法时，检查会报一条 `W_FN_REST_SPELLING` Notes，给出数量和第一处位置。运行 `calcit edit format` 会把 schema 改写成 `(& T)`。函数体里 `hint-fn` 的旧写法照常读取，`edit format` 不会改写函数体，需要时手工改。
+
+同一版本起，固定元数函数也可以传给变长参数的函数类型：`fn(Number, Number) -> Number` 满足 `Fn (& Number) (-> Number)`，见 [静态分析](../features/static-analysis.md)。
+
 ## 0.36.x 族约束泛型 `:where (T AnyEnum)` / `(T AnyStruct)`（#2611）
 
 只做反射、又要把调用方的具体类型带回去的函数，可以把 `Fn AnyEnum (-> AnyEnum)` 改成 `Fn T (-> T) (:generics T)` 加 `:where $ T AnyEnum`。调用点必须传具名 enum（`AnyStruct` 则是具名 struct）；传 `Dynamic`、族类型本身、普通值或另一族的成员会报 `W_GENERIC_WHERE_BOUND_MISMATCH`，提示先解码或收窄成具体类型。函数体内 `T` 的值可以继续传给写 `AnyEnum` 的反射函数。旧写法仍可用，这一项是可选迁移。

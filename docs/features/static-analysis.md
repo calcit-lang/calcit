@@ -609,14 +609,14 @@ Represent variable arguments in `&` parameters:
 ```cirru
 let
     sum $ fn (& xs)
-      hint-fn $ Fn & Number (-> Number)
+      hint-fn $ Fn (& Number) (-> Number)
       .fold xs 0 &+
   sum 1 2 3
 ```
 
 A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant.
 
-The reverse also holds (#2612): a fixed-arity function can satisfy a variadic callback when it takes every fixed argument of the callback and each of its extra parameters accepts the rest element type. For example `fn(Number, Number) -> Number` fits `Fn & Number (-> Number)`. How many rest values a call actually supplies, for example through `apply`, is only known at run time, so a call with the wrong count still fails with a runtime arity error; cover such callbacks with `:tests`. Prefer a concrete rest element such as `& Number`; `& Dynamic` is counted by `W_OPEN_FAMILY` like any other `Dynamic`.
+The reverse also holds (#2612): a fixed-arity function can satisfy a variadic callback when it takes every fixed argument of the callback and each of its extra parameters accepts the rest element type. For example `fn(Number, Number) -> Number` fits `Fn (& Number) (-> Number)`. How many rest values a call actually supplies, for example through `apply`, is only known at run time, so a call with the wrong count still fails with a runtime arity error; cover such callbacks with `:tests`. Prefer a concrete rest element such as `(& Number)`; `(& Dynamic)` is counted by `W_OPEN_FAMILY` like any other `Dynamic`.
 
 Write `Dynamic` for an open type. Schema serialization, generated metadata, type queries, and diagnostics all use `Dynamic`.
 
@@ -893,7 +893,7 @@ defn sum (& numbers) (.fold numbers 0 +)
 Schema on the namespace definition:
 
 ```cirru
-quote $ Fn & Number (-> Number)
+quote $ Fn (& Number) (-> Number)
 ```
 
 ## Function Types

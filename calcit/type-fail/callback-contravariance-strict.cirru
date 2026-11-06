@@ -65,7 +65,7 @@
           :code $ quote $ defn needs-open-rest-callback (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn & Dynamic $ -> Unit
+            Fn (& Dynamic) (-> Unit)
             -> Unit
         'needs-path-callback $ %{} 'CodeEntry
           :doc "|Callback slot that will only be invoked with FsPath."
@@ -79,7 +79,7 @@
           :code $ quote $ defn needs-path-rest-callback (f) &unit
           :examples $ []
           :schema $ quote $ Fn
-            Fn & FsPath $ -> Unit
+            Fn (& FsPath) (-> Unit)
             -> Unit
         'needs-path-result $ %{} 'CodeEntry (:doc "|Callback slot whose result is used as FsPath.")
           :code $ quote $ defn needs-path-result (f) &unit
@@ -99,7 +99,7 @@
         'open-rest-callback $ %{} 'CodeEntry (:doc "|Accepts any number of values of any type.")
           :code $ quote $ defn open-rest-callback (& values) &unit
           :examples $ []
-          :schema $ quote $ Fn & Dynamic (-> Unit)
+          :schema $ quote $ Fn (& Dynamic) (-> Unit)
         'open-result $ %{} 'CodeEntry
           :doc "|Returns its input as Dynamic, erasing the nominal result."
           :code $ quote $ defn open-result (path) path
@@ -112,7 +112,7 @@
         'path-rest-callback $ %{} 'CodeEntry (:doc "|Accepts any number of FsPath values only.")
           :code $ quote $ defn path-rest-callback (& paths) &unit
           :examples $ []
-          :schema $ quote $ Fn & FsPath (-> Unit)
+          :schema $ quote $ Fn (& FsPath) (-> Unit)
         'reject-nominal-callback $ %{} 'CodeEntry
           :doc "|A FsPath-only callback must not serve a slot that passes Dynamic values."
           :code $ quote $ defn reject-nominal-callback () (needs-open-callback path-callback)
