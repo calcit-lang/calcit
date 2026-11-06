@@ -436,6 +436,29 @@ pub(crate) struct CallTypeProof {
   caller_capabilities: Option<Arc<TypeBindings>>,
 }
 
+/// Whether `Dynamic` (or an untyped callable) appears anywhere in the type.
+fn mentions_dynamic(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::TypeRef(_, args)
+    | CalcitTypeAnnotation::Struct(_, args)
+    | CalcitTypeAnnotation::Enum(_, args)
+    | CalcitTypeAnnotation::Tuple(args) => args.iter().any(|arg| mentions_dynamic(arg)),
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _)
+    | CalcitTypeAnnotation::Variadic(inner) => mentions_dynamic(inner),
+    CalcitTypeAnnotation::Map(key, value) => mentions_dynamic(key) || mentions_dynamic(value),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| mentions_dynamic(arg))
+        || mentions_dynamic(&signature.return_type)
+        || signature.rest_type.as_deref().is_some_and(mentions_dynamic)
+    }
+    _ => false,
+  }
+}
+
 fn type_variable_names(types: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
   collect_type_variable_names(types, false)
 }
@@ -605,7 +628,9 @@ impl CallTypeProof {
         }
       }
       if evidence.iter().all(|actual| rigidly_proves(actual, &candidate)) {
-        if evidence.iter().any(|actual| !rigidly_proves(&candidate, actual)) {
+        // Only a closed common bound may widen an earlier argument: an open
+        // peer such as `Map Tag Dynamic` must not relax a narrower contract.
+        if !mentions_dynamic(&candidate) && evidence.iter().any(|actual| !rigidly_proves(&candidate, actual)) {
           self.widened_inputs.insert(name.clone());
         }
         self.bindings.insert(name, candidate);
