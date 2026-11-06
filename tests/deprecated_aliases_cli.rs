@@ -264,10 +264,10 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   let before = fs::read(snapshot).unwrap();
   let strict_args = ["--check-only", "--all-defs", "--format", "json"];
   let strict_before = run_calcit(snapshot, &strict_args);
-  // The fixture keeps its erasures on purpose: each proven one is a
-  // W_OPTION_ERASED_TO_NIL note that does not fail the check, and the view
-  // must not change that verdict.
-  assert_eq!(
+  // The fixture keeps its erasures on purpose: since 0.36.0 (#2124) each
+  // proven one is an E_OPTION_ERASED_TO_NIL error that fails its definition,
+  // and the view must not change that verdict.
+  assert_ne!(
     strict_before.status.code(),
     Some(0),
     "{}",
@@ -276,15 +276,10 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   let strict_report: serde_json::Value = serde_json::from_slice(&strict_before.stdout).expect("one JSON document");
   let mut codes = Vec::new();
   collect_codes(&strict_report["data"]["definitions"], &mut codes);
-  assert!(codes.is_empty(), "{codes:?}");
+  assert!(!codes.is_empty(), "the kept erasures should be reported as errors");
+  assert!(codes.iter().all(|code| code == "E_OPTION_ERASED_TO_NIL"), "{codes:?}");
   let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
-  assert!(!notes.is_empty(), "the kept erasures should be reported as notes");
-  assert!(
-    notes
-      .iter()
-      .all(|note| note["severity"] == "note" && note["code"] == "W_OPTION_ERASED_TO_NIL"),
-    "{notes:?}"
-  );
+  assert!(notes.is_empty(), "{notes:?}");
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
   assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];

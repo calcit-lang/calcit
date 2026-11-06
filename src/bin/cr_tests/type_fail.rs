@@ -4358,16 +4358,17 @@ fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
       .expect("erasing an Option to nil should preprocess");
 
-    // The erasure is advisory for now, so it must not block the check.
+    // The erasure is not a preprocess warning: it is collected with the
+    // advisories, and the check splits it out as a blocking error (#2124).
     let warnings = warnings.borrow();
     assert!(
-      warnings.iter().all(|warning| warning.code() != Some("W_OPTION_ERASED_TO_NIL")),
+      warnings.iter().all(|warning| warning.code() != Some("E_OPTION_ERASED_TO_NIL")),
       "{warnings:?}"
     );
     let advisories = runner::preprocess::take_advisories();
     let erased = advisories
       .iter()
-      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .filter(|advisory| advisory.code() == Some("E_OPTION_ERASED_TO_NIL"))
       .collect::<Vec<_>>();
     // The method in both call forms, the direct call and the `(:none) nil` branch report; keeping
     // the Option, choosing a concrete default or declaring a `JsNullish`
@@ -4470,7 +4471,7 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
     let advisories = runner::preprocess::take_advisories();
     let mut erased = advisories
       .iter()
-      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .filter(|advisory| advisory.code() == Some("E_OPTION_ERASED_TO_NIL"))
       .map(|advisory| advisory.location().def.to_string())
       .collect::<Vec<_>>();
     erased.sort();
@@ -4515,7 +4516,7 @@ fn option_erased_to_nil_suggests_rewrites_that_keep_results() {
     let advisories = runner::preprocess::take_advisories();
     let hints = advisories
       .iter()
-      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .filter(|advisory| advisory.code() == Some("E_OPTION_ERASED_TO_NIL"))
       .map(|advisory| advisory.hint().map(str::to_owned))
       .collect::<Vec<_>>();
     assert_eq!(
@@ -4558,7 +4559,7 @@ fn option_erased_to_nil_rewrites_only_core_consumers() {
     let advisories = runner::preprocess::take_advisories();
     let hints = advisories
       .iter()
-      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .filter(|advisory| advisory.code() == Some("E_OPTION_ERASED_TO_NIL"))
       .map(|advisory| advisory.hint().map(str::to_owned))
       .collect::<Vec<_>>();
     assert_eq!(hints, [None, None], "{advisories:?}");
@@ -4575,12 +4576,12 @@ fn option_erased_in_a_js_nullish_function_initializer_is_not_exempt() {
     let _ = runner::preprocess::take_advisories();
 
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-      .expect("an Option erasure inside a nullish-returning function should remain advisory");
+      .expect("an Option erasure inside a nullish-returning function should preprocess");
 
     let advisories = runner::preprocess::take_advisories();
     let erased = advisories
       .iter()
-      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .filter(|advisory| advisory.code() == Some("E_OPTION_ERASED_TO_NIL"))
       .collect::<Vec<_>>();
     assert_eq!(erased.len(), 1, "{advisories:?}");
     assert_eq!(erased[0].location().def.as_ref(), "main!", "{advisories:?}");

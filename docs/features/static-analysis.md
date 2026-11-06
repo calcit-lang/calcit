@@ -255,13 +255,16 @@ are not reported. A macro that moves a caller-written value into head position,
 such as `-> 1 f` expanding to `(f 1)`, still reports, because the caller chose
 the value being called.
 
-An Option turned back into nil reports `W_OPTION_ERASED_TO_NIL`: `.unwrap-or X nil`
+An Option turned back into nil is an `E_OPTION_ERASED_TO_NIL` error (blocking
+since 0.36.0, #2124): `.unwrap-or X nil`
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
 `(:none) nil` branch of a `match` on an Option. The signature promises absence
 is explicit while the value is again nil-or-T. Keep the Option, choose a
-concrete default, or handle both variants with `match`. An erasure written in
+concrete default, or handle both variants with `match`. Like `E_BROAD_TYPE`, it
+fails `--check-only`, counts the definition as failed in `--all-defs` / `--ns`
+reports, and stops the default proof preflight before a run or JS codegen. An erasure written in
 the body of a project macro is reported once at that form in the macro
-definition. The note names the call site that expanded it, or the number of
+definition. The error names the call site that expanded it, or the number of
 call sites and the first of them; when the body has several such forms, it
 gives their number and points at the first. A form written by the caller and
 passed through a macro stays on the caller.
@@ -275,7 +278,7 @@ still reports, and neither a `:js-ffi` feature nor a `JsNullish` return exempts
 business erasures in local binding initializers or other non-tail expressions.
 
 When the erased value is only tested, by `or`, `if`, `nil?` or `non-nil?`, the
-note's hint gives a `match` that keeps every result:
+error's hint gives a `match` that keeps every result:
 `or (.unwrap-or x nil) d` becomes `match x ((:some v) (or v d)) ((:none) d)`.
 It returns the same value for Some, Some nil, Some false and None, and still
 evaluates the fallback only when the original would. Other consumers get no

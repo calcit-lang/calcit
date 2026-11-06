@@ -4282,9 +4282,23 @@ try {
       await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
       run("test", "--tag", "nullable-branch-binding", "--require-match");
       run("test", "--tag", "open-match-payload", "--require-match");
-      const bindingTests = ["lookup-inline", "lookup-local", "if-value-first", "if-nil-first",
-        "choose-option", "choose-nullable", "choose-nil", "decode-lookup", "decode-option",
-        "decode-result", "retain-open"].flatMap(name => {
+      // A `(:none) nil` branch is an E_OPTION_ERASED_TO_NIL error since 0.36.0
+      // (#2124), so the defs that join through one fail the check; the `if`
+      // and Result joins still reach their Option fields through `nil->option`.
+      const erasingBindings = ["lookup-inline", "lookup-local", "decode-lookup", "decode-option", "retain-open"];
+      {
+        const result = spawnSync(binary, [snapshot, "--check-only", "--all-defs", "--format", "json"], options);
+        if (result.error) throw result.error;
+        assert.equal(result.status, 1, result.stderr);
+        const report = JSON.parse(result.stdout);
+        const erased = report.data.definitions
+          .filter(item => item.diagnostics.some(diagnostic => diagnostic.code === "E_OPTION_ERASED_TO_NIL"))
+          .map(item => item.definition)
+          .filter(definition => definition.startsWith("app.binding-proof/"));
+        assert.deepEqual(erased.sort(), erasingBindings.map(name => `app.binding-proof/${name}`).sort());
+      }
+      const bindingTests = ["if-value-first", "if-nil-first", "choose-option", "choose-nullable", "choose-nil",
+        "decode-result"].flatMap(name => {
         const report = JSON.parse(run("query", "def", `app.binding-proof/${name}`, "--format", "json"));
         assert.deepEqual(report.diagnostics, []);
         assert.equal(report.data.tests.length, 1);
@@ -4336,7 +4350,12 @@ try {
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
           // Since #2233 a let-bound `if` nil join is itself a strict error.
-          const diagnostic = expression.startsWith("if ") ? /W_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/ : /W_FN_ARG_TYPE_MISMATCH/;
+          // A `(:none) nil` branch is itself an E_OPTION_ERASED_TO_NIL error since
+          // 0.36.0 (#2124); `--check-only` still reports the field mismatch first,
+          // the JS preflight may stop at the erasure.
+          const erases = expression.includes("nil)") && expression.startsWith("match ");
+          const diagnostic = expression.startsWith("if ") ? /W_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/
+            : erases && mode[0] === "js" ? /W_FN_ARG_TYPE_MISMATCH|E_OPTION_ERASED_TO_NIL/ : /W_FN_ARG_TYPE_MISMATCH/;
           assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
           assert.deepEqual(await readFile(snapshot), original);
           if (mode[0] === "js") await assertRejectedArtifacts(output, name, diagnostic, true);

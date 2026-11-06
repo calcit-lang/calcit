@@ -762,12 +762,17 @@ pub fn take_advisories() -> Vec<LocatedWarning> {
   advisories
 }
 
-/// Splits collected advisories into blocking `E_BROAD_TYPE` errors (#2504)
-/// and the non-failing notes.
+/// Splits collected advisories into blocking errors (`E_BROAD_TYPE`, #2504;
+/// `E_OPTION_ERASED_TO_NIL`, #2124) and the non-failing notes.
 pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<LocatedWarning>, Vec<LocatedWarning>) {
-  advisories
-    .into_iter()
-    .partition(|advisory| advisory.code() == Some(crate::snapshot::BROAD_TYPE_ERROR))
+  advisories.into_iter().partition(is_blocking_advisory)
+}
+
+pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
+  matches!(
+    advisory.code(),
+    Some(crate::snapshot::BROAD_TYPE_ERROR | crate::snapshot::OPTION_ERASED_ERROR)
+  )
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
@@ -9063,20 +9068,20 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
   }
 }
 
-/// An advisory until the ecosystem stops erasing Options; the check and the
-/// runner still pass so upgrading does not break existing libraries.
+/// Blocking since 0.36.0 (#2124): the check and the run preflight fail on it,
+/// like `E_BROAD_TYPE`. Only project namespaces are checked.
 fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
   let rewrite = option_erasure_rewrite(&location);
   let message = match &rewrite {
     Some(_) => format!(
-      "[Warn] {shape} turns an Option back into nil in {file_ns}; its consumer only tests the value, so a `match` on the Option gives the same results for Some nil, Some false and None and still evaluates the fallback only when it is needed (see hint)"
+      "[Error] {shape} turns an Option back into nil in {file_ns}; its consumer only tests the value, so a `match` on the Option gives the same results for Some nil, Some false and None and still evaluates the fallback only when it is needed (see hint)"
     ),
-    None => format!("[Warn] {shape} turns an Option back into nil in {file_ns}; {OPTION_ERASED_GUIDANCE}"),
+    None => format!("[Error] {shape} turns an Option back into nil in {file_ns}; {OPTION_ERASED_GUIDANCE}"),
   };
   push_advisory(LocatedWarning::new_with_detail(
     message,
     location,
-    Some("W_OPTION_ERASED_TO_NIL".to_owned()),
+    Some(crate::snapshot::OPTION_ERASED_ERROR.to_owned()),
     rewrite,
   ));
 }
@@ -9406,10 +9411,15 @@ fn report_macro_option_erased_to_nil(shape: &str, origin: MacroErasureOrigin, ca
     String::new()
   };
   let message = format!(
-    "[Warn] {shape} in the body of macro `{}` turns an Option back into nil wherever it is expanded ({expansions}{forms}); fix it once in the macro: {OPTION_ERASED_GUIDANCE}",
+    "[Error] {shape} in the body of macro `{}` turns an Option back into nil wherever it is expanded ({expansions}{forms}); fix it once in the macro: {OPTION_ERASED_GUIDANCE}",
     origin.macro_name
   );
-  let advisory = LocatedWarning::new_with_detail(message, origin.location, Some("W_OPTION_ERASED_TO_NIL".to_owned()), None);
+  let advisory = LocatedWarning::new_with_detail(
+    message,
+    origin.location,
+    Some(crate::snapshot::OPTION_ERASED_ERROR.to_owned()),
+    None,
+  );
   let mut list = ADVISORIES.lock().expect("lock advisories");
   if let Some(existing) = list
     .iter_mut()

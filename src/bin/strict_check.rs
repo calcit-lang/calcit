@@ -50,7 +50,7 @@ struct CheckData {
   entries: Vec<String>,
   summary: CheckSummary,
   definitions: Vec<DefinitionResult>,
-  /// Non-failing diagnostics such as `W_OPTION_ERASED_TO_NIL`; they never change `status`.
+  /// Non-failing diagnostics such as `W_QUOTED_COMPOUND_TYPE`; they never change `status`.
   advisories: Vec<CheckDiagnostic>,
 }
 
@@ -515,8 +515,8 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
       drop(runner::preprocess::take_advisories());
     }
   }
-  // Bare broad types are errors since 0.36.0 (#2504): they fail the
-  // definition that writes them, reachable or not.
+  // Bare broad types (#2504) and Options erased to nil (#2124) are errors
+  // since 0.36.0: they fail the definition that writes them, reachable or not.
   for error in &broad_type_errors {
     let diagnostic = CheckDiagnostic {
       severity: "error",

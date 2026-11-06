@@ -2224,17 +2224,34 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
   })
 }
 
-/// Bare broad types are errors since 0.36.0 (#2504).
-fn report_broad_type_errors(broad_type_errors: Vec<LocatedWarning>) -> Result<(), String> {
-  if broad_type_errors.is_empty() {
+/// Bare broad types (#2504) and Options erased to nil (#2124) are errors
+/// since 0.36.0.
+fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String> {
+  if blocking.is_empty() {
     return Ok(());
   }
-  eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad_type_errors.len());
-  LocatedWarning::print_list(&broad_type_errors);
-  Err(format!(
-    "Found {} bare broad type(s); write the concrete type, or AnyFn / AnyStruct / AnyEnum where any member is intended",
-    broad_type_errors.len()
-  ))
+  let (broad, erased): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
+  let mut summaries = vec![];
+  if !broad.is_empty() {
+    eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad.len());
+    LocatedWarning::print_list(&broad);
+    summaries.push(format!(
+      "Found {} bare broad type(s); write the concrete type, or AnyFn / AnyStruct / AnyEnum where any member is intended",
+      broad.len()
+    ));
+  }
+  if !erased.is_empty() {
+    eprintln!("\n{} ({} Options erased to nil)", "Errors:".red(), erased.len());
+    LocatedWarning::print_list(&erased);
+    summaries.push(format!(
+      "[{}] Found {} Option(s) turned back into nil; keep the Option, `match` both variants, or choose a concrete default",
+      snapshot::OPTION_ERASED_ERROR,
+      erased.len()
+    ));
+  }
+  Err(summaries.join("; "))
 }
 
 fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Result<(), String> {

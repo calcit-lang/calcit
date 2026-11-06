@@ -3502,6 +3502,12 @@ fn collect_snapshot_legacy_optional_hits(files: &HashMap<String, FileInSnapShot>
 /// from the value is `Dynamic`.
 pub const BROAD_TYPE_ERROR: &str = "E_BROAD_TYPE";
 
+/// Error code for an Option turned back into nil by `.unwrap-or … nil` or
+/// `match … (:none) nil` in project code (blocking since 0.36.0, #2124).
+/// Real host boundaries (`JsNullish` parameters and returns, direct JS host
+/// calls) stay exempt.
+pub const OPTION_ERASED_ERROR: &str = "E_OPTION_ERASED_TO_NIL";
+
 /// Advisory code for a bare `Trait` in a type position. It has no explicit
 /// open spelling, so it stays a non-blocking note.
 pub const BROAD_TRAIT_WARNING: &str = "W_BROAD_TYPE";
