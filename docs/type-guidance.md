@@ -310,6 +310,23 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 - 内置的 `calcit.core`、`calcit.internal` 等命名空间里对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不报告。
 - `AnyFn` / `AnyStruct` / `AnyEnum` 不约束到某个具体定义，读出的载荷、字段和调用结果仍是 Dynamic；能写出具体类型时仍应写具体类型。
 
+### 开放类型的理由 `(:open …)` 与 `W_OPEN_FAMILY`
+
+开放类型（`AnyEnum`、`AnyFn`、`AnyStruct`、`Dynamic`）只应留在确实需要的位置。确认过的签名在 `Fn` 里加一个 `:open` 选项写明理由，和 `:generics`、`:features` 同一层：
+
+```cirru.no-check
+; 对任意 enum 做反射（显示、比较、序列化）
+:schema $ quote $ Fn AnyEnum (-> String) (:open :reflect)
+; 接收解码前的数据
+:schema $ quote $ Fn Dynamic (-> app.schema/Config) (:open :decode)
+; 透传 JS 宿主值
+:schema $ quote $ Fn Dynamic (-> Unit) (:features :js-ffi) (:open :host)
+```
+
+理由只有 `:reflect`、`:decode`、`:host` 三种，不改变类型：带不带 `:open` 的同一签名是同一个类型。
+
+普通 `--check-only` 通过且计数不为零时，在最后打印一行 `Open types: [W_OPEN_FAMILY] …` 汇总（检查失败、`--all-defs` / `--keep-going` / `--incremental` 和运行前的预检不打印），统计项目自身定义 `:schema` 里没有 `:open` 理由的 `AnyEnum`、`AnyFn`、`AnyStruct` 和 `Dynamic` 个数，并指出第一个出现的定义。带 `:open` 的 `Fn` 连同它内部的类型都不计入；依赖库和内置 core 不计入。汇总不算 Notes，不进入 `--format json` 报告，也不改变检查结果。`calcit analyze weak-types` 只列出 Dynamic 的位置，`AnyEnum` / `AnyFn` / `AnyStruct` 的逐处列表暂未提供。
+
 ## 定长元组 `Tuple`
 
 `Tuple` 描述长度固定、每个位置类型各自固定的 List，例如二维点 `Tuple Number Number`、属性对 `Tuple Tag String`。运行时它仍是普通 List，native、JS 和 WASM 的表示不变；元组只存在于类型检查中。

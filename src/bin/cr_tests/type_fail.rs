@@ -405,6 +405,7 @@ fn result_generic_declaration_order_preserves_ok_and_err_payload_types() {
 fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -446,6 +447,7 @@ fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
     }
 
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -475,6 +477,7 @@ fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
 fn strict_map_list_kv_preserves_key_value_and_result_types() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -518,6 +521,7 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
     ));
     let main_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -577,6 +581,7 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
     ));
     let main_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -598,6 +603,7 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
     run_check_only(&invoked).expect("(%none) must remain a valid Option value");
 
     let constructor_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -1078,6 +1084,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
     .expect("generic callback snippet should parse");
     let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1089,6 +1096,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
     })));
     file.defs.get_mut("invoke").expect("invoke definition").schema =
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![]),
@@ -1101,6 +1109,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
     for name in ["main!", "reload!"] {
       file.defs.get_mut(name).expect("entry definition").schema =
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+          open_reason: Default::default(),
           runtime_arity: None,
           generics: Arc::new(vec![]),
           where_bounds: Arc::new(vec![]),
@@ -1270,6 +1279,7 @@ fn strict_type_fail_reachable_whole_dynamic_schema_reports_stable_error_code() {
 fn strict_mode_accepts_macro_generated_closures_without_public_schemas() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1290,6 +1300,7 @@ fn strict_mode_accepts_macro_generated_closures_without_public_schemas() {
 fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_public_schema() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1316,6 +1327,7 @@ fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_pu
 fn strict_mode_keeps_source_optional_parameter_validation_under_macro_ancestry() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1395,6 +1407,7 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
     .expect("public-check snippet should parse");
     let fn_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -1449,6 +1462,7 @@ fn public_check_runs_default_proof_audit_after_ordinary_check() {
     .expect("public-check snippet should parse");
     let fn_schema = |arg_types, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -1509,6 +1523,7 @@ fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
     .expect("test project should parse");
     let checked = file.defs.get_mut("checked").expect("checked should exist");
     checked.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -1574,6 +1589,7 @@ fn strict_type_fail_dynamic_nominal_argument_reports_decoder_migration() {
     });
     let fn_schema = |args, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -1681,6 +1697,7 @@ fn strict_type_fail_unsupported_indexed_receiver_reports_stable_error_code() {
     .expect("unsupported indexed receiver snippet should parse");
     let fn_schema = |args, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -2271,6 +2288,7 @@ fn strict_explicit_trait_call_rejects_unproven_dispatch_before_runtime() {
 fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -2411,6 +2429,7 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
   run_with_large_stack(|| {
     let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -2423,6 +2442,7 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
     };
 
     let generic_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -2513,6 +2533,7 @@ fn schema_alias_definitions_must_inhabit_their_schema_for_all_defs_checks() {
   run_with_large_stack(|| {
     let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -2715,6 +2736,7 @@ fn strict_mode_rejects_implicit_option_and_result_stringification() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -2745,6 +2767,7 @@ fn strict_mode_keeps_explicit_enum_representation_and_plain_stringification() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

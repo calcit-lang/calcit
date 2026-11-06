@@ -304,6 +304,7 @@ mod tests {
     let source = ffi(Edn::map_from_iter([(Edn::tag("inline"), Edn::str("(x) => x + 1"))]));
     let signature = |features: HashSet<EdnTag>, argument: CalcitTypeAnnotation| {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),

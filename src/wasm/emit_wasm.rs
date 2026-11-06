@@ -11560,6 +11560,7 @@ mod tests {
 
     // A signature proves call shape, not the target or its host capabilities.
     let callable = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: Default::default(),
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
@@ -11863,6 +11864,7 @@ mod tests {
   fn local_spread_call_requires_inline_lambda() {
     let fn_type = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, rest: bool| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types,
