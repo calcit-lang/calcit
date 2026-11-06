@@ -5620,13 +5620,20 @@ fn preprocess_list_call(
               check_warnings,
             );
           }
+          // A proc head carries no definition name; name the enclosing
+          // definition the way the warning location already does (#2608).
+          let proc_call_location = preferred_source_call_location(call_location.clone(), call_stack);
+          let proc_call_def = match &proc_call_location {
+            Some(location) if def_name.as_ref() == "??" => location.def.clone(),
+            _ => def_name.clone(),
+          };
           check_proc_arg_types(
             proc,
             &processed_args,
             scope_types,
             file_ns,
-            &def_name,
-            preferred_source_call_location(call_location.clone(), call_stack),
+            &proc_call_def,
+            proc_call_location,
             check_warnings,
           );
           let requires_error = match proc {
