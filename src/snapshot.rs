@@ -5616,6 +5616,39 @@ impl LegacyQuotedDeclarationHit {
   }
 }
 
+/// `quote $ <compound type>` in a position that only holds a type. A note in
+/// 0.36.x; 0.37.0 rejects it at load (#2583). `edit format` writes them bare.
+pub const QUOTED_COMPOUND_TYPE_WARNING: &str = "W_QUOTED_COMPOUND_TYPE";
+
+/// Project definitions whose code or examples still quote a compound type
+/// where `calcit edit format` would write it bare, as sorted
+/// `(namespace, definition, count)`. Tests are skipped: `edit format` does not
+/// rewrite them, and a quoted type there keeps loading until 0.37.0.
+pub fn collect_quoted_compound_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<(String, String, usize)> {
+  let mut hits = vec![];
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let entry = &file.defs[def];
+      let count: usize = std::iter::once(&entry.code)
+        .chain(entry.examples.iter())
+        .map(|code| unquote_compound_types(code).1)
+        .sum();
+      if count > 0 {
+        hits.push((ns.to_owned(), def.to_owned(), count));
+      }
+    }
+  }
+  hits
+}
+
 /// Find the `defstruct` / `defenum` / `defunion` forms in project definitions,
 /// examples and tests that `calcit edit format` would unquote.
 pub fn collect_legacy_quoted_declaration_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<LegacyQuotedDeclarationHit> {

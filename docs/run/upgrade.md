@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.36.x 带 quote 的复合类型报弃用提示（#2583）
+
+只放类型的位置（`assert-type`、`unsafe-coerce`、`decode-map-as` 等解码目标、`defstruct` 字段、`defenum` 载荷、`defunion` 成员、`deftrait` 方法类型）里写成 `quote $ List Number` 的复合类型，检查时汇总报一条 `W_QUOTED_COMPOUND_TYPE` Notes，给出数量和第一处定义。不影响检查结论。运行 `calcit edit format` 会把它们写成裸的 `List Number`，提示随之消失。`:tests` 不扫描，`edit format` 也不改，需要时手工改。0.37.0 起加载时拒绝带 quote 的写法。
+
 ## 0.36.x 变长参数写成 `(& T)` 分组（#2612）
 
 `Fn` / `Macro` 的 rest 参数改为分组写法：`Fn Number (& Number) (-> Number)`，取代 `Fn Number & Number (-> Number)`。旧写法仍能读取，含义不变；Snapshot 里的 `:schema` 还用旧写法时，检查会报一条 `W_FN_REST_SPELLING` Notes，给出数量和第一处位置。运行 `calcit edit format` 会把 schema 改写成 `(& T)`。函数体里 `hint-fn` 的旧写法照常读取，`edit format` 不会改写函数体，需要时手工改。

@@ -2117,9 +2117,32 @@ fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespa
   push_broad_type_advisories(snapshot, project_namespaces);
   push_type_slot_spelling_advisories(&raw.type_slots, snapshot.active_entry_name());
   push_fn_rest_spelling_advisory(&raw.fn_rest);
+<<<<<<< HEAD
   record_open_family_summary(snapshot, project_namespaces);
 }
 
+=======
+  push_quoted_compound_type_advisory(&snapshot::collect_quoted_compound_type_hits(snapshot, project_namespaces));
+  record_open_family_summary(snapshot, project_namespaces);
+}
+
+/// One advisory for every quoted compound type in a type-only position,
+/// located at the first definition, so a large library does not flood the notes.
+fn push_quoted_compound_type_advisory(hits: &[(String, String, usize)]) {
+  let Some((ns, def, _)) = hits.first() else { return };
+  let total: usize = hits.iter().map(|(_, _, count)| count).sum();
+  runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
+    format!(
+      "{total} compound type(s) in {} definition(s) are still written as `quote $ <type>` where only a type fits; write them bare, such as `assert-type xs $ List Number`. 0.37.0 rejects the quoted spelling (#2583) (first at {ns}/{def})",
+      hits.len()
+    ),
+    calcit::calcit::NodeLocation::new(Arc::from(ns.as_str()), Arc::from(def.as_str()), Arc::new(vec![])),
+    Some(snapshot::QUOTED_COMPOUND_TYPE_WARNING.to_owned()),
+    Some("run `calcit edit format` to write compound types without quote".to_owned()),
+  ));
+}
+
+>>>>>>> origin/main
 /// One advisory for all schemas still written with the bare `& T` rest spelling,
 /// located at the first one, so a large library does not flood the notes.
 fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
