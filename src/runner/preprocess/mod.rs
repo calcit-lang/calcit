@@ -2307,7 +2307,9 @@ fn parse_deftrait_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTrai
 fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, file_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   let mut traits = Vec::with_capacity(bound.traits.len());
   for trait_ref in bound.traits.iter() {
-    if !trait_ref.methods.is_empty() {
+    // #2611: a family bound (`AnyEnum`, `AnyStruct`) is its own evidence; it
+    // names no trait definition to resolve.
+    if !trait_ref.methods.is_empty() || crate::calcit::type_annotation::family_of_bound_trait(trait_ref).is_some() {
       traits.push(trait_ref.clone());
       continue;
     }

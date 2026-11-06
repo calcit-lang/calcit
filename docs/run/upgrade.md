@@ -30,6 +30,10 @@ related:
 
 同一版本起，固定元数函数也可以传给变长参数的函数类型：`fn(Number, Number) -> Number` 满足 `Fn (& Number) (-> Number)`，见 [静态分析](../features/static-analysis.md)。
 
+## 0.36.x 族约束泛型 `:where (T AnyEnum)` / `(T AnyStruct)`（#2611）
+
+只做反射、又要把调用方的具体类型带回去的函数，可以把 `Fn AnyEnum (-> AnyEnum)` 改成 `Fn T (-> T) (:generics T)` 加 `:where $ T AnyEnum`。调用点必须传具名 enum（`AnyStruct` 则是具名 struct）；传 `Dynamic`、族类型本身、普通值或另一族的成员会报 `W_GENERIC_WHERE_BOUND_MISMATCH`，提示先解码或收窄成具体类型。函数体内 `T` 的值可以继续传给写 `AnyEnum` 的反射函数。旧写法仍可用，这一项是可选迁移。
+
 ## 0.36.x type slot 写成 symbol，并且必须绑定到具名类型
 
 entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。

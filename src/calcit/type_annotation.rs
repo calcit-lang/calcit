@@ -309,12 +309,91 @@ pub(crate) static NEVER_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::ne
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// #2611: `:where (T AnyEnum)` and `:where (T AnyStruct)` are family bounds.
+/// They parse as bare trait references named after the family; this names the
+/// family such a reference stands for.
+pub(crate) fn family_of_bound_trait(trait_def: &CalcitTrait) -> Option<&'static str> {
+  if trait_def.runtime_id.is_some() || trait_def.definition_ref.is_some() || !trait_def.methods.is_empty() {
+    return None;
+  }
+  match trait_def.name.ref_str() {
+    "AnyEnum" => Some("AnyEnum"),
+    "AnyStruct" => Some("AnyStruct"),
+    _ => None,
+  }
+}
+
+fn capability_has_family(capability: &CalcitTypeAnnotation, family: &str) -> bool {
+  match capability {
+    CalcitTypeAnnotation::Trait(trait_def) => family_of_bound_trait(trait_def) == Some(family),
+    CalcitTypeAnnotation::TraitSet(traits) => traits.iter().any(|trait_def| family_of_bound_trait(trait_def) == Some(family)),
+    _ => false,
+  }
+}
+
+/// A family bound admits only a named member: a concrete enum (or struct), or
+/// a type variable carrying the same bound. The family itself and `Dynamic`
+/// are not members, so the caller's concrete type is never lost.
+fn is_family_member(actual: &CalcitTypeAnnotation, family: &str, capabilities: Option<&TypeBindings>) -> bool {
+  if let CalcitTypeAnnotation::TypeVar(name) = actual {
+    return capabilities
+      .and_then(|items| items.get(name))
+      .is_some_and(|capability| capability_has_family(capability, family));
+  }
+  if actual.open_family_name().is_some()
+    || matches!(
+      actual,
+      CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::Custom(_)
+    )
+  {
+    return false;
+  }
+  CalcitTypeAnnotation::open_family_type(family).is_some_and(|node| actual.is_proven_for(&node))
+}
+
+/// `Some` when `required` involves a family bound: at a call site the bound
+/// itself (possibly beside traits), or inside the function body the family
+/// type that a bounded type variable is passed to.
+fn family_bound_proof(
+  actual: &CalcitTypeAnnotation,
+  required: &CalcitTypeAnnotation,
+  capabilities: Option<&TypeBindings>,
+) -> Option<bool> {
+  let required_traits: &[Arc<CalcitTrait>] = match required {
+    CalcitTypeAnnotation::Trait(trait_def) => std::slice::from_ref(trait_def),
+    CalcitTypeAnnotation::TraitSet(traits) => traits.as_slice(),
+    _ => {
+      // Substitution rebuilds nodes, so match the family by shape, not identity.
+      let family = match required {
+        CalcitTypeAnnotation::AnonymousEnum => "AnyEnum",
+        _ if required == ANY_STRUCT_TYPE.as_ref() => "AnyStruct",
+        _ => return None,
+      };
+      let CalcitTypeAnnotation::TypeVar(name) = actual else {
+        return None;
+      };
+      let capability = capabilities?.get(name)?;
+      return capability_has_family(capability, family).then_some(true);
+    }
+  };
+  if !required_traits.iter().any(|trait_def| family_of_bound_trait(trait_def).is_some()) {
+    return None;
+  }
+  Some(required_traits.iter().all(|trait_def| match family_of_bound_trait(trait_def) {
+    Some(family) => is_family_member(actual, family, capabilities),
+    None => proves_trait_bound(actual, &CalcitTypeAnnotation::Trait(trait_def.clone()), capabilities),
+  }))
+}
+
 /// Capability evidence proves only a trait obligation, never value identity.
 pub(crate) fn proves_trait_bound(
   actual: &CalcitTypeAnnotation,
   required: &CalcitTypeAnnotation,
   capabilities: Option<&TypeBindings>,
 ) -> bool {
+  if let Some(proven) = family_bound_proof(actual, required, capabilities) {
+    return proven;
+  }
   let capability = match actual {
     CalcitTypeAnnotation::TypeVar(name) => capabilities.and_then(|items| items.get(name)).map(AsRef::as_ref),
     _ => None,
@@ -618,12 +697,23 @@ impl CallTypeProof {
         }
       }
       if let Some(expected_rest) = &expected_signature.rest_type {
-        let Some(actual_rest) = &actual_signature.rest_type else {
-          return TypeProof::Mismatch;
-        };
-        let proof = callback_proof.prove(&expected_rest.substitute_type_vars(&self.bindings), actual_rest);
-        if !proof.is_proven() {
-          return proof;
+        let expected_rest = expected_rest.substitute_type_vars(&self.bindings);
+        match &actual_signature.rest_type {
+          Some(actual_rest) => {
+            let proof = callback_proof.prove(&expected_rest, actual_rest);
+            if !proof.is_proven() {
+              return proof;
+            }
+          }
+          // #2612: a fixed-arity callable takes the rest values in its extra parameters.
+          None => {
+            for parameter in actual_signature.arg_types.iter().skip(expected_inputs.len()) {
+              let proof = callback_proof.prove(&expected_rest, parameter);
+              if !proof.is_proven() {
+                return proof;
+              }
+            }
+          }
         }
       }
       if !expected_signature.generics.is_empty() {
@@ -10635,7 +10725,7 @@ mod tests {
   }
 
   #[test]
-  fn fixed_arity_function_does_not_satisfy_larger_or_variadic_contract() {
+  fn fixed_arity_function_satisfies_variadic_contract_only_when_it_takes_the_fixed_values() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let actual = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone());
     let binary_expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone(), number.clone()], number.clone());
@@ -10652,7 +10742,28 @@ mod tests {
     }));
 
     assert!(!actual.is_compatible_with(&binary_expected));
-    assert!(!actual.is_compatible_with(&variadic_expected));
+    // #2612: `fn(Number)` takes the fixed Number of `Fn Number & Number` and no rest values.
+    assert!(actual.is_compatible_with(&variadic_expected));
+    assert!(actual.is_proven_for(&variadic_expected));
+    let CalcitTypeAnnotation::Fn(variadic) = &variadic_expected else {
+      unreachable!()
+    };
+    let wider_fixed = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      arg_types: vec![variadic.arg_types[0].clone(), variadic.arg_types[0].clone()],
+      ..variadic.as_ref().clone()
+    }));
+    assert!(
+      !actual.is_compatible_with(&wider_fixed),
+      "one parameter cannot take two fixed values"
+    );
+    let mixed = CalcitTypeAnnotation::from_function_parts(
+      vec![variadic.arg_types[0].clone(), Arc::new(CalcitTypeAnnotation::String)],
+      variadic.return_type.clone(),
+    );
+    assert!(
+      !mixed.is_compatible_with(&variadic_expected),
+      "an extra String parameter does not accept Number rest values"
+    );
   }
 
   #[test]
@@ -10687,8 +10798,14 @@ mod tests {
       (vec![string.clone(); 3], false),
       (vec![Arc::new(CalcitTypeAnnotation::Number)], false),
       (vec![string.clone(), Arc::new(CalcitTypeAnnotation::Number)], false),
+      // A fixed-arity function fills a variadic slot when it takes the fixed values
+      // and its extra parameters accept the rest element (#2612).
+      (vec![string.clone(), Arc::new(CalcitTypeAnnotation::Variadic(string.clone()))], true),
       (
-        vec![string.clone(), Arc::new(CalcitTypeAnnotation::Variadic(string.clone()))],
+        vec![
+          string.clone(),
+          Arc::new(CalcitTypeAnnotation::Variadic(Arc::new(CalcitTypeAnnotation::Number))),
+        ],
         false,
       ),
     ] {
@@ -11239,6 +11356,11 @@ impl CalcitFnTypeAnnotation {
   fn accepts_call_range(&self, expected: &Self) -> bool {
     let actual = self.call_arity();
     let expected = expected.call_arity();
+    // #2612: a fixed-arity callable may stand in for a variadic contract when it accepts
+    // every fixed argument; how many rest values a call supplies is only known at run time.
+    if let (Some(actual_max), None) = (actual.max, expected.max) {
+      return actual_max >= expected.min;
+    }
     actual.min <= expected.min
       && match (actual.max, expected.max) {
         (None, _) => true,
@@ -11578,15 +11700,13 @@ impl CalcitFnTypeAnnotation {
       }
     }
 
-    // An expected rest contract may invoke the callback with arbitrarily many values, so the
-    // actual callable must have a compatible rest parameter as well.
-    if let Some(expected_rest) = &other.rest_type {
-      let Some(actual_rest) = &self.rest_type else {
-        return false;
-      };
-      if !expected_rest.compatible_with_bindings(actual_rest, &mut staged_bindings) {
-        return false;
-      }
+    // An expected rest contract may invoke the callback with more values. A rest parameter must
+    // accept them all; a fixed-arity callable had its extra parameters checked against the
+    // rest element above (#2612).
+    if let (Some(expected_rest), Some(actual_rest)) = (&other.rest_type, &self.rest_type)
+      && !expected_rest.compatible_with_bindings(actual_rest, &mut staged_bindings)
+    {
+      return false;
     }
 
     if !self
@@ -11618,12 +11738,9 @@ impl CalcitFnTypeAnnotation {
       };
       result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
     }
-    match (&self.rest_type, &other.rest_type) {
-      (Some(actual), Some(expected)) => {
-        result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
-      }
-      (None, Some(_)) => return TypeProof::Mismatch,
-      _ => {}
+    // #2612: a fixed-arity callable had its extra parameters proven against the rest element above.
+    if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
+      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
     }
     result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
     if result.is_proven() {
