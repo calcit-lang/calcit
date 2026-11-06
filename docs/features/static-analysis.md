@@ -616,6 +616,8 @@ let
 
 A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant.
 
+The reverse also holds (#2612): a fixed-arity function can satisfy a variadic callback when it takes every fixed argument of the callback and each of its extra parameters accepts the rest element type. For example `fn(Number, Number) -> Number` fits `Fn & Number (-> Number)`. How many rest values a call actually supplies, for example through `apply`, is only known at run time, so a call with the wrong count still fails with a runtime arity error; cover such callbacks with `:tests`. Prefer a concrete rest element such as `& Number`; `& Dynamic` is counted by `W_OPEN_FAMILY` like any other `Dynamic`.
+
 Write `Dynamic` for an open type. Schema serialization, generated metadata, type queries, and diagnostics all use `Dynamic`.
 
 Do not strengthen a schema beyond the runtime contract merely to silence a report. Instead, preserve the relationship that the code actually promises: use a declared type variable when input and output share a type, a trait plus `:where` when only capabilities matter, a parameterized collection/ref for homogeneous values, and a named enum for finite heterogeneous alternatives. Retain `Dynamic` only when the type is genuinely unavailable, such as an unresolved JS FFI/global-state or macro boundary, and keep that boundary explicit and narrow.

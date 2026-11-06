@@ -2222,6 +2222,41 @@ fn strict_callback_parameters_are_contravariant_at_the_nominal_boundary() {
   });
 }
 
+/// #2612: a fixed-arity callable fills a variadic callback slot when it takes every fixed
+/// value and each extra parameter accepts the rest element. Element mismatches, too few
+/// parameters and a nominal parameter behind a Dynamic rest stay rejected.
+#[test]
+fn strict_fixed_arity_callbacks_fill_variadic_slots() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/variadic-fixed-arity-strict.cirru";
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    run_check_only(&load_fixture_entries(fixture)).expect("fixed-arity callbacks must satisfy variadic slots");
+
+    let err = run_check_only(&load_fixture_entries_with_entry(fixture, Some("nominal-extra")))
+      .expect_err("a FsPath parameter must not take Dynamic rest values");
+    assert!(err.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "unexpected error: {err}");
+
+    for (entry, detail) in [
+      ("wrong-element", "fn(:string, :string) -> :string"),
+      ("too-few", "fn(:number) -> :number"),
+    ] {
+      let entries = load_fixture_entries_with_entry(fixture, Some(entry));
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("a mismatching callback is reported as a diagnostic");
+      assert!(
+        warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains(detail)),
+        "{entry} should be rejected: {:?}",
+        warnings.borrow()
+      );
+    }
+  });
+}
+
 #[test]
 fn strict_family_bounds_admit_named_members_only() {
   run_with_large_stack(|| {
