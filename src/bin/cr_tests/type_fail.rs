@@ -2223,6 +2223,36 @@ fn strict_callback_parameters_are_contravariant_at_the_nominal_boundary() {
 }
 
 #[test]
+fn strict_family_bounds_admit_named_members_only() {
+  run_with_large_stack(|| {
+    let fixture = "calcit/type-fail/family-bound-generics.cirru";
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    run_check_only(&load_fixture_entries(fixture)).expect("named enums and structs satisfy family bounds");
+    for (entry, family) in [
+      ("dynamic", "AnyEnum"),
+      ("family", "AnyEnum"),
+      ("number", "AnyEnum"),
+      ("struct-for-enum", "AnyEnum"),
+      ("enum-for-struct", "AnyStruct"),
+    ] {
+      let entries = load_fixture_entries_with_entry(fixture, Some(entry));
+      let warnings = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let expected = format!("family bound `{family}`");
+      assert!(
+        warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH") && warning.message().contains(&expected)),
+        "{entry} must report a family bound mismatch: {:?}",
+        warnings.borrow()
+      );
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
   run_with_large_stack(|| {
     let fixture = "calcit/type-fail/erased-generic-relation-strict.cirru";

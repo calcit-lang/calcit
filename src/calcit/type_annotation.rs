@@ -309,12 +309,91 @@ pub(crate) static NEVER_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::ne
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// #2611: `:where (T AnyEnum)` and `:where (T AnyStruct)` are family bounds.
+/// They parse as bare trait references named after the family; this names the
+/// family such a reference stands for.
+pub(crate) fn family_of_bound_trait(trait_def: &CalcitTrait) -> Option<&'static str> {
+  if trait_def.runtime_id.is_some() || trait_def.definition_ref.is_some() || !trait_def.methods.is_empty() {
+    return None;
+  }
+  match trait_def.name.ref_str() {
+    "AnyEnum" => Some("AnyEnum"),
+    "AnyStruct" => Some("AnyStruct"),
+    _ => None,
+  }
+}
+
+fn capability_has_family(capability: &CalcitTypeAnnotation, family: &str) -> bool {
+  match capability {
+    CalcitTypeAnnotation::Trait(trait_def) => family_of_bound_trait(trait_def) == Some(family),
+    CalcitTypeAnnotation::TraitSet(traits) => traits.iter().any(|trait_def| family_of_bound_trait(trait_def) == Some(family)),
+    _ => false,
+  }
+}
+
+/// A family bound admits only a named member: a concrete enum (or struct), or
+/// a type variable carrying the same bound. The family itself and `Dynamic`
+/// are not members, so the caller's concrete type is never lost.
+fn is_family_member(actual: &CalcitTypeAnnotation, family: &str, capabilities: Option<&TypeBindings>) -> bool {
+  if let CalcitTypeAnnotation::TypeVar(name) = actual {
+    return capabilities
+      .and_then(|items| items.get(name))
+      .is_some_and(|capability| capability_has_family(capability, family));
+  }
+  if actual.open_family_name().is_some()
+    || matches!(
+      actual,
+      CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::Custom(_)
+    )
+  {
+    return false;
+  }
+  CalcitTypeAnnotation::open_family_type(family).is_some_and(|node| actual.is_proven_for(&node))
+}
+
+/// `Some` when `required` involves a family bound: at a call site the bound
+/// itself (possibly beside traits), or inside the function body the family
+/// type that a bounded type variable is passed to.
+fn family_bound_proof(
+  actual: &CalcitTypeAnnotation,
+  required: &CalcitTypeAnnotation,
+  capabilities: Option<&TypeBindings>,
+) -> Option<bool> {
+  let required_traits: &[Arc<CalcitTrait>] = match required {
+    CalcitTypeAnnotation::Trait(trait_def) => std::slice::from_ref(trait_def),
+    CalcitTypeAnnotation::TraitSet(traits) => traits.as_slice(),
+    _ => {
+      // Substitution rebuilds nodes, so match the family by shape, not identity.
+      let family = match required {
+        CalcitTypeAnnotation::AnonymousEnum => "AnyEnum",
+        _ if required == ANY_STRUCT_TYPE.as_ref() => "AnyStruct",
+        _ => return None,
+      };
+      let CalcitTypeAnnotation::TypeVar(name) = actual else {
+        return None;
+      };
+      let capability = capabilities?.get(name)?;
+      return capability_has_family(capability, family).then_some(true);
+    }
+  };
+  if !required_traits.iter().any(|trait_def| family_of_bound_trait(trait_def).is_some()) {
+    return None;
+  }
+  Some(required_traits.iter().all(|trait_def| match family_of_bound_trait(trait_def) {
+    Some(family) => is_family_member(actual, family, capabilities),
+    None => proves_trait_bound(actual, &CalcitTypeAnnotation::Trait(trait_def.clone()), capabilities),
+  }))
+}
+
 /// Capability evidence proves only a trait obligation, never value identity.
 pub(crate) fn proves_trait_bound(
   actual: &CalcitTypeAnnotation,
   required: &CalcitTypeAnnotation,
   capabilities: Option<&TypeBindings>,
 ) -> bool {
+  if let Some(proven) = family_bound_proof(actual, required, capabilities) {
+    return proven;
+  }
   let capability = match actual {
     CalcitTypeAnnotation::TypeVar(name) => capabilities.and_then(|items| items.get(name)).map(AsRef::as_ref),
     _ => None,

@@ -170,12 +170,24 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
       .call_location
       .clone()
       .or_else(|| ctx.args.first().and_then(Calcit::get_location));
+    // #2611: a family bound asks for a named member, not a trait implementation.
+    let family = bound
+      .traits
+      .iter()
+      .find_map(|trait_def| crate::calcit::type_annotation::family_of_bound_trait(trait_def));
+    let bound_text = match family {
+      Some("AnyStruct") => {
+        "family bound `AnyStruct`, which needs a named struct; decode or narrow the value to a concrete struct first".to_owned()
+      }
+      Some(family) => format!("family bound `{family}`, which needs a named enum; decode or narrow the value to a concrete enum first"),
+      None => format!("trait bound `{}`", diagnostic_type_string(required.as_ref())),
+    };
     gen_check_warning_code_at(
       format!(
-        "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
+        "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy {} at {}/{}\n  Expression: `{}`",
         crate::calcit::type_annotation::source_type_variable(&bound.name),
         diagnostic_type_string(actual_type.as_ref()),
-        diagnostic_type_string(required.as_ref()),
+        bound_text,
         ctx.file_ns,
         match ctx.head_form {
           Calcit::Import(import) => import.def.as_ref(),
