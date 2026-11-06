@@ -41,7 +41,7 @@
         'fixable $ %{} 'CodeEntry (:doc "|Exact removed API call.")
           :code $ quote $ defn fixable (value) (&tuple:enum value)
           :examples $ []
-          :schema $ quote $ Fn Enum
+          :schema $ quote $ Fn AnyEnum
             -> $ calcit.core/Option EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |returns-enum-definition)
             :code $ quote $ assert= (Option :some Option)

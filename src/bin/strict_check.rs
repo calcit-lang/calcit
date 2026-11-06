@@ -399,6 +399,41 @@ fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec
   results
 }
 
+/// Marks passed definitions blocked when a definition they depend on failed
+/// after the ordinary check, such as for a bare broad type (#2504).
+/// `components` are in dependency order, so blocks propagate in one pass.
+fn block_dependents_of_failed(graph: &DefinitionGraph, components: &[Vec<String>], results: &mut [DefinitionResult]) {
+  let mut statuses = results
+    .iter()
+    .map(|result| (result.definition.clone(), result.status))
+    .collect::<HashMap<_, _>>();
+  for component in components {
+    let component_set = component.iter().collect::<HashSet<_>>();
+    let blockers = component
+      .iter()
+      .flat_map(|definition| graph.get(definition).into_iter().flatten())
+      .filter(|dependency| !component_set.contains(dependency))
+      .chain(component.iter())
+      .filter(|dependency| matches!(statuses.get(*dependency), Some(&"failed" | &"blocked" | &"cascaded")))
+      .cloned()
+      .collect::<BTreeSet<_>>();
+    if blockers.is_empty() {
+      continue;
+    }
+    for definition in component {
+      let Some(result) = results
+        .iter_mut()
+        .find(|result| &result.definition == definition && result.status == "passed")
+      else {
+        continue;
+      };
+      result.status = "blocked";
+      result.blocked_by = blockers.iter().filter(|blocker| *blocker != definition).cloned().collect();
+      statuses.insert(definition.clone(), "blocked");
+    }
+  }
+}
+
 fn print_human(data: &CheckData) {
   println!("# Strict check\n");
   println!("- status: **{}**", data.status.to_uppercase());
@@ -447,7 +482,7 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
   let _output_guard = crate::ProgramOutputGuard::new(format != StructuredOutputFormat::Human, false);
   let (graph, definitions) = reachable_definitions(entries, all_defs)?;
   let mut results = check_definitions(&graph, &definitions);
-  let advisories = runner::preprocess::take_advisories();
+  let (broad_type_errors, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
   // The proof audit re-checks the components that passed the ordinary check,
   // so ordinary rejections keep their own diagnostics (#2121). It runs even
   // when another definition failed, so an unrelated warning cannot leave an
@@ -479,6 +514,29 @@ pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefs
       // The audit re-preprocesses the same code; its advisories repeat the ordinary ones.
       drop(runner::preprocess::take_advisories());
     }
+  }
+  // Bare broad types are errors since 0.36.0 (#2504): they fail the
+  // definition that writes them, reachable or not.
+  for error in &broad_type_errors {
+    let diagnostic = CheckDiagnostic {
+      severity: "error",
+      ..warning_diagnostic(error)
+    };
+    match results.iter_mut().find(|result| result.definition == diagnostic.definition) {
+      Some(result) => {
+        result.status = "failed";
+        result.diagnostics.push(diagnostic);
+      }
+      None => results.push(DefinitionResult {
+        definition: diagnostic.definition.clone(),
+        status: "failed",
+        blocked_by: vec![],
+        diagnostics: vec![diagnostic],
+      }),
+    }
+  }
+  if !broad_type_errors.is_empty() {
+    block_dependents_of_failed(&graph, &definitions, &mut results);
   }
   let summary = CheckSummary {
     total: results.len(),

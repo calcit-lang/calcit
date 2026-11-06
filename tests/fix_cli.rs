@@ -6592,7 +6592,7 @@ fn semantic_rename_updates_schema_trait_bounds_atomically() {
         "def",
         "fix-command.main/RenameTrait",
         "--code",
-        "quote $ deftrait RenameTrait (.show 'Fn)",
+        "quote $ deftrait RenameTrait (.show AnyFn)",
       ],
       "create rename trait",
     ),

@@ -277,7 +277,7 @@ fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotat
 // `AnyFn`, `AnyStruct` and `AnyEnum` (#2594) are the bare family types written
 // on purpose. They parse to these shared nodes, so every relation treats them
 // exactly like `Fn`, `Struct` and `Enum`; the node identity keeps the spelling
-// for serialization and lets `W_BROAD_TYPE` skip them, as `DYNAMIC_TYPE` does
+// for serialization and lets `E_BROAD_TYPE` skip them, as `DYNAMIC_TYPE` does
 // for omitted container arguments.
 static ANY_FN_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::DynFn));
 static ANY_STRUCT_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> =

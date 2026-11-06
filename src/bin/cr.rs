@@ -2047,8 +2047,9 @@ fn run_entry_proof_preflight(entries: &ProgramEntries, js_emit_path: Option<&str
   })
 }
 
-/// Report bare `Enum`/`Struct`/`Trait`/`Fn` types in project definitions as
-/// check notes. They are not rewritten: only the author knows the concrete type.
+/// Queue bare `Enum`/`Struct`/`Trait`/`Fn` types in project definitions; the
+/// check reports them as errors (#2504). They are not rewritten: only the
+/// author knows the concrete type.
 fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
   for hit in snapshot::collect_broad_type_hits(snapshot, project_namespaces) {
     // Coordinates of examples and tests do not point into the definition code.
@@ -2059,7 +2060,7 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
       LocatedWarning::new_with_detail(
         hit.message(),
         calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(coord)),
-        Some(snapshot::BROAD_TYPE_WARNING.to_owned()),
+        Some(hit.code().to_owned()),
         None,
       ),
       slot,
@@ -2085,11 +2086,31 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
     let check_warnings = RefCell::new(vec![]);
     let (init_result, reload_result) = compile_entries(entries, &check_warnings);
     if !entries_passed(&init_result, &reload_result, &check_warnings) {
+      // A native run starts from `init_fn` alone, so once it compiles a bare
+      // broad type must not slip through behind warnings or a failed
+      // `reload_fn` (#2504).
+      let (broad_type_errors, _) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+      if init_result.is_ok() {
+        report_broad_type_errors(broad_type_errors)?;
+      }
       return Ok(());
     }
     // The ordinary entries are compiled now, so the check below only adds the audit.
     check_entries(entries, false, true)
   })
+}
+
+/// Bare broad types are errors since 0.36.0 (#2504).
+fn report_broad_type_errors(broad_type_errors: Vec<LocatedWarning>) -> Result<(), String> {
+  if broad_type_errors.is_empty() {
+    return Ok(());
+  }
+  eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad_type_errors.len());
+  LocatedWarning::print_list(&broad_type_errors);
+  Err(format!(
+    "Found {} bare broad type(s); write the concrete type, or AnyFn / AnyStruct / AnyEnum where any member is intended",
+    broad_type_errors.len()
+  ))
 }
 
 fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Result<(), String> {
@@ -2101,7 +2122,7 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   }
 
   let (mut init_result, mut reload_result) = compile_entries(entries, check_warnings);
-  let advisories = runner::preprocess::take_advisories();
+  let (broad_type_errors, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
   // The proof audit runs only after the ordinary check passes, so ordinary
   // rejections keep their own diagnostics and the audit adds the rest (#2121).
   if prove && runner::preprocess::default_proof_enabled() && entries_passed(&init_result, &reload_result, check_warnings) {
@@ -2147,6 +2168,8 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
     LocatedWarning::print_list(&warnings);
     return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
+
+  report_broad_type_errors(broad_type_errors)?;
 
   // Advisories never fail the check; they only point at calls that still work.
   if emit_output && !advisories.is_empty() {

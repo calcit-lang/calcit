@@ -21,7 +21,7 @@
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
           :schema $ quote Trait
         'Plain $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Plain (.label 'Fn)
+          :code $ quote $ deftrait Plain (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)

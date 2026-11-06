@@ -1156,7 +1156,7 @@
           :examples $ []
           :schema $ quote StructDef
         'OpenCallableBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OpenCallableBox (:apply Fn)
+          :code $ quote $ defstruct OpenCallableBox (:apply AnyFn)
           :examples $ []
           :schema $ quote StructDef
         'OpenRefBox $ %{} 'CodeEntry (:doc |)

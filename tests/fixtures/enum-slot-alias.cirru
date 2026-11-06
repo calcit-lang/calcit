@@ -20,7 +20,7 @@
         'Op $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Op (:: :sample)
           :examples $ []
-          :schema $ quote Enum
+          :schema $ quote AnyEnum
         'accept $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn accept (f)
             f $ :: :sample
@@ -32,7 +32,7 @@
           :code $ quote $ defn callback (op)
             assert= (:: :sample) op
           :examples $ []
-          :schema $ quote $ Fn Enum (-> Unit)
+          :schema $ quote $ Fn AnyEnum (-> Unit)
         'forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn forward (op) (callback op)
           :examples $ []

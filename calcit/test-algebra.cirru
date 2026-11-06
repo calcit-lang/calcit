@@ -11,11 +11,11 @@
     %{} 'FileEntry
       :defs $ {}
         'AlgebraApply $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraApply (.apply 'Fn)
+          :code $ quote $ deftrait AlgebraApply (.apply AnyFn)
           :examples $ []
           :schema $ quote Trait
         'AlgebraBind $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraBind (.bind 'Fn)
+          :code $ quote $ deftrait AlgebraBind (.bind AnyFn)
           :examples $ []
           :schema $ quote Trait
         'AlgebraBox $ %{} 'CodeEntry (:doc |)
@@ -60,11 +60,11 @@
           :examples $ []
           :schema $ quote Impl
         'AlgebraMap $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraMap (.map 'Fn)
+          :code $ quote $ deftrait AlgebraMap (.map AnyFn)
           :examples $ []
           :schema $ quote Trait
         'AlgebraMappend $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlgebraMappend (.mappend 'Fn)
+          :code $ quote $ deftrait AlgebraMappend (.mappend AnyFn)
           :examples $ []
           :schema $ quote Trait
         'main! $ %{} 'CodeEntry (:doc |)

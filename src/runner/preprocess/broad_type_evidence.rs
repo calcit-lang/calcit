@@ -1,5 +1,5 @@
 //! Candidate concrete types for bare `Enum` / `Struct` schema slots
-//! (`W_BROAD_TYPE`, #2566), including those inside a callback parameter such
+//! (`E_BROAD_TYPE`, #2566), including those inside a callback parameter such
 //! as `Fn Enum (-> Unit)`.
 //!
 //! While call sites are checked, the actual type passed into a broad slot of a
@@ -36,7 +36,7 @@ thread_local! {
   static CALL_OWNER: RefCell<Option<SlotKey>> = const { RefCell::new(None) };
 }
 
-/// Queues a `W_BROAD_TYPE` note. `slot` names the function definition and
+/// Queues a `E_BROAD_TYPE` note. `slot` names the function definition and
 /// the path of the broad type among its parameters and results.
 pub fn push_broad_type_advisory(advisory: LocatedWarning, slot: Option<(&str, &str, &[SchemaSlotStep])>) {
   let slot = slot.map(|(ns, def, path)| (Arc::from(ns), Arc::from(def), path.to_vec()));

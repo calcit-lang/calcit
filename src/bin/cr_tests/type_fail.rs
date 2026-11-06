@@ -4855,7 +4855,7 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
 
     let notes = runner::preprocess::take_advisories()
       .into_iter()
-      .filter(|advisory| advisory.code() == Some("W_BROAD_TYPE"))
+      .filter(|advisory| advisory.code() == Some("E_BROAD_TYPE"))
       .map(|advisory| (advisory.location().def.to_string(), advisory.hint().map(str::to_owned)))
       .collect::<Vec<_>>();
     // A `hint-fn` inside a body adds its own note without a slot; the

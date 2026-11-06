@@ -32,11 +32,11 @@
           :examples $ []
           :schema $ quote Impl
         'BirdShape $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct BirdShape (:show Fn) (:rename Fn)
+          :code $ quote $ defstruct BirdShape (:show AnyFn) (:rename AnyFn)
           :examples $ []
           :schema $ quote StructDef
         'BirdTrait $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait BirdTrait (.show 'Fn) (.rename 'Fn)
+          :code $ quote $ deftrait BirdTrait (.show AnyFn) (.rename AnyFn)
           :examples $ []
           :schema $ quote Trait
         'C $ %{} 'CodeEntry (:doc |)

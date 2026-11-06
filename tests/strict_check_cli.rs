@@ -1853,3 +1853,61 @@ fn referred_union_short_name_is_the_declared_type() {
     assert_success(&run_calcit(&snapshot, &args), &args.join(" "));
   }
 }
+
+#[test]
+fn bare_broad_types_fail_the_check_and_block_dependents() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(&snapshot, "broad", "quote $ defn broad (f) (f 1)", false);
+  edit_definition(&snapshot, "user", "quote $ defn user () $ broad inc", false);
+  edit_definition(&snapshot, "main!", "quote $ defn main! () $ do (user) nil", true);
+  edit_definition(&snapshot, "reload!", "quote $ defn reload! () nil", true);
+  let set_broad_schema = |schema: &str| {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", "app.main/broad", "--code", schema]),
+      "edit broad schema",
+    );
+  };
+  set_broad_schema("quote $ Fn Fn (-> Dynamic)");
+  edit_schema(&snapshot, "user", "Dynamic");
+  edit_schema(&snapshot, "main!", "Nil");
+  edit_schema(&snapshot, "reload!", "Nil");
+
+  // Fail-fast check and the run preflight both refuse the bare `Fn`.
+  for args in [&["--check-only"][..], &[][..]] {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "{args:?} must fail on a bare broad type");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("[E_BROAD_TYPE] [Error]"),
+      "{args:?} stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+
+  let output = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert!(!output.status.success(), "the strict check must fail");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON envelope");
+  let by_name = report["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .map(|item| (item["definition"].as_str().expect("definition should be text"), item))
+    .collect::<std::collections::HashMap<_, _>>();
+  assert_eq!(by_name["app.main/broad"]["status"], "failed");
+  assert_eq!(by_name["app.main/broad"]["diagnostics"][0]["code"], "E_BROAD_TYPE");
+  assert_eq!(by_name["app.main/broad"]["diagnostics"][0]["severity"], "error");
+  assert_eq!(by_name["app.main/user"]["status"], "blocked");
+  assert_eq!(by_name["app.main/user"]["blocked_by"], serde_json::json!(["app.main/broad"]));
+  assert_eq!(by_name["app.main/main!"]["status"], "blocked");
+  assert_eq!(by_name["app.main/main!"]["blocked_by"], serde_json::json!(["app.main/user"]));
+  assert_eq!(by_name["app.main/reload!"]["status"], "passed");
+
+  // `AnyFn` is the same type, written on purpose.
+  set_broad_schema("quote $ Fn AnyFn (-> Dynamic)");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "AnyFn check");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]),
+    "AnyFn strict check",
+  );
+}

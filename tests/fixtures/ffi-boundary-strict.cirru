@@ -18,7 +18,7 @@
           :schema $ quote Trait
         'Labelled $ %{} 'CodeEntry
           :doc "|Ordinary Calcit trait: host values coerced to it still need proof."
-          :code $ quote $ deftrait Labelled (.label 'Fn)
+          :code $ quote $ deftrait Labelled (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'as-label $ %{} 'CodeEntry

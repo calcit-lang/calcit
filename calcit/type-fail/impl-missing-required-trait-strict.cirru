@@ -16,7 +16,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Child $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Child (requires Parent) (.greet 'Fn)
+          :code $ quote $ deftrait Child (requires Parent) (.greet AnyFn)
           :examples $ []
           :schema $ quote Trait
         'ChildImpl $ %{} 'CodeEntry (:doc |)
@@ -25,7 +25,7 @@
           :examples $ []
           :schema $ quote Impl
         'Parent $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Parent (.label 'Fn)
+          :code $ quote $ deftrait Parent (.label AnyFn)
           :examples $ []
           :schema $ quote Trait
         'Widget $ %{} 'CodeEntry (:doc |)

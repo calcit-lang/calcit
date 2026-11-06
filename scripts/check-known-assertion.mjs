@@ -255,7 +255,7 @@ try {
             else {
               badCode[2] = ["h"];
               badCode[3] = "h";
-              badSchema[2].find(field => field[0] === ":args")[1] = ["[]", "'Fn"];
+              badSchema[2].find(field => field[0] === ":args")[1] = ["[]", "'AnyFn"];
               badSchema[2].find(field => field[0] === ":generics")[1] = ["[]", "'A", "'C"];
             }
             const mutation = JSON.stringify([
@@ -776,7 +776,7 @@ try {
         {
           label: "shortcut-cannot-specialize-caller", diagnostic: /E_FN_RETURN_UNPROVEN/,
           schema: "quote $ Fn T (-> $ Option T) (:generics T)",
-          source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'Enum)\n    :: true $ Option :some 1",
+          source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'AnyEnum)\n    :: true $ Option :some 1",
         },
         {
           label: "bound-missing-impl", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
@@ -915,7 +915,7 @@ try {
         ["edit", "def", `test-traits.main/unproven-${name}`, "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", `unproven-${name}`, ["value"], body])],
         ["edit", "schema", `test-traits.main/unproven-${name}`, "--input-format", "cirru", "--code",
-          "quote $ Fn Struct (-> Number)"],
+          "quote $ Fn AnyStruct (-> Number)"],
       ]);
       const originMutation = JSON.stringify(originOperations);
       const originPreview = JSON.parse(runOrigin("edit", "transaction", "--code", originMutation, "--dry-run", "--format", "json"));
@@ -2402,7 +2402,7 @@ try {
       }
       new WebAssembly.Instance(resetModule, resetImports).exports["run-tests"]();
 
-      const functionKeyedNumbers = ["::", "'Map", "'Fn", "'Number"];
+      const functionKeyedNumbers = ["::", "'Map", "'AnyFn", "'Number"];
       const numberCallback = ["::", "'Fn", ["{}", [":args", ["[]", "'Number"]], [":return", "'Number"]]];
       const stringCallback = ["::", "'Fn", ["{}", [":args", ["[]", "'String"]], [":return", "'String"]]];
       for (const [name, types, returned, body, generics = [], features = []] of [
@@ -2414,11 +2414,11 @@ try {
         ["reset-wrong-write", [["::", "'Ref", "'Number"], "'String"], "'String", ["reset!", "source", "value"]],
         ["reset-unrelated-generic", [["::", "'Ref", "'T"], "'U"], "'U", ["reset!", "source", "value"], ["'T", "'U"]],
         ["reset-borrowed-payload", [["::", "'Ref", "'Number"], "'Dynamic"], "'Number", ["reset!", "source", "value"]],
-        ["reset-fn-map-wrong-value", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Fn", "'String"]], ["::", "'Map", "'Fn", "'String"], ["reset!", "source", "value"]],
+        ["reset-fn-map-wrong-value", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'AnyFn", "'String"]], ["::", "'Map", "'AnyFn", "'String"], ["reset!", "source", "value"]],
         ["reset-fn-map-wrong-key", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Number", "'Number"]], ["::", "'Map", "'Number", "'Number"], ["reset!", "source", "value"]],
         ["reset-fn-map-open-key", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Dynamic", "'Number"]], ["::", "'Map", "'Dynamic", "'Number"], ["reset!", "source", "value"]],
-        ["reset-opaque-to-concrete-fn", [["::", "'Ref", numberCallback], "'Fn"], "'Fn", ["reset!", "source", "value"]],
-        ["reset-open-to-opaque-fn", [["::", "'Ref", "'Fn"], "'Dynamic"], "'Dynamic", ["reset!", "source", "value"]],
+        ["reset-opaque-to-concrete-fn", [["::", "'Ref", numberCallback], "'AnyFn"], "'AnyFn", ["reset!", "source", "value"]],
+        ["reset-open-to-opaque-fn", [["::", "'Ref", "'AnyFn"], "'Dynamic"], "'Dynamic", ["reset!", "source", "value"]],
         ["reset-wrong-concrete-fn", [["::", "'Ref", numberCallback], stringCallback], stringCallback, ["reset!", "source", "value"]],
       ]) {
         const target = `app.main/${name}`;
@@ -2658,7 +2658,7 @@ try {
         ["mixed-wrong-callback-input", [], "[]", "NullableEventStore :handlers ({} (:click (fn (value) (hint-fn $ {} (:args ([] String)) (:return Unit)) &unit)) (:focus nil))"],
         ["mixed-wrong-callback-return", [], "[]", "NullableEventStore :handlers ({} (:click (fn (value) (hint-fn $ {} (:args ([] Number)) (:return Number)) 1)) (:focus nil))"],
         ["mixed-wrong-callback-arity", [], "[]", "NullableEventStore :handlers ({} (:click (fn (left right) (hint-fn $ {} (:args ([] Number Number)) (:return Unit)) &unit)) (:focus nil))"],
-        ["mixed-open-callback", ["callback"], "[] 'Fn", "NullableEventStore :handlers ({} (:click callback) (:focus nil))"],
+        ["mixed-open-callback", ["callback"], "[] 'AnyFn", "NullableEventStore :handlers ({} (:click callback) (:focus nil))"],
         ["mixed-open-member", ["raw"], "[] 'Dynamic", "NullableNumberStore :values ({} (:live raw) (:absent nil)) :nested ([])"],
         ["mixed-optional-member", [], "[]", "NullableNumberStore :values ({} (:live (&parse-float |1)) (:absent nil)) :nested ([])"],
         ["open-container", ["values"], "[] $ :: 'Map 'Tag 'Dynamic", "NullableNumberStore :values values :nested ([])"],
@@ -2809,7 +2809,7 @@ try {
         ["wrong-callback-input", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'String)) (:return 'Unit)) &unit) nil", nullableCallback, true],
         ["wrong-callback-return", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'Number)) 1) nil", nullableCallback, true],
         ["wrong-callback-arity", [], "[]", "if flag (fn (left right) (hint-fn $ {} (:args ([] 'Number 'Number)) (:return 'Unit)) &unit) nil", nullableCallback, true],
-        ["open-callback", ["raw"], "[] 'Fn", "if flag raw nil", nullableCallback, false],
+        ["open-callback", ["raw"], "[] 'AnyFn", "if flag raw nil", nullableCallback, false],
         ["recursive-cycle", ["value"], "[] 'Number", "recur flag value", nullableNumber, false],
       ]) {
         const target = "test-struct.main/contextual-rejected";
@@ -2872,7 +2872,7 @@ try {
         ["wrong-callback-return", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'Number) (:return 'Number)) 1", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["wrong-callback-arity", [], "NullableEventStore :handlers $ {} $ :click $ fn (left right) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["narrower-callback-input", [], "NullableInputCallbackStore :handlers $ {} $ :click NullableEvent", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
-        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
+        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'AnyFn) (:return 'Dynamic)"],
         ["nullable-elimination", ["values"], "ConcreteNumberStore :values values", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag $ :: 'JsNullish 'Number) (:return 'Dynamic)"],
         ["mutable-widening", ["cell"], "NullableRefStore :cell cell", ":: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Dynamic)"],
       ]) {
@@ -3260,7 +3260,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "open-shortcut", ["callback"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
       run("edit", "schema", "calcit.assert-evidence/open-shortcut", "--input-format", "cirru", "--code",
-        "quote $ Fn Fn (-> Number)");
+        "quote $ Fn AnyFn (-> Number)");
       const openShortcutOriginal = await readFile(snapshot);
       const openShortcut = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-shortcut", "--format", "edn"], options);
       if (openShortcut.error) throw openShortcut.error;
@@ -3346,7 +3346,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/make-async-tail", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "make-async-tail", [], asyncTests[0].code]));
       run("edit", "schema", "calcit.assert-evidence/make-async-tail", "--input-format", "cirru", "--code",
-        "quote $ Fn (-> Fn)");
+        "quote $ Fn (-> AnyFn)");
       const asyncOutput = join(project, "async-js-out");
       run("--emit-path", asyncOutput, "js");
       const asyncGenerated = await import(pathToFileURL(join(asyncOutput, "calcit.assert-evidence.mjs")).href);
@@ -3375,7 +3375,7 @@ try {
       const enumKeyTarget = "calcit.assert-evidence/enum-key";
       const enumKeyCode = ["defn", "enum-key", ["value", "key"], [".contains?", "value", "key"]];
       const enumKeySchema = ["::", "'Fn", ["{}", [":generics", ["[]", "'K"]],
-        [":args", ["[]", "'Enum", "'K"]], [":return", "'Bool"]]];
+        [":args", ["[]", "'AnyEnum", "'K"]], [":return", "'Bool"]]];
       const enumKeyCases = [
         ["zero", "0", true], ["negative-zero", "-0", true], ["fraction", "1.5", true],
         ["nil", "nil", false], ["false", "false", false], ["true", "true", false],
@@ -3584,13 +3584,13 @@ try {
         "assert-type |hello 'Number",
         "assert-type 3 'String",
         "assert-type (+ 1 2) 'String",
-        "assert-type (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) 'Fn",
+        "assert-type (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) 'AnyFn",
         "assert-type ([] 1 2) (:: 'List 'String)",
         "assert-type (Option :some 3) (:: 'Option 'String)",
         "assert-type (Option :some 3) (:: 'Result 'Number 'String)",
       ];
       const detailed = new Map([
-        ["assert-type (to-pairs (&{} :a 1)) (:: 'Set 'Enum)",
+        ["assert-type (to-pairs (&{} :a 1)) (:: 'Set 'AnyEnum)",
           ["expected `set<:enum>`", "got `set<tuple<:tag, :number>>`"]],
         ["assert-type (.map (Option :some 3) $ fn (x) ([] x)) (:: 'Option (:: 'List 'String))",
           ["expected `'Option<list<:string>>`", "got `'calcit.core/Option<list<:number>>`"]],
@@ -3606,11 +3606,11 @@ try {
       bad.push(...detailed.keys());
       const badReturns = [
         "let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Number)))))) (empty)",
-        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
-        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
-        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) callback))) facade (fn (x) x)",
-        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'List 'Number)))) callback))) facade (fn (x) x)",
-        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'Option 'Number)))) callback))) facade (fn (x) x)",
+        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'Number))) callback))) facade (fn (x) x)",
+        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'String))) callback))) facade (fn (x) x)",
+        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'Unit))) callback))) facade (fn (x) x)",
+        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return (:: 'List 'Number)))) callback))) facade (fn (x) x)",
+        "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return (:: 'Option 'Number)))) callback))) facade (fn (x) x)",
         "let ((facade (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Number))) value))) facade |hello",
         "let ((facade (fn (value) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return (:: 'List 'String)))) value))) facade ([] 1 2)",
         "let ((load (fn (x) (hint-fn ({} (:async true) (:args ([] 'Number)) (:return 'Number))) x)) (forward (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (load x)))) (fn? forward)",
@@ -3622,11 +3622,11 @@ try {
         "let ((consume (fn (values) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return 'Unit))) &unit))) (consume ([] |hello))",
         "let ((consume (fn (value) (hint-fn ({} (:args ([] (:: 'Option 'Number))) (:return 'Unit))) &unit))) (consume (Option :some |hello))",
         "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Unit))) &unit)) (wrong (fn (x) (hint-fn ({} (:args ([] 'String)) (:return 'String))) x))) (consume wrong)",
-        "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit)) (forward (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) (consume callback)))) (forward (fn (x) x))",
+        "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit)) (forward (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'Unit))) (consume callback)))) (forward (fn (x) x))",
         // Annotation expressions are Nil, including through bindings and helpers.
         "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number))) (callback 1)))) (consume (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))",
-        "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))) (consume callback)",
-        "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
+        "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'Unit))) &unit)) (callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))) (consume callback)",
+        "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'AnyFn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
       ];
       // Open values need their own proof before a concrete parameter or payload (#1767).
       const numberOnly = "(number-only (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (&+ value 1)))";
@@ -3734,9 +3734,9 @@ try {
         ["RecursiveSignalHolder", "defstruct RecursiveSignalHolder (:signal $ :: 'calcit.assert-evidence/RecursiveSignal 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
         ["make-open-signal", "defn make-open-signal () $ RecursiveSignal :data 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'calcit.assert-evidence/RecursiveSignal 'Dynamic)"],
         ["RecursiveCell", "defstruct RecursiveCell ([] T) (:value T)", "'StructDef"],
-        ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
+        ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'AnyStruct) (:tree $ :: 'Option 'AnyStruct)", "'StructDef"],
         ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
-        ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
+        ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'AnyStruct)"],
         ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
         ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
         ["make-open-number", "defn make-open-number () 1", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],

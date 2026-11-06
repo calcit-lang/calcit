@@ -3437,10 +3437,15 @@ fn collect_snapshot_legacy_optional_hits(files: &HashMap<String, FileInSnapShot>
   hits
 }
 
-/// Advisory code for a bare `Enum`, `Struct`, `Trait` or `Fn` in a type
-/// position. The broad family accepts any member and drops its nominal
-/// identity or signature, so whatever is read from the value is `Dynamic`.
-pub const BROAD_TYPE_WARNING: &str = "W_BROAD_TYPE";
+/// Error code for a bare `Enum`, `Struct`, `Trait` or `Fn` in a type
+/// position (blocking since 0.36.0, #2504). The broad family accepts any
+/// member and drops its nominal identity or signature, so whatever is read
+/// from the value is `Dynamic`.
+pub const BROAD_TYPE_ERROR: &str = "E_BROAD_TYPE";
+
+/// Advisory code for a bare `Trait` in a type position. It has no explicit
+/// open spelling, so it stays a non-blocking note.
+pub const BROAD_TRAIT_WARNING: &str = "W_BROAD_TYPE";
 
 /// A bare broad type written in a definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3498,6 +3503,20 @@ fn schema_slot_paths(root: &CalcitTypeAnnotation) -> HashMap<usize, Vec<SchemaSl
 }
 
 impl BroadTypeHit {
+  /// Whether this hit fails the check: every family except a bare `Trait`
+  /// type, which has no `Any*` spelling to migrate to.
+  pub fn is_blocking(&self) -> bool {
+    self.definition_kind.is_some() || self.family != "Trait"
+  }
+
+  pub fn code(&self) -> &'static str {
+    if self.is_blocking() {
+      BROAD_TYPE_ERROR
+    } else {
+      BROAD_TRAIT_WARNING
+    }
+  }
+
   pub fn message(&self) -> String {
     let place = if self.place.is_empty() {
       String::new()
@@ -3507,7 +3526,7 @@ impl BroadTypeHit {
     let advice = match (self.definition_kind, self.family) {
       (Some(kind), family) => {
         return format!(
-          "[Warn] the `:schema` of this definition is bare `{family}`, but its value is a `{kind}`; write `{kind}` instead"
+          "[Error] the `:schema` of this definition is bare `{family}`, but its value is a `{kind}`; write `{kind}` instead"
         );
       }
       (None, "Enum") => {
@@ -3523,7 +3542,8 @@ impl BroadTypeHit {
       "Trait" => "Write `Dynamic` only where the boundary is intentionally open.".to_owned(),
       family => format!("Write `Any{family}` where any {} is intended.", family.to_lowercase()),
     };
-    format!("[Warn] bare `{}`{place} {advice}. {open}", self.family)
+    let level = if self.is_blocking() { "Error" } else { "Warn" };
+    format!("[{level}] bare `{}`{place} {advice}. {open}", self.family)
   }
 }
 
@@ -3695,10 +3715,10 @@ fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static
 /// tests, and `:schema`. A `deftrait` keeps `Trait` as its definition kind.
 pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<BroadTypeHit> {
   let mut hits = vec![];
-  // Core procs that work on any enum or struct keep their broad signatures.
+  // Bundled core namespaces (core procs that work on any enum or struct) keep their broad signatures.
   let mut names: Vec<&String> = namespaces
     .iter()
-    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .filter(|ns| !crate::calcit::is_bundled_core_ns(ns) && snapshot.files.contains_key(*ns))
     .collect();
   names.sort();
   for ns in names {

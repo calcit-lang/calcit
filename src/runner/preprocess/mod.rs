@@ -762,6 +762,14 @@ pub fn take_advisories() -> Vec<LocatedWarning> {
   advisories
 }
 
+/// Splits collected advisories into blocking `E_BROAD_TYPE` errors (#2504)
+/// and the non-failing notes.
+pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<LocatedWarning>, Vec<LocatedWarning>) {
+  advisories
+    .into_iter()
+    .partition(|advisory| advisory.code() == Some(crate::snapshot::BROAD_TYPE_ERROR))
+}
+
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
   #[cfg(not(test))]
   {
@@ -14370,7 +14378,7 @@ pub fn preprocess_defn(
         recur_param_types = parameters;
       }
       // Only the definition's own parameters, not those of a nested `fn`,
-      // collect call-site evidence for its `W_BROAD_TYPE` notes.
+      // collect call-site evidence for its `E_BROAD_TYPE` notes.
       if info.at_ns.as_ref() == ctx.file_ns && info.at_def.as_ref() == def_name.as_ref() {
         body_types.mark_defn_parameters(&param_symbols);
       }

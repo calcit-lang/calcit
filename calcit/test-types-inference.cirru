@@ -1537,7 +1537,7 @@
                     reset! trace $ str (deref trace) |h
                     , add
                   keep-open $ fn (callback)
-                    hint-fn $ Fn Fn $ -> Fn
+                    hint-fn $ Fn AnyFn $ -> AnyFn
                     , callback
                 assert= 15 $
                   produce

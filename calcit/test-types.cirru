@@ -27,7 +27,7 @@
         'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote $ defstruct Person (:name String) (:age nil)
           :examples $ []
-          :schema $ quote Struct
+          :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |same-slot-callback)
             :code $ quote $ with-type-slot (:callback Person)
               let
@@ -45,7 +45,7 @@
         'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
           :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
-          :schema $ quote Enum
+          :schema $ quote EnumDef
         'ResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote $ defimpl ResultImpl ResultTrait
             .describe $ fn (self)
@@ -55,7 +55,7 @@
           :examples $ []
           :schema $ quote Impl
         'ResultTrait $ %{} 'CodeEntry (:doc "|Trait definition for enum tuple tests")
-          :code $ quote $ deftrait ResultTrait (.describe 'Fn)
+          :code $ quote $ deftrait ResultTrait (.describe AnyFn)
           :examples $ []
           :schema $ quote Trait
         'StructImpl $ %{} 'CodeEntry (:doc "|Trait impl for struct metadata")
@@ -338,7 +338,7 @@
           :doc "|Tests method calls on Struct instances with impls"
           :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
             let
-                PersonGreeting $ deftrait PersonGreeting $ .greet 'Fn
+                PersonGreeting $ deftrait PersonGreeting $ .greet AnyFn
                 PersonImpl $ defimpl PersonImpl PersonGreeting $ .greet
                   fn (self)
                     str "|Hello, I'm " $ :name self
