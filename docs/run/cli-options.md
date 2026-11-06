@@ -367,11 +367,14 @@ from accidental omission.
 
 `E_UNBOUND_TYPE_SLOT` rejects a reachable function or macro contract that uses
 `*slot` without a binding in the selected entry. Bind a concrete nominal type
-with `calcit config set-type-slot :slot namespace/definition`. When the entry
-deliberately opts out of static checking at that boundary, bind `:dynamic`
-explicitly; it remains visible to `analyze weak-types` and quality baselines but
-is no longer confused with an omitted configuration. Compatibility mode keeps
-the existing warning/inventory behavior while projects migrate.
+with `calcit config set-type-slot :slot namespace/definition`. A `Dynamic`
+binding does not count as bound: it avoids the error but is reported as
+`W_UNBOUND_TYPE_SLOT`, as is an unbound slot outside strict project source
+(including slots used by dependency code that the entry leaves unbound). Since
+0.36.x bindings are written as symbols (`:dispatch-op 'app.schema/Op`); a string
+binding is reported as `W_TYPE_SLOT_STRING`, and `calcit edit format` rewrites
+it. `W_UNBOUND_TYPE_SLOT` becomes an error in
+0.37.0.
 
 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` rejects a reachable project function when
 neither its root schema nor an embedded `Fn` hint provides a structured

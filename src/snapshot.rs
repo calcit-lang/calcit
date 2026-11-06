@@ -2594,7 +2594,7 @@ fn parse_snapshot_type_slots(data: &Edn, owner: &str) -> Result<HashMap<String, 
       Edn::Tag(tag) if tag.ref_str() == "dynamic" => ":dynamic".to_owned(),
       _ => {
         return Err(format!(
-          "{owner}.type-slots.{slot}: type must be a full `namespace/definition` string or `:dynamic`; got {}",
+          "{owner}.type-slots.{slot}: type must be a full `namespace/definition` symbol or `Dynamic`; got {}",
           format_edn_preview(raw_type)
         ));
       }
@@ -4731,17 +4731,64 @@ impl TryFrom<ChangesDict> for Edn {
   }
 }
 
+/// A type-slot binding as written in a Snapshot: the symbol of a full
+/// `namespace/definition` path, or `Dynamic` for the explicit opt-out.
+pub fn type_slot_value_edn(type_path: &str) -> Edn {
+  if type_path == ":dynamic" {
+    Edn::Symbol(Arc::from("Dynamic"))
+  } else {
+    Edn::Symbol(Arc::from(type_path))
+  }
+}
+
+pub const TYPE_SLOT_STRING_WARNING: &str = "W_TYPE_SLOT_STRING";
+/// A schema uses a type slot that the selected entry leaves unbound or binds
+/// to `Dynamic`. A warning in 0.36.x; it becomes an error in 0.37.0.
+pub const UNBOUND_TYPE_SLOT_WARNING: &str = "W_UNBOUND_TYPE_SLOT";
+
+/// Legacy spellings in the raw `:type-slots` map of one entry: a binding
+/// written as a string (`|app.schema/Op`) instead of a symbol, or a slot name
+/// written as a string or symbol instead of a tag. `edit format` rewrites both.
+pub fn collect_type_slot_spelling_hits(data: &Edn, entry_name: &str) -> Vec<String> {
+  let find = |map: &EdnMapView, key: &str| map.get(&Edn::tag(key)).or_else(|| map.get(&Edn::str(key))).cloned();
+  let Ok(root) = data.view_map() else { return vec![] };
+  let Some(entries) = find(&root, "entries") else { return vec![] };
+  let Ok(entries) = entries.view_map() else { return vec![] };
+  let Some(entry) = find(&entries, entry_name) else { return vec![] };
+  let Ok(entry) = entry.view_map() else { return vec![] };
+  let Some(slots) = find(&entry, "type-slots") else { return vec![] };
+  let Ok(slots) = slots.view_map() else { return vec![] };
+  let mut hits = vec![];
+  for (raw_slot, raw_type) in slots.0.iter() {
+    let slot = match raw_slot {
+      Edn::Tag(tag) => tag.ref_str().to_owned(),
+      Edn::Str(text) | Edn::Symbol(text) => {
+        let name = text.trim_start_matches(':');
+        hits.push(format!("type slot name `{text}` should be written as the tag `:{name}`"));
+        name.to_owned()
+      }
+      _ => continue,
+    };
+    match raw_type {
+      Edn::Str(text) => hits.push(format!(
+        "type slot `:{slot}` is bound with the string `|{text}`; write the symbol `{text}` instead"
+      )),
+      Edn::Tag(tag) if tag.ref_str() == "dynamic" => hits.push(format!(
+        "type slot `:{slot}` is bound with the tag `:dynamic`; write the symbol `Dynamic` instead"
+      )),
+      _ => {}
+    }
+  }
+  hits.sort();
+  hits
+}
+
 fn type_slots_to_edn(type_slots: &HashMap<String, String>) -> Edn {
   let mut slots_map = EdnMapView::default();
   let mut slots: Vec<(&String, &String)> = type_slots.iter().collect();
   slots.sort_by_key(|(slot, _)| *slot);
   for (slot, type_path) in slots {
-    let value = if type_path == ":dynamic" {
-      Edn::Symbol(Arc::from("Dynamic"))
-    } else {
-      Edn::Str(type_path.as_str().into())
-    };
-    slots_map.insert_key(slot.as_str(), value);
+    slots_map.insert_key(slot.as_str(), type_slot_value_edn(type_path));
   }
   slots_map.into()
 }
@@ -8501,7 +8548,22 @@ mod tests {
       rendered.contains(":reload-fn 'mini/reload!"),
       "entry function should be stored as a symbol: {rendered}"
     );
+    // Legacy string and `:dynamic` bindings load, are reported, and render as symbols.
+    assert!(
+      rendered.contains(":dispatch-op 'mini.schema/ClientOp") && rendered.contains(":optional-op 'Dynamic"),
+      "type-slot bindings should be stored as symbols: {rendered}"
+    );
+    assert_eq!(
+      collect_type_slot_spelling_hits(&edn_data, "server"),
+      vec![
+        "type slot `:dispatch-op` is bound with the string `|mini.schema/ServerOp`; write the symbol `mini.schema/ServerOp` instead"
+          .to_owned(),
+        "type slot `:optional-op` is bound with the tag `:dynamic`; write the symbol `Dynamic` instead".to_owned(),
+      ]
+    );
     let rendered_edn = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
+    assert!(collect_type_slot_spelling_hits(&rendered_edn, DEFAULT_ENTRY_NAME).is_empty());
+    assert!(collect_type_slot_spelling_hits(&rendered_edn, "server").is_empty());
     let restored = load_snapshot_data(&rendered_edn, "mini.cirru").expect("rendered snapshot should load");
     assert_eq!(
       restored.entries[DEFAULT_ENTRY_NAME].type_slots,

@@ -6,11 +6,11 @@
     :default $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!)
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |app.main/Op
+      :type-slots $ {} $ :dispatch-op 'app.main/Op
     :inferred $ {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!)
       :feature-policy $ {}
       :modules $ []
-      :type-slots $ {} $ :dispatch-op |app.main/InferredOp
+      :type-slots $ {} $ :dispatch-op 'app.main/InferredOp
   :files $ {}
     'app.main $ %{} 'FileEntry
       :defs $ {}
