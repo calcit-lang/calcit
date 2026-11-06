@@ -1855,6 +1855,45 @@ fn referred_union_short_name_is_the_declared_type() {
 }
 
 #[test]
+fn incremental_check_reports_snapshot_level_diagnostics() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  // Outside the entry closure, so a warm cache stays warm after it changes.
+  edit_definition(&snapshot, "spread", "quote $ defn spread (& xs) (count xs)", false);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/spread", "--code", "quote $ Fn (& Number) (-> Number)"],
+    ),
+    "edit spread schema",
+  );
+  let source = fs::read_to_string(&snapshot).expect("snapshot should read");
+  fs::write(&snapshot, source.replace("Fn (& Number) (-> Number)", "Fn & Number (-> Number)")).expect("snapshot should write");
+
+  for status in ["status=cold", "status=warm"] {
+    let output = run_calcit(&snapshot, &["--check-only", "--incremental"]);
+    assert_success(&output, "incremental check");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains(status), "expected {status}, stdout:\n{stdout}");
+    assert!(stderr.contains("[W_FN_REST_SPELLING]"), "{status} stderr:\n{stderr}");
+  }
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/spread", "--code", "quote $ Fn Fn (-> Number)"],
+    ),
+    "edit spread schema to a bare Fn",
+  );
+  let output = run_calcit(&snapshot, &["--check-only", "--incremental"]);
+  assert!(!output.status.success(), "--incremental must fail on a bare broad type");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("[E_BROAD_TYPE] [Error]"), "stderr:\n{stderr}");
+}
+
+#[test]
 fn bare_broad_types_fail_the_check_and_block_dependents() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

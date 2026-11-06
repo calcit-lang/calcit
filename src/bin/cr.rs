@@ -615,6 +615,9 @@ fn run_cli() -> Result<(), String> {
     apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
     let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
     reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
+    // The cold check reports the same snapshot-level diagnostics as a plain
+    // `--check-only`, so `--incremental` cannot pass a bare broad type (#2504).
+    push_snapshot_level_advisories(&snapshot, &project_namespaces, &raw_spelling_hits(&cli_args.input, &snapshot)?);
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
       let builtin_warnings = RefCell::new(Vec::new());
@@ -628,6 +631,14 @@ fn run_cli() -> Result<(), String> {
       run_check_only(&entries)
     })?;
     if stats.preprocessing_cached {
+      // A warm cache skips compiling, but the snapshot-level diagnostics
+      // queued above may come from definitions outside the cached closure.
+      let (broad_type_errors, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+      report_broad_type_errors(broad_type_errors)?;
+      if !advisories.is_empty() {
+        eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
+        LocatedWarning::print_list(&advisories);
+      }
       eprintln!("{}", "Check-only mode: validating code...".dimmed());
       println!(
         "  {} {}",
@@ -641,6 +652,7 @@ fn run_cli() -> Result<(), String> {
       );
       println!("\n{}", "✓ Check passed (cached)".green().bold());
     }
+    print_open_family_summary();
     print!("{}", stats.human_line());
     return Ok(());
   }
@@ -993,10 +1005,14 @@ fn run_cli() -> Result<(), String> {
   // with an older globally installed `calcit` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
-  push_broad_type_advisories(&snapshot, &project_namespaces);
-  push_type_slot_spelling_advisories(&type_slot_spelling_hits, snapshot.active_entry_name());
-  push_fn_rest_spelling_advisory(&fn_rest_spelling_hits);
-  record_open_family_summary(&snapshot, &project_namespaces);
+  push_snapshot_level_advisories(
+    &snapshot,
+    &project_namespaces,
+    &RawSpellingHits {
+      type_slots: type_slot_spelling_hits,
+      fn_rest: fn_rest_spelling_hits,
+    },
+  );
   reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
@@ -2076,8 +2092,34 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
   }
 }
 
-/// String-valued type-slot bindings are a legacy spelling; the symbol form
-/// names the type the way schemas do. `edit format` rewrites them.
+/// Spelling hits that only the raw Snapshot EDN shows: loading normalizes
+/// string type-slot bindings and the bare `& T` rest spelling.
+struct RawSpellingHits {
+  type_slots: Vec<String>,
+  fn_rest: Vec<(String, String)>,
+}
+
+/// Re-reads the snapshot file for the spelling scans; the incremental path
+/// restores the loaded snapshot from its cache and never sees the raw EDN.
+fn raw_spelling_hits(input: &str, snapshot: &snapshot::Snapshot) -> Result<RawSpellingHits, String> {
+  let mut content = fs::read_to_string(input).map_err(|e| format!("failed to read {input}: {e}"))?;
+  strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{input}': {e}"))?;
+  Ok(RawSpellingHits {
+    type_slots: snapshot::collect_type_slot_spelling_hits(&data, snapshot.active_entry_name()),
+    fn_rest: snapshot::collect_fn_rest_spelling_hits(&data),
+  })
+}
+
+/// Snapshot-level diagnostics that are not tied to compiling one definition.
+/// Every check path that loads a project snapshot queues them the same way.
+fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>, raw: &RawSpellingHits) {
+  push_broad_type_advisories(snapshot, project_namespaces);
+  push_type_slot_spelling_advisories(&raw.type_slots, snapshot.active_entry_name());
+  push_fn_rest_spelling_advisory(&raw.fn_rest);
+  record_open_family_summary(snapshot, project_namespaces);
+}
+
 /// One advisory for all schemas still written with the bare `& T` rest spelling,
 /// located at the first one, so a large library does not flood the notes.
 fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
@@ -2093,6 +2135,8 @@ fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
   ));
 }
 
+/// String-valued type-slot bindings are a legacy spelling; the symbol form
+/// names the type the way schemas do. `edit format` rewrites them.
 fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
   for hit in hits {
     runner::preprocess::push_advisory(LocatedWarning::new_with_detail(

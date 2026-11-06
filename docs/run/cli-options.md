@@ -278,6 +278,8 @@ calcit calcit.cirru --check-only --all-defs --format edn
 该模式复用上一次成功结果，并以 `preprocessing-cached=true` 明确报告；闭包外定义变化不强制重跑。缓存不保存 compiled AST、warning
 或 error，失败检查不会成为后续命中依据。reachable definition/schema、namespace import、entry type-slot、feature policy、编译器或 core input
 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。
+不依赖单个定义编译的 Snapshot 级诊断每次都重新扫描，命中缓存时也一样：`E_BROAD_TYPE` 照常让检查失败，`W_TYPE_SLOT_STRING`、
+`W_FN_REST_SPELLING` 作为 Notes 输出，`W_OPEN_FAMILY` 汇总在通过后打印，与不带 `--incremental` 的 `--check-only` 一致。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
 > **弃用**：`--strict-types` 与 `--compat-types` 现在会在 stderr 打印一行弃用提示，行为保持不变；`--strict-types` 只是重复默认的严格诊断，`--compat-types` 没有替代，应改为修复报告的类型诊断。0.31.0 仍保留这两个选项（仓库的生态严格模式检查脚本还在使用），计划在之后的非 patch 版本删除，补丁版本不会删除它们。
