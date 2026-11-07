@@ -74,7 +74,7 @@ calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-sche
 
 迁移：写出具体类型（如 `app.schema/Op`、`Fn Number (-> String)`）；确实接受任意成员的位置写 `AnyFn`、`AnyStruct`、`AnyEnum`，它们与裸写法是同一个类型。`defstruct` / `defenum` 的 `:schema` 误写成 `Struct` / `Enum` 的改为 `StructDef` / `EnumDef`。调用点证据（#2566）照常写在错误的 hint 里。
 
-裸 `Trait` 没有对应的 `Any*` 写法，仍是非阻塞的 `W_BROAD_TYPE` Notes。
+裸 `Trait` 不再报告：它和 `StructDef`、`EnumDef`、`Impl` 一样表示定义值的种类（一个 trait 本身），具体 trait 名表示实现该 trait 的值，没有更窄的写法，所以不是宽泛类型。
 
 ## 0.35.1 逐定义报告也做证明审计（#2591）
 
