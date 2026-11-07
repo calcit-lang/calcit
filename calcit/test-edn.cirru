@@ -191,6 +191,13 @@
                     :body $ {} $ :kind :json
                   , Response
               assert= 200 $ :code response
+              ; a bare decoder target inside a loop's recursive-input preparation stays a type position
+              assert= 1 $ loop
+                  n 0
+                  value $ Option :none
+                if (&< n 1)
+                  recur 1 $ Option :some $ count $ decode-map-as ([] 7) $ List Number
+                  value .unwrap-or 0
               assert= (Option :some |ok) (:message response)
               assert= (Option :none) (:message no-message)
               assert= (Option :some |already) (:message prewrapped)

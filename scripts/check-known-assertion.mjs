@@ -3864,7 +3864,7 @@ try {
       value $ Option :none
     if (&< n 1)
       let
-          decoded $ decode-map-as ([] 7) $ :: 'List 'Number
+          decoded $ decode-map-as ([] 7) $ List Number
         recur 1 $ Option :some $ count decoded
       value .unwrap-or 0
   assert= 7 $ loop-expansion-once
