@@ -763,7 +763,8 @@ pub fn take_advisories() -> Vec<LocatedWarning> {
 }
 
 /// Splits collected advisories into blocking errors (`E_BROAD_TYPE`, #2504;
-/// `E_OPTION_ERASED_TO_NIL`, #2124) and the non-failing notes.
+/// `E_OPTION_ERASED_TO_NIL`, #2124; `E_UNBOUND_TYPE_SLOT`, #2627) and the
+/// non-failing notes.
 pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<LocatedWarning>, Vec<LocatedWarning>) {
   advisories.into_iter().partition(is_blocking_advisory)
 }

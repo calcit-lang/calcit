@@ -1465,6 +1465,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     *program_data = program::extract_program_data(&temp_snapshot)?;
   }
 
+  // Diagnostics from loading belong to `--check-only`; set them aside so the
+  // blocking ones a test's own compilation raises are told apart (0.37.0).
+  let load_advisories = runner::preprocess::take_advisories();
   let mut compile_errors = std::collections::HashMap::new();
   if let Some(affected_ids) = &affected_ids {
     // `--affected` needs every candidate's static dependency graph. Ordinary
@@ -1476,6 +1479,8 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
         runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
       {
         compile_errors.insert(test.id(), failure.headline());
+      } else if let Some(error) = take_blocking_test_advisories() {
+        compile_errors.insert(test.id(), error);
       } else if !warnings.borrow().is_empty() {
         let warnings = warnings.borrow();
         compile_errors.insert(
@@ -1504,6 +1509,11 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     });
   }
 
+  if tests.is_empty() || options.list {
+    for advisory in load_advisories.iter().cloned() {
+      runner::preprocess::push_advisory(advisory);
+    }
+  }
   if tests.is_empty() {
     if json_mode {
       emit_test_report(
@@ -1578,6 +1588,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
         LocatedWarning::print_list(&failure.warnings);
         failure.msg
       })
+      .and_then(|()| take_blocking_test_advisories().map_or(Ok(()), Err))
     };
     match result {
       Ok(()) => {
@@ -1614,6 +1625,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     }
   }
 
+  for advisory in load_advisories {
+    runner::preprocess::push_advisory(advisory);
+  }
   let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
   if json_mode {
     emit_test_report(
@@ -1633,6 +1647,20 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   } else {
     Err(format!("{} test(s) failed", failures.len()))
   }
+}
+
+/// Blocking diagnostics (such as `E_UNBOUND_TYPE_SLOT`) raised while a test
+/// compiled fail that test; the other advisories stay queued.
+fn take_blocking_test_advisories() -> Option<String> {
+  let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  for advisory in advisories {
+    runner::preprocess::push_advisory(advisory);
+  }
+  if blocking.is_empty() {
+    return None;
+  }
+  LocatedWarning::print_list(&blocking);
+  Some(blocking.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))
 }
 
 fn no_tests_matched_error(options: &TestCommand) -> Option<String> {
@@ -2456,6 +2484,17 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir: Option<IrEmitOptio
 
   let warnings = check_warnings.borrow();
   throw_on_js_warnings(&warnings, &js_file_path)?;
+  // `--no-proof-audit` and `--compat-types` skip the preflight, so the
+  // blocking advisories still have to stop the emit here.
+  let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  for advisory in rest {
+    runner::preprocess::push_advisory(advisory);
+  }
+  if let Err(message) = report_broad_type_errors(blocking) {
+    fs::write(&js_file_path, format!("export default \"{}\";", message.trim().escape_default()))
+      .map_err(|e| format!("{message}; failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
+    return Err(message);
+  }
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");

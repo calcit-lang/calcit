@@ -2028,6 +2028,45 @@ fn dynamic_bound_type_slots_fail_the_check() {
       "{args:?} stderr:\n{stderr}"
     );
   }
+  // Code generation without the preflight and the scoped namespace check
+  // must refuse the open slot too, and so must the test runner.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/slotted",
+        "slot-use",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ slotted 1",
+      ],
+    ),
+    "add a test that uses the slot",
+  );
+  for args in [
+    &["test"][..],
+    &["--no-proof-audit", "js"][..],
+    &["--compat-types", "js"][..],
+    &["ir"][..],
+    &["--check-only", "--ns", "app.main"][..],
+  ] {
+    if args[0] == "--check-only" {
+      assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+    }
+    let output = run_calcit(&snapshot, args);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+      !output.status.success() && report.contains("uses type slot `*dispatch-op`"),
+      "{args:?} must fail on a Dynamic-bound slot:\n{report}"
+    );
+  }
   assert_success(
     &run_calcit(&snapshot, &["edit", "def", "app.main/Op", "--code", "quote $ defenum Op (:ping)"]),
     "add a named slot type",
