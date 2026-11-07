@@ -207,6 +207,22 @@ PR 推送新提交时，CI 取消同一 PR 旧提交上尚未完成的 Test work
 的每次提交仍独立验证。减少执行成本时，应先移除重复构建与重复回放，保留
 原始 `:tests`、零匹配失败检查和独立的后端边界验证。
 
+Test workflow 分两档，由 `plan` 任务（[`scripts/ci-plan.mjs`](../../scripts/ci-plan.mjs)）决定：
+
+- **full**：发版 PR（分支名 `release/*`，或打开/推送时标题以 `chore: release` 开头；只改
+  标题不会重跑，优先用分支名）、手动
+  `workflow_dispatch`、维护分支的 push，以及 main 上尚无同一 tree 全量通过记录的
+  `chore: release` 提交。所有任务都运行，`check-all` 分 5 个分片。
+- **light**：其它 PR 与 main push。始终运行 CLI 构建、Clippy（含 no-WASM
+  `cargo check`）、Core/CLI 与文档检查、`check-all` 冒烟（`ci-check-all.mjs --smoke`：
+  `try-core-tests`、`try-rs`、`try-js`、`try-wasm`，加上命令里引用了改动文件、或
+  `package.json` 中定义有变化的步骤）以及 Rust lib/CLI 单元测试（纯文档 PR 跳过）；集成
+  测试只跑改动相关的文件，WASI 与平台二进制任务只在 PR 改到对应路径（含 Test workflow
+  与 `scripts/ci-*.mjs` 本身）时运行。
+
+full 档全绿时记录 `full-ci-tree-<tree>` artifact；发版 PR 合并后 main 上 tree 相同的
+发版提交（`chore: release` 标题，或 `Cargo.toml` 版本号有变化）据此保持 light，publish 流程等待的仍是该提交的 Test。
+
 ### 统一后端回放
 
 `calcit test` 在 native 上运行 definition `:tests`。仓库用一个统一运行器把同一批 `:tests` 在 native、生成的 JS 与 WASM 上各执行一次：

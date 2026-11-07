@@ -4,11 +4,24 @@ on:
       - main
       - release/0.30.1
   pull_request: {}
+  # Manual full run on any branch.
+  workflow_dispatch: {}
 
 name: Test
 
 permissions:
   contents: read
+
+# Two depths, chosen by the `plan` job (scripts/ci-plan.mjs):
+# - full: release pull requests (branch `release/*` or title `chore: release ...`), manual
+#   runs, pushes to maintenance branches, and a release commit on main whose tree has no
+#   green full run yet. Every job below runs, check-all in 5 shards.
+# - light: other pull requests and main pushes. Build, clippy, core/docs checks, a
+#   check-all smoke plus the check-all steps that name a changed file, and Rust unit tests
+#   always run; integration tests, WASI jobs and platform binaries run only when the
+#   pull request touches them.
+# The aggregate `Test` check keeps its name and is green only when each job either
+# succeeded or was skipped by the plan.
 
 # Superseded PR commits need no second full run; release-branch pushes stay independent.
 concurrency:
@@ -16,6 +29,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  plan:
+    name: Plan checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.plan.outputs.full }}
+      rust: ${{ steps.plan.outputs.rust }}
+      rust_tests: ${{ steps.plan.outputs.rust_tests }}
+      wasi: ${{ steps.plan.outputs.wasi }}
+      platform: ${{ steps.plan.outputs.platform }}
+      tree: ${{ steps.plan.outputs.tree }}
+      # Jobs re-run alone ("Re-run failed jobs") keep this attempt's artifact.
+      artifact: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          # The parent commit tells a version bump on main apart from other pushes.
+          fetch-depth: 2
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: 24
+      - name: Decide full or light checks
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-plan.mjs
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ci-plan/changed.txt
+          if-no-files-found: error
+          retention-days: 1
+
   cli_build:
     name: Build shared CI CLI
     runs-on: ubuntu-24.04
@@ -38,6 +88,8 @@ jobs:
           retention-days: 1
 
   wasi_preprocess:
+    needs: plan
+    if: needs.plan.outputs.wasi == 'true'
     name: WASI preprocess regression
     runs-on: ubuntu-24.04
     steps:
@@ -70,6 +122,8 @@ jobs:
         run: bash scripts/test-wasi-manifest-business.sh
 
   wasi03_command_smoke:
+    needs: plan
+    if: needs.plan.outputs.wasi == 'true'
     name: WASI 0.3 command Component smoke
     runs-on: ubuntu-24.04
     steps:
@@ -156,6 +210,8 @@ jobs:
             node scripts/check-wasi-number-text.mjs
 
   wasi_business_smoke:
+    needs: plan
+    if: needs.plan.outputs.wasi == 'true'
     name: Published WASI HTTP business loop
     runs-on: ubuntu-24.04
     steps:
@@ -185,6 +241,8 @@ jobs:
         run: bash scripts/test-published-wasi-http-business.sh
 
   macos_main_thread:
+    needs: plan
+    if: needs.plan.outputs.platform == 'true'
     name: macOS main-thread CLI
     runs-on: macos-15
     steps:
@@ -201,6 +259,8 @@ jobs:
       - run: ./target/debug/calcit -v
 
   ubuntu_2204_no_wasm:
+    needs: plan
+    if: needs.plan.outputs.platform == 'true'
     name: Ubuntu 22.04 no-WASM binary
     runs-on: ubuntu-22.04
     steps:
@@ -239,6 +299,8 @@ jobs:
   # Keep Rust unit/integration tests separate from CLI, docs, and lint checks.
   rust_tests:
     name: Rust tests
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -267,8 +329,20 @@ jobs:
       # The integration tests start the CLI many times and each start preprocesses the whole
       # core library; the `ci` profile runs that several times faster than plain debug while
       # keeping debug assertions and overflow checks.
-      - run: cargo test --profile ci
+      # Light runs keep the lib and CLI unit tests (about 75 s) and only the integration
+      # test files the plan picked for the changed paths.
+      - name: cargo test --profile ci
+        run: |
+          if [[ "$FULL" == "true" ]]; then
+            cargo test --profile ci
+          else
+            echo "light run: unit tests plus [${RUST_TESTS:-no integration tests}]"
+            # shellcheck disable=SC2086
+            cargo test --profile ci --lib --bins $RUST_TESTS
+          fi
         env:
+          FULL: ${{ needs.plan.outputs.full }}
+          RUST_TESTS: ${{ needs.plan.outputs.rust_tests }}
           RUST_MIN_STACK: "16777216"
           # Execute generated namespace-import code here instead of building
           # Rust integration-test dependencies again in the Core/CLI job.
@@ -349,7 +423,7 @@ jobs:
           ln -s ../../ node_modules/@calcit/procs
 
       - name: "verify release manifest generator"
-        run: node --test scripts/release-manifest.test.mjs scripts/publish-registry.test.mjs
+        run: node --test scripts/release-manifest.test.mjs scripts/publish-registry.test.mjs scripts/ci-plan.test.mjs
 
       - name: "verify JS command fixture"
         run: bash scripts/test-js-command.sh
@@ -363,7 +437,8 @@ jobs:
     # check-all fixture also proves that lowering kept its type evidence (#1553).
     # scripts/ci-check-all.mjs spreads the check-all steps and known-assertion
     # parts over the shards, all against the shared optimized CLI.
-    needs: cli_build
+    needs: [plan, cli_build]
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -402,6 +477,50 @@ jobs:
 
       - name: "yarn check-all shard (CALCIT_LINT_CORE=1)"
         run: node scripts/ci-check-all.mjs --shard ${{ matrix.shard }}/5
+
+  check_all_smoke:
+    name: check-all smoke with post-lowering validation
+    # Light runs: native/JS/WASM smoke of the shared test entries plus every check-all
+    # step whose commands name a file the pull request changed.
+    needs: [plan, cli_build]
+    if: needs.plan.outputs.full != 'true'
+    runs-on: ubuntu-24.04
+    env:
+      CALCIT_BIN: target/ci/calcit
+      CALCIT_LINT_CORE: "1"
+      RUST_MIN_STACK: "16777216"
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: calcit-cli-${{ github.sha }}
+          path: target/ci
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.artifact }}
+          path: target/ci-plan
+      - name: Prepare shared CLI and JS runtime
+        run: |
+          chmod +x "$CALCIT_BIN"
+          mkdir -p target/debug
+          ln -s ../ci/calcit target/debug/calcit
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn install --immutable
+          yarn compile
+          mkdir -p node_modules/@calcit
+          ln -s ../../ node_modules/@calcit/procs
+
+      - name: "yarn check-all smoke (CALCIT_LINT_CORE=1)"
+        run: node scripts/ci-check-all.mjs --smoke --changed target/ci-plan/changed.txt
 
   docs_checks:
     name: Docs checks
@@ -467,6 +586,7 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: plan
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -482,12 +602,19 @@ jobs:
 
       - run: cargo clippy -- -D warnings
 
+      # Light runs skip the Ubuntu 22.04 no-WASM job; still prove the feature-gated code compiles.
+      - name: Check no-WASM build
+        if: needs.plan.outputs.platform != 'true'
+        run: cargo check --locked --no-default-features --bin calcit
+
   # Preserve the pre-split required check name: this aggregate job is green
-  # only when every shard above succeeded.
+  # only when every job above succeeded or was skipped by the plan. A green full run
+  # records its tree, so the merged release commit on main can stay light (scripts/ci-plan.mjs).
   Test:
     name: Test
     if: ${{ always() }}
     needs:
+      - plan
       - cli_build
       - wasi_preprocess
       - wasi03_command_smoke
@@ -496,29 +623,43 @@ jobs:
       - rust_tests
       - core_checks
       - lint_core_check_all
+      - check_all_smoke
       - docs_checks
       - clippy
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify all shards succeeded
+      - name: Verify every planned job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "cli_build=${{ needs.cli_build.result }}"
-          echo "wasi_preprocess=${{ needs.wasi_preprocess.result }}"
-          echo "wasi03_command_smoke=${{ needs.wasi03_command_smoke.result }}"
-          echo "rust_tests=${{ needs.rust_tests.result }}"
-          echo "wasi_business_smoke=${{ needs.wasi_business_smoke.result }}"
-          echo "ubuntu_2204_no_wasm=${{ needs.ubuntu_2204_no_wasm.result }}"
-          echo "core_checks=${{ needs.core_checks.result }}"
-          echo "lint_core_check_all=${{ needs.lint_core_check_all.result }}"
-          echo "docs_checks=${{ needs.docs_checks.result }}"
-          echo "clippy=${{ needs.clippy.result }}"
-          test "${{ needs.cli_build.result }}" = "success"
-          test "${{ needs.wasi_preprocess.result }}" = "success"
-          test "${{ needs.wasi03_command_smoke.result }}" = "success"
-          test "${{ needs.rust_tests.result }}" = "success"
-          test "${{ needs.wasi_business_smoke.result }}" = "success"
-          test "${{ needs.ubuntu_2204_no_wasm.result }}" = "success"
-          test "${{ needs.core_checks.result }}" = "success"
-          test "${{ needs.lint_core_check_all.result }}" = "success"
-          test "${{ needs.docs_checks.result }}" = "success"
-          test "${{ needs.clippy.result }}" = "success"
+          set -euo pipefail
+          echo "plan: full=${{ needs.plan.outputs.full }} rust=${{ needs.plan.outputs.rust }} wasi=${{ needs.plan.outputs.wasi }} platform=${{ needs.plan.outputs.platform }}"
+          full="${{ needs.plan.outputs.full }}"
+          expect() { # job, should-run
+            local result
+            result="$(jq -r --arg job "$1" '.[$job].result' <<<"$NEEDS")"
+            echo "$1=$result (planned: $2)"
+            if [[ "$2" == "true" ]]; then test "$result" = "success"; else test "$result" = "skipped"; fi
+          }
+          expect plan true
+          expect cli_build true
+          expect core_checks true
+          expect docs_checks true
+          expect clippy true
+          expect rust_tests "${{ needs.plan.outputs.rust }}"
+          expect wasi_preprocess "${{ needs.plan.outputs.wasi }}"
+          expect wasi03_command_smoke "${{ needs.plan.outputs.wasi }}"
+          expect wasi_business_smoke "${{ needs.plan.outputs.wasi }}"
+          expect ubuntu_2204_no_wasm "${{ needs.plan.outputs.platform }}"
+          expect lint_core_check_all "$full"
+          if [[ "$full" == "true" ]]; then expect check_all_smoke false; else expect check_all_smoke true; fi
+          mkdir -p target
+          echo "${{ needs.plan.outputs.tree }}" > target/full-ci-tree.txt
+      - name: Record the full run for this tree
+        if: needs.plan.outputs.full == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: full-ci-tree-${{ needs.plan.outputs.tree }}
+          path: target/full-ci-tree.txt
+          if-no-files-found: error
+          retention-days: 30
