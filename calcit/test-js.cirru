@@ -107,7 +107,7 @@
               :code $ quote $ do
                 assert-type
                   reassign-same-generic ([] 1) ([] 7)
-                  quote $ List Number
+                  List Number
                 assert= ([] 7)
                   reassign-same-generic ([] 1) ([] 7)
               :tags $ #{} :generic-assignment :js-ffi :unit

@@ -2163,24 +2163,7 @@ fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespa
   push_broad_type_advisories(snapshot, project_namespaces);
   push_type_slot_spelling_advisories(&raw.type_slots, snapshot.active_entry_name());
   push_fn_rest_spelling_advisory(&raw.fn_rest);
-  push_quoted_compound_type_advisory(&snapshot::collect_quoted_compound_type_hits(snapshot, project_namespaces));
   record_open_family_summary(snapshot, project_namespaces);
-}
-
-/// One advisory for every quoted compound type in a type-only position,
-/// located at the first definition, so a large library does not flood the notes.
-fn push_quoted_compound_type_advisory(hits: &[(String, String, usize)]) {
-  let Some((ns, def, _)) = hits.first() else { return };
-  let total: usize = hits.iter().map(|(_, _, count)| count).sum();
-  runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
-    format!(
-      "{total} compound type(s) in {} definition(s) are still written as `quote $ <type>` where only a type fits; write them bare, such as `assert-type xs $ List Number`. 0.37.0 rejects the quoted spelling (#2583) (first at {ns}/{def})",
-      hits.len()
-    ),
-    calcit::calcit::NodeLocation::new(Arc::from(ns.as_str()), Arc::from(def.as_str()), Arc::new(vec![])),
-    Some(snapshot::QUOTED_COMPOUND_TYPE_WARNING.to_owned()),
-    Some("run `calcit edit format` to write compound types without quote".to_owned()),
-  ));
 }
 
 /// One advisory for all schemas still written with the bare `& T` rest spelling,
@@ -2241,11 +2224,33 @@ fn print_open_family_summary() {
 /// Quoted type names in `defstruct` / `defenum` / `defunion` were removed in
 /// 0.35.0 (#2516). Loading a Snapshot file already rejects them; this covers
 /// code that skips that check, such as `eval` snippets.
+/// Quoted compound types in type-only positions follow in 0.37.0 (#2583).
 fn reject_legacy_quoted_declarations(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
-  match snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces).first() {
-    Some(hit) => Err(hit.message()),
-    None => Ok(()),
+  if let Some(hit) = snapshot::collect_legacy_quoted_declaration_hits(snapshot, project_namespaces).first() {
+    return Err(hit.message());
   }
+  let mut names: Vec<&String> = project_namespaces
+    .iter()
+    .filter(|ns| ns.as_str() != calcit::calcit::CORE_NS && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let entry = &file.defs[def];
+      let owner = format!("{ns}/{def}");
+      snapshot::check_quoted_compound_types(&entry.code, &owner, "<snapshot>")?;
+      for example in &entry.examples {
+        snapshot::check_quoted_compound_types(example, &format!("{owner} example"), "<snapshot>")?;
+      }
+      for test in &entry.tests {
+        snapshot::check_quoted_compound_types(&test.code, &format!("{owner} test `{}`", test.name), "<snapshot>")?;
+      }
+    }
+  }
+  Ok(())
 }
 
 /// Native runs and JS codegen prove the entries before compiling them

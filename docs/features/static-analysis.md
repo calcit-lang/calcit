@@ -824,7 +824,7 @@ let
         -> $ List Number
       let
           xs data
-        assert-type xs $ quote $ List Number
+        assert-type xs $ List Number
         &list:map xs transform-fn
   process-data $ [] 1 2 3
 ```
@@ -838,7 +838,7 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 例如 `assert-type (+ 1 2) 'String` 会被拒绝。请修正目标类型；外部开放数据需要真正的 checked decoder，并处理失败，不能仅用断言或返回值声明冒充验证。这里不改变尚在迁移的 Dynamic 边界策略，也不声称断言能深层校验任意嵌套数据。已证明的局部断言可被消去；表达式断言的运行时处理仍取决于 backend，不保证所有断言都没有运行成本。
 
 已知空 List、Set、Map 构造器可以满足同类容器的具体元素合同：没有成员需要转换。
-例如 `assert-type (#{}) $ quote $ Set String` 可作为字符串 Set 的初始值，随后通过普通 `.union` 或 `fold` 累积。
+例如 `assert-type (#{}) $ Set String` 可作为字符串 Set 的初始值，随后通过普通 `.union` 或 `fold` 累积。
 
 泛型函数内部的断言保留外层词法类型变量。空 List、Map 或 Set 没有成员与同种集合的泛型契约冲突，
 可作为 fold 的初始值；非空输入和开放输入仍需独立证据。断言检查已有契约，不能把外层 `T`
@@ -992,7 +992,7 @@ let
       hint-fn $ Fn (List Number) (-> (List Number))
       let
           checked data
-        assert-type checked $ quote $ List Number
+        assert-type checked $ List Number
         ; Ensure the local value is still what we expect before processing
         dangerous-operation checked
   critical-operation $ [] 1 2 3

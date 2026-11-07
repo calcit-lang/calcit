@@ -16,7 +16,7 @@
           :schema $ quote $ Ref Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |dynamic-atom-deref)
             :code $ quote $ do
-              assert-type *dynamic-ref $ quote $ Ref Dynamic
+              assert-type *dynamic-ref $ Ref Dynamic
               assert= 1 $ deref *dynamic-ref
               assert= 1 @*dynamic-ref
         'Address $ %{} 'CodeEntry (:doc |)
@@ -298,8 +298,7 @@
           :tests $ []
             %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
               :code $ quote $ let
-                  box $ assert-type (empty-field-box |seed)
-                    quote $ test-types-inference.main/EmptyFieldBox Number String
+                  box $ assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox Number String)
                 do
                   assert= ([]) (:items box)
                   assert= |seed $ :seed box
@@ -308,10 +307,8 @@
               :tags $ #{} :empty-field-struct :unit
             %{} 'TestEntry (:name |independent-return-instantiations)
               :code $ quote $ do
-                assert-type (empty-field-box |seed)
-                  quote $ test-types-inference.main/EmptyFieldBox Number String
-                assert-type (empty-field-box |seed)
-                  quote $ test-types-inference.main/EmptyFieldBox String String
+                assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox Number String)
+                assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox String String)
                 assert= |seed $ :seed $ empty-field-box |seed
               :tags $ #{} :empty-field-struct :return-only-generic :unit
             %{} 'TestEntry (:name |declared-return-context)
@@ -322,8 +319,7 @@
               :tags $ #{} :empty-field-struct :return-only-generic :unit
             %{} 'TestEntry (:name |caller-generic-and-transparent-let)
               :code $ quote $ let
-                  box $ assert-type (lexical-field-box 7)
-                    quote $ test-types-inference.main/EmptyFieldBox Number Number
+                  box $ assert-type (lexical-field-box 7) (test-types-inference.main/EmptyFieldBox Number Number)
                 assert= 7 $ :seed box
                 assert= 0 $ .len $ :items box
               :tags $ #{} :empty-field-struct :return-only-generic :unit
@@ -439,7 +435,7 @@
             :code $ quote $ let
                 items $ guarded-identity $ [] 1 2
                 text $ guarded-identity |a
-              assert-type items $ quote $ List Number
+              assert-type items $ List Number
               assert-type text 'String
               assert= ([] 1 2) items
               assert= |a text
@@ -655,7 +651,7 @@
             :code $ quote $ let
                 kept $ assert-type
                   kept-members ([] 1 2 3) 2
-                  quote $ List Number
+                  List Number
               do
                 assert= ([] 1 3) kept
                 assert= ([])
@@ -1082,7 +1078,7 @@
             %{} 'TestEntry (:name |generic-payload-remains-precise)
               :code $ quote $ let
                   value $ read-state-metadata $ {} (:data 7)
-                assert-type value $ quote $ Result Number PathError
+                assert-type value $ Result Number PathError
                 assert= (Result :ok 7) value
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |concrete-mismatching-path-is-absent)
@@ -1302,7 +1298,7 @@
             %{} 'TestEntry (:name |empty-list-before-elements)
               :code $ quote $ let
                   selected $ same-type-second ([]) ([] 1)
-                assert-type selected $ quote $ List Number
+                assert-type selected $ List Number
                 assert= ([] 1) selected
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |local-empty-option-before-payload)

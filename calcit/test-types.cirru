@@ -397,23 +397,19 @@
               :tags $ #{} :tuple
             %{} 'TestEntry (:name |homogeneous-tuple-is-a-list)
               :code $ quote $ let
-                  point $ assert-type ([] 3 4)
-                    quote $ Tuple Number Number
+                  point $ assert-type ([] 3 4) (Tuple Number Number)
                 assert= ([] 4 5)
                   map point $ fn (x) (&+ x 1)
               :tags $ #{} :tuple
             %{} 'TestEntry (:name |tuple-count-and-equality)
               :code $ quote $ let
-                  pair $ assert-type ([] 1 |a)
-                    quote $ Tuple Number String
+                  pair $ assert-type ([] 1 |a) (Tuple Number String)
                 assert= 3 $ &+ (nth pair 0) (count pair)
               :tags $ #{} :tuple
             %{} 'TestEntry (:name |tuple-method-and-optional-reads)
               :code $ quote $ let
-                  pair $ assert-type ([] 1 |a)
-                    quote $ Tuple Number String
-                  point $ assert-type ([] 3 4)
-                    quote $ Tuple Number Number
+                  pair $ assert-type ([] 1 |a) (Tuple Number String)
+                  point $ assert-type ([] 3 4) (Tuple Number Number)
                 assert= 2 $ .count pair
                 assert= (Option :some 4) (get point 1)
                 assert= (Option :some 4) (last point)

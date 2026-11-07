@@ -71,7 +71,7 @@
             %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
               :code $ quote $ let
                   f2 &+
-                assert-type f2 $ quote $ Fn Number Number (-> Number)
+                assert-type f2 $ Fn Number Number $ -> Number
                 assert= 3 $ f2 1 2
                 assert= 3 $ apply f2 $ [] 1 2
               :tags $ #{} :core :unit
@@ -712,8 +712,7 @@
             :code $ quote $ let
                 value $ Option :some 1
               assert= (Option :some Option) (&enum:definition value)
-              assert-type (&enum:definition value)
-                quote $ Option EnumDef
+              assert-type (&enum:definition value) (Option EnumDef)
               assert= (Option :none)
                 &enum:definition $ %:: _ :anonymous 1
             :tags $ #{} :nominal-definition-proof :unit
@@ -791,8 +790,8 @@
                     &- left right
                   direct $ &fn:apply producer consumer
                   method $ .apply producer consumer
-                assert-type direct $ quote $ Fn Number (-> Number)
-                assert-type method $ quote $ Fn Number (-> Number)
+                assert-type direct $ Fn Number $ -> Number
+                assert-type method $ Fn Number $ -> Number
                 assert= -3 $ direct 3
                 assert= -3 $ method 3
               :tags $ #{} :core :fn-bind-apply-contract :unit
@@ -807,8 +806,8 @@
                   direct $ &fn:apply producer consumer
                   method $ .apply producer consumer
                   input |ab
-                assert-type direct $ quote $ Fn String (-> FsPath)
-                assert-type method $ quote $ Fn String (-> FsPath)
+                assert-type direct $ Fn String $ -> FsPath
+                assert-type method $ Fn String $ -> FsPath
                 assert= (FsPath :value |ab:2) (direct input)
                 assert= (FsPath :value |ab:2) (method input)
                 assert= (FsPath :value |:0) (method |)
@@ -820,8 +819,8 @@
               :code $ quote $ let
                   direct $ &fn:apply inc &-
                   method $ .apply inc &-
-                assert-type direct $ quote $ Fn Number (-> Number)
-                assert-type method $ quote $ Fn Number (-> Number)
+                assert-type direct $ Fn Number $ -> Number
+                assert-type method $ Fn Number $ -> Number
                 assert= -1 $ direct 3
                 assert= -1 $ method 3
               :tags $ #{} :core :fn-bind-apply-contract :unit
@@ -905,8 +904,8 @@
                     &- left right
                   direct $ &fn:bind producer consumer
                   method $ .bind producer consumer
-                assert-type direct $ quote $ Fn Number (-> Number)
-                assert-type method $ quote $ Fn Number (-> Number)
+                assert-type direct $ Fn Number $ -> Number
+                assert-type method $ Fn Number $ -> Number
                 assert= 3 $ direct 3
                 assert= 3 $ method 3
               :tags $ #{} :core :fn-bind-apply-contract :unit
@@ -921,8 +920,8 @@
                   direct $ &fn:bind producer consumer
                   method $ .bind producer consumer
                   input |ab
-                assert-type direct $ quote $ Fn String (-> FsPath)
-                assert-type method $ quote $ Fn String (-> FsPath)
+                assert-type direct $ Fn String $ -> FsPath
+                assert-type method $ Fn String $ -> FsPath
                 assert= (FsPath :value |2:ab) (direct input)
                 assert= (FsPath :value |2:ab) (method input)
                 assert= (FsPath :value |0:) (method |)
@@ -934,8 +933,8 @@
               :code $ quote $ let
                   direct $ &fn:bind inc &-
                   method $ .bind inc &-
-                assert-type direct $ quote $ Fn Number (-> Number)
-                assert-type method $ quote $ Fn Number (-> Number)
+                assert-type direct $ Fn Number $ -> Number
+                assert-type method $ Fn Number $ -> Number
                 assert= 1 $ direct 3
                 assert= 1 $ method 3
               :tags $ #{} :core :fn-bind-apply-contract :unit
@@ -1035,8 +1034,8 @@
                   direct $ &fn:map f g
                   method $ .map f g
                   input |ab
-                assert-type direct $ quote $ Fn String (-> String)
-                assert-type method $ quote $ Fn String (-> String)
+                assert-type direct $ Fn String $ -> String
+                assert-type method $ Fn String $ -> String
                 assert= |len=2 $ direct input
                 assert= |len=2 $ method input
                 assert= |len=0 $ method |
@@ -1051,7 +1050,7 @@
                     hint-fn $ Fn Number $ -> String
                     str value
                   method $ .map f g
-                assert-type method $ quote $ Fn Number (-> FsPath)
+                assert-type method $ Fn Number $ -> FsPath
                 assert= |4 $ :value $ method 4
               :tags $ #{} :core :fn-map-contract :unit
             %{} 'TestEntry (:name |preserves-construction-and-callback-effects)
@@ -1116,22 +1115,22 @@
                 let
                     direct $ &fn:map str inc
                     method $ .map str inc
-                  assert-type direct $ quote $ Fn Number (-> String)
-                  assert-type method $ quote $ Fn Number (-> String)
+                  assert-type direct $ Fn Number $ -> String
+                  assert-type method $ Fn Number $ -> String
                   assert= |4 $ direct 3
                   assert= |4 $ method 3
                 let
                     direct $ &fn:map str identity
                     method $ .map str identity
-                  assert-type direct $ quote $ Fn Number (-> String)
-                  assert-type method $ quote $ Fn Number (-> String)
+                  assert-type direct $ Fn Number $ -> String
+                  assert-type method $ Fn Number $ -> String
                   assert= |3 $ direct 3
                   assert= |3 $ method 3
                 let
                     direct $ &fn:map identity identity
                     method $ .map identity identity
-                  assert-type direct $ quote $ Fn Number (-> Number)
-                  assert-type method $ quote $ Fn Number (-> Number)
+                  assert-type direct $ Fn Number $ -> Number
+                  assert-type method $ Fn Number $ -> Number
                   assert= 3 $ direct 3
                   assert= 3 $ method 3
               :tags $ #{} :core :fn-map-contract :unit
@@ -1144,7 +1143,7 @@
                     hint-fn $ Fn Number $ -> Number
                     &+ x 1
                   method $ .map f g
-                assert-type method $ quote $ Fn Number (-> Dynamic)
+                assert-type method $ Fn Number $ -> Dynamic
                 assert= 4 $ method 3
               :tags $ #{} :core :fn-map-contract :unit
         '&fn:mappend $ %{} 'CodeEntry (:doc "|internal helper for fn :mappend method entry")
@@ -1212,8 +1211,7 @@
             %{} 'TestEntry (:name |calls-f-then-g-once-without-changing-input)
               :code $ quote $ let
                   input $ [] 1
-                  *log $ ref $ assert-type ([])
-                    quote $ List Dynamic
+                  *log $ ref $ assert-type ([]) (List Dynamic)
                   h $ &fn:mappend
                     fn (xs)
                       swap! *log $ fn (items)
@@ -1561,7 +1559,7 @@
                   [] 1 2
                   , .apply $ [] str $ fn (x)
                     str $ * x 2
-                quote $ List String
+                List String
               assert= ([] |1 |2 |2 |4)
                 ([] 1 2) .apply $ [] str $ fn (x)
                   str $ * x 2
@@ -2046,7 +2044,7 @@
                   &list:map ([] 1 2) &str
                 assert-type
                   &list:map ([] 1 2) &str
-                  quote $ List String
+                  List String
               :tags $ #{} :generic-fold-proof :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
@@ -2119,8 +2117,7 @@
             %{} 'TestEntry (:name |preserves-order-input-and-errors)
               :code $ quote $ let
                   input $ [] ([] :a 1) ([] :b 2)
-                  calls $ ref $ assert-type ([])
-                    quote $ List Dynamic
+                  calls $ ref $ assert-type ([]) (List Dynamic)
                   result $ &list:map-pair input $ fn (k v)
                     swap! calls $ fn (items) (append items k)
                     [] k v
@@ -2370,7 +2367,7 @@
                 match (&map:destruct m)
                   (:some key value remaining-map)
                     do (assert-type key 'Tag) (assert-type value 'Number)
-                      assert-type remaining-map $ quote $ Map Tag Number
+                      assert-type remaining-map $ Map Tag Number
                       assert= (Option :some value) (&map:get m key)
                       assert= (&map:dissoc m key) remaining-map
                       assert= 3 $ count remaining-map
@@ -2524,7 +2521,7 @@
               :code $ quote $ let
                   source $ &{} :a 1 :b 2 :c 3
                   seen $ ref $ assert-type ([])
-                    quote $ List $ Tuple Tag Number
+                    List $ Tuple Tag Number
                 let
                     filtered $ &map:filter source $ fn (pair)
                       swap! seen $ fn (items) (&list:append items pair)
@@ -2542,7 +2539,7 @@
                   kept $ &map:filter (&{} :a 1 :b 2)
                     fn (pair)
                       let[] (key value) pair $ and (tag? key) (> value 1)
-                assert-type kept $ quote $ Map Tag Number
+                assert-type kept $ Map Tag Number
                 assert= (&{} :b 2) kept
               :tags $ #{} :core :lexical-binder :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
@@ -2572,7 +2569,7 @@
                   selected $ input .filter-kv $ fn (key path) (swap! calls inc)
                     and (= key |b)
                       = (:value path) |second
-                assert-type selected $ quote $ Map String FsPath
+                assert-type selected $ Map String FsPath
                 assert=
                   {} $ |b $ FsPath :value |second
                   , selected
@@ -2674,7 +2671,7 @@
                   renamed $ &map:map (&{} :a 1 :b 2)
                     fn (pair)
                       let[] (key value) pair $ [] value key
-                assert-type renamed $ quote $ Map Number Tag
+                assert-type renamed $ Map Number Tag
                 assert= (&{} 1 :a 2 :b) renamed
               :tags $ #{} :core :lexical-binder :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
@@ -2719,7 +2716,7 @@
             %{} 'TestEntry (:name |keeps-key-and-value-types)
               :code $ quote $ let
                   entries $ &map:to-list $ &{} :a 1
-                assert-type entries $ quote $ List (Tuple Tag Number)
+                assert-type entries $ List $ Tuple Tag Number
                 let[] (k v) (&list:nth entries 0)
                   assert= 2 $ &+ v 1
                   assert= |a $ to-string k
@@ -2981,7 +2978,7 @@
                 &set:destruct $ #{} 7
                 (:some item remaining-set)
                   do (assert-type item 'Number)
-                    assert-type remaining-set $ quote $ Set Number
+                    assert-type remaining-set $ Set Number
                     assert= 7 item
                     assert= (#{}) remaining-set
                 (:none) (raise |expected-non-empty-set)
@@ -3904,10 +3901,8 @@
             :code $ quote $ do
               assert=
                 [] $ [] |a ([] |b |c) ([])
-                decode-map-as (parse-cirru-list "|a (b c) ()")
-                  quote $ List CirruNode
-              assert= false $ result:ok? $ try-decode-map-as ([] |a 1)
-                quote $ List CirruNode
+                decode-map-as (parse-cirru-list "|a (b c) ()") (List CirruNode)
+              assert= false $ result:ok? $ try-decode-map-as ([] |a 1) (List CirruNode)
             :tags $ #{} :core :unit
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
@@ -4557,8 +4552,7 @@
                   [] |items $ [] 10 20 30
                 assert= 0 $ apply
                   fn (label values) (count values)
-                  [] |items $ assert-type ([])
-                    quote $ List Number
+                  [] |items $ assert-type ([]) (List Number)
               :tags $ #{} :core :count-contract :unit
             %{} 'TestEntry (:name |preserves-evaluation-order)
               :code $ quote $ let
@@ -4663,7 +4657,7 @@
             %{} 'TestEntry (:name |proven-list-payload)
               :code $ quote $ let
                   xs $ [] 1 2
-                assert-type xs $ quote $ List Number
+                assert-type xs $ List Number
                 assert= 3 $ xs .fold 0 +
               :tags $ #{} :assert-boundary :unit
             %{} 'TestEntry (:name |proven-bare-list-payload)
@@ -4687,8 +4681,7 @@
               :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
             %{} 'TestEntry (:name |proven-list-expression)
               :code $ quote $ assert= ([] 1 2)
-                assert-type ([] 1 2)
-                  quote $ List Number
+                assert-type ([] 1 2) (List Number)
               :tags $ #{} :assert-boundary :unit
             %{} 'TestEntry (:name |proven-generic-identity)
               :code $ quote $ assert= 3
@@ -4775,7 +4768,7 @@
               :code $ quote $ let
                   m $ assert-type
                     {} (:a 1) (:b |x)
-                    quote $ Map Tag Dynamic
+                    Map Tag Dynamic
                 assert=
                   {} (:a 1) (:b |x) (:ready true)
                   assoc m :ready true
@@ -4792,7 +4785,7 @@
                 assert=
                   {} $ |a $ Draft :text |new :mono? true
                   , changed
-                assert-type changed $ quote $ Map String Draft
+                assert-type changed $ Map String Draft
                 assert= changed $ match (.get drafts |a)
                   (:some draft)
                     .assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
@@ -4801,8 +4794,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |rejects-non-number-list-index)
               :code $ quote $ let
-                  open-keys $ assert-type ([] :a)
-                    quote $ List Dynamic
+                  open-keys $ assert-type ([] :a) (List Dynamic)
                 assert= |rejected $ try
                   assoc ([] 1 2) (&list:nth open-keys 0) 3
                   fn (message) |rejected
@@ -4810,7 +4802,7 @@
             %{} 'TestEntry (:name |empty-map-infers-first-entry)
               :code $ quote $ let
                   result $ assoc ({}) |k 1
-                assert-type result $ quote $ Map String Number
+                assert-type result $ Map String Number
                 assert=
                   {} $ |k 1
                   , result
@@ -4822,15 +4814,15 @@
                   source-map $ {}
                   result $ assoc source-map :ready true
                   method-result $ .assoc source-map :ready true
-                assert-type result $ quote $ Map Tag Bool
-                assert-type method-result $ quote $ Map Tag Bool
+                assert-type result $ Map Tag Bool
+                assert-type method-result $ Map Tag Bool
                 assert= method-result result
                 assert= ({}) source-map
               :tags $ #{} :core :empty-map :unit
             %{} 'TestEntry (:name |empty-map-keeps-option-payload)
               :code $ quote $ let
                   result $ assoc ({}) |value $ Option :some 3
-                assert-type result $ quote $ Map String (Option Number)
+                assert-type result $ Map String $ Option Number
                 assert=
                   Option :some $ Option :some 3
                   get result |value
@@ -4843,7 +4835,7 @@
                   make-key $ fn () (assert= 1 @calls) (swap! calls inc) |k
                   make-value $ fn () (assert= 2 @calls) (swap! calls inc) 7
                   result $ assoc (make-map) (make-key) (make-value)
-                assert-type result $ quote $ Map String Number
+                assert-type result $ Map String Number
                 assert=
                   {} $ |k 7
                   , result
@@ -5307,7 +5299,7 @@
                   .leaf-text $ cirru-quote $
                 assert-type
                   .leaf-text $ cirru-quote x
-                  quote $ Option String
+                  Option String
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |evaluates-receiver-once)
               :code $ quote $ let
@@ -5383,7 +5375,7 @@
                   .to-list $ cirru-quote x
                 assert-type
                   .to-list $ cirru-quote $ a b
-                  quote $ Option $ List Dynamic
+                  Option $ List Dynamic
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |matches-parse-cirru-list)
               :code $ quote $ let
@@ -5543,8 +5535,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |appends-concrete-value-to-open-list)
               :code $ quote $ let
-                  xs $ assert-type ([] 1 |x)
-                    quote $ List Dynamic
+                  xs $ assert-type ([] 1 |x) (List Dynamic)
                 assert= ([] 1 |x :ready) (conj xs :ready)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-order-and-source-with-rest-spread)
@@ -5838,8 +5829,7 @@
               :tags $ #{} :core :naming-contract :unit
             %{} 'TestEntry (:name |rejects-non-number-list-index)
               :code $ quote $ let
-                  open-keys $ assert-type ([] :a)
-                    quote $ List Dynamic
+                  open-keys $ assert-type ([] :a) (List Dynamic)
                 do
                   assert= |rejected $ try
                     contains? ([] 1 2) (&list:nth open-keys 0)
@@ -6480,8 +6470,7 @@
             %{} 'TestEntry (:name |decodes-inside-typed-first)
               :code $ quote $ assert= |abc
                 option:unwrap-or
-                  first $ decode-map-as ([] |abc)
-                    quote $ List String
+                  first $ decode-map-as ([] |abc) (List String)
                   , |
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |decodes-bare-compound-type)
@@ -6511,8 +6500,7 @@
                     , message
                 assert= "|decode-map-as failed at $[1]: expected number, got string" $ try
                   do
-                    decode-map-as ([] 1 |wrong)
-                      quote $ List Number
+                    decode-map-as ([] 1 |wrong) (List Number)
                     , |unexpected-success
                   fn (message)
                     hint-fn $ Fn String $ -> String
@@ -6524,10 +6512,10 @@
                     original $ StringDestruct :some |x |tail
                     decoded $ decode-map-as original 'StringDestruct
                     original-option $ Option :some 3
-                    decoded-option $ decode-map-as original-option $ quote (Option Number)
+                    decoded-option $ decode-map-as original-option $ Option Number
                   assert-type decoded 'StringDestruct
                   assert= true $ identical? original decoded
-                  assert-type decoded-option $ quote $ Option Number
+                  assert-type decoded-option $ Option Number
                   assert= true $ identical? original-option decoded-option
               :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |preserves-nan-identity)
@@ -6535,11 +6523,11 @@
                 let
                     not-a-number $ &/ 0 0
                     original-option $ Option :some not-a-number
-                    decoded-option $ decode-map-as original-option $ quote (Option Number)
+                    decoded-option $ decode-map-as original-option $ Option Number
                     original-result $ Result :ok not-a-number
-                    decoded-result $ decode-map-as original-result $ quote (Result Number String)
-                  assert-type decoded-option $ quote $ Option Number
-                  assert-type decoded-result $ quote $ Result Number String
+                    decoded-result $ decode-map-as original-result $ Result Number String
+                  assert-type decoded-option $ Option Number
+                  assert-type decoded-result $ Result Number String
                   assert= true $ identical? original-option decoded-option
                   assert= true $ identical? original-result decoded-result
               :tags $ #{} :core :types :unit
@@ -6548,7 +6536,7 @@
                 let
                     original-meta $ RuntimeMapMeta :kind :nested
                     original-result $ Result :ok original-meta
-                    decoded-result $ decode-map-as original-result $ quote (Result RuntimeMapMeta String)
+                    decoded-result $ decode-map-as original-result $ Result RuntimeMapMeta String
                   assert= true $ identical? original-meta $ result:unwrap-or decoded-result (RuntimeMapMeta :kind :fallback)
               :tags $ #{} :core :types :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
@@ -6653,7 +6641,7 @@
                   :tagged T String
                   :none
                 quoted $ defenum Shape ([] T) (:circle Number)
-                  :poly $ quote $ List Number
+                  :poly $ List Number
                   :tagged T String
                   :none
               assert= quoted bare
@@ -6872,8 +6860,8 @@
                     {} $ T Debug
                     :value T
                     :count Number 0
-                    :items $ quote $ List Item
-                    :table $ quote $ Map String (List Number)
+                    :items $ List Item
+                    :table $ Map String $ List Number
                 assert= quoted bare
                 assert= 0 $ :count $ bare :value |a :items ([]) :table ({})
               :tags $ #{} :core :unit
@@ -6958,7 +6946,7 @@
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'defunion $ %{} 'CodeEntry
-          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型可以直接写，如 `List Number`（旧的 `quote $ List Number` 写法仍然可用）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型直接写，如 `List Number`（0.37.0 起带 quote 的 `quote $ List Number` 加载时报 E_LEGACY_TYPE_SYNTAX）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
@@ -6972,7 +6960,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
             :code $ quote $ let
                 bare $ defunion Cell String $ List Number
-                quoted $ defunion Cell String $ quote (List Number)
+                quoted $ defunion Cell String $ List Number
               assert= quoted bare
             :tags $ #{} :core :unit
         'deref $ %{} 'CodeEntry
@@ -7544,19 +7532,19 @@
             %{} 'TestEntry (:name |preserves-list-member-contract)
               :code $ quote $ let
                   result $ empty $ [] 1 2
-                assert-type result $ quote $ List Number
+                assert-type result $ List Number
                 assert= ([]) result
               :tags $ #{} :core :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-map-key-value-contract)
               :code $ quote $ let
                   result $ empty $ &{} :name |Ada
-                assert-type result $ quote $ Map Tag String
+                assert-type result $ Map Tag String
                 assert= (&{}) result
               :tags $ #{} :core :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-set-member-contract)
               :code $ quote $ let
                   result $ empty $ #{} |a |b
-                assert-type result $ quote $ Set String
+                assert-type result $ Set String
                 assert= (#{}) result
               :tags $ #{} :core :lexical-binder :unit
             %{} 'TestEntry (:name |methods-preserve-primitive-empty-values)
@@ -7648,18 +7636,17 @@
                     rows $ [] meta meta
                   assert=
                     Result :ok $ {} $ :kind :nested
-                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
+                    encode-map-as ok $ Result RuntimeMapMeta String
                   assert= ok $ decode-map-as
-                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
-                    quote $ Result RuntimeMapMeta String
+                    encode-map-as ok $ Result RuntimeMapMeta String
+                    Result RuntimeMapMeta String
                   assert=
                     []
                       {} $ :kind :nested
                       {} $ :kind :nested
-                    encode-map-as rows $ quote $ List RuntimeMapMeta
+                    encode-map-as rows $ List RuntimeMapMeta
                   assert= (Option :none)
-                    encode-map-as (Option :none)
-                      quote $ Option RuntimeMapMeta
+                    encode-map-as (Option :none) (Option RuntimeMapMeta)
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
@@ -7975,8 +7962,8 @@
                   response $ ffi:response nil
                   resolve $ fn () $ response.resolve! :ok
                   reject $ fn () $ response.reject! :error
-                assert-type resolve $ quote $ Fn (-> Unit)
-                assert-type reject $ quote $ Fn (-> Unit)
+                assert-type resolve $ Fn $ -> Unit
+                assert-type reject $ Fn $ -> Unit
                 , true
               :tags $ #{} :unit
         'ffi:task $ %{} 'CodeEntry
@@ -8004,8 +7991,8 @@
                   task $ ffi:task nil
                   cancel $ fn () task.cancel!
                   cancel-with $ fn () $ task.cancel-with! :shutdown
-                assert-type cancel $ quote $ Fn (-> Unit)
-                assert-type cancel-with $ quote $ Fn (-> Unit)
+                assert-type cancel $ Fn $ -> Unit
+                assert-type cancel-with $ Fn $ -> Unit
                 , true
               :tags $ #{} :unit
         'filter $ %{} 'CodeEntry
@@ -8079,7 +8066,7 @@
                   input $ {} $ |a 1
                   selected $ filter-map-kv input $ fn (id value)
                     MapEntryDecision :keep (to-tag id) (str value)
-                assert-type selected $ quote $ Map Tag String
+                assert-type selected $ Map Tag String
                 assert= (Option :some |1) (&map:get selected :a)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-captured-generic-relations)
@@ -8096,7 +8083,7 @@
                       |b $ FsPath :value |second
                     fn (key path)
                       MapEntryDecision :keep (to-tag key) (:value path)
-                assert-type selected $ quote $ Map Tag String
+                assert-type selected $ Map Tag String
                 assert=
                   {} (:a |first) (:b |second)
                   , selected
@@ -8106,7 +8093,7 @@
                   input $ {} (:a 1) (:b 2) (:c 3)
                   values $ map-list-kv input $ fn (key value) value
                   result $ input .filter-map-kv $ fn (key value) (MapEntryDecision :keep :shared value)
-                assert-type result $ quote $ Map Tag Number
+                assert-type result $ Map Tag Number
                 assert=
                   {} $ :shared $ -> values (.last) (.unwrap)
                   , result
@@ -8231,9 +8218,8 @@
               :code $ quote $ do
                 assert-type
                   first $ [] 1 2
-                  quote $ Option Number
-                assert-type (first |abc)
-                  quote $ Option String
+                  Option Number
+                assert-type (first |abc) (Option String)
                 assert= (Option :some 1)
                   first $ [] 1 2
                 assert= (Option :some |a) (first |abc)
@@ -8372,8 +8358,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |stops-calling-reducer-after-break)
               :code $ quote $ let
-                  *seen $ ref $ assert-type ([])
-                    quote $ List Number
+                  *seen $ ref $ assert-type ([]) (List Number)
                   result $ fold-while ([] 1 2 3) 0 $ fn (acc x) (swap! *seen append x)
                     if (&= x 2) (ControlFlow :break acc) (ControlFlow :continue x)
                 assert= 1 result
@@ -8722,22 +8707,22 @@
                 assert= true $ result:err? $ .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
                 assert-type
                   .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
-                  quote $ Result String String
+                  Result String String
                 assert-type
                   .read-dir $ fs:path |/calcit-result-contract-does-not-exist
-                  quote $ Result (List FsPath) String
+                  Result (List FsPath) String
                 assert-type
                   .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
-                  quote $ Result (List FsPath) String
+                  Result (List FsPath) String
                 assert-type
                   .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
-                  quote $ Result Unit String
+                  Result Unit String
             %{} 'TestEntry (:name |write-text-effect-contract)
               :code $ quote $ do
                 assert= true $ result:err? $ .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
                 assert-type
                   .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
-                  quote $ Result Unit String
+                  Result Unit String
               :tags $ #{} :unit
             %{} 'TestEntry (:name |preserves-nominal-child-paths)
               :code $ quote $ assert=
@@ -8823,7 +8808,7 @@
               :code $ quote $ let
                   m $ assert-type
                     {} (:a 1) (:b |x)
-                    quote $ Map Tag Dynamic
+                    Map Tag Dynamic
                 do
                   assert= (Option :some 1) (get m :a)
                   assert= (Option :none) (get m :missing)
@@ -8857,7 +8842,7 @@
                   states $ assert-type
                     ref $ {} $ 1
                       {} $ :status :active
-                    quote $ Ref $ Map Number (Map Tag Dynamic)
+                    Ref $ Map Number $ Map Tag Dynamic
                 assert= :active $ when
                   = :active $ option:unwrap $ get
                     option:unwrap $ get @states 1
@@ -8976,7 +8961,7 @@
                     {}
                       :a $ {} $ :b 2
                       :other |x
-                    quote $ Map Tag Dynamic
+                    Map Tag Dynamic
                 assert= (Result :ok 2)
                   get-in m $ [] :a :b
               :tags $ #{} :core :unit
@@ -9003,7 +8988,7 @@
               :code $ quote $ let
                   m $ assert-type
                     {} $ :a 1
-                    quote $ Map Tag Dynamic
+                    Map Tag Dynamic
                 assert=
                   Result :err $ PathError :missing
                   get-in m $ [] :b :c
@@ -9481,7 +9466,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-generic-schema-for-local-binding)
             :code $ quote $ let
                 f1 identity
-              assert-type f1 $ quote $ Fn T (-> T) (:generics T)
+              assert-type f1 $ Fn T (-> T) (:generics T)
               assert= 1 $ f1 1
             :tags $ #{} :core :unit
         'if $ %{} 'CodeEntry
@@ -9727,8 +9712,7 @@
           :tags $ #{} :macro
           :tests $ [] $ %{} 'TestEntry (:name |binds-open-option-payload)
             :code $ quote $ let
-                present $ assert-type (Option :some 1)
-                  quote $ Option Dynamic
+                present $ assert-type (Option :some 1) (Option Dynamic)
               assert= 1 $ if-let (value present) value 0
             :tags $ #{} :core :unit
         'if-not $ %{} 'CodeEntry (:doc |)
@@ -10266,9 +10250,8 @@
               :code $ quote $ do
                 assert-type
                   last $ [] 1 2
-                  quote $ Option Number
-                assert-type (last |abc)
-                  quote $ Option String
+                  Option Number
+                assert-type (last |abc) (Option String)
                 assert= (Option :some 2)
                   last $ [] 1 2
                 assert= (Option :some |c) (last |abc)
@@ -10524,7 +10507,7 @@
               :code $ quote $ do
                 let
                     entries $ map-entries $ &{} :a 1 :b 2
-                  assert-type entries $ quote $ List (MapEntry Tag Number)
+                  assert-type entries $ List $ MapEntry Tag Number
                   assert= 2 $ count entries
                   assert= (#{} 1 2)
                     &list:to-set $ map entries $ fn (entry) (:value entry)
@@ -10536,7 +10519,7 @@
                     entries $ map-entries $ &{} |b 2 |a 1
                     sorted $ &list:sort-by entries :value
                     values $ map-indexed sorted $ fn (idx entry) (:value entry)
-                  assert-type values $ quote $ List Number
+                  assert-type values $ List Number
                   assert= ([] 1 2) values
                 , &unit
               :tags $ #{} :core :unit
@@ -10547,7 +10530,7 @@
                     sorted $ sort entries $ fn (left right)
                       - (:value left) (:value right)
                     values $ map sorted $ fn (entry) (:value entry)
-                  assert-type sorted $ quote $ List (MapEntry String Number)
+                  assert-type sorted $ List $ MapEntry String Number
                   assert= ([] 1 2) values
                 , &unit
               :tags $ #{} :core :unit
@@ -10590,8 +10573,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-with-index)
               :code $ quote $ let
-                  xs $ assert-type ([] 1 :ready)
-                    quote $ List Dynamic
+                  xs $ assert-type ([] 1 :ready) (List Dynamic)
                 assert=
                   [] ([] 0 1) ([] 1 :ready)
                   map-indexed xs $ fn (idx value) ([] idx value)
@@ -10754,7 +10736,7 @@
                     |b $ FsPath :value |second
                   result $ map-list-kv input $ fn (key path)
                     str key |= $ :value path
-                assert-type result $ quote $ List String
+                assert-type result $ List String
                 assert= (#{} |a=first |b=second) (result .to-set)
               :tags $ #{} :core :map-kv-proof :unit
             %{} 'TestEntry (:name |preserves-iteration-effects-and-failure)
@@ -10812,7 +10794,7 @@
                     [] 1 2 3
                     , .flat-map $ fn (x) (swap! calls inc)
                       [] (str x) (str x)
-                assert-type result $ quote $ List String
+                assert-type result $ List String
                 assert= ([] |1 |1 |2 |2 |3 |3) result
                 assert= 3 @calls
                 assert= ([])
@@ -10962,8 +10944,7 @@
                 assert= (Option :some 0) (nil->option 0)
                 assert= (Option :some |) (nil->option |)
                 assert= (Option :some |value) (nil->option |value)
-                assert-type (nil->option 1)
-                  quote $ Option Number
+                assert-type (nil->option 1) (Option Number)
               :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |preserves-nested-option-payload)
               :code $ quote $ let
@@ -11015,8 +10996,7 @@
                   from-branches $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
                     if (> x 0) (nil->option x) (nil->option nil)
-                  numbers $ assert-type ([] 1 2)
-                    quote $ List Number
+                  numbers $ assert-type ([] 1 2) (List Number)
                 assert= (Option :some 1) (from-if 1)
                 assert= (Option :none) (from-if -1)
                 assert= (Option :some 2) (from-local-join 2)
@@ -11156,7 +11136,7 @@
               :code $ quote $ let
                   xs $ assert-type
                     [] 1 $ {} $ :a 2
-                    quote $ List Dynamic
+                    List Dynamic
                 assert=
                   Option :some $ {} $ :a 2
                   nth xs 1
@@ -11165,9 +11145,8 @@
               :code $ quote $ do
                 assert-type
                   nth ([] 1 2) 1
-                  quote $ Option Number
-                assert-type (nth |abc 1)
-                  quote $ Option String
+                  Option Number
+                assert-type (nth |abc 1) (Option String)
                 assert= (Option :some 2)
                   nth ([] 1 2) 1
                 assert= (Option :some |b) (nth |abc 1)
@@ -11185,8 +11164,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 0.5) (number->float32 0.5)
-              assert-type (number->float32 0.5)
-                quote $ Result Float32 String
+              assert-type (number->float32 0.5) (Result Float32 String)
               assert= true $ result:err? $ number->float32 0.1
             :tags $ #{} :core :unit
         'number->float64 $ %{} 'CodeEntry
@@ -11202,8 +11180,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 0.1) (number->float64 0.1)
-              assert-type (number->float64 0.1)
-                quote $ Result Float64 String
+              assert-type (number->float64 0.1) (Result Float64 String)
             :tags $ #{} :core :unit
         'number->int16 $ %{} 'CodeEntry
           :doc "|把 Number 显式检查并转换为 Int16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
@@ -11218,8 +11195,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 32767) (number->int16 32767)
-              assert-type (number->int16 32767)
-                quote $ Result Int16 String
+              assert-type (number->int16 32767) (Result Int16 String)
               assert= true $ result:err? $ number->int16 32768
             :tags $ #{} :core :unit
         'number->int32 $ %{} 'CodeEntry
@@ -11235,8 +11211,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 2147483647) (number->int32 2147483647)
-              assert-type (number->int32 2147483647)
-                quote $ Result Int32 String
+              assert-type (number->int32 2147483647) (Result Int32 String)
               assert= true $ result:err? $ number->int32 2147483648
             :tags $ #{} :core :unit
         'number->int64 $ %{} 'CodeEntry
@@ -11252,8 +11227,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 9007199254740991) (number->int64 9007199254740991)
-              assert-type (number->int64 9007199254740991)
-                quote $ Result Int64 String
+              assert-type (number->int64 9007199254740991) (Result Int64 String)
               assert= true $ result:err? $ number->int64 9007199254740992
             :tags $ #{} :core :unit
         'number->int8 $ %{} 'CodeEntry
@@ -11269,15 +11243,13 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 127) (number->int8 127)
-              assert-type (number->int8 127)
-                quote $ Result Int8 String
+              assert-type (number->int8 127) (Result Int8 String)
               assert= true $ result:err? $ number->int8 128
               assert= true $ result:err? $ number->int8 (/ 1 0)
               assert= true $ result:err? $ number->int8 1.5
               assert= ([] 127)
-                parse-cirru-edn-as "|[] 127" $ quote $ List Int8
-              assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128"
-                quote $ List Int8
+                parse-cirru-edn-as "|[] 127" $ List Int8
+              assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 128" (List Int8)
             :tags $ #{} :core :unit
         'number->uint16 $ %{} 'CodeEntry
           :doc "|把 Number 显式检查并转换为 UInt16 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
@@ -11292,8 +11264,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 65535) (number->uint16 65535)
-              assert-type (number->uint16 65535)
-                quote $ Result UInt16 String
+              assert-type (number->uint16 65535) (Result UInt16 String)
               assert= true $ result:err? $ number->uint16 -1
             :tags $ #{} :core :unit
         'number->uint32 $ %{} 'CodeEntry
@@ -11309,8 +11280,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 4294967295) (number->uint32 4294967295)
-              assert-type (number->uint32 4294967295)
-                quote $ Result UInt32 String
+              assert-type (number->uint32 4294967295) (Result UInt32 String)
               assert= true $ result:err? $ number->uint32 -1
             :tags $ #{} :core :unit
         'number->uint64 $ %{} 'CodeEntry
@@ -11326,8 +11296,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 9007199254740991) (number->uint64 9007199254740991)
-              assert-type (number->uint64 9007199254740991)
-                quote $ Result UInt64 String
+              assert-type (number->uint64 9007199254740991) (Result UInt64 String)
               assert= true $ result:err? $ number->uint64 -1
             :tags $ #{} :core :unit
         'number->uint8 $ %{} 'CodeEntry
@@ -11343,8 +11312,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-boundaries-and-type)
             :code $ quote $ do
               assert= (Result :ok 255) (number->uint8 255)
-              assert-type (number->uint8 255)
-                quote $ Result UInt8 String
+              assert-type (number->uint8 255) (Result UInt8 String)
               assert= true $ result:err? $ number->uint8 -1
             :tags $ #{} :core :unit
         'number? $ %{} 'CodeEntry
@@ -11471,11 +11439,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
             :code $ quote $ let
                 present $ Option :some 3
-                absent $ assert-type (Option :none)
-                  quote $ Option Number
+                absent $ assert-type (Option :none) (Option Number)
                 chained $ present .and-then $ fn (value)
                   Option :some $ str value
-              assert-type chained $ quote $ Option String
+              assert-type chained $ Option String
               assert= (Option :some |3) chained
               assert= (Option :none)
                 absent .and-then $ fn (value) (raise |unselected-option-and-then)
@@ -11507,10 +11474,8 @@
           :tests $ []
             %{} 'TestEntry (:name |folds-open-option-payload)
               :code $ quote $ let
-                  present $ assert-type (Option :some 1)
-                    quote $ Option Dynamic
-                  absent $ assert-type (Option :none)
-                    quote $ Option Dynamic
+                  present $ assert-type (Option :some 1) (Option Dynamic)
+                  absent $ assert-type (Option :none) (Option Dynamic)
                 do
                   assert= 1 $ option:fold present
                     fn () 0
@@ -11522,8 +11487,7 @@
             %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
               :code $ quote $ let
                   present $ Option :some 3
-                  absent $ assert-type (Option :none)
-                    quote $ Option Number
+                  absent $ assert-type (Option :none) (Option Number)
                 assert= |3 $ present .fold
                   fn () (raise |unselected-option-fold-none) |missing
                   fn (value) (str value)
@@ -11565,8 +11529,8 @@
                     , .map $ fn (value)
                       hint-fn $ Fn Number $ -> String
                       raise |unselected-map-callback
-                assert-type mapped $ quote $ Option String
-                assert-type absent $ quote $ Option String
+                assert-type mapped $ Option String
+                assert-type absent $ Option String
                 assert= (Option :some |3) mapped
                 assert= (Option :none) absent
               :tags $ #{} :core :unit
@@ -11599,8 +11563,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
             :code $ quote $ let
                 present $ Option :some 3
-                absent $ assert-type (Option :none)
-                  quote $ Option Number
+                absent $ assert-type (Option :none) (Option Number)
               assert= present $ present .or-else $ fn () (raise |unselected-option-or-else) (Option :some 9)
               assert= (Option :some 9)
                 absent .or-else $ fn () $ Option :some 9
@@ -11644,31 +11607,34 @@
           :tests $ []
             %{} 'TestEntry (:name |consumes-open-option-payload)
               :code $ quote $ let
-                  present $ assert-type (Option :some 1)
-                    quote $ Option Dynamic
-                  absent $ assert-type (Option :none)
-                    quote $ Option Dynamic
+                  present $ assert-type (Option :some 1) (Option Dynamic)
+                  absent $ assert-type (Option :none) (Option Dynamic)
                 do
                   assert= 1 $ option:unwrap-or present 0
                   assert= 0 $ option:unwrap-or absent 0
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |erased-consumer-rewrites-keep-results)
-              :doc "|The rewrites E_OPTION_ERASED_TO_NIL suggests for `or`, `if`, `nil?` and `non-nil?` give the original results for Some, Some nil, Some false and None, and evaluate the fallback exactly as often."
               :code $ quote $ let
                   calls $ ref 0
                   check $ fn (subject expected-calls)
-                    hint-fn $ Fn (Option Dynamic) Number (-> Unit)
+                    hint-fn $ Fn (Option Dynamic) Number $ -> Unit
                     reset! calls 0
                     let
                         erased $ or (option:unwrap-or subject nil)
-                          do (reset! calls $ inc $ deref calls) 0
+                          do
+                            reset! calls $ inc $ deref calls
+                            , 0
                         erased-calls $ deref calls
                       reset! calls 0
                       assert= erased $ match subject
                         (:some v)
-                          or v $ do (reset! calls $ inc $ deref calls) 0
+                          or v $ do
+                            reset! calls $ inc $ deref calls
+                            , 0
                         (:none)
-                          do (reset! calls $ inc $ deref calls) 0
+                          do
+                            reset! calls $ inc $ deref calls
+                            , 0
                       assert= erased-calls $ deref calls
                       assert= expected-calls erased-calls
                     assert=
@@ -11687,10 +11653,18 @@
                         (:some v) (non-nil? v)
                         (:none) false
                     , &unit
-                check (assert-type (Option :some 1) (quote $ Option Dynamic)) 0
-                check (assert-type (Option :some nil) (quote $ Option Dynamic)) 1
-                check (assert-type (Option :some false) (quote $ Option Dynamic)) 1
-                check (assert-type (Option :none) (quote $ Option Dynamic)) 1
+                check
+                  assert-type (Option :some 1) (Option Dynamic)
+                  , 0
+                check
+                  assert-type (Option :some nil) (Option Dynamic)
+                  , 1
+                check
+                  assert-type (Option :some false) (Option Dynamic)
+                  , 1
+                check
+                  assert-type (Option :none) (Option Dynamic)
+                  , 1
               :tags $ #{} :core :unit
         'or $ %{} 'CodeEntry
           :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
@@ -11787,7 +11761,7 @@
               :code $ quote $ let
                   xs $ [] ([] 1 2) ([] 3 4)
                   answer $ pairs-map xs
-                assert-type answer $ quote $ Map Number Number
+                assert-type answer $ Map Number Number
                 assert=
                   {} (1 2) (3 4)
                   , answer
@@ -11864,8 +11838,7 @@
               assert=
                 [] $ [] |a |b
                 parse-cirru-list "|a b"
-              assert-type (parse-cirru-list "|a b")
-                quote $ List CirruNode
+              assert-type (parse-cirru-list "|a b") (List CirruNode)
             :tags $ #{} :core :unit
         'parse-float $ %{} 'CodeEntry
           :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
@@ -11910,8 +11883,7 @@
               :code $ quote $ do
                 assert= (Result :ok 1.5) (|1.5 .parse-float)
                 assert= (Result :err |oops) (|oops .parse-float)
-                assert-type (|1.5 .parse-float)
-                  quote $ Result Number String
+                assert-type (|1.5 .parse-float) (Result Number String)
               :tags $ #{} :core :parse-method-contract :unit
         'pow $ %{} 'CodeEntry
           :doc "|公开的指数函数。pow base exponent 接收两个 Number，返回 base 的 exponent 次幂；保留原有非有限数语义。"
@@ -12249,8 +12221,7 @@
               :tags $ #{} :core :reset-proof :types :unit
             %{} 'TestEntry (:name |empty-initializer-needs-explicit-payload)
               :code $ quote $ let
-                  cell $ ref $ assert-type (Option :none)
-                    quote $ Option Number
+                  cell $ ref $ assert-type (Option :none) (Option Number)
                 assert= (Option :some 7)
                   reset! cell $ Option :some 7
                 assert= 8 $ &+ 1 $ option:unwrap-or (deref cell) 0
@@ -12262,7 +12233,7 @@
               :code $ quote $ let
                   cache $ assert-type
                     ref $ {}
-                    quote $ Ref $ Map AnyFn Number
+                    Ref $ Map AnyFn Number
                 reset! cache $ .assoc @cache inc 1
                 reset! cache $ .assoc @cache inc 2
                 assert= (Option :some 2) (.get @cache inc)
@@ -12310,7 +12281,7 @@
               :code $ quote $ let
                   items $ rest $ [] 1 2 3
                   text $ rest |abc
-                assert-type items $ quote $ List Number
+                assert-type items $ List Number
                 assert-type text 'String
                 assert= ([] 2 3) items
                 assert= |bc text
@@ -12332,21 +12303,19 @@
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
             :code $ quote $ let
-                ok $ assert-type (Result :ok 3)
-                  quote $ Result Number String
-                err $ assert-type (Result :err |failed)
-                  quote $ Result Number String
+                ok $ assert-type (Result :ok 3) (Result Number String)
+                err $ assert-type (Result :err |failed) (Result Number String)
                 chained $ ok .and-then $ fn (value)
                   assert-type
                     Result :ok $ str value
-                    quote $ Result String String
-              assert-type chained $ quote $ Result String String
+                    Result String String
+              assert-type chained $ Result String String
               assert= (Result :ok |3) chained
               assert= (Result :err |failed)
                 err .and-then $ fn (value) (raise |unselected-result-and-then)
                   assert-type
                     Result :ok $ str value
-                    quote $ Result String String
+                    Result String String
             :tags $ #{} :core :unit
         'result:err? $ %{} 'CodeEntry
           :doc "|判断 Result 是否为 :err；公开代码优先使用 .err?，本辅助函数属于内部兼容入口。"
@@ -12374,12 +12343,10 @@
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
             :code $ quote $ let
-                ok $ assert-type (Result :ok 3)
-                  quote $ Result Number String
-                err $ assert-type (Result :err |failed)
-                  quote $ Result Number String
+                ok $ assert-type (Result :ok 3) (Result Number String)
+                err $ assert-type (Result :err |failed) (Result Number String)
                 mapped $ ok .map $ fn (value) (str value)
-              assert-type mapped $ quote $ Result String String
+              assert-type mapped $ Result String String
               assert= (Result :ok |3) mapped
               assert= (Result :err |failed)
                 err .map $ fn (value) (raise |unselected-result-map) (str value)
@@ -12402,24 +12369,20 @@
           :tests $ []
             %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
               :code $ quote $ let
-                  ok $ assert-type (Result :ok 3)
-                    quote $ Result Number String
-                  err $ assert-type (Result :err |failed)
-                    quote $ Result Number String
+                  ok $ assert-type (Result :ok 3) (Result Number String)
+                  err $ assert-type (Result :err |failed) (Result Number String)
                   mapped $ err .map-err $ fn (message) (to-tag message)
-                assert-type mapped $ quote $ Result Number Tag
+                assert-type mapped $ Result Number Tag
                 assert= (Result :err :failed) mapped
                 assert= (Result :ok 3)
                   ok .map-err $ fn (message) (raise |unselected-result-map-err) (to-tag message)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |maps-error-to-inferred-number)
               :code $ quote $ let
-                  ok $ assert-type (Result :ok 3)
-                    quote $ Result Number String
-                  err $ assert-type (Result :err |failed)
-                    quote $ Result Number String
+                  ok $ assert-type (Result :ok 3) (Result Number String)
+                  err $ assert-type (Result :err |failed) (Result Number String)
                   mapped $ err .map-err $ fn (message) (.len message)
-                assert-type mapped $ quote $ Result Number Number
+                assert-type mapped $ Result Number Number
                 assert= (Result :err 6) mapped
                 assert= (Result :ok 3)
                   ok .map-err $ fn (message) (raise |unselected-result-map-err-length) (.len message)
@@ -12451,16 +12414,12 @@
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
             :code $ quote $ let
-                ok $ assert-type (Result :ok 3)
-                  quote $ Result Number String
-                err $ assert-type (Result :err |failed)
-                  quote $ Result Number String
+                ok $ assert-type (Result :ok 3) (Result Number String)
+                err $ assert-type (Result :err |failed) (Result Number String)
               assert= ok $ ok .or-else $ fn () (raise |unselected-result-or-else)
-                assert-type (Result :ok 9)
-                  quote $ Result Number String
+                assert-type (Result :ok 9) (Result Number String)
               assert= (Result :ok 9)
-                err .or-else $ fn () $ assert-type (Result :ok 9)
-                  quote $ Result Number String
+                err .or-else $ fn () $ assert-type (Result :ok 9) (Result Number String)
             :tags $ #{} :core :unit
         'result:unwrap-or $ %{} 'CodeEntry
           :doc "|Returns the :ok payload, or the fallback for :err."
@@ -12600,7 +12559,7 @@
               :code $ quote $ do
                 assert-type
                   slice ([] 1 2 3) 1
-                  quote $ List Number
+                  List Number
                 assert-type (slice |abc 1) 'String
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |slices-through-sliceable-contract)
@@ -13128,7 +13087,7 @@
             %{} 'TestEntry (:name |exposes-list-shaped-entries)
               :code $ quote $ let
                   ps $ to-pairs $ &{} :a 1 :b 2
-                assert-type ps $ quote $ Set (Tuple Tag Number)
+                assert-type ps $ Set $ Tuple Tag Number
                 assert= 2 $ .len ps
                 assert= 2 $ .len $ .unwrap
                   .first $ .to-list ps
@@ -13214,7 +13173,7 @@
                 &doseq
                   entry $ map-entries $ {} (:className |circle-button)
                   let
-                      typed $ assert-type entry $ quote (MapEntry Tag String)
+                      typed $ assert-type entry $ MapEntry Tag String
                     assert= |className $
                       :key typed
                       , .to-string
@@ -13225,8 +13184,8 @@
                       hint-fn $ Fn $ -> Unit
                       , &unit
                   let
-                      typed $ assert-type entry $ quote
-                        MapEntry Tag $ Fn $ -> Unit
+                      typed $ assert-type entry $ MapEntry Tag
+                        Fn $ -> Unit
                     assert= |pointerdown $
                       :key typed
                       , .to-string
@@ -13318,22 +13277,21 @@
               :code $ quote $ do
                 assert= true $ result:ok? $ try-decode-map-as 1 'Number
                 assert= true $ result:err? $ try-decode-map-as |bad 'Number
-                assert-type (try-decode-map-as 1 'Number)
-                  quote $ Result Number String
+                assert-type (try-decode-map-as 1 'Number) (Result Number String)
               :tags $ #{} :unit
             %{} 'TestEntry (:name |parsed-open-value-deep-success)
               :code $ quote $ match ("|[] ([] 1 2)" .parse-cirru-edn)
                 (:ok value)
                   assert=
                     Result :ok $ [] $ [] 1 2
-                    try-decode-map-as value $ quote $ List (List Number)
+                    try-decode-map-as value $ List $ List Number
                 (:err message) (raise message)
               :tags $ #{} :parse-boundary :unit
             %{} 'TestEntry (:name |parsed-open-value-deep-rejection)
               :code $ quote $ match ("|[] ([] 1 |bad)" .parse-cirru-edn)
                 (:ok value)
                   match
-                    try-decode-map-as value $ quote $ List (List Number)
+                    try-decode-map-as value $ List $ List Number
                     (:err message)
                       assert= true $ message .includes? |[0][1]
                     (:ok _) (raise "|parsing does not validate nested payload types")
@@ -13349,10 +13307,10 @@
                   original $ ref $ parse-cirru-edn "|do 1"
                   alias original
                 match
-                  try-decode-map-as original $ quote $ Ref Number
+                  try-decode-map-as original $ Ref Number
                   (:ok decoded)
                     do
-                      assert-type decoded $ quote $ Ref Number
+                      assert-type decoded $ Ref Number
                       reset! alias |bad
                       assert= 1 $ deref decoded
                       assert= |bad $ deref original
@@ -13366,7 +13324,7 @@
                   original $ ref $ parse-cirru-edn "|do |bad"
                   alias original
                 match
-                  try-decode-map-as original $ quote $ Ref Number
+                  try-decode-map-as original $ Ref Number
                   (:err message)
                     do
                       assert= true $ .includes? message |.value
@@ -13393,8 +13351,7 @@
               assert= true $ result:err? $
                 char-from-code 41
                 , .parse-cirru
-              assert-type (|a .parse-cirru)
-                quote $ Result CirruQuote String
+              assert-type (|a .parse-cirru) (Result CirruQuote String)
         'try-parse-cirru-edn $ %{} 'CodeEntry
           :doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code."
           :code $ quote $ defn try-parse-cirru-edn (source)
@@ -13415,8 +13372,7 @@
                 assert= true $ result:err? $
                   char-from-code 41
                   , .parse-cirru-edn
-                assert-type (|[] .parse-cirru-edn)
-                  quote $ Result Dynamic String
+                assert-type (|[] .parse-cirru-edn) (Result Dynamic String)
             %{} 'TestEntry (:name |scalar-format-roundtrip)
               :code $ quote $
                 [] true false
@@ -13478,22 +13434,20 @@
           :tests $ []
             %{} 'TestEntry (:name |result-contract)
               :code $ quote $ do
-                assert= true $ result:ok? $ try-parse-cirru-edn-as "|[] 1 2"
-                  quote $ List Number
-                assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 1 |bad"
-                  quote $ List Number
+                assert= true $ result:ok? $ try-parse-cirru-edn-as "|[] 1 2" (List Number)
+                assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 1 |bad" (List Number)
                 assert-type
-                  try-parse-cirru-edn-as "|[] 1 2" $ quote $ List Number
-                  quote $ Result (List Number) String
+                  try-parse-cirru-edn-as "|[] 1 2" $ List Number
+                  Result (List Number) String
               :tags $ #{} :unit
             %{} 'TestEntry (:name |nested-list-success)
               :code $ quote $ assert=
                 Result :ok $ [] $ [] 1 2
-                try-parse-cirru-edn-as "|[] ([] 1 2)" $ quote $ List (List Number)
+                try-parse-cirru-edn-as "|[] ([] 1 2)" $ List $ List Number
               :tags $ #{} :parse-boundary :unit
             %{} 'TestEntry (:name |nested-list-failure-path)
               :code $ quote $ match
-                try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ quote $ List (List Number)
+                try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ List $ List Number
                 (:err message)
                   assert= true $ message .includes? |[0][1]
                 (:ok _) (raise "|nested invalid Number must not be accepted")
@@ -13502,7 +13456,7 @@
               :code $ quote $ assert= |b
                 option:unwrap-or
                   nth
-                    parse-cirru-edn-as "|[] |a |b" $ quote $ List String
+                    parse-cirru-edn-as "|[] |a |b" $ List String
                     , 1
                   , |
               :tags $ #{} :core :unit
@@ -13527,7 +13481,7 @@
                   char-from-code 41
                   , .parse-cirru-list
                 assert-type (|a .parse-cirru-list)
-                  quote $ Result (List Dynamic) String
+                  Result (List Dynamic) String
             %{} 'TestEntry (:name |lexer-state-contract)
               :code $ quote $ do
                 assert=
@@ -13563,8 +13517,7 @@
             :code $ quote $ do
               assert= true $ result:ok? $ |1 .parse-json
               assert= true $ result:err? $ |{ .parse-json
-              assert-type (|1 .parse-json)
-                quote $ Result Dynamic String
+              assert-type (|1 .parse-json) (Result Dynamic String)
         'try-read-dir $ %{} 'CodeEntry
           :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass `Option :some true` for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported."
           :code $ quote $ defn try-read-dir (path recursive?)

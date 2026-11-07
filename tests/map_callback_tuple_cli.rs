@@ -35,7 +35,7 @@ fn map_callbacks_infer_result_keys_and_values_in_every_spelling() {
     ".map m $ fn (pair) $ let[] (k v) pair $ [] k (+ v 1)",
     "&map:map m $ fn (pair) ([] (&list:nth pair 0) (+ 1 (&list:nth pair 1)))",
   ] {
-    let snippet = format!("let\n    m $ &{{}} :a 1\n    out $ {call}\n  assert-type out $ quote $ Map Tag Number\n  , out\n");
+    let snippet = format!("let\n    m $ &{{}} :a 1\n    out $ {call}\n  assert-type out $ Map Tag Number\n  , out\n");
     let (ok, text) = eval(&snippet);
     assert!(ok, "{call}:\n{text}");
     assert!(text.contains("({} (:a 2))"), "{call}:\n{text}");
@@ -48,7 +48,7 @@ fn filter_callbacks_receive_typed_entries() {
     "filter m $ fn (pair) $ let[] (k v) pair $ > v 1",
     ".filter m $ fn (pair) $ > (&list:nth pair 1) 1",
   ] {
-    let snippet = format!("let\n    m $ &{{}} :a 1 :b 2\n    out $ {call}\n  assert-type out $ quote $ Map Tag Number\n  , out\n");
+    let snippet = format!("let\n    m $ &{{}} :a 1 :b 2\n    out $ {call}\n  assert-type out $ Map Tag Number\n  , out\n");
     let (ok, text) = eval(&snippet);
     assert!(ok, "{call}:\n{text}");
     assert!(text.contains("({} (:b 2))"), "{call}:\n{text}");

@@ -236,7 +236,7 @@ let
       hint-fn $ Fn Number (-> Number)
       &+ x 1
     composed $ double .map increment
-  assert-type composed $ quote $ Fn Number (-> Number)
+  assert-type composed $ Fn Number (-> Number)
   assert= 8 $ composed 3
 ```
 
@@ -254,8 +254,8 @@ let
       &- left right
     bound $ producer .bind consumer
     applied $ producer .apply consumer
-  assert-type bound $ quote $ Fn Number (-> Number)
-  assert-type applied $ quote $ Fn Number (-> Number)
+  assert-type bound $ Fn Number (-> Number)
+  assert-type applied $ Fn Number (-> Number)
   assert= 3 $ bound 3
   assert= -3 $ applied 3
 ```

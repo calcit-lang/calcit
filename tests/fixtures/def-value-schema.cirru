@@ -2487,13 +2487,13 @@
                         arrays $ make-arrays 3
                       assert= ([])
                         decode-map-as (to-calcit-data empty-array)
-                          quote $ List $ List Number
+                          List $ List Number
                       assert |independent-children $ not $ identical? (aget arrays 0) (aget arrays 1)
                       js/Reflect.set (aget arrays 0) |0 7
                       assert=
                         [] ([] 7) ([]) ([])
                         decode-map-as (to-calcit-data arrays)
-                          quote $ List $ List Number
+                          List $ List Number
                     , &unit
                 verify!
               :tags $ #{} :js-array-spread :unit
@@ -2601,7 +2601,7 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ {} $ :years ([] 2025 2026)
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                   (:ok data)
                     assert=
                       Option :some $ [] 2025 2026
@@ -2610,7 +2610,7 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ {} $ :years ([] 2025 |bad)
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                   (:ok _) (raise |invalid-storage-accepted)
                   (:err reason)
                     assert= true $ .includes? reason |[1]
@@ -2618,12 +2618,12 @@
             %{} 'TestEntry (:name |member-key-contract)
               :code $ quote $ do
                 match
-                  try-decode-map-as members $ quote $ Map Number String
+                  try-decode-map-as members $ Map Number String
                   (:ok data)
                     assert= (Option :some |Ada) (get data 1)
                   (:err reason) (raise reason)
                 match
-                  try-decode-map-as members $ quote $ Map String String
+                  try-decode-map-as members $ Map String String
                   (:ok _) (raise |numeric-member-key-accepted-as-string)
                   (:err reason)
                     assert= true $ .includes? reason |key
@@ -2633,14 +2633,14 @@
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ [] |Ada |secret
-                    quote $ List String
+                    List String
                   (:ok credentials)
                     assert= ([] |Ada |secret) credentials
                   (:err reason) (raise reason)
                 match
                   try-parse-cirru-edn-as
                     format-cirru-edn $ [] |Ada 42
-                    quote $ List String
+                    List String
                   (:ok _) (raise |invalid-credentials-accepted)
                   (:err reason)
                     assert= true $ .includes? reason |[1]
