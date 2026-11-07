@@ -1651,8 +1651,12 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
 /// Blocking diagnostics (such as `E_UNBOUND_TYPE_SLOT`) raised while a test
 /// compiled fail that test; the other advisories stay queued.
+/// A test fails on an open type slot (#2627). Bare broad types and Options
+/// erased to nil stay advisories here, so tests can still replay them.
 fn take_blocking_test_advisories() -> Option<String> {
-  let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  let (blocking, advisories): (Vec<_>, Vec<_>) = runner::preprocess::take_advisories()
+    .into_iter()
+    .partition(|advisory| advisory.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR));
   for advisory in advisories {
     runner::preprocess::push_advisory(advisory);
   }
