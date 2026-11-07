@@ -848,6 +848,7 @@ fn run_cli() -> Result<(), String> {
     // or prefer. Merge their namespaces strictly before installing the snippet.
     let snippet_package = std::mem::take(&mut snapshot.package);
     let mut eval_module_paths = HashSet::new();
+    let mut inherited_type_slots: HashMap<String, (String, String)> = HashMap::new();
 
     for module_path in &command.dep {
       // Reuse equivalent directory aliases without changing the first source.
@@ -874,6 +875,9 @@ fn run_cli() -> Result<(), String> {
         }
       }
       calcit::merge_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
+      if let Some(dep_entry) = loaded.snapshot.entries.get(snapshot::DEFAULT_ENTRY_NAME) {
+        inherit_eval_dep_type_slots(&mut inherited_type_slots, &dep_entry.type_slots, module_path)?;
+      }
     }
     snapshot.package = snippet_package;
     // Keep the historical namespace when available, without replacing a loaded
@@ -888,6 +892,9 @@ fn run_cli() -> Result<(), String> {
       items[1] = Cirru::leaf(eval_namespace.as_str());
     }
     let entry = snapshot.entries.get_mut(snapshot::DEFAULT_ENTRY_NAME).expect("default eval entry");
+    for (slot, (binding, _)) in inherited_type_slots {
+      entry.type_slots.entry(slot).or_insert(binding);
+    }
     entry.init_fn = format!("{eval_namespace}/main!");
     entry.reload_fn = format!("{eval_namespace}/reload!");
     snapshot.files.insert(eval_namespace.clone(), main_file);
@@ -2325,6 +2332,33 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
     );
   }
 
+  Ok(())
+}
+
+/// `calcit eval --dep` has no project entry of its own, so the eval entry takes
+/// the type-slot bindings each dependency declares on its default entry. Two
+/// dependencies that bind the same slot to different types are rejected rather
+/// than resolved by load order.
+fn inherit_eval_dep_type_slots(
+  inherited: &mut HashMap<String, (String, String)>,
+  dep_slots: &HashMap<String, String>,
+  module_path: &str,
+) -> Result<(), String> {
+  let mut slots: Vec<(&String, &String)> = dep_slots.iter().collect();
+  slots.sort();
+  for (slot, binding) in slots {
+    match inherited.get(slot) {
+      Some((existing, owner)) if existing != binding => {
+        return Err(format!(
+          "type slot `:{slot}` is bound to `{existing}` by `{owner}` but to `{binding}` by `{module_path}`; `calcit eval --dep` cannot pick one"
+        ));
+      }
+      Some(_) => {}
+      None => {
+        inherited.insert(slot.clone(), (binding.clone(), module_path.to_owned()));
+      }
+    }
+  }
   Ok(())
 }
 

@@ -100,6 +100,8 @@ c+ ([] 1 2) ([] 3 4)
 
 `--dep` 负责加载定义，`:require` 负责导入名字，两者职责不同；只有 `:require` 不会自动加载项目。
 
+被加载模块默认 entry 上的 `:type-slots`（例如 Respo 的 `:dispatch-op`）会继承到 eval 的 entry，所以片段可以直接调用用 type slot 参数化的定义。两个 `--dep` 把同一个 slot 绑定到不同类型时，eval 直接报错，不按加载顺序选择。
+
 ## Type Checking in Eval
 
 Type annotations and static checks work in eval mode:

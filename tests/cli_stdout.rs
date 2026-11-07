@@ -349,3 +349,90 @@ fn recur_outside_tail_position_is_rejected_by_the_check() {
     );
   }
 }
+
+const EVAL_DEP_TYPE_SLOT_FIXTURE: &str = r#"
+{}
+  :package |slotlib
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'slotlib.main/main!) (:mode :native) (:reload-fn 'slotlib.main/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {} $ :dispatch-op 'slotlib.main/Op
+  :files $ {}
+    'slotlib.main $ %{} 'FileEntry
+      :defs $ {}
+        'Op $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Op (:inc) (:dec)
+          :examples $ []
+          :schema $ quote EnumDef
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () $ raise |eval-must-not-run-dependency-entry
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+        'send! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn send! (op) &unit
+          :examples $ []
+          :schema $ quote $ Fn *dispatch-op (-> Unit)
+        'slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :dispatch-op
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns slotlib.main
+"#;
+
+// #2631: `eval --dep` has no project entry, so slot-parameterized definitions
+// of a dependency must see the bindings that dependency's entry declares.
+#[test]
+fn eval_dep_inherits_dependency_entry_type_slots() {
+  let project = tempfile::tempdir().expect("create eval project");
+  let lib = project.path().join("slotlib");
+  std::fs::create_dir(&lib).expect("create dependency directory");
+  std::fs::write(lib.join("calcit.cirru"), EVAL_DEP_TYPE_SLOT_FIXTURE).expect("write dependency");
+  let run = |args: &[&str]| {
+    calcit(project.path())
+      .current_dir(project.path())
+      .args(args)
+      .output()
+      .expect("run eval")
+  };
+  let output_text = |output: &std::process::Output| {
+    format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    )
+  };
+
+  let accepted = run(&["eval", "--dep", "./slotlib/", "slotlib.main/send! $ slotlib.main/Op :inc"]);
+  assert!(accepted.status.success(), "{}", output_text(&accepted));
+  assert!(!output_text(&accepted).contains("E_UNBOUND_TYPE_SLOT"));
+  assert!(!output_text(&accepted).contains("eval-must-not-run-dependency-entry"));
+
+  // The inherited binding is the dependency's nominal Op, so other values are still rejected.
+  let rejected = run(&["eval", "--dep", "./slotlib/", "slotlib.main/send! 42"]);
+  assert!(!rejected.status.success(), "{}", output_text(&rejected));
+  assert!(
+    !output_text(&rejected).contains("E_UNBOUND_TYPE_SLOT"),
+    "{}",
+    output_text(&rejected)
+  );
+
+  // A second dependency binding the same slot elsewhere is ambiguous.
+  let other = project.path().join("otherlib");
+  std::fs::create_dir(&other).expect("create second dependency directory");
+  std::fs::write(
+    other.join("calcit.cirru"),
+    EVAL_DEP_TYPE_SLOT_FIXTURE
+      .replace("slotlib", "otherlib")
+      // Keep a single `deftype-slot :dispatch-op` declaration across both modules.
+      .replace("deftype-slot :dispatch-op", "deftype-slot :other-op"),
+  )
+  .expect("write second dependency");
+  let conflict = run(&["eval", "--dep", "./slotlib/", "--dep", "./otherlib/", "&unit"]);
+  assert!(!conflict.status.success(), "{}", output_text(&conflict));
+  assert!(
+    output_text(&conflict).contains("type slot `:dispatch-op` is bound to `slotlib.main/Op`"),
+    "{}",
+    output_text(&conflict)
+  );
+}
