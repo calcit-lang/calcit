@@ -26,7 +26,7 @@ related:
 
 ## 0.37.0 删除带 quote 的复合类型写法（#2583）
 
-只放类型的位置（`assert-type`、`unsafe-coerce`、`decode-map-as` 等解码目标、`defstruct` 字段、`defenum` 载荷、`defunion` 成员、`deftrait` 方法类型）里写成 `quote $ List Number` 的复合类型，0.37.0 起加载 Snapshot 时报 `E_LEGACY_TYPE_SYNTAX`，依赖库里的定义、`:examples` 和 `:tests` 也算；`calcit eval` 片段同样拒绝。0.36.x 的 `W_QUOTED_COMPOUND_TYPE` Notes 随之移除。
+只放类型的位置（`assert-type`、`unsafe-coerce`、`decode-map-as` 等解码目标和 `encode-map-as` 编码目标、`defstruct` 字段、`defenum` 载荷、`defunion` 成员、`deftrait` 方法类型）里写成 `quote $ List Number` 的复合类型，0.37.0 起加载 Snapshot 时报 `E_LEGACY_TYPE_SYNTAX`，依赖库里的定义、`:examples` 和 `:tests` 也算；`calcit eval` 片段同样拒绝。0.36.x 的 `W_QUOTED_COMPOUND_TYPE` Notes 随之移除。
 
 迁移：用 0.37.0 运行 `calcit calcit.cirru edit format`，它把这些位置写成裸的 `List Number`，`:tests` 也一起改写。裸写法从 0.35.2 起可用，所以迁移后的库仍能被 0.35.2 / 0.36.x 加载。
 
@@ -122,7 +122,7 @@ deftrait Show $ .show $ Fn T (-> String) (:generics T)
 
 覆盖 `assert-type`、`unsafe-coerce`、`js-cast`、`parse-cirru-edn-as`、`decode-map-as`（及 `try-` 版本）的类型参数，以及
 `defstruct` 字段类型、`defenum` 载荷、`defunion` 成员和 `deftrait` 方法类型。两种写法读出的类型和生成的 JS 相同，原来的
-`quote $ List Number` 照常可用；`calcit edit format` 会把它们改成不带 quote 的写法（附带的 `:tests` 保持原样）。
+`quote $ List Number` 照常可用；`calcit edit format` 会把它们改成不带 quote 的写法（附带的 `:tests` 保持原样）。（这是 0.35.x 的说明；0.37.0 起带 quote 的写法加载时报 `E_LEGACY_TYPE_SYNTAX`，`edit format` 也改写 `:tests`，见 [0.37.0 一节](#0370-删除带-quote-的复合类型写法2583)。）
 表头最后一段以小写开头的限定名（如 `app.lib/box`）与函数调用写法相同，仍写 quote。
 
 注意保留 `$` 或括号：`defenum Shape (:some List Number)` 是两个 payload `List`、`Number`；
@@ -231,7 +231,7 @@ defstruct Box ([] T)
 calcit <snapshot> edit format
 ```
 
-它只改这三个声明宏里的类型名：`'Number` 改为 `Number`，`[] 'T` 改为 `[] T`，`{} $ 'T Debug` 改为 `{} $ T Debug`。复合类型 `quote $ List Number` 保持原样，`assert-type`、`:schema`、`deftrait` 等其他类型位置也保持原样。附带的 `:tests` 不改，方便保留旧写法的兼容测试；需要的话手动改。宏或代码生成器里拼出的 `defstruct` 需要手动改为不带 quote 的写法。
+它只改这三个声明宏里的类型名：`'Number` 改为 `Number`，`[] 'T` 改为 `[] T`，`{} $ 'T Debug` 改为 `{} $ T Debug`。复合类型 `quote $ List Number` 保持原样，`assert-type`、`:schema`、`deftrait` 等其他类型位置也保持原样。附带的 `:tests` 不改，方便保留旧写法的兼容测试；需要的话手动改。宏或代码生成器里拼出的 `defstruct` 需要手动改为不带 quote 的写法。（这是 0.35.x 的说明；0.37.0 起带 quote 的写法加载时报 `E_LEGACY_TYPE_SYNTAX`，`edit format` 也改写 `:tests`，见 [0.37.0 一节](#0370-删除带-quote-的复合类型写法2583)。）
 
 ## 0.34.0 `--check-only --ns` 运行默认证明审计（#2506）
 

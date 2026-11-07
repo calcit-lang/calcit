@@ -335,13 +335,13 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 ```cirru
 let
     point $ assert-type ([] 3 4) (Tuple Number Number)
-    entry $ assert-type ([] :title |Calcit) (quote $ Tuple Tag String)
+    entry $ assert-type ([] :title |Calcit) (Tuple Tag String)
   let[] (key title) entry
     assert= :title key
     assert= 9 $ &+ (nth point 0) (&str:count title)
 ```
 
-- **写法**：`quote $ Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
+- **写法**：`Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
 - **字面量**：在期望类型是元组的位置（参数、返回值、带 schema 的 `def`、`assert-type`），`[]` 字面量按位置检查，长度不同或某个位置类型不符都会报错。
 - **读取**：`let[] (x y) t` 让每个变量得到对应位置的类型。`nth t 0` 的下标必须是字面量，返回该位置的值本身，不包 `Option`（位置总是存在）；越界或非字面量下标报 `E_TUPLE_INDEX`。`let[]` 绑定的变量多于元组长度时报 `W_TUPLE_INDEX`。
 - **与 List 的关系**：元素同类型的元组（如 `Tuple Number Number`）可以当作 `List Number` 使用，`first`、`map`、`conj` 等按 List 处理，结果是 `List T`。元素类型不同的元组不能传给任何 List，包括 `List Dynamic`；`List T` 也不能隐式当作元组，长度需要先用 `let[]` 或字面量证明。

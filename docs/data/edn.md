@@ -102,8 +102,8 @@ defn decode-person (raw)
 Container and generic targets use the existing type-expression syntax:
 
 ```cirru.no-check
-parse-cirru-edn-as "|[] 1 2 3" $ quote $ List Number
-parse-cirru-edn-as "|%{} :Box (:value |hi)" $ quote $ Box String
+parse-cirru-edn-as "|[] 1 2 3" $ List Number
+parse-cirru-edn-as "|%{} :Box (:value |hi)" $ Box String
 ```
 
 Successful decoding guarantees the recursive container elements, struct fields, enum variant and payloads, generic arguments, and nominal struct/enum identity all match the target type. It does not coerce strings to numbers, maps to structs, or ordinary lists to enums.

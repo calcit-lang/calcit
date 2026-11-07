@@ -83,7 +83,7 @@
                 do
                   encode-map-as
                     [] (LabelB :text |b) 1
-                    quote $ Tuple LabelText Number
+                    Tuple LabelText Number
                   , |unexpected-success
                 fn (message)
                   hint-fn $ Fn String $ -> String
@@ -460,13 +460,13 @@
                   nested $ Option :some $ Option :none
                 assert= some-point $ decode-map-as (encode-map-as some-point MaybeGeo) MaybeGeo
                 assert= nested $ decode-map-as
-                  encode-map-as nested $ quote $ Option MaybeGeo
+                  encode-map-as nested $ Option MaybeGeo
                   Option MaybeGeo
               let[] (cell geo)
                 decode-map-as
                   encode-map-as
                     [] (ref 3) |plain
-                    quote $ Tuple (Ref Number) Geo
+                    Tuple (Ref Number) Geo
                   Tuple (Ref Number) Geo
                 assert= 3 $ deref cell
                 assert= |plain geo

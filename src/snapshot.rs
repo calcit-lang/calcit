@@ -5051,8 +5051,9 @@ fn canonicalize_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 
 /// Heads whose second argument is a decode or cast target type. `edit format`
 /// migrates these, while loading only reports them as `W_LEGACY_TYPE_SYNTAX`.
-const DECODER_TYPE_HEADS: [&str; 5] = [
+const DECODER_TYPE_HEADS: [&str; 6] = [
   "decode-map-as",
+  "encode-map-as",
   "try-decode-map-as",
   "parse-cirru-edn-as",
   "try-parse-cirru-edn-as",
@@ -5434,8 +5435,9 @@ pub fn unquote_compound_types(node: &Cirru) -> (Cirru, usize) {
     Cirru::Leaf(value) => Some(value.as_ref()),
     _ => None,
   });
-  // Quoted data is not code.
-  if head == Some("quote") {
+  // Quoted data is not code, and a `quasiquote` template is data that a
+  // macro returns: its type positions are rewritten where it expands.
+  if matches!(head, Some("quote" | "quasiquote")) {
     return (node.clone(), 0);
   }
   let mut rewritten = Vec::with_capacity(items.len());
@@ -7147,6 +7149,7 @@ mod tests {
         "unsafe-coerce v $ Fn Number (-> Number)",
       ),
       ("decode-map-as raw $ quote $ Map Tag Number", "decode-map-as raw $ Map Tag Number"),
+      ("encode-map-as value $ quote $ Option Number", "encode-map-as value $ Option Number"),
       (
         "defstruct Box (:items $ quote $ List Number) (:tags (quote $ List String) ([]))",
         "defstruct Box (:items $ List Number) (:tags (List String) ([]))",
@@ -7180,6 +7183,8 @@ mod tests {
     // Quoted data, values, struct defaults and lowercase qualified heads keep their quotes.
     for source in [
       "quote $ assert-type xs $ quote $ List Number",
+      // A quasiquote template is data the macro returns, checked where it expands.
+      "quasiquote $ assert-type ~x $ quote $ List Number",
       "defunion Boxed String $ quote $ app.lib/box Number",
       "macroexpand $ quote $ List Number",
       "defstruct Box (:items $ quote $ List Number) (:raw Dynamic (quote $ List Number))",

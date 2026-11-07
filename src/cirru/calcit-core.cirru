@@ -6946,7 +6946,7 @@
           :schema $ quote $ Fn Tag (-> Unit)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'defunion $ %{} 'CodeEntry
-          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型可以直接写，如 `List Number`（旧的 `quote $ List Number` 写法仍然可用）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
+          :doc "|定义闭合的无标签联合类型：(defunion Name MemberA MemberB ...)，成员按类型语法读取，如 `String`；复合类型直接写，如 `List Number`（0.37.0 起带 quote 的 `quote $ List Number` 加载时报 E_LEGACY_TYPE_SYNTAX）。运行时值没有包装，联合类型的值就是某个成员的值；使用前必须用 match 的类型模式拆出成员。成员至少两个，不能是 Dynamic、Nil、Option，每种运行时类型最多出现一次。"
           :code $ quote $ defmacro defunion (name & members)
             assert "|defunion expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defunion expects at least two member types" $ &>= (&list:count members) 2
@@ -7636,18 +7636,17 @@
                     rows $ [] meta meta
                   assert=
                     Result :ok $ {} $ :kind :nested
-                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
+                    encode-map-as ok $ Result RuntimeMapMeta String
                   assert= ok $ decode-map-as
-                    encode-map-as ok $ quote $ Result RuntimeMapMeta String
+                    encode-map-as ok $ Result RuntimeMapMeta String
                     Result RuntimeMapMeta String
                   assert=
                     []
                       {} $ :kind :nested
                       {} $ :kind :nested
-                    encode-map-as rows $ quote $ List RuntimeMapMeta
+                    encode-map-as rows $ List RuntimeMapMeta
                   assert= (Option :none)
-                    encode-map-as (Option :none)
-                      quote $ Option RuntimeMapMeta
+                    encode-map-as (Option :none) (Option RuntimeMapMeta)
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
