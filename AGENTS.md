@@ -155,6 +155,7 @@ calcit docs agents --contract
 
 1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
 2. **升级版本**：版本号更新允许直接在已验证的 `main` 上进行，不需要为版本号本身创建 PR。该例外只允许修改 `Cargo.toml`、`package.json` 的版本字段，以及仅由该版本变化产生的 lockfile metadata。执行 `cargo update --workspace` 后必须检查 diff；若依赖集合、依赖版本或其他字段发生变化，改用普通分支和 PR。提交 `chore: release <version>` 并推送 `main`。
+   普通 PR 与 main push 的 Test 只跑轻量检查；发版 PR 用 `release/<version>` 分支名（或 `chore: release <version>` 标题）触发全量检查。直接推送到 main 的版本提交在 main 上自动跑全量；release PR 合并后 tree 不变时 main 上保持轻量（见 `scripts/ci-plan.mjs`）。
 3. **等待 main 验证**：release PR 合并或版本提交推送后拉取最新 `main`，把当前 commit 记录为 `VERIFIED_SHA`，确认目标 tag 尚不存在，并按该 SHA 查询每个 required workflow。所有 required runs 都必须为 `completed/success`；失败、缺失或仍在运行时不得打 tag。
 4. **从 main 打 tag 并发布**：只在上述验证成功后，在已同步的 `main` 上创建并推送不带 `v` 前缀的 annotated tag。推送前必须确认 tag peel 后的 commit 恰好等于 `VERIFIED_SHA`，随后创建 GitHub release；这一步不需要发布分支。它会触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。

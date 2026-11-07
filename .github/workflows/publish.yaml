@@ -16,9 +16,10 @@ env:
   RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
-# The release commit must already be green in the branch Test workflow (full cargo test,
-# check-all, docs, WASI, clippy) and CodeQL; `branch_ci` waits for both on the exact SHA instead
-# of repeating them. The other gates run in parallel and cover only what branch CI cannot:
+# The release commit must already be green in the branch Test workflow and CodeQL; `branch_ci`
+# waits for both on the exact SHA instead of repeating them. On main that Test run is light
+# only when a full run (release PR, full cargo test, check-all, docs, WASI, clippy) already
+# passed for the same tree; otherwise the release commit itself runs full (scripts/ci-plan.mjs). The other gates run in parallel and cover only what branch CI cannot:
 # the tag/version/Release identity, the optimized binaries that are shipped, and the
 # registry packages as they will be uploaded.
 # No rust-cache: caches saved on a tag ref are visible only to that tag, so they are never

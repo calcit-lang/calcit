@@ -3,6 +3,11 @@
 //
 // Usage:
 //   node scripts/ci-check-all.mjs --shard i/n [--dry-run]
+//   node scripts/ci-check-all.mjs --smoke [--changed files.txt] [--dry-run]
+//
+// `--smoke` is the light mode for ordinary pull requests and main pushes: it runs
+// SMOKE_STEPS plus every check-all step whose commands name a changed file (one path
+// per line in `--changed`), in a single job. Release pull requests run the shards.
 //
 // The top-level steps of `check-all` in package.json stay the single source of
 // truth: every step runs in exactly one shard, and a step added there later
@@ -28,15 +33,24 @@ const WEIGHTS = {
 };
 const DEFAULT_WEIGHT = 30;
 const KNOWN_ASSERTION = "node scripts/check-known-assertion.mjs";
+// Native, JS and WASM runs of the shared test entries: enough to catch a broken build
+// or backend after a merge, in about two minutes.
+const SMOKE_STEPS = ["yarn try-core-tests", "yarn try-rs", "yarn try-js", "yarn try-wasm"];
 
 const args = process.argv.slice(2);
+const smoke = args.includes("--smoke");
 const shardArg = args[args.indexOf("--shard") + 1];
-const match = /^(\d+)\/(\d+)$/.exec(args.includes("--shard") ? shardArg : "");
-if (!match || Number(match[1]) >= Number(match[2])) {
-  console.error("usage: node scripts/ci-check-all.mjs --shard i/n [--dry-run]");
+const match = /^(\d+)\/(\d+)$/.exec(args.includes("--shard") ? shardArg : smoke ? "0/1" : "");
+if (!match || Number(match[1]) >= Number(match[2]) || (smoke && match[2] !== "1")) {
+  console.error("usage: node scripts/ci-check-all.mjs --shard i/n [--dry-run]\n"
+    + "       node scripts/ci-check-all.mjs --smoke [--changed files.txt] [--dry-run]");
   process.exit(2);
 }
 const [index, count] = [Number(match[1]), Number(match[2])];
+const changedArg = args.includes("--changed") ? args[args.indexOf("--changed") + 1] : undefined;
+const changed = changedArg
+  ? readFileSync(changedArg, "utf8").split("\n").map((line) => line.trim()).filter(Boolean)
+  : [];
 const dryRun = args.includes("--dry-run");
 // The check-all fixtures exercise language features, including open idioms the
 // default proof audit rejects, so they run like `--no-proof-audit`. The audit
@@ -76,9 +90,24 @@ for (const step of [...steps].sort((a, b) => b.weight - a.weight)) {
   loads[target] += step.weight;
   assigned[target].push(step);
 }
-const mine = steps.filter((step) => assigned[index].includes(step));
+// A step is "touched" when one of its commands names a changed file, e.g. an edited
+// scripts/check-*.mjs or a calcit/*.cirru fixture that the step runs.
+const touches = (command, path) => command.includes(path);
+const touched = (step) => changed.some((path) => step.commands.some((command) => touches(command, path))
+  || touches(step.step, path));
+const mine = smoke
+  ? steps.filter((step) => SMOKE_STEPS.includes(step.step) || touched(step))
+  : steps.filter((step) => assigned[index].includes(step));
+if (smoke && SMOKE_STEPS.some((name) => !steps.some((step) => step.step === name))) {
+  throw new Error(`check-all no longer runs all of ${SMOKE_STEPS.join(", ")}; update SMOKE_STEPS`);
+}
+// The known-assertion suite is long; smoke runs it only when it or check-strict-default changed.
+const runKnownAssertion = !smoke || changed.some((path) => touches(KNOWN_ASSERTION, path)
+  || touches(scripts["check-strict-default"], path));
 
-console.log(`check-all shard ${index + 1}/${count}: known-assertion parts with index % ${count} == ${index}`);
+console.log(smoke
+  ? `check-all smoke: ${mine.length} of ${steps.length} steps (${changed.length} changed files), known-assertion ${runKnownAssertion ? "on" : "off"}`
+  : `check-all shard ${index + 1}/${count}: known-assertion parts with index % ${count} == ${index}`);
 for (const { step, commands } of mine) console.log(`  ${step}\n    ${commands.join("\n    ")}`);
 if (dryRun) process.exit(0);
 
@@ -90,7 +119,7 @@ const run = (command, env = process.env) => new Promise((done) => {
 });
 
 // Known-assertion parts buffer their own output, so they can run beside the sequential steps.
-const knownAssertion = run(KNOWN_ASSERTION, {
+const knownAssertion = !runKnownAssertion ? Promise.resolve(null) : run(KNOWN_ASSERTION, {
   ...process.env,
   CALCIT_KNOWN_ASSERTION_SHARD: `${index}/${count}`,
   CALCIT_KNOWN_ASSERTION_JOBS: String(Math.max(1, availableParallelism() - 1)),
@@ -113,4 +142,4 @@ if (failures.length > 0) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log(`check-all shard ${index + 1}/${count} passed in ${elapsed()}`);
+console.log(`check-all ${smoke ? "smoke" : `shard ${index + 1}/${count}`} passed in ${elapsed()}`);
