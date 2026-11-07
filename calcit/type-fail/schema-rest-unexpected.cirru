@@ -14,7 +14,7 @@
           :doc "|Expect preprocess error: schema has :rest but code has no & param"
           :code $ quote $ defn bad-rest (x) (do x)
           :examples $ []
-          :schema $ quote $ Fn Number & Number (-> Number)
+          :schema $ quote $ Fn Number (& Number) (-> Number)
         'main! $ %{} 'CodeEntry (:doc "|Entry for type-fail schema unexpected rest")
           :code $ quote $ defn main! ()
             do (; calling to force preprocessing of bad-rest) (bad-rest 1) (println |unreachable)

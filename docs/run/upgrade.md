@@ -30,6 +30,15 @@ related:
 
 迁移：给每个 entry 绑定具名类型，例如 `calcit calcit.cirru config set-type-slot :dispatch-op app.schema/Op`，`--entry test` 等其它 entry 分别绑定。库自己的 demo / test entry 也一样；还没有具体操作类型的库可以先定义一个只给 demo 用的 `defenum Op`。
 
+## 0.37.0 删除裸 `& T` rest 写法和字符串 type slot 绑定
+
+0.36.x 用 Notes 提示的两种旧写法，0.37.0 起加载 Snapshot 时直接报 `E_LEGACY_TYPE_SYNTAX`，依赖库也算：
+
+- `:schema` 里 `Fn` / `Macro` 的 rest 参数写成裸的 `& T`（如 `Fn Number & Number (-> Number)`），要写成分组 `Fn Number (& Number) (-> Number)`。`W_FN_REST_SPELLING` 随之移除。函数体里 `hint-fn` 等类型位置的旧写法暂时照常读取。
+- entry 的 `:type-slots` 绑定写成字符串（`|app.schema/Op`）或 tag `:dynamic`，或 slot 名不是 tag，要写成 `:dispatch-op 'app.schema/Op` / `Dynamic`。`W_TYPE_SLOT_STRING` 随之移除。
+
+迁移：用 0.37.0 运行 `calcit calcit.cirru edit format`，两种写法都会自动改写。新写法从 0.36.0 起可用，迁移后的库仍能被 0.36.x 加载。
+
 ## 0.37.0 删除带 quote 的复合类型写法（#2583）
 
 只放类型的位置（`assert-type`、`unsafe-coerce`、`decode-map-as` 等解码目标和 `encode-map-as` 编码目标、`defstruct` 字段、`defenum` 载荷、`defunion` 成员、`deftrait` 方法类型）里写成 `quote $ List Number` 的复合类型，0.37.0 起加载 Snapshot 时报 `E_LEGACY_TYPE_SYNTAX`，依赖库里的定义、`:examples` 和 `:tests` 也算；`calcit eval` 片段同样拒绝。0.36.x 的 `W_QUOTED_COMPOUND_TYPE` Notes 随之移除。
@@ -40,7 +49,7 @@ related:
 
 ## 0.36.x 变长参数写成 `(& T)` 分组（#2612）
 
-`Fn` / `Macro` 的 rest 参数改为分组写法：`Fn Number (& Number) (-> Number)`，取代 `Fn Number & Number (-> Number)`。旧写法仍能读取，含义不变；Snapshot 里的 `:schema` 还用旧写法时，检查会报一条 `W_FN_REST_SPELLING` Notes，给出数量和第一处位置。运行 `calcit edit format` 会把 schema 改写成 `(& T)`。函数体里 `hint-fn` 的旧写法照常读取，`edit format` 不会改写函数体，需要时手工改。
+`Fn` / `Macro` 的 rest 参数改为分组写法：`Fn Number (& Number) (-> Number)`，取代 `Fn Number & Number (-> Number)`。旧写法在 0.36.x 仍能读取，含义不变；Snapshot 里的 `:schema` 还用旧写法时，检查会报一条 `W_FN_REST_SPELLING` Notes，给出数量和第一处位置。0.37.0 起改为加载错误，见上文。运行 `calcit edit format` 会把 schema 改写成 `(& T)`。函数体里 `hint-fn` 的旧写法照常读取，`edit format` 不会改写函数体，需要时手工改。
 
 同一版本起，固定元数函数也可以传给变长参数的函数类型：`fn(Number, Number) -> Number` 满足 `Fn (& Number) (-> Number)`，见 [静态分析](../features/static-analysis.md)。
 
@@ -50,7 +59,7 @@ related:
 
 ## 0.36.x type slot 写成 symbol，并且必须绑定到具名类型
 
-entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。
+entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名在 0.36.x 仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes（0.37.0 起改为加载错误，见上文）；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。
 
 用到 `*slot` 的定义，要求当前 entry 把 slot 绑定到具名类型。未绑定、或绑定成 `Dynamic` 的 slot，在所有检查模式下都报 `W_UNBOUND_TYPE_SLOT` Notes，依赖库里的定义也算（由应用的 entry 负责绑定）；严格模式下项目自身定义的未绑定 slot 仍是 `E_UNBOUND_TYPE_SLOT` 错误。具名类型内部还含 `Dynamic` 的暂时不报。0.37.0 起改为错误，见上文「0.37.0 未绑定的 type slot 改为错误」。
 

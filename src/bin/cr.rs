@@ -617,7 +617,7 @@ fn run_cli() -> Result<(), String> {
     reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
     // The cold check reports the same snapshot-level diagnostics as a plain
     // `--check-only`, so `--incremental` cannot pass a bare broad type (#2504).
-    push_snapshot_level_advisories(&snapshot, &project_namespaces, &raw_spelling_hits(&cli_args.input, &snapshot)?);
+    push_snapshot_level_advisories(&snapshot, &project_namespaces);
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
       let builtin_warnings = RefCell::new(Vec::new());
@@ -804,8 +804,6 @@ fn run_cli() -> Result<(), String> {
   let core_snapshot = calcit::load_core_snapshot()?;
 
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
-  let mut type_slot_spelling_hits: Vec<String> = vec![];
-  let mut fn_rest_spelling_hits: Vec<(String, String)> = vec![];
   let mut project_namespaces: HashSet<String> = HashSet::new();
 
   if cli_args.disable_stack {
@@ -912,8 +910,6 @@ fn run_cli() -> Result<(), String> {
     project_namespaces.extend(snapshot.files.keys().cloned());
 
     snapshot.select_entry(cli_args.entry.as_deref())?;
-    type_slot_spelling_hits = snapshot::collect_type_slot_spelling_hits(&data, snapshot.active_entry_name());
-    fn_rest_spelling_hits = snapshot::collect_fn_rest_spelling_hits(&data);
     if cli_args.entry.is_some() && !calcit::quiet_tool_output() {
       println!("running entry: {}", snapshot.active_entry_name());
     }
@@ -1005,14 +1001,7 @@ fn run_cli() -> Result<(), String> {
   // with an older globally installed `calcit` binary.
   attach_missing_core_namespaces(&mut snapshot, core_snapshot);
   runner::preprocess::set_project_namespaces(&project_namespaces);
-  push_snapshot_level_advisories(
-    &snapshot,
-    &project_namespaces,
-    &RawSpellingHits {
-      type_slots: type_slot_spelling_hits,
-      fn_rest: fn_rest_spelling_hits,
-    },
-  );
+  push_snapshot_level_advisories(&snapshot, &project_namespaces);
   reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
   if matches!(&cli_args.subcommand, Some(CalcitCommand::EmitIr(_))) {
     codegen::ir_sources::install_ir_sources(&snapshot, &cli_args.input, &project_namespaces);
@@ -2138,64 +2127,11 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
   }
 }
 
-/// Spelling hits that only the raw Snapshot EDN shows: loading normalizes
-/// string type-slot bindings and the bare `& T` rest spelling.
-struct RawSpellingHits {
-  type_slots: Vec<String>,
-  fn_rest: Vec<(String, String)>,
-}
-
-/// Re-reads the snapshot file for the spelling scans; the incremental path
-/// restores the loaded snapshot from its cache and never sees the raw EDN.
-fn raw_spelling_hits(input: &str, snapshot: &snapshot::Snapshot) -> Result<RawSpellingHits, String> {
-  let mut content = fs::read_to_string(input).map_err(|e| format!("failed to read {input}: {e}"))?;
-  strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{input}': {e}"))?;
-  Ok(RawSpellingHits {
-    type_slots: snapshot::collect_type_slot_spelling_hits(&data, snapshot.active_entry_name()),
-    fn_rest: snapshot::collect_fn_rest_spelling_hits(&data),
-  })
-}
-
 /// Snapshot-level diagnostics that are not tied to compiling one definition.
 /// Every check path that loads a project snapshot queues them the same way.
-fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>, raw: &RawSpellingHits) {
+fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
   push_broad_type_advisories(snapshot, project_namespaces);
-  push_type_slot_spelling_advisories(&raw.type_slots, snapshot.active_entry_name());
-  push_fn_rest_spelling_advisory(&raw.fn_rest);
   record_open_family_summary(snapshot, project_namespaces);
-}
-
-/// One advisory for all schemas still written with the bare `& T` rest spelling,
-/// located at the first one, so a large library does not flood the notes.
-fn push_fn_rest_spelling_advisory(hits: &[(String, String)]) {
-  let Some((ns, def)) = hits.first() else { return };
-  runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
-    format!(
-      "{} schema(s) write the rest type as a bare `& T`; write it as the group `(& T)`, such as `Fn Number (& Number) (-> Number)` (first at {ns}/{def})",
-      hits.len()
-    ),
-    calcit::calcit::NodeLocation::new(Arc::from(ns.as_str()), Arc::from(def.as_str()), Arc::new(vec![])),
-    Some(snapshot::FN_REST_SPELLING_WARNING.to_owned()),
-    Some("run `calcit edit format` to rewrite schemas with the `(& T)` rest group".to_owned()),
-  ));
-}
-
-/// String-valued type-slot bindings are a legacy spelling; the symbol form
-/// names the type the way schemas do. `edit format` rewrites them.
-fn push_type_slot_spelling_advisories(hits: &[String], entry_name: &str) {
-  for hit in hits {
-    runner::preprocess::push_advisory(LocatedWarning::new_with_detail(
-      hit.to_owned(),
-      calcit::calcit::NodeLocation::new(
-        Arc::from(format!("entries.{entry_name}")),
-        Arc::from("type-slots"),
-        Arc::new(vec![]),
-      ),
-      Some(snapshot::TYPE_SLOT_STRING_WARNING.to_owned()),
-      Some("run `calcit edit format` to rewrite type-slot bindings as symbols".to_owned()),
-    ));
-  }
 }
 
 /// The `W_OPEN_FAMILY` summary for the loaded project, printed once after a

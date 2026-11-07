@@ -3412,9 +3412,48 @@ fn legacy_optional_hit(owner: &str, form: &Cirru) -> String {
 
 /// Collect legacy `Optional<T>` uses from raw `:files` before schemas are
 /// parsed, so one load reports every definition instead of the first failure.
-/// A `Fn` or `Macro` schema still writes its rest type as a bare `& T` instead
-/// of the `(& T)` group. A warning in 0.36.x; `edit format` rewrites schemas.
-pub const FN_REST_SPELLING_WARNING: &str = "W_FN_REST_SPELLING";
+/// Spellings that 0.36.x accepted with a note and 0.37.0 removed: a `Fn` or
+/// `Macro` schema writing its rest type as a bare `& T` instead of the `(& T)`
+/// group, and `:type-slots` bindings written as strings or `:dynamic`, or slot
+/// names written as strings. Only `edit format` still reads them, to migrate.
+/// The incremental cache only reuses units this loader built with the same
+/// Calcit version from unchanged sources, so a warm cache cannot skip it.
+pub fn check_removed_0_37_spellings(data: &Edn, path: &str) -> Result<(), String> {
+  let rest_hits = collect_fn_rest_spelling_hits(data);
+  if let Some((ns, def)) = rest_hits.first() {
+    return Err(format!(
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {} schema(s) write the rest type as a bare `& T` (first at {ns}/{def}); 0.37.0 removed this spelling. Write the group `(& T)`, such as `Fn Number (& Number) (-> Number)`, or run `calcit {path} edit format` to migrate the Snapshot (for an installed dependency, upgrade it or migrate it in its source repository).",
+      rest_hits.len()
+    ));
+  }
+  for entry_name in raw_entry_names(data) {
+    if let Some(hit) = collect_type_slot_spelling_hits(data, &entry_name).first() {
+      return Err(format!(
+        "[{LEGACY_TYPE_SYNTAX_CODE}] entry `{entry_name}`: {hit}; 0.37.0 removed this spelling. Run `calcit {path} edit format` to migrate the Snapshot (for an installed dependency, upgrade it or migrate it in its source repository)."
+      ));
+    }
+  }
+  Ok(())
+}
+
+fn raw_entry_names(data: &Edn) -> Vec<String> {
+  let Ok(root) = data.view_map() else { return vec![] };
+  let Some(entries) = root.get(&Edn::tag("entries")).or_else(|| root.get(&Edn::str("entries"))) else {
+    return vec![];
+  };
+  let Ok(entries) = entries.view_map() else { return vec![] };
+  let mut names: Vec<String> = entries
+    .0
+    .keys()
+    .filter_map(|key| match key {
+      Edn::Tag(tag) => Some(tag.ref_str().to_owned()),
+      Edn::Str(text) | Edn::Symbol(text) => Some(text.to_string()),
+      _ => None,
+    })
+    .collect();
+  names.sort();
+  names
+}
 
 fn has_bare_rest_marker(node: &Cirru) -> bool {
   let Cirru::List(items) = node else { return false };
@@ -3978,6 +4017,7 @@ fn check_snapshot_code_type_syntax(files: &HashMap<String, FileInSnapShot>, path
 }
 
 fn load_snapshot_data_inner(data: &Edn, path: &str, strict_macros: bool) -> Result<Snapshot, String> {
+  check_removed_0_37_spellings(data, path)?;
   let data = data.view_map()?;
   if data.contains_key("configs") {
     return Err(retired_snapshot_configs_error(path));
@@ -4887,7 +4927,6 @@ pub fn type_slot_value_edn(type_path: &str) -> Edn {
   }
 }
 
-pub const TYPE_SLOT_STRING_WARNING: &str = "W_TYPE_SLOT_STRING";
 /// A schema uses a type slot that the selected entry leaves unbound or binds
 /// to `Dynamic`. A warning (`W_UNBOUND_TYPE_SLOT`) in 0.36.x; an error since
 /// 0.37.0, in every check mode and for dependency code too.
@@ -8778,13 +8817,13 @@ mod tests {
       :description "|Browser client entry"
       :target :browser
       :modules $ []
-      :type-slots $ {} (:dispatch-op |mini.schema/ClientOp)
+      :type-slots $ {} (:dispatch-op 'mini.schema/ClientOp)
       :feature-policy $ {} (:js-ffi :error)
     :server $ {} (:mode :native) (:init-fn 'mini/server-main!) (:reload-fn 'mini/reload!)
       :description "|HTTP server entry"
       :target :node
       :modules $ []
-      :type-slots $ {} (:dispatch-op |mini.schema/ServerOp) (:optional-op :dynamic)
+      :type-slots $ {} (:dispatch-op 'mini.schema/ServerOp) (:optional-op 'Dynamic)
       :feature-policy $ {} (:js-ffi :warn)
   :files $ {}
     |mini $ %{} :FileEntry
@@ -8833,19 +8872,30 @@ mod tests {
       rendered.contains(":reload-fn 'mini/reload!"),
       "entry function should be stored as a symbol: {rendered}"
     );
-    // Legacy string and `:dynamic` bindings load, are reported, and render as symbols.
     assert!(
       rendered.contains(":dispatch-op 'mini.schema/ClientOp") && rendered.contains(":optional-op 'Dynamic"),
       "type-slot bindings should be stored as symbols: {rendered}"
     );
+    // 0.37.0 rejects string and `:dynamic` bindings at load; only `edit format` reads them.
+    let legacy = content
+      .replace("(:dispatch-op 'mini.schema/ServerOp)", "(:dispatch-op |mini.schema/ServerOp)")
+      .replace("(:optional-op 'Dynamic)", "(:optional-op :dynamic)");
+    let legacy_edn = cirru_edn::parse(&legacy).expect("legacy snapshot text should parse as EDN");
     assert_eq!(
-      collect_type_slot_spelling_hits(&edn_data, "server"),
+      collect_type_slot_spelling_hits(&legacy_edn, "server"),
       vec![
         "type slot `:dispatch-op` is bound with the string `|mini.schema/ServerOp`; write the symbol `mini.schema/ServerOp` instead"
           .to_owned(),
         "type slot `:optional-op` is bound with the tag `:dynamic`; write the symbol `Dynamic` instead".to_owned(),
       ]
     );
+    let err = load_snapshot_data(&legacy_edn, "mini.cirru").expect_err("legacy type-slot bindings should fail to load");
+    assert!(
+      err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains("entry `server`") && err.contains("edit format"),
+      "{err}"
+    );
+    let (formatted, _) = load_snapshot_data_for_format(&legacy_edn, "mini.cirru").expect("edit format should read legacy bindings");
+    assert_eq!(formatted.entries["server"].type_slots, server.type_slots);
     let rendered_edn = cirru_edn::parse(&rendered).expect("rendered snapshot should parse");
     assert!(collect_type_slot_spelling_hits(&rendered_edn, DEFAULT_ENTRY_NAME).is_empty());
     assert!(collect_type_slot_spelling_hits(&rendered_edn, "server").is_empty());
