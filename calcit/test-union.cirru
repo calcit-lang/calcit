@@ -432,9 +432,8 @@
               assert= false $ .ok? $ try-decode-map-as ([] 1 2 3 4) TripleInput
               assert= false $ .ok? $ try-decode-map-as ([] 1 :b 3) TripleInput
               assert= ([] 1 |a)
-                parse-cirru-edn-as "|[] 1 |a" $ quote $ Tuple Number String
-              assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1"
-                quote $ Tuple Number String
+                parse-cirru-edn-as "|[] 1 |a" $ Tuple Number String
+              assert= false $ .ok? $ try-parse-cirru-edn-as "|[] 1" (Tuple Number String)
             :tags $ #{} :union :unit
         'round-trip-geo $ %{} 'CodeEntry
           :doc "|encode-map-as is the inverse of decode-map-as for each union member (#2562)."
@@ -462,13 +461,13 @@
                 assert= some-point $ decode-map-as (encode-map-as some-point MaybeGeo) MaybeGeo
                 assert= nested $ decode-map-as
                   encode-map-as nested $ quote $ Option MaybeGeo
-                  quote $ Option MaybeGeo
+                  Option MaybeGeo
               let[] (cell geo)
                 decode-map-as
                   encode-map-as
                     [] (ref 3) |plain
                     quote $ Tuple (Ref Number) Geo
-                  quote $ Tuple (Ref Number) Geo
+                  Tuple (Ref Number) Geo
                 assert= 3 $ deref cell
                 assert= |plain geo
             :tags $ #{} :union :unit

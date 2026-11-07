@@ -180,7 +180,7 @@ ns app.npm.ids $ :require $ |nanoid :refer (nanoid)
 
 defn make-id (size)
   let
-      generate $ unsafe-coerce nanoid $ quote $ Fn Number $ -> String
+      generate $ unsafe-coerce nanoid $ Fn Number $ -> String
     generate size
 ```
 

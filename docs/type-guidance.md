@@ -92,7 +92,7 @@ calcit app.cirru edit schema app.main/f --code "quote $ :: 'Fn $ {} (:args $ [] 
 语法错误在预处理时报告 `E_TYPE_EXPR_SYNTAX`，例如：
 
 ```bash
-calcit eval 'assert-type ([] 1) $ quote $ List number'
+calcit eval 'assert-type ([] 1) $ List number'
 # [E_TYPE_EXPR_SYNTAX] invalid compact type expression: `number` is not a type name; …
 ```
 
@@ -334,7 +334,7 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 ```cirru
 let
-    point $ assert-type ([] 3 4) (quote $ Tuple Number Number)
+    point $ assert-type ([] 3 4) (Tuple Number Number)
     entry $ assert-type ([] :title |Calcit) (quote $ Tuple Tag String)
   let[] (key title) entry
     assert= :title key

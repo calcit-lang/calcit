@@ -124,7 +124,7 @@ def Person $ defstruct Person (:name String) (:age Number)
 defn decode-people (raw)
   hint-fn $ Fn String
     -> $ Result (List Person) String
-  try-parse-cirru-edn-as raw $ quote $ List Person
+  try-parse-cirru-edn-as raw $ List Person
 ```
 
 Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,String>`. Runtime parse and recursive shape failures become `:err` with the same structural context. An invalid `TypeExpr` remains a compile-time error because it is a program definition problem rather than recoverable input.

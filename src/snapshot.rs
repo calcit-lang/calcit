@@ -3226,6 +3226,8 @@ fn first_rewritten_form<'a>(before: &'a Cirru, after: &'a Cirru) -> Option<(&'a 
   match (before, after) {
     // A bare compound type such as `(List Number)` became `(quote (List Number))`.
     _ if quote_head(after) && !quote_head(before) => Some((before, after)),
+    // A quoted compound type such as `(quote (List Number))` lost its quote.
+    (Cirru::List(xs), _) if quote_head(before) && xs.len() == 2 && xs[1] == *after => Some((before, after)),
     (Cirru::List(xs), Cirru::List(ys)) if xs.len() == ys.len() => xs.iter().zip(ys).find_map(|(x, y)| first_rewritten_form(x, y)),
     _ if before == after => None,
     _ => Some((before, after)),
@@ -3236,6 +3238,13 @@ fn legacy_type_syntax_error(owner: &str, path: &str, written: &Cirru, migrated: 
   if *migrated == Cirru::List(vec![Cirru::leaf("quote"), written.clone()]) {
     return format!(
       "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} writes the compound type `{}` without a quote; data declarations and trait methods still need `{}`, or run `calcit {path} edit format` to migrate the Snapshot.",
+      render_cirru_inline(written),
+      render_cirru_inline(migrated)
+    );
+  }
+  if *written == Cirru::List(vec![Cirru::leaf("quote"), migrated.clone()]) {
+    return format!(
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {owner} quotes the compound type `{}` where only a type fits; 0.37.0 removed this spelling (#2583). Write `{}` instead, or run `calcit {path} edit format` to migrate the Snapshot.",
       render_cirru_inline(written),
       render_cirru_inline(migrated)
     );
@@ -3263,6 +3272,20 @@ pub fn check_code_type_syntax(code: &Cirru, owner: &str, path: &str) -> Result<(
     return Ok(());
   }
   match first_rewritten_form(code, &migrated) {
+    Some((written, next)) => Err(legacy_type_syntax_error(owner, path, written, next)),
+    None => Ok(()),
+  }
+}
+
+/// Reject `quote $ <compound type>` in type-only positions (#2583). Loading a
+/// Snapshot already does this through [`check_code_type_syntax`]; code that
+/// skips loading, such as `eval` snippets, uses this narrower check.
+pub fn check_quoted_compound_types(code: &Cirru, owner: &str, path: &str) -> Result<(), String> {
+  let (bare, count) = unquote_compound_types(code);
+  if count == 0 {
+    return Ok(());
+  }
+  match first_rewritten_form(code, &bare) {
     Some((written, next)) => Err(legacy_type_syntax_error(owner, path, written, next)),
     None => Ok(()),
   }
@@ -5350,7 +5373,9 @@ fn migrate_code_type_syntax_in(node: &Cirru, decoders: bool) -> (Cirru, usize) {
   let (compact, count) = compact_code_type_syntax(&canonical);
   // Quoted type names in data declarations are retired since 0.35.0 (#2516).
   let (unquoted, quoted) = unquote_declaration_types(&compact);
-  (unquoted, legacy + count + quoted)
+  // Quoted compound types in type-only positions are retired since 0.37.0 (#2583).
+  let (bare, compound) = unquote_compound_types(&unquoted);
+  (bare, legacy + count + quoted + compound)
 }
 
 /// The compact spelling of a legacy decode or cast target type, such as
@@ -5373,11 +5398,10 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
 
 /// The full `calcit edit format` rewrite of one code tree: the legacy type
 /// migration that loading enforces, including the quoted type names of data
-/// declarations that 0.35.0 removes (#2516).
+/// declarations that 0.35.0 removed (#2516) and the quoted compound types that
+/// 0.37.0 removed (#2583).
 fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  let (migrated, count) = migrate_code_type_syntax(node);
-  let (unquoted, compound) = unquote_compound_types(&migrated);
-  (unquoted, count + compound)
+  migrate_code_type_syntax(node)
 }
 
 /// The payload of `quote $ <compound type>` when it can be written bare, such
@@ -5400,8 +5424,8 @@ fn unquote_compound_type(node: &Cirru) -> Option<Cirru> {
 /// type (#2581, #2582): `assert-type xs $ quote $ List Number` becomes
 /// `assert-type xs $ List Number`, and the same for `unsafe-coerce`, decoder
 /// targets, `defstruct` field types, `defenum` payloads, `defunion` members
-/// and `deftrait` method types. Only `calcit edit format` runs this; loading
-/// still accepts the quoted spelling.
+/// and `deftrait` method types. Loading rejects what this rewrites since
+/// 0.37.0 (#2583); `calcit edit format` applies it.
 pub fn unquote_compound_types(node: &Cirru) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
@@ -5604,39 +5628,6 @@ impl LegacyQuotedDeclarationHit {
   }
 }
 
-/// `quote $ <compound type>` in a position that only holds a type. A note in
-/// 0.36.x; 0.37.0 rejects it at load (#2583). `edit format` writes them bare.
-pub const QUOTED_COMPOUND_TYPE_WARNING: &str = "W_QUOTED_COMPOUND_TYPE";
-
-/// Project definitions whose code or examples still quote a compound type
-/// where `calcit edit format` would write it bare, as sorted
-/// `(namespace, definition, count)`. Tests are skipped: `edit format` does not
-/// rewrite them, and a quoted type there keeps loading until 0.37.0.
-pub fn collect_quoted_compound_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<(String, String, usize)> {
-  let mut hits = vec![];
-  let mut names: Vec<&String> = namespaces
-    .iter()
-    .filter(|ns| ns.as_str() != crate::calcit::CORE_NS && snapshot.files.contains_key(*ns))
-    .collect();
-  names.sort();
-  for ns in names {
-    let file = &snapshot.files[ns];
-    let mut defs: Vec<&String> = file.defs.keys().collect();
-    defs.sort();
-    for def in defs {
-      let entry = &file.defs[def];
-      let count: usize = std::iter::once(&entry.code)
-        .chain(entry.examples.iter())
-        .map(|code| unquote_compound_types(code).1)
-        .sum();
-      if count > 0 {
-        hits.push((ns.to_owned(), def.to_owned(), count));
-      }
-    }
-  }
-  hits
-}
-
 /// Find the `defstruct` / `defenum` / `defunion` forms in project definitions,
 /// examples and tests that `calcit edit format` would unquote.
 pub fn collect_legacy_quoted_declaration_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<LegacyQuotedDeclarationHit> {
@@ -5731,7 +5722,7 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
       }
       entry.examples = rewritten_examples;
       for test in entry.tests.iter_mut() {
-        let (code, count) = migrate_code_type_syntax(&test.code);
+        let (code, count) = format_code_type_syntax(&test.code);
         test.code = code;
         changed += count;
       }
@@ -7089,9 +7080,9 @@ mod tests {
   }
 
   #[test]
-  fn format_migrates_canonical_type_positions_to_compact_quotes() {
+  fn format_migrates_canonical_type_positions_to_bare_types() {
     let cases = [
-      ("assert-type xs $ :: 'List 'Number", "assert-type xs $ quote $ List Number"),
+      ("assert-type xs $ :: 'List 'Number", "assert-type xs $ List Number"),
       (
         "hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
         "hint-fn $ Fn T (-> T) (:generics T)",
@@ -7103,13 +7094,10 @@ mod tests {
         "hint-fn f $ {} (:args $ [] 'Number) (:return 'Number)",
         "hint-fn f $ Fn Number (-> Number)",
       ),
-      (
-        "defstruct Box (:items $ :: 'List 'Number)",
-        "defstruct Box $ :items $ quote $ List Number",
-      ),
+      ("defstruct Box (:items $ :: 'List 'Number)", "defstruct Box $ :items $ List Number"),
       (
         "defenum Shape (:some 'T $ :: 'List 'T) (:none)",
-        "defenum Shape (:some T $ quote $ List T) (:none)",
+        "defenum Shape (:some T $ List T) (:none)",
       ),
       // A lowercase qualified head reads as a call, so the member gains a quote.
       (
@@ -7117,13 +7105,10 @@ mod tests {
         "defunion Boxed String $ quote $ app.lib/box Number",
       ),
       ("defunion Cells 'String (List Number)", "defunion Cells String (List Number)"),
-      (
-        "defunion Cells String $ :: 'List 'Number",
-        "defunion Cells String $ quote $ List Number",
-      ),
+      ("defunion Cells String $ :: 'List 'Number", "defunion Cells String $ List Number"),
       (
         "deftrait Show $ .show $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T)",
-        "deftrait Show $ .show $ quote $ Fn T (-> String) (:generics T)",
+        "deftrait Show $ .show $ Fn T (-> String) (:generics T)",
       ),
     ];
     for (source, expected) in cases {
@@ -7134,7 +7119,6 @@ mod tests {
     // Value references, partial hints and quoted data keep their written shape.
     for source in [
       "defunion CssValue String Number",
-      "defunion Cells String $ quote $ List Number",
       // Bare compound types are source syntax in every type position (#2581, #2582).
       "defunion Cells String (List Item)",
       "defunion TextStyle String (Map Tag Number)",
@@ -7185,11 +7169,9 @@ mod tests {
       let (formatted, count) = format_code_type_syntax(&parse_one(source));
       assert_eq!(formatted, parse_one(expected), "{source}");
       assert!(count > 0, "{source}");
-      // Loading accepts both spellings.
-      assert!(
-        check_code_type_syntax(&parse_one(source), "mini.main/f", "calcit.cirru").is_ok(),
-        "{source}"
-      );
+      // Loading rejects the quoted spelling since 0.37.0 (#2583).
+      let err = check_code_type_syntax(&parse_one(source), "mini.main/f", "calcit.cirru").expect_err(source);
+      assert!(err.contains(LEGACY_TYPE_SYNTAX_CODE) && err.contains("#2583"), "{source}: {err}");
       assert!(
         check_code_type_syntax(&parse_one(expected), "mini.main/f", "calcit.cirru").is_ok(),
         "{expected}"
@@ -7230,15 +7212,15 @@ mod tests {
   #[test]
   fn format_migrates_decoder_targets_but_loading_accepts_them() {
     let cases = [
-      ("decode-map-as raw $ :: 'List 'Dynamic", "decode-map-as raw $ quote $ List Dynamic"),
+      ("decode-map-as raw $ :: 'List 'Dynamic", "decode-map-as raw $ List Dynamic"),
       (
         "try-decode-map-as raw $ :: 'Map 'Tag 'Number",
-        "try-decode-map-as raw $ quote $ Map Tag Number",
+        "try-decode-map-as raw $ Map Tag Number",
       ),
       ("parse-cirru-edn-as text :number", "parse-cirru-edn-as text 'Number"),
       (
         "try-parse-cirru-edn-as text $ :: 'Set 'String",
-        "try-parse-cirru-edn-as text $ quote $ Set String",
+        "try-parse-cirru-edn-as text $ Set String",
       ),
     ];
     for (source, expected) in cases {
@@ -7251,7 +7233,7 @@ mod tests {
     }
     for source in [
       "decode-map-as raw $ :: 'List Person",
-      "decode-map-as raw $ quote $ List Number",
+      "decode-map-as raw $ List Number",
       "decode-map-as raw Person",
       "parse-cirru-edn-as text 'Number",
       "quote $ decode-map-as raw $ :: 'List 'Number",
@@ -7296,7 +7278,7 @@ mod tests {
       ),
       (
         "nil",
-        "(defn main! (xs) (assert-type xs $ quote $ List $ Map Tag Trait) xs)",
+        "(defn main! (xs) (assert-type xs $ List $ Map Tag Trait) xs)",
         // A bare `Trait` is a definition kind, like `StructDef`, not a broad family.
         vec![],
       ),
@@ -7328,10 +7310,10 @@ mod tests {
     }
     // Concrete and signed types, quoted data and struct default values are not bare.
     for code in [
-      "(defn main! (x) (assert-type x $ quote $ List Number) (hint-fn $ Fn Number (-> String)) x)",
+      "(defn main! (x) (assert-type x $ List Number) (hint-fn $ Fn Number (-> String)) x)",
       "(defn main! () (quote $ assert-type x 'Enum))",
       "(defstruct main! (:kind Tag :enum) (:on-change $ :: Fn String (-> Unit)))",
-      "(defn main! (raw) (decode-map-as raw $ quote $ List mini/Item))",
+      "(defn main! (raw) (decode-map-as raw $ List mini/Item))",
       // `AnyFn`, `AnyStruct` and `AnyEnum` are open on purpose (#2594).
       "(defstruct main! (:callback AnyFn) (:item AnyStruct) (:op AnyEnum))",
       "(defn main! (f x) (hint-fn $ Fn AnyFn AnyStruct (-> AnyEnum)) (f x))",
@@ -7400,7 +7382,13 @@ mod tests {
       (
         "$ quote $ Fn Dynamic (-> Dynamic)",
         "(defn main! (xs) (assert-type xs $ :: 'List 'Number))",
-        "write `quote $ List Number`",
+        "write `List Number`",
+      ),
+      // Quoted compound types in type-only positions are retired since 0.37.0 (#2583).
+      (
+        "$ quote $ Fn Dynamic (-> Dynamic)",
+        "(defn main! (xs) (assert-type xs $ quote $ List Number))",
+        "Write `List Number`",
       ),
     ];
     for (schema, code, suggestion) in cases {
@@ -7464,7 +7452,7 @@ mod tests {
     let entry = snapshot.files.get_mut("mini").unwrap().defs.get_mut("main!").unwrap();
     entry.code = parse_one("defn main! (xs) (assert-type xs $ :: 'List 'Number) xs");
     let rendered = render_snapshot_content(&snapshot).expect("retired code input is rewritten on write");
-    assert!(rendered.contains("assert-type xs $ quote $ List Number"), "{rendered}");
+    assert!(rendered.contains("assert-type xs $ List Number"), "{rendered}");
     let reloaded = cirru_edn::parse(rendered.trim_start_matches("#! /usr/bin/env calcit\n")).expect("rendered snapshot parses");
     load_snapshot_data(&reloaded, "mini.cirru").expect("rewritten snapshot loads strictly");
   }

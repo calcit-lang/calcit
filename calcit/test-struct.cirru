@@ -78,12 +78,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |local-definition-fills-empty-container-defaults)
             :code $ quote $ let
                 Local $ defstruct Local
-                  :items
-                    quote $ List String
-                    []
-                  :table
-                    quote $ Map Tag Number
-                    {}
+                  :items (List String) ([])
+                  :table (Map Tag Number) ({})
                   :marks Set $ #{}
                 value $ Local
               assert= ([]) (:items value)
