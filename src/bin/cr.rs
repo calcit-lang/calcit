@@ -617,7 +617,6 @@ fn run_cli() -> Result<(), String> {
     reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
     // The cold check reports the same snapshot-level diagnostics as a plain
     // `--check-only`, so `--incremental` cannot pass a bare broad type (#2504).
-    check_raw_removed_spellings(&cli_args.input)?;
     push_snapshot_level_advisories(&snapshot, &project_namespaces);
     let stats = analysis_cache::run_incremental_strict_check(&snapshot, &cli_args.input, &entries, input_cache, || {
       *program::PROGRAM_CODE_DATA.write().expect("open program data for strict check") = program::extract_program_data(&snapshot)?;
@@ -2126,16 +2125,6 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
       slot,
     );
   }
-}
-
-/// The incremental path restores the loaded snapshot from its cache and never
-/// sees the raw EDN, so it re-reads the file for the spellings that 0.37.0
-/// removed and that only the raw Snapshot shows (the ordinary load rejects them).
-fn check_raw_removed_spellings(input: &str) -> Result<(), String> {
-  let mut content = fs::read_to_string(input).map_err(|e| format!("failed to read {input}: {e}"))?;
-  strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse entry file '{input}': {e}"))?;
-  snapshot::check_removed_0_37_spellings(&data, input)
 }
 
 /// Snapshot-level diagnostics that are not tied to compiling one definition.

@@ -3416,18 +3416,20 @@ fn legacy_optional_hit(owner: &str, form: &Cirru) -> String {
 /// `Macro` schema writing its rest type as a bare `& T` instead of the `(& T)`
 /// group, and `:type-slots` bindings written as strings or `:dynamic`, or slot
 /// names written as strings. Only `edit format` still reads them, to migrate.
+/// The incremental cache only reuses units this loader built with the same
+/// Calcit version from unchanged sources, so a warm cache cannot skip it.
 pub fn check_removed_0_37_spellings(data: &Edn, path: &str) -> Result<(), String> {
   let rest_hits = collect_fn_rest_spelling_hits(data);
   if let Some((ns, def)) = rest_hits.first() {
     return Err(format!(
-      "[{LEGACY_TYPE_SYNTAX_CODE}] {} schema(s) write the rest type as a bare `& T` (first at {ns}/{def}); 0.37.0 removed this spelling. Write the group `(& T)`, such as `Fn Number (& Number) (-> Number)`, or run `calcit {path} edit format` to migrate the Snapshot.",
+      "[{LEGACY_TYPE_SYNTAX_CODE}] {} schema(s) write the rest type as a bare `& T` (first at {ns}/{def}); 0.37.0 removed this spelling. Write the group `(& T)`, such as `Fn Number (& Number) (-> Number)`, or run `calcit {path} edit format` to migrate the Snapshot (for an installed dependency, upgrade it or migrate it in its source repository).",
       rest_hits.len()
     ));
   }
   for entry_name in raw_entry_names(data) {
     if let Some(hit) = collect_type_slot_spelling_hits(data, &entry_name).first() {
       return Err(format!(
-        "[{LEGACY_TYPE_SYNTAX_CODE}] entry `{entry_name}`: {hit}; 0.37.0 removed this spelling. Run `calcit {path} edit format` to migrate the Snapshot."
+        "[{LEGACY_TYPE_SYNTAX_CODE}] entry `{entry_name}`: {hit}; 0.37.0 removed this spelling. Run `calcit {path} edit format` to migrate the Snapshot (for an installed dependency, upgrade it or migrate it in its source repository)."
       ));
     }
   }

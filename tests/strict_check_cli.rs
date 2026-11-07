@@ -1996,7 +1996,7 @@ fn incremental_check_reports_snapshot_level_diagnostics() {
   assert_success(&output, "cold incremental check");
   assert!(String::from_utf8_lossy(&output.stdout).contains("status=cold"));
 
-  // 0.37.0 removed the bare `& T` rest spelling; the warm cache must not hide it.
+  // 0.37.0 removed the bare `& T` rest spelling; the changed source misses the cache and fails to load.
   let source = fs::read_to_string(&snapshot).expect("snapshot should read");
   fs::write(&snapshot, source.replace("Fn (& Number) (-> Number)", "Fn & Number (-> Number)")).expect("snapshot should write");
   for run in ["first", "second"] {
