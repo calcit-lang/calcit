@@ -43,10 +43,14 @@ jobs:
       wasi: ${{ steps.plan.outputs.wasi }}
       platform: ${{ steps.plan.outputs.platform }}
       tree: ${{ steps.plan.outputs.tree }}
+      # Jobs re-run alone ("Re-run failed jobs") keep this attempt's artifact.
+      artifact: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+          # The parent commit tells a version bump on main apart from other pushes.
+          fetch-depth: 2
       - uses: actions/setup-node@v6.5.0
         with:
           node-version: 24
@@ -501,7 +505,7 @@ jobs:
           path: target/ci
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.plan.outputs.artifact }}
           path: target/ci-plan
       - name: Prepare shared CLI and JS runtime
         run: |

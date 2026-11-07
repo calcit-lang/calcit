@@ -20,14 +20,20 @@ import { fileURLToPath } from "node:url";
 export const RELEASE_TITLE = /^chore(\([^)]*\))?: release\b/i;
 
 const DOCS_ONLY = [/^docs\//, /\.md$/i, /^LICENSE/, /^\.github\/ISSUE_TEMPLATE\//];
-// Files the WASI jobs build or run directly.
+// The workflow and planner themselves: a change there runs every gated job once.
+const CI = [/^\.github\/workflows\/test\.yaml$/, /^scripts\/ci-(plan|check-all)\.mjs$/];
+// Files the WASI jobs build or run directly, including the snapshots and scripts that the
+// WASI 0.3 job replays on the `wasi` backend (keep in sync with .github/workflows/test.yaml).
 const WASI = [
-  /^src\/wasm\//, /^src\/bin\/wasi_preprocess_harness\.rs$/,
+  ...CI, /^src\/wasm\//, /^src\/bin\/wasi_preprocess_harness\.rs$/,
   /wasi/i, /^scripts\/.*wasm/, /^tests\/(component_wasm_cli|wasm_support_matrix)\.rs$/,
   /^tests\/fixtures\/component-/, /^Cargo\.(toml|lock)$/, /^rust-toolchain/,
+  /^src\/cirru\/calcit-core\.cirru$/, /^calcit\/test-(types-inference|traits)\.cirru$/,
+  /^tests\/fixtures\/def-value-schema\.cirru$/,
+  /^scripts\/(run-core-tests|check-nil-predicate|check-wasi-number-text|test-published-wasi-http-business)\./,
 ];
 // Files that decide what the macOS and Ubuntu 22.04 no-WASM binaries link and how they start.
-const PLATFORM = [/^Cargo\.(toml|lock)$/, /^build\.rs$/, /^rust-toolchain/, /^\.cargo\//, /^src\/bin\/cr\.rs$/];
+const PLATFORM = [...CI, /^Cargo\.(toml|lock)$/, /^build\.rs$/, /^rust-toolchain/, /^\.cargo\//, /^src\/bin\/cr\.rs$/];
 // Path segments too generic to pick an integration test by name.
 const GENERIC_SEGMENTS = new Set(["src", "bin", "lib", "mod", "main", "cli", "cli_handlers", "common", "util", "tests", "fixtures"]);
 
@@ -38,11 +44,12 @@ const GENERIC_SEGMENTS = new Set(["src", "bin", "lib", "mod", "main", "cli", "cl
  * @param {string} [input.headRef]     pull request head branch
  * @param {string} [input.title]       pull request title
  * @param {string} [input.headMessage] pushed head commit message
+ * @param {boolean} [input.versionBump] the pushed commit changes the Cargo.toml package version
  * @param {boolean} [input.fullEvidence] a green full run exists for this exact tree
  * @param {string[] | null} input.changed  changed paths for a pull request, null otherwise
  * @param {Record<string, string>} [input.testSources] tests/<name>.rs source keyed by name
  */
-export function planRun({ event, ref, headRef = "", title = "", headMessage = "", fullEvidence = false, changed, testSources = {} }) {
+export function planRun({ event, ref, headRef = "", title = "", headMessage = "", versionBump = false, fullEvidence = false, changed, testSources = {} }) {
   const full = (reason) => ({ mode: "full", reason, rust: true, rustTests: [], wasi: true, platform: true });
   if (event === "workflow_dispatch") return full("manual run");
   if (event === "pull_request") {
@@ -51,12 +58,13 @@ export function planRun({ event, ref, headRef = "", title = "", headMessage = ""
   }
   if (event === "push") {
     if (ref !== "refs/heads/main") return full(`push to ${ref}`);
-    if (RELEASE_TITLE.test(headMessage) && !fullEvidence) return full("release commit on main without a green full run for its tree");
+    // A version bump marks the release commit however it was merged (squash, merge commit, push).
+    if ((versionBump || RELEASE_TITLE.test(headMessage)) && !fullEvidence) return full("release commit on main without a green full run for its tree");
   }
 
   if (changed === null || changed === undefined) {
     // main push: whatever merged together must still build and pass the smoke.
-    const reason = RELEASE_TITLE.test(headMessage) ? "release commit on main, tree already passed a full run" : "main push";
+    const reason = versionBump || RELEASE_TITLE.test(headMessage) ? "release commit on main, tree already passed a full run" : "main push";
     return { mode: "light", reason, rust: true, rustTests: [], wasi: false, platform: false };
   }
   const matches = (patterns) => changed.some((path) => patterns.some((pattern) => pattern.test(path)));
@@ -80,7 +88,10 @@ export function selectIntegrationTests(changed, testSources) {
   for (const path of changed) {
     const own = /^tests\/([\w-]+)\.rs$/.exec(path);
     if (own && names.includes(own[1])) picked.add(own[1]);
-    const needles = [path, path.startsWith("tests/") ? path.slice("tests/".length) : null].filter(Boolean);
+    // The file itself, and each fixture directory holding it (tests often name only the directory).
+    const ancestors = path.split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"))
+      .filter((dir) => /^tests\/fixtures\/./.test(dir));
+    const needles = [path, ...ancestors].flatMap((item) => [item, item.startsWith("tests/") ? item.slice("tests/".length) : null]).filter(Boolean);
     for (const name of names) {
       if (needles.some((needle) => testSources[name].includes(needle))) picked.add(name);
     }
@@ -113,6 +124,12 @@ function hasFullEvidence(repo, tree) {
   return false;
 }
 
+// The [package] version of Cargo.toml at a revision (needs the parent commit fetched).
+function packageVersion(revision) {
+  const manifest = sh("git", ["show", `${revision}:Cargo.toml`]);
+  return /^\[package\][^[]*?^version\s*=\s*"([^"]+)"/m.exec(manifest)?.[1];
+}
+
 function main() {
   const env = process.env;
   const event = env.GITHUB_EVENT_NAME;
@@ -124,13 +141,15 @@ function main() {
     ? sh("gh", ["api", "--paginate", `repos/${repo}/pulls/${pr.number}/files?per_page=100`, "-q", ".[].filename"]).split("\n").filter(Boolean)
     : null;
   const headMessage = payload.head_commit?.message ?? "";
-  const fullEvidence = event === "push" && env.GITHUB_REF === "refs/heads/main" && RELEASE_TITLE.test(headMessage)
+  const mainPush = event === "push" && env.GITHUB_REF === "refs/heads/main";
+  const versionBump = mainPush && packageVersion("HEAD") !== packageVersion("HEAD^");
+  const fullEvidence = mainPush && (versionBump || RELEASE_TITLE.test(headMessage))
     ? hasFullEvidence(repo, tree)
     : false;
   const testSources = Object.fromEntries(readdirSync("tests").filter((file) => file.endsWith(".rs"))
     .map((file) => [basename(file, ".rs"), readFileSync(join("tests", file), "utf8")]));
 
-  const plan = planRun({ event, ref: env.GITHUB_REF, headRef: pr?.head?.ref, title: pr?.title, headMessage, fullEvidence, changed, testSources });
+  const plan = planRun({ event, ref: env.GITHUB_REF, headRef: pr?.head?.ref, title: pr?.title, headMessage, versionBump, fullEvidence, changed, testSources });
   console.log(JSON.stringify({ ...plan, tree, changed: changed?.length ?? "n/a" }, null, 2));
   mkdirSync("target/ci-plan", { recursive: true });
   writeFileSync("target/ci-plan/changed.txt", (changed ?? []).join("\n") + "\n");

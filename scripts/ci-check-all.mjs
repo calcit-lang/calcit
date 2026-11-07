@@ -14,7 +14,7 @@
 // lands in a shard without touching the workflow. Known-assertion parts are
 // spread over all shards and run beside the sequential steps.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 
@@ -93,7 +93,26 @@ for (const step of [...steps].sort((a, b) => b.weight - a.weight)) {
 // A step is "touched" when one of its commands names a changed file, e.g. an edited
 // scripts/check-*.mjs or a calcit/*.cirru fixture that the step runs.
 const touches = (command, path) => command.includes(path);
-const touched = (step) => changed.some((path) => step.commands.some((command) => touches(command, path))
+// With package.json changed, a step whose expanded commands differ from the base branch
+// counts as touched too (needs the base ref fetched, as `fetch-depth: 0` does).
+const baseScripts = (() => {
+  if (!changed.includes("package.json") || !process.env.GITHUB_BASE_REF) return null;
+  try {
+    return JSON.parse(execFileSync("git", ["show", `origin/${process.env.GITHUB_BASE_REF}:package.json`], { encoding: "utf8" })).scripts;
+  } catch (error) {
+    console.log(`cannot read base package.json (${error.message.split("\n")[0]}); running every step`);
+    return {};
+  }
+})();
+const redefined = (step) => {
+  if (!baseScripts) return false;
+  const expandWith = (table, command) => command.split(" && ").flatMap((part) => {
+    const yarn = /^yarn ([\w:-]+)$/.exec(part);
+    return yarn && table[yarn[1]] ? expandWith(table, table[yarn[1]]) : [part];
+  });
+  return expandWith(baseScripts, step.step).join(" && ") !== expandWith(scripts, step.step).join(" && ");
+};
+const touched = (step) => redefined(step) || changed.some((path) => step.commands.some((command) => touches(command, path))
   || touches(step.step, path));
 const mine = smoke
   ? steps.filter((step) => SMOKE_STEPS.includes(step.step) || touched(step))
@@ -103,7 +122,8 @@ if (smoke && SMOKE_STEPS.some((name) => !steps.some((step) => step.step === name
 }
 // The known-assertion suite is long; smoke runs it only when it or check-strict-default changed.
 const runKnownAssertion = !smoke || changed.some((path) => touches(KNOWN_ASSERTION, path)
-  || touches(scripts["check-strict-default"], path));
+  || touches(scripts["check-strict-default"], path))
+  || steps.some((step) => step.step === "yarn check-strict-default" && redefined(step));
 
 console.log(smoke
   ? `check-all smoke: ${mine.length} of ${steps.length} steps (${changed.length} changed files), known-assertion ${runKnownAssertion ? "on" : "off"}`

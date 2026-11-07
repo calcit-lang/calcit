@@ -9,6 +9,7 @@ const sources = {
   query_entry_cli: "",
   edit_cli: '"calcit/test-edit-defmacro.cirru"',
   wasi_command_component_cli: "tests/fixtures/wasi-command-03.cirru",
+  native_async_exit_cli: 'join("tests/fixtures/native-async-exit/Cargo.toml")',
 };
 
 test("release pull requests and manual runs are full", () => {
@@ -25,6 +26,9 @@ test("main pushes are light unless a release commit lacks a full run for its tre
   assert.deepEqual(main("fix: a (#1)", false), { mode: "light", reason: "main push", rust: true, rustTests: [], wasi: false, platform: false });
   assert.equal(main("chore: release 0.36.0 (#2624)", false).mode, "full");
   assert.equal(main("chore: release 0.36.0 (#2624)", true).mode, "light");
+  const merged = (fullEvidence) => planRun({ event: "push", ref: "refs/heads/main", headMessage: "Merge pull request #9 from x/release/1.0.0", versionBump: true, fullEvidence, changed: null });
+  assert.equal(merged(false).mode, "full");
+  assert.equal(merged(true).mode, "light");
 });
 
 test("light pull requests pick jobs by path", () => {
@@ -35,6 +39,11 @@ test("light pull requests pick jobs by path", () => {
   assert.deepEqual([core.rust, core.wasi, core.platform], [true, false, false]);
   assert.equal(pr(["src/wasm/emit_wasm.rs"]).wasi, true);
   assert.equal(pr(["scripts/test-wasi-stdin.mjs"]).wasi, true);
+  for (const path of ["calcit/test-traits.cirru", "tests/fixtures/def-value-schema.cirru", "src/cirru/calcit-core.cirru", "scripts/run-core-tests.mjs"]) {
+    assert.equal(pr([path]).wasi, true, path);
+  }
+  const workflow = pr([".github/workflows/test.yaml"]);
+  assert.deepEqual([workflow.wasi, workflow.platform], [true, true]);
   const deps = pr(["Cargo.lock"]);
   assert.deepEqual([deps.wasi, deps.platform], [true, true]);
 });
@@ -45,5 +54,6 @@ test("integration tests follow the changed files", () => {
   assert.deepEqual(selectIntegrationTests(["calcit/test-edit-defmacro.cirru"], sources), ["edit_cli"]);
   assert.deepEqual(selectIntegrationTests(["src/bin/cli_handlers/query.rs"], sources), ["query_entry_cli", "query_usages_cli"]);
   assert.deepEqual(selectIntegrationTests(["src/bin/cli_handlers/fix/apply.rs"], sources), ["fix_cli"]);
+  assert.deepEqual(selectIntegrationTests(["tests/fixtures/native-async-exit/src/lib.rs"], sources), ["native_async_exit_cli"]);
   assert.deepEqual(selectIntegrationTests(["src/lib.rs", "src/bin/cli_handlers/mod.rs"], sources), []);
 });
