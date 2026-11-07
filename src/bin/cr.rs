@@ -1465,6 +1465,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     *program_data = program::extract_program_data(&temp_snapshot)?;
   }
 
+  // Diagnostics from loading belong to `--check-only`; set them aside so the
+  // blocking ones a test's own compilation raises are told apart (0.37.0).
+  let load_advisories = runner::preprocess::take_advisories();
   let mut compile_errors = std::collections::HashMap::new();
   if let Some(affected_ids) = &affected_ids {
     // `--affected` needs every candidate's static dependency graph. Ordinary
@@ -1472,10 +1475,15 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     // fail-fast run does not preprocess tests it will never execute.
     for test in &tests {
       let warnings = RefCell::new(Vec::new());
-      if let Err(failure) =
-        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
-      {
-        compile_errors.insert(test.id(), failure.headline());
+      let compiled =
+        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default());
+      // Drain this test's blocking advisories even when it failed to compile,
+      // so they are not charged to the next test.
+      let blocking = take_blocking_test_advisories();
+      if let Err(failure) = compiled {
+        compile_errors.insert(test.id(), join_test_errors(failure.headline(), blocking));
+      } else if let Some(error) = blocking {
+        compile_errors.insert(test.id(), error);
       } else if !warnings.borrow().is_empty() {
         let warnings = warnings.borrow();
         compile_errors.insert(
@@ -1504,6 +1512,11 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     });
   }
 
+  if tests.is_empty() || options.list {
+    for advisory in load_advisories.iter().cloned() {
+      runner::preprocess::push_advisory(advisory);
+    }
+  }
   if tests.is_empty() {
     if json_mode {
       emit_test_report(
@@ -1568,7 +1581,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     let result = if let Some(error) = compile_errors.remove(&id) {
       Err(error)
     } else {
-      calcit::run_program_with_docs(
+      let run = calcit::run_program_with_docs(
         Arc::from(test.namespace.as_str()),
         Arc::from(test.synthetic_definition.as_str()),
         &[],
@@ -1577,7 +1590,12 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
       .map_err(|failure| {
         LocatedWarning::print_list(&failure.warnings);
         failure.msg
-      })
+      });
+      match (run, take_blocking_test_advisories()) {
+        (run, None) => run,
+        (Ok(()), Some(error)) => Err(error),
+        (Err(message), blocking) => Err(join_test_errors(message, blocking)),
+      }
     };
     match result {
       Ok(()) => {
@@ -1614,6 +1632,9 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     }
   }
 
+  for advisory in load_advisories {
+    runner::preprocess::push_advisory(advisory);
+  }
   let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
   if json_mode {
     emit_test_report(
@@ -1632,6 +1653,31 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     Ok(())
   } else {
     Err(format!("{} test(s) failed", failures.len()))
+  }
+}
+
+/// Blocking diagnostics (such as `E_UNBOUND_TYPE_SLOT`) raised while a test
+/// compiled fail that test; the other advisories stay queued.
+/// A test fails on an open type slot (#2627). Bare broad types and Options
+/// erased to nil stay advisories here, so tests can still replay them.
+fn take_blocking_test_advisories() -> Option<String> {
+  let (blocking, advisories): (Vec<_>, Vec<_>) = runner::preprocess::take_advisories()
+    .into_iter()
+    .partition(|advisory| advisory.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR));
+  for advisory in advisories {
+    runner::preprocess::push_advisory(advisory);
+  }
+  if blocking.is_empty() {
+    return None;
+  }
+  LocatedWarning::print_list(&blocking);
+  Some(blocking.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))
+}
+
+fn join_test_errors(message: String, blocking: Option<String>) -> String {
+  match blocking {
+    Some(blocking) => format!("{message}; {blocking}"),
+    None => message,
   }
 }
 
@@ -2230,11 +2276,14 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
 }
 
 /// Bare broad types (#2504) and Options erased to nil (#2124) are errors
-/// since 0.36.0.
+/// since 0.36.0; open type slots since 0.37.0.
 fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String> {
   if blocking.is_empty() {
     return Ok(());
   }
+  let (slots, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR));
   let (broad, erased): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
@@ -2254,6 +2303,15 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} Option(s) turned back into nil; keep the Option, `match` both variants, or choose a concrete default",
       snapshot::OPTION_ERASED_ERROR,
       erased.len()
+    ));
+  }
+  if !slots.is_empty() {
+    eprintln!("\n{} ({} open type slots)", "Errors:".red(), slots.len());
+    LocatedWarning::print_list(&slots);
+    summaries.push(format!(
+      "[{}] Found {} use(s) of type slots that the selected entry leaves unbound or binds to Dynamic; bind each with `calcit config set-type-slot :slot namespace/definition`",
+      snapshot::UNBOUND_TYPE_SLOT_ERROR,
+      slots.len()
     ));
   }
   Err(summaries.join("; "))
@@ -2447,8 +2505,24 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir: Option<IrEmitOptio
   }
   ensure_host_running("codegen")?;
 
+  // `--no-proof-audit` and `--compat-types` skip the preflight, so the
+  // blocking advisories still have to stop the emit here. They go into the
+  // same diagnostic artifact as ordinary warnings, so neither hides the other.
+  let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  for advisory in rest {
+    runner::preprocess::push_advisory(advisory);
+  }
   let warnings = check_warnings.borrow();
-  throw_on_js_warnings(&warnings, &js_file_path)?;
+  if !warnings.is_empty() {
+    let all = warnings.iter().cloned().chain(blocking).collect::<Vec<_>>();
+    throw_on_js_warnings(&all, &js_file_path)?;
+    unreachable!("non-empty warnings always block codegen");
+  }
+  if let Err(message) = report_broad_type_errors(blocking) {
+    fs::write(&js_file_path, format!("export default \"{}\";", message.trim().escape_default()))
+      .map_err(|e| format!("{message}; failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
+    return Err(message);
+  }
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");

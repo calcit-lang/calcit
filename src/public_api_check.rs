@@ -389,6 +389,39 @@ pub fn run(
     }
   }
 
+  // Blocking advisories (`E_BROAD_TYPE`, `E_OPTION_ERASED_TO_NIL`,
+  // `E_UNBOUND_TYPE_SLOT`) fail the selected definition that reports them. An
+  // open type slot is reported at the dependency that declares it, but only
+  // when a checked definition reaches it, so it fails the scoped check too.
+  // So does an Option erased to nil: it is only reported while a checked
+  // definition preprocesses it, and may sit on a macro in another namespace.
+  let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  for advisory in advisories {
+    runner::preprocess::push_advisory(advisory);
+  }
+  for advisory in &blocking {
+    let mut diagnostic = warning_diagnostic(advisory);
+    diagnostic["severity"] = json!("error");
+    let location = (
+      diagnostic["location"]["ns"].as_str().map(str::to_owned),
+      diagnostic["location"]["def"].as_str().map(str::to_owned),
+    );
+    let row = results
+      .iter_mut()
+      .find(|row| Some(&row.namespace) == location.0.as_ref() && Some(&row.definition) == location.1.as_ref());
+    let reached = matches!(
+      advisory.code(),
+      Some(snapshot::UNBOUND_TYPE_SLOT_ERROR | snapshot::OPTION_ERASED_ERROR)
+    );
+    match row {
+      Some(row) => row.status = "failed",
+      None if reached => {}
+      None => continue,
+    }
+    if !diagnostics.contains(&diagnostic) {
+      diagnostics.push(diagnostic);
+    }
+  }
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));
   // A dependency may already have been compiled through an earlier root.
   // Its cached success does not erase warnings owned by its source definition.

@@ -1730,6 +1730,49 @@ fn keep_going_and_all_defs_fail_on_an_option_erased_to_nil() {
   assert!(option_erased_diagnostics(&reachable_report).is_empty());
 }
 
+#[test]
+fn scoped_check_fails_on_an_option_erasure_reached_in_another_namespace() {
+  // The erasure is written in a macro of `app.macros`, so the error sits there,
+  // outside the `--ns app.main` scope; the scoped check must still fail.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.macros"]), "create macro namespace");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.macros/read-field",
+        "--code",
+        "quote $ defmacro read-field (value field) $ quasiquote $ match (get ~value ~field) ((:some v) v) ((:none) nil)",
+      ],
+    ),
+    "declare erasing macro",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "add-import", "app.main", "--code", "quote $ app.macros :refer $ read-field"],
+    ),
+    "import the macro",
+  );
+  edit_definition(&snapshot, "use-field", "quote $ defn use-field (m) $ read-field m :a", false);
+  set_schema(&snapshot, "use-field", "quote $ Fn (Map Tag Dynamic) (-> Dynamic)");
+  let output = run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]);
+  let report = format!(
+    "{}{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+  assert!(
+    !output.status.success() && report.contains("macro `app.macros/read-field` turns an Option back into nil"),
+    "the reached erasure must fail the scoped check:\n{report}"
+  );
+}
+
 fn option_erased_diagnostics(report: &serde_json::Value) -> Vec<serde_json::Value> {
   report["data"]["definitions"]
     .as_array()
@@ -2005,6 +2048,83 @@ fn quoted_compound_types_are_rejected_until_edit_format() {
   assert_success(&run_calcit(&snapshot, &["edit", "format"]), "edit format");
   assert!(fs::read_to_string(&snapshot).expect("snapshot should be readable").contains(bare));
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "check after edit format");
+}
+
+#[test]
+fn dynamic_bound_type_slots_fail_the_check() {
+  // 0.37.0: a type slot bound to `Dynamic` (or left unbound outside strict
+  // project source) is an error, no longer the W_UNBOUND_TYPE_SLOT note.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(&snapshot, "slotted", "quote $ defn slotted (op) (println op)", false);
+  set_schema(&snapshot, "slotted", "quote $ Fn *dispatch-op (-> Unit)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted 1)", true);
+  set_schema(&snapshot, "main!", "quote $ Fn (-> Unit)");
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", ":dynamic"]),
+    "bind the slot to Dynamic",
+  );
+  for args in [&["--check-only"][..], &["--check-only", "--incremental"][..], &[][..]] {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "{args:?} must fail on a Dynamic-bound slot");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+      stderr.contains("[E_UNBOUND_TYPE_SLOT] app.main/slotted uses type slot `*dispatch-op`")
+        && stderr.contains("Found 1 use(s) of type slots")
+        && !stderr.contains("W_UNBOUND_TYPE_SLOT"),
+      "{args:?} stderr:\n{stderr}"
+    );
+  }
+  // Code generation without the preflight and the scoped namespace check
+  // must refuse the open slot too, and so must the test runner.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/slotted",
+        "slot-use",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ slotted 1",
+      ],
+    ),
+    "add a test that uses the slot",
+  );
+  for args in [
+    &["test"][..],
+    &["--no-proof-audit", "js"][..],
+    &["--compat-types", "js"][..],
+    &["ir"][..],
+    &["--check-only", "--ns", "app.main"][..],
+  ] {
+    if args[0] == "--check-only" {
+      assert_success(&run_calcit(&snapshot, &["config", "set", "target", "native"]), "set native target");
+    }
+    let output = run_calcit(&snapshot, args);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+      !output.status.success() && report.contains("uses type slot `*dispatch-op`"),
+      "{args:?} must fail on a Dynamic-bound slot:\n{report}"
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "def", "app.main/Op", "--code", "quote $ defenum Op (:ping)"]),
+    "add a named slot type",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/Op"]),
+    "bind the slot to a named type",
+  );
+  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted $ %:: Op :ping)", true);
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "check with a named slot binding");
 }
 
 #[test]

@@ -763,7 +763,8 @@ pub fn take_advisories() -> Vec<LocatedWarning> {
 }
 
 /// Splits collected advisories into blocking errors (`E_BROAD_TYPE`, #2504;
-/// `E_OPTION_ERASED_TO_NIL`, #2124) and the non-failing notes.
+/// `E_OPTION_ERASED_TO_NIL`, #2124; `E_UNBOUND_TYPE_SLOT`, #2627) and the
+/// non-failing notes.
 pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<LocatedWarning>, Vec<LocatedWarning>) {
   advisories.into_iter().partition(is_blocking_advisory)
 }
@@ -771,7 +772,7 @@ pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<Locate
 pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
   matches!(
     advisory.code(),
-    Some(crate::snapshot::BROAD_TYPE_ERROR | crate::snapshot::OPTION_ERASED_ERROR)
+    Some(crate::snapshot::BROAD_TYPE_ERROR | crate::snapshot::OPTION_ERASED_ERROR | crate::snapshot::UNBOUND_TYPE_SLOT_ERROR)
   )
 }
 
@@ -17341,7 +17342,8 @@ fn reject_strict_unbound_type_slot_schema(
     return Err(unbound_type_slot_error(ns, def_name, &path, &slot, call_stack, definition_location));
   }
   // Outside strict project source, and for slots bound to `Dynamic`, the slot
-  // is reported but still accepts every value (0.36.x; an error in 0.37.0).
+  // is a blocking error reported with the rest of the check (0.37.0; a
+  // warning in 0.36.x), so dependency code that the entry leaves open fails too.
   for (path, slot, dynamic) in find_open_type_slots_in_schema(schema, "schema") {
     let message = if dynamic {
       format!(
@@ -17356,9 +17358,9 @@ fn reject_strict_unbound_type_slot_schema(
     push_advisory(LocatedWarning::new_with_detail(
       message,
       location,
-      Some(crate::snapshot::UNBOUND_TYPE_SLOT_WARNING.to_owned()),
+      Some(crate::snapshot::UNBOUND_TYPE_SLOT_ERROR.to_owned()),
       Some(format!(
-        "bind it to a named type with `calcit config set-type-slot :{slot} namespace/definition`; this becomes an error in 0.37.0"
+        "bind it to a named type with `calcit config set-type-slot :{slot} namespace/definition`"
       )),
     ));
   }
@@ -17420,7 +17422,7 @@ fn unbound_type_slot_error(
   CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry to a named type with `calcit config set-type-slot :{slot} namespace/definition`; a `Dynamic` binding is still reported as W_UNBOUND_TYPE_SLOT"
+      "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry to a named type with `calcit config set-type-slot :{slot} namespace/definition`; a `Dynamic` binding does not count as bound"
     ),
     "E_UNBOUND_TYPE_SLOT",
     call_stack,
