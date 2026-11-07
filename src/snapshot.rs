@@ -3508,10 +3508,6 @@ pub const BROAD_TYPE_ERROR: &str = "E_BROAD_TYPE";
 /// calls) stay exempt.
 pub const OPTION_ERASED_ERROR: &str = "E_OPTION_ERASED_TO_NIL";
 
-/// Advisory code for a bare `Trait` in a type position. It has no explicit
-/// open spelling, so it stays a non-blocking note.
-pub const BROAD_TRAIT_WARNING: &str = "W_BROAD_TYPE";
-
 pub const OPEN_FAMILY_WARNING: &str = "W_OPEN_FAMILY";
 
 /// Open types written in project `:schema`s outside a reviewed `(:open …)`
@@ -3643,18 +3639,8 @@ fn schema_slot_paths(root: &CalcitTypeAnnotation) -> HashMap<usize, Vec<SchemaSl
 }
 
 impl BroadTypeHit {
-  /// Whether this hit fails the check: every family except a bare `Trait`
-  /// type, which has no `Any*` spelling to migrate to.
-  pub fn is_blocking(&self) -> bool {
-    self.definition_kind.is_some() || self.family != "Trait"
-  }
-
   pub fn code(&self) -> &'static str {
-    if self.is_blocking() {
-      BROAD_TYPE_ERROR
-    } else {
-      BROAD_TRAIT_WARNING
-    }
+    BROAD_TYPE_ERROR
   }
 
   pub fn message(&self) -> String {
@@ -3675,24 +3661,22 @@ impl BroadTypeHit {
       (None, "Struct") => {
         "accepts any struct and drops its fields, so they read back as Dynamic; name the concrete struct, such as `app.schema/User`"
       }
-      (None, "Trait") => "accepts any trait definition; name the concrete trait",
       _ => "drops the signature, so arguments and results are Dynamic; write it, such as `Fn Number (-> String)`",
     };
-    let open = match self.family {
-      "Trait" => "Write `Dynamic` only where the boundary is intentionally open.".to_owned(),
-      family => format!("Write `Any{family}` where any {} is intended.", family.to_lowercase()),
-    };
-    let level = if self.is_blocking() { "Error" } else { "Warn" };
-    format!("[{level}] bare `{}`{place} {advice}. {open}", self.family)
+    let open = format!("Write `Any{0}` where any {1} is intended.", self.family, self.family.to_lowercase());
+    format!("[Error] bare `{}`{place} {advice}. {open}", self.family)
   }
 }
 
 /// The broad family a type leaf names: `'Enum`, `Enum`, `:enum` and the
-/// legacy `'tuple` / `'Record` spellings.
+/// legacy `'tuple` / `'Record` spellings. A bare `Trait` is not one: like
+/// `StructDef`, `EnumDef` and `Impl` it is the kind of a definition value
+/// (a trait itself), and a concrete trait name means a value implementing
+/// it, so there is nothing narrower to write (#2504).
 fn broad_type_family(leaf: &str) -> Option<&'static str> {
   let name = leaf.strip_prefix('\'').unwrap_or(leaf);
   let family = CalcitTypeAnnotation::canonical_type_symbol_name(name)?;
-  if !matches!(family, "Enum" | "Struct" | "Trait" | "Fn") {
+  if !matches!(family, "Enum" | "Struct" | "Fn") {
     return None;
   }
   // An unquoted lowercase leaf such as `fn` is an ordinary symbol.
@@ -3842,7 +3826,6 @@ fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
       Calcit::Tag(tag) => match tag.ref_str() {
         "struct" | "record" => Some("Struct"),
-        "trait" => Some("Trait"),
         _ => None,
       },
       _ => None,
@@ -3852,7 +3835,7 @@ fn broad_annotation_family(annotation: &CalcitTypeAnnotation) -> Option<&'static
 }
 
 /// Bare broad types in the given namespaces: definition code, examples and
-/// tests, and `:schema`. A `deftrait` keeps `Trait` as its definition kind.
+/// tests, and `:schema`.
 pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<BroadTypeHit> {
   let mut hits = vec![];
   // Bundled core namespaces (core procs that work on any enum or struct) keep their broad signatures.
@@ -3918,7 +3901,6 @@ pub fn collect_broad_type_hits(snapshot: &Snapshot, namespaces: &HashSet<String>
       });
       for (is_root, family, slot) in found.into_inner() {
         match (is_root, definition_kind) {
-          (true, Some("Trait")) if family == "Trait" => {}
           (true, Some(kind)) => push(":schema".to_owned(), vec![], family, Some(kind), None),
           _ => push(":schema".to_owned(), vec![], family, None, slot),
         }
@@ -7315,7 +7297,8 @@ mod tests {
       (
         "nil",
         "(defn main! (xs) (assert-type xs $ quote $ List $ Map Tag Trait) xs)",
-        vec![("", vec![3, 2, 1, 1, 2], "Trait", None)],
+        // A bare `Trait` is a definition kind, like `StructDef`, not a broad family.
+        vec![],
       ),
       // Members wrapped in one `{}` form; the struct default `:enum` is a value.
       (

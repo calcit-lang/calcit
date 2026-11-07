@@ -261,10 +261,10 @@ calcit analyze weak-types --only coverage --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
-## 用具体类型代替裸 `Enum` / `Struct` / `Trait` / `Fn`
+## 用具体类型代替裸 `Enum` / `Struct` / `Fn`
 
 类型位置里的裸 `Enum`、`Struct` 接受任意 enum / struct，但丢掉了具体定义：读出的载荷和字段都是 Dynamic，
-传给需要具体类型的函数时还要额外的边界证明。裸 `Trait` 接受任意 trait 定义，裸 `Fn` 丢掉参数和返回类型。
+传给需要具体类型的函数时还要额外的边界证明。裸 `Fn` 丢掉参数和返回类型。
 写出具体定义：
 
 ```cirru.no-check
@@ -289,7 +289,7 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 库需要把调用方的具体类型原样传回时（如 `reel.typed/State` 的操作类型参数），用 `:generics` 类型变量。类型变量不限定为 enum，可以绑定任意类型，所以它不等价于 `Enum`；只对任意 enum 做底层操作的少数位置会继续得到提示。
 
-0.36.0 起检查时裸 `Fn` / `Struct` / `Enum` 报告 `E_BROAD_TYPE` 错误（裸 `Trait` 仍是非阻塞的 `W_BROAD_TYPE`），范围是项目自身的定义代码、examples、tests 和 `:schema`：
+0.36.0 起检查时裸 `Fn` / `Struct` / `Enum` 报告 `E_BROAD_TYPE` 错误，范围是项目自身的定义代码、examples、tests 和 `:schema`：
 `assert-type`、`unsafe-coerce`、`hint-fn`、解码目标、函数返回标注、`defstruct` 字段、`defenum` 载荷和 `deftrait` 成员。
 
 ```text
@@ -302,11 +302,12 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 统计只覆盖从入口检查到的调用，定义 `:tests` 里的调用不算，所以改完要连同 `:tests` 一起跑。裸 `Fn` 不给候选签名；带类型参数的候选（如 `Option Number`）也不给，参数写法交给作者；剩余参数（`&`）位置不统计。
 
 定义级 `:schema` 写的是定义值自身的种类：`defstruct` 为 `StructDef`，`defenum` 为 `EnumDef`，`deftrait` 为 `Trait`。
-`deftrait` 的 `Trait` 不提示；`defstruct` / `defenum` 的 `:schema` 写成 `Enum` 或 `Struct` 时，提示改为对应的种类。
+`defstruct` / `defenum` 的 `:schema` 写成 `Enum` 或 `Struct` 时，提示改为对应的种类。
+裸 `Trait` 和 `StructDef`、`EnumDef`、`Impl` 一样是定义值的种类（一个 trait 本身），不是宽泛类型，任何位置都不提示；写具体 trait 名如 `app.schema/Greeting` 表示实现该 trait 的值，不是这个 trait 定义。
 
 ### 限制
 
-- `E_BROAD_TYPE` 让 `--check-only`、严格检查（该定义记为 failed，依赖它的定义记为 blocked）和运行前的预检失败；裸 `Trait` 的 `W_BROAD_TYPE` 只是提示，检查仍通过。`edit format` 不改写这两种写法：具体类型只有作者知道。
+- `E_BROAD_TYPE` 让 `--check-only`、严格检查（该定义记为 failed，依赖它的定义记为 blocked）和运行前的预检失败。`edit format` 不改写这些写法：具体类型只有作者知道。
 - 内置的 `calcit.core`、`calcit.internal` 等命名空间里对任意 enum / struct 工作的底层 proc 保留宽泛签名，依赖模块的定义不报告。
 - `AnyFn` / `AnyStruct` / `AnyEnum` 不约束到某个具体定义，读出的载荷、字段和调用结果仍是 Dynamic；能写出具体类型时仍应写具体类型。
 
