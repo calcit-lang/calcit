@@ -1475,11 +1475,14 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     // fail-fast run does not preprocess tests it will never execute.
     for test in &tests {
       let warnings = RefCell::new(Vec::new());
-      if let Err(failure) =
-        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default())
-      {
-        compile_errors.insert(test.id(), failure.headline());
-      } else if let Some(error) = take_blocking_test_advisories() {
+      let compiled =
+        runner::preprocess::ensure_ns_def_compiled(&test.namespace, &test.synthetic_definition, &warnings, &CallStackList::default());
+      // Drain this test's blocking advisories even when it failed to compile,
+      // so they are not charged to the next test.
+      let blocking = take_blocking_test_advisories();
+      if let Err(failure) = compiled {
+        compile_errors.insert(test.id(), join_test_errors(failure.headline(), blocking));
+      } else if let Some(error) = blocking {
         compile_errors.insert(test.id(), error);
       } else if !warnings.borrow().is_empty() {
         let warnings = warnings.borrow();
@@ -1578,7 +1581,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     let result = if let Some(error) = compile_errors.remove(&id) {
       Err(error)
     } else {
-      calcit::run_program_with_docs(
+      let run = calcit::run_program_with_docs(
         Arc::from(test.namespace.as_str()),
         Arc::from(test.synthetic_definition.as_str()),
         &[],
@@ -1587,8 +1590,12 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
       .map_err(|failure| {
         LocatedWarning::print_list(&failure.warnings);
         failure.msg
-      })
-      .and_then(|()| take_blocking_test_advisories().map_or(Ok(()), Err))
+      });
+      match (run, take_blocking_test_advisories()) {
+        (run, None) => run,
+        (Ok(()), Some(error)) => Err(error),
+        (Err(message), blocking) => Err(join_test_errors(message, blocking)),
+      }
     };
     match result {
       Ok(()) => {
@@ -1665,6 +1672,13 @@ fn take_blocking_test_advisories() -> Option<String> {
   }
   LocatedWarning::print_list(&blocking);
   Some(blocking.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))
+}
+
+fn join_test_errors(message: String, blocking: Option<String>) -> String {
+  match blocking {
+    Some(blocking) => format!("{message}; {blocking}"),
+    None => message,
+  }
 }
 
 fn no_tests_matched_error(options: &TestCommand) -> Option<String> {
@@ -2486,13 +2500,18 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir: Option<IrEmitOptio
   }
   ensure_host_running("codegen")?;
 
-  let warnings = check_warnings.borrow();
-  throw_on_js_warnings(&warnings, &js_file_path)?;
   // `--no-proof-audit` and `--compat-types` skip the preflight, so the
-  // blocking advisories still have to stop the emit here.
+  // blocking advisories still have to stop the emit here. They go into the
+  // same diagnostic artifact as ordinary warnings, so neither hides the other.
   let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
   for advisory in rest {
     runner::preprocess::push_advisory(advisory);
+  }
+  let warnings = check_warnings.borrow();
+  if !warnings.is_empty() {
+    let all = warnings.iter().cloned().chain(blocking).collect::<Vec<_>>();
+    throw_on_js_warnings(&all, &js_file_path)?;
+    unreachable!("non-empty warnings always block codegen");
   }
   if let Err(message) = report_broad_type_errors(blocking) {
     fs::write(&js_file_path, format!("export default \"{}\";", message.trim().escape_default()))

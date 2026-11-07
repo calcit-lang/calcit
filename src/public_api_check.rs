@@ -393,6 +393,8 @@ pub fn run(
   // `E_UNBOUND_TYPE_SLOT`) fail the selected definition that reports them. An
   // open type slot is reported at the dependency that declares it, but only
   // when a checked definition reaches it, so it fails the scoped check too.
+  // So does an Option erased to nil: it is only reported while a checked
+  // definition preprocesses it, and may sit on a macro in another namespace.
   let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
   for advisory in advisories {
     runner::preprocess::push_advisory(advisory);
@@ -407,10 +409,13 @@ pub fn run(
     let row = results
       .iter_mut()
       .find(|row| Some(&row.namespace) == location.0.as_ref() && Some(&row.definition) == location.1.as_ref());
-    let reached_slot = advisory.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR);
+    let reached = matches!(
+      advisory.code(),
+      Some(snapshot::UNBOUND_TYPE_SLOT_ERROR | snapshot::OPTION_ERASED_ERROR)
+    );
     match row {
       Some(row) => row.status = "failed",
-      None if reached_slot => {}
+      None if reached => {}
       None => continue,
     }
     if !diagnostics.contains(&diagnostic) {
