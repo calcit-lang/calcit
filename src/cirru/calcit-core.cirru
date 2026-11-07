@@ -11653,7 +11653,7 @@
                   assert= 0 $ option:unwrap-or absent 0
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |erased-consumer-rewrites-keep-results)
-              :doc "|The rewrites W_OPTION_ERASED_TO_NIL suggests for `or`, `if`, `nil?` and `non-nil?` give the original results for Some, Some nil, Some false and None, and evaluate the fallback exactly as often."
+              :doc "|The rewrites E_OPTION_ERASED_TO_NIL suggests for `or`, `if`, `nil?` and `non-nil?` give the original results for Some, Some nil, Some false and None, and evaluate the fallback exactly as often."
               :code $ quote $ let
                   calls $ ref 0
                   check $ fn (subject expected-calls)

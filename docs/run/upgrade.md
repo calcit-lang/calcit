@@ -54,6 +54,20 @@ calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-sche
 
 还没有具体 Op 的库（例如只在 demo 里用 slot 的组件库），给 demo/test entry 定义一个占位的 `defenum`，而不是绑定 `Dynamic`。
 
+## 0.36.0 Option 擦除回 nil 改为错误 `E_OPTION_ERASED_TO_NIL`（#2124）
+
+项目自身代码里把已证明的 Option 变回 nil 的写法，即 `.unwrap-or X nil`、`option:unwrap-or X nil` 和 `match` 的 `(:none) nil` 分支，不再是 `W_OPTION_ERASED_TO_NIL` Notes，而是 `E_OPTION_ERASED_TO_NIL` 错误：`--check-only` 失败，`--all-defs` / `--ns` 把写它的定义计为 failed，运行和 JS 编译前的默认证明预检也会拒绝。写在项目宏体里的擦除报在宏定义上，修一次即可。依赖库和 core 里的写法不报，所以下游不必等上游发布。
+
+免报位置不变（见下方 0.35.0 一节）：直接作为 JS 宿主调用或 `JsNullish` 形参的实参，以及声明返回 `JsNullish` 的函数的尾部返回值。
+
+迁移：
+
+- 值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，错误的 hint 给出保持结果的 `match` 改写，可以直接替换。
+- 其他情况保留 Option 继续传递，用 `match` 处理两个分支，或给出具体的默认值，例如 `.unwrap-or x |` 代替 `.unwrap-or x nil`。
+- 确实要把 nil 交给 JS 的，改成直接作为宿主调用的实参，或交给形参声明为 `JsNullish<T>` 的适配函数。
+
+可以先用 `calcit <snapshot> --check-only --all-defs --format json` 列出全部位置（`data.definitions[].diagnostics` 里 `code` 为 `E_OPTION_ERASED_TO_NIL` 的项）。
+
 ## 0.36.0 裸 `Fn` / `Struct` / `Enum` 改为错误 `E_BROAD_TYPE`（#2504）
 
 项目自身定义里的裸 `Fn`、`Struct`、`Enum`（代码、examples、tests 与 `:schema`）不再是 Notes，而是 `E_BROAD_TYPE` 错误：`--check-only` 失败，`--all-defs` / `--ns` 把写它的定义计为 failed，运行和 JS 编译前的默认证明预检也会拒绝。依赖库里的写法不报，所以下游不必等上游发布。
@@ -72,7 +86,7 @@ calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-sche
 
 ## 0.35.0 `W_OPTION_ERASED_TO_NIL` 按位置免报并给出改写（#2565）
 
-仍是 Notes，不影响检查结论；0.36.0 计划改为阻塞（#2124），先用这一版清理。
+当时仍是 Notes，不影响检查结论；0.36.0 起改为 `E_OPTION_ERASED_TO_NIL` 错误（#2124，见上）。
 
 - 免报按值实际去向判断：作为 JS 宿主调用或 `JsNullish` 形参的实参时免报，经过 `if` / `match` 分支、`let` / `do` 尾部或 `->` 这类宏展开到达也算，例如 `js/console.log $ if c (.unwrap-or x nil) 0`。中间被普通调用消费（`js/f $ str (.unwrap-or x nil)`）或绑定到局部时照常报告。
 - 被擦除的值只被 `or`、`if`、`nil?`、`non-nil?` 测试时，hint 给出保持结果的 `match` 改写，例如 `or (.unwrap-or x nil) d` → `match x ((:some v) (or v d)) ((:none) d)`。Some、Some nil、Some false、None 的结果和 fallback 的求值次数都不变，可以直接替换；其他用法没有 hint，需要作者决定默认值或改为传递 Option。没有 else 分支的 `if`、fallback 引用了 `match` 在 `:some` 分支绑定的同名变量、或 `or` / `if` 是局部或项目里的同名绑定时，也不给 hint；同名的局部 `do` / `let` 是普通调用，经过它到达宿主的值不再免报。

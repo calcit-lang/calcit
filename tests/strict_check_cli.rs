@@ -1677,7 +1677,7 @@ fn each_method_keeps_the_element_callback_relation() {
 }
 
 #[test]
-fn keep_going_and_all_defs_report_advisories_without_failing() {
+fn keep_going_and_all_defs_fail_on_an_option_erased_to_nil() {
   let (_directory, snapshot) = prepare_all_defs_project(false, false);
   edit_def_at(
     &snapshot,
@@ -1697,32 +1697,47 @@ fn keep_going_and_all_defs_report_advisories_without_failing() {
     ),
     "edit erase-field schema",
   );
-  // zeta-bad still fails, so the report must carry the note next to a failing status.
+  // #2124: blocking since 0.36.0, so the erasure fails the definition that writes it.
   let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(!all.status.success(), "an Option erased to nil must fail --all-defs");
   let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
-  let advisories = report["data"]["advisories"].as_array().expect("advisories should be an array");
-  let erased = advisories
-    .iter()
-    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
-    .collect::<Vec<_>>();
-  assert_eq!(erased.len(), 1, "advisories: {advisories:?}");
-  assert_eq!(erased[0]["severity"], "note");
+  let erased = option_erased_diagnostics(&report);
+  assert_eq!(erased.len(), 1, "{erased:?}");
+  assert_eq!(erased[0]["severity"], "error");
   assert_eq!(erased[0]["definition"], "app.main/erase-field");
   assert!(!erased[0]["path"].as_array().unwrap().is_empty());
   let statuses = definition_statuses(&report);
-  assert_eq!(statuses["app.main/erase-field"], "passed", "a note never fails its definition");
+  assert_eq!(statuses["app.main/erase-field"], "failed");
+  let advisories = report["data"]["advisories"].as_array().expect("advisories should be an array");
+  assert!(
+    advisories.iter().all(|item| item["code"] != "E_OPTION_ERASED_TO_NIL"),
+    "the error is not repeated as a note: {advisories:?}"
+  );
 
-  // The human report lists the same note on stderr, like plain check-only.
   let human = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
-  let stderr = String::from_utf8_lossy(&human.stderr);
-  assert!(stderr.contains("Notes: (1 notes"), "stderr:\n{stderr}");
-  assert!(stderr.contains("W_OPTION_ERASED_TO_NIL"), "stderr:\n{stderr}");
+  assert!(!human.status.success());
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&human.stdout),
+    String::from_utf8_lossy(&human.stderr)
+  );
+  assert!(output.contains("E_OPTION_ERASED_TO_NIL"), "output:\n{output}");
 
-  // The entry-reachable keep-going report never reaches erase-field, so it has no notes.
+  // The entry-reachable keep-going report never reaches erase-field.
   let reachable = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
   assert_success(&reachable, "keep-going check stays entry-reachable");
   let reachable_report: serde_json::Value = serde_json::from_slice(&reachable.stdout).unwrap();
-  assert_eq!(reachable_report["data"]["advisories"], serde_json::json!([]));
+  assert!(option_erased_diagnostics(&reachable_report).is_empty());
+}
+
+fn option_erased_diagnostics(report: &serde_json::Value) -> Vec<serde_json::Value> {
+  report["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .flat_map(|item| item["diagnostics"].as_array().cloned().unwrap_or_default())
+    .filter(|item| item["code"] == "E_OPTION_ERASED_TO_NIL")
+    .collect()
 }
 
 #[test]
@@ -1762,17 +1777,12 @@ fn option_erasure_written_in_a_macro_body_is_reported_once_on_the_macro() {
 
   let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
   let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
-  let erased = report["data"]["advisories"]
-    .as_array()
-    .expect("advisories should be an array")
-    .iter()
-    .filter(|item| item["code"] == "W_OPTION_ERASED_TO_NIL")
-    .collect::<Vec<_>>();
+  let erased = option_erased_diagnostics(&report);
   let definitions = erased
     .iter()
     .map(|item| item["definition"].as_str().unwrap())
     .collect::<std::collections::BTreeSet<_>>();
-  // Both expansions share one note on the macro body; the branch the caller
+  // Both expansions share one error on the macro body; the branch the caller
   // passed through `wrap` stays on the caller, and the one `outer` passes
   // through `wrap` stays on `outer`.
   assert_eq!(erased.len(), 3, "{erased:?}");
