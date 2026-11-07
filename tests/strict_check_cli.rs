@@ -1975,31 +1975,36 @@ fn incremental_check_reports_snapshot_level_diagnostics() {
 }
 
 #[test]
-fn quoted_compound_types_are_a_note_until_edit_format() {
-  // #2583: a summarized note in 0.36.x; `edit format` writes the type bare.
+fn quoted_compound_types_are_rejected_until_edit_format() {
+  // #2583: 0.37.0 rejects `quote $ <compound type>` in type-only positions at load,
+  // tests included; `edit format` writes them bare.
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
   edit_definition(
     &snapshot,
     "xs",
-    "quote $ defn xs () (hint-fn $ Fn (-> (List Number))) (assert-type ([] 1) (quote (List Number)))",
+    "quote $ defn xs () (hint-fn $ Fn (-> (List Number))) (assert-type ([] 1) (List Number))",
     false,
   );
   set_schema(&snapshot, "xs", "quote $ Fn (-> (List Number))");
-  for args in [&["--check-only"][..], &["--check-only", "--incremental"][..]] {
-    let output = run_calcit(&snapshot, args);
-    assert_success(&output, &args.join(" "));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-      stderr.contains("[W_QUOTED_COMPOUND_TYPE] 1 compound type(s) in 1 definition(s)") && stderr.contains("(first at app.main/xs)"),
-      "{args:?} stderr:\n{stderr}"
-    );
-  }
-  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "edit format");
+  let content = fs::read_to_string(&snapshot).expect("snapshot should be readable");
+  let bare = "assert-type ([] 1) (List Number)";
+  assert!(content.contains(bare), "edit should write the bare spelling:\n{content}");
+  fs::write(&snapshot, content.replace(bare, "assert-type ([] 1) (quote (List Number))")).expect("snapshot should be writable");
+
   let output = run_calcit(&snapshot, &["--check-only"]);
-  assert_success(&output, "check after edit format");
-  assert!(!String::from_utf8_lossy(&output.stderr).contains("W_QUOTED_COMPOUND_TYPE"));
+  assert!(!output.status.success(), "a quoted compound type must fail to load");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("[E_LEGACY_TYPE_SYNTAX] app.main/xs quotes the compound type `quote $ List Number`")
+      && stderr.contains("Write `List Number` instead"),
+    "stderr:\n{stderr}"
+  );
+
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "edit format");
+  assert!(fs::read_to_string(&snapshot).expect("snapshot should be readable").contains(bare));
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "check after edit format");
 }
 
 #[test]

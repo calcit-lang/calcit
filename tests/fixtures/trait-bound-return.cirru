@@ -66,7 +66,7 @@
               :code $ quote $ let
                   trace $ ref $ [] |start
                   Override $ deftrait Override $ .assoc
-                    quote $ Fn T Tag Number (-> String) (:generics T)
+                    Fn T Tag Number (-> String) (:generics T)
                   implementation $ defimpl CustomAssoc Override $ .assoc
                     fn (_self _key _value)
                       assert= ([] |start |callback) @trace
@@ -90,8 +90,7 @@
             %{} 'TestEntry
               :name |nested-writes-keep-callback-errors-and-enum-values
               :code $ quote $ let
-                  trace $ ref $ assert-type ([])
-                    quote $ List String
+                  trace $ ref $ assert-type ([]) (List String)
                   change $ fn (data key)
                     hint-fn $ Fn Dynamic Dynamic $ -> Dynamic
                     update-in data ([] key)

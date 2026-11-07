@@ -734,7 +734,7 @@ fn reader_shorthand_inside_a_sibling_does_not_shift_type_at_expected_context() {
   define(
     &snapshot,
     "collect",
-    "quote $ defn collect () $ foldl (map-entries data) (assert-type (#{}) $ quote $ Set Tag) $ fn (acc pair) (hint-fn $ Fn (Set Tag) (MapEntry Number Tag) (-> $ Set Tag)) $ include acc (:value pair)",
+    "quote $ defn collect () $ foldl (map-entries data) (assert-type (#{}) $ Set Tag) $ fn (acc pair) (hint-fn $ Fn (Set Tag) (MapEntry Number Tag) (-> $ Set Tag)) $ include acc (:value pair)",
     "quote $ Fn (-> $ Set Tag)",
     false,
   );

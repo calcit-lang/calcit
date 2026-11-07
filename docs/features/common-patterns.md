@@ -275,7 +275,7 @@ let
         and (> (count data) 0)
           every? data $ fn (x) (>= x 0)
         Option :some data
-        assert-type (Option :none) (quote $ Option (List Number))
+        assert-type (Option :none) (Option (List Number))
     transform-data $ fn (validated)
       hint-fn $ Fn (List Number) (-> (List Number))
       map validated $ fn (x) (* x 2)
@@ -291,7 +291,7 @@ let
           :: :err |Invalid-data
   assert= (:: :ok $ [] 2 4 6) (process-data $ [] 1 2 3)
   assert= (:: :err |Empty-data)
-    process-data $ assert-type ([]) (quote $ List Number)
+    process-data $ assert-type ([]) (List Number)
   assert= (:: :err |Invalid-data) (process-data $ [] 1 -2 3)
 ```
 

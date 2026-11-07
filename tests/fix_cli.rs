@@ -5621,7 +5621,7 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
   );
   let fixture = fixture.replace(
     "        'reload! $ %{} 'CodeEntry",
-    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ quote $ Fn app.main/NodeClock (-> Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ quote Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ quote $ Fn (-> Number) (:features :js-ffi)\n        'reload! $ %{} 'CodeEntry",
+    "        'NodeClock $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait NodeClock\n            .get-date $ Fn app.main/NodeClock (-> Number)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)\n            :names $ {} (:get-date |getDate)\n          :schema $ quote Trait\n        'node-date $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn node-date ()\n            do $ let\n                date $ unsafe-coerce (new js/Date) NodeClock\n              date .get-date\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :node)\n          :schema $ quote $ Fn (-> Number) (:features :js-ffi)\n        'reload! $ %{} 'CodeEntry",
   );
   fs::write(&snapshot, &fixture).expect("multi-target fixture should write");
 
@@ -6110,7 +6110,7 @@ fn staged_fix_validation_preserves_the_selected_browser_entry() {
   );
   let fixture = fixture.replace(
     "        'main! $ %{} 'CodeEntry",
-    "        'BrowserElement $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait BrowserElement\n            .focus! $ quote $ Fn fix-command.main/BrowserElement (-> Unit)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)\n            :names $ {} (:focus! |focus)\n          :schema $ quote Trait\n        'browser-focus! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn browser-focus! (element)\n            do (element .focus!) &unit\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :browser)\n          :schema $ quote $ Fn fix-command.main/BrowserElement (-> Unit) (:features :js-ffi)\n        'main! $ %{} 'CodeEntry",
+    "        'BrowserElement $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ deftrait BrowserElement\n            .focus! $ Fn fix-command.main/BrowserElement (-> Unit)\n          :examples $ []\n          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)\n            :names $ {} (:focus! |focus)\n          :schema $ quote Trait\n        'browser-focus! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn browser-focus! (element)\n            do (element .focus!) &unit\n          :examples $ []\n          :ffi $ {} (:backend :js) (:target :browser)\n          :schema $ quote $ Fn fix-command.main/BrowserElement (-> Unit) (:features :js-ffi)\n        'main! $ %{} 'CodeEntry",
   );
   fs::write(&snapshot, fixture).expect("entry fixture should write");
 

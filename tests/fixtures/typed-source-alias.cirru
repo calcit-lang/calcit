@@ -108,7 +108,7 @@
                 .map
                   [] ([]) ([] 1)
                   , fix-command.alias-evidence/empty-proc
-                quote $ List Bool
+                List Bool
               assert= ([] true false)
                 .map
                   [] ([]) ([] 1)

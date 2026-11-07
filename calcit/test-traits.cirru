@@ -1192,7 +1192,7 @@
             %{} 'TestEntry (:name |empty-rejects-non-bool-and-nil)
               :code $ quote $ let
                   EmptyProbeOps $ deftrait EmptyProbeOps $ .empty?
-                    quote $ Fn AnyEnum $ -> Number
+                    Fn AnyEnum $ -> Number
                   EmptyProbeImpl $ defimpl EmptyProbeImpl EmptyProbeOps $ .empty?
                     fn (self)
                       hint-fn $ Fn AnyEnum $ -> Number
@@ -1206,7 +1206,7 @@
             %{} 'TestEntry (:name |contains-rejects-non-bool-and-open-key)
               :code $ quote $ let
                   ContainsProbeOps $ deftrait ContainsProbeOps $ .contains?
-                    quote $ Fn AnyEnum Number $ -> Number
+                    Fn AnyEnum Number $ -> Number
                   ContainsProbeImpl $ defimpl ContainsProbeImpl ContainsProbeOps $ .contains?
                     fn (self key)
                       hint-fn $ Fn AnyEnum Number $ -> Number
@@ -1244,7 +1244,7 @@
             %{} 'TestEntry (:name |contains-keeps-open-enum-impl)
               :code $ quote $ let
                   ReviewContainsOps $ deftrait ReviewContainsOps $ .contains?
-                    quote $ Fn AnyEnum Number $ -> Bool
+                    Fn AnyEnum Number $ -> Bool
                   ReviewContainsImpl $ defimpl ReviewContainsImpl ReviewContainsOps $ .contains?
                     fn (self key)
                       hint-fn $ Fn AnyEnum Number $ -> Bool
@@ -1881,9 +1881,9 @@
             %{} 'TestEntry (:name |preserves-nested-container-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                   right $ defstruct ComparedRecord $ :value
-                    quote $ Map Tag $ List Number
+                    Map Tag $ List Number
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -1891,35 +1891,34 @@
             %{} 'TestEntry (:name |preserves-default-container-arguments)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :value List
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ List Dynamic
+                  right $ defstruct ComparedRecord $ :value (List Dynamic)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-function-type-aliases)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> String
+                    Fn Number $ -> String
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> String
+                    Fn Number $ -> String
                 assert= true $ = left right
                 assert= 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-rest-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number & String $ -> Bool
+                    Fn Number & String $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number & Number $ -> Bool
+                    Fn Number & Number $ -> Bool
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |orders-distinct-function-feature-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> Bool
+                    Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number (-> Bool) (:features :js-ffi)
+                    Fn Number (-> Bool) (:features :js-ffi)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -1961,7 +1960,7 @@
             %{} 'TestEntry (:name |preserves-function-schema-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn $ -> Bool
+                    Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ []
@@ -1994,7 +1993,7 @@
             %{} 'TestEntry (:name |preserves-function-generic-defaults)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn Number $ -> Bool
+                    Fn Number $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
                     :: 'Fn $ {}
                       :args $ [] 'Number
@@ -2008,9 +2007,9 @@
             %{} 'TestEntry (:name |orders-function-async-contracts)
               :code $ quote $ let
                   left $ defstruct ComparedRecord $ :callback
-                    quote $ Fn $ -> Bool
+                    Fn $ -> Bool
                   right $ defstruct ComparedRecord $ :callback
-                    quote $ Fn (-> Bool) (:async)
+                    Fn (-> Bool) (:async)
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
               :tags $ #{} :struct-definition-equality :unit
@@ -2025,20 +2024,16 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-host-nullable-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value
-                    quote $ JsNullish Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ JsNullish Number
+                  left $ defstruct ComparedRecord $ :value (JsNullish Number)
+                  right $ defstruct ComparedRecord $ :value (JsNullish Number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-variadic-type-aliases)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord $ :value
-                    quote $ Variadic Number
-                  right $ defstruct ComparedRecord $ :value
-                    quote $ Variadic Number
+                  left $ defstruct ComparedRecord $ :value (Variadic Number)
+                  right $ defstruct ComparedRecord $ :value (Variadic Number)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right

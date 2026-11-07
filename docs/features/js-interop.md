@@ -180,7 +180,7 @@ ns app.npm.ids $ :require $ |nanoid :refer (nanoid)
 
 defn make-id (size)
   let
-      generate $ unsafe-coerce nanoid $ quote $ Fn Number $ -> String
+      generate $ unsafe-coerce nanoid $ Fn Number $ -> String
     generate size
 ```
 
@@ -254,7 +254,7 @@ stays visible to the type checker:
 
 ```cirru.no-check
 deftrait StorageHost (:length 'Number)
-  .get-item $ quote $ Fn StorageHost String
+  .get-item $ Fn StorageHost String
     -> $ JsNullish String
 
 :ffi $ {} (:backend :js) (:kind :external-object)

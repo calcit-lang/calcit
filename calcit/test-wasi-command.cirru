@@ -458,8 +458,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
             :code $ quote $ do
               assert=
-                Result :ok $ EdnOutcome :ready $ assert-type ([] 1 -2)
-                  quote $ List Int32
+                Result :ok $ EdnOutcome :ready $ assert-type ([] 1 -2) (List Int32)
                 edn-parse-outcome "|%:: 'EdnOutcome 'ready ([] 1 -2)"
               assert=
                 Result :ok $ EdnOutcome :idle
