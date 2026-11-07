@@ -1992,17 +1992,34 @@ fn incremental_check_reports_snapshot_level_diagnostics() {
     ),
     "edit spread schema",
   );
+  let output = run_calcit(&snapshot, &["--check-only", "--incremental"]);
+  assert_success(&output, "cold incremental check");
+  assert!(String::from_utf8_lossy(&output.stdout).contains("status=cold"));
+
+  // 0.37.0 removed the bare `& T` rest spelling; the warm cache must not hide it.
   let source = fs::read_to_string(&snapshot).expect("snapshot should read");
   fs::write(&snapshot, source.replace("Fn (& Number) (-> Number)", "Fn & Number (-> Number)")).expect("snapshot should write");
-
-  for status in ["status=cold", "status=warm"] {
+  for run in ["first", "second"] {
     let output = run_calcit(&snapshot, &["--check-only", "--incremental"]);
-    assert_success(&output, "incremental check");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+      !output.status.success(),
+      "{run} incremental check must reject the bare rest spelling"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stdout.contains(status), "expected {status}, stdout:\n{stdout}");
-    assert!(stderr.contains("[W_FN_REST_SPELLING]"), "{status} stderr:\n{stderr}");
+    assert!(
+      stderr.contains("[E_LEGACY_TYPE_SYNTAX]") && stderr.contains("bare `& T`"),
+      "{run} stderr:\n{stderr}"
+    );
   }
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "format"]),
+    "edit format migrates the rest spelling",
+  );
+  assert!(
+    fs::read_to_string(&snapshot)
+      .expect("snapshot should read")
+      .contains("Fn (& Number) (-> Number)")
+  );
 
   assert_success(
     &run_calcit(
@@ -2015,6 +2032,42 @@ fn incremental_check_reports_snapshot_level_diagnostics() {
   assert!(!output.status.success(), "--incremental must fail on a bare broad type");
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(stderr.contains("[E_BROAD_TYPE] [Error]"), "stderr:\n{stderr}");
+}
+
+#[test]
+fn string_type_slot_bindings_are_rejected_until_edit_format() {
+  // 0.37.0 removed `:type-slots` bindings written as strings; `edit format` writes symbols.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  let content = fs::read_to_string(&snapshot).expect("snapshot should be readable");
+  assert!(
+    content.contains(":type-slots $ {}\n"),
+    "fixture should have an empty type-slot map:\n{content}"
+  );
+  fs::write(
+    &snapshot,
+    content.replacen(":type-slots $ {}\n", ":type-slots $ {} (:payload |app.main/main!)\n", 1),
+  )
+  .expect("snapshot should be writable");
+
+  let output = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!output.status.success(), "a string type-slot binding must fail to load");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("[E_LEGACY_TYPE_SYNTAX]") && stderr.contains("type slot `:payload` is bound with the string"),
+    "stderr:\n{stderr}"
+  );
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "format"]),
+    "edit format migrates the type-slot binding",
+  );
+  let content = fs::read_to_string(&snapshot).expect("snapshot should be readable");
+  assert!(
+    content.contains(":payload 'app.main/main!"),
+    "edit format should write a symbol:\n{content}"
+  );
 }
 
 #[test]

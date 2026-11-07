@@ -75,7 +75,7 @@
         'partial-variadic-check $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-variadic-check (& items) &unit
           :examples $ []
-          :schema $ quote $ Fn & (Map T Number) (-> Unit) (:generics T)
+          :schema $ quote $ Fn (& (Map T Number)) (-> Unit) (:generics T)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
           :code $ quote $ defn reload! () nil
           :examples $ []

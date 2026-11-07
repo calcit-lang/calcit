@@ -233,7 +233,7 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 只收集严格预处理诊断，不混入基于统计预算的 quality gate；批量问题修复后，可用普通
 `--check-only` 再做 fail-fast 检查。
 
-建议级诊断（如 `W_FN_REST_SPELLING`）同样会收集：human 输出在 stderr 以 `Notes:` 列出，结构化 envelope 写在
+建议级诊断（如 `W_OPEN_FAMILY`）同样会收集：human 输出在 stderr 以 `Notes:` 列出，结构化 envelope 写在
 `data.advisories`，每项 `severity` 为 `note`，带 `definition` 与 `path`。它们不改变任何 definition 的 `status`，也不影响退出码。
 被 `blocked` 的 definition 不会预处理，其中的建议级诊断要等阻断解除后才会出现。
 `E_BROAD_TYPE` 与 `E_OPTION_ERASED_TO_NIL`（0.36.0 起）不是建议级诊断：它们写在所在 definition 的 `diagnostics` 里，`severity` 为 `error`，把该 definition 计为 `failed`，依赖它的 definition 计为 `blocked`。
@@ -279,8 +279,8 @@ calcit calcit.cirru --check-only --all-defs --format edn
 该模式复用上一次成功结果，并以 `preprocessing-cached=true` 明确报告；闭包外定义变化不强制重跑。缓存不保存 compiled AST、warning
 或 error，失败检查不会成为后续命中依据。reachable definition/schema、namespace import、entry type-slot、feature policy、编译器或 core input
 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。
-不依赖单个定义编译的 Snapshot 级诊断每次都重新扫描，命中缓存时也一样：`E_BROAD_TYPE` 照常让检查失败，`W_TYPE_SLOT_STRING`、
-`W_FN_REST_SPELLING` 作为 Notes 输出，`W_OPEN_FAMILY` 汇总在通过后打印，与不带 `--incremental` 的 `--check-only` 一致。
+不依赖单个定义编译的 Snapshot 级诊断每次都重新扫描，命中缓存时也一样：`E_BROAD_TYPE` 照常让检查失败，0.37.0 删除的裸 `& T` rest 写法和字符串
+type slot 绑定照常报 `E_LEGACY_TYPE_SYNTAX`，`W_OPEN_FAMILY` 汇总在通过后打印，与不带 `--incremental` 的 `--check-only` 一致。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
 > **弃用**：`--strict-types` 与 `--compat-types` 现在会在 stderr 打印一行弃用提示，行为保持不变；`--strict-types` 只是重复默认的严格诊断，`--compat-types` 没有替代，应改为修复报告的类型诊断。0.31.0 仍保留这两个选项（仓库的生态严格模式检查脚本还在使用），计划在之后的非 patch 版本删除，补丁版本不会删除它们。
@@ -294,7 +294,7 @@ calcit --strict-types js
 
 所选 entry 未设置 `:feature-policy :js-ffi` 时，默认严格诊断在内存中采用 `:error`，不改写 Snapshot。
 
-`--check-only` 另会在 stderr 以 `Notes:` 列出建议级诊断，例如 `W_FN_REST_SPELLING`；`--keep-going` 与 `--all-defs` 的报告也包含它们。建议级诊断不是 warning，不会使检查、运行或代码生成失败，也不计入退出码；依赖项和 core 内部的调用不报告。
+`--check-only` 另会在 stderr 以 `Notes:` 列出建议级诊断，例如 `W_OPEN_FAMILY`；`--keep-going` 与 `--all-defs` 的报告也包含它们。建议级诊断不是 warning，不会使检查、运行或代码生成失败，也不计入退出码；依赖项和 core 内部的调用不报告。
 旧 entry 可显式设置 `calcit config set feature-policy.js-ffi warn`（或 `allow`）分阶段迁移，并用
 `calcit config show` 核对策略。默认严格诊断也包含定位到源码的未类型化 JS FFI 检查。
 开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
@@ -376,8 +376,9 @@ unbound slot outside strict project source (including slots used by dependency
 code that the entry leaves unbound), fail the check with `E_UNBOUND_TYPE_SLOT`
 too; they are collected and reported together after the other diagnostics (in
 0.36.x they were the `W_UNBOUND_TYPE_SLOT` note). Since 0.36.x bindings are
-written as symbols (`:dispatch-op 'app.schema/Op`); a string binding is
-reported as `W_TYPE_SLOT_STRING`, and `calcit edit format` rewrites it.
+written as symbols (`:dispatch-op 'app.schema/Op`); since 0.37.0 a string
+binding fails to load with `E_LEGACY_TYPE_SYNTAX` (0.36.x reported the
+`W_TYPE_SLOT_STRING` note), and `calcit edit format` rewrites it.
 
 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` rejects a reachable project function when
 neither its root schema nor an embedded `Fn` hint provides a structured

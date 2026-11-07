@@ -50,7 +50,7 @@ struct CheckData {
   entries: Vec<String>,
   summary: CheckSummary,
   definitions: Vec<DefinitionResult>,
-  /// Non-failing diagnostics such as `W_FN_REST_SPELLING`; they never change `status`.
+  /// Non-failing diagnostics such as `W_OPEN_FAMILY`; they never change `status`.
   advisories: Vec<CheckDiagnostic>,
 }
 

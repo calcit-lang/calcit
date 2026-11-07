@@ -37,7 +37,7 @@
           :code $ quote $ defmacro defcomp (comp-name params & body)
             quasiquote $ defn ~comp-name ~params ~@body
           :examples $ []
-          :schema $ quote $ Macro SyntaxSymbol SyntaxList & Syntax
+          :schema $ quote $ Macro SyntaxSymbol SyntaxList (& Syntax)
             -> $ Definition Fn
         'dispatch! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dispatch! (op) &unit
