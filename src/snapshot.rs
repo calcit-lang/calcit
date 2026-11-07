@@ -4866,8 +4866,9 @@ pub fn type_slot_value_edn(type_path: &str) -> Edn {
 
 pub const TYPE_SLOT_STRING_WARNING: &str = "W_TYPE_SLOT_STRING";
 /// A schema uses a type slot that the selected entry leaves unbound or binds
-/// to `Dynamic`. A warning in 0.36.x; it becomes an error in 0.37.0.
-pub const UNBOUND_TYPE_SLOT_WARNING: &str = "W_UNBOUND_TYPE_SLOT";
+/// to `Dynamic`. A warning (`W_UNBOUND_TYPE_SLOT`) in 0.36.x; an error since
+/// 0.37.0, in every check mode and for dependency code too.
+pub const UNBOUND_TYPE_SLOT_ERROR: &str = "E_UNBOUND_TYPE_SLOT";
 
 /// Legacy spellings in the raw `:type-slots` map of one entry: a binding
 /// written as a string (`|app.schema/Op`) instead of a symbol, or a slot name

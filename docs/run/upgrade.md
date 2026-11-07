@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.37.0 未绑定的 type slot 改为错误
+
+用到 `*slot` 的定义，如果当前 entry 没有绑定这个 slot，或者绑定成 `Dynamic`，0.37.0 起在所有检查模式下都报 `E_UNBOUND_TYPE_SLOT`，依赖库里的定义也算；`--check-only`、`--incremental`、直接运行和代码生成都会失败。0.36.x 的 `W_UNBOUND_TYPE_SLOT` Notes 随之移除。
+
+迁移：给每个 entry 绑定具名类型，例如 `calcit calcit.cirru config set-type-slot :dispatch-op app.schema/Op`，`--entry test` 等其它 entry 分别绑定。库自己的 demo / test entry 也一样；还没有具体操作类型的库可以先定义一个只给 demo 用的 `defenum Op`。
+
 ## 0.36.x 带 quote 的复合类型报弃用提示（#2583）
 
 只放类型的位置（`assert-type`、`unsafe-coerce`、`decode-map-as` 等解码目标、`defstruct` 字段、`defenum` 载荷、`defunion` 成员、`deftrait` 方法类型）里写成 `quote $ List Number` 的复合类型，检查时汇总报一条 `W_QUOTED_COMPOUND_TYPE` Notes，给出数量和第一处定义。不影响检查结论。运行 `calcit edit format` 会把它们写成裸的 `List Number`，提示随之消失。`:tests` 不扫描，`edit format` 也不改，需要时手工改。0.37.0 起加载时拒绝带 quote 的写法。
@@ -42,7 +48,7 @@ related:
 
 entry 的 `:type-slots` 绑定改为 symbol 写法：`:type-slots $ {} $ :dispatch-op 'app.schema/Op`。旧的字符串写法 `|app.schema/Op`、tag 写法 `:dynamic` 和非 tag 的 slot 名仍能读取，但会报 `W_TYPE_SLOT_STRING` Notes；`calcit edit format` 和 `calcit config set-type-slot` 会写成 symbol。
 
-用到 `*slot` 的定义，要求当前 entry 把 slot 绑定到具名类型。未绑定、或绑定成 `Dynamic` 的 slot，在所有检查模式下都报 `W_UNBOUND_TYPE_SLOT` Notes，依赖库里的定义也算（由应用的 entry 负责绑定）；严格模式下项目自身定义的未绑定 slot 仍是 `E_UNBOUND_TYPE_SLOT` 错误。具名类型内部还含 `Dynamic` 的暂时不报。0.37.0 起 `W_UNBOUND_TYPE_SLOT` 改为错误。
+用到 `*slot` 的定义，要求当前 entry 把 slot 绑定到具名类型。未绑定、或绑定成 `Dynamic` 的 slot，在所有检查模式下都报 `W_UNBOUND_TYPE_SLOT` Notes，依赖库里的定义也算（由应用的 entry 负责绑定）；严格模式下项目自身定义的未绑定 slot 仍是 `E_UNBOUND_TYPE_SLOT` 错误。具名类型内部还含 `Dynamic` 的暂时不报。0.37.0 起改为错误，见上一节。
 
 迁移：
 
@@ -2839,7 +2845,7 @@ calcit calcit.cirru config set-type-slot :dispatch-op app.schema/DispatchOp
 calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-schema/TestDispatchOp
 ```
 
-未绑定 slot 会回退到 `Dynamic`，可能让 callback 检查和 method specialization 失去静态证据，因此会报 `W_UNBOUND_TYPE_SLOT`（绑定成 `Dynamic` 也一样，0.37.0 起是错误）。升级后应逐 entry 检查，而不是只验证 default。
+未绑定 slot 会回退到 `Dynamic`，可能让 callback 检查和 method specialization 失去静态证据，因此 0.37.0 起报 `E_UNBOUND_TYPE_SLOT` 错误（绑定成 `Dynamic` 也一样；0.36.x 是 `W_UNBOUND_TYPE_SLOT` Notes）。升级后应逐 entry 检查，而不是只验证 default。
 
 ### 3.5 旧 schema 与动态类型
 

@@ -2003,6 +2003,44 @@ fn quoted_compound_types_are_a_note_until_edit_format() {
 }
 
 #[test]
+fn dynamic_bound_type_slots_fail_the_check() {
+  // 0.37.0: a type slot bound to `Dynamic` (or left unbound outside strict
+  // project source) is an error, no longer the W_UNBOUND_TYPE_SLOT note.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(&snapshot, "slotted", "quote $ defn slotted (op) (println op)", false);
+  set_schema(&snapshot, "slotted", "quote $ Fn *dispatch-op (-> Unit)");
+  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted 1)", true);
+  set_schema(&snapshot, "main!", "quote $ Fn (-> Unit)");
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", ":dynamic"]),
+    "bind the slot to Dynamic",
+  );
+  for args in [&["--check-only"][..], &["--check-only", "--incremental"][..], &[][..]] {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "{args:?} must fail on a Dynamic-bound slot");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+      stderr.contains("[E_UNBOUND_TYPE_SLOT] app.main/slotted uses type slot `*dispatch-op`")
+        && stderr.contains("Found 1 use(s) of type slots")
+        && !stderr.contains("W_UNBOUND_TYPE_SLOT"),
+      "{args:?} stderr:\n{stderr}"
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "def", "app.main/Op", "--code", "quote $ defenum Op (:ping)"]),
+    "add a named slot type",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/Op"]),
+    "bind the slot to a named type",
+  );
+  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted $ %:: Op :ping)", true);
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "check with a named slot binding");
+}
+
+#[test]
 fn bare_broad_types_fail_the_check_and_block_dependents() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

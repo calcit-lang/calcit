@@ -2225,11 +2225,14 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
 }
 
 /// Bare broad types (#2504) and Options erased to nil (#2124) are errors
-/// since 0.36.0.
+/// since 0.36.0; open type slots since 0.37.0.
 fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String> {
   if blocking.is_empty() {
     return Ok(());
   }
+  let (slots, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR));
   let (broad, erased): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
@@ -2249,6 +2252,15 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} Option(s) turned back into nil; keep the Option, `match` both variants, or choose a concrete default",
       snapshot::OPTION_ERASED_ERROR,
       erased.len()
+    ));
+  }
+  if !slots.is_empty() {
+    eprintln!("\n{} ({} open type slots)", "Errors:".red(), slots.len());
+    LocatedWarning::print_list(&slots);
+    summaries.push(format!(
+      "[{}] Found {} use(s) of type slots that the selected entry leaves unbound or binds to Dynamic; bind each with `calcit config set-type-slot :slot namespace/definition`",
+      snapshot::UNBOUND_TYPE_SLOT_ERROR,
+      slots.len()
     ));
   }
   Err(summaries.join("; "))

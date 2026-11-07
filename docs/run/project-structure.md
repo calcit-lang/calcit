@@ -94,7 +94,7 @@ Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照
 - `:entries`：全部运行入口；不指定 `--entry` 时使用 `:default`。
 - `:mode`：入口的默认运行后端，只接受 `:native` 或 `:js`。
 - `:description`：entry 用途的简短语义说明；只提供给人和工具阅读，不影响运行。
-- `:type-slots`：当前 entry 的编译期类型绑定（slot 名 tag → 完整 `namespace/definition` 路径的 symbol，如 `:dispatch-op 'app.schema/Op`）。绑定成 `Dynamic` 不算已设置，会报 `W_UNBOUND_TYPE_SLOT`；字符串写法报 `W_TYPE_SLOT_STRING`。各 entry 都保存完整配置，彼此不继承。
+- `:type-slots`：当前 entry 的编译期类型绑定（slot 名 tag → 完整 `namespace/definition` 路径的 symbol，如 `:dispatch-op 'app.schema/Op`）。绑定成 `Dynamic` 不算已设置，0.37.0 起报 `E_UNBOUND_TYPE_SLOT` 错误；字符串写法报 `W_TYPE_SLOT_STRING`。各 entry 都保存完整配置，彼此不继承。
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自项目 `.calcit/modules/`，目录结尾 `/` 补 `calcit.cirru`；旧 `compact.cirru` 模块会被拒绝）。
 

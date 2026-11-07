@@ -990,7 +990,7 @@ fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) ->
     eprintln!(
       "{} type slot ':{slot}' bound to Dynamic still counts as unbound ({}); bind it to a named type",
       "warning:".yellow(),
-      snapshot::UNBOUND_TYPE_SLOT_WARNING
+      snapshot::UNBOUND_TYPE_SLOT_ERROR
     );
   }
   Ok(())
