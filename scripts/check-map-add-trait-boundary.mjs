@@ -41,7 +41,7 @@ export function traitRejectionCases() {
       hint-fn $ {}
         :args $ []
         :return 'Trait
-      deftrait FreshShow $ .render :fn
+      deftrait FreshShow $ .render AnyFn
     old-trait $ make-trait
     next-trait $ make-trait
     old-impl $ defimpl OldImpl old-trait $ .render
