@@ -824,3 +824,60 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
   );
   assert!(!uncached.status.success(), "incomplete uncached snapshot should fail");
 }
+
+/// `analyze weak-types` reads the selected entry's `:type-slots` like `--check-only` does (#2634).
+#[test]
+fn weak_types_resolve_type_slots_bound_by_the_selected_entry() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = |binding: &str| {
+    format!(
+      r#"{{}}
+  :package |demo
+  :entries $ {{}}
+    :default $ {{}} (:init-fn 'demo.main/main!) (:reload-fn 'demo.main/main!) (:mode :js) (:target :browser)
+      :type-slots $ {{}}{binding}
+      :modules $ []
+  :files $ {{}}
+    'demo.main $ %{{}} 'FileEntry
+      :ns $ %{{}} 'NsEntry (:doc |)
+        :code $ quote $ ns demo.main
+      :defs $ {{}}
+        '*dispatch-op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :dispatch-op
+          :schema $ quote Dynamic
+        'Op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Op (:toggle)
+          :schema $ quote EnumDef
+        'echo-op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defn echo-op (op) op
+          :schema $ quote $ Fn *dispatch-op (-> *dispatch-op)
+        'main! $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (, &unit)
+          :schema $ quote $ Fn (-> Unit)
+"#
+    )
+  };
+  let slot_hits = |incremental: bool| {
+    let mut args = vec!["analyze", "weak-types", "--only", "unresolved-type-slot", "--format", "json"];
+    if incremental {
+      args.push("--incremental");
+    }
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "weak-types --only unresolved-type-slot");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("weak-types json");
+    let text = report.to_string();
+    text.matches("unresolved-type-slot:").count()
+  };
+
+  fs::write(&snapshot, source(" (:dispatch-op 'demo.main/Op)")).expect("write bound snapshot");
+  assert_eq!(slot_hits(false), 0, "a slot bound by the entry is resolved");
+  assert_eq!(slot_hits(true), 0, "the incremental path also resolves the bound slot");
+
+  fs::write(&snapshot, source("")).expect("write unbound snapshot");
+  assert_eq!(
+    slot_hits(false),
+    2,
+    "an unbound slot is still reported for the argument and the return type"
+  );
+}
