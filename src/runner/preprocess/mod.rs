@@ -10,12 +10,15 @@ mod post_lowering;
 mod proof_provenance;
 mod recur_tail;
 mod recursive_inputs;
+mod redundant_hint;
 mod scope_types;
 mod source_replay;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
 mod union_types;
+
+pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundant_hint_sites};
 
 use crate::calcit::NullableOrigin;
 pub use broad_type_evidence::push_broad_type_advisory;
@@ -14162,6 +14165,27 @@ pub fn preprocess_defn(
         }
       });
       let has_body_fn_hint = body_fn_hint.is_some();
+      // A source-written hint that repeats the callback contract is noise (#2636).
+      let mut redundant_hint_pending = None;
+      if !source_top_level_definition
+        && let (Some(hint), Some(expected), Some(source), Some(location)) = (
+          body_fn_hint.as_ref(),
+          expected_fn_schema.as_ref(),
+          body_fn_hint_source.as_ref(),
+          body_fn_hint_location.as_ref(),
+        )
+        && !generated_hint(source)
+        && should_emit_project_source_lint(ctx.file_ns)
+        && location.ns.as_ref() == ctx.file_ns
+      {
+        match redundant_hint::compare_with_expected(hint, expected, &expected_callee_owned_generics, ctx.file_ns) {
+          redundant_hint::HintRepeat::Whole => redundant_hint::record(location),
+          redundant_hint::HintRepeat::InputsWithOpenResult => {
+            redundant_hint_pending = Some((hint.return_type.clone(), location.clone()));
+          }
+          redundant_hint::HintRepeat::No => {}
+        }
+      }
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
       let infer_contextual_callback = !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
@@ -14575,6 +14599,20 @@ pub fn preprocess_defn(
         && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
       {
         detected_return_type = inferred;
+      }
+      // Without the hint the context's open result would be inferred from the
+      // body; the hint only repeats it when that inference already agrees.
+      if let Some((written_return, location)) = redundant_hint_pending
+        && !has_marked_args
+        && let Some(body) = processed_body
+          .iter()
+          .rev()
+          .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+        && !type_inference::expression_definitely_diverges(body)
+        && let Some(inferred) = type_inference::infer_function_exit_type(body, &body_types, &recur_param_types)
+        && redundant_hint::same_result(&written_return, &inferred, ctx.file_ns)
+      {
+        redundant_hint::record(&location);
       }
       let open_contextual_output = if infer_contextual_callback {
         expected_fn_schema.as_ref().and_then(|expected| {

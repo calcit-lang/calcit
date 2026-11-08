@@ -24,6 +24,13 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.39.0 删除重复的 `hint-fn`（#2636）
+
+lambda 直接传给已声明 callback 类型的位置时，参数类型已能从上下文推断。`--check-only` 通过后的
+`[W_REDUNDANT_HINT_FN]` 汇总列出与上下文完全重复的 `hint-fn`，可用
+`calcit fix --rule redundant-hint-fn-v1 --format json` 预览，再 `--apply --expect-revision <revision>` 删除。
+这只是提示，不会让检查失败。详见 [calcit fix](fix.md)。
+
 ## 0.37.0 未绑定的 type slot 改为错误
 
 用到 `*slot` 的定义，如果当前 entry 没有绑定这个 slot，或者绑定成 `Dynamic`，0.37.0 起在所有检查模式下都报 `E_UNBOUND_TYPE_SLOT`，依赖库里的定义也算；`--check-only`、`--incremental`、直接运行和代码生成都会失败。0.36.x 的 `W_UNBOUND_TYPE_SLOT` Notes 随之移除。

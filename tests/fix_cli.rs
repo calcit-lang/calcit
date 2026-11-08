@@ -11269,3 +11269,59 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
   let captured = rename("locals", "3.1.0.0", "b", &[]);
   assert!(!captured.status.success(), "capture checks still apply after staging");
 }
+
+#[test]
+fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
+  // Hints on lambdas passed straight to a typed callback slot repeat the
+  // signature inference already gives; the narrower `Fn Dynamic` hint stays.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/redundant-hint-fn.cirru", &snapshot).unwrap();
+  let before = fs::read(&snapshot).unwrap();
+
+  let check = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&check, "redundant hints are advisory");
+  let check_text = String::from_utf8_lossy(&check.stderr);
+  assert!(
+    check_text.contains("[W_REDUNDANT_HINT_FN] 3 `hint-fn`"),
+    "summary counts the three repeated hints:\n{check_text}"
+  );
+
+  let base = ["fix", "--rule", "redundant-hint-fn-v1", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "preview redundant hint removal");
+  let report = parse_stdout(&preview);
+  let mut sites: Vec<&str> = report["data"]["suggestions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|suggestion| {
+      assert_eq!(suggestion["applicability"], "machine-applicable");
+      suggestion["definition"].as_str().unwrap()
+    })
+    .collect();
+  sites.sort_unstable();
+  assert_eq!(
+    sites,
+    ["demo.main/h1-user-fn", "demo.main/h2-filter", "demo.main/h3-map"],
+    "{report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview is read-only");
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply redundant hint removal");
+  let after = fs::read_to_string(&snapshot).unwrap();
+  assert_eq!(after.matches("hint-fn").count(), 1, "only the narrower hint remains:\n{after}");
+  assert!(after.contains("hint-fn $ Fn Dynamic $ -> Number"), "{after}");
+
+  let recheck = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&recheck, "inferred callbacks still check");
+  assert!(!String::from_utf8_lossy(&recheck.stderr).contains("W_REDUNDANT_HINT_FN"));
+}

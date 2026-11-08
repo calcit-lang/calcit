@@ -2162,6 +2162,23 @@ fn print_open_family_summary() {
   if let Some(summary) = OPEN_FAMILY_SUMMARY.lock().expect("lock open family summary").as_ref() {
     eprintln!("\n{} {summary}", "Open types:".dimmed());
   }
+  print_redundant_hint_summary();
+}
+
+/// `W_REDUNDANT_HINT_FN` (#2636): one line after a passing plain check, like
+/// `W_OPEN_FAMILY`; it is not an advisory and never changes the result.
+fn print_redundant_hint_summary() {
+  let sites = runner::preprocess::redundant_hint_sites();
+  let Some(first) = sites.first() else {
+    return;
+  };
+  eprintln!(
+    "\n{} [W_REDUNDANT_HINT_FN] {} `hint-fn` repeat the signature their callback context already gives (first at {}/{})\n  hint: preview `calcit fix --rule redundant-hint-fn-v1`, then apply it to remove them",
+    "Redundant hints:".dimmed(),
+    sites.len(),
+    first.ns,
+    first.def
+  );
 }
 
 /// Quoted type names in `defstruct` / `defenum` / `defunion` were removed in
