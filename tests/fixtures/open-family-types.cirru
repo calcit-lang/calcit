@@ -30,11 +30,11 @@
           :doc "|Calls a function of any arity, like a memo helper."
           :code $ quote $ defn apply-any (f args) (apply f args)
           :examples $ []
-          :schema $ quote $ Fn AnyFn (List Dynamic) (-> Dynamic)
+          :schema $ quote $ Fn AnyFn (List Dynamic) (-> Dynamic) (:open :reflect)
         'call-any $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-any (f x) (f x)
           :examples $ []
-          :schema $ quote $ Fn AnyFn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn AnyFn Dynamic (-> Dynamic) (:open :reflect)
         'checked-assoc $ %{} 'CodeEntry
           :doc "|A dynamic field write: the struct and key are not known statically."
           :code $ quote $ defn checked-assoc (base key value)
@@ -50,7 +50,7 @@
             dispatch! $ :: :reset
           :examples $ []
           :schema $ quote $ Fn
-            Fn AnyEnum $ -> Unit
+            Fn AnyEnum (-> Unit) (:open :reflect)
             -> Unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
@@ -108,10 +108,10 @@
         'same-struct? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-struct? (a b) (&struct:matches? a b)
           :examples $ []
-          :schema $ quote $ Fn AnyStruct AnyStruct (-> Bool)
+          :schema $ quote $ Fn AnyStruct AnyStruct (-> Bool) (:open :reflect)
         'struct-size $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn struct-size (value) (&struct:count value)
           :examples $ []
-          :schema $ quote $ Fn AnyStruct (-> Number)
+          :schema $ quote $ Fn AnyStruct (-> Number) (:open :reflect)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
