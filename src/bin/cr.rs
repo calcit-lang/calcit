@@ -117,12 +117,20 @@ fn run_check_types(
   Ok(())
 }
 
+/// Static analyses read type slots through the same validated entry bindings
+/// as `--check-only` (#2634): a binding to a missing definition is rejected
+/// instead of counting the slot as resolved.
+fn configure_analysis_entry_type_slots(snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  calcit::program::configure_active_entry_type_slots(snapshot)
+}
+
 fn run_weak_types(
   options: &WeakTypesCommand,
   snapshot: &snapshot::Snapshot,
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  configure_analysis_entry_type_slots(snapshot)?;
   if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_OPTION_NIL_ROUNDTRIP) {
     let _output_guard = ProgramOutputGuard::new(true, false);
     return type_coverage::option_nil_roundtrip::run(options, snapshot);
@@ -227,6 +235,7 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
 fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
   let output_format = cli_handlers::StructuredOutputFormat::parse(&options.format, "quality")?;
   let _output_guard = ProgramOutputGuard::new(true, false);
+  configure_analysis_entry_type_slots(snapshot)?;
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;

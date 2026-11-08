@@ -824,3 +824,89 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
   );
   assert!(!uncached.status.success(), "incomplete uncached snapshot should fail");
 }
+
+/// `analyze weak-types` reads the selected entry's `:type-slots` like `--check-only` does (#2634).
+#[test]
+fn weak_types_resolve_type_slots_bound_by_the_selected_entry() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = |binding: &str| {
+    format!(
+      r#"{{}}
+  :package |demo
+  :entries $ {{}}
+    :default $ {{}} (:init-fn 'demo.main/main!) (:reload-fn 'demo.main/main!) (:mode :js) (:target :browser)
+      :type-slots $ {{}}{binding}
+      :modules $ []
+  :files $ {{}}
+    'demo.main $ %{{}} 'FileEntry
+      :ns $ %{{}} 'NsEntry (:doc |)
+        :code $ quote $ ns demo.main
+      :defs $ {{}}
+        '*dispatch-op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ deftype-slot :dispatch-op
+          :schema $ quote Dynamic
+        'Op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Op (:toggle)
+          :schema $ quote EnumDef
+        'echo-op $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defn echo-op (op) op
+          :schema $ quote $ Fn *dispatch-op (-> *dispatch-op)
+        'main! $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (, &unit)
+          :schema $ quote $ Fn (-> Unit)
+"#
+    )
+  };
+  let slot_hits = |incremental: bool| {
+    let mut args = vec!["analyze", "weak-types", "--only", "unresolved-type-slot", "--format", "json"];
+    if incremental {
+      args.push("--incremental");
+    }
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "weak-types --only unresolved-type-slot");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("weak-types json");
+    let text = report.to_string();
+    text.matches("unresolved-type-slot:").count()
+  };
+
+  // `analyze quality` exits non-zero on any debt; its metrics are still printed.
+  let quality_unresolved = || {
+    let output = run_calcit(&snapshot, &["analyze", "quality", "--format", "json"]);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("quality json");
+    report["data"]["metrics"]["unresolved"].as_u64().expect("unresolved metric")
+  };
+
+  fs::write(&snapshot, source(" (:dispatch-op 'demo.main/Op)")).expect("write bound snapshot");
+  assert_eq!(slot_hits(false), 0, "a slot bound by the entry is resolved");
+  assert_eq!(slot_hits(true), 0, "the incremental path also resolves the bound slot");
+  let bound_quality = quality_unresolved();
+
+  fs::write(&snapshot, source("")).expect("write unbound snapshot");
+  assert_eq!(
+    slot_hits(false),
+    2,
+    "an unbound slot is still reported for the argument and the return type"
+  );
+  assert_eq!(slot_hits(true), 2, "removing the binding invalidates the cached incremental rows");
+  assert_eq!(
+    quality_unresolved(),
+    bound_quality + 2,
+    "quality counts the two slot uses only when the entry leaves the slot unbound"
+  );
+
+  // A binding to a missing definition is rejected like `--check-only` does.
+  fs::write(&snapshot, source(" (:dispatch-op 'demo.main/Missing)")).expect("write dangling binding");
+  for args in [
+    &["analyze", "weak-types", "--only", "unresolved-type-slot", "--format", "json"][..],
+    &["analyze", "quality", "--format", "json"][..],
+  ] {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "{args:?} must reject a dangling slot binding");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("unknown type definition `demo.main/Missing`"),
+      "{args:?} stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+}
