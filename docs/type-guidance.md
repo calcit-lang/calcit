@@ -241,6 +241,11 @@ let
 
 已知字段、返回或显式 `assert-type` 合同也会逐项检查 List、Map、Set 字面量。例如 `Map<Tag,JsNullish<EventHandler>>` 可以接收 `{} (:click typed-handler) (:focus nil)`，嵌套集合采用同一规则；每个回调仍须具有兼容的完整签名。需要保存并复用混合集合时，可以在字面量处用 `assert-type` 明确检查合同。没有期望合同的异质集合仍按既有规则推导，开放的 Map 参数不会因此获得具体成员类型。检查不改变运行值，异步返回也不会自动等待集合中的 Promise。
 
+lambda 的参数类型可以从所在位置得到，不必写 `hint-fn`：直接作为实参传给声明了 `Fn` 类型的参数（`.map`、`.filter`、`foldl`、
+用户函数等）；处在函数的返回位置且函数声明的返回类型是 `Fn`（包括 `let`/`do` 的最后一个表达式和 `if` 的两个分支）；
+或者先用 `let` 绑定、在绑定作用域里只使用一次，并且那一次使用处于上述位置。同一个绑定被使用多次时不推断，需要保留
+`hint-fn`。推断出的签名与写出的 `hint-fn` 不一致时按函数返回声明报错（0.39.0，#2637）。
+
 ## Dynamic 是边界，不是默认多态
 
 普通泛型函数会按实参顺序传递已知的类型关系。例如 `filter-map-kv` 接收 `Map<String,Number>` 时，后续回调的参数可推为 `String` 和 `Number`；回调返回的 `MapEntryDecision<R,S>` 也保留泛型实参，让结果 `Map<R,S>` 继续约束后续写入。无需为了传递这些关系手工增加 `hint-fn` 或 `assert-type`。如果输入本身是显式 `Dynamic`，推断不会凭空把它收窄为某个具体类型，仍应在真实边界处 decode 或 narrow。

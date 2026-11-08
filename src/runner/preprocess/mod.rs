@@ -12,6 +12,7 @@ mod recur_tail;
 mod recursive_inputs;
 mod scope_types;
 mod source_replay;
+mod tail_context;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -115,6 +116,7 @@ impl Drop for ExpressionContextScope {
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
   _expression: ExpressionContextScope,
+  _tail: tail_context::SuspendScope,
   _features: FunctionFeaturesScope,
   _host_nullish: HostNullishReturnScope,
 }
@@ -135,6 +137,7 @@ impl DefinitionContextScope {
     };
     Self {
       _expression: ExpressionContextScope::enter(context, None),
+      _tail: tail_context::SuspendScope::enter(),
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
       },
@@ -264,6 +267,13 @@ fn preprocess_argument_with_context(
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
     }
+  }
+  if let Calcit::Symbol { sym, .. } = expr
+    && has_deferred_let_lambda(sym, scope_types)
+    && let Some(signature) = expected.and_then(|annotation| annotation.resolve_to_fn())
+  {
+    let context = callback_parameter_context(signature, member_inputs, callee_owned_generics);
+    resolve_deferred_let_lambda(sym, scope_types, Some(context), file_ns, check_warnings, call_stack)?;
   }
   let _context = ExpressionContextScope::enter(
     expected
@@ -3268,6 +3278,13 @@ pub fn preprocess_expr(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  let _depth = tail_context::DepthGuard::enter();
+  if let Calcit::Symbol { sym, .. } = expr
+    && has_deferred_let_lambda(sym, scope_types)
+  {
+    let context = tail_context::take_for_current().map(|signature| callback_parameter_context(signature, false, &[]));
+    resolve_deferred_let_lambda(sym, scope_types, context, file_ns, check_warnings, call_stack)?;
+  }
   let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
@@ -4020,14 +4037,18 @@ impl MacroSourcePhase<'_> {
   fn process(&mut self, code: &Calcit, ctx: PreprocessContext) -> Result<Calcit, CalcitErr> {
     match self {
       Self::Prepare(constraints) => recursive_inputs::prepare_expression(code, ctx, constraints),
-      Self::Check => preprocess_expr(
-        code,
-        ctx.scope_defs,
-        ctx.scope_types,
-        ctx.file_ns,
-        ctx.check_warnings,
-        ctx.call_stack,
-      ),
+      Self::Check => {
+        // A macro in return position hands the offer to its expansion.
+        let _tail = tail_context::TailScope::offer(tail_context::take_for_current());
+        preprocess_expr(
+          code,
+          ctx.scope_defs,
+          ctx.scope_types,
+          ctx.file_ns,
+          ctx.check_warnings,
+          ctx.call_stack,
+        )
+      }
     }
   }
 }
@@ -12194,11 +12215,13 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   }
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
+  let tail_signature = tail_context::take_for_current();
   let mut true_scope_types = ctx.scope_types.clone();
   for (sym, inferred) in &narrowing.when_true {
     true_scope_types.refine(sym.clone(), inferred.clone());
   }
 
+  let true_tail = tail_context::TailScope::offer(tail_signature.clone());
   let true_form = preprocess_expr(
     args.get(1).unwrap(),
     ctx.scope_defs,
@@ -12207,12 +12230,14 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.check_warnings,
     ctx.call_stack,
   )?;
+  drop(true_tail);
 
   let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
     for (sym, inferred) in &narrowing.when_false {
       false_scope_types.refine(sym.clone(), inferred.clone());
     }
+    let _false_tail = tail_context::TailScope::offer(tail_signature);
     let form = preprocess_expr(
       false_branch,
       ctx.scope_defs,
@@ -14129,7 +14154,11 @@ pub fn preprocess_defn(
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
-      let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      // A lambda in return position takes the enclosing declared result (#2637).
+      let tail_signature = tail_context::take_for_current();
+      let expected_context = EXPECTED_FN_TYPE
+        .with(|cell| cell.borrow_mut().take())
+        .or_else(|| tail_signature.map(|signature| callback_parameter_context(signature, false, &[])));
       let expected_callee_owned_generics = expected_context
         .as_ref()
         .map(|context| context.callee_owned_generics.clone())
@@ -14429,6 +14458,16 @@ pub fn preprocess_defn(
         PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
       let initial_rewrites = post_lowering::Scope::checkpoint();
 
+      // A declared `Fn` result types a lambda written as the last body form (#2637).
+      let tail_result = effective_fn_schema
+        .as_ref()
+        .filter(|signature| !signature.is_async_invocation())
+        .and_then(|signature| {
+          let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
+          resolve_namespace_type_refs_for_body(local, ctx.file_ns).resolve_to_fn()
+        });
+      let body_count = args.len();
+      let mut body_position = 0;
       let declaring_ns = ctx.file_ns;
       let retain_fn_hint = |source: &Calcit, form: Calcit| {
         if body_fn_hint_source.as_ref() == Some(source)
@@ -14442,10 +14481,12 @@ pub fn preprocess_defn(
       };
 
       args.traverse_result::<CalcitErr>(&mut |a| {
+        body_position += 1;
         if to_skip > 0 {
           to_skip -= 1;
           return Ok(());
         }
+        let _tail = tail_context::TailScope::offer(if body_position == body_count { tail_result.clone() } else { None });
         let form = retain_fn_hint(
           a,
           preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
@@ -14504,7 +14545,8 @@ pub fn preprocess_defn(
         source_replay::Scope::rewind_function();
         let replayed_from = ctx.check_warnings.borrow().len();
         let replay_result = (|| -> Result<(), CalcitErr> {
-          for source in args.iter().skip(2) {
+          for (index, source) in args.iter().enumerate().skip(2) {
+            let _tail = tail_context::TailScope::offer(if index + 1 == body_count { tail_result.clone() } else { None });
             let form = retain_fn_hint(
               source,
               preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
@@ -15032,6 +15074,140 @@ fn recheck_let_lambda_call(
   Ok(())
 }
 
+/// A `&let`-bound lambda literal used once, compiled at that use (#2637).
+struct DeferredLetLambda {
+  sym: Arc<str>,
+  placeholder: Arc<CalcitTypeAnnotation>,
+  lambda: Arc<explicit_open::LetLambda>,
+  /// Lexical permissions where the literal is written, not where it is used.
+  features: Option<Arc<HashSet<EdnTag>>>,
+  resolved: Option<(Calcit, Arc<CalcitTypeAnnotation>)>,
+}
+
+thread_local! {
+  static DEFERRED_LET_LAMBDAS: RefCell<Vec<DeferredLetLambda>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Owns one entry of `DEFERRED_LET_LAMBDAS`; dropping it, also on error, removes it.
+struct DeferredLetLambdaGuard {
+  index: usize,
+}
+
+impl DeferredLetLambdaGuard {
+  fn push(sym: Arc<str>, placeholder: Arc<CalcitTypeAnnotation>, lambda: Arc<explicit_open::LetLambda>) -> Self {
+    let index = DEFERRED_LET_LAMBDAS.with(|stack| {
+      let mut stack = stack.borrow_mut();
+      stack.push(DeferredLetLambda {
+        sym,
+        placeholder,
+        lambda,
+        features: CURRENT_FN_FEATURES.with(|cell| cell.borrow().clone()),
+        resolved: None,
+      });
+      stack.len() - 1
+    });
+    Self { index }
+  }
+
+  /// The compiled binding value: as compiled at its use, or without a
+  /// context when no use resolved the name (e.g. inside `quote`).
+  fn finish(
+    self,
+    file_ns: &str,
+    check_warnings: &RefCell<Vec<LocatedWarning>>,
+    call_stack: &CallStackList,
+  ) -> Result<(Calcit, Arc<CalcitTypeAnnotation>), CalcitErr> {
+    let (lambda, features, resolved) = DEFERRED_LET_LAMBDAS.with(|stack| {
+      let mut stack = stack.borrow_mut();
+      let entry = &mut stack[self.index];
+      (entry.lambda.clone(), entry.features.clone(), entry.resolved.take())
+    });
+    drop(self);
+    match resolved {
+      Some(resolved) => Ok(resolved),
+      None => compile_let_lambda(&lambda, features, None, file_ns, check_warnings, call_stack),
+    }
+  }
+}
+
+impl Drop for DeferredLetLambdaGuard {
+  fn drop(&mut self) {
+    DEFERRED_LET_LAMBDAS.with(|stack| stack.borrow_mut().truncate(self.index));
+  }
+}
+
+fn deferred_let_lambda_index(sym: &str, scope_types: &ScopeTypes) -> Option<usize> {
+  let current = scope_types.get(sym)?;
+  DEFERRED_LET_LAMBDAS.with(|stack| {
+    stack
+      .borrow()
+      .iter()
+      .rposition(|entry| entry.resolved.is_none() && entry.sym.as_ref() == sym && Arc::ptr_eq(&entry.placeholder, current))
+  })
+}
+
+fn has_deferred_let_lambda(sym: &str, scope_types: &ScopeTypes) -> bool {
+  DEFERRED_LET_LAMBDAS.with(|stack| !stack.borrow().is_empty()) && deferred_let_lambda_index(sym, scope_types).is_some()
+}
+
+/// Compile the deferred lambda where its name is first resolved, with the
+/// callback context of that position when it has one, in the binding's scope.
+fn resolve_deferred_let_lambda(
+  sym: &str,
+  scope_types: &mut ScopeTypes,
+  context: Option<ExpectedFunctionContext>,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(index) = deferred_let_lambda_index(sym, scope_types) else {
+    return Ok(());
+  };
+  let (lambda, features) = DEFERRED_LET_LAMBDAS.with(|stack| {
+    let entry = &stack.borrow()[index];
+    (entry.lambda.clone(), entry.features.clone())
+  });
+  let (form, annotation) = compile_let_lambda(&lambda, features, context, file_ns, check_warnings, call_stack)?;
+  DEFERRED_LET_LAMBDAS.with(|stack| {
+    if let Some(entry) = stack.borrow_mut().get_mut(index) {
+      entry.resolved = Some((form, annotation.clone()));
+    }
+  });
+  scope_types.insert(Arc::from(sym), annotation);
+  Ok(())
+}
+
+fn compile_let_lambda(
+  lambda: &explicit_open::LetLambda,
+  features: Option<Arc<HashSet<EdnTag>>>,
+  context: Option<ExpectedFunctionContext>,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(Calcit, Arc<CalcitTypeAnnotation>), CalcitErr> {
+  let _context = ExpressionContextScope::enter(context, None);
+  let _tail = tail_context::SuspendScope::enter();
+  let _features = FunctionFeaturesScope {
+    previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(features)),
+  };
+  let mut types = lambda.scope_types.clone();
+  let form = explicit_open::with_scope_locals(&lambda.scope_locals, || {
+    preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, check_warnings, call_stack)
+  })?;
+  let annotation = infer_type_from_expr(&form, &types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  Ok((form, annotation))
+}
+
+fn count_symbol_uses<'a>(forms: impl Iterator<Item = &'a Calcit>, sym: &str) -> usize {
+  forms
+    .map(|form| match form {
+      Calcit::Symbol { sym: current, .. } => usize::from(current.as_ref() == sym),
+      Calcit::List(items) => count_symbol_uses(items.iter(), sym),
+      _ => 0,
+    })
+    .sum()
+}
+
 pub fn preprocess_core_let(
   head: &CalcitSyntax,
   // where the symbol was defined
@@ -15039,10 +15215,14 @@ pub fn preprocess_core_let(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  // Taken before the binding, which is never in return position.
+  let mut tail_signature = tail_context::take_for_current();
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
   let mut body_types: ScopeTypes = ctx.scope_types.clone();
   let mut let_lambda = None;
+  // A lambda bound once is compiled where its only use gives a context (#2637).
+  let mut deferred: Option<DeferredLetLambdaGuard> = None;
   let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => {
@@ -15079,53 +15259,73 @@ pub fn preprocess_core_let(
           scope_types: body_types.clone(),
           scope_locals: explicit_open::capture_scope_locals(),
         });
-      let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
-      // The initializer executes before the new binding shadows its name.
-      propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
+      if existing_type.is_none()
+        && let Some(lambda) = let_lambda.take()
+        && count_symbol_uses(args.iter().skip(1), sym) == 1
+      {
+        let placeholder = Arc::new(CalcitTypeAnnotation::Dynamic);
+        deferred = Some(DeferredLetLambdaGuard::push(sym.to_owned(), placeholder.clone(), Arc::new(lambda)));
+        let name = Calcit::Local(CalcitLocal {
+          idx: CalcitLocal::track_sym(sym),
+          sym: sym.to_owned(),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: info.at_ns.to_owned(),
+            at_def: info.at_def.to_owned(),
+          }),
+          location: location.to_owned(),
+          type_info: placeholder.clone(),
+        });
+        body_types.insert(sym.to_owned(), placeholder);
+        Calcit::from(CalcitList::from(&[name, Calcit::Nil]))
+      } else {
+        let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        // The initializer executes before the new binding shadows its name.
+        propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
-      // A branch made only of literals carries no coordinate; the binding name
-      // written in this definition still locates it.
-      let binding_location = location
-        .as_ref()
-        .map(|path| NodeLocation::new(info.at_ns.to_owned(), info.at_def.to_owned(), path.to_owned()));
-      if existing_type.is_none() {
-        // A nil join has no Calcit type since `Optional<T>` was removed (#2233), so
-        // binding one is rejected like any other value use.
-        check_value_position_nil_branch(
-          &form,
-          "let binding",
-          true,
-          &body_types,
-          ctx.file_ns,
-          ctx.call_stack,
-          binding_location.as_ref(),
-        )?;
-      }
-      // Only compatibility mode reaches here with a reported nil branch; the
-      // binding is an open value there rather than a nullable `T`.
-      let compat_nil_join =
-        existing_type.is_none() && reported_implicit_nil_branch(&form, &body_types, ctx.file_ns, binding_location.as_ref()).is_some();
-      let inferred_type = existing_type.unwrap_or_else(|| {
-        if compat_nil_join {
-          return crate::calcit::DYNAMIC_TYPE.clone();
+        // A branch made only of literals carries no coordinate; the binding name
+        // written in this definition still locates it.
+        let binding_location = location
+          .as_ref()
+          .map(|path| NodeLocation::new(info.at_ns.to_owned(), info.at_def.to_owned(), path.to_owned()));
+        if existing_type.is_none() {
+          // A nil join has no Calcit type since `Optional<T>` was removed (#2233), so
+          // binding one is rejected like any other value use.
+          check_value_position_nil_branch(
+            &form,
+            "let binding",
+            true,
+            &body_types,
+            ctx.file_ns,
+            ctx.call_stack,
+            binding_location.as_ref(),
+          )?;
         }
-        infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
-      });
+        // Only compatibility mode reaches here with a reported nil branch; the
+        // binding is an open value there rather than a nullable `T`.
+        let compat_nil_join =
+          existing_type.is_none() && reported_implicit_nil_branch(&form, &body_types, ctx.file_ns, binding_location.as_ref()).is_some();
+        let inferred_type = existing_type.unwrap_or_else(|| {
+          if compat_nil_join {
+            return crate::calcit::DYNAMIC_TYPE.clone();
+          }
+          infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
+        });
 
-      let name = Calcit::Local(CalcitLocal {
-        idx: CalcitLocal::track_sym(sym),
-        sym: sym.to_owned(),
-        info: Arc::new(CalcitSymbolInfo {
-          at_ns: info.at_ns.to_owned(),
-          at_def: info.at_def.to_owned(),
-        }),
-        location: location.to_owned(),
-        type_info: inferred_type.clone(),
-      });
+        let name = Calcit::Local(CalcitLocal {
+          idx: CalcitLocal::track_sym(sym),
+          sym: sym.to_owned(),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: info.at_ns.to_owned(),
+            at_def: info.at_def.to_owned(),
+          }),
+          location: location.to_owned(),
+          type_info: inferred_type.clone(),
+        });
 
-      body_types.insert(sym.to_owned(), inferred_type);
+        body_types.insert(sym.to_owned(), inferred_type);
 
-      Calcit::from(CalcitList::from(&[name, form]))
+        Calcit::from(CalcitList::from(&[name, form]))
+      }
     }
     Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack_location(
@@ -15154,7 +15354,13 @@ pub fn preprocess_core_let(
   xs.push(binding);
   let mut proof_binding = proof_provenance::BindingScope::new();
   let mut explicit_open_binding = explicit_open::ExplicitOpenScope::new();
-  if let Some(Calcit::List(pair)) = xs.get(1)
+  if deferred.is_some()
+    && let Some(Calcit::List(pair)) = xs.get(1)
+    && let Some(local) = pair.first()
+  {
+    proof_binding.bind(local, None, &body_types);
+    explicit_open_binding.bind(local, false);
+  } else if let Some(Calcit::List(pair)) = xs.get(1)
     && let (Some(local), Some(value)) = (pair.first(), pair.get(1))
   {
     proof_binding.bind(local, Some(value), &body_types);
@@ -15181,16 +15387,30 @@ pub fn preprocess_core_let(
   }
 
   let mut skipped_head = false;
+  let mut body_index = 0;
+  let body_len = args.len().saturating_sub(1);
   args.traverse_result::<CalcitErr>(&mut |a| {
     if !skipped_head {
       skipped_head = true;
       return Ok(());
     }
+    body_index += 1;
+    let _tail = tail_context::TailScope::offer(if body_index == body_len { tail_signature.take() } else { None });
     let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     condition_evidence::establish_normal_exit(&form, &mut body_types);
     xs.push(form);
     Ok(())
   })?;
+  if let Some(guard) = deferred.take() {
+    let (form, annotation) = guard.finish(ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+    if let Some(Calcit::List(pair)) = xs.get(1)
+      && let Some(Calcit::Local(local)) = pair.first()
+    {
+      let mut local = local.clone();
+      local.type_info = annotation;
+      xs[1] = Calcit::from(CalcitList::from(&[Calcit::Local(local), form]));
+    }
+  }
   let shadowed = match xs.get(1) {
     Some(Calcit::List(pair)) => match pair.first() {
       Some(Calcit::Local(local)) => Some(local.sym.as_ref()),

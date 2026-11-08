@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.39.0 返回位置和单次使用的 let lambda 也从上下文推断参数（#2637）
+
+函数声明的返回类型是 `Fn` 时，写在返回位置的 lambda（含 `let`/`do` 末尾和 `if` 分支）按该签名得到参数类型；
+`let` 绑定后只使用一次的 lambda 按那次使用的期望类型推断。以前这些参数是开放的，现在类型错误会被报告，
+例如对 `Task` 参数做数值运算。按报告修正 lambda 体，或在确实需要开放参数时写 `hint-fn $ Fn Dynamic …`。
+
 ## 0.37.0 未绑定的 type slot 改为错误
 
 用到 `*slot` 的定义，如果当前 entry 没有绑定这个 slot，或者绑定成 `Dynamic`，0.37.0 起在所有检查模式下都报 `E_UNBOUND_TYPE_SLOT`，依赖库里的定义也算；`--check-only`、`--incremental`、直接运行和代码生成都会失败。0.36.x 的 `W_UNBOUND_TYPE_SLOT` Notes 随之移除。
