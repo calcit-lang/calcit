@@ -213,7 +213,7 @@
               set! f 1
               get-value
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi)
+          :schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi) (:open :host)
           :tests $ [] $ %{} 'TestEntry
             :name |checked-value-is-independent-of-original-binding
             :code $ quote $ let

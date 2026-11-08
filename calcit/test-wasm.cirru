@@ -102,7 +102,7 @@
         'enum-index-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-index-helper (value key) (.contains? value key)
           :examples $ []
-          :schema $ quote $ Fn AnyEnum K (-> Bool) (:generics K)
+          :schema $ quote $ Fn AnyEnum K (-> Bool) (:generics K) (:open :reflect)
         'factorial $ %{} 'CodeEntry (:doc "|Factorial — recursive")
           :code $ quote $ defwasm-export factorial (n)
             if (&< n 2) 1 $ &* n $ factorial (&- n 1)
@@ -170,7 +170,7 @@
                   if (= index 1) (raise |recur-key-error) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-enum-receiver-failure? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-enum-receiver-failure? (value index)
             if (> index 0)
@@ -180,7 +180,7 @@
                 do (println |recur-key) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
             if (<= remaining 0)

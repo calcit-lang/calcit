@@ -43,6 +43,7 @@
           :examples $ []
           :schema $ quote $ Fn AnyEnum
             -> $ calcit.core/Option EnumDef
+            :open :reflect
           :tests $ [] $ %{} 'TestEntry (:name |returns-enum-definition)
             :code $ quote $ assert= (Option :some Option)
               fixable $ Option :some 1

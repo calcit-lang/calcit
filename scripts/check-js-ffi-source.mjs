@@ -33,7 +33,7 @@ try {
   mutateFunction([
     ["edit", "add-import", "app.main", "--input-format", "json-ast", "--code", JSON.stringify(["|node:assert", ":default", "host-assert"])],
     ["edit", "def", "app.main/accept", "--input-format", "cirru", "--code", "quote $ defn accept (callback) (assert= true $ fn? callback) &unit"],
-    ["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code", "quote $ Fn AnyFn (-> Unit)"],
+    ["edit", "schema", "app.main/accept", "--input-format", "cirru", "--code", "quote $ Fn AnyFn (-> Unit) (:open :host)"],
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () &unit"],
     ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :js-ffi)"],
     ["config", "set", "init-fn", "app.main/main!"],

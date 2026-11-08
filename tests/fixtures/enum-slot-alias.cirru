@@ -32,7 +32,7 @@
           :code $ quote $ defn callback (op)
             assert= (:: :sample) op
           :examples $ []
-          :schema $ quote $ Fn AnyEnum (-> Unit)
+          :schema $ quote $ Fn AnyEnum (-> Unit) (:open :reflect)
         'forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn forward (op) (callback op)
           :examples $ []

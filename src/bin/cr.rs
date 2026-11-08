@@ -117,12 +117,20 @@ fn run_check_types(
   Ok(())
 }
 
+/// Static analyses read type slots through the same validated entry bindings
+/// as `--check-only` (#2634): a binding to a missing definition is rejected
+/// instead of counting the slot as resolved.
+fn configure_analysis_entry_type_slots(snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  calcit::program::configure_active_entry_type_slots(snapshot)
+}
+
 fn run_weak_types(
   options: &WeakTypesCommand,
   snapshot: &snapshot::Snapshot,
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  configure_analysis_entry_type_slots(snapshot)?;
   if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_OPTION_NIL_ROUNDTRIP) {
     let _output_guard = ProgramOutputGuard::new(true, false);
     return type_coverage::option_nil_roundtrip::run(options, snapshot);
@@ -227,6 +235,7 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
 fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
   let output_format = cli_handlers::StructuredOutputFormat::parse(&options.format, "quality")?;
   let _output_guard = ProgramOutputGuard::new(true, false);
+  configure_analysis_entry_type_slots(snapshot)?;
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;
@@ -2134,10 +2143,27 @@ fn push_broad_type_advisories(snapshot: &snapshot::Snapshot, project_namespaces:
   }
 }
 
+/// Open families in an unreasoned `Fn` schema (#2635) are queued with the
+/// other load-time schema errors.
+fn push_open_without_reason_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
+  for hit in snapshot::collect_open_without_reason_hits(snapshot, project_namespaces) {
+    runner::preprocess::push_broad_type_advisory(
+      LocatedWarning::new_with_detail(
+        hit.message(),
+        calcit::calcit::NodeLocation::new(Arc::from(hit.ns.as_str()), Arc::from(hit.def.as_str()), Arc::new(vec![])),
+        Some(snapshot::OPEN_WITHOUT_REASON_ERROR.to_owned()),
+        None,
+      ),
+      None,
+    );
+  }
+}
+
 /// Snapshot-level diagnostics that are not tied to compiling one definition.
 /// Every check path that loads a project snapshot queues them the same way.
 fn push_snapshot_level_advisories(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) {
   push_broad_type_advisories(snapshot, project_namespaces);
+  push_open_without_reason_advisories(snapshot, project_namespaces);
   record_open_family_summary(snapshot, project_namespaces);
 }
 
@@ -2244,6 +2270,9 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
   let (slots, blocking): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::UNBOUND_TYPE_SLOT_ERROR));
+  let (unreasoned, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::OPEN_WITHOUT_REASON_ERROR));
   let (broad, erased): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
@@ -2263,6 +2292,15 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} Option(s) turned back into nil; keep the Option, `match` both variants, or choose a concrete default",
       snapshot::OPTION_ERASED_ERROR,
       erased.len()
+    ));
+  }
+  if !unreasoned.is_empty() {
+    eprintln!("\n{} ({} open signatures without a reason)", "Errors:".red(), unreasoned.len());
+    LocatedWarning::print_list(&unreasoned);
+    summaries.push(format!(
+      "[{}] Found {} definition(s) using AnyEnum / AnyFn / AnyStruct in a `Fn` schema without `(:open …)`; write the concrete type or add `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+      snapshot::OPEN_WITHOUT_REASON_ERROR,
+      unreasoned.len()
     ));
   }
   if !slots.is_empty() {

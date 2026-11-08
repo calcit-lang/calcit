@@ -3645,6 +3645,122 @@ pub fn collect_open_family_count(snapshot: &Snapshot, namespaces: &HashSet<Strin
   count
 }
 
+/// Error code for `AnyEnum` / `AnyFn` / `AnyStruct` inside a project `Fn`
+/// schema that carries no `(:open …)` reason (blocking since 0.39.0, #2635).
+pub const OPEN_WITHOUT_REASON_ERROR: &str = "E_OPEN_WITHOUT_REASON";
+
+/// One project definition whose `Fn` schema holds open families without a reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenWithoutReasonHit {
+  pub ns: String,
+  pub def: String,
+  /// Open family names in schema order, such as `["AnyEnum", "AnyFn"]`.
+  pub families: Vec<&'static str>,
+}
+
+impl OpenWithoutReasonHit {
+  pub fn message(&self) -> String {
+    let mut unique: Vec<&str> = vec![];
+    for name in self.families.iter().copied() {
+      if !unique.contains(&name) {
+        unique.push(name);
+      }
+    }
+    format!(
+      "[Error] the `:schema` of this definition uses {} inside a `Fn` without an `(:open …)` reason; write the concrete type, or mark the reviewed signature with `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+      unique.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
+    )
+  }
+}
+
+/// `AnyEnum` / `AnyFn` / `AnyStruct` reached through a `Fn` schema whose
+/// enclosing signatures have no `(:open …)` reason. Open families outside any
+/// `Fn` (such as the value type of a `defref`) stay in the `W_OPEN_FAMILY`
+/// summary. Bundled core namespaces keep their open signatures.
+/// Collect open families below every `Fn` that gives no `(:open …)` reason.
+/// Macro contracts are entered too, since `Expr`/definition slots may hold
+/// function types.
+fn collect_unreasoned_open_families(annotation: &CalcitTypeAnnotation, families: &mut Vec<&'static str>) {
+  annotation.walk_components(&mut |annotation| match annotation {
+    CalcitTypeAnnotation::Fn(signature) => {
+      if signature.open_reason.0.is_none() {
+        // Count everything below this unreasoned signature once, skipping
+        // nested signatures that give their own reason.
+        annotation.walk_components(&mut |inner| match inner {
+          CalcitTypeAnnotation::Fn(inner_signature) if inner_signature.open_reason.0.is_some() => false,
+          CalcitTypeAnnotation::Macro(_) => {
+            collect_unreasoned_open_families(inner, families);
+            false
+          }
+          _ => {
+            if let Some(family) = inner.open_family_name() {
+              families.push(family);
+            }
+            true
+          }
+        });
+      }
+      false
+    }
+    CalcitTypeAnnotation::Macro(signature) => {
+      for slot in macro_contract_types(signature) {
+        collect_unreasoned_open_families(slot, families);
+      }
+      false
+    }
+    _ => true,
+  });
+}
+
+fn macro_contract_types(signature: &crate::calcit::MacroSignature) -> Vec<&CalcitTypeAnnotation> {
+  use crate::calcit::{MacroExpansionType, MacroSyntaxType};
+  let mut slots = vec![];
+  for input in signature
+    .required_inputs
+    .iter()
+    .chain(signature.optional_inputs.iter())
+    .chain(signature.rest_input.iter())
+  {
+    if let MacroSyntaxType::Expr(inner) = input {
+      slots.push(inner.as_ref());
+    }
+  }
+  if let MacroExpansionType::Expr(inner) | MacroExpansionType::Definition(inner) = &signature.expansion {
+    slots.push(inner.as_ref());
+  }
+  slots
+}
+
+pub fn collect_open_without_reason_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<OpenWithoutReasonHit> {
+  let mut hits = vec![];
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| !crate::calcit::is_bundled_core_ns(ns) && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let schema = &file.defs[def].schema;
+      if schema_annotation_is_missing(schema) {
+        continue;
+      }
+      let mut families = vec![];
+      collect_unreasoned_open_families(schema, &mut families);
+      if !families.is_empty() {
+        hits.push(OpenWithoutReasonHit {
+          ns: ns.to_owned(),
+          def: def.to_owned(),
+          families,
+        });
+      }
+    }
+  }
+  hits
+}
+
 /// A bare broad type written in a definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BroadTypeHit {
@@ -7004,6 +7120,51 @@ mod tests {
     let count = collect_open_family_count(&snapshot, &HashSet::from(["app.main".to_owned()]));
     assert_eq!((count.any_enum, count.any_fn, count.any_struct, count.dynamic), (1, 1, 0, 1));
     assert_eq!(count.first, Some(("app.main".to_owned(), "dispatch".to_owned())));
+  }
+
+  #[test]
+  fn open_families_in_unreasoned_fn_schemas_are_errors() {
+    let _guard = crate::program::lock_program_test_state();
+    let mut snapshot = Snapshot::default();
+    let mut defs = HashMap::new();
+    for (name, schema) in [
+      ("show", "Fn AnyEnum (-> String) (:open :reflect)"),
+      ("plain", "Fn AnyEnum (-> String)"),
+      ("nested", "Fn (Fn AnyFn (-> Unit)) AnyStruct (-> Unit)"),
+      ("inner-reason", "Fn (Fn AnyEnum (-> Unit) (:open :reflect)) (-> Unit)"),
+      ("handlers", "Ref (Map Tag AnyFn)"),
+      ("number", "Fn Number (-> String)"),
+      ("macro-input", "Macro (Expr (Fn AnyFn (-> Unit))) (-> (Expr Number))"),
+      (
+        "macro-reasoned",
+        "Macro (Expr (Fn AnyFn (-> Unit) (:open :reflect))) (-> (Expr Number))",
+      ),
+    ] {
+      let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+      entry.schema = parse_schema_annotation_for_write(&parse_one(schema)).expect("schema parses");
+      defs.insert(name.to_owned(), entry);
+    }
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      FileInSnapShot {
+        ns: NsEntry {
+          doc: String::new(),
+          code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+        },
+        defs,
+      },
+    );
+    let hits = collect_open_without_reason_hits(&snapshot, &HashSet::from(["app.main".to_owned()]));
+    let found: Vec<(&str, Vec<&str>)> = hits.iter().map(|hit| (hit.def.as_str(), hit.families.clone())).collect();
+    assert_eq!(
+      found,
+      vec![
+        ("macro-input", vec!["AnyFn"]),
+        ("nested", vec!["AnyFn", "AnyStruct"]),
+        ("plain", vec!["AnyEnum"])
+      ]
+    );
+    assert!(hits[1].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[1].message());
   }
 
   #[test]
