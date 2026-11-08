@@ -26,6 +26,12 @@
         'bound-returned $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bound-returned () $ let ((step (fn (x) $ &+ x 1))) step
           :schema $ quote $ Fn (-> (Fn Task (-> Number)))
+        'hint-after $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn hint-after () (fn (x) (&+ x 1)) (hint-fn $ Fn (-> (Fn Task (-> Number))))
+          :schema $ quote $ Fn (-> (Fn Task (-> Number)))
+        'called-once $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn called-once (t) $ let ((step (fn (x) $ &+ x 1))) $ step t
+          :schema $ quote $ Fn Task (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail) t) ((if-tail true) t) (bound-once ([] t)) ((bound-returned) t)) &unit
+          :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail) t) ((if-tail true) t) (bound-once ([] t)) ((bound-returned) t) ((hint-after) t) (called-once t)) &unit
           :schema $ quote $ Fn (-> Unit)

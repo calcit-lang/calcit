@@ -2282,7 +2282,17 @@ fn lambdas_in_return_position_and_bound_once_take_the_expected_callable_type() {
     String::from_utf8_lossy(&check.stdout),
     String::from_utf8_lossy(&check.stderr)
   );
-  for def in ["tail-lambda", "let-tail", "if-tail", "bound-once", "bound-returned"] {
+  // `hint-after` returns the lambda before a trailing `hint-fn`;
+  // `called-once` keeps the per-call re-check of a directly called binding.
+  for def in [
+    "tail-lambda",
+    "let-tail",
+    "if-tail",
+    "bound-once",
+    "bound-returned",
+    "hint-after",
+    "called-once",
+  ] {
     assert!(
       report.contains(&format!("got `'demo.main/Task` in call at demo.main/{def}")),
       "{def} should see a Task parameter:\n{report}"

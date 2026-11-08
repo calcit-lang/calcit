@@ -14472,7 +14472,14 @@ pub fn preprocess_defn(
           let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
           resolve_namespace_type_refs_for_body(local, ctx.file_ns).resolve_to_fn()
         });
-      let body_count = args.len();
+      // The returned form is the last one that is not a function hint.
+      let tail_index = args
+        .iter()
+        .enumerate()
+        .skip(2)
+        .filter(|(_, form)| !is_source_hint_form(form))
+        .map(|(index, _)| index)
+        .last();
       let mut body_position = 0;
       let declaring_ns = ctx.file_ns;
       let retain_fn_hint = |source: &Calcit, form: Calcit| {
@@ -14487,12 +14494,13 @@ pub fn preprocess_defn(
       };
 
       args.traverse_result::<CalcitErr>(&mut |a| {
+        let index = body_position;
         body_position += 1;
         if to_skip > 0 {
           to_skip -= 1;
           return Ok(());
         }
-        let _tail = tail_context::TailScope::offer(if body_position == body_count { tail_result.clone() } else { None });
+        let _tail = tail_context::TailScope::offer(if Some(index) == tail_index { tail_result.clone() } else { None });
         let form = retain_fn_hint(
           a,
           preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
@@ -14552,7 +14560,7 @@ pub fn preprocess_defn(
         let replayed_from = ctx.check_warnings.borrow().len();
         let replay_result = (|| -> Result<(), CalcitErr> {
           for (index, source) in args.iter().enumerate().skip(2) {
-            let _tail = tail_context::TailScope::offer(if index + 1 == body_count { tail_result.clone() } else { None });
+            let _tail = tail_context::TailScope::offer(if Some(index) == tail_index { tail_result.clone() } else { None });
             let form = retain_fn_hint(
               source,
               preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
@@ -15204,14 +15212,29 @@ fn compile_let_lambda(
   Ok((form, annotation))
 }
 
-fn count_symbol_uses<'a>(forms: impl Iterator<Item = &'a Calcit>, sym: &str) -> usize {
-  forms
-    .map(|form| match form {
-      Calcit::Symbol { sym: current, .. } => usize::from(current.as_ref() == sym),
-      Calcit::List(items) => count_symbol_uses(items.iter(), sym),
-      _ => 0,
-    })
-    .sum()
+/// How often `sym` occurs in source forms, and whether any occurrence is a call head.
+fn symbol_uses<'a>(forms: impl Iterator<Item = &'a Calcit>, sym: &str) -> (usize, bool) {
+  let mut count = 0;
+  let mut called = false;
+  for form in forms {
+    match form {
+      Calcit::Symbol { sym: current, .. } => count += usize::from(current.as_ref() == sym),
+      Calcit::List(items) => {
+        called |= matches!(items.first(), Some(Calcit::Symbol { sym: head, .. }) if head.as_ref() == sym);
+        let (inner, inner_called) = symbol_uses(items.iter(), sym);
+        count += inner;
+        called |= inner_called;
+      }
+      _ => {}
+    }
+  }
+  (count, called)
+}
+
+/// A source `hint-fn` form, which annotates the function rather than returning a value.
+fn is_source_hint_form(form: &Calcit) -> bool {
+  matches!(form, Calcit::List(items) if matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn")
+    || matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _))))
 }
 
 pub fn preprocess_core_let(
@@ -15265,9 +15288,12 @@ pub fn preprocess_core_let(
           scope_types: body_types.clone(),
           scope_locals: explicit_open::capture_scope_locals(),
         });
+      // Only a value use is deferred: a direct call keeps its per-call
+      // re-check (#1655), and a local `fn` is not the lambda constructor.
       if existing_type.is_none()
+        && !ctx.scope_defs.contains("fn")
+        && symbol_uses(args.iter().skip(1), sym) == (1, false)
         && let Some(lambda) = let_lambda.take()
-        && count_symbol_uses(args.iter().skip(1), sym) == 1
       {
         let placeholder = Arc::new(CalcitTypeAnnotation::Dynamic);
         deferred = Some(DeferredLetLambdaGuard::push(sym.to_owned(), placeholder.clone(), Arc::new(lambda)));
