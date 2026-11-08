@@ -15156,7 +15156,7 @@ fn deferred_let_lambda_index(sym: &str, scope_types: &ScopeTypes) -> Option<usiz
     stack
       .borrow()
       .iter()
-      .rposition(|entry| entry.resolved.is_none() && entry.sym.as_ref() == sym && Arc::ptr_eq(&entry.placeholder, current))
+      .rposition(|entry| entry.sym.as_ref() == sym && Arc::ptr_eq(&entry.placeholder, current))
   })
 }
 
@@ -15166,6 +15166,9 @@ fn has_deferred_let_lambda(sym: &str, scope_types: &ScopeTypes) -> bool {
 
 /// Compile the deferred lambda where its name is first resolved, with the
 /// callback context of that position when it has one, in the binding's scope.
+/// A macro can copy the single source use into several places, such as both
+/// branches of an `if` whose scopes were split before the first one resolved
+/// it; those later places still see the placeholder and get the compiled type.
 fn resolve_deferred_let_lambda(
   sym: &str,
   scope_types: &mut ScopeTypes,
@@ -15177,10 +15180,18 @@ fn resolve_deferred_let_lambda(
   let Some(index) = deferred_let_lambda_index(sym, scope_types) else {
     return Ok(());
   };
-  let (lambda, features) = DEFERRED_LET_LAMBDAS.with(|stack| {
+  let (lambda, features, compiled) = DEFERRED_LET_LAMBDAS.with(|stack| {
     let entry = &stack.borrow()[index];
-    (entry.lambda.clone(), entry.features.clone())
+    (
+      entry.lambda.clone(),
+      entry.features.clone(),
+      entry.resolved.as_ref().map(|(_, annotation)| annotation.clone()),
+    )
   });
+  if let Some(annotation) = compiled {
+    scope_types.insert(Arc::from(sym), annotation);
+    return Ok(());
+  }
   let (form, annotation) = compile_let_lambda(&lambda, features, context, file_ns, check_warnings, call_stack)?;
   DEFERRED_LET_LAMBDAS.with(|stack| {
     if let Some(entry) = stack.borrow_mut().get_mut(index) {

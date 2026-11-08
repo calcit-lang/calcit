@@ -29,6 +29,12 @@
         'bound-returned $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bound-returned () $ let ((size (fn (x) $ .len $ :title x))) size
           :schema $ quote $ Fn (-> (Fn Task (-> Number)))
+        'both $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro both (flag xs f) $ quasiquote $ if ~flag (.map ~xs ~f) (.map (.reverse ~xs) ~f)
+          :schema $ quote $ Macro (Expr Bool) (Expr Dynamic) (Expr Dynamic) (-> (Expr Dynamic))
+        'dup-macro $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn dup-macro (ts flag) $ let ((label (fn (x) $ str (:title x) |!))) $ both flag ts label
+          :schema $ quote $ Fn (List Task) Bool (-> (List String))
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail |?) t) ((if-tail false) t) (bound-once ([] t)) (count (bound-in-let ([] t))) ((bound-returned) t)) &unit
+          :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail |?) t) ((if-tail false) t) (bound-once ([] t)) (count (bound-in-let ([] t))) ((bound-returned) t) (dup-macro ([] t) false)) &unit
           :schema $ quote $ Fn (-> Unit)
