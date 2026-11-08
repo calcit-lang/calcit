@@ -915,7 +915,7 @@ try {
         ["edit", "def", `test-traits.main/unproven-${name}`, "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", `unproven-${name}`, ["value"], body])],
         ["edit", "schema", `test-traits.main/unproven-${name}`, "--input-format", "cirru", "--code",
-          "quote $ Fn AnyStruct (-> Number)"],
+          "quote $ Fn AnyStruct (-> Number) (:open :reflect)"],
       ]);
       const originMutation = JSON.stringify(originOperations);
       const originPreview = JSON.parse(runOrigin("edit", "transaction", "--code", originMutation, "--dry-run", "--format", "json"));
@@ -3260,7 +3260,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "open-shortcut", ["callback"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
       run("edit", "schema", "calcit.assert-evidence/open-shortcut", "--input-format", "cirru", "--code",
-        "quote $ Fn AnyFn (-> Number)");
+        "quote $ Fn AnyFn (-> Number) (:open :reflect)");
       const openShortcutOriginal = await readFile(snapshot);
       const openShortcut = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-shortcut", "--format", "edn"], options);
       if (openShortcut.error) throw openShortcut.error;
@@ -3346,7 +3346,7 @@ try {
       run("edit", "def", "calcit.assert-evidence/make-async-tail", "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", "make-async-tail", [], asyncTests[0].code]));
       run("edit", "schema", "calcit.assert-evidence/make-async-tail", "--input-format", "cirru", "--code",
-        "quote $ Fn (-> AnyFn)");
+        "quote $ Fn (-> AnyFn) (:open :host)");
       const asyncOutput = join(project, "async-js-out");
       run("--emit-path", asyncOutput, "js");
       const asyncGenerated = await import(pathToFileURL(join(asyncOutput, "calcit.assert-evidence.mjs")).href);

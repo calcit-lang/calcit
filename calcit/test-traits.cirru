@@ -741,7 +741,7 @@
         'explicit-core-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-core-contains? (value key) (&trait-call Contains :contains? value key)
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-nominal-contains? (value key) (&trait-call ExplicitContainsOps :contains? value key)
           :examples $ []
@@ -870,15 +870,15 @@
         'open-contains-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'open-enum-after-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-enum-after-number (index value) (open-enum-public value index)
           :examples $ []
-          :schema $ quote $ Fn Number AnyEnum (-> Bool)
+          :schema $ quote $ Fn Number AnyEnum (-> Bool) (:open :reflect)
         'open-enum-forward $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-enum-forward (value index) (open-enum-public value index)
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
           :tests $ [] $ %{} 'TestEntry (:name |forwarded-nominal-impl-is-called)
             :code $ quote $ assert= false
               open-enum-forward (OpenContainsFalseLast :item 1) 0
@@ -889,7 +889,7 @@
                 result $ .contains? value index
               if (bool? result) result $ raise |Open-contains-method-must-return-Bool
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
           :tests $ []
             %{} 'TestEntry (:name |last-false-impl-is-called)
               :code $ quote $ assert= false
@@ -908,7 +908,7 @@
         'open-enum-public $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-enum-public (value index) (contains? value index)
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
           :tests $ []
             %{} 'TestEntry (:name |last-false-impl-is-called)
               :code $ quote $ assert= false
@@ -965,14 +965,14 @@
               recur (ExplicitTraitFalse :item index) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-method-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-method-contains? (value index)
             if (> index 0)
               recur value $ - index 1
               .contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-nested-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-nested-contains? (value index)
             assert= false $ recur-public-contains? value 2
@@ -980,21 +980,21 @@
               recur value $ - index 1
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-option-variant? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-option-variant? (value index)
             if (> index 0)
               recur (Option :none) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-public-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-public-contains? (value index)
             if (> index 0)
               recur value $ - index 1
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-sequence-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-sequence-contains? (value index)
             assert= 0 $ loop
@@ -1008,21 +1008,21 @@
                 do (println |recur-index) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'recur-swap-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-swap-contains? (left right index)
             if (> index 0)
               recur right left $ - index 1
               contains? left 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum AnyEnum Number (-> Bool) (:open :reflect)
         'recur-switch-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-switch-contains? (value index)
             if (> index 0)
               recur (ExplicitTraitTrue :item 1) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
@@ -2244,7 +2244,7 @@
               &+ (:x value) 1
               raise "|expected test-traits.struct-left/Point"
           :examples $ []
-          :schema $ quote $ Fn AnyStruct (-> Number)
+          :schema $ quote $ Fn AnyStruct (-> Number) (:open :reflect)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-left
     'test-traits.struct-right $ %{} 'FileEntry

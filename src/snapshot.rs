@@ -3645,6 +3645,89 @@ pub fn collect_open_family_count(snapshot: &Snapshot, namespaces: &HashSet<Strin
   count
 }
 
+/// Error code for `AnyEnum` / `AnyFn` / `AnyStruct` inside a project `Fn`
+/// schema that carries no `(:open …)` reason (blocking since 0.39.0, #2635).
+pub const OPEN_WITHOUT_REASON_ERROR: &str = "E_OPEN_WITHOUT_REASON";
+
+/// One project definition whose `Fn` schema holds open families without a reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenWithoutReasonHit {
+  pub ns: String,
+  pub def: String,
+  /// Open family names in schema order, such as `["AnyEnum", "AnyFn"]`.
+  pub families: Vec<&'static str>,
+}
+
+impl OpenWithoutReasonHit {
+  pub fn message(&self) -> String {
+    let mut unique: Vec<&str> = vec![];
+    for name in self.families.iter().copied() {
+      if !unique.contains(&name) {
+        unique.push(name);
+      }
+    }
+    format!(
+      "[Error] the `:schema` of this definition uses {} inside a `Fn` without an `(:open …)` reason; write the concrete type, or mark the reviewed signature with `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+      unique.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
+    )
+  }
+}
+
+/// `AnyEnum` / `AnyFn` / `AnyStruct` reached through a `Fn` schema whose
+/// enclosing signatures have no `(:open …)` reason. Open families outside any
+/// `Fn` (such as the value type of a `defref`) stay in the `W_OPEN_FAMILY`
+/// summary. Bundled core namespaces keep their open signatures.
+pub fn collect_open_without_reason_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<OpenWithoutReasonHit> {
+  let mut hits = vec![];
+  let mut names: Vec<&String> = namespaces
+    .iter()
+    .filter(|ns| !crate::calcit::is_bundled_core_ns(ns) && snapshot.files.contains_key(*ns))
+    .collect();
+  names.sort();
+  for ns in names {
+    let file = &snapshot.files[ns];
+    let mut defs: Vec<&String> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let schema = &file.defs[def].schema;
+      if schema_annotation_is_missing(schema) {
+        continue;
+      }
+      let mut families = vec![];
+      schema.walk_components(&mut |annotation| {
+        let CalcitTypeAnnotation::Fn(signature) = annotation else {
+          return true;
+        };
+        if signature.open_reason.0.is_some() {
+          return false;
+        }
+        // Count everything below this unreasoned signature once, skipping
+        // nested signatures that give their own reason.
+        annotation.walk_components(&mut |inner| {
+          if let CalcitTypeAnnotation::Fn(inner_signature) = inner
+            && inner_signature.open_reason.0.is_some()
+          {
+            return false;
+          }
+          if let Some(family) = inner.open_family_name() {
+            families.push(family);
+          }
+          true
+        });
+        false
+      });
+      if !families.is_empty() {
+        hits.push(OpenWithoutReasonHit {
+          ns: ns.to_owned(),
+          def: def.to_owned(),
+          families,
+        });
+      }
+    }
+  }
+  hits
+}
+
 /// A bare broad type written in a definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BroadTypeHit {
@@ -7004,6 +7087,39 @@ mod tests {
     let count = collect_open_family_count(&snapshot, &HashSet::from(["app.main".to_owned()]));
     assert_eq!((count.any_enum, count.any_fn, count.any_struct, count.dynamic), (1, 1, 0, 1));
     assert_eq!(count.first, Some(("app.main".to_owned(), "dispatch".to_owned())));
+  }
+
+  #[test]
+  fn open_families_in_unreasoned_fn_schemas_are_errors() {
+    let _guard = crate::program::lock_program_test_state();
+    let mut snapshot = Snapshot::default();
+    let mut defs = HashMap::new();
+    for (name, schema) in [
+      ("show", "Fn AnyEnum (-> String) (:open :reflect)"),
+      ("plain", "Fn AnyEnum (-> String)"),
+      ("nested", "Fn (Fn AnyFn (-> Unit)) AnyStruct (-> Unit)"),
+      ("inner-reason", "Fn (Fn AnyEnum (-> Unit) (:open :reflect)) (-> Unit)"),
+      ("handlers", "Ref (Map Tag AnyFn)"),
+      ("number", "Fn Number (-> String)"),
+    ] {
+      let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
+      entry.schema = parse_schema_annotation_for_write(&parse_one(schema)).expect("schema parses");
+      defs.insert(name.to_owned(), entry);
+    }
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      FileInSnapShot {
+        ns: NsEntry {
+          doc: String::new(),
+          code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
+        },
+        defs,
+      },
+    );
+    let hits = collect_open_without_reason_hits(&snapshot, &HashSet::from(["app.main".to_owned()]));
+    let found: Vec<(&str, Vec<&str>)> = hits.iter().map(|hit| (hit.def.as_str(), hit.families.clone())).collect();
+    assert_eq!(found, vec![("nested", vec!["AnyFn", "AnyStruct"]), ("plain", vec!["AnyEnum"])]);
+    assert!(hits[0].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[0].message());
   }
 
   #[test]
