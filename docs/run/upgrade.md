@@ -35,9 +35,9 @@ related:
 :schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi) (:open :host)
 ```
 
-多行写法里理由单独一行，写成 `:open :reflect`（不加括号）。理由不改变类型关系，加上后检查结果和生成代码不变。
+多行写法里理由单独一行，写成 `:open :reflect`（不加括号）。理由不改变类型关系和生成代码，只消除对应签名的 `E_OPEN_WITHOUT_REASON`。
 
-不在任何 `Fn` 里的开放类型（例如 `defref` 的 `Ref (Map Tag AnyFn)`）、`Dynamic`、依赖库和内置 core 都不报错，仍计入 `W_OPEN_FAMILY` 汇总。
+项目自身 `:schema` 里不在任何 `Fn` 中的开放类型（例如 `defref` 的 `Ref (Map Tag AnyFn)`）和 `Dynamic` 不报 `E_OPEN_WITHOUT_REASON`，没有理由的仍计入 `W_OPEN_FAMILY` 汇总。依赖库和内置 core 既不报错，也不计入汇总。
 
 ## 0.39.0 返回位置和单次使用的 let lambda 也从上下文推断参数（#2637）
 
