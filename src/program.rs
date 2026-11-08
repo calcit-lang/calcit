@@ -1077,20 +1077,11 @@ fn program_def_entry_from_change(
   }
 }
 
-pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
-  // Register the program lookup functions in type_annotation so it can resolve
-  // imported type definitions without a circular module dependency.
-  calcit::register_program_lookups(
-    lookup_runtime_ready,
-    lookup_def_code,
-    lookup_def_schema,
-    crate::runner::preprocess::infer_static_definition_type,
-  );
-  calcit::clear_type_slots();
-
+/// Validates the active entry's `:type-slots` against the loaded definitions
+/// and installs them, so checks and static analyses resolve slots alike.
+pub fn configure_active_entry_type_slots(s: &Snapshot) -> Result<(), String> {
   let entry = s.active_entry()?;
   let entry_owner = format!("entries.{}", s.active_entry_name());
-
   for (slot, type_path) in &entry.type_slots {
     if matches!(type_path.as_str(), ":dynamic" | "dynamic") {
       continue;
@@ -1106,7 +1097,22 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
       ));
     }
   }
-  calcit::configure_entry_type_slots(&entry.type_slots).map_err(|message| format!("{entry_owner}.type-slots: {message}"))?;
+  calcit::configure_entry_type_slots(&entry.type_slots).map_err(|message| format!("{entry_owner}.type-slots: {message}"))
+}
+
+pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
+  // Register the program lookup functions in type_annotation so it can resolve
+  // imported type definitions without a circular module dependency.
+  calcit::register_program_lookups(
+    lookup_runtime_ready,
+    lookup_def_code,
+    lookup_def_schema,
+    crate::runner::preprocess::infer_static_definition_type,
+  );
+  calcit::clear_type_slots();
+
+  let entry = s.active_entry()?;
+  configure_active_entry_type_slots(s)?;
   configure_entry_feature_policy(&entry.feature_policy);
   configure_entry_target(entry.target);
 

@@ -117,11 +117,11 @@ fn run_check_types(
   Ok(())
 }
 
-/// Static analyses read type slots through the same entry bindings as `--check-only` (#2634).
+/// Static analyses read type slots through the same validated entry bindings
+/// as `--check-only` (#2634): a binding to a missing definition is rejected
+/// instead of counting the slot as resolved.
 fn configure_analysis_entry_type_slots(snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  let entry = snapshot.active_entry()?;
-  calcit::calcit::configure_entry_type_slots(&entry.type_slots)
-    .map_err(|message| format!("entries.{}.type-slots: {message}", snapshot.active_entry_name()))
+  calcit::program::configure_active_entry_type_slots(snapshot)
 }
 
 fn run_weak_types(
