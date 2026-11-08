@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "main": "./lib/calcit.procs.mjs",
   "files": [
     "lib/",
