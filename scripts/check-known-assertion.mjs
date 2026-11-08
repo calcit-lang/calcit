@@ -257,6 +257,7 @@ try {
               badCode[3] = "h";
               badSchema[2].find(field => field[0] === ":args")[1] = ["[]", "'AnyFn"];
               badSchema[2].find(field => field[0] === ":generics")[1] = ["[]", "'A", "'C"];
+              badSchema[2].push([":open", ":reflect"]);
             }
             const mutation = JSON.stringify([
               ["edit", "def", `app.main/${copyName}`, "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(badCode)],
@@ -2424,7 +2425,8 @@ try {
         const target = `app.main/${name}`;
         resetRun("edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, ["source", "value"], body]));
         resetRun("edit", "schema", target, "--input-format", "json-ast", "--code", JSON.stringify(["::", "'Fn", ["{}",
-          [":args", ["[]", ...types]], [":return", returned], [":generics", ["[]", ...generics]], [":features", ["#{}", ...features]]]]));
+          [":args", ["[]", ...types]], [":return", returned], [":generics", ["[]", ...generics]], [":features", ["#{}", ...features]],
+          ...(JSON.stringify([types, returned]).includes("'Any") ? [[":open", ":reflect"]] : [])]]));
         const before = await readFile(resetSnapshot);
         const rejected = spawnSync(binary, [resetSnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
         if (rejected.error) throw rejected.error;
@@ -2669,7 +2671,7 @@ try {
         run("edit", "def", target, "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "collection-rejected", parameters, JSON.parse(run("cirru", "parse", "-e", body))]));
         run("edit", "schema", target, "--input-format", "cirru", "--code",
-          `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)`);
+          `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)${argumentTypes.includes("'Any") ? " (:open :reflect)" : ""}`);
         const before = await readFile(snapshot);
         for (const mode of [["--check-only"], ["js"]]) {
           const output = join(project, `collection-${label}-${mode[0] === "js" ? "js" : "native"}`);
@@ -2690,7 +2692,7 @@ try {
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
           `quote $ defn collection-rejected (${parameters.join(" ")}) $ assert-type ({} (:live ${member}) (:absent nil)) $ :: 'Map 'Tag $ :: 'JsNullish 'Number`);
         run("edit", "schema", target, "--input-format", "cirru", "--code",
-          `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)`);
+          `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)${argumentTypes.includes("'Any") ? " (:open :reflect)" : ""}`);
         const before = await readFile(snapshot);
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "test-struct.main",
           "--def", "collection-rejected", "--format", "edn"], options);
@@ -2817,7 +2819,8 @@ try {
           JSON.stringify(["defn", "contextual-rejected", ["flag", ...parameters], JSON.parse(run("cirru", "parse", "-e", body))]));
         run("edit", "schema", target, "--input-format", "json-ast", "--code",
           JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", "'Bool", ...JSON.parse(run("cirru", "parse", "-e", argumentTypes)).slice(1)]],
-            [":return", resultType.startsWith("::") ? JSON.parse(run("cirru", "parse", "-e", resultType)) : resultType]]]));
+            [":return", resultType.startsWith("::") ? JSON.parse(run("cirru", "parse", "-e", resultType)) : resultType],
+            ...(`${argumentTypes} ${resultType}`.includes("'Any") ? [[":open", ":reflect"]] : [])]]));
         const original = await readFile(snapshot);
         const audit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
           "--def", "contextual-rejected", "--format", "edn"], options);
@@ -2872,7 +2875,7 @@ try {
         ["wrong-callback-return", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'Number) (:return 'Number)) 1", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["wrong-callback-arity", [], "NullableEventStore :handlers $ {} $ :click $ fn (left right) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
         ["narrower-callback-input", [], "NullableInputCallbackStore :handlers $ {} $ :click NullableEvent", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
-        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'AnyFn) (:return 'Dynamic)"],
+        ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'AnyFn) (:return 'Dynamic) (:open :reflect)"],
         ["nullable-elimination", ["values"], "ConcreteNumberStore :values values", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag $ :: 'JsNullish 'Number) (:return 'Dynamic)"],
         ["mutable-widening", ["cell"], "NullableRefStore :cell cell", ":: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Dynamic)"],
       ]) {
@@ -3375,7 +3378,7 @@ try {
       const enumKeyTarget = "calcit.assert-evidence/enum-key";
       const enumKeyCode = ["defn", "enum-key", ["value", "key"], [".contains?", "value", "key"]];
       const enumKeySchema = ["::", "'Fn", ["{}", [":generics", ["[]", "'K"]],
-        [":args", ["[]", "'AnyEnum", "'K"]], [":return", "'Bool"]]];
+        [":args", ["[]", "'AnyEnum", "'K"]], [":return", "'Bool"], [":open", ":reflect"]]];
       const enumKeyCases = [
         ["zero", "0", true], ["negative-zero", "-0", true], ["fraction", "1.5", true],
         ["nil", "nil", false], ["false", "false", false], ["true", "true", false],
@@ -3736,7 +3739,7 @@ try {
         ["RecursiveCell", "defstruct RecursiveCell ([] T) (:value T)", "'StructDef"],
         ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'AnyStruct) (:tree $ :: 'Option 'AnyStruct)", "'StructDef"],
         ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
-        ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'AnyStruct)"],
+        ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'AnyStruct) (:open :reflect)"],
         ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
         ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
         ["make-open-number", "defn make-open-number () 1", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],

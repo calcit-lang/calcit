@@ -3677,6 +3677,60 @@ impl OpenWithoutReasonHit {
 /// enclosing signatures have no `(:open …)` reason. Open families outside any
 /// `Fn` (such as the value type of a `defref`) stay in the `W_OPEN_FAMILY`
 /// summary. Bundled core namespaces keep their open signatures.
+/// Collect open families below every `Fn` that gives no `(:open …)` reason.
+/// Macro contracts are entered too, since `Expr`/definition slots may hold
+/// function types.
+fn collect_unreasoned_open_families(annotation: &CalcitTypeAnnotation, families: &mut Vec<&'static str>) {
+  annotation.walk_components(&mut |annotation| match annotation {
+    CalcitTypeAnnotation::Fn(signature) => {
+      if signature.open_reason.0.is_none() {
+        // Count everything below this unreasoned signature once, skipping
+        // nested signatures that give their own reason.
+        annotation.walk_components(&mut |inner| match inner {
+          CalcitTypeAnnotation::Fn(inner_signature) if inner_signature.open_reason.0.is_some() => false,
+          CalcitTypeAnnotation::Macro(_) => {
+            collect_unreasoned_open_families(inner, families);
+            false
+          }
+          _ => {
+            if let Some(family) = inner.open_family_name() {
+              families.push(family);
+            }
+            true
+          }
+        });
+      }
+      false
+    }
+    CalcitTypeAnnotation::Macro(signature) => {
+      for slot in macro_contract_types(signature) {
+        collect_unreasoned_open_families(slot, families);
+      }
+      false
+    }
+    _ => true,
+  });
+}
+
+fn macro_contract_types(signature: &crate::calcit::MacroSignature) -> Vec<&CalcitTypeAnnotation> {
+  use crate::calcit::{MacroExpansionType, MacroSyntaxType};
+  let mut slots = vec![];
+  for input in signature
+    .required_inputs
+    .iter()
+    .chain(signature.optional_inputs.iter())
+    .chain(signature.rest_input.iter())
+  {
+    if let MacroSyntaxType::Expr(inner) = input {
+      slots.push(inner.as_ref());
+    }
+  }
+  if let MacroExpansionType::Expr(inner) | MacroExpansionType::Definition(inner) = &signature.expansion {
+    slots.push(inner.as_ref());
+  }
+  slots
+}
+
 pub fn collect_open_without_reason_hits(snapshot: &Snapshot, namespaces: &HashSet<String>) -> Vec<OpenWithoutReasonHit> {
   let mut hits = vec![];
   let mut names: Vec<&String> = namespaces
@@ -3694,28 +3748,7 @@ pub fn collect_open_without_reason_hits(snapshot: &Snapshot, namespaces: &HashSe
         continue;
       }
       let mut families = vec![];
-      schema.walk_components(&mut |annotation| {
-        let CalcitTypeAnnotation::Fn(signature) = annotation else {
-          return true;
-        };
-        if signature.open_reason.0.is_some() {
-          return false;
-        }
-        // Count everything below this unreasoned signature once, skipping
-        // nested signatures that give their own reason.
-        annotation.walk_components(&mut |inner| {
-          if let CalcitTypeAnnotation::Fn(inner_signature) = inner
-            && inner_signature.open_reason.0.is_some()
-          {
-            return false;
-          }
-          if let Some(family) = inner.open_family_name() {
-            families.push(family);
-          }
-          true
-        });
-        false
-      });
+      collect_unreasoned_open_families(schema, &mut families);
       if !families.is_empty() {
         hits.push(OpenWithoutReasonHit {
           ns: ns.to_owned(),
@@ -7101,6 +7134,11 @@ mod tests {
       ("inner-reason", "Fn (Fn AnyEnum (-> Unit) (:open :reflect)) (-> Unit)"),
       ("handlers", "Ref (Map Tag AnyFn)"),
       ("number", "Fn Number (-> String)"),
+      ("macro-input", "Macro (Expr (Fn AnyFn (-> Unit))) (-> (Expr Number))"),
+      (
+        "macro-reasoned",
+        "Macro (Expr (Fn AnyFn (-> Unit) (:open :reflect))) (-> (Expr Number))",
+      ),
     ] {
       let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
       entry.schema = parse_schema_annotation_for_write(&parse_one(schema)).expect("schema parses");
@@ -7118,8 +7156,15 @@ mod tests {
     );
     let hits = collect_open_without_reason_hits(&snapshot, &HashSet::from(["app.main".to_owned()]));
     let found: Vec<(&str, Vec<&str>)> = hits.iter().map(|hit| (hit.def.as_str(), hit.families.clone())).collect();
-    assert_eq!(found, vec![("nested", vec!["AnyFn", "AnyStruct"]), ("plain", vec!["AnyEnum"])]);
-    assert!(hits[0].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[0].message());
+    assert_eq!(
+      found,
+      vec![
+        ("macro-input", vec!["AnyFn"]),
+        ("nested", vec!["AnyFn", "AnyStruct"]),
+        ("plain", vec!["AnyEnum"])
+      ]
+    );
+    assert!(hits[1].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[1].message());
   }
 
   #[test]
