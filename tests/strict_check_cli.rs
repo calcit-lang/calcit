@@ -2229,11 +2229,28 @@ fn bare_broad_types_fail_the_check_and_block_dependents() {
   assert_eq!(by_name["app.main/main!"]["blocked_by"], serde_json::json!(["app.main/user"]));
   assert_eq!(by_name["app.main/reload!"]["status"], "passed");
 
-  // `AnyFn` is the same type, written on purpose.
-  set_broad_schema("quote $ Fn AnyFn (-> Dynamic)");
+  // `AnyFn` is the same type, written on purpose with a reviewed reason (#2635).
+  set_broad_schema("quote $ Fn AnyFn (-> Dynamic) (:open :reflect)");
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "AnyFn check");
   assert_success(
     &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]),
     "AnyFn strict check",
   );
+
+  // Without the reason the open family is an error since 0.39.0 (#2635).
+  set_broad_schema("quote $ Fn AnyFn (-> Dynamic)");
+  let output = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!output.status.success(), "an unreasoned AnyFn must fail the check");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("[E_OPEN_WITHOUT_REASON] [Error]"), "stderr:\n{stderr}");
+  let output = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert!(!output.status.success(), "an unreasoned AnyFn must fail the strict check");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("strict check json");
+  let results = report["data"]["definitions"].as_array().expect("strict check definitions");
+  let broad = results
+    .iter()
+    .find(|row| row["definition"] == "app.main/broad")
+    .expect("broad definition row");
+  assert_eq!(broad["status"], "failed");
+  assert_eq!(broad["diagnostics"][0]["code"], "E_OPEN_WITHOUT_REASON");
 }

@@ -24,6 +24,21 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.39.0 `Fn` 里的开放类型需要写理由（#2635）
+
+项目自身定义的 `:schema` 中，`Fn` 签名（含嵌套的参数、返回值里的 `Fn`）用到 `AnyEnum`、`AnyFn`、`AnyStruct`，而该签名和外层签名都没有 `(:open …)` 时，0.39.0 起报 `E_OPEN_WITHOUT_REASON` 错误，每个定义一条；`--check-only`、严格检查（该定义记为 failed）和运行前的预检都会失败。
+
+迁移：能写具体类型的改成具体类型；确实接受任意成员的签名加上理由：
+
+```cirru.no-check
+:schema $ quote $ Fn AnyEnum (-> String) (:open :reflect)
+:schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi) (:open :host)
+```
+
+多行写法里理由单独一行，写成 `:open :reflect`（不加括号）。理由不改变类型关系，加上后检查结果和生成代码不变。
+
+不在任何 `Fn` 里的开放类型（例如 `defref` 的 `Ref (Map Tag AnyFn)`）、`Dynamic`、依赖库和内置 core 都不报错，仍计入 `W_OPEN_FAMILY` 汇总。
+
 ## 0.37.0 未绑定的 type slot 改为错误
 
 用到 `*slot` 的定义，如果当前 entry 没有绑定这个 slot，或者绑定成 `Dynamic`，0.37.0 起在所有检查模式下都报 `E_UNBOUND_TYPE_SLOT`，依赖库里的定义也算；`--check-only`、`--incremental`、直接运行和代码生成都会失败。0.36.x 的 `W_UNBOUND_TYPE_SLOT` Notes 随之移除。
