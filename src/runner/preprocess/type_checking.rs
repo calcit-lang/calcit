@@ -2347,6 +2347,89 @@ fn tuple_literal_evidence(
   ))))
 }
 
+/// One value exit of a branching tail, with its own type when it has one.
+struct BranchExit {
+  location: Option<NodeLocation>,
+  actual: Option<Arc<CalcitTypeAnnotation>>,
+  proven: bool,
+}
+
+/// When an `if`/`cond`/`match` tail has no joined type, name each branch's
+/// type instead of reporting the join as `unknown` (#2651). Only a tail whose
+/// every value exit has a concrete type is described; an open or generic exit
+/// keeps the generic unproven-return error.
+fn branch_type_mismatch(
+  last_expr: &Calcit,
+  declared_return_type: &Arc<CalcitTypeAnnotation>,
+  async_invocation: bool,
+  scope_types: &ScopeTypes,
+  recur_parameters: &[Arc<CalcitTypeAnnotation>],
+  info: &CallTypeCheckInfo<'_>,
+) -> Option<CalcitErr> {
+  let is_branching = |expr: &Calcit| matches!(expr, Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If | CalcitSyntax::Match, _))));
+  if !is_branching(result_tail(last_expr)) {
+    return None;
+  }
+  let mut exits = Vec::new();
+  super::type_inference::prove_function_value_exits(last_expr, scope_types, recur_parameters, &mut |exit, scope| {
+    exits.push(BranchExit {
+      location: exit.get_location(),
+      actual: resolve_type_value(exit, scope),
+      proven: expression_is_proven_for(exit, declared_return_type, scope, async_invocation),
+    });
+    true
+  })?;
+  // An open or generic exit is unproven rather than mismatched.
+  let concrete = |exit: &BranchExit| {
+    exit
+      .actual
+      .as_ref()
+      .is_some_and(|actual| !super::contains_dynamic_type(actual) && !actual.contains_type_var())
+  };
+  if exits.len() < 2 || !exits.iter().all(concrete) || exits.iter().all(|exit| exit.proven) {
+    return None;
+  }
+  let (file_ns, def_name) = (info.file_ns, info.def_name);
+  let expected = diagnostic_type_string(declared_return_type);
+  let branches = exits
+    .iter()
+    .enumerate()
+    .map(|(index, exit)| {
+      let actual = diagnostic_type_string(exit.actual.as_deref().expect("every exit has a type"));
+      let mark = if exit.proven { "" } else { " (does not satisfy the return type)" };
+      let at = exit
+        .location
+        .as_ref()
+        .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() == def_name && !location.coord.is_empty())
+        .map(|location| {
+          let coord = location.coord.iter().map(u16::to_string).collect::<Vec<_>>().join(".");
+          format!(" at code@{coord}")
+        })
+        .unwrap_or_default();
+      format!("branch {}{at}: `{actual}`{mark}", index + 1)
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
+  let first_failed = exits.iter().find(|exit| !exit.proven);
+  let location = first_failed
+    .and_then(|exit| exit.location.clone())
+    .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() == def_name)
+    .or_else(|| last_expr.get_location())
+    .or(info.call_location.clone());
+  let mut error = CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!("Function `{file_ns}/{def_name}` returns `{expected}`, but its branches have no common type: {branches}"),
+    "E_BRANCH_TYPE_MISMATCH",
+    &crate::call_stack::CallStackList::default(),
+    location,
+  );
+  error.hint = Some(
+    "Every branch of the returned `if`/`cond`/`match` must produce the declared return type. Convert the mismatched branch, or declare a union of the branch types as the return."
+      .into(),
+  );
+  Some(error)
+}
+
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
   declared_return_type: &Arc<CalcitTypeAnnotation>,
@@ -2427,7 +2510,17 @@ pub(crate) fn check_function_return_type(
     // declaration; reuse the same branch-wise proof as typed joins.
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
     return if (audit || lexical_return) && !proven {
-      Err(unproven("unknown"))
+      Err(
+        branch_type_mismatch(
+          last_expr,
+          declared_return_type,
+          async_invocation,
+          scope_types,
+          recur_parameters.unwrap_or_default(),
+          &info,
+        )
+        .unwrap_or_else(|| unproven("unknown")),
+      )
     } else {
       Ok(())
     };

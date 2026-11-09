@@ -448,6 +448,10 @@ assert= ([] 2 3 4)
 
 限制：仅有递归而无独立退出证据、开放退出、错误递归实参和需要重新绑定泛型实例的转移仍无法证明具体返回；带 optional/rest 参数的递归函数保留现有推断边界。
 
+返回位置的 `if`、`cond`、`match` 各分支类型无法合并、又有分支不满足声明时，报 `E_BRANCH_TYPE_MISMATCH`，逐个列出分支类型并标出不满足返回类型的那些，例如声明返回 Number 的 `if (:done t) 1 |x` 报“branch 1: `:number`, branch 2: `:string` (does not satisfy the return type)”。只要有一个分支推不出类型，仍报原来的 `E_FN_RETURN_UNPROVEN`。
+
+`cond` 必须以 `true` 分支结尾，否则没有命中的值会落到 nil。缺少时在宏调用处报 `E_COND_MISSING_DEFAULT`，提示补上 `true <兜底值>`；确实不可能走到时写 `true $ raise |unreachable`，让这个出口显式可见。
+
 受检调用会独立实例化被调用函数声明的泛型。调用者的 `T` 和辅助函数声明的 `T` 即使同名，也不是同一个推断变量；`List<List<T>>` 可以传给泛型 `List<U>` 参数，并保留调用者的元素关系。闭包捕获的外层类型变量不是闭包的新泛型，后续实参不能把它重新绑定为另一个具体类型。开放输出仍保留开放证据，不能因实例化获得未经证明的具体类型。
 
 泛型工厂也可以从已有的期望类型取得返回专属参数。例如合同 `<Item,Store>(Store) -> EmptyBox<Item,Store>` 的空列表工厂，可以在 `assert-type`、具体函数实参或声明的函数返回位置实例化为 `EmptyBox<Number,String>`；输入仍须证明 `Store=String`。纯 `let` 包装与各个分支可保留同一关系，各次调用独立实例化。检查会重新验证全部输入、回调结果和 trait 约束，真实的 `List<Dynamic>` 不会因此变成 `List<Number>`。局部别名的临时证明不会跨过可能修改该值的作用；已有局部值也不能在每次使用时任意换一种类型。

@@ -2155,7 +2155,9 @@ fn default_proof_rejects_directional_dynamic_flows() {
     ("p03", "E_FN_RETURN_UNPROVEN"),
     ("p12", "E_FN_RETURN_UNPROVEN"),
     ("p21", "E_CALL_ARGUMENT_UNPROVEN"),
-    ("p30", "E_FN_RETURN_UNPROVEN"),
+    // `and a b` expands to branches that return `false`; with every branch
+    // typed, the report names them instead of an unknown join (#2651).
+    ("p30", "E_BRANCH_TYPE_MISMATCH"),
     ("p31", "E_CALL_ARGUMENT_UNPROVEN"),
   ];
   for (case, code) in cases {
@@ -2166,6 +2168,12 @@ fn default_proof_rejects_directional_dynamic_flows() {
         let _strict = StrictTypesReset::enabled();
         let err = run_check_only(&load_fixture_entries(&path)).expect_err("default proof must reject the directional flow");
         assert!(err.contains(code), "{case}: expected {code}, got: {err}");
+        if case == "p30" {
+          assert!(
+            err.contains("`:number`") && err.contains("`:bool`"),
+            "p30 must name its branch types: {err}"
+          );
+        }
       }
       let _compat = StrictTypesReset::disabled();
       run_check_only(&load_fixture_entries(&path)).expect("--compat-types keeps the old behavior");
