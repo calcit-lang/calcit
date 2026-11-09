@@ -5031,8 +5031,23 @@ impl CalcitTypeAnnotation {
         });
       }
       (Self::TypeVar(_), _) | (_, Self::TypeVar(_)) => return None,
-      // A slot resolves later through its own relation arm.
       (_, Self::TypeSlot(_)) => return None,
+      // An actual slot relates as its bound type, so a slot bound to this union
+      // relates as the union itself (#2642) and one bound to a member as that
+      // member. A recursive binding defers to the slot's own relation arm.
+      (Self::TypeSlot(name), _) => {
+        let bound = resolve_type_slot(name)?;
+        return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || match mode {
+          PlainRelationMode::Proof => bound.prove_with_bindings(expected, bindings),
+          PlainRelationMode::Compatibility => {
+            if bound.compatible_with_bindings(expected, bindings) {
+              Proven
+            } else {
+              Mismatch
+            }
+          }
+        });
+      }
       _ => {}
     }
     let relate = |actual: &Self, expected: &Self, bindings: &mut TypeBindings| match mode {
@@ -5878,8 +5893,9 @@ impl CalcitTypeAnnotation {
         .unwrap_or(false),
         None => true,
       },
-      // TypeSlot: resolve the bound type from the global registry and delegate
-      (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
+      // TypeSlot: resolve the bound type from the global registry and delegate,
+      // keeping the slot on its own side of the relation.
+      (Self::TypeSlot(name), other) => {
         if let Some(resolved) = resolve_type_slot(name) {
           return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
             resolved.compatible_with_bindings(other, bindings)
@@ -5887,6 +5903,15 @@ impl CalcitTypeAnnotation {
           .unwrap_or(false);
         }
         // Slot not yet bound — treat as Dynamic (no checking)
+        true
+      }
+      (other, Self::TypeSlot(name)) => {
+        if let Some(resolved) = resolve_type_slot(name) {
+          return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
+            other.compatible_with_bindings(resolved.as_ref(), bindings)
+          })
+          .unwrap_or(false);
+        }
         true
       }
       _ => false,
@@ -10305,6 +10330,24 @@ mod tests {
       TypeProof::Proven
     );
 
+    pop_type_slot_override(&slot_name);
+    clear_type_slots();
+  }
+
+  #[test]
+  fn compatibility_preserves_direction_when_the_expected_type_slot_resolves() {
+    clear_type_slots();
+    let slot_name: Arc<str> = Arc::from("maybe-count");
+    let js_nullish_number = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      NullableOrigin::JsHost,
+    ));
+    push_type_slot_override(slot_name.clone(), js_nullish_number.clone());
+    let slot = CalcitTypeAnnotation::TypeSlot(slot_name.clone());
+    let mut bindings = TypeBindings::new();
+    // `Number` fits a slot bound to `JsNullish<Number>`, not the other way round.
+    assert!(CalcitTypeAnnotation::Number.compatible_with_bindings(&slot, &mut bindings));
+    assert!(!slot.compatible_with_bindings(&CalcitTypeAnnotation::Number, &mut bindings));
     pop_type_slot_override(&slot_name);
     clear_type_slots();
   }

@@ -51,6 +51,57 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn slot_bound_to_union_accepts_callbacks_over_that_union() {
+  // `:dispatch-op` is bound to the union `ViewOp`; a callback typed over the
+  // same union is the slot's callback, and a slot value fits a `ViewOp`
+  // parameter (#2642). A callback over one member
+  // cannot take every slot value and stays rejected.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/slot-union-callback.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "union-typed callback for a union-bound slot",
+  );
+
+  // A slot bound to one member passes where the union is expected.
+  let member_directory = TestDirectory::create();
+  let member_bound = member_directory.snapshot();
+  let source = fs::read_to_string("tests/fixtures/slot-union-callback.cirru").unwrap();
+  fs::write(
+    &member_bound,
+    source.replace("(:dispatch-op 'demo.main/ViewOp)", "(:dispatch-op 'demo.main/AppOp)"),
+  )
+  .unwrap();
+  assert_success(
+    &run_calcit(&member_bound, &["--check-only", "--all-defs"]),
+    "member-bound slot value passed to a union parameter",
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "demo.main/on-op!",
+        "--code",
+        "quote $ Fn demo.main/AppOp (-> Unit)",
+      ],
+    ),
+    "narrow the callback to one member",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "a member-only callback cannot take every slot value");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  assert!(output.contains("W_FN_ARG_TYPE_MISMATCH"), "{output}");
+}
+
+#[test]
 fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
