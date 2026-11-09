@@ -4088,7 +4088,7 @@ pub(crate) fn infer_struct_field_type(
   resolve_struct_field_type(type_info.as_ref(), field_name)
 }
 
-fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+pub(super) fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   let idx = type_info.resolve_to_struct()?.index_of(field_name)?;
   resolve_struct_field_type_by_index(type_info, idx)
 }
