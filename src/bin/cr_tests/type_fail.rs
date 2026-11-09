@@ -448,6 +448,32 @@ fn removed_map_kv_method_points_to_filter_map_kv() {
 }
 
 #[test]
+fn local_method_sharing_a_retired_core_name_still_dispatches() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _restore = StrictTypesReset {
+      previous: runner::preprocess::is_strict_types_enabled(),
+    };
+    for strict in [false, true] {
+      runner::preprocess::set_strict_types(strict);
+      // A local struct's own `.write-text` is not the retired core FsPath alias, in either call form.
+      let entries = load_fixture_entries("calcit/type-fail/local-retired-name-method.cirru");
+      run_check_only(&entries).unwrap_or_else(|err| panic!("local `.write-text` must dispatch (strict={strict}): {err}"));
+      // The core FsPath alias stays retired in both call forms.
+      for snippet in [
+        ".write-text (fs:path |/calcit-retired-method-does-not-exist/file) |content",
+        "(fs:path |/calcit-retired-method-does-not-exist/file) .write-text |content",
+      ] {
+        let entries = load_snippet_entries(snippet);
+        let err = run_check_only(&entries).expect_err(&format!("core `.write-text` must stay retired (strict={strict}): {snippet}"));
+        assert!(err.contains("E_RETIRED_METHOD"), "missing retirement diagnostic: {err}");
+        assert!(err.contains("`.write-text!`"), "missing replacement spelling: {err}");
+      }
+    }
+  });
+}
+
+#[test]
 fn strict_map_list_kv_preserves_key_value_and_result_types() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
