@@ -368,7 +368,8 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
         | type_coverage::WeakTypeIntent::JsFfiNonHost => review_required.push(finding),
         type_coverage::WeakTypeIntent::IntentionalJsFfi
         | type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic
-        | type_coverage::WeakTypeIntent::IntentionalDecode => retained_boundaries.push(finding),
+        | type_coverage::WeakTypeIntent::IntentionalDecode
+        | type_coverage::WeakTypeIntent::IntentionalOpen => retained_boundaries.push(finding),
         type_coverage::WeakTypeIntent::IntentionalMacroSyntax | type_coverage::WeakTypeIntent::DeclaredUnit => {}
       }
     }

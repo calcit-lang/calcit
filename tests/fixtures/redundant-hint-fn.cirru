@@ -52,10 +52,17 @@
                   :title x
               .map ts label
           :schema $ quote $ Fn (List Task) (-> (List String))
+        'h7-each $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn h7-each (ts)
+            each ts $ fn (x)
+              hint-fn $ Fn Task (-> Unit)
+              println $ :title x
+          :schema $ quote $ Fn (List Task) (-> Unit)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 t $ Task :title |a :done true
               println (h1-user-fn t) (h2-filter $ [] t) (h3-map $ [] t) (h4-narrower $ [] 1) ((h5-tail) t) (h6-bound-once $ [] t)
+              h7-each $ [] t
               , &unit
           :schema $ quote $ Fn (-> Unit)

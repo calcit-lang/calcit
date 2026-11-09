@@ -1927,7 +1927,23 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
         note.replace(snapshot::LEGACY_TYPE_SYNTAX_CODE, snapshot::LEGACY_TYPE_SYNTAX_WARNING)
       );
     }
-    snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?
+    let schema = snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
+    // Only calcit.core may rely on a checker built-in rule; `--check-only`
+    // would reject the saved schema with E_OPEN_WITHOUT_REASON.
+    if !calcit::calcit::is_bundled_core_ns(namespace) && snapshot::schema_uses_intrinsic_reason(&schema) {
+      let hit = snapshot::OpenWithoutReasonHit {
+        ns: namespace.to_owned(),
+        def: resolved_definition.clone(),
+        families: vec![],
+        reserved_intrinsic: true,
+      };
+      return Err(format!(
+        "Schema validation failed ({}): {}",
+        snapshot::OPEN_WITHOUT_REASON_ERROR,
+        hit.message()
+      ));
+    }
+    schema
   };
 
   save_schema_preserving_snapshot(

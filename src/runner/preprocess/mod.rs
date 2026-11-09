@@ -5,6 +5,7 @@ mod broad_type_evidence;
 mod checked_call_contract;
 mod condition_evidence;
 mod explicit_open;
+mod intrinsic_rules;
 mod js_ffi;
 mod post_lowering;
 mod proof_provenance;
@@ -19,6 +20,7 @@ mod type_inference;
 mod type_rewriting;
 mod union_types;
 
+pub use intrinsic_rules::intrinsic_rule_summary;
 pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundant_hint_sites};
 
 use crate::calcit::NullableOrigin;

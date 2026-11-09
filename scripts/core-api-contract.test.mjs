@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { assertHistoryPreserved, assertPreserved, baselinePath, collect, readEdn, readMigrations, writeEdn } from "./core-api-contract.mjs";
+import { assertHistoryPreserved, assertPreserved, baselinePath, collect, readEdn, readMigrations, withoutOpenReason, writeEdn } from "./core-api-contract.mjs";
 
 const baseline = readEdn(readFileSync(baselinePath, "utf8"));
 const definition = (data, name) => data.definitions.find(row => row.name.symbol === `calcit.core/${name}`);
@@ -33,6 +33,17 @@ test("scalar conversion evidence preserves precise results and distinct display 
   }
   assert.ok(!baseline["method-contracts"].some(row => row.name === ".show"),
     "a Show trait declaration must not fabricate a builtin implementation");
+});
+
+test("open reasons are schema notes, not part of the frozen signature", () => {
+  const callback = ["::", "'Fn", ["{}", [":args", ["[]", "'Dynamic"]], [":open", ":reflect"], [":return", "'Bool"]]];
+  const marked = ["{}", [":args", ["[]", "'Dynamic", callback]], [":kind", "'Fn"], [":open", ":intrinsic"], [":return", "'Dynamic"]];
+  assert.deepEqual(withoutOpenReason(marked), [
+    "{}",
+    [":args", ["[]", "'Dynamic", ["::", "'Fn", ["{}", [":args", ["[]", "'Dynamic"]], [":return", "'Bool"]]]]],
+    [":kind", "'Fn"],
+    [":return", "'Dynamic"],
+  ]);
 });
 
 test("native EDN preserves symbols, tags and raw schema quotes", () => {

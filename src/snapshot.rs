@@ -2131,7 +2131,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   if let Some(open) = open_node
     && !matches!(open, Cirru::Leaf(value) if value.starts_with(':') && crate::calcit::FnOpenReason::parse(value).is_some())
   {
-    return Err("`:open` must be `:reflect`, `:decode` or `:host`".to_owned());
+    return Err("`:open` must be `:reflect`, `:decode` or `:host` (`:intrinsic` is reserved for calcit.core)".to_owned());
   }
 
   if let Some(async_value) = async_node
@@ -3605,6 +3605,7 @@ impl OpenFamilyCount {
 /// Count `AnyEnum` / `AnyFn` / `AnyStruct` / `Dynamic` in the written
 /// `:schema` of project definitions. A `Fn` marked `(:open :reflect)`,
 /// `(:open :decode)` or `(:open :host)` is skipped with everything inside it.
+/// `(:open :intrinsic)` is reserved for calcit.core and gives no reason here.
 pub fn collect_open_family_count(snapshot: &Snapshot, namespaces: &HashSet<String>) -> OpenFamilyCount {
   let mut count = OpenFamilyCount::default();
   let mut names: Vec<&String> = namespaces
@@ -3624,7 +3625,7 @@ pub fn collect_open_family_count(snapshot: &Snapshot, namespaces: &HashSet<Strin
       let before = count.total();
       schema.walk_components(&mut |annotation| {
         if let CalcitTypeAnnotation::Fn(signature) = annotation
-          && signature.open_reason.0.is_some()
+          && project_open_reason(signature).is_some()
         {
           return false;
         }
@@ -3656,10 +3657,17 @@ pub struct OpenWithoutReasonHit {
   pub def: String,
   /// Open family names in schema order, such as `["AnyEnum", "AnyFn"]`.
   pub families: Vec<&'static str>,
+  /// The schema writes `(:open :intrinsic)`, which only calcit.core may use.
+  pub reserved_intrinsic: bool,
 }
 
 impl OpenWithoutReasonHit {
   pub fn message(&self) -> String {
+    if self.reserved_intrinsic {
+      return String::from(
+        "[Error] `(:open :intrinsic)` is reserved for calcit.core functions whose types the checker decides with a built-in rule; write the concrete type, or mark the reviewed signature with `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+      );
+    }
     let mut unique: Vec<&str> = vec![];
     for name in self.families.iter().copied() {
       if !unique.contains(&name) {
@@ -3680,14 +3688,43 @@ impl OpenWithoutReasonHit {
 /// Collect open families below every `Fn` that gives no `(:open …)` reason.
 /// Macro contracts are entered too, since `Expr`/definition slots may hold
 /// function types.
+/// The reason a project signature gives for its open types. Project code
+/// cannot rely on a checker built-in rule, so `:intrinsic` counts as none.
+fn project_open_reason(signature: &crate::calcit::CalcitFnTypeAnnotation) -> Option<crate::calcit::FnOpenReason> {
+  signature
+    .open_reason
+    .0
+    .filter(|reason| *reason != crate::calcit::FnOpenReason::Intrinsic)
+}
+
+/// Whether any signature in the schema writes `(:open :intrinsic)`.
+pub fn schema_uses_intrinsic_reason(annotation: &CalcitTypeAnnotation) -> bool {
+  let mut found = false;
+  annotation.walk_components(&mut |annotation| {
+    if let CalcitTypeAnnotation::Fn(signature) = annotation
+      && signature.open_reason.0 == Some(crate::calcit::FnOpenReason::Intrinsic)
+    {
+      found = true;
+    }
+    if let CalcitTypeAnnotation::Macro(signature) = annotation {
+      for slot in macro_contract_types(signature) {
+        found |= schema_uses_intrinsic_reason(slot);
+      }
+      return false;
+    }
+    !found
+  });
+  found
+}
+
 fn collect_unreasoned_open_families(annotation: &CalcitTypeAnnotation, families: &mut Vec<&'static str>) {
   annotation.walk_components(&mut |annotation| match annotation {
     CalcitTypeAnnotation::Fn(signature) => {
-      if signature.open_reason.0.is_none() {
+      if project_open_reason(signature).is_none() {
         // Count everything below this unreasoned signature once, skipping
         // nested signatures that give their own reason.
         annotation.walk_components(&mut |inner| match inner {
-          CalcitTypeAnnotation::Fn(inner_signature) if inner_signature.open_reason.0.is_some() => false,
+          CalcitTypeAnnotation::Fn(inner_signature) if project_open_reason(inner_signature).is_some() => false,
           CalcitTypeAnnotation::Macro(_) => {
             collect_unreasoned_open_families(inner, families);
             false
@@ -3749,11 +3786,13 @@ pub fn collect_open_without_reason_hits(snapshot: &Snapshot, namespaces: &HashSe
       }
       let mut families = vec![];
       collect_unreasoned_open_families(schema, &mut families);
-      if !families.is_empty() {
+      let reserved_intrinsic = schema_uses_intrinsic_reason(schema);
+      if !families.is_empty() || reserved_intrinsic {
         hits.push(OpenWithoutReasonHit {
           ns: ns.to_owned(),
           def: def.to_owned(),
           families,
+          reserved_intrinsic,
         });
       }
     }
@@ -7102,6 +7141,8 @@ mod tests {
       ("show", "Fn AnyEnum (-> String) (:open :reflect)"),
       ("dispatch", "Fn AnyEnum (Fn AnyFn $ -> Dynamic) (-> Unit)"),
       ("plain", "Fn Number (-> String)"),
+      // Reserved for calcit.core: counted like an unreasoned signature.
+      ("reserved", "Fn Dynamic (-> Unit) (:open :intrinsic)"),
     ] {
       let mut entry = CodeEntry::from_code(Cirru::leaf("nil"));
       entry.schema = parse_schema_annotation_for_write(&parse_one(schema)).expect("schema parses");
@@ -7118,7 +7159,7 @@ mod tests {
       },
     );
     let count = collect_open_family_count(&snapshot, &HashSet::from(["app.main".to_owned()]));
-    assert_eq!((count.any_enum, count.any_fn, count.any_struct, count.dynamic), (1, 1, 0, 1));
+    assert_eq!((count.any_enum, count.any_fn, count.any_struct, count.dynamic), (1, 1, 0, 2));
     assert_eq!(count.first, Some(("app.main".to_owned(), "dispatch".to_owned())));
   }
 
@@ -7135,6 +7176,8 @@ mod tests {
       ("outer-reason", "Fn (Fn AnyFn (-> Unit)) (-> Unit) (:open :reflect)"),
       ("handlers", "Ref (Map Tag AnyFn)"),
       ("number", "Fn Number (-> String)"),
+      ("intrinsic", "Fn Dynamic (-> Unit) (:open :intrinsic)"),
+      ("intrinsic-any", "Fn AnyEnum (-> String) (:open :intrinsic)"),
       ("macro-input", "Macro (Expr (Fn AnyFn (-> Unit))) (-> (Expr Number))"),
       (
         "macro-reasoned",
@@ -7160,12 +7203,17 @@ mod tests {
     assert_eq!(
       found,
       vec![
+        ("intrinsic", vec![]),
+        ("intrinsic-any", vec!["AnyEnum"]),
         ("macro-input", vec!["AnyFn"]),
         ("nested", vec!["AnyFn", "AnyStruct"]),
         ("plain", vec!["AnyEnum"])
       ]
     );
-    assert!(hits[1].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[1].message());
+    // `:intrinsic` is reserved for calcit.core, so project code gets no reason from it.
+    assert!(hits[0].reserved_intrinsic && hits[1].reserved_intrinsic);
+    assert!(hits[0].message().contains("reserved for calcit.core"), "{}", hits[0].message());
+    assert!(hits[3].message().contains("`AnyFn`, `AnyStruct`"), "{}", hits[3].message());
   }
 
   #[test]

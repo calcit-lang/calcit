@@ -315,6 +315,60 @@ fn schema_clear_and_structural_edits_preserve_missing_intent() {
 }
 
 #[test]
+fn schema_edit_rejects_the_core_only_intrinsic_reason() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/helper";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn helper (x) x",
+      ],
+    ),
+    "create helper",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let rejected = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "schema",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ Fn Dynamic (-> Dynamic) (:open :intrinsic)",
+    ],
+  );
+  assert!(!rejected.status.success(), "project schemas cannot use :intrinsic");
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(stderr.contains("E_OPEN_WITHOUT_REASON") && stderr.contains("reserved"), "{stderr}");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "a rejected schema is not written");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn Dynamic (-> Dynamic) (:open :reflect)",
+      ],
+    ),
+    "other reasons stay writable",
+  );
+}
+
+#[test]
 fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);

@@ -480,7 +480,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
           }
           _ => {
             return Err(String::from(
-              "`:open` takes one reason: `(:open :reflect)`, `(:open :decode)` or `(:open :host)`",
+              "`:open` takes one reason: `(:open :reflect)`, `(:open :decode)` or `(:open :host)`; `(:open :intrinsic)` is reserved for calcit.core",
             ));
           }
         }

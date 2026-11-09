@@ -11274,7 +11274,8 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
 fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   // Hints on lambdas passed straight to a typed callback slot, returned as a
   // declared `Fn` result, or bound once by `let` (#2637) repeat the signature
-  // inference already gives; the narrower `Fn Dynamic` hint stays.
+  // inference already gives. The narrower `Fn Dynamic` hint stays, and so does
+  // a `Unit` result for `each`: it is narrower than the open callback result.
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/redundant-hint-fn.cirru", &snapshot).unwrap();
@@ -11325,7 +11326,7 @@ fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   ]);
   assert_success(&run_calcit(&snapshot, &apply), "apply redundant hint removal");
   let after = fs::read_to_string(&snapshot).unwrap();
-  assert_eq!(after.matches("hint-fn").count(), 1, "only the narrower hint remains:\n{after}");
+  assert_eq!(after.matches("hint-fn").count(), 2, "only the narrower hints remain:\n{after}");
   assert!(after.contains("hint-fn $ Fn Dynamic $ -> Number"), "{after}");
 
   let recheck = run_calcit(&snapshot, &["--check-only"]);

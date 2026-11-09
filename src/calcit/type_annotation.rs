@@ -11269,6 +11269,10 @@ pub enum FnOpenReason {
   Decode,
   /// Passes host (JS) values through an FFI boundary.
   Host,
+  /// A `calcit.core` function whose argument and result types the checker
+  /// decides with a built-in rule per receiver kind (#2649). The schema keeps
+  /// the open shape that the runtime accepts; project code cannot use it.
+  Intrinsic,
 }
 
 impl FnOpenReason {
@@ -11277,6 +11281,7 @@ impl FnOpenReason {
       FnOpenReason::Reflect => "reflect",
       FnOpenReason::Decode => "decode",
       FnOpenReason::Host => "host",
+      FnOpenReason::Intrinsic => "intrinsic",
     }
   }
 
@@ -11285,6 +11290,7 @@ impl FnOpenReason {
       "reflect" => Some(FnOpenReason::Reflect),
       "decode" => Some(FnOpenReason::Decode),
       "host" => Some(FnOpenReason::Host),
+      "intrinsic" => Some(FnOpenReason::Intrinsic),
       _ => None,
     }
   }

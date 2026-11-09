@@ -219,6 +219,7 @@ fn collect_quality_snapshot(options: &QualityCommand, snapshot: &snapshot::Snaps
         | WeakTypeIntent::IntentionalMacroSyntax
         | WeakTypeIntent::IntentionalTypeSlotDynamic
         | WeakTypeIntent::IntentionalDecode
+        | WeakTypeIntent::IntentionalOpen
         | WeakTypeIntent::ExplicitUnsafe
         | WeakTypeIntent::DeclaredUnit => {}
       }
