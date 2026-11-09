@@ -21,7 +21,8 @@ fn branch_and_cond_failures_have_dedicated_codes() {
       .find(|item| item["definition"] == definition)
       .unwrap_or_else(|| panic!("no diagnostic for {definition}: {diagnostics:#?}"))
   };
-  for definition in ["demo.main/if-mixed", "demo.main/cond-mixed"] {
+  // `recur-mixed` also has a `recur` exit, which adds no value branch.
+  for definition in ["demo.main/if-mixed", "demo.main/cond-mixed", "demo.main/recur-mixed"] {
     let item = find(definition);
     assert_eq!(item["code"], "E_BRANCH_TYPE_MISMATCH", "{item:#?}");
     let message = item["message"].as_str().unwrap();
@@ -50,5 +51,5 @@ fn branch_and_cond_failures_have_dedicated_codes() {
       "{passing}: {diagnostics:#?}"
     );
   }
-  assert_eq!(diagnostics.len(), 4, "{diagnostics:#?}");
+  assert_eq!(diagnostics.len(), 5, "{diagnostics:#?}");
 }

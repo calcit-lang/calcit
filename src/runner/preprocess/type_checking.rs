@@ -2363,6 +2363,7 @@ fn branch_type_mismatch(
   declared_return_type: &Arc<CalcitTypeAnnotation>,
   async_invocation: bool,
   scope_types: &ScopeTypes,
+  recur_parameters: &[Arc<CalcitTypeAnnotation>],
   info: &CallTypeCheckInfo<'_>,
 ) -> Option<CalcitErr> {
   let is_branching = |expr: &Calcit| matches!(expr, Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If | CalcitSyntax::Match, _))));
@@ -2370,7 +2371,7 @@ fn branch_type_mismatch(
     return None;
   }
   let mut exits = Vec::new();
-  super::type_inference::prove_function_value_exits(last_expr, scope_types, &[], &mut |exit, scope| {
+  super::type_inference::prove_function_value_exits(last_expr, scope_types, recur_parameters, &mut |exit, scope| {
     exits.push(BranchExit {
       location: exit.get_location(),
       actual: resolve_type_value(exit, scope),
@@ -2510,8 +2511,15 @@ pub(crate) fn check_function_return_type(
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
     return if (audit || lexical_return) && !proven {
       Err(
-        branch_type_mismatch(last_expr, declared_return_type, async_invocation, scope_types, &info)
-          .unwrap_or_else(|| unproven("unknown")),
+        branch_type_mismatch(
+          last_expr,
+          declared_return_type,
+          async_invocation,
+          scope_types,
+          recur_parameters.unwrap_or_default(),
+          &info,
+        )
+        .unwrap_or_else(|| unproven("unknown")),
       )
     } else {
       Ok(())

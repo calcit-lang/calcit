@@ -28,6 +28,10 @@
             (> n 1) 1
             (< n 0) 2
           :schema $ quote $ Fn Number (-> Number)
+        'recur-mixed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recur-mixed (n) $ if (> n 10) 1
+            if (< n 0) |x $ recur (inc n)
+          :schema $ quote $ Fn Number (-> Number)
         'if-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-ok (t) $ if (:done t) 1 2
           :schema $ quote $ Fn Task (-> Number)

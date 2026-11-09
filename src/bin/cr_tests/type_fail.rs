@@ -2168,6 +2168,12 @@ fn default_proof_rejects_directional_dynamic_flows() {
         let _strict = StrictTypesReset::enabled();
         let err = run_check_only(&load_fixture_entries(&path)).expect_err("default proof must reject the directional flow");
         assert!(err.contains(code), "{case}: expected {code}, got: {err}");
+        if case == "p30" {
+          assert!(
+            err.contains("`:number`") && err.contains("`:bool`"),
+            "p30 must name its branch types: {err}"
+          );
+        }
       }
       let _compat = StrictTypesReset::disabled();
       run_check_only(&load_fixture_entries(&path)).expect("--compat-types keeps the old behavior");
