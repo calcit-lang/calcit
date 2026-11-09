@@ -424,52 +424,13 @@ fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
 }
 
 #[test]
-fn legacy_map_kv_contract_warns_in_compatibility_and_fails_in_strict_mode() {
+fn removed_map_kv_method_points_to_filter_map_kv() {
   run_with_large_stack(|| {
-    let snippets = [
-      "let\n    output $ map-kv\n      {} $ :a 1\n      fn (k v) ([] k 1)\n  assert-type output $ quote $ Map Tag String\n  , output",
-      "({} (:a 1)) .map-kv $ fn (k v) (:: :skip)",
-    ];
-
-    for snippet in snippets {
-      let entries = load_snippet_entries(snippet);
-      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-        .expect("compatibility mode should retain the legacy map-kv boundary as a warning");
-      let warnings = warnings.borrow();
-      let contract_warnings = warnings
-        .iter()
-        .filter(|warning| warning.code() == Some("W_MAP_KV_UNPROVEN_CONTRACT"))
-        .collect::<Vec<_>>();
-      assert_eq!(contract_warnings.len(), 1, "expected one map-kv migration warning: {warnings:?}");
-      assert!(contract_warnings[0].message().contains("result is Dynamic"));
-      assert!(contract_warnings[0].message().contains("filter-map-kv"));
-    }
-
-    let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      open_reason: Default::default(),
-      runtime_arity: None,
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types: vec![],
-      return_type: Arc::new(CalcitTypeAnnotation::Unit),
-      fn_kind: SchemaKind::Fn,
-      rest_type: None,
-      features: Arc::new(HashSet::new()),
-    })));
     let _strict = StrictTypesReset::enabled();
-    for snippet in snippets {
-      let entries = load_snippet_entries_with_main_schema(snippet, Some(main_schema.clone()));
-      let error = run_check_only(&entries).expect_err("strict mode must reject the unproven map-kv contract");
-      assert!(
-        error.contains("E_MAP_KV_UNPROVEN_CONTRACT"),
-        "unexpected strict map-kv error: {error}"
-      );
-      assert!(
-        error.contains("MapEntryDecision"),
-        "migration must name the typed replacement: {error}"
-      );
-    }
+    let entries = load_snippet_entries("({} (:a 1)) .map-kv $ fn (k v) ([] k v)");
+    let err = run_check_only(&entries).expect_err("the removed `.map-kv` method must not resolve");
+    assert!(err.contains("E_RETIRED_METHOD"), "missing retirement diagnostic: {err}");
+    assert!(err.contains("`.filter-map-kv`"), "missing replacement spelling: {err}");
   });
 }
 
@@ -618,26 +579,6 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
       Some(main_schema(constructor_type)),
     );
     run_check_only(&function_value).expect("bare %none must remain valid when a constructor function is expected");
-  });
-}
-
-#[test]
-fn postfix_map_kv_gate_ignores_concrete_non_map_receivers() {
-  run_with_large_stack(|| {
-    let entries = load_snippet_entries("|text .map-kv $ fn (value) value");
-    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
-
-    if let Err(error) = result {
-      assert!(!error.to_string().contains("E_MAP_KV_UNPROVEN_CONTRACT"), "{error}");
-    }
-    assert!(
-      warnings
-        .borrow()
-        .iter()
-        .all(|warning| warning.code() != Some("W_MAP_KV_UNPROVEN_CONTRACT")),
-      "a concrete non-Map receiver must not be diagnosed as the legacy core map-kv contract"
-    );
   });
 }
 
@@ -1975,6 +1916,7 @@ fn retired_core_functions_report_preferred_spelling() {
       ("turn-str 1", "turn-str", "to-string", "0.31.0"),
       ("some-in? ({} (:a 1)) ([] :a)", "some-in?", ".ok? $ get-in x path", "0.31.0"),
       ("round? 1", "round?", "integer?", "0.31.0"),
+      ("map-kv ({} (:a 1)) $ fn (k v) ([] k v)", "map-kv", "filter-map-kv", "0.41.0"),
       (
         "foldl-shortcut ([] 1) 0 0 $ fn (acc x) (:: false acc)",
         "foldl-shortcut",

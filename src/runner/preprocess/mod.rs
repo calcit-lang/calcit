@@ -1516,6 +1516,10 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "bind the arguments once, then use `range (inc (negate x)) x`, or `range (inc (- (+ x x) y)) y` with an end `y`",
     )),
     "round?" => Some(("0.31.0", "use `integer?`, or the Number method `.integer?`")),
+    "map-kv" => Some((
+      "0.41.0",
+      "use `filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` from the callback",
+    )),
     "foldl-shortcut" => Some((
       "0.31.0",
       "use `fold-while` with a reducer returning `ControlFlow :continue acc` or `ControlFlow :break value`; it returns the accumulator when no step breaks, so pass the old default explicitly where it differs",
@@ -4351,54 +4355,6 @@ fn preprocess_list_call(
 
   let has_anonymous_definition_marker = matches!(args.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_");
 
-  let postfix_receiver_type = resolve_type_value(&head_form, scope_types);
-  let postfix_receiver_could_be_map = matches!(
-    postfix_receiver_type.as_deref(),
-    None | Some(CalcitTypeAnnotation::Dynamic) | Some(CalcitTypeAnnotation::Map(_, _))
-  );
-  let uses_legacy_map_kv = is_constructor_named("map-kv")
-    || (postfix_receiver_could_be_map
-      && matches!(args.first(), Some(Calcit::Method(name, calcit::MethodKind::Invoke(_))) if name.as_ref() == "map-kv"));
-  // The two definition-attached tests on calcit.core/map-kv deliberately pin
-  // the retained runtime compatibility behavior. They compile as synthetic
-  // core definitions; ordinary project tests and source calls still lint.
-  let intentional_core_contract_test = file_ns == calcit::CORE_NS
-    && call_location
-      .as_ref()
-      .is_some_and(|location| location.def.starts_with("&calcit:test:"));
-  if should_emit_project_source_lint(file_ns) && uses_legacy_map_kv && !intentional_core_contract_test {
-    if strict_types_enabled()
-      && let Some(callback) = args.get(1)
-      && inline_callback_has_nil_return_path(callback)
-    {
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        "`map-kv` callback uses nil as a legacy drop sentinel; use `filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path",
-        "E_NIL_CALLBACK_SENTINEL",
-        call_stack,
-        call_location,
-      ));
-    }
-
-    let message = "`map-kv` has an unproven legacy pair/drop contract and its result is Dynamic; use `filter-map-kv` with `MapEntryDecision :keep key value` or `MapEntryDecision :drop` so output key/value types are proven";
-    if strict_types_enabled() {
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        message,
-        "E_MAP_KV_UNPROVEN_CONTRACT",
-        call_stack,
-        call_location,
-      ));
-    }
-    gen_check_warning_code_at(
-      format!("[Warn] {message}"),
-      "W_MAP_KV_UNPROVEN_CONTRACT",
-      file_ns,
-      call_location.clone(),
-      check_warnings,
-    );
-  }
-
   // `%{} _ (:field value) ...` is the canonical anonymous-struct
   // constructor. Lower it before macro arguments are preprocessed so `_`
   // cannot be mistaken for a normal unresolved symbol.
@@ -6616,47 +6572,6 @@ fn preprocess_known_function_call(
       }
     }
     Ok(Calcit::from(CalcitList::from(ys)))
-  }
-}
-
-/// Conservatively recognizes only inline callbacks whose return control flow
-/// structurally contains `nil`. A nil nested inside a returned pair is data,
-/// not the legacy `map-kv` drop sentinel, and must remain valid.
-fn inline_callback_has_nil_return_path(callback: &Calcit) -> bool {
-  let Calcit::List(nodes) = callback else {
-    return false;
-  };
-  let body_start = match nodes.first().and_then(source_callable_name) {
-    Some("fn") => 2,
-    Some("defn") => 3,
-    _ => return false,
-  };
-  nodes.len() > body_start && nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path)
-}
-
-fn expression_has_nil_return_path(expr: &Calcit) -> bool {
-  if matches!(expr, Calcit::Nil) {
-    return true;
-  }
-  let Calcit::List(nodes) = expr else {
-    return false;
-  };
-  let Some(head) = nodes.first() else {
-    return false;
-  };
-  match source_callable_name(head) {
-    Some("if") => {
-      // `if` without an else branch manufactures nil when the condition is false.
-      nodes.len() == 3
-        || nodes.get(2).is_some_and(expression_has_nil_return_path)
-        || nodes.get(3).is_some_and(expression_has_nil_return_path)
-    }
-    Some("do" | "let" | "&let") => nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path),
-    Some("match") => nodes
-      .iter()
-      .skip(2)
-      .any(|branch| matches!(branch, Calcit::List(pair) if pair.get(1).is_some_and(expression_has_nil_return_path))),
-    _ => false,
   }
 }
 
@@ -10688,6 +10603,9 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     (T::List(_), "join-str") => Some("`.join-str` was a same-implementation alias; use `.join-string`"),
     (T::List(_), "nth") => Some("`.nth` was a same-implementation alias; use `.get`, which returns Option<T>"),
     (T::Map(_, _), "mappend") => Some("`.mappend` was a same-implementation alias; use `.merge`"),
+    (T::Map(_, _), "map-kv") => Some(
+      "`.map-kv` was removed in 0.41.0; use `.filter-map-kv` and return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` from the callback",
+    ),
     (T::List(_), "add") => Some("`.add` was a single-item alias of `.append`; use `.append` (or `.concat` to join two Lists)"),
     (T::List(_) | T::Map(_, _) | T::Set(_), "count") => Some("`.count` was a same-implementation alias; use `.len`"),
     (T::Map(_, _), "add") => Some(
@@ -20579,59 +20497,6 @@ mod tests {
       &macro_stack,
     )
     .expect("the source migration rule must not reject private parameters owned by a macro expansion");
-  }
-
-  #[test]
-  fn strict_types_rejects_inline_map_kv_nil_sentinel_without_rejecting_nil_pair_values() {
-    let _state = lock_preprocess_test_state();
-    let callback = Cirru::List(vec![
-      Cirru::leaf("fn"),
-      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
-      Cirru::List(vec![
-        Cirru::leaf("if"),
-        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("v")]),
-        Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("v")]),
-        Cirru::leaf("nil"),
-      ]),
-    ]);
-    let expr = Cirru::List(vec![Cirru::leaf("map-kv"), Cirru::List(vec![Cirru::leaf("{}")]), callback]);
-    let code = code_to_calcit(&expr, "tests.strict-nil", "map-entries", vec![]).expect("parse map-kv callback");
-
-    {
-      let _compat = StrictTypesGuard::new(false);
-      preprocess_test_expr(&code).expect("compatibility mode should preserve the legacy map-kv sentinel");
-    }
-
-    let _strict = StrictTypesGuard::new(true);
-    let error = preprocess_test_expr(&code).expect_err("strict mode should reject the nil drop sentinel");
-    assert_eq!(error.code.as_deref(), Some("E_NIL_CALLBACK_SENTINEL"));
-    assert!(error.msg.contains("filter-map-kv"));
-    assert!(error.location.is_some(), "strict diagnostic should retain the map-kv call location");
-
-    let nil_value_callback = Cirru::List(vec![
-      Cirru::leaf("fn"),
-      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
-      Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("nil")]),
-    ]);
-    let nil_value_code =
-      code_to_calcit(&nil_value_callback, "tests.strict-nil", "keep-nil-value", vec![]).expect("parse callback that keeps a nil value");
-    assert!(
-      !inline_callback_has_nil_return_path(&nil_value_code),
-      "nil nested in the returned key/value pair is data, not a drop sentinel"
-    );
-
-    let missing_else_callback = Cirru::List(vec![
-      Cirru::leaf("fn"),
-      Cirru::List(vec![Cirru::leaf("k"), Cirru::leaf("v")]),
-      Cirru::List(vec![
-        Cirru::leaf("if"),
-        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("v")]),
-        Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("k"), Cirru::leaf("v")]),
-      ]),
-    ]);
-    let missing_else_code = code_to_calcit(&missing_else_callback, "tests.strict-nil", "implicit-drop", vec![])
-      .expect("parse callback with an implicit nil branch");
-    assert!(inline_callback_has_nil_return_path(&missing_else_code));
   }
 
   #[test]

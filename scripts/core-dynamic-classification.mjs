@@ -307,10 +307,6 @@ const reviewedCompatibilityPositions = new Map([
     "&turn-string|schema.args.0",
     "内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外的 to-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。",
   ],
-  [
-    "map-kv|schema.return",
-    "Legacy map-kv accepts an untyped two-item List or a nil/enum drop sentinel, so its output key/value relation cannot be proven. Typed callers receive W_MAP_KV_UNPROVEN_CONTRACT and must migrate to filter-map-kv.",
-  ],
 ]);
 const reviewedPublicBoundaryPositions = new Map([
   [

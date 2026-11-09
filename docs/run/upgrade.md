@@ -24,6 +24,15 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 删除 `map-kv`（#2655）
+
+`calcit.core/map-kv` 和 Map 方法 `.map-kv` 已删除。调用处会报 removed-name 诊断并指向替代写法：
+
+- 结果仍是 Map、或者要丢弃部分条目：改用 `filter-map-kv`，回调返回 `MapEntryDecision :keep key value` 或 `MapEntryDecision :drop`。
+- 要收集成 `List<U>`：改用 `map-list-kv`。
+
+原来 `fn (k v) ([] k (f v))` 的回调改成 `fn (k v) (MapEntryDecision :keep k (f v))`；返回 `nil` 丢弃条目的分支改成 `MapEntryDecision :drop`。
+
 ## 0.39.0 `Fn` 里的开放类型需要写理由（#2635）
 
 项目自身定义的 `:schema` 中，`Fn` 签名（含嵌套的参数、返回值里的 `Fn`）用到 `AnyEnum`、`AnyFn`、`AnyStruct`，而该签名和外层签名都没有 `(:open …)` 时，0.39.0 起报 `E_OPEN_WITHOUT_REASON` 错误，每个定义一条；`--check-only`、严格检查（该定义记为 failed）和运行前的预检都会失败。
