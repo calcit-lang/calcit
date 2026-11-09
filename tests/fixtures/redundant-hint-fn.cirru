@@ -58,11 +58,21 @@
               hint-fn $ Fn Task (-> Unit)
               println $ :title x
           :schema $ quote $ Fn (List Task) (-> Unit)
+        'Patch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Patch (:mount (Fn Task (-> String))) (:noop)
+          :schema $ quote EnumDef
+        'h8-enum-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn h8-enum-payload ()
+            %:: Patch :mount $ fn (x)
+              hint-fn $ Fn Task (-> String)
+              :title x
+          :schema $ quote $ Fn (-> Patch)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 t $ Task :title |a :done true
               println (h1-user-fn t) (h2-filter $ [] t) (h3-map $ [] t) (h4-narrower $ [] 1) ((h5-tail) t) (h6-bound-once $ [] t)
               h7-each $ [] t
+              h8-enum-payload
               , &unit
           :schema $ quote $ Fn (-> Unit)

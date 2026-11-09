@@ -11274,7 +11274,8 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
 fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   // Hints on lambdas passed straight to a typed callback slot, returned as a
   // declared `Fn` result, or bound once by `let` (#2637) repeat the signature
-  // inference already gives. The narrower `Fn Dynamic` hint stays, and so does
+  // inference already gives, as does a lambda passed as a typed enum payload
+  // (#2644). The narrower `Fn Dynamic` hint stays, and so does
   // a `Unit` result for `each`: it is narrower than the open callback result.
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -11285,8 +11286,8 @@ fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   assert_success(&check, "redundant hints are advisory");
   let check_text = String::from_utf8_lossy(&check.stderr);
   assert!(
-    check_text.contains("[W_REDUNDANT_HINT_FN] 5 `hint-fn`"),
-    "summary counts the five repeated hints:\n{check_text}"
+    check_text.contains("[W_REDUNDANT_HINT_FN] 6 `hint-fn`"),
+    "summary counts the six repeated hints:\n{check_text}"
   );
 
   let base = ["fix", "--rule", "redundant-hint-fn-v1", "--format", "json"];
@@ -11310,7 +11311,8 @@ fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
       "demo.main/h2-filter",
       "demo.main/h3-map",
       "demo.main/h5-tail",
-      "demo.main/h6-bound-once"
+      "demo.main/h6-bound-once",
+      "demo.main/h8-enum-payload"
     ],
     "{report}"
   );
