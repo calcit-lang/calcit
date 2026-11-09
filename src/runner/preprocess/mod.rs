@@ -4643,6 +4643,19 @@ fn preprocess_list_call(
               check_value_position_nil_branch(arg, "method argument", true, scope_types, file_ns, call_stack, None)?;
             }
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
+            // A let-bound lambda compiled at this use had only its placeholder
+            // type when the contract was first specialized (#2637); recompute it
+            // from the processed arguments so the callable gate sees the lambda.
+            let method_context = if contextual_args.iter().skip(1).any(|arg| {
+              matches!(arg, Calcit::Symbol { sym, .. } if scope_types.get(sym).is_some_and(|current| {
+                DEFERRED_LET_LAMBDAS.with(|stack| stack.borrow().iter().any(|entry| entry.sym == *sym && !Arc::ptr_eq(&entry.placeholder, current)))
+              }))
+            }) {
+              expected_method_argument_types(type_info.as_ref(), method_name.as_ref(), &processed_args, scope_types).or(method_context)
+            } else {
+              method_context
+            };
+            let expected_method_args = method_context.as_ref().map(|context| context.argument_types.as_slice());
             if let Some(expected_method_args) = expected_method_args
               && let Ok(method_args) = processed_args.skip(1)
             {
