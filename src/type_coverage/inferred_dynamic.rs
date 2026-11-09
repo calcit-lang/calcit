@@ -141,13 +141,23 @@ fn classify_call_siblings(siblings: &[&Calcit]) -> Source {
   }
 }
 
-fn push_local(local: &CalcitLocal, binding: &'static str, source: Source, findings: &mut BTreeSet<Finding>) {
-  // Generated bindings of macro expansions have no source coordinate.
-  let Some(coord) = local.location.as_ref() else { return };
+#[derive(Default)]
+struct Collector {
+  findings: BTreeSet<Finding>,
+  /// Open bindings with no source coordinate, usually rebuilt by a user macro.
+  /// They have no path to report, but still count as Dynamic debt.
+  unlocated: usize,
+}
+
+fn push_local(local: &CalcitLocal, binding: &'static str, source: Source, out: &mut Collector) {
   if !is_open(&local.type_info) || local.sym.starts_with('&') {
     return;
   }
-  findings.insert(Finding {
+  let Some(coord) = local.location.as_ref() else {
+    out.unlocated += 1;
+    return;
+  };
+  out.findings.insert(Finding {
     coord: coord.iter().map(|index| usize::from(*index)).collect(),
     name: local.sym.to_string(),
     binding,
@@ -156,7 +166,7 @@ fn push_local(local: &CalcitLocal, binding: &'static str, source: Source, findin
   });
 }
 
-fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, findings: &mut BTreeSet<Finding>) {
+fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, out: &mut Collector) {
   let Calcit::List(items) = node else { return };
   match items.first() {
     Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote | CalcitSyntax::Defmacro, _)) => return,
@@ -164,7 +174,7 @@ fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, findin
       if let Some(Calcit::List(pair)) = items.get(1)
         && let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1))
       {
-        push_local(local, "let", classify_value(value), findings);
+        push_local(local, "let", classify_value(value), out);
       }
     }
     Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => {
@@ -173,17 +183,21 @@ fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, findin
       if !top_level && let Some(Calcit::List(params)) = items.get(2) {
         for param in params.iter() {
           if let Calcit::Local(local) = param {
-            push_local(local, "param", lambda_source.unwrap_or(Source::InferenceFailure), findings);
+            push_local(local, "param", lambda_source.unwrap_or(Source::InferenceFailure), out);
           }
         }
       }
     }
     _ => {}
   }
+  // Only a call passes its other arguments to a lambda; under a special form
+  // such as `&let`, `defn` or `if`, the siblings are bindings, parameters or
+  // conditions, so a lambda there has no contract from them.
+  let is_call = !matches!(items.first(), Some(Calcit::Syntax(..)));
   let children = items.iter().collect::<Vec<_>>();
   for (index, child) in children.iter().enumerate() {
     let is_lambda = matches!(child, Calcit::List(inner) if matches!(inner.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))));
-    let source = (is_lambda && index > 0).then(|| {
+    let source = (is_call && is_lambda && index > 0).then(|| {
       let siblings = children
         .iter()
         .enumerate()
@@ -192,26 +206,26 @@ fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, findin
         .collect::<Vec<_>>();
       classify_call_siblings(&siblings)
     });
-    collect(child, false, source, findings);
+    collect(child, false, source, out);
   }
 }
 
 /// Open bindings in one compiled definition, ordered by source coordinate.
-pub(crate) fn definition_findings(namespace: &str, definition: &str) -> Result<Vec<Finding>, String> {
+pub(crate) fn definition_findings(namespace: &str, definition: &str) -> Result<(Vec<Finding>, usize), String> {
   let warnings = RefCell::new(Vec::new());
   runner::preprocess::compile_source_def_for_snapshot(namespace, definition, &warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
   let compiled =
     program::lookup_compiled_def(namespace, definition).ok_or_else(|| format!("no compiled form for {namespace}/{definition}"))?;
-  let mut findings = BTreeSet::new();
-  collect(&compiled.preprocessed_code, true, None, &mut findings);
-  Ok(findings.into_iter().collect())
+  let mut out = Collector::default();
+  collect(&compiled.preprocessed_code, true, None, &mut out);
+  Ok((out.findings.into_iter().collect(), out.unlocated))
 }
 
 pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
   if !matches!(options.format.as_str(), "human" | "text" | "edn" | "json") {
     return Err(format!(
-      "Unknown weak-types output format `{}`. Expected `human`, `edn`, or `json`.",
+      "Unknown weak-types output format `{}`. Expected `human` (or `text`), `edn`, or `json`.",
       options.format
     ));
   }
@@ -219,11 +233,13 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
   cli_handlers::prepare_program_for_type_query(snapshot)?;
   let mut findings = Vec::new();
   let mut failed = Vec::new();
+  let mut unlocated = 0;
   let mut by_source: BTreeMap<&'static str, usize> = BTreeMap::new();
   let mut by_binding: BTreeMap<&'static str, usize> = BTreeMap::new();
   for (namespace, definition, _) in entries {
     match definition_findings(namespace, definition) {
-      Ok(rows) => {
+      Ok((rows, unlocated_here)) => {
+        unlocated += unlocated_here;
         for row in rows {
           *by_source.entry(row.source.as_str()).or_default() += 1;
           *by_binding.entry(row.binding).or_default() += 1;
@@ -252,6 +268,7 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
         "findings": findings.len(),
         "by_source": by_source,
         "by_binding": by_binding,
+        "unlocated_bindings": unlocated,
         "uncompiled_definitions": failed.len(),
       },
       "findings": if options.summary_only { Vec::<Value>::new() } else { findings.clone() },
@@ -272,6 +289,9 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
       );
       for (source, count) in &by_source {
         println!("- {source}: {count}");
+      }
+      if unlocated > 0 {
+        println!("- open bindings without a source path (macro generated): {unlocated}");
       }
       if !failed.is_empty() {
         println!("- definitions that did not compile: {}", failed.len());

@@ -29,6 +29,12 @@
                 total $ foldl xs 0 $ fn (acc x) (+ acc x)
               map xs $ fn (x) (* x total)
           :schema $ quote $ Fn (List Number) (-> (List Number))
+        'returned $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn returned (data)
+            let
+                copy data
+              fn (y) (str copy y)
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () nil
           :schema $ quote $ Fn (-> Nil)
