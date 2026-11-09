@@ -45,10 +45,10 @@ pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use ffi::handle_ffi_command;
 pub(crate) use fix::handle_fix_command;
-pub(crate) use normalize::VIEW_OPTION_NIL_ROUNDTRIP;
 pub use normalize::{
   AnalyzeView, deprecated_command_hint, deprecated_type_policy_flag_hint, normalize_consolidated_views, removed_command_error,
 };
+pub(crate) use normalize::{VIEW_INFERRED_DYNAMIC, VIEW_OPTION_NIL_ROUNDTRIP};
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::{

@@ -138,6 +138,12 @@ fn run_weak_types(
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let snapshot = effective.as_ref();
+  if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_INFERRED_DYNAMIC) {
+    // Compile against the same proven helper contracts as the other views, so
+    // an unannotated helper does not leave a Dynamic the effective snapshot lacks.
+    let _output_guard = ProgramOutputGuard::new(true, false);
+    return type_coverage::inferred_dynamic::run(options, snapshot);
+  }
   if options.schema_evidence {
     struct StrictTypesGuard(bool);
     impl Drop for StrictTypesGuard {

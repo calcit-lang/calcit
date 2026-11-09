@@ -19,6 +19,8 @@ use md5::{Digest, Md5};
 
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
 
+#[path = "type_coverage/inferred_dynamic.rs"]
+pub(crate) mod inferred_dynamic;
 #[path = "type_coverage/option_nil_roundtrip.rs"]
 pub(crate) mod option_nil_roundtrip;
 
@@ -781,7 +783,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
       "data-dynamic" => WeakTypeKind::DataDynamic,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic; or exactly one view: coverage, dynamic-method, deprecated-call"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic; or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip, inferred-dynamic"
         ));
       }
     };

@@ -16,6 +16,7 @@ const VIEW_COVERAGE: &str = "coverage";
 const VIEW_DYNAMIC_METHOD: &str = "dynamic-method";
 const VIEW_DEPRECATED_CALL: &str = "deprecated-call";
 pub(crate) const VIEW_OPTION_NIL_ROUNDTRIP: &str = "option-nil-roundtrip";
+pub(crate) const VIEW_INFERRED_DYNAMIC: &str = "inferred-dynamic";
 
 /// Removed entries without a replacement name this instead of a command.
 const NO_REPLACEMENT: &str = "";
@@ -493,7 +494,13 @@ fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
     return Ok(None);
   };
   let kinds = raw.split(',').map(str::trim).filter(|kind| !kind.is_empty()).collect::<Vec<_>>();
-  let views = [VIEW_COVERAGE, VIEW_DYNAMIC_METHOD, VIEW_DEPRECATED_CALL, VIEW_OPTION_NIL_ROUNDTRIP];
+  let views = [
+    VIEW_COVERAGE,
+    VIEW_DYNAMIC_METHOD,
+    VIEW_DEPRECATED_CALL,
+    VIEW_OPTION_NIL_ROUNDTRIP,
+    VIEW_INFERRED_DYNAMIC,
+  ];
   let selected = views.iter().copied().filter(|view| kinds.contains(view)).collect::<Vec<_>>();
   match (selected.as_slice(), kinds.len()) {
     ([], _) => Ok(None),
@@ -532,17 +539,17 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<(ToplevelCa
     ("--ffi-evidence", options.ffi_evidence),
     ("--schema-evidence", options.schema_evidence),
   ];
-  if view == Some(VIEW_OPTION_NIL_ROUNDTRIP) {
-    reject_options(VIEW_OPTION_NIL_ROUNDTRIP, &evidence_flags)?;
+  if let Some(view @ (VIEW_OPTION_NIL_ROUNDTRIP | VIEW_INFERRED_DYNAMIC)) = view {
+    reject_options(view, &evidence_flags)?;
     reject_options(
-      VIEW_OPTION_NIL_ROUNDTRIP,
+      view,
       &[
         ("--incremental", options.incremental),
         ("--coverage-level", options.coverage_level.is_some()),
       ],
     )?;
     let mut options = options.clone();
-    options.only = Some(VIEW_OPTION_NIL_ROUNDTRIP.to_owned());
+    options.only = Some(view.to_owned());
     return Ok((
       ToplevelCalcit {
         subcommand: Some(CalcitCommand::Analyze(AnalyzeCommand {
