@@ -2254,3 +2254,49 @@ fn bare_broad_types_fail_the_check_and_block_dependents() {
   assert_eq!(broad["status"], "failed");
   assert_eq!(broad["diagnostics"][0]["code"], "E_OPEN_WITHOUT_REASON");
 }
+
+#[test]
+fn lambdas_in_return_position_and_bound_once_take_the_expected_callable_type() {
+  // #2637: the declared `Fn` result types a lambda written as the last body
+  // form (through `let` bodies and `if` branches), and a lambda bound once by
+  // `let` takes the callback type of its only use. `dup-macro` passes that
+  // use to a macro that copies it into both `if` branches.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/contextual-lambda-positions.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "inferred lambdas check without hints");
+  let run = run_calcit(&snapshot, &[]);
+  assert_success(&run, "inferred lambdas run");
+  assert!(
+    String::from_utf8_lossy(&run.stdout).contains("3 abc? 0 ([] \"|abc!\") 1 3 ([] \"|abc!\")"),
+    "{}",
+    String::from_utf8_lossy(&run.stdout)
+  );
+
+  // The same positions with a body that cannot accept `Task` now fail, which
+  // shows each parameter is typed rather than left open.
+  fs::copy("tests/fixtures/contextual-lambda-mismatch.cirru", &snapshot).unwrap();
+  let check = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!check.status.success(), "typed parameters reject `&+` on a Task");
+  let report = format!(
+    "{}{}",
+    String::from_utf8_lossy(&check.stdout),
+    String::from_utf8_lossy(&check.stderr)
+  );
+  // `hint-after` returns the lambda before a trailing `hint-fn`;
+  // `called-once` keeps the per-call re-check of a directly called binding.
+  for def in [
+    "tail-lambda",
+    "let-tail",
+    "if-tail",
+    "bound-once",
+    "bound-returned",
+    "hint-after",
+    "called-once",
+  ] {
+    assert!(
+      report.contains(&format!("got `'demo.main/Task` in call at demo.main/{def}")),
+      "{def} should see a Task parameter:\n{report}"
+    );
+  }
+}

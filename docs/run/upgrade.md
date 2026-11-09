@@ -35,9 +35,15 @@ related:
 :schema $ quote $ Fn Dynamic (-> AnyFn) (:features :js-ffi) (:open :host)
 ```
 
-多行写法里理由单独一行，写成 `:open :reflect`（不加括号）。理由不改变类型关系，加上后检查结果和生成代码不变。
+多行写法里理由单独一行，写成 `:open :reflect`（不加括号）。理由不改变类型关系和生成代码，只消除对应签名的 `E_OPEN_WITHOUT_REASON`。
 
-不在任何 `Fn` 里的开放类型（例如 `defref` 的 `Ref (Map Tag AnyFn)`）、`Dynamic`、依赖库和内置 core 都不报错，仍计入 `W_OPEN_FAMILY` 汇总。
+项目自身 `:schema` 里不在任何 `Fn` 中的开放类型（例如 `defref` 的 `Ref (Map Tag AnyFn)`）和 `Dynamic` 不报 `E_OPEN_WITHOUT_REASON`，没有理由的仍计入 `W_OPEN_FAMILY` 汇总。依赖库和内置 core 既不报错，也不计入汇总。
+
+## 0.39.0 返回位置和单次使用的 let lambda 也从上下文推断参数（#2637）
+
+函数声明的返回类型是 `Fn` 时，写在返回位置的 lambda（含 `let`/`do` 末尾和 `if` 分支）按该签名得到参数类型；
+`let` 绑定后只使用一次的 lambda 按那次使用的期望类型推断。以前这些参数是开放的，现在类型错误会被报告，
+例如对 `Task` 参数做数值运算。按报告修正 lambda 体，或在确实需要开放参数时写 `hint-fn $ Fn Dynamic …`。
 
 ## 0.37.0 未绑定的 type slot 改为错误
 

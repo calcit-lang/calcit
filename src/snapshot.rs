@@ -7132,6 +7132,7 @@ mod tests {
       ("plain", "Fn AnyEnum (-> String)"),
       ("nested", "Fn (Fn AnyFn (-> Unit)) AnyStruct (-> Unit)"),
       ("inner-reason", "Fn (Fn AnyEnum (-> Unit) (:open :reflect)) (-> Unit)"),
+      ("outer-reason", "Fn (Fn AnyFn (-> Unit)) (-> Unit) (:open :reflect)"),
       ("handlers", "Ref (Map Tag AnyFn)"),
       ("number", "Fn Number (-> String)"),
       ("macro-input", "Macro (Expr (Fn AnyFn (-> Unit))) (-> (Expr Number))"),
