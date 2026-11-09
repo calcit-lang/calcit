@@ -688,6 +688,30 @@ fn format_schema_query_json(
   format_schema_cirru_query_json(id, source, query_schema_cirru(annotation, true)?, revision, runtime_arity)
 }
 
+/// Built-in checker rule lines for a calcit.core signature marked
+/// `(:open :intrinsic)` (#2649); `None` for every other definition.
+fn intrinsic_checker_rules(namespace: &str, definition: &str, schema: &CalcitTypeAnnotation) -> Option<&'static [&'static str]> {
+  if namespace != calcit::calcit::CORE_NS {
+    return None;
+  }
+  match schema {
+    CalcitTypeAnnotation::Fn(signature) if signature.open_reason.0 == Some(calcit::calcit::FnOpenReason::Intrinsic) => {
+      calcit::runner::preprocess::intrinsic_rule_summary(definition)
+    }
+    _ => None,
+  }
+}
+
+fn write_intrinsic_checker_rules(out: &mut String, rules: &[&str]) {
+  let _ = writeln!(
+    out,
+    "\n## Checker rules\n\nThe schema keeps the open shape the runtime accepts; the checker decides the types per receiver:\n"
+  );
+  for rule in rules {
+    let _ = writeln!(out, "- `{rule}`");
+  }
+}
+
 fn format_schema_cirru_query_json(
   id: &str,
   source: &str,
@@ -5577,6 +5601,9 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str, entry: Optio
   } else {
     let _ = writeln!(&mut out, "_No explicit schema._");
   }
+  if let Some(rules) = intrinsic_checker_rules(namespace, resolved_definition.as_str(), code_entry.schema.as_ref()) {
+    write_intrinsic_checker_rules(&mut out, rules);
+  }
 
   emit_cli_output(&out, render_to_stderr);
   Ok(())
@@ -5639,21 +5666,35 @@ fn handle_schema(
 
   let mut out = String::new();
 
+  let checker_rules = intrinsic_checker_rules(namespace, resolved_definition.as_str(), code_entry.schema.as_ref());
   if structured {
     let id = format!("{namespace}/{resolved_definition}");
-    format.print_json_text(&format_schema_cirru_query_json(
+    let text = format_schema_cirru_query_json(
       &id,
       &namespace_source(&snapshot, namespace),
       definition_schema_cirru(&code_entry.schema, true)?,
       snapshot::definition_revision(code_entry)?,
       None,
-    )?)?;
+    )?;
+    let text = match checker_rules {
+      Some(rules) => {
+        let mut envelope: serde_json::Value =
+          serde_json::from_str(&text).map_err(|error| format!("Failed to decode schema query JSON: {error}"))?;
+        envelope["data"]["checker_rules"] = serde_json::json!(rules);
+        serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode schema query JSON: {error}"))?
+      }
+      None => text,
+    };
+    format.print_json_text(&text)?;
     return Ok(());
   }
 
   if let Some(cirru) = definition_schema_cirru(&code_entry.schema, true)? {
     let _ = writeln!(&mut out, "# Schema for `{namespace}/{resolved_definition}`\n");
     out.push_str(&markdown_fenced_block("cirru", &format_query_schema_oneline(&cirru)?));
+    if let Some(rules) = checker_rules {
+      write_intrinsic_checker_rules(&mut out, rules);
+    }
   } else {
     let _ = writeln!(
       &mut out,

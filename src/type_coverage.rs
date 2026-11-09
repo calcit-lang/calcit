@@ -281,6 +281,10 @@ pub enum WeakTypeIntent {
   /// Dynamic input of a function whose schema declares `:decode-boundary`:
   /// a reviewed place that checks open data into a concrete type.
   IntentionalDecode,
+  /// Dynamic inside a `Fn` schema that states why it stays open with
+  /// `(:open :reflect|:decode|:host)`, or a calcit.core signature marked
+  /// `(:open :intrinsic)` whose types the checker decides with a built-in rule.
+  IntentionalOpen,
   ExplicitUnsafe,
   DeclaredUnit,
 }
@@ -294,6 +298,7 @@ impl WeakTypeIntent {
       Self::IntentionalMacroSyntax => "intentional-macro-syntax",
       Self::IntentionalTypeSlotDynamic => "intentional-type-slot-dynamic",
       Self::IntentionalDecode => "intentional-decode",
+      Self::IntentionalOpen => "intentional-open",
       Self::ExplicitUnsafe => "explicit-unsafe",
       Self::DeclaredUnit => "declared-unit",
     }
@@ -307,6 +312,7 @@ impl WeakTypeIntent {
       Self::IntentionalMacroSyntax,
       Self::IntentionalTypeSlotDynamic,
       Self::IntentionalDecode,
+      Self::IntentionalOpen,
       Self::ExplicitUnsafe,
       Self::DeclaredUnit,
     ])
@@ -803,6 +809,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       "intentional-macro-syntax" => WeakTypeIntent::IntentionalMacroSyntax,
       "intentional-type-slot-dynamic" => WeakTypeIntent::IntentionalTypeSlotDynamic,
       "intentional-decode" => WeakTypeIntent::IntentionalDecode,
+      "intentional-open" => WeakTypeIntent::IntentionalOpen,
       "explicit-unsafe" => WeakTypeIntent::ExplicitUnsafe,
       "declared-unit" => WeakTypeIntent::DeclaredUnit,
       "declared-optional" => {
@@ -812,7 +819,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
       }
       other => {
         return Err(format!(
-          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, explicit-unsafe, declared-unit"
+          "Unknown weak-type intent `{other}`. Expected comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, intentional-open, explicit-unsafe, declared-unit"
         ));
       }
     };
@@ -821,7 +828,7 @@ pub fn parse_weak_type_intents(raw: &str) -> Result<BTreeSet<WeakTypeIntent>, St
 
   if selected.is_empty() {
     return Err(
-      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, explicit-unsafe, declared-unit"
+      "Weak-type intent filter cannot be empty. Use comma-separated values from: unresolved, intentional-js-ffi, js-ffi-non-host, intentional-macro-syntax, intentional-type-slot-dynamic, intentional-decode, intentional-open, explicit-unsafe, declared-unit"
         .to_owned(),
     );
   }
@@ -941,6 +948,7 @@ fn scan_schema_dynamic_annotation(
       scan_schema_dynamic_annotation(value, &format!("{path}.value"), &value_detail, occurrences);
     }
     CalcitTypeAnnotation::Fn(fn_annot) => {
+      let occurrence_start = occurrences.len();
       for (idx, arg) in fn_annot.arg_types.iter().enumerate() {
         let arg_detail = extend_schema_dynamic_detail(detail, "fn-arg");
         scan_schema_dynamic_annotation(arg, &format!("{path}.args.{idx}"), &arg_detail, occurrences);
@@ -950,6 +958,14 @@ fn scan_schema_dynamic_annotation(
       if let Some(rest) = &fn_annot.rest_type {
         let rest_detail = extend_schema_dynamic_detail(detail, "fn-rest");
         scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), &rest_detail, occurrences);
+      }
+      // A stated `(:open …)` reason covers every open position below it.
+      if fn_annot.open_reason.0.is_some() {
+        for occurrence in &mut occurrences[occurrence_start..] {
+          if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
+            occurrence.intent = WeakTypeIntent::IntentionalOpen;
+          }
+        }
       }
     }
     CalcitTypeAnnotation::Macro(signature) => {
@@ -1082,6 +1098,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   if occurrence.intent == WeakTypeIntent::IntentionalDecode {
     return "This Dynamic is the input of a reviewed `:decode-boundary` function. Keep the function small: check the value and return a concrete type, and cover rejected inputs with tests.";
   }
+  if occurrence.intent == WeakTypeIntent::IntentionalOpen {
+    return "This Dynamic sits in a signature that states why it stays open with `(:open …)`. Keep the reason accurate; replace it with a concrete type or type parameter once callers need more than the open contract.";
+  }
   if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
     return "This slot intentionally resolves to Dynamic for the selected entry. Keep that boundary documented and narrow or validate the value before typed code relies on it.";
   }
@@ -1160,6 +1179,7 @@ fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<Calc
     if decode_input
       || (has_js_ffi_feature && occurrence.kind == WeakTypeKind::SchemaDynamic)
       || occurrence.intent == WeakTypeIntent::IntentionalMacroSyntax
+      || occurrence.intent == WeakTypeIntent::IntentionalOpen
     {
       continue;
     }
@@ -1184,6 +1204,7 @@ fn downgrade_coverage_for_dynamic_annotation(level: CoverageLevel, annotation: &
   }
   let mut occurrences = vec![];
   scan_schema_dynamic_annotation(annotation, "schema", "root", &mut occurrences);
+  occurrences.retain(|occurrence| occurrence.intent != WeakTypeIntent::IntentionalOpen);
   if occurrences.is_empty() {
     CoverageLevel::Full
   } else {
@@ -2508,13 +2529,14 @@ pub(crate) fn run_weak_types_report_with_rows(
   }
   let _ = writeln!(
     out,
-    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} intentional-decode={} explicit-unsafe={} declared-unit={}",
+    "- intents: unresolved={} intentional-js-ffi={} js-ffi-non-host={} intentional-macro-syntax={} intentional-type-slot-dynamic={} intentional-decode={} intentional-open={} explicit-unsafe={} declared-unit={}",
     intent_count.get("unresolved").copied().unwrap_or(0),
     intent_count.get("intentional-js-ffi").copied().unwrap_or(0),
     intent_count.get("js-ffi-non-host").copied().unwrap_or(0),
     intent_count.get("intentional-macro-syntax").copied().unwrap_or(0),
     intent_count.get("intentional-type-slot-dynamic").copied().unwrap_or(0),
     intent_count.get("intentional-decode").copied().unwrap_or(0),
+    intent_count.get("intentional-open").copied().unwrap_or(0),
     intent_count.get("explicit-unsafe").copied().unwrap_or(0),
     intent_count.get("declared-unit").copied().unwrap_or(0)
   );
@@ -3944,6 +3966,7 @@ pub(crate) fn format_weak_types_json_with_rows(
     "intentional-macro-syntax",
     "intentional-type-slot-dynamic",
     "intentional-decode",
+    "intentional-open",
     "explicit-unsafe",
     "declared-unit",
   ] {
@@ -4263,6 +4286,38 @@ mod tests {
     assert!(
       issues.is_empty(),
       "reviewed Expr<Dynamic> boundaries should not be unresolved: {issues:?}"
+    );
+  }
+
+  #[test]
+  fn reasoned_open_signatures_have_intentional_open_intent() {
+    let schema = |text: &str| {
+      let form = cirru_parser::parse(text).expect("parse schema").remove(0);
+      calcit::snapshot::parse_schema_annotation_for_write(&form).expect("schema parses")
+    };
+    // A reason covers the signature it is written on and everything below it.
+    let marked = schema("Fn Dynamic (Fn Dynamic (-> Dynamic)) (-> Dynamic) (:open :intrinsic)");
+    let occurrences = scan(marked.as_ref().clone());
+    assert_eq!(occurrences.len(), 4);
+    assert!(occurrences.iter().all(|it| it.intent == WeakTypeIntent::IntentionalOpen));
+    assert_eq!(
+      super::downgrade_coverage_for_dynamic_annotation(super::CoverageLevel::Full, marked.as_ref()),
+      super::CoverageLevel::Full
+    );
+    // A reason on the inner callback leaves the outer positions unresolved.
+    let inner = schema("Fn Dynamic (Fn Dynamic (-> Dynamic) (:open :reflect)) (-> Number)");
+    let intents: Vec<WeakTypeIntent> = scan(inner.as_ref().clone()).iter().map(|it| it.intent).collect();
+    assert_eq!(
+      intents,
+      vec![
+        WeakTypeIntent::Unresolved,
+        WeakTypeIntent::IntentionalOpen,
+        WeakTypeIntent::IntentionalOpen
+      ]
+    );
+    assert_eq!(
+      super::downgrade_coverage_for_dynamic_annotation(super::CoverageLevel::Full, inner.as_ref()),
+      super::CoverageLevel::Partial
     );
   }
 

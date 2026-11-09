@@ -1341,6 +1341,7 @@
           :schema $ quote $ Fn Dynamic (List K)
             -> $ Option Dynamic
             :generics K
+            :open :reflect
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
             :code $ quote $ do
@@ -1413,7 +1414,7 @@
                 if (tag? k) (&struct:get base k) (raise "|&get-raw expected a Tag field for struct")
               true $ raise "|&get-raw expected a collection or struct"
           :examples $ []
-          :schema $ quote $ Fn Dynamic Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic Dynamic (-> Dynamic) (:open :reflect)
           :tags $ #{} :internal
         '&hash $ %{} 'CodeEntry
           :doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables"
@@ -1869,6 +1870,7 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic
             -> $ List Dynamic
+            :open :reflect
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |flattens-nested-lists-and-sets)
             :code $ quote $ assert=
@@ -2061,6 +2063,7 @@
             Fn Dynamic Dynamic $ -> R
             -> $ List R
             :generics P R
+            :open :reflect
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |maps-key-value-pairs)
@@ -2214,6 +2217,7 @@
           :examples $ []
           :schema $ quote $ Fn (List Dynamic)
             -> $ List Number
+            :open :decode
         '&list:prepend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -2296,6 +2300,7 @@
           :schema $ quote $ Fn (List T) Dynamic
             -> $ List T
             :generics T
+            :open :intrinsic
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |sorts-by-function-key)
             :code $ quote $ assert= ([] 1 2 3 4)
@@ -4473,7 +4478,7 @@
               fn (x) (> x 10)
             quote $ assert= true $ any? ([] 5 15 25)
               fn (x) (> x 10)
-          :schema $ quote $ Fn Dynamic Fn (-> Bool)
+          :schema $ quote $ Fn Dynamic Fn (-> Bool) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |shortlists-list-members)
               :code $ quote $ assert= true
@@ -4539,7 +4544,7 @@
             quote $ assert= 6 $ apply + ([] 1 2 3)
             quote $ assert= 10 $ apply * ([] 2 5)
             quote $ assert= |abc $ apply str ([] |a |b |c)
-          :schema $ quote $ Fn Fn (List A) (-> Dynamic) (:generics A)
+          :schema $ quote $ Fn Fn (List A) (-> Dynamic) (:generics A) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |spreads-list-arguments)
               :code $ quote $ assert= 10
@@ -4754,7 +4759,7 @@
               assoc ([] 1 2 3) 0 10
             quote $ assert= (&{} :a 1 :b 3)
               assoc (&{} :a 1 :b 2) :b 3
-          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |replaces-map-value)
               :code $ quote $ assert= (&{} :a 3 :b 2)
@@ -4874,7 +4879,7 @@
             quote $ assert=
               &{} :x $ &{} :y $ &{} :z 3
               assoc-in (&{}) ([] :x :y :z) 3
-          :schema $ quote $ Fn Dynamic (List K) Dynamic (-> Dynamic) (:generics K)
+          :schema $ quote $ Fn Dynamic (List K) Dynamic (-> Dynamic) (:generics K) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |assocs-nested-maps-lists-and-nil-base)
               :code $ quote $ do
@@ -5605,7 +5610,7 @@
             quote $ assert= false $ contains-in?
               {} $ :profile $ {} (:name |calcit)
               [] :profile :missing
-          :schema $ quote $ Fn Dynamic (List K) (-> Bool) (:generics K)
+          :schema $ quote $ Fn Dynamic (List K) (-> Bool) (:generics K) (:open :intrinsic)
           :tests $ [] $ %{} 'TestEntry (:name |traverses-maps-lists-tags-and-enums)
             :code $ quote $ do
               assert= true $ contains-in?
@@ -6087,7 +6092,7 @@
                 raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
                 , entry
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :reflect)
         'data-definition-malformed-nesting? $ %{} 'CodeEntry
           :doc "|Detect suspicious nested forms that usually come from wrong indentation in data-definition macros"
           :code $ quote $ defn data-definition-malformed-nesting? (form)
@@ -6111,7 +6116,7 @@
                               &= 2 $ count items
               , false
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Bool)
+          :schema $ quote $ Fn Dynamic (-> Bool) (:open :reflect)
         'data-definition-type-form $ %{} 'CodeEntry
           :doc "|Read one declared type of defstruct, defenum or defunion. A bare symbol is a type name and is quoted so the macro never evaluates it. Other forms, such as `'Number` or a compound type written `quote $ List Number`, pass through unchanged."
           :code $ quote $ defmacro data-definition-type-form (form)
@@ -6147,7 +6152,7 @@
                       and (list? items)
                         &= 2 $ count items
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Bool)
+          :schema $ quote $ Fn Dynamic (-> Bool) (:open :reflect)
         'data-view $ %{} 'CodeEntry
           :doc "|Classify an open value as Data for exhaustive match. Scalar payloads are typed; collection elements and function/enum/struct/ref/other payloads stay Dynamic and need further evidence before concrete use."
           :code $ quote $ defn data-view (x)
@@ -6172,7 +6177,7 @@
             assert= |str $ match (data-view |a)
               (:string s) |str
               _ |other
-          :schema $ quote $ Fn Dynamic (-> Data)
+          :schema $ quote $ Fn Dynamic (-> Data) (:open :reflect)
           :tags $ #{} :core
           :tests $ []
             %{} 'TestEntry (:name |classifies-values)
@@ -6712,14 +6717,14 @@
             do
               defmacro identity-macro (x) (quasiquote ~x)
               assert= 4 $ identity-macro $ + 2 2
-          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :internal :syntax
         'defn $ %{} 'CodeEntry
           :doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             defn my-add (p1 p2) (+ p1 p2)
-          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :internal :syntax
         'defref $ %{} 'CodeEntry
           :doc "|定义命名空间级 Ref<T>：(defref name initial-value)。首次求值时计算初始值，热重载时保留已有状态；读写与 ref 创建的局部 Ref 相同。"
@@ -7184,7 +7189,7 @@
                   &map:dissoc x (&list:nth args 0) & $ &list:rest args
                 raise "|dissoc expected a List or Map"
           :examples $ []
-          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Dynamic) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |removes-multiple-map-keys)
               :code $ quote $ assert= (&{} :d 5)
@@ -7363,7 +7368,7 @@
                   dissoc data p0
                   assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
-          :schema $ quote $ Fn Dynamic (List K) (-> Dynamic) (:generics K)
+          :schema $ quote $ Fn Dynamic (List K) (-> Dynamic) (:generics K) (:open :intrinsic)
           :tests $ [] $ %{} 'TestEntry (:name |dissocs-nested-maps-and-list-indexes)
             :code $ quote $ do
               assert=
@@ -7465,6 +7470,7 @@
             Fn Dynamic $ -> R
             -> Unit
             :generics R
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |returns-unit-after-callbacks)
               :code $ quote $ assert= &unit
@@ -7759,7 +7765,7 @@
                 &= 0 $ .rem x 2
             quote $ assert= false $ every? ([] 1 2 3)
               defn %gt1 (x) (&> x 1)
-          :schema $ quote $ Fn Dynamic Fn (-> Bool)
+          :schema $ quote $ Fn Dynamic Fn (-> Bool) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |checks-every-set-member)
               :code $ quote $ assert= true
@@ -7948,7 +7954,7 @@
             quote $ let
                 response $ ffi:response nil
               fn () $ response.reject! :error
-          :schema $ quote $ Fn Dynamic (-> FfiResponse)
+          :schema $ quote $ Fn Dynamic (-> FfiResponse) (:open :host)
           :tags $ #{} :core :ffi
           :tests $ []
             %{} 'TestEntry (:name |wraps-response-capability)
@@ -7977,7 +7983,7 @@
             quote $ let
                 task $ ffi:task nil
               fn () $ task.cancel-with! :shutdown
-          :schema $ quote $ Fn Dynamic (-> FfiTask)
+          :schema $ quote $ Fn Dynamic (-> FfiTask) (:open :host)
           :tags $ #{} :core :ffi
           :tests $ []
             %{} 'TestEntry (:name |wraps-task-capability)
@@ -8007,7 +8013,7 @@
               filter ([] |a |bb |ccc)
                 defn %long? (s)
                   &> (&str:count s) 1
-          :schema $ quote $ Fn Dynamic Fn (-> Dynamic)
+          :schema $ quote $ Fn Dynamic Fn (-> Dynamic) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |filters-map-pairs)
               :code $ quote $ assert= (&{} :c 3 :d 4)
@@ -8174,6 +8180,7 @@
               first $ []
           :schema $ quote $ Fn Dynamic
             -> $ Option Dynamic
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |returns-first-or-none)
               :code $ quote $ do
@@ -8781,6 +8788,7 @@
               assert= (Option :some |demo) (get open-path :value)
           :schema $ quote $ Fn Dynamic Dynamic
             -> $ Option Dynamic
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |reads-list-indices-as-options)
               :code $ quote $ do
@@ -8948,6 +8956,7 @@
           :schema $ quote $ Fn Dynamic (List K)
             -> $ Result Dynamic PathError
             :generics K
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |returns-nested-map-value)
               :code $ quote $ assert= (Result :ok 2)
@@ -9756,7 +9765,7 @@
               if (enum-def? x) (&enum-def:impl-traits x & traits)
                 raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
-          :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
           :code $ quote $ defn inc (x) (&+ x 1)
           :examples $ []
@@ -9808,7 +9817,7 @@
                   result $ .includes? x k
                   if (bool? result) result $ raise "|includes? expected a Bool from the receiver .includes? method"
           :examples $ []
-          :schema $ quote $ Fn Dynamic Dynamic (-> Bool)
+          :schema $ quote $ Fn Dynamic Dynamic (-> Bool) (:open :intrinsic)
           :tests $ []
             %{} 'TestEntry (:name |finds-map-value)
               :code $ quote $ assert= false
@@ -10172,6 +10181,7 @@
               last $ []
           :schema $ quote $ Fn Dynamic
             -> $ Option Dynamic
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |returns-last-or-none)
               :code $ quote $ do
@@ -10465,6 +10475,7 @@
             -> Dynamic
             :generics C T U
             :where $ C Mappable
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |maps-over-sets)
               :code $ quote $ assert= (#{} 2 3 4)
@@ -11131,6 +11142,7 @@
               nth ([] 1 2 3) 9
           :schema $ quote $ Fn Dynamic Number
             -> $ Option Dynamic
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |reads-open-list-payload)
               :code $ quote $ let
@@ -11752,6 +11764,7 @@
           :schema $ quote $ Fn (List P)
             -> $ Map Dynamic Dynamic
             :generics P
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |converts-list-pairs)
               :code $ quote $ assert= (&{} :a 1 :b 2)
@@ -12702,7 +12715,7 @@
             quote $ assert= |abc $ str |a |b |c
             quote $ assert= |123 $ str 1 2 3
             quote $ assert= "|hello world" $ str |hello "| " |world
-          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String) (:open :reflect)
           :tests $ []
             %{} 'TestEntry (:name |concats-dynamic-values)
               :code $ quote $ do
@@ -12785,7 +12798,7 @@
           :examples $ []
             quote $ assert= "|a b c" $ str-spaced |a |b |c
             quote $ assert= "|1 2 3" $ str-spaced 1 2 3
-          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String)
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String) (:open :reflect)
           :tests $ []
             %{} 'TestEntry (:name |joins-non-nil-values)
               :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
@@ -13004,7 +13017,7 @@
                     tagging-edn v
                 , data
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :reflect)
           :tests $ [] $ %{} 'TestEntry (:name |retains-open-map-callback)
             :code $ quote $ assert=
               {} (:name |Ada)
@@ -13365,6 +13378,7 @@
               , .parse-cirru-edn
           :schema $ quote $ Fn String
             -> $ Result Dynamic String
+            :open :decode
           :tests $ []
             %{} 'TestEntry (:name |result-method-contract)
               :code $ quote $ do
@@ -13513,6 +13527,7 @@
             quote $ |{ .parse-json
           :schema $ quote $ Fn String
             -> $ Result Dynamic String
+            :open :decode
           :tests $ [] $ %{} 'TestEntry (:name |result-method-contract)
             :code $ quote $ do
               assert= true $ result:ok? $ |1 .parse-json
@@ -13657,6 +13672,7 @@
           :schema $ quote $ Fn Dynamic Dynamic
             Fn Dynamic $ -> Dynamic
             -> Dynamic
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
               :code $ quote $ do
@@ -13763,6 +13779,7 @@
             Fn (Option Dynamic) (-> R)
             -> Dynamic
             :generics K R
+            :open :intrinsic
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-nested-leaf)
               :code $ quote $ do
@@ -14036,7 +14053,7 @@
           :doc "|Compatibility form for a local compile-time type-slot override. Syntax: (with-type-slot (:slot-name TypeExpr) body...). The form is always erased during preprocessing; it evaluates bodies in order and returns the last value. New entry points should prefer :type-slots configuration."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :internal :meta :state :syntax
         'write-file $ %{} 'CodeEntry
           :doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file"

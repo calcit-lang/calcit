@@ -64,6 +64,14 @@ function sourceArity(code) {
   return { min, max };
 }
 
+// `(:open …)` documents why a signature stays open; type relations ignore it,
+// so the frozen API compares signatures without it (#2649).
+export function withoutOpenReason(node) {
+  if (!Array.isArray(node)) return node;
+  const items = node[0] === "{}" ? node.filter(item => !(Array.isArray(item) && item[0] === ":open")) : node;
+  return items.map(withoutOpenReason);
+}
+
 export function collect(scope, query) {
   const cache = new Map();
   const receivers = new Map();
@@ -74,7 +82,7 @@ export function collect(scope, query) {
     // A written `Dynamic` declares no static contract, the same as an omitted
     // schema; `query def` shows it since #2486, but the frozen API does not change.
     return {
-      schema: data.schema == null || data.schema === "Dynamic" ? null : { quote: data.schema },
+      schema: data.schema == null || data.schema === "Dynamic" ? null : { quote: withoutOpenReason(data.schema) },
       declaration: declaration(data.code),
       "runtime-arity": data.runtime_arity ?? sourceArity(data.code),
     };

@@ -331,6 +331,10 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 理由只有 `:reflect`、`:decode`、`:host` 三种，不改变类型：带不带 `:open` 的同一签名是同一个类型。
 
+`calcit.core` 另有第四种理由 `:intrinsic`，标在由检查器内建规则决定类型的函数上，例如 `filter`、`first`、`get`、`assoc`、`each`。它们的 schema 保留运行时接受的开放形状（`Fn Dynamic Fn (-> Dynamic) (:open :intrinsic)`），调用处按接收者种类检查：`filter` 收 `List Task` 时回调是 `Fn Task (-> Bool)`，结果是 `List Task`。`calcit query peek` 和 `calcit query schema` 在 schema 后列出这些规则（JSON 输出的 `data.checker_rules`）。项目代码不能使用 `:intrinsic`，写了会报 `E_OPEN_WITHOUT_REASON`。
+
+`calcit analyze weak-types` 把带 `:open` 理由的签名里的 Dynamic 归到 `intentional-open`，不计入 `unresolved`，也不让该定义的 coverage 降为 partial；`--intent intentional-open` 可以单独列出这些位置。
+
 0.39.0 起，`Fn` 签名里的 `AnyEnum`、`AnyFn`、`AnyStruct` 必须有理由：签名自身或外层签名都没有 `:open` 时报 `E_OPEN_WITHOUT_REASON` 错误（#2635）。不在 `Fn` 里的开放类型和 `Dynamic` 不受影响，仍只计入下面的汇总。
 
 普通 `--check-only` 通过且计数不为零时，在最后打印一行 `Open types: [W_OPEN_FAMILY] …` 汇总（检查失败、`--all-defs` / `--keep-going` / `--incremental` 和运行前的预检不打印），统计项目自身定义 `:schema` 里没有 `:open` 理由的 `AnyEnum`、`AnyFn`、`AnyStruct` 和 `Dynamic` 个数，并指出第一个出现的定义。带 `:open` 的 `Fn` 连同它内部的类型都不计入；依赖库和内置 core 不计入。汇总不算 Notes，不进入 `--format json` 报告，也不改变检查结果。`calcit analyze weak-types` 只列出 Dynamic 的位置，`AnyEnum` / `AnyFn` / `AnyStruct` 的逐处列表暂未提供。

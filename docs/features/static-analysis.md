@@ -222,6 +222,10 @@ schema 声明 `:features :decode-boundary` 后，`analyze weak-types` 把参数�
 
 这个标记只能用在函数 schema 上：参数里至少有一个位置含 Dynamic，返回类型不含 Dynamic。加载 Snapshot 时检查，不符合时报 `E_DECODE_BOUNDARY_SHAPE`。返回值仍是 Dynamic 的函数没有完成解码，应该先写出具体返回类型。
 
+### 写明理由的开放签名 `(:open …)`
+
+`Fn` schema 写了 `(:open :reflect)`、`(:open :decode)`、`(:open :host)`，或 `calcit.core` 里由检查器内建规则决定类型的 `(:open :intrinsic)` 时，签名内部的 schema Dynamic 归到 `intentional-open`，不计入 `unresolved`，不产生 `W_SCHEMA_DYNAMIC`，该定义的 coverage 也不因此降为 partial。理由的写法见 [类型指南](../type-guidance.md)。
+
 For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.

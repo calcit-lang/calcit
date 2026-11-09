@@ -22,8 +22,8 @@ pub(super) enum HintRepeat {
   /// Inputs and result are the same concrete types.
   Whole,
   /// Inputs are the same; the context leaves the result to a callee-owned
-  /// output variable, so the hint is redundant only when the body infers the
-  /// same result by itself.
+  /// output variable or keeps it open, so the hint is redundant only when the
+  /// body infers the same result by itself.
   InputsWithOpenResult,
   No,
 }
@@ -73,6 +73,9 @@ pub(super) fn compare_with_expected(
     CalcitTypeAnnotation::TypeVar(name) if callee_owned_generics.contains(name) && !hint.return_type.contains_type_var() => {
       HintRepeat::InputsWithOpenResult
     }
+    // The callee keeps the callback result open (such as `each`), so a written
+    // result only repeats what the body infers by itself.
+    CalcitTypeAnnotation::Dynamic if !hint.return_type.contains_type_var() => HintRepeat::InputsWithOpenResult,
     _ => HintRepeat::No,
   }
 }
