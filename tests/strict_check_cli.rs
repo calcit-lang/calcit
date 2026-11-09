@@ -115,7 +115,8 @@ fn enum_payload_lambdas_take_the_declared_payload_type() {
     String::from_utf8_lossy(&rejected.stdout),
     String::from_utf8_lossy(&rejected.stderr)
   );
-  for definition in ["demo.main/anonymous-ctor", "demo.main/named-ctor"] {
+  // A generic payload keeps its concrete `Task` input; only `T` stays open.
+  for definition in ["demo.main/anonymous-ctor", "demo.main/named-ctor", "demo.main/generic-ctor"] {
     let section = output
       .split(&format!("## `{definition}`"))
       .nth(1)

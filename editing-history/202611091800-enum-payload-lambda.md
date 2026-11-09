@@ -10,3 +10,7 @@
 
 - `cargo test --test strict_check_cli -- enum_payload_lambdas`（fixture `tests/fixtures/enum-payload-lambda.cirru`）。
 - `cargo test --test fix_cli -- redundant_hint`（新增 `h8-enum-payload`）。
+
+## 补充（#2658 review）
+
+- 泛型 enum 的回调 payload（如 `defenum Mapper ([] T) (:pick (Fn Task (-> T)))`）输入都是具体类型时，lambda 仍拿到 `Task` 输入，只有结果留给推断（期望签名的返回位置换成 Dynamic）；输入里带类型变量时整个 payload 仍不给上下文。

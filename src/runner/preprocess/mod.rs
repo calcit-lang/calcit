@@ -5160,12 +5160,25 @@ fn preprocess_list_call(
             {
               // A variant payload declares its type like a Struct field or a
               // function input, so an inline lambda there gets it too (#2644).
-              // Payloads bound through the enum's own parameters stay open.
+              // Payloads bound through the enum's own parameters stay open;
+              // a callback keeps its concrete inputs with only the result open.
               type_inference::resolve_enum_value(enum_arg, scope_types).and_then(|enum_def| {
                 let variant = enum_def.find_variant_by_name(tag.ref_str())?;
                 let payload = variant.payload_types().get(ys.len() - 3)?.clone();
                 let expected = type_inference::resolve_enum_payload_type(&enum_def, payload);
-                (!expected.contains_type_var()).then_some(expected)
+                if !expected.contains_type_var() {
+                  return Some(expected);
+                }
+                let CalcitTypeAnnotation::Fn(signature) = expected.as_ref() else {
+                  return None;
+                };
+                let concrete_inputs = signature.arg_types.iter().all(|arg| !arg.contains_type_var())
+                  && signature.rest_type.as_ref().is_none_or(|rest| !rest.contains_type_var());
+                concrete_inputs.then(|| {
+                  let mut open_result = signature.as_ref().clone();
+                  open_result.return_type = calcit::DYNAMIC_TYPE.clone();
+                  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(open_result)))
+                })
               })
             } else if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form

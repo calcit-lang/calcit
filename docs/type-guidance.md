@@ -354,6 +354,7 @@ let
 
 - **写法**：`Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
 - **字面量**：在期望类型是元组的位置（参数、返回值、带 schema 的 `def`、`assert-type`），`[]` 字面量按位置检查，长度不同或某个位置类型不符都会报错。
+- **回调尾部**：不写 `hint-fn` 的 lambda 以 `[] a b` 结尾时，同样按期望的元组位置检查。返回值声明为 `Fn … (-> (Tuple …))` 时直接返回的 lambda，以及声明为 `List (Tuple …)` 时 `map` / `.map` 的回调都适用（`let` 链的最后一个表达式也算），例如 `defn names (ts) $ .map ts $ fn (t) ([] (:title t) (:done t))` 可以写 schema `Fn (List Task) (-> (List (Tuple String Bool)))`（0.40.0，#2645）。
 - **读取**：`let[] (x y) t` 让每个变量得到对应位置的类型。`nth t 0` 的下标必须是字面量，返回该位置的值本身，不包 `Option`（位置总是存在）；越界或非字面量下标报 `E_TUPLE_INDEX`。`let[]` 绑定的变量多于元组长度时报 `W_TUPLE_INDEX`。
 - **与 List 的关系**：元素同类型的元组（如 `Tuple Number Number`）可以当作 `List Number` 使用，`first`、`map`、`conj` 等按 List 处理，结果是 `List T`。元素类型不同的元组不能传给任何 List，包括 `List Dynamic`；`List T` 也不能隐式当作元组，长度需要先用 `let[]` 或字面量证明。
 - **能力**：`count`、`=`、`str` 对所有元组可用，同构元组还可以 `map`。`rest`、`reverse`、`sort` 这类返回同一类型的 trait 泛型操作不接受元组，因为结果的长度已经变了；需要时先把同构元组作为 `List T` 传入再调用。
