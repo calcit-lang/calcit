@@ -2366,6 +2366,11 @@ fn branch_type_mismatch(
   recur_parameters: &[Arc<CalcitTypeAnnotation>],
   info: &CallTypeCheckInfo<'_>,
 ) -> Option<CalcitErr> {
+  // A generic return keeps its relation diagnostics (E_FN_RETURN_UNPROVEN or
+  // E_ERASED_GENERIC_RELATION); branch mismatch only names concrete contracts.
+  if declared_return_type.contains_type_var() {
+    return None;
+  }
   let is_branching = |expr: &Calcit| matches!(expr, Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If | CalcitSyntax::Match, _))));
   if !is_branching(result_tail(last_expr)) {
     return None;
