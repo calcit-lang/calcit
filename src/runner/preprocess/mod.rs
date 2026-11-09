@@ -5289,6 +5289,7 @@ fn preprocess_list_call(
                     .is_some_and(is_js_nullish_param)
                 }),
             );
+            let warnings_before = check_warnings.borrow().len();
             let result = if has_callback_contract {
               let callee_generics = method_generics
                 .as_deref()
@@ -5310,6 +5311,29 @@ fn preprocess_list_call(
             };
             HostSinkFrame::set_current_arg_host_nullish(false);
             let form = result?;
+            // An empty seed such as `(#{})` gives the accumulator no element
+            // type. When the callback widens it, check the callback again with
+            // the widened accumulator so the fold proves that type (#2646).
+            let is_fold = match &head_form {
+              Calcit::Proc(CalcitProc::Foldl | CalcitProc::NativeListFoldl | CalcitProc::NativeMapFoldKv) => true,
+              Calcit::Method(name, calcit::MethodKind::Invoke(_)) => matches!(name.as_ref(), "foldl" | "fold"),
+              _ => false,
+            };
+            let form = match widened_fold_accumulator(is_fold, &ys, expected_type.as_ref(), &form, scope_types) {
+              Some(widened) => {
+                check_warnings.borrow_mut().truncate(warnings_before);
+                preprocess_argument_with_context(
+                  a,
+                  Some((&widened, member_inputs, &[])),
+                  scope_defs,
+                  scope_types,
+                  file_ns,
+                  check_warnings,
+                  call_stack,
+                )?
+              }
+              None => form,
+            };
             // Specialize callback context using proven preceding inputs.
             // Nested Dynamic preserves known container shape, not concrete members.
             if !has_spread
@@ -6187,18 +6211,16 @@ fn preprocess_known_function_call(
     }
 
     HostSinkFrame::set_current_arg_host_nullish(!has_spread && expected_type.as_ref().is_some_and(is_js_nullish_param));
+    // A callback's declared input is evidence, including an explicit
+    // open payload. Do not relabel an inferred callable placeholder.
+    let member_inputs = refreshed_core_types.is_some()
+      || (declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input));
+    let warnings_before = check_warnings.borrow().len();
     let result = preprocess_argument_with_context(
       a,
-      expected_type.as_ref().map(|annotation| {
-        // A callback's declared input is evidence, including an explicit
-        // open payload. Do not relabel an inferred callable placeholder.
-        let declared_input = declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input);
-        (
-          annotation,
-          refreshed_core_types.is_some() || declared_input,
-          callback_output_binders.as_slice(),
-        )
-      }),
+      expected_type
+        .as_ref()
+        .map(|annotation| (annotation, member_inputs, callback_output_binders.as_slice())),
       scope_defs,
       scope_types,
       file_ns,
@@ -6212,6 +6234,26 @@ fn preprocess_known_function_call(
     HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
+    // Same empty-seed widening as the proc and method folds (#2646).
+    let is_fold = can_refresh_core_types && arg_idx == 2 && info.name.as_ref() != "&list:sort-by";
+    let form = match widened_fold_accumulator(is_fold, &ys, expected_type.as_ref(), &form, scope_types) {
+      Some(widened) => {
+        check_warnings.borrow_mut().truncate(warnings_before);
+        let result = preprocess_argument_with_context(
+          a,
+          Some((&widened, member_inputs, callback_output_binders.as_slice())),
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        );
+        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
+        EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
+        result?
+      }
+      None => form,
+    };
     // A parameter that declares nullability already admits the nil exit.
     if !is_nil_bridge_head(&head_form)
       && !expected_type
@@ -16714,6 +16756,44 @@ fn reject_strict_unproven_specialized_contract(
     call_stack,
     argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
   ))
+}
+
+/// The accumulator type a fold callback widened an empty seed to, as a
+/// callback contract with that type in the accumulator and result slots.
+fn widened_fold_accumulator(
+  is_fold: bool,
+  processed: &FingerVec<Calcit>,
+  expected: Option<&Arc<CalcitTypeAnnotation>>,
+  callback: &Calcit,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  if !is_fold || processed.len() != 3 {
+    return None;
+  }
+  let seed = resolve_type_value(processed.get(2)?, scope_types)?;
+  if !type_inference::has_inferred_empty_slot(&seed) {
+    return None;
+  }
+  let CalcitTypeAnnotation::Fn(contract) = expected?.as_ref() else {
+    return None;
+  };
+  let actual = resolve_type_value(callback, scope_types)?;
+  let CalcitTypeAnnotation::Fn(actual) = actual.as_ref() else {
+    return None;
+  };
+  let widened = actual.return_type.clone();
+  if contract.arg_types.is_empty()
+    || widened == seed
+    || type_inference::has_inferred_empty_slot(&widened)
+    || widened.contains_type_var()
+    || !seed.is_proven_for(&widened)
+  {
+    return None;
+  }
+  let mut contract = contract.as_ref().clone();
+  contract.arg_types[0] = widened.clone();
+  contract.return_type = widened;
+  Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(contract))))
 }
 
 fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {

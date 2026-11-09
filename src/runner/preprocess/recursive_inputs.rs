@@ -226,10 +226,11 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
             };
             // Repeated callee slots connect independently supplied arguments;
             // only compiler-owned pending inputs may be solved by that relation.
-            // An open proc parameter says nothing about a loop slot's members;
-            // collection growth inference supplies them through the transfer.
+            // An open proc parameter says nothing about a slot's members, with
+            // or without a tail transfer; collection growth inference supplies
+            // them (a fold callback's empty seed, #2646).
             if let Some(instantiated) = proof.result(expected)
-              && !(constraints.tail_transfers && has_slot_variable(&annotation) && contains_dynamic_type(expected))
+              && !(has_slot_variable(&annotation) && contains_dynamic_type(expected))
             {
               constraints.join_branches(vec![Some(annotation.clone()), Some(instantiated)], &ctx)?;
             }
