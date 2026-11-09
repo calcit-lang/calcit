@@ -135,6 +135,10 @@ fn run_weak_types(
     let _output_guard = ProgramOutputGuard::new(true, false);
     return type_coverage::option_nil_roundtrip::run(options, snapshot);
   }
+  if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_INFERRED_DYNAMIC) {
+    let _output_guard = ProgramOutputGuard::new(true, false);
+    return type_coverage::inferred_dynamic::run(options, snapshot);
+  }
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let snapshot = effective.as_ref();

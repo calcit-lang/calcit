@@ -17548,7 +17548,7 @@ fn dynamic_erases_nominal_contract(actual: &CalcitTypeAnnotation, expected: &Cal
   }
 }
 
-fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
+pub fn contains_dynamic_type(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::List(inner)
