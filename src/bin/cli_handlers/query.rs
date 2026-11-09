@@ -3869,6 +3869,7 @@ fn weak_type_diagnostics(entry: &snapshot::CodeEntry, budget: usize) -> Vec<Cont
           | crate::type_coverage::WeakTypeIntent::IntentionalMacroSyntax
           | crate::type_coverage::WeakTypeIntent::IntentionalTypeSlotDynamic
           | crate::type_coverage::WeakTypeIntent::IntentionalDecode
+          | crate::type_coverage::WeakTypeIntent::IntentionalOpen
       );
       ContextDiagnostic {
         code: if intentional {

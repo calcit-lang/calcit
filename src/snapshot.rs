@@ -3697,7 +3697,8 @@ fn project_open_reason(signature: &crate::calcit::CalcitFnTypeAnnotation) -> Opt
     .filter(|reason| *reason != crate::calcit::FnOpenReason::Intrinsic)
 }
 
-fn schema_uses_intrinsic_reason(annotation: &CalcitTypeAnnotation) -> bool {
+/// Whether any signature in the schema writes `(:open :intrinsic)`.
+pub fn schema_uses_intrinsic_reason(annotation: &CalcitTypeAnnotation) -> bool {
   let mut found = false;
   annotation.walk_components(&mut |annotation| {
     if let CalcitTypeAnnotation::Fn(signature) = annotation

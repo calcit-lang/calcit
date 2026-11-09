@@ -1769,6 +1769,14 @@ pub fn analyze_weak_types_entry(
       if let Some(rest) = &fn_annot.rest_type {
         scan_schema_dynamic_annotation(rest, "schema.rest", "rest", &mut occurrences);
       }
+      // The root signature's `(:open …)` reason covers its positions too.
+      if fn_annot.open_reason.0.is_some() {
+        for occurrence in &mut occurrences {
+          if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
+            occurrence.intent = WeakTypeIntent::IntentionalOpen;
+          }
+        }
+      }
     }
   } else if selected_schema_annotations {
     let before = occurrences.len();
@@ -4319,6 +4327,33 @@ mod tests {
       super::downgrade_coverage_for_dynamic_annotation(super::CoverageLevel::Full, inner.as_ref()),
       super::CoverageLevel::Partial
     );
+  }
+
+  #[test]
+  fn weak_type_rows_apply_the_root_open_reason() {
+    let schema = |text: &str| {
+      let form = cirru_parser::parse(text).expect("parse schema").remove(0);
+      calcit::snapshot::parse_schema_annotation_for_write(&form).expect("schema parses")
+    };
+    let row_intents = |text: &str| {
+      let mut entry = calcit::snapshot::CodeEntry::from_code(cirru_parser::parse("defn f (x) x").expect("parse code").remove(0));
+      entry.schema = schema(text);
+      super::analyze_weak_types_entry("app.main", "f", &entry, &WeakTypeKind::collected())
+        .map(|row| {
+          row
+            .occurrences
+            .iter()
+            .filter(|it| it.kind == WeakTypeKind::SchemaDynamic)
+            .map(|it| it.intent)
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+    };
+    let reasoned = row_intents("Fn Dynamic (-> Dynamic) (:open :reflect)");
+    assert_eq!(reasoned.len(), 2);
+    assert!(reasoned.iter().all(|intent| *intent == WeakTypeIntent::IntentionalOpen));
+    let plain = row_intents("Fn Dynamic (-> Dynamic)");
+    assert_eq!(plain, vec![WeakTypeIntent::Unresolved, WeakTypeIntent::Unresolved]);
   }
 
   #[test]

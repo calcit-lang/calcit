@@ -7,7 +7,7 @@
 - 规则摘要只有一份：`src/runner/preprocess/intrinsic_rules.rs`。`query peek` / `query schema` 读它显示 “Checker rules”（JSON 为 `data.checker_rules`）；单元测试保证带标记的 core 定义和摘要表一一对应。
 - 其余 16 个 partial 定义按语义标 `:reflect`（`str`、`data-view`、`&get-raw` 等）、`:decode`（`try-parse-json` 等）或 `:host`（`ffi:response`、`ffi:task`）。`map-kv` 不标，0.41.0 删除（#2655）。
 - `analyze weak-types` 新增 intent `intentional-open`：任何带 `(:open …)` 的 `Fn` 签名内部的 schema Dynamic 归入此类，不计 `unresolved`、不产生 `W_SCHEMA_DYNAMIC`、不让 coverage 降为 partial。理由写在内层回调签名上时只覆盖该回调。
-- 冗余 `hint-fn`：上下文把回调结果留成 Dynamic（如 `each`）时，与 callee 自有的结果变量同样处理，只有函数体自己推出相同结果时才算冗余。
+- 冗余 `hint-fn`：上下文把回调结果留成 Dynamic（如 `each`）时，hint 写的具体结果比上下文更窄，按 fix 文档的约定保留，不报告。
 
 ## 兼容边界
 
