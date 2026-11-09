@@ -535,6 +535,11 @@ pub(crate) fn resolve_checked_call_contract(
         _ => return None,
       };
       let field_type = super::type_inference::resolve_struct_field_type(receiver, field)?;
+      // A field typed by the Struct's own parameter stays on the existing
+      // check; a callback must not get to choose that parameter.
+      if field_type.contains_type_var() {
+        return None;
+      }
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),

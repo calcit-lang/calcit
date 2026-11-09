@@ -26,6 +26,8 @@ fn struct_update_callbacks_take_the_field_type() {
   );
   assert!(!output.status.success(), "{text}");
   assert!(text.contains("[passed] demo.main/c-ok (fn)"), "{text}");
+  // A field typed by the Struct's own parameter keeps the existing check.
+  assert!(text.contains("[passed] demo.main/box-inc (fn)"), "{text}");
   // The callback input is the `:title` String, not an open value.
   assert!(
     text.contains("`calcit.core/+` arg 2 expects type `:number`, but got `:string` in call at demo.main/c12"),

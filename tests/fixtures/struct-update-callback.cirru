@@ -20,6 +20,12 @@
         'c-ret $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn c-ret (t) $ update t :title $ fn (x) (&str:count x)
           :schema $ quote $ Fn Task (-> Task)
+        'Box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Box ([] T) (:value T)
+          :schema $ quote StructDef
+        'box-inc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn box-inc (b) $ update b :value $ fn (x) (+ x 1)
+          :schema $ quote $ Fn (Box Number) (-> (Box Number))
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () nil
           :schema $ quote $ Fn (-> Nil)
