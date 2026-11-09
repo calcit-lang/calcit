@@ -47,7 +47,8 @@ related:
 
 ## 0.39.0 删除重复的 `hint-fn`（#2636）
 
-lambda 直接传给已声明 callback 类型的位置时，参数类型已能从上下文推断。`--check-only` 通过后的
+lambda 直接传给已声明 callback 类型的位置、写在返回位置，或被 `let` 绑定后只使用一次时，参数类型已能从上下文推断。
+`--check-only` 通过后的
 `[W_REDUNDANT_HINT_FN]` 汇总列出与上下文完全重复的 `hint-fn`，可用
 `calcit fix --rule redundant-hint-fn-v1 --format json` 预览，再 `--apply --expect-revision <revision>` 删除。
 这只是提示，不会让检查失败。详见 [calcit fix](fix.md)。

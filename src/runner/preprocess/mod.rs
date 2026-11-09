@@ -14970,6 +14970,12 @@ fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warn
 /// whose body declares no signature with `hint-fn`; such a lambda has no
 /// contextual signature when it is bound by `&let` (#1655).
 fn plain_lambda_arity(form: &Calcit) -> Option<usize> {
+  lambda_arity(form, false)
+}
+
+/// The parameter count of an `fn` literal with plain parameters; with
+/// `allow_hint` its body may carry a `hint-fn`.
+fn lambda_arity(form: &Calcit, allow_hint: bool) -> Option<usize> {
   let Calcit::List(items) = form else { return None };
   if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn") {
     return None;
@@ -14984,7 +14990,7 @@ fn plain_lambda_arity(form: &Calcit) -> Option<usize> {
     matches!(item, Calcit::List(body) if matches!(body.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn")
       || matches!(body.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _))))
   });
-  (plain && !hinted && items.len() > 2).then_some(parameters.len())
+  (plain && (allow_hint || !hinted) && items.len() > 2).then_some(parameters.len())
 }
 
 /// A lambda bound once may serve several argument types, so a re-check keeps
@@ -15327,22 +15333,22 @@ pub fn preprocess_core_let(
         check_symbol(sym, ys, loc, ctx.check_warnings);
       }
       body_defs.insert(sym.to_owned());
-      let_lambda = (existing_type.is_none())
-        .then(|| plain_lambda_arity(a))
-        .flatten()
-        .map(|arity| explicit_open::LetLambda {
-          form: a.to_owned(),
-          arity,
-          scope_defs: body_defs.clone(),
-          scope_types: body_types.clone(),
-          scope_locals: explicit_open::capture_scope_locals(),
-        });
+      let capture = |arity| explicit_open::LetLambda {
+        form: a.to_owned(),
+        arity,
+        scope_defs: body_defs.clone(),
+        scope_types: body_types.clone(),
+        scope_locals: explicit_open::capture_scope_locals(),
+      };
+      let_lambda = (existing_type.is_none()).then(|| plain_lambda_arity(a)).flatten().map(capture);
       // Only a value use is deferred: a direct call keeps its per-call
       // re-check (#1655), and a local `fn` is not the lambda constructor.
+      // A hinted literal is deferred too, so its use can report a `hint-fn`
+      // that repeats the callback type, as it does for a direct argument.
       if existing_type.is_none()
         && !ctx.scope_defs.contains("fn")
         && symbol_uses(args.iter().skip(1), sym) == (1, false)
-        && let Some(lambda) = let_lambda.take()
+        && let Some(lambda) = let_lambda.take().or_else(|| lambda_arity(a, true).map(capture))
       {
         let placeholder = Arc::new(CalcitTypeAnnotation::Dynamic);
         deferred = Some(DeferredLetLambdaGuard::push(sym.to_owned(), placeholder.clone(), Arc::new(lambda)));
