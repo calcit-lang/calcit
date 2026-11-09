@@ -53,7 +53,8 @@ fn assert_success(output: &Output, context: &str) {
 #[test]
 fn slot_bound_to_union_accepts_callbacks_over_that_union() {
   // `:dispatch-op` is bound to the union `ViewOp`; a callback typed over the
-  // same union is the slot's callback (#2642). A callback over one member
+  // same union is the slot's callback, and a slot value fits a `ViewOp`
+  // parameter (#2642). A callback over one member
   // cannot take every slot value and stays rejected.
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
@@ -61,6 +62,20 @@ fn slot_bound_to_union_accepts_callbacks_over_that_union() {
   assert_success(
     &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
     "union-typed callback for a union-bound slot",
+  );
+
+  // A slot bound to one member passes where the union is expected.
+  let member_directory = TestDirectory::create();
+  let member_bound = member_directory.snapshot();
+  let source = fs::read_to_string("tests/fixtures/slot-union-callback.cirru").unwrap();
+  fs::write(
+    &member_bound,
+    source.replace("(:dispatch-op 'demo.main/ViewOp)", "(:dispatch-op 'demo.main/AppOp)"),
+  )
+  .unwrap();
+  assert_success(
+    &run_calcit(&member_bound, &["--check-only", "--all-defs"]),
+    "member-bound slot value passed to a union parameter",
   );
 
   assert_success(

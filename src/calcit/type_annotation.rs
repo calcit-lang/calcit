@@ -5031,9 +5031,23 @@ impl CalcitTypeAnnotation {
         });
       }
       (Self::TypeVar(_), _) | (_, Self::TypeVar(_)) => return None,
-      // A slot on either side resolves later through its own relation arm,
-      // so a slot bound to this union relates to it as the union itself (#2642).
-      (_, Self::TypeSlot(_)) | (Self::TypeSlot(_), _) => return None,
+      (_, Self::TypeSlot(_)) => return None,
+      // An actual slot relates as its bound type, so a slot bound to this union
+      // relates as the union itself (#2642) and one bound to a member as that
+      // member. A recursive binding defers to the slot's own relation arm.
+      (Self::TypeSlot(name), _) => {
+        let bound = resolve_type_slot(name)?;
+        return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || match mode {
+          PlainRelationMode::Proof => bound.prove_with_bindings(expected, bindings),
+          PlainRelationMode::Compatibility => {
+            if bound.compatible_with_bindings(expected, bindings) {
+              Proven
+            } else {
+              Mismatch
+            }
+          }
+        });
+      }
       _ => {}
     }
     let relate = |actual: &Self, expected: &Self, bindings: &mut TypeBindings| match mode {

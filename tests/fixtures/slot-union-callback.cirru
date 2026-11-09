@@ -15,6 +15,9 @@
         'accept! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn accept! (_on-op!) &unit
           :schema $ quote $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)
+        'forward! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn forward! (op) (demo.main/on-op! op)
+          :schema $ quote $ Fn *dispatch-op (-> Unit)
     'demo.main $ %{} 'FileEntry
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns demo.main
