@@ -2170,8 +2170,8 @@ fn default_proof_rejects_directional_dynamic_flows() {
         assert!(err.contains(code), "{case}: expected {code}, got: {err}");
         if case == "p30" {
           assert!(
-            err.contains("`:number`") && err.contains("`:bool`"),
-            "p30 must name its branch types: {err}"
+            err.contains(": `:number`, branch 2: `:bool` (does not satisfy the return type)"),
+            "p30 must name each branch type: {err}"
           );
         }
       }

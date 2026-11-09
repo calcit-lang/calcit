@@ -2374,7 +2374,15 @@ fn branch_type_mismatch(
   super::type_inference::prove_function_value_exits(last_expr, scope_types, recur_parameters, &mut |exit, scope| {
     exits.push(BranchExit {
       location: exit.get_location(),
-      actual: resolve_type_value(exit, scope),
+      // An async function adopts each pending exit, so name the adopted type
+      // that the proof below checks.
+      actual: resolve_type_value(exit, scope).map(|actual| {
+        if async_invocation {
+          async_invocation_result(actual.as_ref()).unwrap_or(actual)
+        } else {
+          actual
+        }
+      }),
       proven: expression_is_proven_for(exit, declared_return_type, scope, async_invocation),
     });
     true

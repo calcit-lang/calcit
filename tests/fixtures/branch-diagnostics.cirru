@@ -32,6 +32,15 @@
           :code $ quote $ defn recur-mixed (n) $ if (> n 10) 1
             if (< n 0) |x $ recur (inc n)
           :schema $ quote $ Fn Number (-> Number)
+        'load-n $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn load-n () 1
+          :schema $ quote $ Fn (-> Number) (:async)
+        'load-s $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn load-s () |x
+          :schema $ quote $ Fn (-> String) (:async)
+        'async-mixed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn async-mixed (t) $ if (:done t) (load-n) (load-s)
+          :schema $ quote $ Fn Task (-> Number) (:async)
         'if-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-ok (t) $ if (:done t) 1 2
           :schema $ quote $ Fn Task (-> Number)
