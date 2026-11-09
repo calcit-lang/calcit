@@ -35,6 +35,20 @@
               updater $ fn (store op) (+ store op)
             apply-op updater |base 5
           :schema $ quote $ Fn (-> String)
+        'apply-rest $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn apply-rest (updater & ops) (foldl ops 0 updater)
+          :schema $ quote $ Fn (Fn Number Op (-> Number)) (& Op) (-> Number) (:generics Op)
+        'rest-bound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rest-bound () $ apply-rest (fn (acc op) (&+ acc (count (.trim op)))) |a |b
+          :schema $ quote $ Fn (-> Number)
+        'alias-bound-bad $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias-bound-bad () $ let
+              run apply-op
+            run (fn (store op) (+ store op)) |base 5
+          :schema $ quote $ Fn (-> String)
+        'param-bound-bad $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn param-bound-bad (run) $ run (fn (store op) (+ store op)) |base 5
+          :schema $ quote $ Fn (Fn (Fn Store Op (-> Store)) Store Op (-> Store) (:generics Op Store)) (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () nil
           :schema $ quote $ Fn (-> Nil)
