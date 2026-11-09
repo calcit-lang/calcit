@@ -28,7 +28,14 @@ fn callbacks_take_generics_from_later_arguments() {
   assert!(!output.status.success(), "{text}");
   // `param-bound` calls a parameter typed with the generic signature, which
   // takes the indirect-call path rather than the named-function one.
-  for def in ["inline", "let-bound", "alias-bound", "param-bound", "rest-bound"] {
+  for def in [
+    "inline",
+    "let-bound",
+    "alias-bound",
+    "param-bound",
+    "rest-bound",
+    "rest-param-bound",
+  ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
   assert!(!text.contains("E_CALL_ARGUMENT_UNPROVEN"), "{text}");

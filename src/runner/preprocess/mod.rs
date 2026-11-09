@@ -1435,9 +1435,15 @@ fn later_evidenced_callback_generics(generics: &[Arc<str>], arguments: &[Arc<Cal
 
 /// Generics bound from ordinary arguments before any callback is preprocessed:
 /// those only a callback returns, and those a later argument fixes (#2648).
-fn pregathered_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+fn pregathered_callback_generics(
+  generics: &[Arc<str>],
+  arguments: &[Arc<CalcitTypeAnnotation>],
+  rest: Option<&Arc<CalcitTypeAnnotation>>,
+) -> HashSet<Arc<str>> {
   let mut pregathered = output_only_callback_generics(generics, arguments);
-  pregathered.extend(later_evidenced_callback_generics(generics, arguments));
+  // Rest values follow every fixed parameter, so they are later evidence too.
+  let with_rest = arguments.iter().chain(rest).cloned().collect::<Vec<_>>();
+  pregathered.extend(later_evidenced_callback_generics(generics, &with_rest));
   pregathered
 }
 
@@ -5134,10 +5140,10 @@ fn preprocess_list_call(
           // context so the callback body cannot choose T by source order.
           if let Some(signature) = callable_contract.as_ref()
             && !signature.generics.is_empty()
-            && !pregathered_callback_generics(&signature.generics, &signature.arg_types).is_empty()
+            && !pregathered_callback_generics(&signature.generics, &signature.arg_types, signature.rest_type.as_ref()).is_empty()
             && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
           {
-            let output_only = pregathered_callback_generics(&signature.generics, &signature.arg_types);
+            let output_only = pregathered_callback_generics(&signature.generics, &signature.arg_types, signature.rest_type.as_ref());
             for (index, arg) in args.iter().enumerate() {
               let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
                 continue;
@@ -6102,7 +6108,7 @@ fn preprocess_known_function_call(
   // returned by an earlier callback (for example `Fn() -> T, T`). Gather that
   // evidence before constructing callback context so the callback body cannot
   // choose the caller's T just because it appears first in source order.
-  let pregathered = pregathered_callback_generics(&info.generics, &info.arg_types);
+  let pregathered = pregathered_callback_generics(&info.generics, &info.arg_types, info.rest_type.as_ref());
   if contextual_generic_typing_enabled()
     && !info.generics.is_empty()
     && !pregathered.is_empty()

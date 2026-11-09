@@ -257,7 +257,7 @@ lambda 的参数类型可以从所在位置得到，不必写 `hint-fn`：直接
 或者先用 `let` 绑定、在绑定作用域里只使用一次，并且那一次使用处于上述位置。同一个绑定被使用多次时不推断，需要保留
 `hint-fn`。推断出的签名与写出的 `hint-fn` 不一致时按函数返回声明报错（0.39.0，#2637）。
 
-被调函数是泛型、而回调写在确定泛型的实参之前时，回调先从后面的普通实参取得绑定。例如 `record-op` 的 schema 是 `Fn (Fn Store Op (-> Store)) Store Op (-> Store)`，`record-op (fn (store op) …) |base 5` 里 lambda 的 `store` 是 String、`op` 是 Number，不需要 `hint-fn`（0.40.0，#2648）。通过带同样泛型签名的参数或局部别名调用时也一样。后面的实参是 Dynamic 时不提供绑定；后面的实参本身是回调时，它的类型也不作为绑定来源。
+被调函数是泛型、而回调写在确定泛型的实参之前时，回调先从后面的普通实参取得绑定。例如 `record-op` 的 schema 是 `Fn (Fn Store Op (-> Store)) Store Op (-> Store)`，`record-op (fn (store op) …) |base 5` 里 lambda 的 `store` 是 String、`op` 是 Number，不需要 `hint-fn`（0.40.0，#2648）。通过带同样泛型签名的参数或局部别名调用时也一样，rest 实参同样算作后面的实参。后面的实参是 Dynamic 时不提供绑定；后面的实参本身是回调时，它的类型也不作为绑定来源。
 
 ## Dynamic 是边界，不是默认多态
 

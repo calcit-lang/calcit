@@ -41,6 +41,9 @@
         'rest-bound $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rest-bound () $ apply-rest (fn (acc op) (&+ acc (count (.trim op)))) |a |b
           :schema $ quote $ Fn (-> Number)
+        'rest-param-bound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rest-param-bound (run) $ run (fn (acc op) (&+ acc (count (.trim op)))) |a |b
+          :schema $ quote $ Fn (Fn (Fn Number Op (-> Number)) (& Op) (-> Number) (:generics Op)) (-> Number)
         'alias-bound-bad $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn alias-bound-bad () $ let
               run apply-op
