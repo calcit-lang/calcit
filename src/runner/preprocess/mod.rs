@@ -4542,6 +4542,9 @@ fn preprocess_list_call(
           // A retired method name stays on the typed path so validation can
           // report the migration instead of a confusing prefix-call failure.
           let is_retired_method = retired_method_migration(type_info.as_ref(), method_name.as_ref()).is_some();
+          if is_retired_method && !has_known_method {
+            reject_retired_method_call(type_info.as_ref(), method_name, call_stack, call_location.clone())?;
+          }
 
           if is_nominal_or_trait || has_static_receiver || has_known_method || is_display_contract || is_retired_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
@@ -5141,6 +5144,14 @@ fn preprocess_list_call(
               has_spread = true;
               ys = ys.push(a.to_owned());
               return Ok(());
+            }
+            // A retired method reports its migration before the callback is
+            // checked against a contract that no longer exists.
+            if ys.len() == 2
+              && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
+              && let Some(receiver_type) = ys.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+            {
+              reject_retired_method_call(receiver_type.as_ref(), name, call_stack, call_location.clone())?;
             }
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
@@ -10625,6 +10636,29 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     ),
     _ => retired_core_struct_method_migration(receiver, method_name),
   }
+}
+
+/// Report a retired method before its arguments are checked, in every type
+/// mode, so a callback written for the old method cannot fail first.
+fn reject_retired_method_call(
+  receiver: &CalcitTypeAnnotation,
+  method_name: &str,
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  if retired_trait_reachable_method_migration(receiver, method_name).is_some() {
+    return Ok(());
+  }
+  let Some(migration) = retired_method_migration(receiver, method_name) else {
+    return Ok(());
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!("method `.{method_name}` for {} was retired: {migration}", describe_type(receiver)),
+    "E_RETIRED_METHOD",
+    call_stack,
+    location,
+  ))
 }
 
 /// Retired inherent methods that a core trait impl still provides for the same

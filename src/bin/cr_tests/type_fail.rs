@@ -426,11 +426,24 @@ fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
 #[test]
 fn removed_map_kv_method_points_to_filter_map_kv() {
   run_with_large_stack(|| {
-    let _strict = StrictTypesReset::enabled();
-    let entries = load_snippet_entries("({} (:a 1)) .map-kv $ fn (k v) ([] k v)");
-    let err = run_check_only(&entries).expect_err("the removed `.map-kv` method must not resolve");
-    assert!(err.contains("E_RETIRED_METHOD"), "missing retirement diagnostic: {err}");
-    assert!(err.contains("`.filter-map-kv`"), "missing replacement spelling: {err}");
+    let _restore = StrictTypesReset {
+      previous: runner::preprocess::is_strict_types_enabled(),
+    };
+    for strict in [false, true] {
+      runner::preprocess::set_strict_types(strict);
+      // A callback written for the old method must not fail before the retirement.
+      for snippet in [
+        "({} (:a 1)) .map-kv $ fn (k v) ([] k (+ v 10))",
+        ".map-kv ({} (:a 1)) $ fn (k v) ([] k (+ v 10))",
+      ] {
+        let entries = load_snippet_entries(snippet);
+        let err = run_check_only(&entries).expect_err(&format!(
+          "the removed `.map-kv` method must not resolve (strict={strict}): {snippet}"
+        ));
+        assert!(err.contains("E_RETIRED_METHOD"), "missing retirement diagnostic: {err}");
+        assert!(err.contains("`.filter-map-kv`"), "missing replacement spelling: {err}");
+      }
+    }
   });
 }
 

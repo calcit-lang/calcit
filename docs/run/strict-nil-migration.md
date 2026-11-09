@@ -21,14 +21,12 @@ nil inside typed code.
 运行时 `nil`、Cirru EDN nil 以及明确的 untyped/FFI 边界不会删除；上述错误只阻断
 typed code 中静默制造 nil 的语法。
 
-`E_NIL_CALLBACK_SENTINEL` is intentionally conservative. It checks only
-structurally visible return paths of inline `fn` / `defn` callbacks. It does not
-guess through named callbacks or reject `[] key nil`, where nil is the mapped
-value rather than a drop sentinel.
+`E_NIL_CALLBACK_SENTINEL` was removed in 0.41.0 together with `map-kv`, the
+only call whose callback could use nil as a drop sentinel; `filter-map-kv`
+callbacks return `MapEntryDecision :drop` instead.
 
-`E_NIL_CALLBACK_SENTINEL` 采用保守检查：只分析内联 `fn` / `defn` 回调中结构上
-可见的返回路径，不猜测具名回调；`[] key nil` 中的 nil 是映射后的值，不是丢弃
-sentinel，因此不会被拒绝。
+`E_NIL_CALLBACK_SENTINEL` 已在 0.41.0 随 `map-kv` 一起删除；它只检查 `map-kv`
+回调用 nil 丢弃条目的写法，`filter-map-kv` 的回调改用 `MapEntryDecision :drop`。
 
 ## Ecosystem audit / 生态审计
 
