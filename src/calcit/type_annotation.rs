@@ -5031,8 +5031,9 @@ impl CalcitTypeAnnotation {
         });
       }
       (Self::TypeVar(_), _) | (_, Self::TypeVar(_)) => return None,
-      // A slot resolves later through its own relation arm.
-      (_, Self::TypeSlot(_)) => return None,
+      // A slot on either side resolves later through its own relation arm,
+      // so a slot bound to this union relates to it as the union itself (#2642).
+      (_, Self::TypeSlot(_)) | (Self::TypeSlot(_), _) => return None,
       _ => {}
     }
     let relate = |actual: &Self, expected: &Self, bindings: &mut TypeBindings| match mode {
