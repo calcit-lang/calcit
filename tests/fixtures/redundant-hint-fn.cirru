@@ -38,10 +38,24 @@
               hint-fn $ Fn Dynamic (-> Number)
               , 1
           :schema $ quote $ Fn (List Number) (-> (List Number))
+        'h5-tail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn h5-tail ()
+            fn (x)
+              hint-fn $ Fn Task (-> String)
+              :title x
+          :schema $ quote $ Fn (-> (Fn Task (-> String)))
+        'h6-bound-once $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn h6-bound-once (ts)
+            let
+                label $ fn (x)
+                  hint-fn $ Fn Task (-> String)
+                  :title x
+              .map ts label
+          :schema $ quote $ Fn (List Task) (-> (List String))
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             let
                 t $ Task :title |a :done true
-              println (h1-user-fn t) (h2-filter $ [] t) (h3-map $ [] t) (h4-narrower $ [] 1)
+              println (h1-user-fn t) (h2-filter $ [] t) (h3-map $ [] t) (h4-narrower $ [] 1) ((h5-tail) t) (h6-bound-once $ [] t)
               , &unit
           :schema $ quote $ Fn (-> Unit)

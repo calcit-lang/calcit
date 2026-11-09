@@ -264,11 +264,12 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   每个 definition 在首个编译错误停止。修复后重新运行以发现后续错误；`:tests` / `:examples` 仍需独立验证。
   不相关错误、依赖或所选 scope 外的错误、缺少源码定位的错误直接失败，不猜定位或隐藏问题。
 - `redundant-hint-fn-v1`（0.39.0，#2636）删除与上下文重复的 `hint-fn`：lambda 直接作为实参传给已声明 callback 类型的位置
-  （`.map` / `.filter` / `.foldl`、带 `Fn` 参数的用户函数等）时，编译器已经从上下文得到参数类型。若 hint 的参数与返回
+  （`.map` / `.filter` / `.foldl`、带 `Fn` 参数的用户函数等）、写在返回类型为 `Fn` 的函数的返回位置，或被 `let` 绑定后
+  只使用一次（#2637）时，编译器已经从上下文得到参数类型。若 hint 的参数与返回
   和上下文给出的具体类型完全相同（返回位置是 callee 的泛型时，以推断出的函数体返回为准），`--check-only` 通过后会打印一行
   `[W_REDUNDANT_HINT_FN]` 汇总。运行 `calcit fix --rule redundant-hint-fn-v1 --format json` 预览，确认后加
   `--apply --expect-revision <revision>` 删除。带泛型、`:where`、`:features`、`(:open …)`、async 或比上下文更窄/更宽的
-  hint 不会被报告；let 绑定后再传入或处于返回位置的 lambda 目前不在推断范围内，需要保留 hint。该规则只按显式 `--rule` 运行。
+  hint 不会被报告；`let` 绑定后使用多次或直接调用的 lambda 没有单一上下文，hint 保留。该规则只按显式 `--rule` 运行。
 - `concrete-return-proof-v1` 复用同一 compiler proof，显式检查函数实现是否证明了声明的具体返回类型。
   运行 `calcit fix --rule concrete-return-proof-v1 --ns app.main --def run --format edn`。
   缺证据的 producer 保留 `E_FN_RETURN_UNPROVEN`、真实 source owner、path、fingerprint 与编译栈；
