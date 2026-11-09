@@ -527,6 +527,24 @@ pub(crate) fn resolve_checked_call_contract(
       return_type: receiver_type,
       lowering: None,
     }),
+    // A known Struct field gives the updater its declared type, so the
+    // callback is checked as `Field -> Field` like a Map value (#2647).
+    ("update", receiver) if super::type_checking::is_direct_struct_receiver(receiver) => {
+      let field = match args.get(1)? {
+        Calcit::Tag(tag) => tag.ref_str(),
+        _ => return None,
+      };
+      let field_type = super::type_inference::resolve_struct_field_type(receiver, field)?;
+      Some(CheckedCallContract {
+        expected_types: Some(vec![
+          receiver_type.clone(),
+          Arc::new(T::Tag),
+          fn_type(vec![field_type.clone()], field_type),
+        ]),
+        return_type: receiver_type,
+        lowering: None,
+      })
+    }
     ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if !is_syntax_member(item_type) => {
       let target = if matches!(receiver_type.as_ref(), T::List(_)) {
         "&list:filter"

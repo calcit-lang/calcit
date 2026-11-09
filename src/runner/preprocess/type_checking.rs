@@ -547,7 +547,7 @@ fn specialize_assoc_expected_types(
   Some(specialized)
 }
 
-fn is_direct_struct_receiver(value: &CalcitTypeAnnotation) -> bool {
+pub(super) fn is_direct_struct_receiver(value: &CalcitTypeAnnotation) -> bool {
   matches!(value, CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_))
     || (matches!(value, CalcitTypeAnnotation::TypeRef(_, _)) && value.resolve_to_struct().is_some())
 }
