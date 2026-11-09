@@ -4542,7 +4542,7 @@ fn preprocess_list_call(
           // A retired method name stays on the typed path so validation can
           // report the migration instead of a confusing prefix-call failure.
           let is_retired_method = retired_method_migration(type_info.as_ref(), method_name.as_ref()).is_some();
-          if is_retired_method && !has_known_method {
+          if is_retired_method {
             reject_retired_method_call(type_info.as_ref(), method_name, call_stack, call_location.clone())?;
           }
 
@@ -10639,14 +10639,20 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
 }
 
 /// Report a retired method before its arguments are checked, in every type
-/// mode, so a callback written for the old method cannot fail first.
+/// mode, so a callback written for the old method cannot fail first. Both the
+/// postfix and the prefix method forms share this guard.
 fn reject_retired_method_call(
   receiver: &CalcitTypeAnnotation,
   method_name: &str,
   call_stack: &CallStackList,
   location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  if retired_trait_reachable_method_migration(receiver, method_name).is_some() {
+  // A method the receiver's impl table still provides, or one a core trait
+  // still reaches, is not retired for this receiver.
+  let expected = format!(".{method_name}");
+  if retired_trait_reachable_method_migration(receiver, method_name).is_some()
+    || static_method_descriptors(receiver).is_some_and(|methods| methods.iter().any(|method| method.name == expected))
+  {
     return Ok(());
   }
   let Some(migration) = retired_method_migration(receiver, method_name) else {
