@@ -148,6 +148,17 @@ wrapper，也不需要把类型放宽为 Dynamic。
 参数报 `W_METHOD_ARG_TYPE_MISMATCH`（函数写法 `merge` 报 `W_FN_ARG_TYPE_MISMATCH`），
 不再因为混合推导成 `Map Tag Dynamic` 而通过（#2589）。
 
+## 空集合作累加初值
+
+`foldl` / `.foldl` / `fold` / `reduce` 的初值是空的 `([])`、`({})` 或 `(#{})` 时，accumulator 的元素类型由回调加入的内容决定，不再固定为空（`never`）。例如：
+
+```cirru
+defn titles (ts)
+  .foldl ts (#{}) $ fn (acc t) (include acc $ :title t)
+```
+
+schema 写 `Fn (List Task) (-> (Set String))` 即可通过，不需要 `assert-type (#{}) (Set String)`。回调加入的类型和函数声明的返回类型不一致时（例如加入 `:done` 的 Bool），报返回类型不符 `set<bool>`，而不是回调参数不符（0.40.0，#2646）。
+
 ## 方法接收者与返回证据
 
 类型化方法的接收者关系先由实际接收者证明，再用于检查其余参数与推导结果。
