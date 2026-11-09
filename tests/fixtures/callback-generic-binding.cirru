@@ -22,6 +22,19 @@
         'inline-bad $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn inline-bad () $ apply-op (fn (store op) (+ store op)) |base 5
           :schema $ quote $ Fn (-> String)
+        'alias-bound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias-bound () $ let
+              run apply-op
+            run (fn (store op) (str store op)) |base 5
+          :schema $ quote $ Fn (-> String)
+        'param-bound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn param-bound (run) $ run (fn (store op) (str store op)) |base 5
+          :schema $ quote $ Fn (Fn (Fn Store Op (-> Store)) Store Op (-> Store) (:generics Op Store)) (-> String)
+        'let-bound-bad $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn let-bound-bad () $ let
+              updater $ fn (store op) (+ store op)
+            apply-op updater |base 5
+          :schema $ quote $ Fn (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () nil
           :schema $ quote $ Fn (-> Nil)

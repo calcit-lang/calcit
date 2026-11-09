@@ -26,13 +26,26 @@ fn callbacks_take_generics_from_later_arguments() {
     String::from_utf8_lossy(&output.stderr)
   );
   assert!(!output.status.success(), "{text}");
-  for def in ["inline", "let-bound"] {
+  // `param-bound` calls a parameter typed with the generic signature, which
+  // takes the indirect-call path rather than the named-function one.
+  for def in ["inline", "let-bound", "alias-bound", "param-bound"] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
   assert!(!text.contains("E_CALL_ARGUMENT_UNPROVEN"), "{text}");
   // The callback's `store` is the String bound from `|base`, so `+` rejects it.
-  assert!(
-    text.contains("`calcit.core/+` arg 1 expects type `:number`, but got `:string` in call at demo.main/inline-bad"),
-    "{text}"
-  );
+  for def in ["inline-bad", "let-bound-bad"] {
+    assert!(
+      text.contains(&format!(
+        "`calcit.core/+` arg 1 expects type `:number`, but got `:string` in call at demo.main/{def}"
+      )),
+      "{def}:\n{text}"
+    );
+    // The callback must return `Store`, so a Number result is rejected too.
+    assert!(
+      text.contains(&format!(
+        "`demo.main/apply-op` arg 1 expects type `fn('Store, 'Op) -> 'Store`, but got `fn(:string, :number) -> :number` in call at demo.main/{def}"
+      )),
+      "{def}:\n{text}"
+    );
+  }
 }
