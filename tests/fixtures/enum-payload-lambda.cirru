@@ -20,6 +20,12 @@
         'named-ctor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn named-ctor () $ Patch :mount $ fn (t) (:titel t)
           :schema $ quote $ Fn (-> Patch)
+        'Mapper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Mapper ([] T) (:pick (Fn Task (-> T)))
+          :schema $ quote EnumDef
+        'generic-ctor $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn generic-ctor () $ Mapper :pick $ fn (t) (:titel t)
+          :schema $ quote $ Fn (-> (Mapper String))
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (anonymous-ctor) (named-ctor) nil
+          :code $ quote $ defn main! () (anonymous-ctor) (named-ctor) (generic-ctor) nil
           :schema $ quote $ Fn (-> Nil)
