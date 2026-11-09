@@ -58,6 +58,8 @@ const NOMINAL_WRITE_PROOF_RULE: &str = "nominal-write-proof-v1";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const CORE_ABSENCE_RULE: &str = "core-absence-to-public-v1";
+const REDUNDANT_HINT_FN_RULE: &str = "redundant-hint-fn-v1";
+const REDUNDANT_HINT_FN_DIAGNOSTIC: &str = "W_REDUNDANT_HINT_FN";
 const CORE_ABSENCE_DIAGNOSTIC: &str = "FIX_CORE_ABSENCE_TO_PUBLIC";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
@@ -113,16 +115,42 @@ const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FixOperation {
-  ReplaceLeaf { original: String, replacement: String },
-  WrapLeafCall { original: String },
-  ReplaceNode { original: String, replacement: String },
+  ReplaceLeaf {
+    original: String,
+    replacement: String,
+  },
+  WrapLeafCall {
+    original: String,
+  },
+  ReplaceNode {
+    original: String,
+    replacement: String,
+  },
   SpliceDo,
-  ReplaceImports { code: String },
-  ReplaceExamples { code: String },
-  ReplaceTest { name: String, tags: String, code: String },
-  ReplaceSchema { code: String },
-  ReplaceDefinition { code: String },
-  RenameDefinition { new_name: String },
+  /// Remove one list node, guarded by its exact source.
+  DeleteNode {
+    original: String,
+  },
+  ReplaceImports {
+    code: String,
+  },
+  ReplaceExamples {
+    code: String,
+  },
+  ReplaceTest {
+    name: String,
+    tags: String,
+    code: String,
+  },
+  ReplaceSchema {
+    code: String,
+  },
+  ReplaceDefinition {
+    code: String,
+  },
+  RenameDefinition {
+    new_name: String,
+  },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -706,6 +734,13 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_ABSENCE_RULE) {
     suggestions.extend(absence::plan(&source_snapshot, snapshot_file, &selected_definitions)?);
+  }
+  if selected_rules.contains(&REDUNDANT_HINT_FN_RULE) {
+    suggestions.extend(plan_redundant_hint_fn_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
   }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
@@ -1367,13 +1402,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | NOMINAL_WRITE_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | CORE_ABSENCE_RULE
+        | REDUNDANT_HINT_FN_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`, `{REDUNDANT_HINT_FN_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1421,6 +1457,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_RESULT_METHOD_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_ABSENCE_RULE
+        | REDUNDANT_HINT_FN_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1437,6 +1474,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
+        REDUNDANT_HINT_FN_RULE => REDUNDANT_HINT_FN_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1493,6 +1531,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
       evidence_source: "current-diagnostic",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    REDUNDANT_HINT_FN_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: REDUNDANT_HINT_FN_DIAGNOSTIC,
+      evidence_source: "compiled-type-inference",
       lifecycle: "current-semantics",
       source_version_required: false,
     },
@@ -4392,6 +4437,60 @@ fn plan_redundant_do_fixes(
   Ok(suggestions)
 }
 
+/// Remove `hint-fn` forms the compiler found repeating their callback
+/// context (#2636). The compiled selection records each site; a site counts
+/// only when its source node still is that `hint-fn` list.
+fn plan_redundant_hint_fn_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let selected: HashSet<(&str, &str)> = selected_definitions
+    .iter()
+    .map(|(namespace, definition)| (namespace.as_str(), definition.as_str()))
+    .collect();
+  let mut sites = runner::preprocess::redundant_hint_sites();
+  // Later siblings first, so earlier deletions keep the remaining paths valid.
+  sites.sort_by(|left, right| (&left.ns, &left.def, &right.coord).cmp(&(&right.ns, &right.def, &left.coord)));
+  let mut suggestions = Vec::new();
+  for site in sites {
+    if !selected.contains(&(site.ns.as_str(), site.def.as_str())) {
+      continue;
+    }
+    let Some(entry) = snapshot.files.get(&site.ns).and_then(|file| file.defs.get(&site.def)) else {
+      continue;
+    };
+    let target_path: Vec<usize> = site.coord.iter().map(|index| usize::from(*index)).collect();
+    let Ok(node) = navigate_to_path(&entry.code, &target_path) else {
+      continue;
+    };
+    if list_head(&node) != Some("hint-fn") {
+      continue;
+    }
+    let original = node
+      .format_one_liner()
+      .map_err(|error| format!("Failed to format hint-fn source at {}/{}: {error}", site.ns, site.def))?;
+    suggestions.push(FixSuggestion {
+      rule_id: REDUNDANT_HINT_FN_RULE,
+      diagnostic_code: REDUNDANT_HINT_FN_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{}/{}", site.ns, site.def),
+      path: format!("code{}", format_path(&target_path)),
+      fingerprint: node_fingerprint(&node),
+      origin_chain: vec![serde_json::json!({"kind": "compiled-callback-context"})],
+      original: quoted_json(&node),
+      replacement: None,
+      applicability: "machine-applicable",
+      message: "Remove a `hint-fn` that repeats the signature the callback already receives from its call context; the checked types are unchanged."
+        .to_owned(),
+      target_path,
+      operation: Some(FixOperation::DeleteNode { original }),
+    });
+  }
+  Ok(suggestions)
+}
+
 /// Collect source paths in evaluation order while treating quoted trees as data.
 fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut Vec<Vec<usize>>) {
   let Cirru::List(items) = node else {
@@ -5227,6 +5326,15 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
         ],
       ]
     }
+    Some(FixOperation::DeleteNode { original }) => vec![vec![
+      "tree".to_owned(),
+      "delete".to_owned(),
+      suggestion.definition.clone(),
+      "--path".to_owned(),
+      format_path(&suggestion.target_path),
+      "--expect".to_owned(),
+      format!("quote $ {original}"),
+    ]],
     Some(FixOperation::ReplaceImports { code }) => vec![vec![
       "edit".to_owned(),
       "imports".to_owned(),
