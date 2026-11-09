@@ -5154,6 +5154,20 @@ fn preprocess_list_call(
                 })
               })
             } else if !has_spread
+              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew))
+              && ys.len() >= 3
+              && let (Some(enum_arg), Some(Calcit::Tag(tag))) = (ys.get(1), ys.get(2))
+            {
+              // A variant payload declares its type like a Struct field or a
+              // function input, so an inline lambda there gets it too (#2644).
+              // Payloads bound through the enum's own parameters stay open.
+              type_inference::resolve_enum_value(enum_arg, scope_types).and_then(|enum_def| {
+                let variant = enum_def.find_variant_by_name(tag.ref_str())?;
+                let payload = variant.payload_types().get(ys.len() - 3)?.clone();
+                let expected = type_inference::resolve_enum_payload_type(&enum_def, payload);
+                (!expected.contains_type_var()).then_some(expected)
+              })
+            } else if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
               && let Some(receiver) = ys.get(1)
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
@@ -5240,6 +5254,7 @@ fn preprocess_list_call(
                 &head_form,
                 Calcit::Proc(
                   CalcitProc::NativeStruct
+                    | CalcitProc::NativeNamedEnumNew
                     | CalcitProc::Sort
                     | CalcitProc::NativeListSort
                     | CalcitProc::Foldl

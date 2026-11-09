@@ -102,6 +102,33 @@ fn slot_bound_to_union_accepts_callbacks_over_that_union() {
 }
 
 #[test]
+fn enum_payload_lambdas_take_the_declared_payload_type() {
+  // A lambda passed as a variant payload gets the declared `Fn Task (-> String)`
+  // like a Struct field does, so a misspelled field on `t` is caught (#2644).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-payload-lambda.cirru", &snapshot).unwrap();
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "misspelled payload fields are reported");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  for definition in ["demo.main/anonymous-ctor", "demo.main/named-ctor"] {
+    let section = output
+      .split(&format!("## `{definition}`"))
+      .nth(1)
+      .and_then(|rest| rest.split("\n## ").next())
+      .unwrap_or_default();
+    assert!(
+      section.contains("W_UNKNOWN_STRUCT_FIELD") && section.contains("`:titel`"),
+      "{definition} reports the unknown field of `Task`:\n{output}"
+    );
+  }
+}
+
+#[test]
 fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
