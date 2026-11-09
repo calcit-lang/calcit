@@ -21,13 +21,19 @@ fn branch_and_cond_failures_have_dedicated_codes() {
       .find(|item| item["definition"] == definition)
       .unwrap_or_else(|| panic!("no diagnostic for {definition}: {diagnostics:#?}"))
   };
-  // `recur-mixed` also has a `recur` exit, which adds no value branch.
-  for definition in ["demo.main/if-mixed", "demo.main/cond-mixed", "demo.main/recur-mixed"] {
+  // `recur-mixed` also has a `recur` exit, which adds no value branch, and
+  // `async-mixed` names the adopted types of its pending exits.
+  for definition in [
+    "demo.main/if-mixed",
+    "demo.main/cond-mixed",
+    "demo.main/recur-mixed",
+    "demo.main/async-mixed",
+  ] {
     let item = find(definition);
     assert_eq!(item["code"], "E_BRANCH_TYPE_MISMATCH", "{item:#?}");
     let message = item["message"].as_str().unwrap();
     assert!(
-      message.contains("branch 1: `:number`, branch 2: `:string` (does not satisfy the return type)"),
+      message.ends_with("branch 1: `:number`, branch 2: `:string` (does not satisfy the return type)"),
       "{message}"
     );
   }
@@ -51,5 +57,5 @@ fn branch_and_cond_failures_have_dedicated_codes() {
       "{passing}: {diagnostics:#?}"
     );
   }
-  assert_eq!(diagnostics.len(), 5, "{diagnostics:#?}");
+  assert_eq!(diagnostics.len(), 6, "{diagnostics:#?}");
 }
