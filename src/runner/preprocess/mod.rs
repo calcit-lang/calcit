@@ -4135,6 +4135,7 @@ fn process_macro_source(
   )?;
 
   reject_legacy_trait_method_tag_syntax(info, args, ctx.file_ns, def_name, ctx.call_stack)?;
+  reject_cond_without_default(info, args, ctx.call_location.clone(), ctx.call_stack)?;
 
   let code = Calcit::List(source.clone());
   let next_stack = ctx
@@ -9669,6 +9670,44 @@ fn warn_on_constant_truthy_condition(
   let message =
     format!("[Warn] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}");
   gen_check_warning_with_location_code(message, "W_CONSTANT_TRUTHY_CONDITION", location, check_warnings);
+}
+
+/// `cond` with no final `true` pair would fall through to nil; report it at
+/// the call with a code and the fix, before the macro's own bare `raise` (#2651).
+/// Malformed pairs are left to the macro's pair checks.
+fn reject_cond_without_default(
+  macro_info: &crate::calcit::CalcitMacro,
+  args: &CalcitList,
+  call_location: Option<NodeLocation>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if macro_info.def_ns.as_ref() != calcit::CORE_NS || macro_info.name.as_ref() != "cond" {
+    return Ok(());
+  }
+  let Some(Calcit::List(last)) = args.iter().last() else {
+    return Ok(());
+  };
+  if last.len() != 2 || args.iter().any(|pair| !matches!(pair, Calcit::List(pair) if pair.len() == 2)) {
+    return Ok(());
+  }
+  if matches!(last.first(), Some(Calcit::Bool(true))) {
+    return Ok(());
+  }
+  let mut error = CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Syntax,
+    format!(
+      "`cond` needs a final `true` branch so that no value falls through to nil, but the last of its {} branch(es) tests another condition",
+      args.len()
+    ),
+    "E_COND_MISSING_DEFAULT",
+    call_stack,
+    call_location.or_else(|| last.first().and_then(Calcit::get_location)),
+  );
+  error.hint = Some(
+    "Add `true <fallback>` as the last pair, e.g. `true 0`; when no other case can happen, write `true $ raise |unreachable` so the exit is explicit."
+      .into(),
+  );
+  Err(error)
 }
 
 fn reject_legacy_trait_method_tag_syntax(

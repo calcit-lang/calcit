@@ -2155,7 +2155,9 @@ fn default_proof_rejects_directional_dynamic_flows() {
     ("p03", "E_FN_RETURN_UNPROVEN"),
     ("p12", "E_FN_RETURN_UNPROVEN"),
     ("p21", "E_CALL_ARGUMENT_UNPROVEN"),
-    ("p30", "E_FN_RETURN_UNPROVEN"),
+    // `and a b` expands to branches that return `false`; with every branch
+    // typed, the report names them instead of an unknown join (#2651).
+    ("p30", "E_BRANCH_TYPE_MISMATCH"),
     ("p31", "E_CALL_ARGUMENT_UNPROVEN"),
   ];
   for (case, code) in cases {
