@@ -2280,6 +2280,45 @@ fn result_tail(mut expr: &Calcit) -> &Calcit {
   expr
 }
 
+/// Positional tuple evidence for a returned value whose declared type carries
+/// a tuple: a `[]` literal against `Tuple`, a callback literal against
+/// `Fn (..) (-> (Tuple ..))`, or a list `map` with such a callback against
+/// `List (Tuple ..)` (#2645).
+fn return_tail_tuple_evidence(
+  expr: &Calcit,
+  actual_type: &Arc<CalcitTypeAnnotation>,
+  expected: &CalcitTypeAnnotation,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  match expected {
+    CalcitTypeAnnotation::Tuple(_) => tuple_literal_evidence(expr, expected, scope_types),
+    CalcitTypeAnnotation::Fn(_) => callback_tail_tuple_evidence(expr, actual_type, expected, scope_types),
+    CalcitTypeAnnotation::List(item) if matches!(item.as_ref(), CalcitTypeAnnotation::Tuple(_)) => {
+      if !matches!(actual_type.as_ref(), CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic) {
+        return None;
+      }
+      let callback = list_map_callback(expr)?;
+      let output = callback_tail_tuple(callback, item, scope_types)?;
+      Some(Arc::new(CalcitTypeAnnotation::List(output)))
+    }
+    _ => None,
+  }
+}
+
+/// The callback literal of a lowered list `map` call.
+fn list_map_callback(expr: &Calcit) -> Option<&Calcit> {
+  let Calcit::List(items) = expr else { return None };
+  if items.len() != 3 {
+    return None;
+  }
+  let is_list_map = match items.first()? {
+    Calcit::Import(import) => import.ns.as_ref() == crate::calcit::CORE_NS && import.def.as_ref() == "&list:map",
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "&list:map",
+    _ => false,
+  };
+  is_list_map.then(|| items.get(2)).flatten()
+}
+
 /// Check function return type matches declared return_type.
 /// Positional evidence for a `[]` literal checked against a tuple, recursing
 /// into nested tuple slots; other slots use ordinary inference.
@@ -2402,7 +2441,8 @@ pub(crate) fn check_function_return_type(
   };
   // A heterogeneous literal infers as a List; against a declared tuple return,
   // its positions are the evidence, so generic slots keep their binders.
-  let actual_type = tuple_literal_evidence(result_tail(last_expr), declared_return_type, scope_types).unwrap_or(actual_type);
+  let actual_type =
+    return_tail_tuple_evidence(result_tail(last_expr), &actual_type, declared_return_type, scope_types).unwrap_or(actual_type);
 
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
