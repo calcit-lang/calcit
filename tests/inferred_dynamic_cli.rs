@@ -39,6 +39,8 @@ fn open_bindings_are_counted_by_source() {
   assert_eq!(
     rows,
     [
+      // A directly invoked lambda takes its source from the call arguments.
+      "demo.main/invoked param z Dynamic dynamic-source",
       "demo.main/open-input let copy Dynamic dynamic-source",
       "demo.main/open-input let field calcit.core/Option Dynamic map-field",
       // A lambda returned from `let` takes no contract from the binding pair.
@@ -50,13 +52,14 @@ fn open_bindings_are_counted_by_source() {
     "typed bindings, typed lambdas and the definitions' own parameters are not listed"
   );
   let summary = &data["summary"];
-  assert_eq!(summary["findings"], 6);
-  assert_eq!(summary["by_binding"], serde_json::json!({ "let": 3, "param": 3 }));
+  // The macro-built `gen` binding has no path, so it is counted but not listed.
+  assert_eq!(summary["findings"], 8);
+  assert_eq!(summary["by_binding"], serde_json::json!({ "let": 4, "param": 4 }));
   assert_eq!(
     summary["by_source"],
-    serde_json::json!({ "dynamic-source": 2, "map-field": 1, "inference-failure": 3 })
+    serde_json::json!({ "dynamic-source": 4, "map-field": 1, "inference-failure": 3 })
   );
-  assert_eq!(summary["unlocated_bindings"], 0);
+  assert_eq!(summary["unlocated_bindings"], 1);
   assert_eq!(summary["uncompiled_definitions"], 0);
   assert_eq!(report["diagnostics"], serde_json::json!([]));
 }
@@ -64,7 +67,14 @@ fn open_bindings_are_counted_by_source() {
 #[test]
 fn summary_only_keeps_counts() {
   let report = run(&["--summary-only"]);
-  assert_eq!(report["data"]["summary"]["findings"], 6);
+  let summary = &report["data"]["summary"];
+  assert_eq!(summary["findings"], 8);
+  assert_eq!(summary["by_binding"], serde_json::json!({ "let": 4, "param": 4 }));
+  assert_eq!(
+    summary["by_source"],
+    serde_json::json!({ "dynamic-source": 4, "map-field": 1, "inference-failure": 3 })
+  );
+  assert_eq!(summary["unlocated_bindings"], 1);
   assert_eq!(report["data"]["findings"], serde_json::json!([]));
 }
 

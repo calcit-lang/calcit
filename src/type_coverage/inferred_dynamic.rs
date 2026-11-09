@@ -141,12 +141,15 @@ fn classify_call_siblings(siblings: &[&Calcit]) -> Source {
   }
 }
 
+/// An open binding with no source coordinate: its binding kind and source.
+type Unlocated = (&'static str, Source);
+
 #[derive(Default)]
 struct Collector {
   findings: BTreeSet<Finding>,
   /// Open bindings with no source coordinate, usually rebuilt by a user macro.
-  /// They have no path to report, but still count as Dynamic debt.
-  unlocated: usize,
+  /// They have no path to list, but still count in the totals.
+  unlocated: Vec<Unlocated>,
 }
 
 fn push_local(local: &CalcitLocal, binding: &'static str, source: Source, out: &mut Collector) {
@@ -154,7 +157,7 @@ fn push_local(local: &CalcitLocal, binding: &'static str, source: Source, out: &
     return;
   }
   let Some(coord) = local.location.as_ref() else {
-    out.unlocated += 1;
+    out.unlocated.push((binding, source));
     return;
   };
   out.findings.insert(Finding {
@@ -193,11 +196,13 @@ fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, out: &
   // Only a call passes its other arguments to a lambda; under a special form
   // such as `&let`, `defn` or `if`, the siblings are bindings, parameters or
   // conditions, so a lambda there has no contract from them.
+  // A lambda in head position is invoked directly, so the arguments are its
+  // inputs too.
   let is_call = !matches!(items.first(), Some(Calcit::Syntax(..)));
   let children = items.iter().collect::<Vec<_>>();
   for (index, child) in children.iter().enumerate() {
     let is_lambda = matches!(child, Calcit::List(inner) if matches!(inner.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))));
-    let source = (is_call && is_lambda && index > 0).then(|| {
+    let source = (is_call && is_lambda).then(|| {
       let siblings = children
         .iter()
         .enumerate()
@@ -211,7 +216,7 @@ fn collect(node: &Calcit, top_level: bool, lambda_source: Option<Source>, out: &
 }
 
 /// Open bindings in one compiled definition, ordered by source coordinate.
-pub(crate) fn definition_findings(namespace: &str, definition: &str) -> Result<(Vec<Finding>, usize), String> {
+pub(crate) fn definition_findings(namespace: &str, definition: &str) -> Result<(Vec<Finding>, Vec<Unlocated>), String> {
   let warnings = RefCell::new(Vec::new());
   runner::preprocess::compile_source_def_for_snapshot(namespace, definition, &warnings, &CallStackList::default())
     .map_err(|failure| failure.msg)?;
@@ -239,7 +244,11 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
   for (namespace, definition, _) in entries {
     match definition_findings(namespace, definition) {
       Ok((rows, unlocated_here)) => {
-        unlocated += unlocated_here;
+        for (binding, source) in unlocated_here {
+          unlocated += 1;
+          *by_source.entry(source.as_str()).or_default() += 1;
+          *by_binding.entry(binding).or_default() += 1;
+        }
         for row in rows {
           *by_source.entry(row.source.as_str()).or_default() += 1;
           *by_binding.entry(row.binding).or_default() += 1;
@@ -265,7 +274,8 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
       "view": VIEW,
       "filters": { "ns": options.ns, "ns_prefix": options.ns_prefix, "deps": options.deps },
       "summary": {
-        "findings": findings.len(),
+        // Unlocated bindings count here and in the breakdowns too.
+        "findings": findings.len() + unlocated,
         "by_source": by_source,
         "by_binding": by_binding,
         "unlocated_bindings": unlocated,
@@ -283,7 +293,7 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
       println!("# Inferred Dynamic bindings\n");
       println!(
         "{} binding(s) compiled as `Dynamic`: {} let, {} lambda param.",
-        findings.len(),
+        findings.len() + unlocated,
         by_binding.get("let").copied().unwrap_or(0),
         by_binding.get("param").copied().unwrap_or(0)
       );

@@ -35,6 +35,21 @@
                 copy data
               fn (y) (str copy y)
           :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'invoked $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn invoked (data)
+            (fn (z) (str z)) data
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'bind-gen $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro bind-gen (value)
+            quasiquote $ let
+                (~ (turn-symbol |gen)) (~ value)
+              str (~ (turn-symbol |gen))
+          :schema $ quote $ Macro Syntax
+            -> $ Expr Dynamic
+        'macro-bound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn macro-bound (data)
+            bind-gen data
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () nil
           :schema $ quote $ Fn (-> Nil)
