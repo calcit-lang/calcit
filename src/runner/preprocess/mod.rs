@@ -1406,6 +1406,47 @@ fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitT
   output_only
 }
 
+/// Callee variables that a callback mentions (as input or result) and that a
+/// later ordinary argument also carries, e.g. `Store` and `Op` in
+/// `Fn (Fn Store Op (-> Store)) Store Op …`. The callback comes first in
+/// source order, so its context must take them from those arguments (#2648).
+fn later_evidenced_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+  let names = |annotation: &Arc<CalcitTypeAnnotation>| {
+    crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(annotation))
+      .into_iter()
+      .filter(|name| generics.contains(name))
+      .collect::<Vec<_>>()
+  };
+  let mut evidenced = HashSet::new();
+  for (index, argument) in arguments.iter().enumerate() {
+    if argument.resolve_to_nonoptional_fn().is_none() {
+      continue;
+    }
+    let later = arguments
+      .iter()
+      .skip(index + 1)
+      .filter(|later| later.resolve_to_nonoptional_fn().is_none())
+      .flat_map(names)
+      .collect::<HashSet<_>>();
+    evidenced.extend(names(argument).into_iter().filter(|name| later.contains(name)));
+  }
+  evidenced
+}
+
+/// Generics bound from ordinary arguments before any callback is preprocessed:
+/// those only a callback returns, and those a later argument fixes (#2648).
+fn pregathered_callback_generics(
+  generics: &[Arc<str>],
+  arguments: &[Arc<CalcitTypeAnnotation>],
+  rest: Option<&Arc<CalcitTypeAnnotation>>,
+) -> HashSet<Arc<str>> {
+  let mut pregathered = output_only_callback_generics(generics, arguments);
+  // Rest values follow every fixed parameter, so they are later evidence too.
+  let with_rest = arguments.iter().chain(rest).cloned().collect::<Vec<_>>();
+  pregathered.extend(later_evidenced_callback_generics(generics, &with_rest));
+  pregathered
+}
+
 fn all_output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
   let mut output_only = HashSet::new();
   for argument in arguments {
@@ -5099,10 +5140,10 @@ fn preprocess_list_call(
           // context so the callback body cannot choose T by source order.
           if let Some(signature) = callable_contract.as_ref()
             && !signature.generics.is_empty()
-            && !output_only_callback_generics(&signature.generics, &signature.arg_types).is_empty()
+            && !pregathered_callback_generics(&signature.generics, &signature.arg_types, signature.rest_type.as_ref()).is_empty()
             && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
           {
-            let output_only = output_only_callback_generics(&signature.generics, &signature.arg_types);
+            let output_only = pregathered_callback_generics(&signature.generics, &signature.arg_types, signature.rest_type.as_ref());
             for (index, arg) in args.iter().enumerate() {
               let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
                 continue;
@@ -6067,12 +6108,13 @@ fn preprocess_known_function_call(
   // returned by an earlier callback (for example `Fn() -> T, T`). Gather that
   // evidence before constructing callback context so the callback body cannot
   // choose the caller's T just because it appears first in source order.
+  let pregathered = pregathered_callback_generics(&info.generics, &info.arg_types, info.rest_type.as_ref());
   if contextual_generic_typing_enabled()
     && !info.generics.is_empty()
-    && !output_only_callback_generics(&info.generics, &info.arg_types).is_empty()
+    && !pregathered.is_empty()
     && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
   {
-    let output_only = output_only_callback_generics(&info.generics, &info.arg_types);
+    let output_only = pregathered;
     for (arg_idx, arg) in args.iter().enumerate() {
       let Some(expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()) else {
         continue;
