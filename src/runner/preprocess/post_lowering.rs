@@ -312,8 +312,11 @@ pub(super) fn validate_definition(
     let source_rewrites_checked = |location: Option<&NodeLocation>| {
       !produced_by.is_empty()
         && produced_by.iter().all(|rewrite| reported_at(rewrite.location.as_ref(), true))
+        // A coordinate from another definition, such as the `fn` macro body
+        // a callback expanded from, is not an operand of this source call.
         && location.is_none_or(|location| {
-          produced_by.iter().any(|rewrite| {
+          location.ns.as_ref() != ns || location.def.as_ref() != def
+            || produced_by.iter().any(|rewrite| {
             rewrite.location.as_ref().is_some_and(|source| {
               source.ns == location.ns && source.def == location.def && location.coord.starts_with(source.coord.as_slice())
             })

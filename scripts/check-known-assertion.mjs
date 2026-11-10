@@ -1827,9 +1827,9 @@ try {
           "--emit-path", output, ...mode], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
         assert.deepEqual(await readFile(snapshot), nominalOriginal);
-        await assertRejectedArtifacts(output, "nominal callback origin", /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+        await assertRejectedArtifacts(output, "nominal callback origin", /W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
       }
       // Conditional exits retain their collection evidence independently of the condition.
       execFileSync(process.execPath, [
@@ -2595,15 +2595,17 @@ try {
       const contextualNominalOutput = join(project, "nominal-js");
       run(...contextualNominalEntry, "--emit-path", contextualNominalOutput, "js");
       (await import(pathToFileURL(join(contextualNominalOutput, "test-struct.main.mjs")).href)).nominal_replay();
+      // A bare `:count` value is wrapped in `Some` (#2652), so a wrong field
+      // carries a payload of the wrong type.
       for (const [label, body] of [
-        ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count 160)"],
-        ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count 160)"],
+        ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count |wrong)"],
+        ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count |wrong)"],
         ["wrong-option-payload", "read-context-box $ {} (:value 1) (:count $ Option :some |wrong)"],
         // `:count` is Option and may be omitted (#2482); `:value` is required.
         ["missing-required-field", "read-number-box $ {} (:count $ Option :none)"],
         ["unknown-field", "read-context-box $ {} (:value 1) (:count $ Option :none) (:extra 1)"],
         ["concrete-generic-mismatch", "read-number-box $ {} (:value |wrong) (:count $ Option :none)"],
-        ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count 160"],
+        ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count |wrong"],
       ]) {
         const target = "test-struct.main/nominal-rejected";
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
@@ -3746,13 +3748,13 @@ try {
         ["NullishCallbackHolder", "defstruct NullishCallbackHolder (:handler $ :: 'JsNullish $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
         ["imported-component", "defn imported-component (flag) $ RecursiveComponent :tree $ if flag (wrappers/empty-tree) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
         ["joined-local-component", "defn joined-local-component (flag) $ let ((absent-tree (Option :none))) (RecursiveComponent :tree (if flag absent-tree (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
-        ["folded-component", "defn folded-component (flag) $ RecursiveComponent :tree $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ wrappers/empty-tree) (fn (present?) $ Option :some $ RecursiveNode :element $ RecursiveElement :children $ [])", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
-        ["folded-signal", "defn folded-signal (flag) $ RecursiveSignalHolder :signal $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ RecursiveSignal :data $ RecursiveNode :element $ RecursiveElement :children $ []) (fn (present?) $ RecursiveSignal :idle)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
-        ["folded-open", "defn folded-open (flag) $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ Option :none) (fn (present?) $ make-open-number)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'Dynamic)"],
+        ["folded-component", "defn folded-component (flag) $ RecursiveComponent :tree $ .fold (if flag (Option :some true) (Option :none)) (fn () $ wrappers/empty-tree) (fn (present?) $ Option :some $ RecursiveNode :element $ RecursiveElement :children $ [])", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
+        ["folded-signal", "defn folded-signal (flag) $ RecursiveSignalHolder :signal $ .fold (if flag (Option :some true) (Option :none)) (fn () $ RecursiveSignal :data $ RecursiveNode :element $ RecursiveElement :children $ []) (fn (present?) $ RecursiveSignal :idle)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
+        ["folded-open", "defn folded-open (flag) $ .fold (if flag (Option :some true) (Option :none)) (fn () $ Option :none) (fn (present?) $ make-open-number)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'Dynamic)"],
         ["loop-component", "defn loop-component (flag) $ loop ((remaining (if flag 1 0)) (tree (Option :none))) (if (&> remaining 0) (recur (dec remaining) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))) (RecursiveComponent :tree tree))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
         ["loop-signal", "defn loop-signal (flag) $ loop ((remaining (if flag 1 0)) (signal (RecursiveSignal :idle))) (if (&> remaining 0) (let ((next (RecursiveSignal :data (RecursiveNode :element (RecursiveElement :children ([])))))) (recur (dec remaining) next)) (RecursiveSignalHolder :signal signal))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
-        ["loop-alias", "defn loop-alias () $ let ((absent (Option :none))) (loop ((n 0) (value absent)) (if (&< n 1) (let ((next (Option :some 7)) (alias next)) (recur 1 alias)) (option:unwrap-or value 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
-        ["loop-propagated", "defn loop-propagated () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) (option:unwrap-or right 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+        ["loop-alias", "defn loop-alias () $ let ((absent (Option :none))) (loop ((n 0) (value absent)) (if (&< n 1) (let ((next (Option :some 7)) (alias next)) (recur 1 alias)) (.unwrap-or value 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+        ["loop-propagated", "defn loop-propagated () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) (.unwrap-or right 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
         ["loop-matched", "defn loop-matched () $ loop ((value (Option :none))) (match value ((:none) (recur (Option :some 7))) ((:some payload) (+ payload 1)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
         ["loop-asserted", "defn loop-asserted () $ loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'Number)) (if (&< n 1) (recur 1 (Option :some 7)) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
         ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],

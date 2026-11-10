@@ -12124,10 +12124,10 @@
                   cell $ ref $ assert-type (Option :none) (Option Number)
                 assert= (Option :some 7)
                   reset! cell $ Option :some 7
-                assert= 8 $ &+ 1 $ option:unwrap-or (deref cell) 0
+                assert= 8 $ &+ 1 $ .unwrap-or (deref cell) 0
                 assert= (Option :none)
                   reset! cell $ Option :none
-                assert= 0 $ option:unwrap-or (deref cell) 0
+                assert= 0 $ .unwrap-or (deref cell) 0
               :tags $ #{} :core :reset-proof :types :unit
             %{} 'TestEntry (:name |function-map-keys-survive-writes)
               :code $ quote $ let
