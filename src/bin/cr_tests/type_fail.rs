@@ -2750,9 +2750,10 @@ fn nil_tests_on_option_literals_are_errors() {
 fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
   run_with_large_stack(|| {
     // The lowered `:nil` arm tests a generated local with `nil?`; only the
-    // user-written `nil? x` is an error.
+    // user-written `nil? x` is an error. `either` also tests a gensym local,
+    // but its nil check is the user's, so it still fails.
     let entries = load_snippet_entries(
-      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x) (either x 0)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     runner::preprocess::take_advisories();
@@ -2762,8 +2763,15 @@ fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
       .into_iter()
       .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
       .collect::<Vec<_>>();
-    assert_eq!(nil_checks.len(), 1, "only the written `nil? x` fails: {nil_checks:?}");
-    assert!(nil_checks[0].message().contains("`'x`"), "{}", nil_checks[0].message());
+    assert_eq!(
+      nil_checks.len(),
+      2,
+      "`nil? x` and `either` fail, the data-view guard does not: {nil_checks:?}"
+    );
+    assert!(
+      nil_checks.iter().all(|check| !check.message().contains("match_v")),
+      "{nil_checks:?}"
+    );
   });
 }
 

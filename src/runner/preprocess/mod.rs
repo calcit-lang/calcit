@@ -2988,6 +2988,12 @@ impl Drop for OutsideGeneratedSpecialization {
 }
 
 thread_local! {
+  /// Locals bound by a lowered `match (data-view …)`. Their `:nil` guard is
+  /// compiler-generated; gensym names are unique, so the set only grows.
+  static DATA_VIEW_GUARD_LOCALS: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+}
+
+thread_local! {
   /// Set while a compiler-generated specialization is preprocessed. Its
   /// synthetic guards (such as `nil?` on an Option) are not user code and
   /// must not raise blocking diagnostics.
@@ -9286,16 +9292,20 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
     }
     _ => "use native `match` instead of positional access on the nominal enum".to_owned(),
   };
-  let location = head
-    .get_location()
-    .or_else(|| option_check_location(value))
-    .or(call_location.clone());
-  // A guard the compiler generated itself, such as the `:nil` arm of a
-  // lowered `match (data-view opt)`, tests a generated local; it is not a
-  // nil check the user wrote.
-  if enum_name == "Option"
-    && matches!(operation, "nil?" | "non-nil?")
-    && location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
+  // Prefer a source coordinate over a gensym local's `gen%` one, so a nil
+  // check expanded from `either` points at the written call.
+  let candidates = [head.get_location(), option_check_location(value), call_location.clone()];
+  let location = candidates
+    .iter()
+    .flatten()
+    .find(|location| location.def.as_ref() != GENERATED_DEF)
+    .or_else(|| candidates.iter().flatten().next())
+    .cloned();
+  // The `:nil` arm of a lowered `match (data-view opt)` tests the local the
+  // lowering bound itself; it is not a nil check the user (or a macro) wrote.
+  if matches!(operation, "nil?" | "non-nil?")
+    && let Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) = value
+    && DATA_VIEW_GUARD_LOCALS.with(|locals| locals.borrow().contains(sym))
   {
     return;
   }
@@ -9306,7 +9316,11 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
     && should_emit_project_source_lint(file_ns)
     && let Some(location) = location.clone()
   {
-    let def_name = if def_name == "??" { location.def.as_ref() } else { def_name };
+    let def_name = if def_name == "??" || def_name == GENERATED_DEF {
+      location.def.as_ref()
+    } else {
+      def_name
+    };
     report_option_nil_check(
       format!(
         "`{operation}` on Option value `{value}` in {file_ns}/{def_name} is always {}",
@@ -13256,6 +13270,9 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
 
   let file_ns = ctx.file_ns;
   let value_sym = generated_path_symbol("match_v", file_ns, ctx.call_stack)?;
+  if let Calcit::Symbol { sym, .. } = &value_sym {
+    DATA_VIEW_GUARD_LOCALS.with(|locals| locals.borrow_mut().insert(sym.clone()));
+  }
   let bind_payload = |binding: &Option<Calcit>, body: &Calcit| match binding {
     Some(local) => generated_let(local.to_owned(), value_sym.to_owned(), body.to_owned(), file_ns),
     None => body.to_owned(),
