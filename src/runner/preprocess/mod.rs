@@ -9409,7 +9409,9 @@ fn option_helper_method(def: &str) -> Option<&'static str> {
 /// A direct `option:*` call written in project source (#2653). Calls a core
 /// macro expands to carry a core (or no) coordinate and are not reported.
 fn warn_on_direct_option_helper_call(info: &CalcitFn, head: &Calcit, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
-  if info.def_ns.as_ref() != calcit::CORE_NS || file_ns == calcit::CORE_NS || !should_emit_project_source_lint(file_ns) {
+  // Core's own tests call the helpers on purpose, also when
+  // `scripts/run-core-tests.mjs` replays them as `calcit.core-test-replay`.
+  if info.def_ns.as_ref() != calcit::CORE_NS || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
     return;
   }
   let Some(method) = option_helper_method(info.name.as_ref()) else {
