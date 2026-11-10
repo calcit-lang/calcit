@@ -233,7 +233,7 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 建议级诊断（如 `W_OPEN_FAMILY`）同样会收集：human 输出在 stderr 以 `Notes:` 列出，结构化 envelope 写在
 `data.advisories`，每项 `severity` 为 `note`，带 `definition` 与 `path`。它们不改变任何 definition 的 `status`，也不影响退出码。
 被 `blocked` 的 definition 不会预处理，其中的建议级诊断要等阻断解除后才会出现。
-`E_BROAD_TYPE` 与 `E_OPTION_ERASED_TO_NIL`（0.36.0 起）不是建议级诊断：它们写在所在 definition 的 `diagnostics` 里，`severity` 为 `error`，把该 definition 计为 `failed`，依赖它的 definition 计为 `blocked`。
+`E_BROAD_TYPE` 与 `E_OPTION_ERASED_TO_NIL`（0.36.0 起）、`E_OPTION_NIL_CHECK`（0.41.0 起）不是建议级诊断：它们写在所在 definition 的 `diagnostics` 里，`severity` 为 `error`，把该 definition 计为 `failed`，依赖它的 definition 计为 `blocked`。
 
 ### 检查范围与 `--all-defs`
 

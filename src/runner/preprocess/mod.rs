@@ -778,7 +778,8 @@ pub fn take_advisories() -> Vec<LocatedWarning> {
 }
 
 /// Splits collected advisories into blocking errors (`E_BROAD_TYPE`, #2504;
-/// `E_OPTION_ERASED_TO_NIL`, #2124; `E_UNBOUND_TYPE_SLOT`, #2627;
+/// `E_OPTION_ERASED_TO_NIL`, #2124; `E_OPTION_NIL_CHECK`, #2653;
+/// `E_UNBOUND_TYPE_SLOT`, #2627;
 /// `E_OPEN_WITHOUT_REASON`, #2635) and the
 /// non-failing notes.
 pub fn split_blocking_advisories(advisories: Vec<LocatedWarning>) -> (Vec<LocatedWarning>, Vec<LocatedWarning>) {
@@ -791,6 +792,7 @@ pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
     Some(
       crate::snapshot::BROAD_TYPE_ERROR
         | crate::snapshot::OPTION_ERASED_ERROR
+        | crate::snapshot::OPTION_NIL_CHECK_ERROR
         | crate::snapshot::UNBOUND_TYPE_SLOT_ERROR
         | crate::snapshot::OPEN_WITHOUT_REASON_ERROR
     )
@@ -2956,7 +2958,17 @@ fn preprocess_generated_specialization(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let generated_warnings = RefCell::new(vec![]);
-  preprocess_expr(expanded, scope_defs, scope_types, file_ns, &generated_warnings, call_stack)
+  let outer = IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(true));
+  let result = preprocess_expr(expanded, scope_defs, scope_types, file_ns, &generated_warnings, call_stack);
+  IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(outer));
+  result
+}
+
+thread_local! {
+  /// Set while a compiler-generated specialization is preprocessed. Its
+  /// synthetic guards (such as `nil?` on an Option) are not user code and
+  /// must not raise blocking diagnostics.
+  static IN_GENERATED_SPECIALIZATION: Cell<bool> = const { Cell::new(false) };
 }
 
 fn generated_optional_value(value: Calcit, file_ns: &str) -> Calcit {
@@ -9200,9 +9212,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
   }
 
   let guidance = match operation {
-    "nil?" | "non-nil?" if enum_name == "Option" => {
-      "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates".to_owned()
-    }
+    "nil?" | "non-nil?" if enum_name == "Option" => "use `.none?` / `.some?` instead of nullable-value predicates".to_owned(),
     "nil?" | "non-nil?" => "use native `match` to inspect the nominal enum variant".to_owned(),
     "=" | "&=" if enum_name == "Option" => {
       "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload".to_owned()
@@ -9218,10 +9228,27 @@ fn warn_on_nominal_enum_legacy_absence_use(
     }
     _ => "use native `match` instead of positional access on the nominal enum".to_owned(),
   };
+  let location = head.get_location().or_else(|| value.get_location());
+  // `nil?` / `non-nil?` (and `either`, which expands to `nil?`) never see
+  // `None` as nil, so on an Option they are always wrong (#2653).
+  if enum_name == "Option"
+    && matches!(operation, "nil?" | "non-nil?")
+    && should_emit_project_source_lint(file_ns)
+    && let Some(location) = location.clone()
+  {
+    report_option_nil_check(
+      format!(
+        "`{operation}` on Option value `{value}` in {file_ns}/{def_name} is always {}",
+        operation == "non-nil?"
+      ),
+      location,
+    );
+    return;
+  }
   let message = format!(
     "[Warn] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
   );
-  if let Some(location) = head.get_location().or_else(|| value.get_location()) {
+  if let Some(location) = location {
     gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
   } else {
     gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
@@ -9269,6 +9296,22 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
   if let Some(location) = source_location_in_namespace(receiver, file_ns) {
     report_option_erased_to_nil(shape, file_ns, location);
   }
+}
+
+/// Blocking since 0.41.0 (#2653): nil-based tests on an Option value. `None`
+/// is a value, not nil, so `nil?`, `non-nil?`, `either` and truthiness
+/// (`if`, `when`, `or`, `and`) never see it as absent. Only project
+/// namespaces are checked, like `E_OPTION_ERASED_TO_NIL`.
+fn report_option_nil_check(what: String, location: NodeLocation) {
+  if IN_GENERATED_SPECIALIZATION.with(Cell::get) {
+    return;
+  }
+  push_advisory(LocatedWarning::new_with_detail(
+    format!("[Error] {what}; `None` is a value, not nil. Use `.some?` / `.none?`, `if-let` / `match`, or `.unwrap-or` for a default"),
+    location,
+    Some(crate::snapshot::OPTION_NIL_CHECK_ERROR.to_owned()),
+    None,
+  ));
 }
 
 /// Blocking since 0.36.0 (#2124): the check and the run preflight fail on it,
@@ -9650,8 +9693,18 @@ fn warn_on_nominal_enum_truthiness(
     return;
   };
 
+  if enum_name == "Option"
+    && should_emit_project_source_lint(file_ns)
+    && let Some(location) = value.get_location()
+  {
+    report_option_nil_check(
+      format!("Option value `{value}` is used as a condition (`if` / `when` / `or` / `and`) in {file_ns} and is always truthy"),
+      location,
+    );
+    return;
+  }
   let guidance = if enum_name == "Option" {
-    "use `option:some?`, `option:none?`, or native `match`; `Option :none` is a truthy nominal value"
+    "use `.some?`, `.none?`, or native `match`; `None` is a truthy nominal value"
   } else {
     "use native `match` to select a nominal enum variant explicitly"
   };
@@ -19666,8 +19719,10 @@ mod tests {
       &CallStackList::default(),
     )
     .expect("preprocess synthetic guard with the normal warning sink");
-    assert_eq!(direct_warnings.borrow().len(), 1);
-    assert_eq!(direct_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
+    // `nil?` on an Option is blocking since 0.41.0 (#2653).
+    let direct_codes = take_advisories().iter().map(|a| a.code().map(str::to_owned)).collect::<Vec<_>>();
+    assert_eq!(direct_codes, vec![Some(crate::snapshot::OPTION_NIL_CHECK_ERROR.to_owned())]);
+    assert!(direct_warnings.borrow().is_empty());
 
     let mut generated_scope_types = ScopeTypes::new();
     preprocess_generated_specialization(
@@ -19678,6 +19733,7 @@ mod tests {
       &CallStackList::default(),
     )
     .expect("preprocess synthetic guard with its private warning sink");
+    assert!(take_advisories().is_empty(), "generated guards raise no blocking diagnostics");
   }
 
   #[test]
@@ -19999,8 +20055,25 @@ mod tests {
     });
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
+    // `nil?` / `non-nil?` on an Option are blocking since 0.41.0 (#2653).
+    take_advisories();
+    for operation in ["nil?", "non-nil?"] {
+      let warnings = RefCell::new(vec![]);
+      warn_on_nominal_enum_legacy_absence_use(
+        &core_head(operation),
+        &args,
+        &ScopeTypes::new(),
+        "tests.option-migration",
+        "demo",
+        &warnings,
+      );
+      assert!(warnings.borrow().is_empty(), "{operation} is an error, not a warning");
+      let advisories = take_advisories();
+      assert_eq!(advisories.len(), 1, "{operation} should fail");
+      assert_eq!(advisories[0].code(), Some(crate::snapshot::OPTION_NIL_CHECK_ERROR));
+    }
+
     for operation in [
-      "non-nil?",
       "get",
       "assoc",
       "assoc-in",
@@ -20369,10 +20442,16 @@ mod tests {
       "application-defined Option must not warn"
     );
 
+    take_advisories();
     let truthiness_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_truthiness(&option_value, &ScopeTypes::new(), "tests.option-migration", &truthiness_warnings);
-    assert_eq!(truthiness_warnings.borrow().len(), 1, "Option truthiness should warn");
-    assert_eq!(truthiness_warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
+    assert!(
+      truthiness_warnings.borrow().is_empty(),
+      "Option truthiness is an error since 0.41.0"
+    );
+    let advisories = take_advisories();
+    assert_eq!(advisories.len(), 1, "Option truthiness should fail");
+    assert_eq!(advisories[0].code(), Some(crate::snapshot::OPTION_NIL_CHECK_ERROR));
   }
 
   #[test]

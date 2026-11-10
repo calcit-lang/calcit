@@ -335,8 +335,8 @@ field still means native versus JavaScript execution; it does not identify the
 host, so use `:target` for that purpose. An entry without `:target` remains
 compatible with older projects and does not enable target validation.
 
-A nominal `Option<T>` uses `.some?`/`.none?`. Preprocessing reports
-`W_NOMINAL_ENUM_LEGACY_USE` when nullable checks, including `non-nil?`, are applied to an Option,
+A nominal `Option<T>` uses `.some?`/`.none?`. Since 0.41.0, nullable checks such as
+`nil?` and `non-nil?` on an Option are an `E_OPTION_NIL_CHECK` error in project code,
 so an API migration cannot silently preserve the wrong branch behavior.
 
 以下是旧式裸宿主对象访问的语义示意；严格类型项目应先声明 external-object trait，并在 `:js-ffi` 适配层转换对象。

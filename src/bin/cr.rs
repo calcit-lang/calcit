@@ -2219,10 +2219,22 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
   let (unreasoned, blocking): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::OPEN_WITHOUT_REASON_ERROR));
+  let (nil_checks, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR));
   let (broad, erased): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
   let mut summaries = vec![];
+  if !nil_checks.is_empty() {
+    eprintln!("\n{} ({} nil checks on Options)", "Errors:".red(), nil_checks.len());
+    LocatedWarning::print_list(&nil_checks);
+    summaries.push(format!(
+      "[{}] Found {} nil-based test(s) on Option values; use `.some?` / `.none?`, `if-let` / `match`, or `.unwrap-or`",
+      snapshot::OPTION_NIL_CHECK_ERROR,
+      nil_checks.len()
+    ));
+  }
   if !broad.is_empty() {
     eprintln!("\n{} ({} bare broad types)", "Errors:".red(), broad.len());
     LocatedWarning::print_list(&broad);

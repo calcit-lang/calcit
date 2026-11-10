@@ -2706,7 +2706,15 @@ fn option_migration_source_calls_fail_during_preprocessing() {
       .expect("Option migration examples should preprocess with warnings, not reach runtime");
 
     let warnings = warnings.borrow();
-    for operation in ["=", "non-nil?", "assoc"] {
+    // `non-nil?` on an Option is blocking since 0.41.0 (#2653).
+    let advisories = runner::preprocess::take_advisories();
+    assert!(
+      advisories.iter().any(|advisory| {
+        advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR) && advisory.message().contains("`non-nil?` on Option value")
+      }),
+      "`non-nil?` on an Option should be an error, got: {advisories:?}"
+    );
+    for operation in ["=", "assoc"] {
       assert!(
         warnings.iter().any(|warning| {
           warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")

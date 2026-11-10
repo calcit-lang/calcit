@@ -263,6 +263,14 @@ are not reported. A macro that moves a caller-written value into head position,
 such as `-> 1 f` expanding to `(f 1)`, still reports, because the caller chose
 the value being called.
 
+A nil-based test on an Option value is an `E_OPTION_NIL_CHECK` error (blocking
+since 0.41.0, #2653): `nil?`, `non-nil?`, `either` (which expands to `nil?`),
+or the Option used directly as an `if` / `when` / `or` / `and` condition. `None`
+is a value, not nil, so these always take the same branch. Use `.some?` /
+`.none?`, `if-let` / `match`, or `.unwrap-or` for a default. It is reported in
+project namespaces only and fails the check like `E_OPTION_ERASED_TO_NIL`.
+`Result` and application enums keep the `W_NOMINAL_ENUM_LEGACY_USE` warning.
+
 An Option turned back into nil is an `E_OPTION_ERASED_TO_NIL` error (blocking
 since 0.36.0, #2124): `.unwrap-or X nil`
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
