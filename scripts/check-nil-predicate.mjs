@@ -16,7 +16,19 @@ const canonicalTests = core[":files"]["'calcit.core"].defs["'non-nil?"].tests;
 assert.deepEqual(canonicalTests.map(test => test.name).sort(), [
   "distinguishes-nil-from-values-and-option-variants", "typed-callers-preserve-non-nil-semantics",
 ]);
-const tests = canonicalTests;
+// #2653: a direct `non-nil?` on an Option literal is E_OPTION_NIL_CHECK in
+// a project namespace, so the replay drops those two assertions and checks
+// the same runtime answer through the generic helpers below.
+const isDirectOptionNilCheck = form => Array.isArray(form) && form[0] === "assert="
+  && Array.isArray(form[2]) && form[2][0] === "non-nil?"
+  && Array.isArray(form[2][1]) && form[2][1][0] === "Option";
+const tests = canonicalTests.map(test => {
+  const code = test.code.__edn_quote;
+  return { ...test, code: { __edn_quote: code.filter(form => !isDirectOptionNilCheck(form)) } };
+});
+assert.equal(tests.flatMap(test => test.code.__edn_quote).filter(isDirectOptionNilCheck).length, 0);
+assert.equal(canonicalTests.flatMap(test => test.code.__edn_quote).filter(isDirectOptionNilCheck).length, 2,
+  "the canonical test still asserts `non-nil?` on both Option variants");
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
@@ -72,6 +84,9 @@ try {
     ["assert=", "true", ["calcit.nil-helper/generic-forward", "0"]],
     ["assert=", "false", ["calcit.nil-helper/generic-forward", "nil"]],
     ["assert=", "true", ["calcit.nil-helper/generic-forward", ["Option", ":none"]]],
+    ["assert=", "true", ["calcit.nil-helper/generic", ["Option", ":none"]]],
+    ["assert=", "true", ["calcit.nil-helper/generic", ["Option", ":some", "nil"]]],
+    ["assert=", "true", ["calcit.nil-helper/generic-forward", ["Option", ":some", "nil"]]],
   ];
   run(snapshot, "edit", "def", "calcit.nil-predicate/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), ...extraAssertions, "&unit"]));
