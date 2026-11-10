@@ -465,17 +465,7 @@ calcit calcit.cirru --entry test
 
 `analyze quality` 与 baseline 已在 0.41.0 删除，迁移见 [升级说明](run/upgrade.md)。
 
-不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。迁移不提高已有预算，并同时保证默认严格检查通过；债务清零后从项目 CI 删除 baseline 命令和文件。代码能否进入具体类型由同一套类型证明决定，不以 coverage 或 Dynamic 数量充当正确性证明，也不预告未经交付的删除版本。
-
-baseline 是已提交的 Cirru EDN 机器生成工件。为使 GitHub 语言统计忽略其行数，同时保留文本 diff，
-可在项目根目录的 `.gitattributes` 加入生成物标记：
-
-```gitattributes
-config/*-quality.cirru text linguist-generated=true
-```
-
-这不会忽略或删除 baseline；文件仍保留文本 diff，但不计入语言统计。只有外部工具明确要求 JSON
-时才使用 `.json` 输出路径。更新 baseline 的 PR 仍应按 definition 审阅预算变化。
+升级到 0.41.0 时，从 CI 删掉 baseline 命令和 baseline 文件。代码能否进入具体类型由同一套类型证明决定，不以 coverage 或 Dynamic 数量充当正确性证明。
 
 ## Option / Result 组合
 

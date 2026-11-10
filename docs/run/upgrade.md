@@ -3003,8 +3003,7 @@ CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确�
 `weak-types` 及其 `coverage`、`deprecated-call` 视图是定位报告，不按命中数充当类型正确性门禁。
 确实动态的 JS FFI 边界应显式声明和收窄，不要通过忽略 warning 伪造通过。
 
-已有非零 `analyze quality` baseline 的旧项目可在该命令于 0.31.0 删除前暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
-清零后从 CI 移除该命令。旧格式、按 definition 的预算及 0.14.x 迁移命令见
+`analyze quality` 与 baseline 已在 0.41.0 删除；升级到 0.41.0 时从 CI 删掉这一步和 baseline 文件（见本页 0.41.0 一节）。旧格式、按 definition 的预算及 0.14.x 迁移命令只作历史参考，见
 [历史版本迁移记录](upgrade-history.md#014x-质量-baseline-迁移)。
 
 ```bash
@@ -3115,8 +3114,6 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
         calcit calcit.cirru --entry "$entry" --check-only
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
-    # 仅在仍有非零 legacy baseline 时保留：
-    calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 
 - name: Run project tests
   run: |
@@ -3128,9 +3125,8 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：`weak-types` 及其 `coverage`、`deprecated-call` 视图仍是展示报告，不按命中数量失败。只有仍有非零
-legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
-不再把数量策略当作独立类型正确性判定。`--write-baseline` 仅允许在已存在的文件上降低预算，不能作为新项目初始化步骤。
+注意：`weak-types` 及其 `coverage`、`deprecated-call` 视图仍是展示报告，不按命中数量失败；类型正确性只由 `--check-only` 判定。
+`analyze quality --baseline ...` 已在 0.41.0 删除，旧 CI 里的这一步要一并删掉。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 
@@ -3149,7 +3145,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 
 1. `caps tree`：确认根开发依赖存在，传递模块的开发依赖未进入图
 2. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze weak-types --only dynamic-method --format json`
-3. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`coverage`、dynamic/nil `weak-types`、`deprecated-call` 仍只作为定位报告）
+3. 从 CI 删掉 `analyze quality --baseline ...` 和 baseline 文件（0.41.0 已删除该命令）；`coverage`、dynamic/nil `weak-types`、`deprecated-call` 只作为定位报告
 4. 声明支持 watch 的 entry 另行验收 `-w`；普通运行默认 once
 5. `package.json` 中与编译/构建相关的脚本
 

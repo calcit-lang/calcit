@@ -94,16 +94,6 @@ calcit calcit.cirru analyze weak-types \
 
 `analyze quality` 已在 0.41.0 删除。已经提交 quality baseline 的存量类库在升级到 0.41.0 时删除这一步 CI 和 baseline 文件，以默认严格的 `--check-only` 作为类型门禁，需要时用 `analyze weak-types` 定位剩余迁移项（见 `docs/run/upgrade.md`）。不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过；coverage/Dynamic 数量不是独立的类型正确性证明。CI 以默认严格检查、公开 API 检查、目标后端测试与真实消费者回归为准。
 
-仍在 0.41.0 之前版本上的类库，若保留 baseline，应保持在 Git 中，并声明为文本形式的生成文件，使 GitHub 语言统计忽略其行数。在项目根目录的 `.gitattributes` 添加：
-
-```gitattributes
-config/*-quality.cirru text linguist-generated=true
-```
-
-baseline 继续参与 CI、版本控制和文本 diff，但不计入 GitHub 语言统计。只有外部工具明确要求
-JSON 时才把输出路径写成 `.json`；仓库内配置默认使用 Cirru EDN。任何 baseline 更新仍须按
-definition 审阅，不能因其属于生成文件而自动接受新债务。
-
 ## 3. API examples 与文档
 
 对每个公开 namespace 执行 examples：
