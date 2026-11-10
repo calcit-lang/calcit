@@ -467,7 +467,7 @@
             :tags $ #{} :unit
         'infer-named-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-named-none-fallback ()
-            option:unwrap-or (Option :none) 7
+            .unwrap-or (Option :none) 7
           :examples $ []
           :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |named-none-fallback)
@@ -501,7 +501,7 @@
             :tags $ #{} :unit
         'infer-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-none-fallback ()
-            option:unwrap-or (Option :none) 7
+            .unwrap-or (Option :none) 7
           :examples $ []
           :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |none-fallback-number)
@@ -509,7 +509,7 @@
             :tags $ #{} :unit
         'infer-option-none-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-none-predicate ()
-            option:none? $ Option :some 1
+            .none? $ Option :some 1
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
@@ -536,7 +536,7 @@
             :tags $ #{} :unit
         'infer-option-some-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-some-predicate ()
-            option:some? $ Option :some 1
+            .some? $ Option :some 1
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)

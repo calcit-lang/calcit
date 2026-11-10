@@ -4847,20 +4847,27 @@ fn preprocess_list_call(
       },
     ),
 
-    Some(Calcit::Fn { info, .. }) => preprocess_known_function_call(
-      info,
-      head_form,
-      args,
-      &call_info,
-      PreprocessContext {
-        scope_defs,
-        scope_types,
-        file_ns,
-        check_warnings,
-        call_stack,
-        call_location,
-      },
-    ),
+    Some(Calcit::Fn { info, .. }) => {
+      // A local alias such as `let ((f option:unwrap)) (f opt)` resolves to the
+      // helper too, but its call head is not the helper name.
+      if matches!(&head_form, Calcit::Import(_)) {
+        warn_on_direct_option_helper_call(&info, head, file_ns, check_warnings);
+      }
+      preprocess_known_function_call(
+        info,
+        head_form,
+        args,
+        &call_info,
+        PreprocessContext {
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+          call_location,
+        },
+      )
+    }
 
     _ => match &head_form {
       Calcit::Tag(tag) => {
@@ -9387,6 +9394,50 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
 /// is a value, not nil, so `nil?`, `non-nil?`, `either` and truthiness
 /// (`if`, `when`, `or`, `and`) never see it as absent. Only project
 /// namespaces are checked, like `E_OPTION_ERASED_TO_NIL`.
+/// Method spelling of each core `option:*` helper. The helpers stay as the
+/// implementations behind those methods; application code calls the method.
+fn option_helper_method(def: &str) -> Option<&'static str> {
+  Some(match def {
+    "option:some?" => ".some?",
+    "option:none?" => ".none?",
+    "option:unwrap" => ".unwrap",
+    "option:unwrap-or" => ".unwrap-or",
+    "option:map" => ".map",
+    "option:and-then" => ".and-then",
+    "option:or-else" => ".or-else",
+    "option:fold" => ".fold",
+    _ => return None,
+  })
+}
+
+/// A direct `option:*` call written in project source (#2653). Calls a core
+/// macro expands to carry a core (or no) coordinate and are not reported.
+fn warn_on_direct_option_helper_call(info: &CalcitFn, head: &Calcit, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  // Core's own tests call the helpers on purpose, also when
+  // `scripts/run-core-tests.mjs` replays them as `calcit.core-test-replay`.
+  if info.def_ns.as_ref() != calcit::CORE_NS || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+    return;
+  }
+  let Some(method) = option_helper_method(info.name.as_ref()) else {
+    return;
+  };
+  let Some(location) = head.get_location() else {
+    return;
+  };
+  if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
+    return;
+  }
+  gen_check_warning_with_location_code(
+    format!(
+      "[Warn] `{}` is the internal helper behind the Option method `{method}`; call `opt {method} …` instead. `calcit fix --rule core-option-method-v1` rewrites calls whose receiver is a proven Option",
+      info.name
+    ),
+    "W_OPTION_HELPER_CALL",
+    location,
+    check_warnings,
+  );
+}
+
 /// Where an Option nil check points: the value itself, or for a call such as
 /// `(lookup k)`, which carries no location of its own, the call expression.
 fn option_check_location(value: &Calcit) -> Option<NodeLocation> {

@@ -1137,7 +1137,15 @@ fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
             "app.main/main!",
             name,
             "--tags",
-            if name == "shadow" { "unit,upgrade,shadow" } else { "unit,upgrade" },
+            // A written `option:*` call warns since 0.41.0 (#2653) and the
+            // runner blocks on warnings, so the opaque Option call is run apart.
+            if name == "shadow" {
+              "unit,upgrade,shadow"
+            } else if name == "opaque" && helper.starts_with("option:") {
+              "unit,upgrade,helper-call"
+            } else {
+              "unit,upgrade"
+            },
             "--input-format",
             "cirru",
             "--code",
@@ -1148,9 +1156,30 @@ fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
       );
     }
     assert_success(
-      &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+      &run_calcit(
+        &snapshot,
+        &[
+          "test",
+          "app.main/main!",
+          "--exclude-tag",
+          "shadow",
+          "--exclude-tag",
+          "helper-call",
+          "--require-match",
+        ],
+      ),
       "original method boundaries",
     );
+    if helper.starts_with("option:") {
+      let helper_call = run_calcit(&snapshot, &["test", "app.main/main!", "--tag", "helper-call", "--require-match"]);
+      assert!(!helper_call.status.success());
+      let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&helper_call.stdout),
+        String::from_utf8_lossy(&helper_call.stderr)
+      );
+      assert!(output.contains("W_OPTION_HELPER_CALL"), "{output}");
+    }
     let shadow_before = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
     assert!(!shadow_before.status.success());
     assert!(String::from_utf8_lossy(&shadow_before.stderr).contains(&format!("shadowed `calcit.core/{helper}`")));
@@ -1192,7 +1221,18 @@ fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
     assert_success(&run_calcit(&snapshot, &apply), "retain method boundaries");
     assert_eq!(fs::read(&snapshot).unwrap(), original);
     assert_success(
-      &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+      &run_calcit(
+        &snapshot,
+        &[
+          "test",
+          "app.main/main!",
+          "--exclude-tag",
+          "shadow",
+          "--exclude-tag",
+          "helper-call",
+          "--require-match",
+        ],
+      ),
       "unchanged method boundaries",
     );
     let shadow_after = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
@@ -8881,6 +8921,119 @@ fn core_option_method_rule_uses_proven_receiver_and_is_idempotent() {
   );
 }
 
+/// `calcit/test-types-inference.cirru` itself calls the Option methods since
+/// 0.41.0 (#2653); restore the helper spelling the migration tests start from.
+fn copy_with_legacy_option_helpers(target: &Path) {
+  let source = fs::read_to_string("calcit/test-types-inference.cirru").expect("read type inference Snapshot");
+  let legacy = source
+    .replace(".unwrap-or (Option :none) 7", "option:unwrap-or (Option :none) 7")
+    .replace(".none? $ Option :some 1", "option:none? $ Option :some 1")
+    .replace(".some? $ Option :some 1", "option:some? $ Option :some 1");
+  assert_ne!(legacy, source, "legacy Option helper fixtures should be restored");
+  fs::write(target, legacy).expect("write legacy Option Snapshot");
+}
+
+#[test]
+fn core_option_method_rule_migrates_callback_helpers() {
+  // `option:map` / `and-then` / `or-else` / `fold` join the 0.41.0 migration (#2653).
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/option-callbacks",
+        "--code",
+        "quote $ defn option-callbacks (opt) $ let\n    a $ option:map opt inc\n    b $ option:and-then a $ fn (x) (Some x)\n    c $ option:or-else b $ fn () (Some 0)\n  option:fold c (fn () 0) (fn (x) x)",
+      ],
+    ),
+    "install Option callback helper calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/option-callbacks",
+        "--code",
+        "quote $ Fn (Option Number) (-> Number)",
+      ],
+    ),
+    "declare Option receiver schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "fix-command.main/option-callbacks",
+        "callback-result",
+        "--code",
+        "quote $ assert= 3 $ option-callbacks $ Some 2",
+      ],
+    ),
+    "attach Calcit behavior test",
+  );
+
+  let args = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "option-callbacks",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "Option callback preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 4, "report: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+    "report: {report}"
+  );
+  let revision = report["revision"].as_str().expect("preview should return revision");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-option-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "option-callbacks",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "Option callback apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
+  for method in [".map inc", ".and-then", ".or-else", ".fold"] {
+    assert!(updated.contains(method), "missing {method}: {updated}");
+  }
+  assert!(!updated.contains("option:fold c"), "snapshot: {updated}");
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "Option callback idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/option-callbacks", "--require-match"]),
+    "Calcit attached test after Option callback migration",
+  );
+}
+
 #[test]
 fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
   let directory = TestDirectory::create();
@@ -8943,7 +9096,7 @@ fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
   assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
 
   let named_snapshot = directory.path().join("named-option.cirru");
-  fs::copy("calcit/test-types-inference.cirru", &named_snapshot).expect("copy named Option Snapshot");
+  copy_with_legacy_option_helpers(&named_snapshot);
   let named_args = [
     "--rule",
     "core-option-method-v1",
@@ -9200,7 +9353,7 @@ fn result_success_with_dynamic_payload_stays_open_across_fallback() {
 fn result_method_fix_uses_concrete_success_evidence_but_not_dynamic_fallback() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+  copy_with_legacy_option_helpers(&snapshot);
   let args = [
     "--rule",
     "core-result-method-v1",
@@ -9268,7 +9421,7 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
     ("infer-result-err-predicate", "core-result-method-v1"),
   ] {
     let snapshot = directory.path().join(format!("{definition}.cirru"));
-    fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+    copy_with_legacy_option_helpers(&snapshot);
     let args = [
       "--rule",
       rule,
@@ -9366,7 +9519,7 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
 fn strict_result_success_consumption_rejects_dynamic_payload() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("calcit/test-types-inference.cirru", &snapshot).expect("copy type inference Snapshot");
+  copy_with_legacy_option_helpers(&snapshot);
   let target = "test-types-inference.main/consume-open-result";
   assert_success(
     &run_calcit(
@@ -9717,9 +9870,13 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
   ] {
     assert_success(&run_calcit(&snapshot, &args), "install lowered receiver contract");
   }
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "original receiver semantics",
+  // The helper call itself now warns (W_OPTION_HELPER_CALL, #2653), and the
+  // test runner blocks on warnings; the migrated call is run below.
+  let original = run_calcit(&snapshot, &["test", target, "--require-match"]);
+  assert!(
+    String::from_utf8_lossy(&original.stdout).contains("W_OPTION_HELPER_CALL")
+      || String::from_utf8_lossy(&original.stderr).contains("W_OPTION_HELPER_CALL"),
+    "the helper call should warn before migration"
   );
   let queried = run_calcit(&snapshot, &["query", "type-at", target, "--path", "3.1", "--format", "json"]);
   assert_success(&queried, "query original nth result");

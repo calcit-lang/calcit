@@ -180,7 +180,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   可能被局部绑定捕获，给出 `requires-review`。原型本身是 `~proto` 或字段由 `~@` 拼接时不给建议；
   `defmacro` 中模板外的展开期代码与 `quote` 数据保持不变。
 - `core-option-method-v1` 在原有取值迁移之外，也把 `option:some?` / `option:none?` 改为
-  `value .some?` / `value .none?`。只有编译器已解析到对应 core helper、接收者静态类型
+  `value .some?` / `value .none?`，0.41.0 起还把 `option:map` / `option:and-then` / `option:or-else` /
+  `option:fold` 改为 `.map` / `.and-then` / `.or-else` / `.fold`（项目代码直接调用这些 helper 会报
+  `W_OPTION_HELPER_CALL`）。只有编译器已解析到对应 core helper、接收者静态类型
   能证明分派到同一个 Option 方法的源码调用才自动改写。取值调用仍改为 `value .unwrap`
   或 `value .unwrap-or fallback`；唯一的空值 fallback 特例是
   `option:unwrap-or (Option :none) fallback`：源码引用须证明构造器
