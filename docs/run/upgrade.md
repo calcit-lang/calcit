@@ -3158,7 +3158,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | 问题写法 | `calcit fix --preset surface-latest-v2 --format edn` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；Cirru EDN 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze weak-types --only dynamic-method --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
-| 静态债务 | `analyze weak-types [--only coverage\|deprecated-call] --format edn` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，非零 legacy baseline 项目才继续比较 |
+| 静态债务 | `analyze weak-types [--only coverage\|deprecated-call] --format edn` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 
