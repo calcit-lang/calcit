@@ -2595,15 +2595,17 @@ try {
       const contextualNominalOutput = join(project, "nominal-js");
       run(...contextualNominalEntry, "--emit-path", contextualNominalOutput, "js");
       (await import(pathToFileURL(join(contextualNominalOutput, "test-struct.main.mjs")).href)).nominal_replay();
+      // A bare `:count` value is wrapped in `Some` (#2652), so a wrong field
+      // carries a payload of the wrong type.
       for (const [label, body] of [
-        ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count 160)"],
-        ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count 160)"],
+        ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count |wrong)"],
+        ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count |wrong)"],
         ["wrong-option-payload", "read-context-box $ {} (:value 1) (:count $ Option :some |wrong)"],
         // `:count` is Option and may be omitted (#2482); `:value` is required.
         ["missing-required-field", "read-number-box $ {} (:count $ Option :none)"],
         ["unknown-field", "read-context-box $ {} (:value 1) (:count $ Option :none) (:extra 1)"],
         ["concrete-generic-mismatch", "read-number-box $ {} (:value |wrong) (:count $ Option :none)"],
-        ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count 160"],
+        ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count |wrong"],
       ]) {
         const target = "test-struct.main/nominal-rejected";
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
