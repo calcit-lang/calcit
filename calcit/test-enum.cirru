@@ -64,7 +64,7 @@
           :schema $ quote EnumDef
         'check-result-type $ %{} 'CodeEntry (:doc "|Check if value has enum origin")
           :code $ quote $ defn check-result-type (r)
-            option:some? $ enum-definition r
+            .some? $ enum-definition r
           :examples $ []
           :schema $ quote $ Fn test-enum.main/Result0 (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)

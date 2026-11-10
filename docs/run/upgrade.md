@@ -78,6 +78,12 @@ core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等
 
 Struct 定义在项目里时，`calcit fix --rule named-struct-constructor-v1` 预览后加 `--apply` 可以自动改写；依赖里的 Struct 需要手动改。以下写法不提示：`let` 绑定的 `defstruct`、函数参数等局部 prototype，`%{} _ …` 匿名 Struct，以及外面包了 `impl-traits` 的定义（它的 schema 是开放的，直接构造器过不了类型检查）。
 
+## 0.41.0 类型名可以写短名，`edit format` 缩短全名（#2677）
+
+普通值定义的 `:schema` 现在也接受短名：`Store` 定义在同一个命名空间、或用 `(app.schema :refer $ Store)` 引入时，写 `quote Store` 即可；用 `:as` 引入时写 `schema/Store`。以前这个位置只认 `app.schema/Store` 这样的全名，而 `Fn`、`assert-type` 等位置早就能用短名。短名按定义所在命名空间解析，顺序是本地定义、`:refer`、`calcit.core`。`calcit edit schema` 遇到解析不到的短名会报错，防止拼错的名字被当成新类型。
+
+`calcit edit format` 会把 schema 里能无歧义缩短的全名改短：同命名空间的 `my.ns/Foo` 和已 `:refer` 的 `lib.ns/Foo` 改成 `Foo`；本地或 `:refer` 里没有同名定义时，`calcit.core/Option` 改成 `Option`；用 `:as` 引入的命名空间改成 `alias/Foo`。本地有同名定义遮住时保留原写法，例如本地定义了 `Result`，`calcit.core/Result` 不会被缩短。只改 `:schema`，代码里的 `hint-fn` / `assert-type` 不动。含义不变，格式化后 diff 里会出现这类单行变化。
+
 ## 0.41.0 删除 `--compat-types`（#2655）
 
 `--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。

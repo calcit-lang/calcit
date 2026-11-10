@@ -369,6 +369,111 @@ fn schema_edit_rejects_the_core_only_intrinsic_reason() {
 }
 
 #[test]
+fn value_schema_accepts_a_bare_local_type_name_and_rejects_an_unknown_one() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let edit = |args: &[&str]| run_calcit(&snapshot, args);
+  assert_success(
+    &edit(&[
+      "edit",
+      "def",
+      "app.main/Point",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defstruct Point (:x Number)",
+    ]),
+    "create Point",
+  );
+  assert_success(
+    &edit(&[
+      "edit",
+      "def",
+      "app.main/origin",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def origin $ Point :x 0",
+    ]),
+    "create origin",
+  );
+  // #2677: the short name resolves in the definition's namespace.
+  assert_success(
+    &edit(&[
+      "edit",
+      "schema",
+      "app.main/origin",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote Point",
+    ]),
+    "bare local type name",
+  );
+  let stored = fs::read_to_string(&snapshot).unwrap();
+  assert!(stored.contains(":schema $ quote Point"), "the short spelling is stored as written");
+
+  let before = fs::read(&snapshot).unwrap();
+  let rejected = edit(&[
+    "edit",
+    "schema",
+    "app.main/origin",
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote Pointt",
+  ]);
+  assert!(!rejected.status.success(), "a name that does not resolve is rejected");
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(
+    stderr.contains("`Pointt` is not defined in `app.main`") && stderr.contains(":refer"),
+    "{stderr}"
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "a rejected schema is not written");
+
+  // `edit format` shortens qualified schema names that resolve the same way.
+  assert_success(
+    &edit(&[
+      "edit",
+      "def",
+      "app.main/keep",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn keep (p) p",
+    ]),
+    "create keep",
+  );
+  assert_success(
+    &edit(&[
+      "edit",
+      "schema",
+      "app.main/keep",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ Fn app.main/Point (-> (calcit.core/Option Number))",
+    ]),
+    "qualified schema",
+  );
+  let formatted = edit(&["edit", "format"]);
+  assert_success(&formatted, "format shortens");
+  assert!(String::from_utf8_lossy(&formatted.stdout).contains("Shortened 2"), "{formatted:?}");
+  let stored = fs::read_to_string(&snapshot).unwrap();
+  assert!(stored.contains("Fn Point") && stored.contains("Option Number"), "{stored}");
+  assert!(
+    !stored.contains("app.main/Point") && !stored.contains("calcit.core/Option"),
+    "{stored}"
+  );
+  let again = edit(&["edit", "format"]);
+  assert_success(&again, "second format");
+  assert!(
+    !String::from_utf8_lossy(&again.stdout).contains("Shortened"),
+    "a second format is a no-op"
+  );
+}
+
+#[test]
 fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);

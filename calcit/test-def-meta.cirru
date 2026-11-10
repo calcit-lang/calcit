@@ -29,7 +29,7 @@
                 schema $ &get-def-schema |calcit.core/map
               assert= true $ includes? doc |map
               assert= :Fn $ &enum:nth schema 0
-              assert= true $ option:some? $ get (&enum:nth schema 1) :args
+              assert= true $ .some? $ get (&enum:nth schema 1) :args
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-local-def $ %{} 'CodeEntry (:doc "|lookup local definition metadata")

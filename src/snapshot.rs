@@ -1744,6 +1744,15 @@ fn is_qualified_nominal_schema_ref(value: &str) -> bool {
   !namespace.is_empty() && !definition.is_empty()
 }
 
+/// `Point` or `'Point`: a PascalCase name with no namespace, which a value
+/// schema resolves through `program::resolve_type_name_in_ns` (#2677).
+fn is_bare_nominal_schema_name(value: &str) -> bool {
+  let name = value.strip_prefix('\'').unwrap_or(value);
+  let mut chars = name.chars();
+  chars.next().is_some_and(|first| first.is_ascii_uppercase())
+    && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '?' | '!'))
+}
+
 fn core_nominal_schema_short_ref_arity(value: &str) -> Option<usize> {
   match value.trim_start_matches('\'') {
     "Option" => Some(1),
@@ -1894,8 +1903,27 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       if PRIMITIVE_SCHEMA_TAGS.contains(&tag_name) {
         return Ok(());
       }
+      // A bare nominal name (`Point`) resolves in the definition's namespace
+      // like nested ones do: a local definition, a `:refer` import, then
+      // `calcit.core` (#2677). Only the spelling is checked here. Core
+      // generics such as `Option` need their type arguments.
+      if let Some(expected_args) = core_nominal_schema_short_ref_arity(s) {
+        let name = s.trim_start_matches('\'');
+        return Err(format!(
+          "Core nominal type `{name}` expects {expected_args} type argument{}, got 0. Write it applied, such as `{}`.",
+          if expected_args == 1 { "" } else { "s" },
+          if expected_args == 1 {
+            "Option Number"
+          } else {
+            "Result Number String"
+          }
+        ));
+      }
+      if is_bare_nominal_schema_name(s) {
+        return Ok(());
+      }
       return Err(format!(
-        "Unknown value schema `{s}`. Use a type name such as `String`, a fully qualified nominal type such as `app.schema/Store`, a type application such as `Ref Bool`, or a function type such as `Fn (-> Unit)`; a Snapshot stores them as `quote String` or `quote $ Fn (-> Unit)`."
+        "Unknown value schema `{s}`. Use a type name such as `String`, a nominal type such as `Store` (defined in this namespace or brought in with `:refer`), `schema/Store` (an `:as` alias) or `app.schema/Store`, a type application such as `Ref Bool`, or a function type such as `Fn (-> Unit)`; a Snapshot stores them as `quote String` or `quote $ Fn (-> Unit)`."
       ));
     }
   };
@@ -6107,6 +6135,79 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
   changed
 }
 
+/// Shorten fully qualified type names in definition schemas when the short
+/// spelling resolves to the same definition (#2677), following
+/// `program::resolve_type_name_in_ns`: a local definition, then a `:refer`
+/// import, then `calcit.core`. `my.ns/Foo` in `my.ns` and a referred
+/// `lib.ns/Foo` become `Foo`; `calcit.core/Debug` becomes `Debug` when nothing
+/// local or referred is named `Debug`; `lib.ns/Foo` imported with
+/// `(lib.ns :as lib)` becomes `lib/Foo`. Generic parameter names are never
+/// produced, and schemas that do not round-trip compactly are left alone.
+pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
+  let mut changed = 0;
+  for (ns, file) in snapshot.files.iter_mut() {
+    if ns == crate::calcit::CORE_NS || ns.ends_with(".$meta") {
+      continue;
+    }
+    let imports = crate::program::extract_import_map(&file.ns.code, ns).unwrap_or_default();
+    let local_defs: HashSet<String> = file.defs.keys().cloned().collect();
+    for entry in file.defs.values_mut() {
+      let Edn::Quote(compact) = schema_annotation_to_storage_edn(&entry.schema) else {
+        continue;
+      };
+      let generics = schema_generic_names(&entry.schema);
+      let shorten = |leaf: &str| -> Option<String> {
+        let (prefix, name) = leaf.rsplit_once('/')?;
+        if prefix.is_empty() || !name.starts_with(|c: char| c.is_ascii_uppercase()) || generics.iter().any(|g| g.as_ref() == name) {
+          return None;
+        }
+        let referred = imports.get(name).map(|rule| rule.as_ref());
+        let bare_target = if local_defs.contains(name) {
+          Some(ns.as_str())
+        } else if let Some(crate::program::ImportRule::NsReferDef(target, def)) = referred {
+          (def.as_ref() == name).then_some(target.as_ref())
+        } else if referred.is_none() {
+          Some(crate::calcit::CORE_NS)
+        } else {
+          None
+        };
+        if bare_target == Some(prefix) {
+          return Some(name.to_owned());
+        }
+        imports
+          .iter()
+          .filter_map(|(alias, rule)| match rule.as_ref() {
+            crate::program::ImportRule::NsAs(target) if target.as_ref() == prefix => Some(format!("{alias}/{name}")),
+            _ => None,
+          })
+          .filter(|short| short.len() < leaf.len())
+          .min_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)))
+      };
+      let mut count = 0;
+      let rewritten = map_cirru_leaves(&compact, &mut |leaf| {
+        let short = shorten(leaf)?;
+        count += 1;
+        Some(short)
+      });
+      if count == 0 {
+        continue;
+      }
+      if let Ok(schema) = parse_schema_annotation_for_write(&rewritten) {
+        entry.schema = schema;
+        changed += count;
+      }
+    }
+  }
+  changed
+}
+
+fn map_cirru_leaves(node: &Cirru, f: &mut dyn FnMut(&str) -> Option<String>) -> Cirru {
+  match node {
+    Cirru::Leaf(text) => f(text).map_or_else(|| node.clone(), |next| Cirru::Leaf(next.into())),
+    Cirru::List(items) => Cirru::List(items.iter().map(|item| map_cirru_leaves(item, f)).collect()),
+  }
+}
+
 /// Rewrite `Option :some x` to `Some x` and `Option :none` to `None` in
 /// definition code, examples and tests: the canonical spelling `calcit edit
 /// format` writes (#2652). Definitions that bind `Some`, `None` or `Option`
@@ -7129,9 +7230,16 @@ mod tests {
       qualified_annotation.as_ref(),
       CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
     ));
+    // #2677: a bare nominal name resolves in the definition's namespace.
     let unqualified_struct = Cirru::Leaf(Arc::from("'Store"));
-    let error = validate_schema_for_write(&unqualified_struct).expect_err("unqualified nominal value schema should fail");
-    assert!(error.contains("fully qualified nominal type"), "error: {error}");
+    assert!(validate_schema_for_write(&unqualified_struct).is_ok());
+    let lowercase = Cirru::Leaf(Arc::from("'store"));
+    let error = validate_schema_for_write(&lowercase).expect_err("a lowercase bare name is not a nominal type");
+    assert!(error.contains("`:refer`"), "error: {error}");
+    for (bare, expected) in [("'Option", "expects 1 type argument,"), ("'Result", "expects 2 type arguments")] {
+      let error = validate_schema_for_write(&Cirru::Leaf(Arc::from(bare))).expect_err("a bare core generic needs its arguments");
+      assert!(error.contains(expected), "error: {error}");
+    }
 
     for (source, name, arg_count) in [(":: 'Option 'Dynamic", "Option", 1), (":: 'Result 'String 'Tag", "Result", 2)] {
       let schema = parse_one(source);
@@ -7583,6 +7691,75 @@ mod tests {
       let (rewritten, changed) = shorten_option_constructors(&parse_one(source));
       assert_eq!((rewritten, changed), (parse_one(expected), count), "{source}");
     }
+  }
+
+  #[test]
+  fn format_shortens_fully_qualified_schema_type_names() {
+    let content = r#"{} (:package |app)
+  :version |0.0.0
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/main!)
+      :modules $ []
+  :files $ {}
+    |app.lib $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns app.lib)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |Pt $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Pt (:x Number))
+          :examples $ []
+          :schema nil
+        |Box $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Box (:x Number))
+          :examples $ []
+          :schema nil
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns app.main $ :require (app.lib :refer $ Pt) (app.lib :as lib))) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |Local $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Local (:z Number))
+          :examples $ []
+          :schema nil
+        |Box $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Box (:w Number))
+          :examples $ []
+          :schema nil
+        |Result $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Result (:r Number))
+          :examples $ []
+          :schema nil
+        |f $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn f (a b c) a)
+          :examples $ []
+          :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box (-> Number)
+        |g $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn g (x) x)
+          :examples $ []
+          :schema $ quote $ Fn (calcit.core/Result Number String) (-> Number)
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn main! () nil)
+          :examples $ []
+          :schema nil
+"#;
+    let edn = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
+    let mut snapshot = load_snapshot_data(&edn, "app.cirru").expect("snapshot loads");
+    // `app.main/Local` and the referred `app.lib/Pt` become bare. A local
+    // `Box` shadows the library one, so `app.lib/Box` takes the `:as` alias,
+    // and a local `Result` keeps `calcit.core/Result` qualified. Core names
+    // are covered by the CLI test: how `Option` renders depends on whether
+    // a core program is registered.
+    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 3);
+    let render = |def: &str| {
+      let schema = &snapshot.files["app.main"].defs[def].schema;
+      match schema_annotation_to_storage_edn(schema) {
+        Edn::Quote(compact) => cirru_parser::format(&[compact], true.into()).expect("format schema"),
+        other => format!("{other:?}"),
+      }
+    };
+    let f = render("f");
+    assert!(f.contains("Fn Local Pt lib/Box"), "{f}");
+    let g = render("g");
+    assert!(g.contains("calcit.core/Result"), "{g}");
+    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 0, "a second pass is a no-op");
   }
 
   #[test]
