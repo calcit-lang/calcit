@@ -1905,7 +1905,20 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
       }
       // A bare nominal name (`Point`) resolves in the definition's namespace
       // like nested ones do: a local definition, a `:refer` import, then
-      // `calcit.core` (#2677). Only the spelling is checked here.
+      // `calcit.core` (#2677). Only the spelling is checked here. Core
+      // generics such as `Option` need their type arguments.
+      if let Some(expected_args) = core_nominal_schema_short_ref_arity(s) {
+        let name = s.trim_start_matches('\'');
+        return Err(format!(
+          "Core nominal type `{name}` expects {expected_args} type argument{}, got 0. Write it applied, such as `{}`.",
+          if expected_args == 1 { "" } else { "s" },
+          if expected_args == 1 {
+            "Option Number"
+          } else {
+            "Result Number String"
+          }
+        ));
+      }
       if is_bare_nominal_schema_name(s) {
         return Ok(());
       }
@@ -7223,6 +7236,10 @@ mod tests {
     let lowercase = Cirru::Leaf(Arc::from("'store"));
     let error = validate_schema_for_write(&lowercase).expect_err("a lowercase bare name is not a nominal type");
     assert!(error.contains("`:refer`"), "error: {error}");
+    for (bare, expected) in [("'Option", "expects 1 type argument,"), ("'Result", "expects 2 type arguments")] {
+      let error = validate_schema_for_write(&Cirru::Leaf(Arc::from(bare))).expect_err("a bare core generic needs its arguments");
+      assert!(error.contains(expected), "error: {error}");
+    }
 
     for (source, name, arg_count) in [(":: 'Option 'Dynamic", "Option", 1), (":: 'Result 'String 'Tag", "Result", 2)] {
       let schema = parse_one(source);
