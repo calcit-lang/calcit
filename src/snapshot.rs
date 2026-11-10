@@ -6143,11 +6143,17 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
 /// local or referred is named `Debug`; `lib.ns/Foo` imported with
 /// `(lib.ns :as lib)` becomes `lib/Foo`. Generic parameter names are never
 /// produced, and schemas that do not round-trip compactly are left alone.
-pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
+///
+/// `dependency_namespaces` lists the namespaces of the project's modules. An
+/// alias that is also a namespace resolves as that namespace first, so
+/// `alias/Name` could name a different type; with `None` (the modules could
+/// not be loaded) no name is shortened to an alias form.
+pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot, dependency_namespaces: Option<&HashSet<String>>) -> usize {
   let mut changed = 0;
-  // An alias that is also a loaded namespace resolves as that namespace
-  // first, so `alias/Name` could name a different type.
   let loaded_namespaces: HashSet<String> = snapshot.files.keys().cloned().collect();
+  let alias_is_safe = |alias: &str, prefix: &str| {
+    alias == prefix || dependency_namespaces.is_some_and(|deps| !loaded_namespaces.contains(alias) && !deps.contains(alias))
+  };
   for (ns, file) in snapshot.files.iter_mut() {
     if ns == crate::calcit::CORE_NS || ns.ends_with(".$meta") {
       continue;
@@ -6184,9 +6190,7 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
         imports
           .iter()
           .filter_map(|(alias, rule)| match rule.as_ref() {
-            crate::program::ImportRule::NsAs(target)
-              if target.as_ref() == prefix && (alias.as_ref() == prefix || !loaded_namespaces.contains(alias.as_ref())) =>
-            {
+            crate::program::ImportRule::NsAs(target) if target.as_ref() == prefix && alias_is_safe(alias.as_ref(), prefix) => {
               Some(format!("{alias}/{name}"))
             }
             _ => None,
@@ -7771,7 +7775,14 @@ mod tests {
     // keeps `calcit.core/Result` qualified. Core names
     // are covered by the CLI test: how `Option` renders depends on whether
     // a core program is registered.
-    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 3);
+    // A dependency namespace named `l2` would also capture `l2/Box`, and
+    // without the module list no alias form is written at all.
+    let deps_with_l2: HashSet<String> = ["l2".to_owned()].into();
+    let mut with_l2_dep = snapshot.clone();
+    assert_eq!(shorten_snapshot_type_names(&mut with_l2_dep, Some(&deps_with_l2)), 2);
+    let mut unknown_deps = snapshot.clone();
+    assert_eq!(shorten_snapshot_type_names(&mut unknown_deps, None), 2);
+    assert_eq!(shorten_snapshot_type_names(&mut snapshot, Some(&HashSet::new())), 3);
     let render = |def: &str| {
       let schema = &snapshot.files["app.main"].defs[def].schema;
       match schema_annotation_to_storage_edn(schema) {
@@ -7783,7 +7794,11 @@ mod tests {
     assert!(f.contains("Fn Local Pt l2/Box app.main/Number"), "{f}");
     let g = render("g");
     assert!(g.contains("calcit.core/Result"), "{g}");
-    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 0, "a second pass is a no-op");
+    assert_eq!(
+      shorten_snapshot_type_names(&mut snapshot, Some(&HashSet::new())),
+      0,
+      "a second pass is a no-op"
+    );
   }
 
   #[test]
