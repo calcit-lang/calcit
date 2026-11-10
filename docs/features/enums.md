@@ -332,6 +332,22 @@ let
   ; => failed: negative-input
 ```
 
+### Option 简写：`Some` / `None`
+
+`Some x` 与 `Option :some x` 等价，`None` 与 `Option :none` 等价（0.41.0，#2652）。预处理把短写法降成长写法，所以类型推断一样：`None` 从期望类型取得 `T`，Struct 的 `Option` 字段、函数参数和返回值都能直接写。`Some` 也可以当函数值传，例如 `map xs Some`。
+
+```cirru
+let
+    pick $ fn (flag n) (if flag (Some n) None)
+  assert= (Option :some 2) (pick true 2)
+  assert= (Option :none) (pick false 2)
+  assert= 5 $ match (Some 5)
+    (:some x) x
+    (:none) 0
+```
+
+`calcit edit format` 把 `Option :some x` / `Option :none` 改写成 `Some x` / `None`。`quote` 数据、`quasiquote` 模板，以及用 `let` / `fn` 参数等局部绑定了 `Some`、`None` 或 `Option` 的定义保持原样。`match` 分支仍写 `(:some x)` / `(:none)`。
+
 ### Compose enums with functions
 
 ```cirru

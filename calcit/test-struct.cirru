@@ -247,6 +247,20 @@
                   :count $ %{} OptionFields (:count 4)
                     :label $ Option :none
               :tags $ #{} :option-fields :unit
+            %{} 'TestEntry (:name |some-none-shorthand-equals-long-form)
+              :code $ quote $ let
+                  some-label $ Some |c
+                  counts $ map ([] 1 2) Some
+                assert= (Option :some |c) some-label
+                assert= (Option :none) $ :count $ OptionFields :count None
+                assert= (Option :some 7) $ :count $ OptionFields :count (Some 7)
+                assert= (Option :none) $ option-fields-count $ {} $ :count None
+                assert= ([] (Option :some 1) (Option :some 2)) counts
+                assert= 7 $ match (Some 7)
+                  (:some x) x
+                  (:none) 0
+                assert-type some-label $ Option String
+              :tags $ #{} :option-fields :unit
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name String) (:age Number) (:position Tag)
           :examples $ []

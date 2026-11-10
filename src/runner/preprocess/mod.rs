@@ -3430,6 +3430,29 @@ fn preprocess_expr_recovering_proof(
   })
 }
 
+/// The long form `Option :<variant> payload…` that `Some x` / `None` stand for,
+/// headed by the core `Option` definition whatever the namespace defines.
+fn core_option_shorthand_call(
+  variant: &str,
+  payload: &[Calcit],
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
+  let mut items = vec![
+    Calcit::Import(CalcitImport {
+      ns: calcit::CORE_NS.into(),
+      def: "Option".into(),
+      info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
+      def_id: Some(program::ensure_def_id(calcit::CORE_NS, "Option").0),
+    }),
+    Calcit::tag(variant),
+  ];
+  items.extend(payload.iter().cloned());
+  Ok(Calcit::from(items))
+}
+
 /// Qualified core primitives resolve to their runtime identity, not the
 /// source metadata placeholder. User namespaces never acquire this identity.
 fn resolved_core_proc(namespace: &str, definition: &str) -> Option<CalcitProc> {
@@ -3545,6 +3568,11 @@ fn preprocess_expr_unguarded(
               location: location.to_owned(),
               type_info,
             }))
+          } else if def.as_ref() == "None" && program::has_def_code(calcit::CORE_NS, "None") {
+            // `None` is the shorthand of `Option :none` (#2652). Lower it to the
+            // long form so expected-type inference treats both the same.
+            let call = core_option_shorthand_call("none", &[], file_ns, check_warnings, call_stack)?;
+            preprocess_expr(&call, scope_defs, scope_types, file_ns, check_warnings, call_stack)
           } else if CalcitSyntax::is_valid(def) {
             Ok(Calcit::Syntax(
               def.parse().map_err(|e: ParseError| {
@@ -3713,16 +3741,25 @@ fn preprocess_expr_unguarded(
       if xs.is_empty() {
         Ok(expr.to_owned())
       } else {
-        // TODO whether function bothers this...
-        // println!("start calling: {}", expr);
-        let processed = into_executable_call(preprocess_list_call(
-          xs,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?);
+        // `Some x` is the shorthand of `Option :some x` (#2652). The lowered
+        // call is still recorded below at the location of the original `(Some x)`.
+        let processed = if xs.len() == 2
+          && matches!(&xs[0], Calcit::Symbol { sym, .. } if sym.as_ref() == "Some")
+          && !scope_defs.contains("Some")
+          && program::has_def_code(calcit::CORE_NS, "Some")
+        {
+          let call = core_option_shorthand_call("some", &[xs[1].clone()], file_ns, check_warnings, call_stack)?;
+          preprocess_expr(&call, scope_defs, scope_types, file_ns, check_warnings, call_stack)?
+        } else {
+          into_executable_call(preprocess_list_call(
+            xs,
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          )?)
+        };
         let source_location = SOURCE_EXPRESSION_TRACE.with(|trace| {
           let trace = trace.borrow();
           let trace = trace.as_ref()?;

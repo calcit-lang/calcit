@@ -316,6 +316,7 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
     snapshot::load_snapshot_data_for_format(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
   let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
+  let shortened_options = snapshot::shorten_snapshot_option_constructors(&mut snapshot);
   let formatted_content = render_snapshot_content(&snapshot)?;
 
   if formatted_content == original_content {
@@ -327,6 +328,12 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
   if canonicalized_type_forms > 0 {
     println!(
       "{} Rewrote {canonicalized_type_forms} type form(s) to the current type syntax",
+      "✓".green()
+    );
+  }
+  if shortened_options > 0 {
+    println!(
+      "{} Rewrote {shortened_options} `Option :some` / `Option :none` form(s) to `Some` / `None`",
       "✓".green()
     );
   }

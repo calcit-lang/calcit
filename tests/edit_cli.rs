@@ -709,7 +709,7 @@ fn schema_metadata_validation_does_not_inspect_business_source_fields() {
   let snapshot = prepare_minimal_snapshot(&directory);
   let target = "app.main/schema-probe";
   let schema = "quote $ Fn String (-> $ Map Tag String)";
-  let semantic_check = "quote $ let\n    Entry $ defstruct Entry (:schema String)\n    entry $ Entry :schema |Ada\n  assert= |Ada $ :schema entry\n  assert= (Option :some |Ada) $ get (schema-probe |Ada) :schema";
+  let semantic_check = "quote $ let\n    Entry $ defstruct Entry (:schema String)\n    entry $ Entry :schema |Ada\n  assert= |Ada $ :schema entry\n  assert= (Some |Ada) $ get (schema-probe |Ada) :schema";
   let operations = serde_json::json!([
     [
       "edit",

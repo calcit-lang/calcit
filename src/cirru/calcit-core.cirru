@@ -4111,6 +4111,13 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+        'None $ %{} 'CodeEntry
+          :doc "|Shorthand for `Option :none`, the empty nominal Option<T>. A bare `None` is rewritten to `Option :none` during preprocessing, so it takes T from the expected type like the long form."
+          :code $ quote $ def None $ Option :none
+          :examples $ []
+            quote $ assert= (Option :none) None
+          :schema $ quote $ Option Dynamic
+          :tags $ #{} :data
         'Option $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Option<T> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Option :some value 或 Option :none 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Option
@@ -4293,6 +4300,15 @@
             :none
           :examples $ []
           :schema $ quote Enum
+          :tags $ #{} :data
+        'Some $ %{} 'CodeEntry
+          :doc "|Shorthand for `Option :some value`. A call `Some x` is rewritten to `Option :some x` during preprocessing; the function value also works where a callback is expected."
+          :code $ quote $ defn Some (x) (Option :some x)
+          :examples $ []
+            quote $ assert= (Option :some 1) (Some 1)
+          :schema $ quote $ Fn T
+            -> $ Option T
+            :generics T
           :tags $ #{} :data
         'Show $ %{} 'CodeEntry
           :doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl."
