@@ -24,6 +24,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 删除 `analyze check-types`、`analyze check-public` 与 `analyze quality`（#2655）
+
+这三个子命令自 0.31.0 起已标为弃用，现在删除。运行旧写法会直接报错，stdout 为空，stderr 写明替代写法，不会读写 Snapshot：
+
+| 删除的写法 | 替代写法 |
+| --- | --- |
+| `calcit analyze check-types [--only none,partial,full]` | `calcit analyze weak-types --only coverage [--coverage-level none,partial,full]` |
+| `calcit analyze check-public --ns <ns> [--deps] [--summary-only]` | `calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn\|json]` |
+| `calcit analyze quality [--baseline <file>]` | `calcit --check-only`（类型正确性）加 `calcit analyze weak-types [--only coverage\|deprecated-call]`（定位迁移项） |
+
+结构化输出的命令名不变：coverage 视图仍是 `analyze.check-types`，`--check-only --ns` 仍是 `analyze.check-public`，按命令名解析的脚本不需要改。
+
+`analyze quality` 没有一对一替代，baseline 文件（如 `config/calcit-quality.cirru`）不再被读取。CI 里删掉这一步和对应的 baseline 文件，由默认严格的 `--check-only` 决定是否通过；需要看剩余迁移项时再运行 `analyze weak-types`。内置 core 的历史 baseline `config/calcit-core-quality.cirru` 也一并删除。
+
 ## 0.41.0 删除 `map-kv`（#2655）
 
 `calcit.core/map-kv` 和 Map 方法 `.map-kv` 已删除。调用处会报 removed-name 诊断并指向替代写法：
@@ -2989,8 +3003,7 @@ CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确�
 `weak-types` 及其 `coverage`、`deprecated-call` 视图是定位报告，不按命中数充当类型正确性门禁。
 确实动态的 JS FFI 边界应显式声明和收窄，不要通过忽略 warning 伪造通过。
 
-已有非零 `analyze quality` baseline 的旧项目可在该命令于 0.31.0 删除前暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
-清零后从 CI 移除该命令。旧格式、按 definition 的预算及 0.14.x 迁移命令见
+`analyze quality` 与 baseline 已在 0.41.0 删除；升级到 0.41.0 时从 CI 删掉这一步和 baseline 文件（见本页 0.41.0 一节）。旧格式、按 definition 的预算及 0.14.x 迁移命令只作历史参考，见
 [历史版本迁移记录](upgrade-history.md#014x-质量-baseline-迁移)。
 
 ```bash
@@ -3101,8 +3114,6 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
         calcit calcit.cirru --entry "$entry" --check-only
       fi
     done < <(calcit calcit.cirru config show | awk '/^Snapshot Entries:/{in_entries=1; next} in_entries && /^  [^ ]/{print $1}')
-    # 仅在仍有非零 legacy baseline 时保留：
-    calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 
 - name: Run project tests
   run: |
@@ -3114,9 +3125,8 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：`weak-types` 及其 `coverage`、`deprecated-call` 视图仍是展示报告，不按命中数量失败。只有仍有非零
-legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
-不再把数量策略当作独立类型正确性判定。`--write-baseline` 仅允许在已存在的文件上降低预算，不能作为新项目初始化步骤。
+注意：`weak-types` 及其 `coverage`、`deprecated-call` 视图仍是展示报告，不按命中数量失败；类型正确性只由 `--check-only` 判定。
+`analyze quality --baseline ...` 已在 0.41.0 删除，旧 CI 里的这一步要一并删掉。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
 definition-attached unit tests 时，应删除对应示例行并替换成项目真实测试命令，而不是机械照抄。
 
@@ -3135,7 +3145,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 
 1. `caps tree`：确认根开发依赖存在，传递模块的开发依赖未进入图
 2. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze weak-types --only dynamic-method --format json`
-3. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`coverage`、dynamic/nil `weak-types`、`deprecated-call` 仍只作为定位报告）
+3. 从 CI 删掉 `analyze quality --baseline ...` 和 baseline 文件（0.41.0 已删除该命令）；`coverage`、dynamic/nil `weak-types`、`deprecated-call` 只作为定位报告
 4. 声明支持 watch 的 entry 另行验收 `-w`；普通运行默认 once
 5. `package.json` 中与编译/构建相关的脚本
 
@@ -3148,7 +3158,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | 问题写法 | `calcit fix --preset surface-latest-v2 --format edn` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；Cirru EDN 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
 | 动态分派 | `calcit analyze weak-types --only dynamic-method --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
-| 静态债务 | `analyze weak-types [--only coverage\|deprecated-call] --format edn` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，非零 legacy baseline 项目才继续比较 |
+| 静态债务 | `analyze weak-types [--only coverage\|deprecated-call] --format edn` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 

@@ -884,7 +884,7 @@ const scenarios = [
         throw new Error("weak-types --only coverage --coverage-level filter was not preserved");
       }
       if (typeof result.data.summary.polymorphism?.generic_definitions !== "number") {
-        throw new Error("check-types lost polymorphism evidence counts");
+        throw new Error("coverage view lost polymorphism evidence counts");
       }
     },
   },
@@ -1101,33 +1101,6 @@ const scenarios = [
       const failed = result.data.definitions.find((definition) => definition.status === "failed");
       if (failed?.diagnostics[0]?.code !== "E_JS_FFI_NULLABLE_DEREF" || !Array.isArray(failed.diagnostics[0].path)) {
         throw new Error("keep-going check lost stable code or source path");
-      }
-    },
-  },
-  {
-    name: "static quality gate failure",
-    args: [
-      "calcit/test.cirru",
-      "analyze",
-      "quality",
-      "--ns",
-      "app.main",
-      "--format",
-      "json",
-    ],
-    expectedStatus: 1,
-    check(result) {
-      if (result.schema_version !== 2 || result.command !== "analyze.quality") {
-        throw new Error("unexpected analyze.quality envelope");
-      }
-      if (result.data.passed !== false || result.data.mode !== "strict-zero") {
-        throw new Error("quality gate did not preserve strict failure semantics");
-      }
-      if (result.data.violations.length === 0 || result.diagnostics[0]?.code !== "E_STATIC_QUALITY_REGRESSION") {
-        throw new Error("quality gate failure lost regressions or structured diagnostics");
-      }
-      if (typeof result.data.metrics.unsafeCoerce !== "number") {
-        throw new Error("quality gate v2 lost the unsafeCoerce metric");
       }
     },
   },

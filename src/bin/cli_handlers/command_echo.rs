@@ -564,21 +564,6 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       Some(definition) => format!("validates code examples for `{}/{definition}`", opts.ns),
       None => format!("validates all code examples in namespace `{}`", opts.ns),
     },
-    AnalyzeSubcommand::CheckPublic(opts) => format!(
-      "checks every definition in {} selected public namespace(s) for the active entry target{}",
-      opts.ns.len(),
-      if opts.deps { ", including dependencies" } else { "" }
-    ),
-    AnalyzeSubcommand::CheckTypes(opts) => {
-      let mut desc = "checks type coverage and reports gaps that can erase polymorphic relationships".to_string();
-      if let Some(ns) = &opts.ns {
-        desc.push_str(&format!(" in namespace `{ns}`"));
-      }
-      if opts.summary_only {
-        desc.push_str(", returning aggregate counts only");
-      }
-      desc
-    }
     AnalyzeSubcommand::WeakTypes(opts) => {
       let mut desc = match opts.only.as_deref().map(str::trim) {
         Some("coverage") => "checks type coverage and reports gaps that can erase polymorphic relationships",
@@ -600,15 +585,6 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
         desc.push_str(", returning aggregate counts only");
       }
       desc
-    }
-    AnalyzeSubcommand::Quality(opts) => {
-      if let Some(path) = &opts.write_baseline {
-        format!("updates an existing legacy quality baseline at `{path}` without raising its budgets")
-      } else if let Some(path) = &opts.baseline {
-        format!("enforces static quality budgets from `{path}`")
-      } else {
-        "enforces zero static type and deprecated API debt".to_string()
-      }
     }
     AnalyzeSubcommand::Verify(opts) => format!("runs declarative verification profile `{}`", opts.profile),
     AnalyzeSubcommand::EffectsGraph(opts) => {
@@ -861,22 +837,6 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       value "ns" => &opts.ns,
       opt "def" => opts.definition.as_deref(); default "all"
     ),
-    AnalyzeSubcommand::CheckPublic(opts) => echo_items!(
-      tokens,
-      list "ns" => &opts.ns,
-      value "format" => &opts.format; default "human",
-      switch "deps" => opts.deps,
-      switch "summary-only" => opts.summary_only
-    ),
-    AnalyzeSubcommand::CheckTypes(opts) => echo_items!(
-      tokens,
-      opt "ns" => opts.ns.as_deref(); default "none",
-      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
-      opt "only" => opts.only.as_deref(); default "all",
-      value "format" => &opts.format; default "human",
-      switch "deps" => opts.deps,
-      switch "summary-only" => opts.summary_only
-    ),
     AnalyzeSubcommand::WeakTypes(opts) => echo_items!(
       tokens,
       opt "ns" => opts.ns.as_deref(); default "none",
@@ -889,15 +849,6 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       switch "ffi-evidence" => opts.ffi_evidence,
       switch "schema-evidence" => opts.schema_evidence,
       switch "summary-only" => opts.summary_only
-    ),
-    AnalyzeSubcommand::Quality(opts) => echo_items!(
-      tokens,
-      opt "ns" => opts.ns.as_deref(); default "none",
-      opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
-      switch "deps" => opts.deps,
-      opt "baseline" => opts.baseline.as_deref(); default "strict-zero",
-      opt "write-baseline" => opts.write_baseline.as_deref(); default "none",
-      value "format" => &opts.format; default "human"
     ),
     AnalyzeSubcommand::Verify(opts) => echo_items!(
       tokens,
@@ -1270,10 +1221,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
     AnalyzeSubcommand::CallGraph(_) => "call-graph",
     AnalyzeSubcommand::ProgramDiff(_) => "program-diff",
     AnalyzeSubcommand::CheckExamples(_) => "check-examples",
-    AnalyzeSubcommand::CheckPublic(_) => "check-public",
-    AnalyzeSubcommand::CheckTypes(_) => "check-types",
     AnalyzeSubcommand::WeakTypes(_) => "weak-types",
-    AnalyzeSubcommand::Quality(_) => "quality",
     AnalyzeSubcommand::Verify(_) => "verify",
     AnalyzeSubcommand::EffectsGraph(_) => "effects-graph",
   }

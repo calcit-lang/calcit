@@ -580,7 +580,7 @@ fn structural_rewrite_can_repair_an_invalid_legacy_call_only_after_strict_staged
 }
 
 #[test]
-fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
+fn deprecation_report_keeps_declared_macro_logs_off_stdout() {
   // Rust checks output-channel purity; the repository macro supplies the declared logging boundary.
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -620,21 +620,21 @@ fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
     "create legacy call with a declared logging macro",
   );
   let before = fs::read(&snapshot).unwrap();
-  for command in ["deprecated", "quality"] {
-    let view: &[&str] = if command == "deprecated" {
-      &["analyze", "weak-types", "--only", "deprecated-call"]
-    } else {
-      &["analyze", "quality"]
-    };
-    let args = [view, &["--ns", "test-hygienic.main", "--format", "json"]].concat();
+  {
+    let args = [
+      "analyze",
+      "weak-types",
+      "--only",
+      "deprecated-call",
+      "--ns",
+      "test-hygienic.main",
+      "--format",
+      "json",
+    ];
     let output = run_calcit(&snapshot, &args);
-    if command == "deprecated" {
-      assert_success(&output, "report deprecation with macro logs");
-    } else {
-      assert_eq!(output.status.code(), Some(1), "quality must retain its existing debt failure");
-    }
+    assert_success(&output, "report deprecation with macro logs");
     let report = parse_stdout(&output);
-    assert_eq!(report["command"], format!("analyze.{command}"));
+    assert_eq!(report["command"], "analyze.deprecated");
     assert!(
       String::from_utf8_lossy(&output.stderr).contains("internal c:"),
       "macro logs must remain observable on stderr"

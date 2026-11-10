@@ -870,17 +870,9 @@ fn weak_types_resolve_type_slots_bound_by_the_selected_entry() {
     text.matches("unresolved-type-slot:").count()
   };
 
-  // `analyze quality` exits non-zero on any debt; its metrics are still printed.
-  let quality_unresolved = || {
-    let output = run_calcit(&snapshot, &["analyze", "quality", "--format", "json"]);
-    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("quality json");
-    report["data"]["metrics"]["unresolved"].as_u64().expect("unresolved metric")
-  };
-
   fs::write(&snapshot, source(" (:dispatch-op 'demo.main/Op)")).expect("write bound snapshot");
   assert_eq!(slot_hits(false), 0, "a slot bound by the entry is resolved");
   assert_eq!(slot_hits(true), 0, "the incremental path also resolves the bound slot");
-  let bound_quality = quality_unresolved();
 
   fs::write(&snapshot, source("")).expect("write unbound snapshot");
   assert_eq!(
@@ -889,24 +881,15 @@ fn weak_types_resolve_type_slots_bound_by_the_selected_entry() {
     "an unbound slot is still reported for the argument and the return type"
   );
   assert_eq!(slot_hits(true), 2, "removing the binding invalidates the cached incremental rows");
-  assert_eq!(
-    quality_unresolved(),
-    bound_quality + 2,
-    "quality counts the two slot uses only when the entry leaves the slot unbound"
-  );
 
   // A binding to a missing definition is rejected like `--check-only` does.
   fs::write(&snapshot, source(" (:dispatch-op 'demo.main/Missing)")).expect("write dangling binding");
-  for args in [
-    &["analyze", "weak-types", "--only", "unresolved-type-slot", "--format", "json"][..],
-    &["analyze", "quality", "--format", "json"][..],
-  ] {
-    let output = run_calcit(&snapshot, args);
-    assert!(!output.status.success(), "{args:?} must reject a dangling slot binding");
-    assert!(
-      String::from_utf8_lossy(&output.stderr).contains("unknown type definition `demo.main/Missing`"),
-      "{args:?} stderr:\n{}",
-      String::from_utf8_lossy(&output.stderr)
-    );
-  }
+  let args = ["analyze", "weak-types", "--only", "unresolved-type-slot", "--format", "json"];
+  let output = run_calcit(&snapshot, &args);
+  assert!(!output.status.success(), "{args:?} must reject a dangling slot binding");
+  assert!(
+    String::from_utf8_lossy(&output.stderr).contains("unknown type definition `demo.main/Missing`"),
+    "{args:?} stderr:\n{}",
+    String::from_utf8_lossy(&output.stderr)
+  );
 }

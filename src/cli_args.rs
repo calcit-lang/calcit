@@ -386,14 +386,8 @@ pub enum AnalyzeSubcommand {
   ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
-  /// [Deprecated] use `calcit --check-only --ns <ns> [--deps]`
-  CheckPublic(CheckPublicCommand),
-  /// [Deprecated] use `analyze weak-types --only coverage`
-  CheckTypes(CheckTypesCommand),
   /// locate weakly-typed hotspots, type coverage, dynamic method dispatch, or deprecated calls (select with --only)
   WeakTypes(WeakTypesCommand),
-  /// [Deprecated] legacy quality budgets; use `--check-only` plus `analyze weak-types`
-  Quality(QualityCommand),
   /// run a declarative project verification profile
   Verify(VerifyCommand),
   /// decompose entry into State / Transform / Effect graph
@@ -412,48 +406,35 @@ pub struct VerifyCommand {
   pub format: String,
 }
 
-/// [Deprecated] use `calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn|json]`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "check-public")]
+/// Options of the public-definition check that `--check-only --ns` runs.
+#[derive(PartialEq, Debug, Clone)]
 pub struct CheckPublicCommand {
-  /// exact public namespace to check; repeat for shared and target-specific namespaces
-  #[argh(option)]
+  /// exact public namespaces to check, shared and target-specific
   pub ns: Vec<String>,
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
+  /// output format: human, edn, or json
   pub format: String,
   /// allow selected namespaces loaded from dependencies or calcit.core
-  #[argh(switch)]
   pub deps: bool,
   /// emit aggregate counts without per-definition rows
-  #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
 }
 
-/// [Deprecated] use `analyze weak-types --only coverage [--coverage-level none,partial,full]`
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "check-types")]
+/// Options of the type-coverage view that `analyze weak-types --only coverage` runs.
+#[derive(PartialEq, Debug, Clone)]
 pub struct CheckTypesCommand {
   /// exact namespace to analyze
-  #[argh(option)]
   pub ns: Option<String>,
   /// namespace prefix scope filter
-  #[argh(option)]
   pub ns_prefix: Option<String>,
   /// coverage levels to include, comma-separated: none,partial,full
-  #[argh(option)]
   pub only: Option<String>,
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
+  /// output format: human, edn, or json
   pub format: String,
   /// include dependency/core namespaces
-  #[argh(switch)]
   pub deps: bool,
   /// emit aggregate counts without per-definition details
-  #[argh(switch, long = "summary-only")]
   pub summary_only: bool,
   /// reuse revision-keyed per-definition analysis from .calcit local state
-  #[argh(switch)]
   pub incremental: bool,
 }
 
@@ -522,30 +503,6 @@ pub struct DeprecatedCommand {
   pub deps: bool,
   /// emit aggregate counts without per-definition details
   pub summary_only: bool,
-}
-
-/// [Deprecated] compare legacy quality budgets; use `--check-only` for correctness and `analyze weak-types` to locate debt
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "quality")]
-pub struct QualityCommand {
-  /// exact namespace to analyze
-  #[argh(option)]
-  pub ns: Option<String>,
-  /// namespace prefix scope filter
-  #[argh(option)]
-  pub ns_prefix: Option<String>,
-  /// include dependency/core namespaces
-  #[argh(switch)]
-  pub deps: bool,
-  /// compare against a committed Cirru EDN baseline, or an explicit .json file
-  #[argh(option)]
-  pub baseline: Option<String>,
-  /// lower an existing baseline only; new projects use strict checks instead
-  #[argh(option, long = "write-baseline")]
-  pub write_baseline: Option<String>,
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
 }
 
 /// check examples in namespace

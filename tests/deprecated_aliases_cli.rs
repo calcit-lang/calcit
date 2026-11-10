@@ -22,55 +22,12 @@ fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
     .expect("calcit command should run")
 }
 
-/// Timing fields are the only nondeterministic part of these reports.
-fn stable_stdout(output: &Output) -> String {
-  String::from_utf8_lossy(&output.stdout)
-    .lines()
-    .map(|line| {
-      if line.starts_with("- result:") {
-        line.split(" (").next().unwrap_or(line).to_owned()
-      } else if line.contains("duration_ms") || line.contains("duration-ms") {
-        line.split("duration").next().unwrap_or(line).to_owned()
-      } else {
-        line.to_owned()
-      }
-    })
-    .collect::<Vec<_>>()
-    .join("\n")
-}
-
 fn hint_lines(output: &Output) -> Vec<String> {
   String::from_utf8_lossy(&output.stderr)
     .lines()
     .filter(|line| line.starts_with(HINT_PREFIX))
     .map(str::to_owned)
     .collect()
-}
-
-fn assert_alias_matches(snapshot: &Path, old: &[&str], new: &[&str], replacement: &str) {
-  let old_output = run_calcit(snapshot, old);
-  let new_output = run_calcit(snapshot, new);
-  assert_eq!(
-    old_output.status.code(),
-    new_output.status.code(),
-    "{old:?} and {new:?} should exit alike\nold stderr:\n{}\nnew stderr:\n{}",
-    String::from_utf8_lossy(&old_output.stderr),
-    String::from_utf8_lossy(&new_output.stderr)
-  );
-  assert!(!old_output.stdout.is_empty(), "{old:?} should report on stdout");
-  assert_eq!(stable_stdout(&old_output), stable_stdout(&new_output), "{old:?} vs {new:?}");
-  let hints = hint_lines(&old_output);
-  assert_eq!(hints.len(), 1, "{old:?} should print exactly one hint: {hints:?}");
-  assert!(
-    hints[0].contains(replacement),
-    "{old:?} hint should name `{replacement}`: {}",
-    hints[0]
-  );
-  assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a deprecation hint");
-  assert!(
-    !String::from_utf8_lossy(&old_output.stdout).contains("[Deprecated]"),
-    "{old:?} must keep the hint off stdout"
-  );
 }
 
 /// A removed entry exits non-zero with an empty stdout, names its replacement on
@@ -86,7 +43,7 @@ fn assert_removed(snapshot: &Path, old: &[&str], replacement: &str) {
   );
   assert!(output.stdout.is_empty(), "{old:?} should not report on stdout");
   assert!(
-    stderr.contains("was removed in 0.31.0"),
+    stderr.contains("was removed in 0.31.0") || stderr.contains("was removed in 0.41.0"),
     "{old:?} should say it was removed: {stderr}"
   );
   assert!(stderr.contains(replacement), "{old:?} should name `{replacement}`: {stderr}");
@@ -98,29 +55,16 @@ fn assert_removed(snapshot: &Path, old: &[&str], replacement: &str) {
 }
 
 #[test]
-fn type_debt_aliases_match_weak_types_views() {
+fn removed_type_debt_entries_point_to_weak_types_views() {
   let snapshot = Path::new("calcit/test.cirru");
-  assert_alias_matches(
+  assert_removed(
     snapshot,
     &["analyze", "check-types", "--summary-only"],
-    &["analyze", "weak-types", "--only", "coverage", "--summary-only"],
     "weak-types --only coverage",
   );
-  assert_alias_matches(
+  assert_removed(
     snapshot,
     &["analyze", "check-types", "--only", "none", "--ns", "app.main", "--format", "json"],
-    &[
-      "analyze",
-      "weak-types",
-      "--only",
-      "coverage",
-      "--coverage-level",
-      "none",
-      "--ns",
-      "app.main",
-      "--format",
-      "json",
-    ],
     "weak-types --only coverage",
   );
   assert_removed(
@@ -497,27 +441,14 @@ fn option_nil_view_keeps_unavailable_evidence_unknown_and_never_runs_the_entry()
 }
 
 #[test]
-fn check_public_alias_matches_check_only_namespace_scope() {
+fn removed_check_public_points_to_check_only_namespace_scope() {
   let snapshot = Path::new("calcit/test-wasi-command.cirru");
-  assert_alias_matches(
-    snapshot,
-    &["analyze", "check-public", "--ns", "calcit.test", "--deps", "--summary-only"],
-    &["--check-only", "--ns", "calcit.test", "--deps", "--summary-only"],
-    "--check-only --ns",
-  );
-  assert_alias_matches(
-    snapshot,
-    &["analyze", "check-public", "--ns", "calcit.test", "--deps", "--format", "json"],
-    &["--check-only", "--ns", "calcit.test", "--deps", "--format", "json"],
-    "--check-only --ns",
-  );
-  // A namespace that is not loaded fails the same way in both forms.
-  assert_alias_matches(
-    snapshot,
-    &["analyze", "check-public", "--ns", "app.missing", "--format", "json"],
-    &["--check-only", "--ns", "app.missing", "--format", "json"],
-    "--check-only --ns",
-  );
+  for old in [
+    &["analyze", "check-public", "--ns", "calcit.test", "--deps", "--summary-only"][..],
+    &["analyze", "check-public", "--ns", "app.missing", "--format", "json"][..],
+  ] {
+    assert_removed(snapshot, old, "--check-only --ns");
+  }
 
   let json = run_calcit(snapshot, &["--check-only", "--ns", "calcit.test", "--deps", "--format", "json"]);
   let edn = run_calcit(snapshot, &["--check-only", "--ns", "calcit.test", "--deps", "--format", "edn"]);
@@ -550,13 +481,9 @@ fn check_public_alias_matches_check_only_namespace_scope() {
 }
 
 #[test]
-fn quality_alias_keeps_output_and_hint_and_query_aliases_are_removed() {
+fn removed_quality_and_query_entries_name_their_replacement() {
   let snapshot = Path::new("calcit/test.cirru");
-  let quality = run_calcit(snapshot, &["analyze", "quality", "--format", "json"]);
-  let hints = hint_lines(&quality);
-  assert_eq!(hints.len(), 1, "{hints:?}");
-  assert!(hints[0].contains("--check-only") && hints[0].contains("weak-types"), "{}", hints[0]);
-  serde_json::from_slice::<serde_json::Value>(&quality.stdout).expect("quality keeps one JSON document on stdout");
+  assert_removed(snapshot, &["analyze", "quality", "--format", "json"], "weak-types");
 
   assert_removed(snapshot, &["query", "pkg"], "`calcit query config`");
   let config = run_calcit(snapshot, &["query", "config"]);

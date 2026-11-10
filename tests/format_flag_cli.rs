@@ -292,10 +292,13 @@ fn cursor_views_accept_edn() {
 }
 
 #[test]
-fn quality_accepts_edn_and_ns_rejects_unknown_values() {
-  // The fixture has quality regressions, so the gate exits non-zero; stdout is still one document.
-  assert_edn_stdout(&run(&["analyze", "quality", "--format", "edn"]), "analyze quality --format edn");
-  assert_json_stdout(&run(&["analyze", "quality", "--format", "json"]), "analyze quality --format json");
+fn coverage_accepts_edn_and_ns_rejects_unknown_values() {
+  let coverage = ["analyze", "weak-types", "--only", "coverage", "--summary-only", "--format"];
+  assert_edn_stdout(&run(&[&coverage[..], &["edn"]].concat()), "weak-types --only coverage --format edn");
+  assert_json_stdout(
+    &run(&[&coverage[..], &["json"]].concat()),
+    "weak-types --only coverage --format json",
+  );
 
   let rejected = run(&["query", "ns", "--format", "yaml"]);
   assert!(!rejected.status.success());

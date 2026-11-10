@@ -1,8 +1,5 @@
 //! Normalization of merged CLI forms, and the migration messages for the
-//! entries removed in 0.31.0 (#2033, see `docs/run/upgrade.md`).
-//!
-//! The few deprecated entries that still have known ecosystem consumers keep a
-//! one-line stderr hint until a later non-patch release removes them.
+//! entries removed in 0.31.0 (#2033) and 0.41.0 (#2655), see `docs/run/upgrade.md`.
 
 use calcit::cli_args::{
   AnalyzeCommand, AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CallGraphDiffCommand, CheckTypesCommand, CountCallsCommand,
@@ -85,22 +82,45 @@ const REMOVED_COMMANDS: &[(&str, &str, &str)] = &[
   ),
 ];
 
+/// `(group, leaf, replacement)` for the deprecated `analyze` entries removed in 0.41.0 (#2655).
+const REMOVED_COMMANDS_0_41: &[(&str, &str, &str)] = &[
+  (
+    "analyze",
+    "check-types",
+    "`calcit analyze weak-types --only coverage` (level filter: `--coverage-level none,partial,full`)",
+  ),
+  (
+    "analyze",
+    "check-public",
+    "`calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn|json]`",
+  ),
+  (
+    "analyze",
+    "quality",
+    "`calcit --check-only` for correctness and `calcit analyze weak-types [--only coverage|deprecated-call]` to locate debt",
+  ),
+];
+
 /// Commands whose `--json` switch was removed in 0.31.0. `ffi export --json` stays
 /// deprecated because the calcit.std FFI inventory workflow still documents it.
 const REMOVED_JSON_SWITCH: &[(&str, &str)] = &[("query", "schema"), ("query", "def"), ("tree", "show")];
 
-fn removed_replacement(group: &str, leaf: &str) -> Option<&'static str> {
-  REMOVED_COMMANDS
+fn find_removed(table: &[(&str, &str, &'static str)], group: &str, leaf: &str) -> Option<&'static str> {
+  table
     .iter()
     .find(|(removed_group, removed_leaf, _)| *removed_group == group && *removed_leaf == leaf)
     .map(|(_, _, replacement)| *replacement)
 }
 
-fn removal_message(subject: &str, replacement: &str) -> String {
+fn removed_replacement(group: &str, leaf: &str) -> Option<&'static str> {
+  find_removed(REMOVED_COMMANDS, group, leaf)
+}
+
+fn removal_message(subject: &str, version: &str, replacement: &str) -> String {
   if replacement == NO_REPLACEMENT {
-    format!("{subject} was removed in 0.31.0 and has no replacement. See docs/run/upgrade.md.")
+    format!("{subject} was removed in {version} and has no replacement. See docs/run/upgrade.md.")
   } else {
-    format!("{subject} was removed in 0.31.0; use {replacement}. See docs/run/upgrade.md.")
+    format!("{subject} was removed in {version}; use {replacement}. See docs/run/upgrade.md.")
   }
 }
 
@@ -143,7 +163,7 @@ fn subcommand_position(args: &[String]) -> Option<usize> {
   None
 }
 
-/// Explains a command line that uses an entry removed in 0.31.0, before argument
+/// Explains a command line that uses an entry removed in 0.31.0 or 0.41.0, before argument
 /// parsing reports it as an unknown command. `args` includes the program name.
 /// Only the subcommand path (the first subcommand token after the top-level options
 /// and the leaf right after it) is inspected, so positional values such as
@@ -156,10 +176,17 @@ pub fn removed_command_error(args: &[String]) -> Option<String> {
   }
   let leaf = args.get(position + 1)?.as_str();
   if let Some(replacement) = removed_replacement(group, leaf) {
-    return Some(removal_message(&format!("`calcit {group} {leaf}`"), replacement));
+    return Some(removal_message(&format!("`calcit {group} {leaf}`"), "0.31.0", replacement));
+  }
+  if let Some(replacement) = find_removed(REMOVED_COMMANDS_0_41, group, leaf) {
+    return Some(removal_message(&format!("`calcit {group} {leaf}`"), "0.41.0", replacement));
   }
   if REMOVED_JSON_SWITCH.contains(&(group, leaf)) && args[position + 2..].iter().any(|arg| arg == "--json") {
-    return Some(removal_message(&format!("`calcit {group} {leaf} --json`"), "`--format json`"));
+    return Some(removal_message(
+      &format!("`calcit {group} {leaf} --json`"),
+      "0.31.0",
+      "`--format json`",
+    ));
   }
   None
 }
@@ -199,30 +226,6 @@ pub fn removed_transaction_operation_error(index: usize, group: &str, subcommand
   ))
 }
 
-/// Returns the one-line migration hint for a deprecated command that is kept
-/// because ecosystem CI still calls it.
-pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
-  let (old, new) = match cli_args.subcommand.as_ref()? {
-    CalcitCommand::Analyze(cmd) => match &cmd.subcommand {
-      AnalyzeSubcommand::CheckTypes(_) => (
-        "analyze check-types",
-        "`calcit analyze weak-types --only coverage` (level filter: `--coverage-level none,partial,full`)",
-      ),
-      AnalyzeSubcommand::CheckPublic(_) => (
-        "analyze check-public",
-        "`calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn|json]`",
-      ),
-      AnalyzeSubcommand::Quality(_) => (
-        "analyze quality",
-        "`calcit --check-only` for correctness and `calcit analyze weak-types [--only coverage|deprecated-call]` to locate debt",
-      ),
-      _ => return None,
-    },
-    _ => return None,
-  };
-  Some(format_hint(&format!("`calcit {old}`"), new))
-}
-
 fn format_hint(subject: &str, new: &str) -> String {
   if new == NO_REPLACEMENT {
     format!("[Deprecated] {subject} will be removed in the next non-patch release and has no replacement. See docs/run/upgrade.md.")
@@ -254,6 +257,8 @@ pub fn deprecated_type_policy_flag_hint(strict_types: bool, compat_types: bool) 
 /// The analyzer selected by a merged `analyze` option that has no parsed entry of its own.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnalyzeView {
+  /// `analyze weak-types --only coverage`
+  Coverage(CheckTypesCommand),
   /// `analyze weak-types --only dynamic-method`
   DynamicMethods(DynamicMethodsCommand),
   /// `analyze weak-types --only deprecated-call`
@@ -517,8 +522,7 @@ fn reject_options(view: &str, rejected: &[(&str, bool)]) -> Result<(), String> {
 }
 
 /// Routes `analyze weak-types --only <view>` to the analyzer that owns that
-/// view. The coverage view shares the `analyze check-types` entry; the other
-/// views are returned as an [`AnalyzeView`].
+/// view. The selected views are returned as an [`AnalyzeView`].
 pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<(ToplevelCalcit, Option<AnalyzeView>), String> {
   let Some(CalcitCommand::Analyze(AnalyzeCommand {
     subcommand: AnalyzeSubcommand::WeakTypes(options),
@@ -563,7 +567,7 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<(ToplevelCa
   let analyze_view = match view {
     Some(VIEW_COVERAGE) => {
       reject_options(VIEW_COVERAGE, &evidence_flags)?;
-      let subcommand = AnalyzeSubcommand::CheckTypes(CheckTypesCommand {
+      AnalyzeView::Coverage(CheckTypesCommand {
         ns: options.ns.clone(),
         ns_prefix: options.ns_prefix.clone(),
         only: options.coverage_level.clone(),
@@ -571,14 +575,7 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<(ToplevelCa
         deps: options.deps,
         summary_only: options.summary_only,
         incremental: options.incremental,
-      });
-      return Ok((
-        ToplevelCalcit {
-          subcommand: Some(CalcitCommand::Analyze(AnalyzeCommand { subcommand })),
-          ..cli_args
-        },
-        None,
-      ));
+      })
     }
     Some(VIEW_DYNAMIC_METHOD) => {
       reject_options(VIEW_DYNAMIC_METHOD, &evidence_flags)?;
@@ -664,19 +661,19 @@ mod tests {
       "json",
     ]))
     .expect("coverage view");
-    assert_eq!(view, None);
-    let legacy = parse(&[
-      "analyze",
-      "check-types",
-      "--only",
-      "none,partial",
-      "--ns",
-      "app.main",
-      "--summary-only",
-      "--format",
-      "json",
-    ]);
-    assert_eq!(analyze(&coverage), analyze(&legacy));
+    assert!(matches!(analyze(&coverage), AnalyzeSubcommand::WeakTypes(_)));
+    assert_eq!(
+      view,
+      Some(AnalyzeView::Coverage(CheckTypesCommand {
+        ns: Some("app.main".to_owned()),
+        ns_prefix: None,
+        only: Some("none,partial".to_owned()),
+        format: "json".to_owned(),
+        deps: false,
+        summary_only: true,
+        incremental: false,
+      }))
+    );
 
     let (_, dynamic) =
       normalize_weak_types_view(parse(&["analyze", "weak-types", "--only", "dynamic-method", "--deps"])).expect("dynamic view");
@@ -744,19 +741,20 @@ mod tests {
   }
 
   #[test]
-  fn kept_deprecated_entries_name_their_replacement() {
+  fn entries_removed_in_0_41_name_their_replacement() {
     for (cli_args, replacement) in [
-      (&["analyze", "check-types"][..], "weak-types --only coverage"),
-      (&["analyze", "check-public", "--ns", "app.lib"][..], "--check-only --ns"),
-      (&["analyze", "quality"][..], "--check-only"),
+      (&["analyze", "check-types", "--ns", "app.main"][..], "weak-types --only coverage"),
+      (
+        &["calcit.cirru", "analyze", "check-public", "--ns", "app.lib"][..],
+        "--check-only --ns",
+      ),
+      (&["analyze", "quality", "--baseline", "config/q.cirru"][..], "--check-only"),
     ] {
-      let hint = deprecated_command_hint(&parse(cli_args)).expect("deprecated entry should have a hint");
-      assert!(hint.starts_with("[Deprecated]") && hint.contains(replacement), "{hint}");
-      assert!(!hint.contains('\n'), "hint should be one line: {hint}");
+      let error = removed_command_error(&args(cli_args)).expect("removed entry should be explained");
+      assert!(error.contains("was removed in 0.41.0") && error.contains(replacement), "{error}");
+      assert!(!error.contains('\n'), "message should be one line: {error}");
     }
-    assert_eq!(deprecated_command_hint(&parse(&["analyze", "weak-types"])), None);
-    assert_eq!(deprecated_command_hint(&parse(&["config", "modules"])), None);
-    assert_eq!(deprecated_command_hint(&parse(&["analyze", "call-graph", "--counts"])), None);
+    assert_eq!(removed_command_error(&args(&["analyze", "weak-types", "--only", "coverage"])), None);
   }
 
   #[test]
