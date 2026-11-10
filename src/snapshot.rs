@@ -5705,6 +5705,16 @@ fn binding_names(node: &Cirru) -> HashSet<String> {
           add_leaves(params, out);
         }
       }
+      // `match v ((:some x) body) ...` binds the names in each branch pattern.
+      "match" | "tag-match" => {
+        for branch in items.iter().skip(2) {
+          if let Cirru::List(branch) = branch
+            && let Some(pattern @ Cirru::List(_)) = branch.first()
+          {
+            add_leaves(pattern, out);
+          }
+        }
+      }
       _ => {}
     }
     items.iter().for_each(|item| walk(item, out));
@@ -6096,9 +6106,21 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
 /// format` writes (#2652). Definitions that bind `Some`, `None` or `Option`
 /// locally, quoted data and `quasiquote` templates keep the long form.
 pub fn shorten_snapshot_option_constructors(snapshot: &mut Snapshot) -> usize {
+  // A snapshot that carries its own `calcit.core` must define the shorthand
+  // names, or the rewritten code would not resolve.
+  if let Some(core) = snapshot.files.get(crate::calcit::CORE_NS)
+    && !(core.defs.contains_key("Some") && core.defs.contains_key("None"))
+  {
+    return 0;
+  }
   let mut changed = 0;
-  for file in snapshot.files.values_mut() {
-    for entry in file.defs.values_mut() {
+  for (ns, file) in snapshot.files.iter_mut() {
+    for (def, entry) in file.defs.iter_mut() {
+      // Inside a user definition named `Option`, `Some` or `None`, the name
+      // refers to that definition itself, so a rewrite would change the call.
+      if ns != crate::calcit::CORE_NS && matches!(def.as_str(), "Option" | "Some" | "None") {
+        continue;
+      }
       let mut shorten = |node: &mut Cirru| {
         let (next, count) = shorten_option_constructors(node);
         *node = next;
@@ -7545,11 +7567,38 @@ mod tests {
       // A local `None` / `Some` / `Option` changes what the names refer to.
       ("let ((None 1)) (f (Option :none))", "let ((None 1)) (f (Option :none))", 0),
       ("defn g (Some) (Option :some 1)", "defn g (Some) (Option :some 1)", 0),
+      (
+        "match v ((:pair Some) (Option :some 1))",
+        "match v ((:pair Some) (Option :some 1))",
+        0,
+      ),
     ];
     for (source, expected, count) in cases {
       let (rewritten, changed) = shorten_option_constructors(&parse_one(source));
       assert_eq!((rewritten, changed), (parse_one(expected), count), "{source}");
     }
+  }
+
+  #[test]
+  fn format_keeps_long_option_forms_where_shorthand_would_change_meaning() {
+    let code = "(defn main! () (Option :none))";
+    let load = || load_snapshot_data(&mini_snapshot_with_def("nil", code), "mini.cirru").expect("mini snapshot loads");
+
+    let mut plain = load();
+    assert_eq!(shorten_snapshot_option_constructors(&mut plain), 1);
+
+    // Inside a user definition named `Option`, the call recurses into itself.
+    let mut self_named = load();
+    let file = self_named.files.get_mut("mini").expect("mini file");
+    let entry = file.defs.remove("main!").expect("main! def");
+    file.defs.insert("Option".to_owned(), entry);
+    assert_eq!(shorten_snapshot_option_constructors(&mut self_named), 0);
+
+    // A snapshot-supplied core without `Some` / `None` cannot resolve the short form.
+    let mut own_core = load();
+    let core_file = own_core.files.get("mini").expect("mini file").clone();
+    own_core.files.insert(crate::calcit::CORE_NS.to_owned(), core_file);
+    assert_eq!(shorten_snapshot_option_constructors(&mut own_core), 0);
   }
 
   #[test]

@@ -3741,25 +3741,25 @@ fn preprocess_expr_unguarded(
       if xs.is_empty() {
         Ok(expr.to_owned())
       } else {
-        // `Some x` is the shorthand of `Option :some x` (#2652).
-        if xs.len() == 2
+        // `Some x` is the shorthand of `Option :some x` (#2652). The lowered
+        // call is still recorded below at the location of the original `(Some x)`.
+        let processed = if xs.len() == 2
           && matches!(&xs[0], Calcit::Symbol { sym, .. } if sym.as_ref() == "Some")
           && !scope_defs.contains("Some")
           && program::has_def_code(calcit::CORE_NS, "Some")
         {
           let call = core_option_shorthand_call("some", &[xs[1].clone()], file_ns, check_warnings, call_stack)?;
-          return preprocess_expr(&call, scope_defs, scope_types, file_ns, check_warnings, call_stack);
-        }
-        // TODO whether function bothers this...
-        // println!("start calling: {}", expr);
-        let processed = into_executable_call(preprocess_list_call(
-          xs,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?);
+          preprocess_expr(&call, scope_defs, scope_types, file_ns, check_warnings, call_stack)?
+        } else {
+          into_executable_call(preprocess_list_call(
+            xs,
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          )?)
+        };
         let source_location = SOURCE_EXPRESSION_TRACE.with(|trace| {
           let trace = trace.borrow();
           let trace = trace.as_ref()?;
