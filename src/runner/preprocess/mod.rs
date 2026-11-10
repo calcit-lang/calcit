@@ -4848,7 +4848,11 @@ fn preprocess_list_call(
     ),
 
     Some(Calcit::Fn { info, .. }) => {
-      warn_on_direct_option_helper_call(&info, head, file_ns, check_warnings);
+      // A local alias such as `let ((f option:unwrap)) (f opt)` resolves to the
+      // helper too, but its call head is not the helper name.
+      if matches!(&head_form, Calcit::Import(_)) {
+        warn_on_direct_option_helper_call(&info, head, file_ns, check_warnings);
+      }
       preprocess_known_function_call(
         info,
         head_form,

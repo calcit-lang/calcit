@@ -2778,9 +2778,10 @@ fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
 #[test]
 fn direct_option_helper_calls_warn_but_core_macro_expansions_do_not() {
   run_with_large_stack(|| {
-    // `if-let` expands to `option:fold`; only the written helper calls warn (#2653).
+    // `if-let` expands to `option:fold`, and `f` is a local alias of a helper;
+    // only the helper calls written by name warn (#2653).
     let entries = load_snippet_entries(
-      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (option:unwrap-or x 0) (option:map x inc) (if-let (v x) v 0) (.unwrap-or x 0)",
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (option:unwrap-or x 0) (option:map x inc) (if-let (v x) v 0) (.unwrap-or x 0)\n    let\n        f option:unwrap\n      f x",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
