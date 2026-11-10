@@ -6145,6 +6145,9 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
 /// produced, and schemas that do not round-trip compactly are left alone.
 pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
   let mut changed = 0;
+  // An alias that is also a loaded namespace resolves as that namespace
+  // first, so `alias/Name` could name a different type.
+  let loaded_namespaces: HashSet<String> = snapshot.files.keys().cloned().collect();
   for (ns, file) in snapshot.files.iter_mut() {
     if ns == crate::calcit::CORE_NS || ns.ends_with(".$meta") {
       continue;
@@ -6162,7 +6165,11 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
           return None;
         }
         let referred = imports.get(name).map(|rule| rule.as_ref());
-        let bare_target = if local_defs.contains(name) {
+        // A bare built-in name such as `Number` parses as the built-in type,
+        // not as a nominal definition that shares its name.
+        let bare_target = if CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some() {
+          None
+        } else if local_defs.contains(name) {
           Some(ns.as_str())
         } else if let Some(crate::program::ImportRule::NsReferDef(target, def)) = referred {
           (def.as_ref() == name).then_some(target.as_ref())
@@ -6177,7 +6184,11 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot) -> usize {
         imports
           .iter()
           .filter_map(|(alias, rule)| match rule.as_ref() {
-            crate::program::ImportRule::NsAs(target) if target.as_ref() == prefix => Some(format!("{alias}/{name}")),
+            crate::program::ImportRule::NsAs(target)
+              if target.as_ref() == prefix && (alias.as_ref() == prefix || !loaded_namespaces.contains(alias.as_ref())) =>
+            {
+              Some(format!("{alias}/{name}"))
+            }
             _ => None,
           })
           .filter(|short| short.len() < leaf.len())
@@ -7712,8 +7723,15 @@ mod tests {
           :code $ quote (defstruct Box (:x Number))
           :examples $ []
           :schema nil
+    |lib $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns lib)) (:examples $ []) (:schema nil)
+      :defs $ {}
+        |Box $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Box (:y Number))
+          :examples $ []
+          :schema nil
     |app.main $ %{} :FileEntry
-      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns app.main $ :require (app.lib :refer $ Pt) (app.lib :as lib))) (:examples $ []) (:schema nil)
+      :ns $ %{} :CodeEntry (:doc |) (:code $ quote (ns app.main $ :require (app.lib :refer $ Pt) (app.lib :as lib) (app.lib :as l2))) (:examples $ []) (:schema nil)
       :defs $ {}
         |Local $ %{} :CodeEntry (:doc |)
           :code $ quote (defstruct Local (:z Number))
@@ -7723,6 +7741,10 @@ mod tests {
           :code $ quote (defstruct Box (:w Number))
           :examples $ []
           :schema nil
+        |Number $ %{} :CodeEntry (:doc |)
+          :code $ quote (defstruct Number (:n Number))
+          :examples $ []
+          :schema nil
         |Result $ %{} :CodeEntry (:doc |)
           :code $ quote (defstruct Result (:r Number))
           :examples $ []
@@ -7730,7 +7752,7 @@ mod tests {
         |f $ %{} :CodeEntry (:doc |)
           :code $ quote (defn f (a b c) a)
           :examples $ []
-          :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box (-> Number)
+          :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box app.main/Number (-> Number)
         |g $ %{} :CodeEntry (:doc |)
           :code $ quote (defn g (x) x)
           :examples $ []
@@ -7743,8 +7765,10 @@ mod tests {
     let edn = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
     let mut snapshot = load_snapshot_data(&edn, "app.cirru").expect("snapshot loads");
     // `app.main/Local` and the referred `app.lib/Pt` become bare. A local
-    // `Box` shadows the library one, so `app.lib/Box` takes the `:as` alias,
-    // and a local `Result` keeps `calcit.core/Result` qualified. Core names
+    // `Box` shadows the library one, so `app.lib/Box` takes an `:as` alias,
+    // but not `lib`, which is also a loaded namespace. A local `Number`
+    // stays qualified, as bare it is the built-in type, and a local `Result`
+    // keeps `calcit.core/Result` qualified. Core names
     // are covered by the CLI test: how `Option` renders depends on whether
     // a core program is registered.
     assert_eq!(shorten_snapshot_type_names(&mut snapshot), 3);
@@ -7756,7 +7780,7 @@ mod tests {
       }
     };
     let f = render("f");
-    assert!(f.contains("Fn Local Pt lib/Box"), "{f}");
+    assert!(f.contains("Fn Local Pt l2/Box app.main/Number"), "{f}");
     let g = render("g");
     assert!(g.contains("calcit.core/Result"), "{g}");
     assert_eq!(shorten_snapshot_type_names(&mut snapshot), 0, "a second pass is a no-op");
