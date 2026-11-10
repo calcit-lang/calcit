@@ -2695,6 +2695,87 @@ fn mixed_public_equality_reports_guided_type_mismatches() {
 }
 
 #[test]
+fn option_truthiness_is_an_error_except_as_the_last_and_operand() {
+  run_with_large_stack(|| {
+    // `get` lowers to a call without a coordinate; the error still points at
+    // the written condition. The last `and` operand is a returned value.
+    let entries = load_snippet_entries("let\n    m $ {} (:a 1)\n  [] (if (get m :a) 1 2) (and true (get m :a))");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Option conditions preprocess into blocking advisories");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(nil_checks.len(), 1, "only the `if` condition fails: {nil_checks:?}");
+    assert_ne!(nil_checks[0].location().def.as_ref(), calcit::calcit::GENERATED_DEF);
+  });
+}
+
+#[test]
+fn nil_tests_on_option_literals_are_errors() {
+  run_with_large_stack(|| {
+    // `nil?` resolves to a builtin proc whose head carries no coordinate, and
+    // inside `let` the call has none either; the error falls back to the
+    // enclosing source form instead of degrading to a warning.
+    let entries = load_snippet_entries(
+      "let\n    a $ nil? None\n    b $ nil? (Some 1)\n    c $ non-nil? None\n    d $ non-nil? (Some 1)\n  [] a b c d",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("nil tests on Option literals preprocess into blocking advisories");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(nil_checks.len(), 4, "every literal nil test fails: {nil_checks:?}");
+    for check in &nil_checks {
+      assert_ne!(check.location().def.as_ref(), calcit::calcit::GENERATED_DEF);
+      assert!(!check.message().contains("/??"), "names the def: {}", check.message());
+    }
+    assert!(
+      !warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")),
+      "no leftover warning: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
+#[test]
+fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
+  run_with_large_stack(|| {
+    // The lowered `:nil` arm tests a generated local with `nil?`; only the
+    // user-written `nil? x` is an error. `either` also tests a gensym local,
+    // but its nil check is the user's, so it still fails.
+    let entries = load_snippet_entries(
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x) (either x 0)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("data-view match preprocesses");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(
+      nil_checks.len(),
+      2,
+      "`nil? x` and `either` fail, the data-view guard does not: {nil_checks:?}"
+    );
+    assert!(
+      nil_checks.iter().all(|check| !check.message().contains("match_v")),
+      "{nil_checks:?}"
+    );
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
@@ -2706,7 +2787,15 @@ fn option_migration_source_calls_fail_during_preprocessing() {
       .expect("Option migration examples should preprocess with warnings, not reach runtime");
 
     let warnings = warnings.borrow();
-    for operation in ["=", "non-nil?", "assoc"] {
+    // `non-nil?` on an Option is blocking since 0.41.0 (#2653).
+    let advisories = runner::preprocess::take_advisories();
+    assert!(
+      advisories.iter().any(|advisory| {
+        advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR) && advisory.message().contains("`non-nil?` on Option value")
+      }),
+      "`non-nil?` on an Option should be an error, got: {advisories:?}"
+    );
+    for operation in ["=", "assoc"] {
       assert!(
         warnings.iter().any(|warning| {
           warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")

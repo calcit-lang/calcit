@@ -3570,6 +3570,10 @@ pub const BROAD_TYPE_ERROR: &str = "E_BROAD_TYPE";
 /// calls) stay exempt.
 pub const OPTION_ERASED_ERROR: &str = "E_OPTION_ERASED_TO_NIL";
 
+/// Error code for `nil?`, `non-nil?`, `either` or a truthiness test on an
+/// Option value in project code (blocking since 0.41.0, #2653).
+pub const OPTION_NIL_CHECK_ERROR: &str = "E_OPTION_NIL_CHECK";
+
 pub const OPEN_FAMILY_WARNING: &str = "W_OPEN_FAMILY";
 
 /// Open types written in project `:schema`s outside a reviewed `(:open …)`

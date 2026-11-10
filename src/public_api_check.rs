@@ -411,7 +411,7 @@ pub fn run(
       .find(|row| Some(&row.namespace) == location.0.as_ref() && Some(&row.definition) == location.1.as_ref());
     let reached = matches!(
       advisory.code(),
-      Some(snapshot::UNBOUND_TYPE_SLOT_ERROR | snapshot::OPTION_ERASED_ERROR)
+      Some(snapshot::UNBOUND_TYPE_SLOT_ERROR | snapshot::OPTION_ERASED_ERROR | snapshot::OPTION_NIL_CHECK_ERROR)
     );
     match row {
       Some(row) => row.status = "failed",

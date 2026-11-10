@@ -36,6 +36,26 @@ core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等
 
 因为 core 定义优先于同命名空间的定义，项目里自己定义的 `Some` / `None`（大写开头，少见）会被 core 版本遮蔽，需要改名。
 
+## 0.41.0 Option 上的 nil 判断改为错误 `E_OPTION_NIL_CHECK`（#2653）
+
+`None` 是一个值，不是 nil，所以在 Option 值上用 `nil?`、`non-nil?`、`either`，或把 Option 直接放进 `if` / `when` / `or` / `and` 的条件，结果永远是同一个分支。以前这些写法只报 `W_NOMINAL_ENUM_LEGACY_USE` 警告，0.41.0 起在项目代码里报 `E_OPTION_NIL_CHECK` 错误，和 `E_OPTION_ERASED_TO_NIL` 一样让 `--check-only` 失败、在 `--all-defs` 报告里把定义计为 `failed`。依赖库里的代码不检查。
+
+按意图改写：
+
+| 以前 | 改成 |
+| --- | --- |
+| `nil? opt` | `.none? opt` |
+| `non-nil? opt` | `.some? opt` |
+| `either opt fallback`（fallback 是普通值） | `.unwrap-or opt fallback` |
+| `either opt fallback`（fallback 有副作用或可能出错） | `match opt ((:some v) v) ((:none) fallback)` |
+| `either opt fallback`（fallback 也是 Option） | `.or-else opt $ fn () fallback` |
+| `if opt a b`（不需要载荷） | `if (.some? opt) a b` |
+| `if opt a b`（需要载荷） | `if-let (v opt) a b` 或 `match opt ((:some v) a) ((:none) b)` |
+
+`either` 只在需要时才求值 fallback；`.unwrap-or` 是普通函数，`Some` 时也会先求值 fallback，所以 fallback 有副作用或可能报错时改用 `match`。`if-let` / `match` 里的载荷名要选一个新名字，避免遮蔽分支里已经用到的同名变量。
+
+`Result` 和应用自己定义的 enum 仍然只报 `W_NOMINAL_ENUM_LEGACY_USE` 警告。
+
 ## 0.41.0 `edit format` 去掉断言里单个类型名的 quote（#2654）
 
 `calcit edit format` 把 `assert-type x 'Number`、`unsafe-coerce raw 'String` 改为裸写的 `Number` / `String`，`assert-type` 里同一命名空间的 Struct / Enum 名和所在定义的泛型名（如 `assert-type p 'Point`、`assert-type x 'T`）也一并改写。以下名字保留 quote，因为裸写会指向别的定义、改变断言的类型：与 `calcit.core` 同名的本地类型（如自定义的 `Result`，裸写 `Result` 指向 core），以及在所在定义里被 `let` / `fn` 参数等局部绑定的同名名字。含义不变，旧写法仍可加载；格式化后 diff 里会出现这类单行变化。
