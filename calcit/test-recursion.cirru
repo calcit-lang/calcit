@@ -25,7 +25,7 @@
             :code $ quote $ assert= 0
               consume-tail $ range 100000
         'hole-series $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn hole-series (x) (assert-type x 'Number)
+          :code $ quote $ defn hole-series (x) (assert-type x Number)
             if (&<= x 0) (raise "|unexpected small number")
               if (&= x 1) 0 $ if (&= x 2) 1 $ let
                   extra $ .rem x 3

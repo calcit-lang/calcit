@@ -76,7 +76,7 @@
           :code $ quote $ defn chained-return-type (base extra)
             let
                 first-sum $ add-numbers base extra
-              assert-type first-sum 'Number
+              assert-type first-sum Number
               hint-fn $ {} $ :return 'Number
               add-numbers first-sum 5
           :examples $ []
@@ -175,8 +175,8 @@
             let
                 x 10
                 y 20
-              assert-type x 'Number
-              assert-type y 'Number
+              assert-type x Number
+              assert-type y Number
               let
                   sum $ &+ x y
                   rounded $ round 3.14
@@ -194,7 +194,7 @@
                 sum-ab $ add-numbers a b
                 final-result $ -> sum-ab $ add-numbers 10
               ; final-result "应该保留" :number "类型"
-              assert-type final-result 'Number
+              assert-type final-result Number
               &+ final-result 5
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
@@ -220,11 +220,11 @@
           :code $ quote $ defn test-dynamic-methods ()
             let
                 typed-text |calcit
-              assert-type typed-text 'String
+              assert-type typed-text String
               assert= |alc $ .slice typed-text 1 $ Option :some 4
             let
                 also-text |numbers
-              assert-type also-text 'String
+              assert-type also-text String
               assert= |num $ .slice also-text 0 $ Option :some 3
             println "|slice checks succeeded"
             , "|slice checks passed"
@@ -240,7 +240,7 @@
           :code $ quote $ defn test-list-methods () (; Create a list and annotate its type)
             let
                 xs $ [] 1 2 3 4 5
-              assert-type xs 'List
+              assert-type xs List
               ; Call valid list methods
               let
                   first-item $ .first xs
@@ -279,7 +279,7 @@
           :code $ quote $ defn test-preprocess-method-validation () (; "所有这些方法调用都是合法的，应该通过" preprocess "检查")
             let
                 xs $ [] 1 2 3 4 5
-              assert-type xs 'List
+              assert-type xs List
               let
                   first-item $ .first xs
                   count-val $ .len xs
@@ -287,7 +287,7 @@
                 println "|✓ List methods validated at preprocess"
             let
                 text |hello-world
-              assert-type text 'String
+              assert-type text String
               let
                   sliced $ .slice text 0 $ Option :some 5
                   len $ .len text
@@ -295,7 +295,7 @@
                 println "|✓ String methods validated at preprocess"
             let
                 m $ {} (:a 1) (:b 2)
-              assert-type m 'Map
+              assert-type m Map
               let
                   val $ .get m :a
                   keys-list $ .keys m
@@ -314,7 +314,7 @@
           :code $ quote $ defn test-string-methods ()
             let
                 text |hello-world
-              assert-type text 'String
+              assert-type text String
               ; Call valid string methods
               let
                   sliced $ .slice text 0 $ Option :some 5
@@ -361,7 +361,7 @@
           :code $ quote $ defn test-typed-method-access () (; "当对象有类型标注时，方法调用会检查该类型支持的方法")
             let
                 typed-list $ [] 1 2 3 4 5
-              assert-type typed-list 'List
+              assert-type typed-list List
               ; :list "类型对应" calcit.core/&core-list-methods "提供的方法"
               let
                   first-elem $ .first typed-list
@@ -374,7 +374,7 @@
             ; "字符串也有类型相关的方法"
             let
                 typed-str |test-string
-              assert-type typed-str 'String
+              assert-type typed-str String
               let
                   str-len $ .len typed-str
                   str-first $ .first typed-str

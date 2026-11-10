@@ -5600,6 +5600,161 @@ fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   migrate_code_type_syntax(node)
 }
 
+/// Drop the quote from a single type name in `assert-type` / `unsafe-coerce`
+/// when the bare name means the same type (#2654): a built-in type such as
+/// `'Number`, or, for `assert-type`, a name `bare_ok` accepts (a generic of
+/// the enclosing definition, or a Struct/Enum declared in the same namespace). Other quoted
+/// names, type slots `'*name` and qualified names stay as written, and quoted
+/// data and `quasiquote` templates are not touched.
+pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool) -> (Cirru, usize) {
+  let bound = binding_names(node);
+  unquote_assertion_type_names_in(node, bare_ok, &|name| bound.contains(name))
+}
+
+fn unquote_assertion_type_names_in(
+  node: &Cirru,
+  bare_ok: &dyn Fn(&str) -> bool,
+  locally_bound: &dyn Fn(&str) -> bool,
+) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = items.first().and_then(|item| match item {
+    Cirru::Leaf(value) => Some(value.as_ref()),
+    _ => None,
+  });
+  if matches!(head, Some("quote" | "quasiquote")) {
+    return (node.clone(), 0);
+  }
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = unquote_assertion_type_names_in(item, bare_ok, locally_bound);
+    rewritten.push(next);
+    changed += count;
+  }
+  if matches!(head, Some("assert-type" | "unsafe-coerce"))
+    && rewritten.len() == 3
+    && let Cirru::Leaf(written) = &rewritten[2]
+    && let Some(name) = written.strip_prefix('\'')
+    && !name.is_empty()
+    && !name.starts_with(['\'', '*'])
+    && !name.contains('/')
+    && !locally_bound(name)
+    && (CalcitTypeAnnotation::canonical_type_symbol_name(name) == Some(name)
+      || CalcitTypeAnnotation::open_family_type(name).is_some()
+      || (head == Some("assert-type") && bare_ok(name)))
+  {
+    rewritten[2] = Cirru::leaf(name);
+    changed += 1;
+  }
+  (Cirru::List(rewritten), changed)
+}
+
+/// Names that `let`, `&let`, `let[]`, `if-let`, `when-let`, `loop`, `fn`,
+/// `defn` or `defmacro` bind anywhere in a tree. A local binding can hold a Struct/Enum definition, and a bare
+/// name in `assert-type` then resolves to it, so such names keep the quote.
+fn binding_names(node: &Cirru) -> HashSet<String> {
+  fn add_leaves(node: &Cirru, out: &mut HashSet<String>) {
+    match node {
+      Cirru::Leaf(name) => {
+        out.insert(name.to_string());
+      }
+      Cirru::List(items) => items.iter().for_each(|item| add_leaves(item, out)),
+    }
+  }
+  fn walk(node: &Cirru, out: &mut HashSet<String>) {
+    let Cirru::List(items) = node else { return };
+    let head = match items.first() {
+      Some(Cirru::Leaf(head)) => head.as_ref(),
+      _ => "",
+    };
+    match head {
+      "quote" => return,
+      "let" | "loop" => {
+        if let Some(Cirru::List(pairs)) = items.get(1) {
+          for pair in pairs {
+            if let Cirru::List(pair) = pair
+              && let Some(name) = pair.first()
+            {
+              add_leaves(name, out);
+            }
+          }
+        }
+      }
+      "&let" | "if-let" | "when-let" => {
+        if let Some(Cirru::List(pair)) = items.get(1)
+          && let Some(name) = pair.first()
+        {
+          add_leaves(name, out);
+        }
+      }
+      // `let[] (a b) xs` destructures into the listed names.
+      "let[]" => {
+        if let Some(names) = items.get(1) {
+          add_leaves(names, out);
+        }
+      }
+      "fn" => {
+        if let Some(params) = items.get(1) {
+          add_leaves(params, out);
+        }
+      }
+      "defn" | "defmacro" => {
+        if let Some(params) = items.get(2) {
+          add_leaves(params, out);
+        }
+      }
+      _ => {}
+    }
+    items.iter().for_each(|item| walk(item, out));
+  }
+  let mut out = HashSet::new();
+  walk(node, &mut out);
+  out
+}
+
+/// Definition names of `calcit.core`. A bare name in `assert-type` that
+/// matches one resolves to the core definition even when the namespace
+/// declares its own, so only the quoted spelling names the local one.
+fn core_def_names() -> &'static HashSet<String> {
+  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
+  NAMES.get_or_init(|| {
+    crate::load_core_snapshot()
+      .ok()
+      .and_then(|core| {
+        core
+          .files
+          .get(crate::calcit::CORE_NS)
+          .map(|file| file.defs.keys().cloned().collect())
+      })
+      .unwrap_or_default()
+  })
+}
+
+/// Names that a bare type position in this namespace resolves to its own
+/// Struct or Enum declaration: names shadowing a core definition are left out.
+fn local_nominal_type_names(file: &FileInSnapShot) -> HashSet<String> {
+  let core = core_def_names();
+  file
+    .defs
+    .iter()
+    .filter(|(name, _)| !core.contains(name.as_str()))
+    .filter(|(_, entry)| {
+      matches!(&entry.code, Cirru::List(items)
+        if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum")))
+    })
+    .map(|(name, _)| name.to_owned())
+    .collect()
+}
+
+fn schema_generic_names(schema: &CalcitTypeAnnotation) -> Vec<Arc<str>> {
+  match schema {
+    CalcitTypeAnnotation::Fn(signature) => signature.generics.as_ref().clone(),
+    _ => vec![],
+  }
+}
+
 /// The payload of `quote $ <compound type>` when it can be written bare, such
 /// as `List Number`; `None` for other forms.
 fn unquote_compound_type(node: &Cirru) -> Option<Cirru> {
@@ -5907,19 +6062,27 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
     let (ns_code, count) = canonicalize_code_type_syntax(&file.ns.code);
     file.ns.code = ns_code;
     changed += count;
+    let nominal = local_nominal_type_names(file);
     for entry in file.defs.values_mut() {
-      let (code, count) = format_code_type_syntax(&entry.code);
+      let generics = schema_generic_names(&entry.schema);
+      let bare_ok = |name: &str| nominal.contains(name) || generics.iter().any(|generic| generic.as_ref() == name);
+      let format = |node: &Cirru| {
+        let (code, count) = format_code_type_syntax(node);
+        let (code, unquoted) = unquote_assertion_type_names(&code, &bare_ok);
+        (code, count + unquoted)
+      };
+      let (code, count) = format(&entry.code);
       entry.code = code;
       changed += count;
       let mut rewritten_examples = Vec::with_capacity(entry.examples.len());
       for example in &entry.examples {
-        let (code, count) = format_code_type_syntax(example);
+        let (code, count) = format(example);
         rewritten_examples.push(code);
         changed += count;
       }
       entry.examples = rewritten_examples;
       for test in entry.tests.iter_mut() {
-        let (code, count) = format_code_type_syntax(&test.code);
+        let (code, count) = format(&test.code);
         test.code = code;
         changed += count;
       }
@@ -7252,6 +7415,50 @@ mod tests {
       reloaded.as_ref(),
       CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "app.schema/Store" && args.is_empty()
     ));
+  }
+
+  #[test]
+  fn format_unquotes_assertion_type_names_with_the_same_meaning() {
+    let local = |name: &str| matches!(name, "Task" | "T");
+    let cases = [
+      ("assert-type x 'Number", "assert-type x Number", 1),
+      ("assert-type x 'AnyFn", "assert-type x AnyFn", 1),
+      ("unsafe-coerce x 'String", "unsafe-coerce x String", 1),
+      // A local Struct or a generic is the same type bare, in `assert-type` only.
+      ("assert-type x 'Task", "assert-type x Task", 1),
+      ("assert-type x 'T", "assert-type x T", 1),
+      ("unsafe-coerce x 'Task", "unsafe-coerce x 'Task", 0),
+      // Unknown, qualified and slot names, legacy lowercase, quoted data and templates stay.
+      ("assert-type x 'Other", "assert-type x 'Other", 0),
+      ("assert-type x 'app.lib/Task", "assert-type x 'app.lib/Task", 0),
+      ("assert-type x '*slot", "assert-type x '*slot", 0),
+      ("assert-type x 'number", "assert-type x 'number", 0),
+      ("quote $ assert-type x 'Number", "quote $ assert-type x 'Number", 0),
+      ("quasiquote $ assert-type ~x 'Number", "quasiquote $ assert-type ~x 'Number", 0),
+      // A local binding of the same name may hold a Struct definition.
+      (
+        "let ((Task other/Task)) (assert-type x 'Task)",
+        "let ((Task other/Task)) (assert-type x 'Task)",
+        0,
+      ),
+      ("fn (Number) (assert-type x 'Number)", "fn (Number) (assert-type x 'Number)", 0),
+      (
+        "let[] (Number b) xs (assert-type 1 'Number)",
+        "let[] (Number b) xs (assert-type 1 'Number)",
+        0,
+      ),
+      (
+        "when-let (Task t) (assert-type x 'Task)",
+        "when-let (Task t) (assert-type x 'Task)",
+        0,
+      ),
+    ];
+    for (source, expected, count) in cases {
+      let (rewritten, changed) = unquote_assertion_type_names(&parse_one(source), &local);
+      assert_eq!((rewritten, changed), (parse_one(expected), count), "{source}");
+    }
+    // A local `Result` shadows the core one only when quoted, so it stays quoted.
+    assert!(core_def_names().contains("Result") && core_def_names().contains("Option"));
   }
 
   #[test]

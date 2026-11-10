@@ -32,6 +32,11 @@ let
   println $ count xs
 ```
 
+单个类型名同样裸写：`assert-type x Number`、`assert-type p Point`。旧写法 `'Number` 仍可使用；`calcit edit format`
+会去掉 `assert-type` / `unsafe-coerce` 里内置类型名（`'Number`、`'String`、`'AnyFn` 等）的 quote，`assert-type`
+里同一命名空间声明的 Struct / Enum 名和所在定义的泛型名也一并去掉。其他名字（例如从别的命名空间引入的类型、
+`'app.lib/Task` 这类限定名、类型槽 `'*name`、与 `calcit.core` 同名的本地类型如自定义的 `Result`、所在定义里被 `let` / `fn` 参数局部绑定的同名名字）保持原样，因为裸写会指向 core 或局部绑定的定义；`quasiquote` 模板里的写法也不改。
+
 嵌套回调、泛型和约束按子句分行：
 
 ```cirru.no-check
@@ -178,7 +183,7 @@ trait 方法中的隐式接收者变量与普通泛型代换复用同一关系�
 等后续运算或后端执行才失败。例如 String `|hello` 不能通过断言变成 Number：
 
 ```bash
-calcit eval "let ((x |hello)) (assert-type x 'Number)"
+calcit eval "let ((x |hello)) (assert-type x Number)"
 ```
 
 已证明的同型断言保持合法；断言为更宽的 Dynamic 也不应丢弃已有具体类型：
@@ -186,7 +191,7 @@ calcit eval "let ((x |hello)) (assert-type x 'Number)"
 ```cirru
 let
     x 3
-  assert-type x 'Number
+  assert-type x Number
   assert= 4 $ + x 1
 ```
 

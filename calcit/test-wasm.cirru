@@ -214,7 +214,7 @@
           :schema $ quote $ Fn Number Int8 T (-> Bool) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |known-number-keeps-generic-recursion)
             :code $ quote $ assert= true
-              recursive-number-kind 2 (assert-type 1 'Int8) :unused
+              recursive-number-kind 2 (assert-type 1 Int8) :unused
             :tags $ #{} :numeric-recursion-evidence :unit :wasm
         'recursive-number-kind-control $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-number-kind-control (remaining value extra)
@@ -1249,7 +1249,7 @@
             assert= true $ hof-number-argument-shadow 0
             assert= true $ recursive-bool-number-kind 2 false :unused
             assert= true $ recursive-bool-number-kind 2 true :unused
-            recursive-number-kind 2 (assert-type 1 'Int8) :unused
+            recursive-number-kind 2 (assert-type 1 Int8) :unused
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-number?-true $ %{} 'CodeEntry (:doc "|number? on number returns true (1)")

@@ -20,7 +20,7 @@ Calcit enums are tagged unions: each variant has a tag and zero or more typed pa
 - **Define**: `defenum Shape (:circle Number) (:rect Number Number)`
 - **Create**: `Shape :circle 5`
 - **Match**: `match shape ((:circle r) ...) ((:rect w h) ...)`
-- **Type Check**: `assert-type shape 'Shape`
+- **Type Check**: `assert-type shape Shape`
 
 ## Defining Enums
 

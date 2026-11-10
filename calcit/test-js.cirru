@@ -69,7 +69,7 @@
           :schema $ quote Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
-            &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
+            &data-to-code $ parse-cirru-edn $ unsafe-coerce s String
           :examples $ []
           :schema $ quote $ Macro (Expr String)
             -> $ Expr Dynamic
@@ -100,7 +100,7 @@
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
               :code $ quote $ do
-                assert-type (reassign-same-generic 1 7) 'Number
+                assert-type (reassign-same-generic 1 7) Number
                 assert= 7 $ reassign-same-generic 1 7
               :tags $ #{} :generic-assignment :js-ffi :unit
             %{} 'TestEntry (:name |preserves-list-members)

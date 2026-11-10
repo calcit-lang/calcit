@@ -140,7 +140,7 @@ let
     User $ defstruct User (:name String) (:age Number) (:email String)
     x 42
   ; Type assertion $ composable check, returns original value
-  assert-type x 'Number
+  assert-type x Number
   [] (add 3 4) (sum 1 2 3) x
 ```
 

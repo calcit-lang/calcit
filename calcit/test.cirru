@@ -432,7 +432,7 @@
                 *c $ ref 0
               add-watch! *b :change $ fn (current prev)
                 do
-                  reset! *c $ assert-type current 'Number
+                  reset! *c $ assert-type current Number
                   , &unit
               reset! *b 1
               assert= 1 @*b
