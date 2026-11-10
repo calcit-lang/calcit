@@ -162,7 +162,7 @@ let
 
 ### Option 字段自动包装
 
-从 0.41.0 起，在构造 Struct 的字面量里，字段声明为 `Option<T>`、而给出的值类型已知是 `T` 时，编译器自动把它包成 `Option :some value`；省略的 Option 字段照旧补 `Option :none`。这适用于直接构造器、`%{}`，以及按期望类型改写成 Struct 的 map 字面量 `{}` 和 `?{}`：
+从 0.41.0 起，在构造 Struct 的字面量里，字段声明为 `Option<T>`、而给出的值类型已知是 `T` 时，编译器自动把它包成 `Option :some value`。这适用于直接构造器、`%{}`，以及按期望类型改写成 Struct 的 map 字面量 `{}` 和 `?{}`。省略 Option 字段的规则不变：直接构造器和 map 字面量改写补 `Option :none`，`%{}` 仍要求写出全部字段，缺失值要显式写 `Option :none`：
 
 ```cirru
 let
