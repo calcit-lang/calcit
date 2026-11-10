@@ -27,7 +27,7 @@ Calcit includes a built-in static type analysis system that performs compile-tim
 
 ## Quick Recipes
 
-- **Assert Type**: `assert-type total 'Number`
+- **Assert Type**: `assert-type total Number`
 - **Local `fn` Hint**: `hint-fn $ Fn Number (-> Number)`
 - **Top-level `defn` Schema**: `calcit edit schema app.main/add --code "quote $ Fn Number Number (-> Number)"`
 - **Top-level value Schema**: `calcit edit schema 'app.main/*enabled?' --code "quote $ Ref Bool"`
@@ -551,7 +551,7 @@ let
       hint-fn $ Fn Number Number (-> Number)
       let
           total $ + a b
-        assert-type total 'Number
+        assert-type total Number
         , total
   assert= 3 $ add 1 2
 ```
@@ -877,7 +877,7 @@ let
     x 10
     nums $ [] 1 2 3
   ; A broad assertion checks the shape without erasing the inferred Number element type.
-  assert-type nums 'List
+  assert-type nums List
   ; Prints: [&inspect-type] x => number
   &inspect-type x
   ; Prints: [&inspect-type] nums => list<number>
@@ -886,7 +886,7 @@ let
       item $ &list:nth nums 0
     ; Prints: [&inspect-type] item => number
     &inspect-type item
-    assert-type item 'Number
+    assert-type item Number
     ; Prints: [&inspect-type] item => number
     &inspect-type item
 ```
@@ -978,7 +978,7 @@ let
       hint-fn $ Fn Map (-> String)
       let
           processed $ process-input input
-        assert-type processed 'Map
+        assert-type processed Map
         str processed
   public-api-function $ {} $ :data |hello
 ```

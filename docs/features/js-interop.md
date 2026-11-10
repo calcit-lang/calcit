@@ -107,7 +107,7 @@ the feature. An anonymous function uses the feature declared in its own
 否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`。类似 adapter 的命名空间名称只能作为盘点线索，不能代替能力声明。
 恢复类型擦除缓存（如 memo 表）中的 Calcit 值不属于 FFI，改用 `:erased-cache`，它只放行 `unsafe-coerce`，不授予宿主能力。
 经过作用域检查的转换仍应接受审阅，但严格编译不会按其出现次数运行独立质量预算。
-默认检查带有断言证明（#2121）：`:js-ffi` 里转换到非 host 目标（如 `unsafe-coerce raw 'String`）只是作用域内允许的写法，
+默认检查带有断言证明（#2121）：`:js-ffi` 里转换到非 host 目标（如 `unsafe-coerce raw String`）只是作用域内允许的写法，
 不证明函数的具体返回类型，会报 `E_FN_RETURN_UNPROVEN`；返回 Calcit 值时用 `string?` 一类 kind 守卫或受检 decoder 收窄。
 
 `calcit edit ffi` 修改的是 CodeEntry 的导出/宿主元数据，**不会**给函数体授予词法 `:js-ffi` 权限。
@@ -714,7 +714,7 @@ defn read-name (host)
   do
     let
         raw $ .-name host
-      unsafe-coerce raw 'String
+      unsafe-coerce raw String
 ```
 
 The equivalent without the redundant `do` is:
@@ -723,7 +723,7 @@ The equivalent without the redundant `do` is:
 defn read-name (host)
   let
       raw $ .-name host
-    unsafe-coerce raw 'String
+    unsafe-coerce raw String
 ```
 
 `calcit fix` preview includes `redundant-do-v1` by default and never writes the

@@ -22,7 +22,7 @@ Calcit structs are declared data types with a fixed set of named fields. Struct 
 - **Low-level (dynamic prototype)**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
-- **Type Check**: `assert-type p 'Point`
+- **Type Check**: `assert-type p Point`
 
 ## Defining a Struct Type
 

@@ -157,7 +157,7 @@
               :tags $ #{} :bounded-binder :generic :lexical-binder :unit
         'bounded-multiple $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-multiple (value)
-            assert-type (.debug value) 'String
+            assert-type (.debug value) String
             .slice value 0 $ Option :some 1
           :examples $ []
           :schema $ quote $ Fn C (-> C) (:generics C)
@@ -172,7 +172,7 @@
                 describe $ fn (other)
                   hint-fn $ Fn T (-> String) (:generics T)
                   .debug value
-              assert-type (describe 1) 'String
+              assert-type (describe 1) String
               , value
           :examples $ []
           :schema $ quote $ Fn T (-> T) (:generics T)
@@ -436,7 +436,7 @@
                 items $ guarded-identity $ [] 1 2
                 text $ guarded-identity |a
               assert-type items $ List Number
-              assert-type text 'String
+              assert-type text String
               assert= ([] 1 2) items
               assert= |a text
             :tags $ #{} :generic :lexical-binder :unit
@@ -1381,8 +1381,8 @@
           :code $ quote $ defn test-count-inference ()
             assert-type
               count $ [] 1 2 3
-              , 'Number
-            assert-type (count |abc) 'Number
+              , Number
+            assert-type (count |abc) Number
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-filter-map-kv-inference $ %{} 'CodeEntry (:doc |)
@@ -1404,10 +1404,10 @@
                 f $ fn (x)
                   hint-fn $ Fn Number $ -> Number
                   + x 1
-              assert-type (f 1) 'Number
+              assert-type (f 1) Number
               assert-type
                 apply f $ [] 1
-                , 'Number
+                , Number
               &inspect-type f
           :examples $ []
           :schema $ quote $ Fn (-> Nil)
@@ -1556,10 +1556,10 @@
                 s $ identity |hello
                 applied-number $ apply identity $ [] 42
                 applied-string $ apply identity $ [] |hello
-              assert-type n 'Number
-              assert-type s 'String
-              assert-type applied-number 'Number
-              assert-type applied-string 'String
+              assert-type n Number
+              assert-type s String
+              assert-type applied-number Number
+              assert-type applied-string String
               &inspect-type n
               &inspect-type s
               match (parse-float |41)
@@ -1589,7 +1589,7 @@
               &inspect-type empty-xs
             let
                 tail $ rest |abc
-              assert-type tail 'String
+              assert-type tail String
               &inspect-type tail
             let
                 first-char $ &str:first |abc
@@ -1634,8 +1634,8 @@
               assert= -1 raw-miss-index
               assert= (Option :some 1) hit-index
               assert= (Option :none) miss-index
-              assert-type raw-hit-index 'Number
-              assert-type raw-miss-index 'Number
+              assert-type raw-hit-index Number
+              assert-type raw-miss-index Number
               assert-type hit-index $ Option Number
               assert-type miss-index $ Option Number
               &inspect-type raw-hit-index
@@ -1743,7 +1743,7 @@
                 &inspect-type inner
               let
                   val $ &list:nth ([] 1 2 3) 0
-                assert-type val 'Number
+                assert-type val Number
                 &inspect-type val
               let
                   xs $ [] 1 2 3
@@ -1842,7 +1842,7 @@
               assert-type r $ Ref Number
               let
                   x $ &atom:deref r
-                assert-type x 'Number
+                assert-type x Number
                 &inspect-type r
                 &inspect-type x
           :examples $ []
@@ -1994,7 +1994,7 @@
           :examples $ []
           :schema $ quote $ Fn (test-types-inference.shadow/Option Number) (-> Bool)
         'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
+          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value Result) (nil? value)
           :examples $ []
           :schema $ quote $ Fn test-types-inference.shadow/Result (-> Bool)
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
@@ -2003,7 +2003,7 @@
                 expected-option $ :other-option fields
                 expected-result $ :other-result fields
               assert-type expected-option $ Option Number
-              assert-type expected-result 'Result
+              assert-type expected-result Result
               and
                 = expected-option $ :option fields
                 = expected-result $ :result fields

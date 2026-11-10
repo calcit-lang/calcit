@@ -30,6 +30,10 @@ related:
 
 这让组件 props 可以从 `Map Tag Dynamic` 改成带 Option 字段的 Struct，调用处继续写 `{} (:label |a) (:size 2)`。其他位置不做隐式转换：`assoc`、函数参数和返回值里把 `T` 交给 `Option<T>` 仍然报错。
 
+## 0.41.0 `edit format` 去掉断言里单个类型名的 quote（#2654）
+
+`calcit edit format` 把 `assert-type x 'Number`、`unsafe-coerce raw 'String` 改为裸写的 `Number` / `String`，`assert-type` 里同一命名空间的 Struct / Enum 名和所在定义的泛型名（如 `assert-type p 'Point`、`assert-type x 'T`）也一并改写。含义不变，旧写法仍可加载；格式化后 diff 里会出现这类单行变化。
+
 ## 0.41.0 删除 `--compat-types`（#2655）
 
 `--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。

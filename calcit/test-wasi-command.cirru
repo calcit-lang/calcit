@@ -122,7 +122,7 @@
             println $ format-cirru-edn $ [] ([] |a |b) ([] "|c d")
             println $ format-cirru-edn true
             println $ format-cirru-edn nil
-            println $ format-cirru-edn $ assert-type 42 'Int32
+            println $ format-cirru-edn $ assert-type 42 Int32
             println $ format-cirru-edn 1.25
             println $ format-cirru-edn -0.5
             println $ format-cirru-edn $ {} (:b |two) (:a |one)
@@ -147,7 +147,7 @@
               format-cirru-edn $ [] ([] |a |b) ([] "|c d")
               format-cirru-edn true
               format-cirru-edn nil
-              format-cirru-edn $ assert-type 42 'Int32
+              format-cirru-edn $ assert-type 42 Int32
               format-cirru-edn 1.25
               format-cirru-edn -0.5
               format-cirru-edn $ {} (:b |two) (:a |one)
@@ -271,7 +271,7 @@
             %{} 'TestEntry (:name |round-trips-scalar-struct)
               :code $ quote $ do
                 assert=
-                  Result :ok $ EdnJob :name |Ada :count (assert-type 3 'Int32) :ready true
+                  Result :ok $ EdnJob :name |Ada :count (assert-type 3 Int32) :ready true
                   edn-parse-job "|%{} 'EdnJob (:ready true) (:count 3) (:name |Ada)"
                 let
                     parsed $ edn-parse-job "|%{} 'EdnJob (:name |Ada) (:count 3) (:ready true)"
@@ -598,7 +598,7 @@
                   , 1
                 refinement :int32
               if (&number:fits? next-count refinement)
-                Result :ok $ &map:assoc data |processed $ assert-type next-count 'Int32
+                Result :ok $ &map:assoc data |processed $ assert-type next-count Int32
                 Result :err |Int32-overflow
           :examples $ []
           :schema $ quote $ Fn (Map String Int32)
@@ -608,13 +608,13 @@
             %{} 'TestEntry (:name |increments-count)
               :code $ quote $ assert=
                 Result :ok $ {}
-                  |count $ assert-type 2 'Int32
-                  |processed $ assert-type 3 'Int32
-                edn-transform-count-map $ {} $ |count (assert-type 2 'Int32)
+                  |count $ assert-type 2 Int32
+                  |processed $ assert-type 3 Int32
+                edn-transform-count-map $ {} $ |count (assert-type 2 Int32)
               :tags $ #{} :wasi
             %{} 'TestEntry (:name |rejects-overflow)
               :code $ quote $ assert= (Result :err |Int32-overflow)
-                edn-transform-count-map $ {} $ |count (assert-type 2147483647 'Int32)
+                edn-transform-count-map $ {} $ |count (assert-type 2147483647 Int32)
               :tags $ #{} :wasi
             %{} 'TestEntry (:name |accepts-bound-refinement-tag)
               :code $ quote $ let

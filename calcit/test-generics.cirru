@@ -62,8 +62,8 @@
               assert-type id2 $ Fn T (-> T) (:generics T)
               assert-type debug-id $ Fn T (-> String) (:generics T)
                 :where $ T Debug
-              assert-type n 'Number
-              assert-type s 'String
+              assert-type n Number
+              assert-type s String
               assert= |1 debugged-n
               assert= |hi debugged-s
               &inspect-type id
@@ -94,10 +94,10 @@
               assert= |hi $ pair-right $ &%{} Pair :left 1 :right |hi
               assert-type
                 unbox $ &%{} Box :value 2
-                , 'Number
+                , Number
               assert-type
                 pair-right $ &%{} Pair :left 1 :right |hi
-                , 'String
+                , String
               &inspect-type $ &%{} Pair :left 1 :right |hi
               &inspect-type $ &%{} Box :value 2
               &inspect-type $ &%{} Holder :box $ &%{} Box :value 2
