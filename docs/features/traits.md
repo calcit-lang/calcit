@@ -233,7 +233,7 @@ Key trait docs examples are mirrored by executable smoke cases in `calcit/test-d
 
 Normal method invocation uses `.method` dispatch. In strict mode, one method name must resolve to exactly one nominal trait origin and one attached impl. If multiple traits provide it, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one origin report `E_DUPLICATE_TRAIT_IMPL`. Use `&trait-call` for the former and remove duplicate attachments for the latter.
 
-Strict diagnostics are always on (`--compat-types` was removed in 0.41.0). The read-only `analyze dynamic-methods` report lists the remaining dynamic dispatches to migrate.
+Strict diagnostics are always on (`--compat-types` was removed in 0.41.0). The read-only `calcit analyze weak-types --only dynamic-method` report lists the remaining dynamic dispatches to migrate.
 
 When you want to **disambiguate** (or bypass `.method` resolution), use `&trait-call`.
 

@@ -35,7 +35,7 @@ related:
 3. 旧的 `?` 参数（`E_LEGACY_OPTIONAL_PARAM`）改为末尾的 `Option<T>` 参数；不带 else 的分支（`E_IMPLICIT_NIL_BRANCH`）改为返回 `Option` 或补上 else 值，见 [strict-nil-migration.md](strict-nil-migration.md)。
 4. 程序确实要用开放 `Dynamic` 写法、只想跳过断言证明审计时，用 `--no-proof-audit`；其他严格诊断仍然生效。
 
-`analyze dynamic-methods` 仍会列出严格检查会拒绝的全部动态方法调用。它是只读的迁移清单，不决定代码能否通过。`--warn-dyn-method` 与 `--strict-types` 只是重申默认行为。
+`calcit analyze weak-types --only dynamic-method` 仍会列出严格检查会拒绝的全部动态方法调用。它是只读的迁移清单，不决定代码能否通过。`--warn-dyn-method` 与 `--strict-types` 只是重申默认行为。
 
 ## 0.41.0 删除 `analyze check-types`、`analyze check-public` 与 `analyze quality`（#2655）
 

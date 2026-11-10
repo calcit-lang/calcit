@@ -300,7 +300,7 @@ calcit --strict-types js
 There is no switch that turns the strict diagnostics off. The former
 `--compat-types` escape hatch was removed in 0.41.0; a command line that still
 passes it fails before running and points to the upgrade notes. The read-only
-`analyze dynamic-methods` report still lists every dispatch strict checking
+`analyze weak-types --only dynamic-method` report still lists every dispatch strict checking
 would reject, because it is a migration inventory and does not decide whether
 code passes.
 
