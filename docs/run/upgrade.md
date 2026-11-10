@@ -30,6 +30,12 @@ related:
 
 这让组件 props 可以从 `Map Tag Dynamic` 改成带 Option 字段的 Struct，调用处继续写 `{} (:label |a) (:size 2)`。其他位置不做隐式转换：`assoc`、函数参数和返回值里把 `T` 交给 `Option<T>` 仍然报错。
 
+## 0.41.0 `Some` / `None` 简写（#2652）
+
+core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等价于 `Option :none`，类型推断相同。`calcit edit format` 会把长写法统一改成短写法，格式化后 diff 里会出现大量这类单行变化；含义不变，长写法仍可加载。局部绑定了 `Some`、`None` 或 `Option` 的定义不改写。
+
+因为 core 定义优先于同命名空间的定义，项目里自己定义的 `Some` / `None`（大写开头，少见）会被 core 版本遮蔽，需要改名。
+
 ## 0.41.0 `edit format` 去掉断言里单个类型名的 quote（#2654）
 
 `calcit edit format` 把 `assert-type x 'Number`、`unsafe-coerce raw 'String` 改为裸写的 `Number` / `String`，`assert-type` 里同一命名空间的 Struct / Enum 名和所在定义的泛型名（如 `assert-type p 'Point`、`assert-type x 'T`）也一并改写。以下名字保留 quote，因为裸写会指向别的定义、改变断言的类型：与 `calcit.core` 同名的本地类型（如自定义的 `Result`，裸写 `Result` 指向 core），以及在所在定义里被 `let` / `fn` 参数等局部绑定的同名名字。含义不变，旧写法仍可加载；格式化后 diff 里会出现这类单行变化。

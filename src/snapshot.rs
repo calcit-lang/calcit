@@ -6153,32 +6153,12 @@ fn shorten_option_constructors_in(node: &Cirru) -> (Cirru, usize) {
   (Cirru::List(rewritten), changed)
 }
 
-/// Whether `let`, `&let`, `loop`, `fn`, `defn` or `defmacro` in this tree
-/// binds `Some`, `None` or `Option`, which would change what the short or the
-/// long spelling refers to.
+/// Whether a local binding in this tree (see [`binding_names`]) names `Some`,
+/// `None` or `Option`, which would change what the short or the long spelling
+/// refers to.
 fn option_shorthand_names_bound(node: &Cirru) -> bool {
-  fn names(node: &Cirru) -> bool {
-    match node {
-      Cirru::Leaf(name) => matches!(name.as_ref(), "Some" | "None" | "Option"),
-      Cirru::List(items) => items.iter().any(names),
-    }
-  }
-  let Cirru::List(items) = node else { return false };
-  let head = match items.first() {
-    Some(Cirru::Leaf(head)) => head.as_ref(),
-    _ => "",
-  };
-  let bound_here = match head {
-    "quote" => return false,
-    "let" | "loop" => {
-      matches!(items.get(1), Some(Cirru::List(pairs)) if pairs.iter().any(|pair| matches!(pair, Cirru::List(pair) if pair.first().is_some_and(names))))
-    }
-    "&let" => matches!(items.get(1), Some(Cirru::List(pair)) if pair.first().is_some_and(names)),
-    "fn" => items.get(1).is_some_and(names),
-    "defn" | "defmacro" => items.get(2).is_some_and(names),
-    _ => false,
-  };
-  bound_here || items.iter().any(option_shorthand_names_bound)
+  let bound = binding_names(node);
+  ["Some", "None", "Option"].iter().any(|name| bound.contains(*name))
 }
 
 /// Load a read-only historical Snapshot (for example a Git baseline) for comparison.
