@@ -4480,6 +4480,39 @@ fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
 }
 
 #[test]
+fn percent_struct_literal_on_a_named_defstruct_is_an_advisory() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "defstruct Point (:x Number) (:y Number)\ndefn main! ()\n  let\n      a $ %{} Point (:x 1) (:y 2)\n      b $ Point :x 1 :y 2\n      L $ defstruct L (:z Number)\n      c $ %{} L (:z 1)\n      d $ %{} _ (:z 1)\n    [] a b c d",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("`%{}` on a known Struct should still preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let notes = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_PERCENT_STRUCT_LITERAL"))
+      .map(|advisory| advisory.message().to_owned())
+      .collect::<Vec<_>>();
+    // Only the written `%{} Point`: the direct constructor (which lowers
+    // through `%{}`), a `let`-bound prototype and `%{} _` are not noted.
+    assert_eq!(notes.len(), 1, "{advisories:?}");
+    assert!(notes[0].contains("`Point :x … :y …`"), "{notes:?}");
+    assert!(notes[0].contains("named-struct-constructor-v1"), "{notes:?}");
+    assert!(
+      warnings
+        .borrow()
+        .iter()
+        .all(|warning| warning.code() != Some("W_PERCENT_STRUCT_LITERAL")),
+      "the note must not block the check"
+    );
+  });
+}
+
+#[test]
 fn legacy_decoder_target_type_is_an_advisory() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(

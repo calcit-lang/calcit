@@ -4831,21 +4831,26 @@ fn preprocess_list_call(
   // Thunk: invalid here
 
   match head_value {
-    Some(Calcit::Macro { id: macro_id, info }) => preprocess_macro_call(
-      &info,
-      &macro_id,
-      xs,
-      &args,
-      def_name.as_ref(),
-      PreprocessContext {
-        scope_defs,
-        scope_types,
-        file_ns,
-        check_warnings,
-        call_stack,
-        call_location,
-      },
-    ),
+    Some(Calcit::Macro { id: macro_id, info }) => {
+      if matches!(&head_form, Calcit::Import(_)) {
+        note_percent_struct_literal(&info, head, &args, scope_defs, file_ns);
+      }
+      preprocess_macro_call(
+        &info,
+        &macro_id,
+        xs,
+        &args,
+        def_name.as_ref(),
+        PreprocessContext {
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+          call_location,
+        },
+      )
+    }
 
     Some(Calcit::Fn { info, .. }) => {
       // A local alias such as `let ((f option:unwrap)) (f opt)` resolves to the
@@ -9412,6 +9417,79 @@ fn option_helper_method(def: &str) -> Option<&'static str> {
 
 /// A direct `option:*` call written in project source (#2653). Calls a core
 /// macro expands to carry a core (or no) coordinate and are not reported.
+/// `%{} Point (:x 1) (:y 2)` written in project code, where `Point` names a
+/// top-level `defstruct`, has a direct constructor `Point :x 1 :y 2` that
+/// also fills defaults and `Option :none`. `%{}` stays for dynamic prototypes
+/// (#2654), so this is a non-blocking note that names the fix rule.
+fn note_percent_struct_literal(info: &CalcitMacro, head: &Calcit, args: &CalcitList, scope_defs: &HashSet<Arc<str>>, file_ns: &str) {
+  if info.def_ns.as_ref() != calcit::CORE_NS
+    || info.name.as_ref() != "%{}"
+    || file_ns.starts_with(calcit::CORE_NS)
+    || !should_emit_project_source_lint(file_ns)
+  {
+    return;
+  }
+  let Some(location) = head.get_location() else {
+    return;
+  };
+  if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
+    return;
+  }
+  // A local prototype (a `let`-bound `defstruct` or a parameter) is not
+  // something the fix rule can prove, so only named definitions are noted.
+  let Some(Calcit::Symbol { sym, info: sym_info, .. }) = args.first() else {
+    return;
+  };
+  if sym.as_ref() == "_" || scope_defs.contains(sym) {
+    return;
+  }
+  let (target_ns, def) = match sym.split_once('/') {
+    Some((alias, def)) if !alias.is_empty() && !def.is_empty() => {
+      let Some(target_ns) = program::lookup_ns_target_in_import(&sym_info.at_ns, alias) else {
+        return;
+      };
+      (target_ns, Arc::<str>::from(def))
+    }
+    // `:refer` may rename nothing today, but keep the target definition name.
+    _ => match program::lookup_refer_target_in_import(&sym_info.at_ns, sym) {
+      Some((target_ns, target_def)) => (target_ns, target_def),
+      None => (sym_info.at_ns.to_owned(), sym.to_owned()),
+    },
+  };
+  let def = def.as_ref();
+  // Same evidence as the fix rule: the definition itself is a `defstruct`
+  // form. A Struct wrapped by `impl-traits` has an open schema and its
+  // direct constructor does not type-check, so it keeps `%{}`.
+  let is_defstruct = matches!(
+    program::lookup_def_code(&target_ns, def),
+    Some(Calcit::List(code)) if matches!(code.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defstruct")
+  );
+  if !is_defstruct {
+    return;
+  }
+  let fields = args
+    .iter()
+    .skip(1)
+    .filter_map(|entry| match entry {
+      Calcit::List(pair) => pair.first().map(|field| format!("{field}")),
+      _ => None,
+    })
+    .collect::<Vec<_>>();
+  let suggestion = if fields.is_empty() {
+    format!("({sym})")
+  } else {
+    format!("{sym} {} …", fields.join(" … "))
+  };
+  push_advisory(LocatedWarning::new_with_detail(
+    format!(
+      "[Warn] `%{{}} {sym}` builds a Struct whose definition is known; use the direct constructor `{suggestion}`, which also fills defaults and `Option :none`. `%{{}}` is for dynamic prototypes. `calcit fix --rule named-struct-constructor-v1` rewrites it when the Struct is defined in the project"
+    ),
+    location,
+    Some(crate::snapshot::PERCENT_STRUCT_LITERAL_WARNING.to_owned()),
+    None,
+  ));
+}
+
 fn warn_on_direct_option_helper_call(info: &CalcitFn, head: &Calcit, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   // Core's own tests call the helpers on purpose, also when
   // `scripts/run-core-tests.mjs` replays them as `calcit.core-test-replay`.

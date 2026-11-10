@@ -279,6 +279,14 @@ macro expands to, such as the `option:fold` of `if-let`, are not reported.
 `calcit fix --rule core-option-method-v1` rewrites calls whose receiver is a
 proven Option.
 
+`%{} Point (:x 1) (:y 2)` in project source, where `Point` names a top-level
+`defstruct`, gives a non-blocking `W_PERCENT_STRUCT_LITERAL` note (0.41.0,
+#2654): use the direct constructor `Point :x 1 :y 2`, which also fills defaults
+and `Option :none`, and keep `%{}` for dynamic prototypes. Local prototypes,
+`%{} _` and definitions wrapped by `impl-traits` are not noted.
+`calcit fix --rule named-struct-constructor-v1` rewrites the noted calls when
+the Struct is defined in the project.
+
 An Option turned back into nil is an `E_OPTION_ERASED_TO_NIL` error (blocking
 since 0.36.0, #2124): `.unwrap-or X nil`
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a

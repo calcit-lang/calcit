@@ -75,12 +75,8 @@
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let
-                leaf $ %{} Node
-                  :next $ Option :none
-                  :value 1
-                nested $ %{} Node
-                  :next $ Option :some leaf
-                  :value 2
+                leaf $ Node :next (Option :none) :value 1
+                nested $ Node :next (Option :some leaf) :value 2
               assert= 1 $ :value $ .unwrap (:next nested)
               assert= true $ .none? $ :next leaf
               assert= 2 $ :value nested

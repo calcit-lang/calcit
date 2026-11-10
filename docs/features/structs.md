@@ -177,7 +177,7 @@ let
 
 只在构造处包装，不做其他隐式转换：`assoc`、函数参数和返回值里把 `T` 交给 `Option<T>` 仍是类型错误。以下情况也不包装，值按原样检查：值已经是 Option；值是 `nil`；值的类型是 `Dynamic` 或未知；字段类型是 `Option<Dynamic>`（即使给的是普通数字也要写 `Option :some`）；字段类型含 Struct 的泛型参数；编译期解析不出 prototype 或字段名（例如 `%{}` 用了动态 prototype），这时即使运行时字段是 Option 也要手写 `Option :some`。所以不会出现 `Option<Option<T>>` 这类重复包装。
 
-低层 `%{}` 宏只用于动态 prototype；类型能静态解析时使用上面的直接构造器。它的写法如下：
+低层 `%{}` 宏只用于动态 prototype；类型能静态解析时使用上面的直接构造器。0.41.0 起，项目代码对顶层 `defstruct` 写 `%{}` 会得到不阻塞的 `W_PERCENT_STRUCT_LITERAL` 提示，`calcit fix --rule named-struct-constructor-v1` 可以改写。它的写法如下：
 
 ```cirru
 let

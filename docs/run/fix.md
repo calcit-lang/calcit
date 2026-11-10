@@ -173,7 +173,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   没有同名定义或 import、也没有同名局部绑定时同样改写，例如 `%:: Option :some x` 改为 `Option :some x`；
   编译器 trace 必须确认原型解析到 `calcit.core` 的同名定义。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
-  `Person :name name`，并保持字段表达式的原始求值顺序。
+  `Person :name name`，并保持字段表达式的原始求值顺序。0.41.0 起检查会对这类写法给
+  `W_PERCENT_STRUCT_LITERAL` 提示（不阻塞）。
 - 两条 named constructor 规则也改写 `quasiquote` 模板中（`~` / `~@` 之外）的构造：模板在每次展开时才编译，
   因此不依赖编译器 trace，而是按宏所在 namespace 静态解析原型并检查字段完整性。带 namespace 前缀的原型
   （如 `schema/Effect`）在展开处仍按宏所在 namespace 解析，属于 `machine-applicable`；无前缀原型在展开处

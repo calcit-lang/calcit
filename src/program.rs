@@ -1258,6 +1258,16 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
   }
 }
 
+/// The namespace and definition a `:refer` import name points at.
+pub fn lookup_refer_target_in_import(ns: &str, name: &str) -> Option<(Arc<str>, Arc<str>)> {
+  let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
+  let file = program.get(ns)?;
+  match &**file.import_map.get(name)? {
+    ImportRule::NsReferDef(ns, def) => Some((ns.to_owned(), def.to_owned())),
+    ImportRule::NsAs(_) | ImportRule::NsDefault(_) => None,
+  }
+}
+
 pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
   let file = program.get(ns)?;

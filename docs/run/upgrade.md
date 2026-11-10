@@ -72,6 +72,12 @@ core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等
 
 `calcit edit format` 把 `assert-type x 'Number`、`unsafe-coerce raw 'String` 改为裸写的 `Number` / `String`，`assert-type` 里同一命名空间的 Struct / Enum 名和所在定义的泛型名（如 `assert-type p 'Point`、`assert-type x 'T`）也一并改写。以下名字保留 quote，因为裸写会指向别的定义、改变断言的类型：与 `calcit.core` 同名的本地类型（如自定义的 `Result`，裸写 `Result` 指向 core），以及在所在定义里被 `let` / `fn` 参数等局部绑定的同名名字。含义不变，旧写法仍可加载；格式化后 diff 里会出现这类单行变化。
 
+## 0.41.0 已知 Struct 上的 `%{}` 给提示 `W_PERCENT_STRUCT_LITERAL`（#2654）
+
+项目代码里写 `%{} Point (:x 1) (:y 2)`、而 `Point` 是项目或依赖里的顶层 `defstruct`（含 `:refer` 引入和 `lib/Point` 写法）时，检查会给 `W_PERCENT_STRUCT_LITERAL` 提示，建议改用直接构造器 `Point :x 1 :y 2`。直接构造器还会补字段默认值和 `Option :none`；`%{}` 留给编译期解析不出的动态 prototype。这只是提示（Notes），不会让检查或测试失败。
+
+Struct 定义在项目里时，`calcit fix --rule named-struct-constructor-v1` 预览后加 `--apply` 可以自动改写；依赖里的 Struct 需要手动改。以下写法不提示：`let` 绑定的 `defstruct`、函数参数等局部 prototype，`%{} _ …` 匿名 Struct，以及外面包了 `impl-traits` 的定义（它的 schema 是开放的，直接构造器过不了类型检查）。
+
 ## 0.41.0 删除 `--compat-types`（#2655）
 
 `--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。
