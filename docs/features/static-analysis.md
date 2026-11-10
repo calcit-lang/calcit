@@ -194,8 +194,7 @@ a declared generic. This includes input/output relations such as
 positions. A standalone reviewed `Dynamic` position is not rejected merely
 because the same contract declares an unrelated generic. Narrow or validate
 the argument before the relational call, or isolate genuinely open behavior in
-an adapter whose contract does not claim that relationship. Compatibility mode
-keeps accepting the call while projects migrate.
+an adapter whose contract does not claim that relationship.
 
 When the nearest typed operation is statically known, the human diagnostic adds
 one bounded Dynamic-origin note. For example, a `Map<K,Dynamic>` lookup names
@@ -239,7 +238,7 @@ For one definition, `calcit query context '<ns/def>' --format json` embeds the s
 
 For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, preprocess lowering evidence, and diagnostics. Its v2 `data.lowering` object distinguishes type-selected primitives from ordinary static call resolution and remaining dynamic dispatch. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
-默认 `weak-types`、`coverage` 与 `quality` 只读取静态 Snapshot（`deprecated-call` 见下，仅在含候选方法调用时才预处理对应 definition）：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会以兼容诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-method` 视图同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
+默认 `weak-types`、`coverage` 与 `quality` 只读取静态 Snapshot（`deprecated-call` 见下，仅在含候选方法调用时才预处理对应 definition）：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会在内部以非严格诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-method` 视图同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
 
 `analyze weak-types --only dynamic-method` 只展示 `P_DYNAMIC_METHOD_DISPATCH` 和 `P_DYNAMIC_POSTFIX_METHOD`，普通类型 warning 与 JS FFI 诊断不混入报告。默认范围为项目命名空间，`--deps` 包含可达依赖，`--summary-only` 省略逐项结果。报告不按命中数失败；需要阻断的不安全调用由默认严格预处理诊断负责。通过普通推断、trait 约束或已审阅的 `unsafe-coerce` 边界得到具体 receiver 时，不属于未解析分派。
 
@@ -248,9 +247,9 @@ Under the default strict diagnostics, every unspecialized project method is reje
 the receiver loss as a missing schema, Dynamic value/callable, nil-joined Dynamic,
 unbound generic/type slot, or explicit `:js-ffi` Dynamic boundary. The
 Option/Result nominal family additionally names the expected receiver family
-and its visible `option:*` / `result:*` helper. Compatibility mode retains the
-`P_DYNAMIC_*` inventory and `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` while projects
-migrate. A concrete inferred type, trait constraint, or external-object trait
+and its visible `option:*` / `result:*` helper. The read-only `dynamic-method`
+report preprocesses without strict promotion to collect its `P_DYNAMIC_*`
+inventory. A concrete inferred type, trait constraint, or external-object trait
 remains statically dispatchable and does not trigger this rule. An inferred
 nil join (`T?`, from an else-less `if` or a `nil` branch) over Dynamic is the
 nil-joined cause, while a nil join over `DynFn` keeps the dynamic-callable cause.
@@ -356,7 +355,7 @@ and implementation-completion status are separate concerns.
 
 `--schema-evidence` 复用 `synthesize-schema-v1` 已有的编译器推断和 resolver call-site 证据，在 `data.evidence.schema_candidates` 中给出源码 schema 候选、unresolved slot、受影响调用点以及 `exact`、`usage-derived`、`boundary-unknown`、`conflict` 置信度。重复出现且字段稳定的匿名 Map shape 会进入 `map_shapes`，`match` 中可直接读出的 tag 集合进入 `dispatch`；二者只给出建议名称、字段/variant 和源码路径，不生成声明或改写业务模型。三个信息代码分别为 `I_SCHEMA_CANDIDATE_EVIDENCE`、`I_MAP_SHAPE_CANDIDATE_EVIDENCE` 和 `I_DISPATCH_CANDIDATE_EVIDENCE`。
 
-该开关会以兼容诊断模式预处理项目 definition 来取得现有编译器证据，但不会执行程序。无法预处理的潜在 call-site owner 会记录为 `unavailable-callsite-owners` 并把候选降为 `boundary-unknown`，不会让整个只读 inventory 失败或把残缺证据标成 exact。所有输出均为 `review-required`；只有用户随后显式选择既有 `fix --rule synthesize-schema-v1` 时，完全消除洞的单 definition schema 才可能按原有 revision guard 写回。Map/dispatch 候选不会自动写入，工具也不会替用户决定 Option/Result、默认值、FFI trust 或业务命名。
+该开关会在内部以非严格诊断模式预处理项目 definition 来取得现有编译器证据，但不会执行程序。无法预处理的潜在 call-site owner 会记录为 `unavailable-callsite-owners` 并把候选降为 `boundary-unknown`，不会让整个只读 inventory 失败或把残缺证据标成 exact。所有输出均为 `review-required`；只有用户随后显式选择既有 `fix --rule synthesize-schema-v1` 时，完全消除洞的单 definition schema 才可能按原有 revision guard 写回。Map/dispatch 候选不会自动写入，工具也不会替用户决定 Option/Result、默认值、FFI trust 或业务命名。
 
 这些 evidence 不增加 warning 数量或质量预算。未传对应开关时不会执行额外扫描；`--summary-only` 只保留 `data.summary` 中的候选总数，不保留候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 

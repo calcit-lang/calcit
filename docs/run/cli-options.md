@@ -183,9 +183,7 @@ Warn when dynamic method dispatch cannot be specialized at preprocess time, and 
 calcit --warn-dyn-method
 ```
 
-In compatibility mode, Dynamic receivers used with nominal Option/Result methods
-continue to report `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Strict mode rejects the
-same ambiguous execution path with `E_DYNAMIC_METHOD_DISPATCH` for prefix calls
+Dynamic receivers used with nominal Option/Result methods are rejected with `E_DYNAMIC_METHOD_DISPATCH` for prefix calls
 or `E_DYNAMIC_POSTFIX_METHOD` for postfix calls. Give the receiver a concrete
 `Option<T>` / `Result<T, E>` schema, or use the matching visible `option:*` /
 `result:*` function inside an explicitly reviewed open adapter.
@@ -204,7 +202,7 @@ classified as a dynamic callable instead.
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。
 严格诊断本身不运行数量预算（旧的 `analyze quality` baseline 已在 0.41.0 删除）。
 
-### 默认严格诊断、入口预检查与兼容模式
+### 默认严格诊断与入口预检查
 
 Calcit 0.14 起，普通调用默认启用严格预处理诊断。项目无需额外开关，也会对无法证明安全的类型操作收到稳定的 `E_*` 诊断：
 
@@ -407,7 +405,7 @@ argument whose contract contains a closed Struct or Enum. Decode text with
 `parse-cirru-edn-as` / `try-parse-cirru-edn-as`, decode an evaluated host value
 with `decode-map-as` / `try-decode-map-as`, or validate and narrow it inside a
 small typed FFI adapter. The diagnostic identifies the argument and target
-contract. Compatibility mode keeps the existing gradual migration behavior. A type slot
+contract. A type slot
 bound to a Struct/Enum contract is resolved before this check, so entry-level
 and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
 bindings are treated conservatively as protected boundaries instead of being

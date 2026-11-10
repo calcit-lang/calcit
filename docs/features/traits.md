@@ -143,7 +143,7 @@ Impl 的 origin 也按这个身份比较，不按 trait 短名合并。native �
 
 ## Attach impls to struct/enum definitions
 
-`impl-traits` attaches impl records to a **struct/enum type**. In compatibility mode, user values retain the historical rule that later impls override earlier impls for the same method name ("last-wins"). Strict mode rejects that call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
+`impl-traits` attaches impl records to a **struct/enum type**. Strict checking rejects a call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
 
 Constraints:
 
@@ -233,7 +233,7 @@ Key trait docs examples are mirrored by executable smoke cases in `calcit/test-d
 
 Normal method invocation uses `.method` dispatch. In strict mode, one method name must resolve to exactly one nominal trait origin and one attached impl. If multiple traits provide it, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one origin report `E_DUPLICATE_TRAIT_IMPL`. Use `&trait-call` for the former and remove duplicate attachments for the latter.
 
-Compatibility mode continues to resolve by the historical built-in/user precedence rules. `--warn-dyn-method` reports the selected origin and every competing full origin so migrations can be made before enabling strict types.
+Strict diagnostics are always on (`--compat-types` was removed in 0.41.0). The read-only `analyze dynamic-methods` report lists the remaining dynamic dispatches to migrate.
 
 When you want to **disambiguate** (or bypass `.method` resolution), use `&trait-call`.
 
@@ -262,7 +262,7 @@ let
     Person0 $ defstruct Person (:name String)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ Person :name |Alice
-  ; compatibility mode keeps last-wins; strict mode rejects this ambiguous call
+  ; strict checking rejects this ambiguous call
   p .zap
   ; explicitly pick a "trait’s" implementation
   &trait-call MyZapA :zap p

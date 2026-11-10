@@ -658,19 +658,13 @@ calcit query def calcit.core/cirru-quote:to-list --raw
 - `:js-ffi` 适配器里 `unsafe-coerce raw 'String` 这类非 host 目标不算证据，返回值会报
   `E_FN_RETURN_UNPROVEN`；改用上面的 kind 守卫，host 对象用 `js-cast`。`:erased-cache` 适配器不受影响。
 - 只想保留其余严格诊断、暂时跳过这项审计时，加 `--no-proof-audit`。它只关闭断言证明审计，
-  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行。
-  它不能与 `--compat-types` 同时使用：
+  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行：
 
 ```bash
 calcit calcit.cirru --no-proof-audit --check-only
 ```
 
-- 只为暂时回到旧行为时，加 `--compat-types`：它关闭默认的严格诊断提升，也跳过这项审计；项目里显式配置的入口策略仍然生效（该选项计划在之后的非 patch 版本删除）：
-
-```bash
-calcit --compat-types --check-only
-calcit calcit.cirru --compat-types js
-```
+- 0.31.0 当时还可以用 `--compat-types` 暂时回到旧行为；该选项已在 0.41.0 删除，见 [0.41.0 删除 `--compat-types`](#0410-删除---compat-types2655)。
 
 ## 0.31.0 泛型工厂与局部别名证明（#2414）
 
@@ -984,7 +978,7 @@ defn call-value (f args)
 | `if ok x nil` 作为实参或具体返回类型的结尾 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装；确属宿主边界的返回声明为 `JsNullish<T>` |
 | `let ((y (when ok x))) …`（提示） | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
 
-迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。需要分批迁移时可暂用 `--compat-types`。
+迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。当时需要分批迁移可暂用 `--compat-types`；该选项已在 0.41.0 删除。
 
 已知受影响的下游位置：Triadica/triadica-space 的 `triadica.comp.drag-point/comp-drag-point`（`:on-mousemove $ if-not ignore-moving? (fn …)` 作为 `{}` 的实参）。改写成 `if ignore-moving? nil (fn …)` 属于 nil 合并，同样被拒绝。可选的修改：
 
