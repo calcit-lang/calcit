@@ -7713,7 +7713,7 @@ mod tests {
         |f $ %{} :CodeEntry (:doc |)
           :code $ quote (defn f (a b c) a)
           :examples $ []
-          :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box (-> (calcit.core/Option Number))
+          :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box (-> Number)
         |g $ %{} :CodeEntry (:doc |)
           :code $ quote (defn g (x) x)
           :examples $ []
@@ -7725,11 +7725,12 @@ mod tests {
 "#;
     let edn = cirru_edn::parse(content).expect("snapshot text should parse as EDN");
     let mut snapshot = load_snapshot_data(&edn, "app.cirru").expect("snapshot loads");
-    // `app.main/Local` and the referred `app.lib/Pt` become bare and
-    // `calcit.core/Option` becomes `Option`. A local `Box` shadows the
-    // library one, so `app.lib/Box` takes the `:as` alias, and a local
-    // `Result` keeps `calcit.core/Result` qualified.
-    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 4);
+    // `app.main/Local` and the referred `app.lib/Pt` become bare. A local
+    // `Box` shadows the library one, so `app.lib/Box` takes the `:as` alias,
+    // and a local `Result` keeps `calcit.core/Result` qualified. Core names
+    // are covered by the CLI test: how `Option` renders depends on whether
+    // a core program is registered.
+    assert_eq!(shorten_snapshot_type_names(&mut snapshot), 3);
     let render = |def: &str| {
       let schema = &snapshot.files["app.main"].defs[def].schema;
       match schema_annotation_to_storage_edn(schema) {
@@ -7739,7 +7740,6 @@ mod tests {
     };
     let f = render("f");
     assert!(f.contains("Fn Local Pt lib/Box"), "{f}");
-    assert!(f.contains("Option Number") && !f.contains("calcit.core/Option"), "{f}");
     let g = render("g");
     assert!(g.contains("calcit.core/Result"), "{g}");
     assert_eq!(shorten_snapshot_type_names(&mut snapshot), 0, "a second pass is a no-op");

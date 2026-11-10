@@ -430,6 +430,47 @@ fn value_schema_accepts_a_bare_local_type_name_and_rejects_an_unknown_one() {
     "{stderr}"
   );
   assert_eq!(fs::read(&snapshot).unwrap(), before, "a rejected schema is not written");
+
+  // `edit format` shortens qualified schema names that resolve the same way.
+  assert_success(
+    &edit(&[
+      "edit",
+      "def",
+      "app.main/keep",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn keep (p) p",
+    ]),
+    "create keep",
+  );
+  assert_success(
+    &edit(&[
+      "edit",
+      "schema",
+      "app.main/keep",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ Fn app.main/Point (-> (calcit.core/Option Number))",
+    ]),
+    "qualified schema",
+  );
+  let formatted = edit(&["edit", "format"]);
+  assert_success(&formatted, "format shortens");
+  assert!(String::from_utf8_lossy(&formatted.stdout).contains("Shortened 2"), "{formatted:?}");
+  let stored = fs::read_to_string(&snapshot).unwrap();
+  assert!(stored.contains("Fn Point") && stored.contains("Option Number"), "{stored}");
+  assert!(
+    !stored.contains("app.main/Point") && !stored.contains("calcit.core/Option"),
+    "{stored}"
+  );
+  let again = edit(&["edit", "format"]);
+  assert_success(&again, "second format");
+  assert!(
+    !String::from_utf8_lossy(&again.stdout).contains("Shortened"),
+    "a second format is a no-op"
+  );
 }
 
 #[test]
