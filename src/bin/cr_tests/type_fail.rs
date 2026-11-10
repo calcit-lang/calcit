@@ -4509,6 +4509,11 @@ fn percent_struct_literal_on_a_named_defstruct_is_an_advisory() {
         .all(|warning| warning.code() != Some("W_PERCENT_STRUCT_LITERAL")),
       "the note must not block the check"
     );
+    let (blocking, _) = runner::preprocess::split_blocking_advisories(advisories);
+    assert!(
+      blocking.iter().all(|advisory| advisory.code() != Some("W_PERCENT_STRUCT_LITERAL")),
+      "the note must stay in the non-blocking partition"
+    );
   });
 }
 

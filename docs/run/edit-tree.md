@@ -468,8 +468,10 @@ quote $ []
 # Schema accepts exactly one quoted Cirru type node.
 calcit edit schema 'app.main/*enabled?' --input-format cirru --code "quote $ :: 'Ref 'Bool"
 
-# Concrete defstruct/defenum value schemas use a fully qualified nominal type.
-calcit edit schema app.schema/store --input-format cirru --code "quote 'app.schema/Store"
+# A defstruct/defenum value schema names its type like code does: `Store` when it
+# is defined in this namespace or brought in with `:refer`, `schema/Store` via an
+# `:as` alias, or the fully qualified `app.schema/Store`.
+calcit edit schema app.schema/store --input-format cirru --code "quote Store"
 
 # Each top-level quote becomes one example; leaves remain representable.
 calcit edit examples app.main/add << 'END'

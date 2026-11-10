@@ -317,6 +317,7 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
   let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let shortened_options = snapshot::shorten_snapshot_option_constructors(&mut snapshot);
+  let shortened_type_names = snapshot::shorten_snapshot_type_names(&mut snapshot);
   let formatted_content = render_snapshot_content(&snapshot)?;
 
   if formatted_content == original_content {
@@ -334,6 +335,12 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
   if shortened_options > 0 {
     println!(
       "{} Rewrote {shortened_options} `Option :some` / `Option :none` form(s) to `Some` / `None`",
+      "✓".green()
+    );
+  }
+  if shortened_type_names > 0 {
+    println!(
+      "{} Shortened {shortened_type_names} fully qualified type name(s) in schemas to the name the namespace resolves",
       "✓".green()
     );
   }
@@ -1867,6 +1874,44 @@ fn handle_ffi(opts: &EditFfiCommand, snapshot_file: &str) -> Result<(), String> 
   Ok(())
 }
 
+/// A bare nominal value schema such as `Point` resolves in the definition's
+/// namespace (#2677). Check that it names something there, so a typo is not
+/// stored as a new nominal type: a local definition, a `:refer` import, or a
+/// `calcit.core` definition.
+fn reject_unresolved_bare_value_schema(
+  snapshot: &snapshot::Snapshot,
+  namespace: &str,
+  schema: &CalcitTypeAnnotation,
+) -> Result<(), String> {
+  let CalcitTypeAnnotation::TypeRef(name, args) = schema else {
+    return Ok(());
+  };
+  let bare = name.trim_start_matches('\'');
+  if !args.is_empty() || bare.contains('/') {
+    return Ok(());
+  }
+  let Some(file) = snapshot.files.get(namespace) else {
+    return Ok(());
+  };
+  if file.defs.contains_key(bare) {
+    return Ok(());
+  }
+  let referred = calcit::program::extract_import_map(&file.ns.code, namespace)
+    .ok()
+    .and_then(|imports| imports.get(bare).cloned())
+    .is_some_and(|rule| matches!(rule.as_ref(), calcit::program::ImportRule::NsReferDef(..)));
+  let in_core = calcit::load_core_snapshot()
+    .ok()
+    .and_then(|core| core.files.get(calcit::calcit::CORE_NS).map(|file| file.defs.contains_key(bare)))
+    .unwrap_or(false);
+  if referred || in_core {
+    return Ok(());
+  }
+  Err(format!(
+    "Schema validation failed: `{bare}` is not defined in `{namespace}` and not brought in with `:refer`; define it, add `(target.ns :refer $ {bare})` to the ns form, or write `alias/{bare}` / `target.ns/{bare}`"
+  ))
+}
+
 fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
@@ -1935,6 +1980,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
       );
     }
     let schema = snapshot::parse_schema_annotation_for_write(&schema_payload).map_err(|e| format!("Schema validation failed: {e}"))?;
+    reject_unresolved_bare_value_schema(&snapshot, namespace, &schema)?;
     // Only calcit.core may rely on a checker built-in rule; `--check-only`
     // would reject the saved schema with E_OPEN_WITHOUT_REASON.
     if !calcit::calcit::is_bundled_core_ns(namespace) && snapshot::schema_uses_intrinsic_reason(&schema) {
