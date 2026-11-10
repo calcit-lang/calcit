@@ -2326,7 +2326,12 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   if !warnings.is_empty() {
     eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
     LocatedWarning::print_list(&warnings);
-    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
+    let warning_summary = format!("Found {} warnings during preprocessing", warnings.len());
+    // Blocking errors are printed too, so warnings do not hide them.
+    if let Err(errors) = report_broad_type_errors(broad_type_errors) {
+      return Err(format!("{errors}; {warning_summary}"));
+    }
+    return Err(warning_summary);
   }
 
   report_broad_type_errors(broad_type_errors)?;

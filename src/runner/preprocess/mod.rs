@@ -5727,7 +5727,15 @@ fn preprocess_list_call(
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           union_types::reject_union_value_use(call_head, &processed_args, scope_types, call_stack)?;
           union_types::check_union_declaration(call_head, &processed_args, file_ns, call_stack)?;
-          warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          warn_on_nominal_enum_legacy_absence_use_at(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            call_location.clone(),
+            check_warnings,
+          );
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
@@ -6428,7 +6436,15 @@ fn preprocess_known_function_call(
     reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     union_types::reject_union_value_use(&head_form, &current_args, scope_types, call_stack)?;
-    warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name, check_warnings);
+    warn_on_nominal_enum_legacy_absence_use_at(
+      &head_form,
+      &current_args,
+      scope_types,
+      file_ns,
+      def_name,
+      call_location.clone(),
+      check_warnings,
+    );
     warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns, call_stack);
     reject_or_warn_on_js_nullish_predicate_mismatch(
       &head_form,
@@ -9103,12 +9119,27 @@ fn nominal_enum_membership_element_name(operation: &str, collection: &Calcit, sc
     .then_some(element_name)
 }
 
+#[cfg(test)]
 fn warn_on_nominal_enum_legacy_absence_use(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  warn_on_nominal_enum_legacy_absence_use_at(head, args, scope_types, file_ns, def_name, None, check_warnings);
+}
+
+/// `call_location` is the source call, used when neither the processed head
+/// nor the value carries a coordinate (a lowered `(get m k)` or `None`).
+fn warn_on_nominal_enum_legacy_absence_use_at(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   if file_ns == calcit::CORE_NS {
@@ -9187,7 +9218,11 @@ fn warn_on_nominal_enum_legacy_absence_use(
     .take(structural_arg_count)
     .filter_map(|value| {
       // A literal `Option :some x` is a deliberate construction, not a migrated nullable API result.
-      if lowered_core_enum_constructor_name(value).is_some() || is_explicit_dynamic_erasure(value) {
+      // A nil test on a literal Option is still always wrong (#2653).
+      let nil_test_on_option = matches!(operation, "nil?" | "non-nil?");
+      if lowered_core_enum_constructor_name(value).is_some_and(|name| !(nil_test_on_option && name == "Option"))
+        || is_explicit_dynamic_erasure(value)
+      {
         return None;
       }
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
@@ -9228,7 +9263,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
     }
     _ => "use native `match` instead of positional access on the nominal enum".to_owned(),
   };
-  let location = head.get_location().or_else(|| value.get_location());
+  let location = head
+    .get_location()
+    .or_else(|| option_check_location(value))
+    .or(call_location.clone());
   // `nil?` / `non-nil?` (and `either`, which expands to `nil?`) never see
   // `None` as nil, so on an Option they are always wrong (#2653).
   if enum_name == "Option"
@@ -9302,6 +9340,15 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
 /// is a value, not nil, so `nil?`, `non-nil?`, `either` and truthiness
 /// (`if`, `when`, `or`, `and`) never see it as absent. Only project
 /// namespaces are checked, like `E_OPTION_ERASED_TO_NIL`.
+/// Where an Option nil check points: the value itself, or for a call such as
+/// `(lookup k)`, which carries no location of its own, the call expression.
+fn option_check_location(value: &Calcit) -> Option<NodeLocation> {
+  value.get_location().or_else(|| match value {
+    Calcit::List(items) => derive_list_call_expr_location(items),
+    _ => None,
+  })
+}
+
 fn report_option_nil_check(what: String, location: NodeLocation) {
   if IN_GENERATED_SPECIALIZATION.with(Cell::get) {
     return;
@@ -9677,8 +9724,11 @@ fn report_macro_option_erased_to_nil(shape: &str, origin: MacroErasureOrigin, ca
   }
 }
 
+/// `source_location` is the condition as written, used when the processed
+/// value has no coordinate of its own (for example a lowered `(get m k)`).
 fn warn_on_nominal_enum_truthiness(
   value: &Calcit,
+  source_location: Option<NodeLocation>,
   scope_types: &ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -9695,10 +9745,10 @@ fn warn_on_nominal_enum_truthiness(
 
   if enum_name == "Option"
     && should_emit_project_source_lint(file_ns)
-    && let Some(location) = value.get_location()
+    && let Some(location) = option_check_location(value).or(source_location)
   {
     report_option_nil_check(
-      format!("Option value `{value}` is used as a condition (`if` / `when` / `or` / `and`) in {file_ns} and is always truthy"),
+      format!("an Option value is used as a condition (`if` / `when` / `or` / `and`) in {file_ns} and is always truthy"),
       location,
     );
     return;
@@ -12498,7 +12548,6 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.call_stack,
   )?;
 
-  warn_on_nominal_enum_truthiness(&cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
   // `and` returns its last operand through `if v v false`; that operand is a
   // value, not a test, so only the operands before it are conditions. The
   // macro splices one node twice, so both copies share a source location;
@@ -12508,6 +12557,13 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     && args.first().map(Calcit::get_location) == args.get(1).map(Calcit::get_location)
     && matches!(args.get(2), Some(Calcit::Bool(false)));
   if !and_tail {
+    warn_on_nominal_enum_truthiness(
+      &cond_form,
+      args.first().and_then(option_check_location),
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+    );
     warn_on_constant_truthy_condition(args.first().unwrap(), &cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
   }
 
@@ -20444,7 +20500,13 @@ mod tests {
 
     take_advisories();
     let truthiness_warnings = RefCell::new(vec![]);
-    warn_on_nominal_enum_truthiness(&option_value, &ScopeTypes::new(), "tests.option-migration", &truthiness_warnings);
+    warn_on_nominal_enum_truthiness(
+      &option_value,
+      None,
+      &ScopeTypes::new(),
+      "tests.option-migration",
+      &truthiness_warnings,
+    );
     assert!(
       truthiness_warnings.borrow().is_empty(),
       "Option truthiness is an error since 0.41.0"

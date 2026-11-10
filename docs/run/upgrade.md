@@ -46,8 +46,13 @@ core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等
 | --- | --- |
 | `nil? opt` | `.none? opt` |
 | `non-nil? opt` | `.some? opt` |
-| `either opt fallback` | `.unwrap-or opt fallback` |
-| `if opt a b`（取值） | `if-let (x opt) a b` 或 `match opt ((:some x) a) ((:none) b)` |
+| `either opt fallback`（fallback 是普通值） | `.unwrap-or opt fallback` |
+| `either opt fallback`（fallback 有副作用或可能出错） | `match opt ((:some v) v) ((:none) fallback)` |
+| `either opt fallback`（fallback 也是 Option） | `.or-else opt $ fn () fallback` |
+| `if opt a b`（不需要载荷） | `if (.some? opt) a b` |
+| `if opt a b`（需要载荷） | `if-let (v opt) a b` 或 `match opt ((:some v) a) ((:none) b)` |
+
+`either` 只在需要时才求值 fallback；`.unwrap-or` 是普通函数，`Some` 时也会先求值 fallback，所以 fallback 有副作用或可能报错时改用 `match`。`if-let` / `match` 里的载荷名要选一个新名字，避免遮蔽分支里已经用到的同名变量。
 
 `Result` 和应用自己定义的 enum 仍然只报 `W_NOMINAL_ENUM_LEGACY_USE` 警告。
 

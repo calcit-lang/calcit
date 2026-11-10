@@ -2695,6 +2695,25 @@ fn mixed_public_equality_reports_guided_type_mismatches() {
 }
 
 #[test]
+fn option_truthiness_is_an_error_except_as_the_last_and_operand() {
+  run_with_large_stack(|| {
+    // `get` lowers to a call without a coordinate; the error still points at
+    // the written condition. The last `and` operand is a returned value.
+    let entries = load_snippet_entries("let\n    m $ {} (:a 1)\n  [] (if (get m :a) 1 2) (and true (get m :a))");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("Option conditions preprocess into blocking advisories");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(nil_checks.len(), 1, "only the `if` condition fails: {nil_checks:?}");
+    assert_ne!(nil_checks[0].location().def.as_ref(), calcit::calcit::GENERATED_DEF);
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
