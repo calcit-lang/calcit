@@ -16255,9 +16255,20 @@ fn preprocess_assert_type_with_obligation(
   // are kept as-is instead of being parsed as resolved types.
   let asserted_type_form = match type_form {
     Calcit::Symbol { sym, info, .. } if !sym.starts_with('\'') => {
+      let is_nominal_def = |ns: &str, def: &str| {
+        program::lookup_def_code(ns, def).is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+      };
+      // `alias/Task` names the definition through an `:as` import, as it does
+      // in a schema and in `hint-fn` (#2682).
       let nominal_target = runner::parse_ns_def(sym)
-        .filter(|(ns, def)| {
-          program::lookup_def_code(ns, def).is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+        .and_then(|(ns, def)| {
+          if is_nominal_def(&ns, &def) {
+            Some((ns, def))
+          } else {
+            program::lookup_ns_target_in_import(&info.at_ns, &ns)
+              .filter(|target| is_nominal_def(target, &def))
+              .map(|_| (ns, def))
+          }
         })
         .or_else(|| {
           if program::lookup_def_code(&info.at_ns, sym)

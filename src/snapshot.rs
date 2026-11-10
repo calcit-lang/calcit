@@ -6160,47 +6160,45 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot, dependency_namespace
     }
     let imports = crate::program::extract_import_map(&file.ns.code, ns).unwrap_or_default();
     let local_defs: HashSet<String> = file.defs.keys().cloned().collect();
+    let names = TypeNameScope {
+      ns,
+      imports: &imports,
+      local_defs: &local_defs,
+      alias_is_safe: &alias_is_safe,
+    };
     for entry in file.defs.values_mut() {
+      let generics = schema_generic_names(&entry.schema);
+      // Code type positions: `assert-type` and compact `hint-fn` (#2682).
+      // There a bare name that calcit.core also defines resolves to core, and
+      // a local binding shadows a definition, so neither is produced.
+      let bound = binding_names(&entry.code);
+      let code_shorten = |leaf: &str| {
+        names.shorten(leaf, &generics).filter(|short| {
+          short.contains('/')
+            || !(bound.contains(short.as_str())
+              || (leaf.rsplit_once('/').map(|(prefix, _)| prefix) != Some(crate::calcit::CORE_NS)
+                && core_def_names().contains(short.as_str())))
+        })
+      };
+      let mut shorten_code = |node: &mut Cirru| {
+        let (next, count) = shorten_code_type_names(node, &code_shorten);
+        if count > 0 {
+          *node = next;
+          changed += count;
+        }
+      };
+      shorten_code(&mut entry.code);
+      entry.examples.iter_mut().for_each(&mut shorten_code);
+      for test in entry.tests.iter_mut() {
+        shorten_code(&mut test.code);
+      }
+
       let Edn::Quote(compact) = schema_annotation_to_storage_edn(&entry.schema) else {
         continue;
       };
-      let generics = schema_generic_names(&entry.schema);
-      let shorten = |leaf: &str| -> Option<String> {
-        let (prefix, name) = leaf.rsplit_once('/')?;
-        if prefix.is_empty() || !name.starts_with(|c: char| c.is_ascii_uppercase()) || generics.iter().any(|g| g.as_ref() == name) {
-          return None;
-        }
-        let referred = imports.get(name).map(|rule| rule.as_ref());
-        // A bare built-in name such as `Number` parses as the built-in type,
-        // not as a nominal definition that shares its name.
-        let bare_target = if CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some() {
-          None
-        } else if local_defs.contains(name) {
-          Some(ns.as_str())
-        } else if let Some(crate::program::ImportRule::NsReferDef(target, def)) = referred {
-          (def.as_ref() == name).then_some(target.as_ref())
-        } else if referred.is_none() {
-          Some(crate::calcit::CORE_NS)
-        } else {
-          None
-        };
-        if bare_target == Some(prefix) {
-          return Some(name.to_owned());
-        }
-        imports
-          .iter()
-          .filter_map(|(alias, rule)| match rule.as_ref() {
-            crate::program::ImportRule::NsAs(target) if target.as_ref() == prefix && alias_is_safe(alias.as_ref(), prefix) => {
-              Some(format!("{alias}/{name}"))
-            }
-            _ => None,
-          })
-          .filter(|short| short.len() < leaf.len())
-          .min_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)))
-      };
       let mut count = 0;
       let rewritten = map_cirru_leaves(&compact, &mut |leaf| {
-        let short = shorten(leaf)?;
+        let short = names.shorten(leaf, &generics)?;
         count += 1;
         Some(short)
       });
@@ -6214,6 +6212,101 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot, dependency_namespace
     }
   }
   changed
+}
+
+/// How a namespace resolves type names, for shortening `prefix/Name` to the
+/// shortest spelling that names the same definition (#2677).
+struct TypeNameScope<'a> {
+  ns: &'a str,
+  imports: &'a HashMap<Arc<str>, Arc<crate::program::ImportRule>>,
+  local_defs: &'a HashSet<String>,
+  alias_is_safe: &'a dyn Fn(&str, &str) -> bool,
+}
+
+impl TypeNameScope<'_> {
+  fn shorten(&self, leaf: &str, generics: &[Arc<str>]) -> Option<String> {
+    let (prefix, name) = leaf.rsplit_once('/')?;
+    if prefix.is_empty() || !name.starts_with(|c: char| c.is_ascii_uppercase()) || generics.iter().any(|g| g.as_ref() == name) {
+      return None;
+    }
+    let referred = self.imports.get(name).map(|rule| rule.as_ref());
+    // A bare built-in name such as `Number` parses as the built-in type,
+    // not as a nominal definition that shares its name.
+    let bare_target = if CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some() {
+      None
+    } else if self.local_defs.contains(name) {
+      Some(self.ns)
+    } else if let Some(crate::program::ImportRule::NsReferDef(target, def)) = referred {
+      (def.as_ref() == name).then_some(target.as_ref())
+    } else if referred.is_none() {
+      Some(crate::calcit::CORE_NS)
+    } else {
+      None
+    };
+    if bare_target == Some(prefix) {
+      return Some(name.to_owned());
+    }
+    self
+      .imports
+      .iter()
+      .filter_map(|(alias, rule)| match rule.as_ref() {
+        crate::program::ImportRule::NsAs(target) if target.as_ref() == prefix && (self.alias_is_safe)(alias.as_ref(), prefix) => {
+          Some(format!("{alias}/{name}"))
+        }
+        _ => None,
+      })
+      .filter(|short| short.len() < leaf.len())
+      .min_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)))
+  }
+}
+
+/// Shorten type names in `assert-type value 'app.lib/Task` (the quote is
+/// dropped with it) and in compact `hint-fn $ Fn …` forms. Quoted data and
+/// `quasiquote` templates are not touched.
+fn shorten_code_type_names(node: &Cirru, shorten: &dyn Fn(&str) -> Option<String>) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  let head = match items.first() {
+    Some(Cirru::Leaf(head)) => head.as_ref(),
+    _ => "",
+  };
+  if matches!(head, "quote" | "quasiquote") {
+    return (node.clone(), 0);
+  }
+  let mut changed = 0;
+  let mut rewritten: Vec<Cirru> = items
+    .iter()
+    .map(|item| {
+      let (next, count) = shorten_code_type_names(item, shorten);
+      changed += count;
+      next
+    })
+    .collect();
+  let mut shorten_compact = |form: &Cirru| {
+    map_cirru_leaves(form, &mut |leaf| {
+      let short = shorten(leaf)?;
+      changed += 1;
+      Some(short)
+    })
+  };
+  match (head, rewritten.as_slice()) {
+    ("assert-type", [_, _, Cirru::Leaf(written)]) => {
+      if let Some(short) = shorten(written.strip_prefix('\'').unwrap_or(written)) {
+        rewritten[2] = Cirru::leaf(short);
+        changed += 1;
+      }
+    }
+    ("assert-type", [_, _, compound @ Cirru::List(_)]) => {
+      rewritten[2] = shorten_compact(compound);
+    }
+    ("hint-fn", [_, signature @ Cirru::List(parts)]) if matches!(parts.first(), Some(Cirru::Leaf(fn_head)) if fn_head.as_ref() == "Fn") =>
+    {
+      rewritten[1] = shorten_compact(signature);
+    }
+    _ => {}
+  }
+  (Cirru::List(rewritten), changed)
 }
 
 fn map_cirru_leaves(node: &Cirru, f: &mut dyn FnMut(&str) -> Option<String>) -> Cirru {
@@ -7757,6 +7850,14 @@ mod tests {
           :code $ quote (defn f (a b c) a)
           :examples $ []
           :schema $ quote $ Fn app.main/Local app.lib/Pt app.lib/Box app.main/Number (-> Number)
+        |h $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn h (a) (assert-type a 'app.main/Local) (assert-type a 'app.lib/Pt) (assert-type a 'app.lib/Box) (assert-type a 'app.main/Result) (fn (x) (hint-fn $ Fn app.lib/Pt (-> Number)) 1) a)
+          :examples $ []
+          :schema nil
+        |k $ %{} :CodeEntry (:doc |)
+          :code $ quote (defn k (a) (let ((Local a)) (assert-type a 'app.main/Local)))
+          :examples $ []
+          :schema nil
         |g $ %{} :CodeEntry (:doc |)
           :code $ quote (defn g (x) x)
           :examples $ []
@@ -7779,10 +7880,26 @@ mod tests {
     // without the module list no alias form is written at all.
     let deps_with_l2: HashSet<String> = ["l2".to_owned()].into();
     let mut with_l2_dep = snapshot.clone();
-    assert_eq!(shorten_snapshot_type_names(&mut with_l2_dep, Some(&deps_with_l2)), 2);
+    assert_eq!(shorten_snapshot_type_names(&mut with_l2_dep, Some(&deps_with_l2)), 5);
     let mut unknown_deps = snapshot.clone();
-    assert_eq!(shorten_snapshot_type_names(&mut unknown_deps, None), 2);
-    assert_eq!(shorten_snapshot_type_names(&mut snapshot, Some(&HashSet::new())), 3);
+    assert_eq!(shorten_snapshot_type_names(&mut unknown_deps, None), 5);
+    assert_eq!(shorten_snapshot_type_names(&mut snapshot, Some(&HashSet::new())), 7);
+    // Code type positions (#2682): the quote goes with the namespace; a local
+    // `Result` stays qualified because a bare one is calcit.core's, and a
+    // local binding named `Local` keeps the full name.
+    let code =
+      |def: &str| cirru_parser::format(&[snapshot.files["app.main"].defs[def].code.clone()], true.into()).expect("format code");
+    let h = code("h");
+    for expected in [
+      "assert-type a Local",
+      "assert-type a Pt",
+      "assert-type a l2/Box",
+      "assert-type a 'app.main/Result",
+      "hint-fn $ Fn Pt",
+    ] {
+      assert!(h.contains(expected), "{expected}: {h}");
+    }
+    assert!(code("k").contains("'app.main/Local"), "{}", code("k"));
     let render = |def: &str| {
       let schema = &snapshot.files["app.main"].defs[def].schema;
       match schema_annotation_to_storage_edn(schema) {

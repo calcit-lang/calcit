@@ -2027,6 +2027,52 @@ fn retired_core_functions_report_preferred_spelling() {
 }
 
 #[test]
+fn assert_type_resolves_struct_through_as_alias() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let build = |target: &str| {
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(&format!(
+          "ns app.main\n  :require\n    app.lib :as lib\n\nlet ((t (lib/Task :n 1))) (assert-type t {target}) t"
+        ))
+        .expect("alias fixture should parse"),
+      );
+      snapshot.files.insert(
+        "app.lib".to_owned(),
+        snapshot::create_file_from_snippet("defstruct Task (:n Number)").expect("struct fixture should parse"),
+      );
+      prepare_snapshot_entries(snapshot)
+    };
+
+    let entries = build("lib/Task");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("`assert-type t lib/Task` should resolve the `:as` alias (#2682)");
+    let app_warnings: Vec<_> = warnings
+      .borrow()
+      .iter()
+      .filter(|warning| !warning.message().contains(" in calcit.core/"))
+      .map(|warning| warning.message().to_owned())
+      .collect();
+    assert!(app_warnings.is_empty(), "unexpected warnings: {app_warnings:?}");
+
+    let entries = build("lib/Nope");
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_err()
+        || warnings
+          .borrow()
+          .iter()
+          .any(|warning| !warning.message().contains(" in calcit.core/")),
+      "an unknown alias target must still be reported"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
