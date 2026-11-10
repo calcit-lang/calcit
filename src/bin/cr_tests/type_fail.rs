@@ -2747,6 +2747,27 @@ fn nil_tests_on_option_literals_are_errors() {
 }
 
 #[test]
+fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
+  run_with_large_stack(|| {
+    // The lowered `:nil` arm tests a generated local with `nil?`; only the
+    // user-written `nil? x` is an error.
+    let entries = load_snippet_entries(
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("data-view match preprocesses");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(nil_checks.len(), 1, "only the written `nil? x` fails: {nil_checks:?}");
+    assert!(nil_checks[0].message().contains("`'x`"), "{}", nil_checks[0].message());
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(

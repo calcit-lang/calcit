@@ -120,6 +120,7 @@ impl Drop for ExpressionContextScope {
 /// Compile an owned definition with its own input contract and no caller permissions.
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
+  _generated: OutsideGeneratedSpecialization,
   _expression: ExpressionContextScope,
   _tail: tail_context::SuspendScope,
   _features: FunctionFeaturesScope,
@@ -141,6 +142,7 @@ impl DefinitionContextScope {
       None
     };
     Self {
+      _generated: OutsideGeneratedSpecialization::enter(),
       _expression: ExpressionContextScope::enter(context, None),
       _tail: tail_context::SuspendScope::enter(),
       _features: FunctionFeaturesScope {
@@ -2962,6 +2964,27 @@ fn preprocess_generated_specialization(
   let result = preprocess_expr(expanded, scope_defs, scope_types, file_ns, &generated_warnings, call_stack);
   IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(outer));
   result
+}
+
+/// A definition compiled on demand while a generated specialization is being
+/// preprocessed is user code again: its own diagnostics must not be suppressed
+/// (and then lost once the compiled definition is cached).
+struct OutsideGeneratedSpecialization {
+  outer: bool,
+}
+
+impl OutsideGeneratedSpecialization {
+  fn enter() -> Self {
+    Self {
+      outer: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
+    }
+  }
+}
+
+impl Drop for OutsideGeneratedSpecialization {
+  fn drop(&mut self) {
+    IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer));
+  }
 }
 
 thread_local! {
@@ -9267,6 +9290,15 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
     .get_location()
     .or_else(|| option_check_location(value))
     .or(call_location.clone());
+  // A guard the compiler generated itself, such as the `:nil` arm of a
+  // lowered `match (data-view opt)`, tests a generated local; it is not a
+  // nil check the user wrote.
+  if enum_name == "Option"
+    && matches!(operation, "nil?" | "non-nil?")
+    && location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
+  {
+    return;
+  }
   // `nil?` / `non-nil?` (and `either`, which expands to `nil?`) never see
   // `None` as nil, so on an Option they are always wrong (#2653).
   if enum_name == "Option"
@@ -20089,6 +20121,8 @@ mod tests {
 
   #[test]
   fn nominal_options_warn_on_legacy_nil_and_enum_operations() {
+    // `take_advisories` drains a process-wide queue shared with other tests.
+    let _guard = lock_preprocess_test_state();
     let core_head = |operation: &str| {
       Calcit::Import(CalcitImport {
         ns: Arc::from(calcit::CORE_NS),
