@@ -16264,6 +16264,10 @@ fn preprocess_assert_type_with_obligation(
         .and_then(|(ns, def)| {
           if is_nominal_def(&ns, &def) {
             Some((ns, def))
+          } else if program::has_def_code(&ns, &def) {
+            // A real `ns/def` that is not nominal (a union, a schema alias)
+            // keeps its own identity; an alias must not shadow it.
+            None
           } else {
             program::lookup_ns_target_in_import(&info.at_ns, &ns)
               .filter(|target| is_nominal_def(target, &def))
@@ -16294,10 +16298,10 @@ fn preprocess_assert_type_with_obligation(
           ctx.call_stack,
         )?
       } else {
-        type_form.to_owned()
+        qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types)
       }
     }
-    _ => type_form.to_owned(),
+    _ => qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types),
   };
 
   let local_nominal_type = match type_form {
@@ -16614,6 +16618,30 @@ fn decoder_type_form_to_cirru(form: &Calcit) -> Option<cirru_parser::Cirru> {
       Some(cirru_parser::Cirru::List(nodes))
     }
     _ => crate::data::cirru::calcit_to_cirru(form).ok(),
+  }
+}
+
+/// Qualify `alias/Def` and `:refer`-imported names anywhere in an `assert-type`
+/// type form, so the short spellings written by `edit format` (#2682), such as
+/// `List lib/Task` or a referred union `U`, name the same declaration as the
+/// full path. Lexical type names and generics keep their local meaning.
+fn qualify_assert_type_form(form: &Calcit, file_ns: &str, scope_types: &ScopeTypes) -> Calcit {
+  match form {
+    Calcit::Symbol { sym, .. } => {
+      let bare = sym.trim_start_matches('\'');
+      if scope_types.type_reference(bare).is_some() || scope_types.generic_names().iter().any(|name| name.as_ref() == bare) {
+        form.to_owned()
+      } else {
+        qualify_decoder_type_form(form, file_ns)
+      }
+    }
+    Calcit::List(items) => Calcit::from(
+      items
+        .iter()
+        .map(|item| qualify_assert_type_form(item, file_ns, scope_types))
+        .collect::<Vec<_>>(),
+    ),
+    _ => form.to_owned(),
   }
 }
 

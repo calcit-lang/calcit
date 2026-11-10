@@ -2073,6 +2073,49 @@ fn assert_type_resolves_struct_through_as_alias() {
 }
 
 #[test]
+fn assert_type_resolves_short_names_in_type_forms() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (value, target) in [
+      ("(lib/Task :n 1)", "'app.lib/Task"),
+      ("|a", "lib/U"),
+      ("|a", "'app.lib/U"),
+      ("([] (lib/Task :n 1))", "$ List lib/Task"),
+      ("([] (lib/Task :n 1))", "$ List app.lib/Task"),
+      ("|a", "U"),
+      ("([] (lib/Task :n 1))", "$ List Task"),
+      ("([] |a)", "$ List U"),
+      ("([] |a)", "$ List lib/U"),
+      ("(lib/Task :n 1)", "Task"),
+    ] {
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(&format!(
+          "ns app.main\n  :require\n    app.lib :as lib\n    app.lib :refer $ Task U\n\nlet ((t {value})) (assert-type t {target}) t"
+        ))
+        .expect("parse"),
+      );
+      snapshot.files.insert(
+        "app.lib".to_owned(),
+        snapshot::create_file_from_snippet("defstruct Task (:n Number)\n\ndef U $ defunion U String Number").expect("parse"),
+      );
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let r = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let w: Vec<_> = warnings
+        .borrow()
+        .iter()
+        .filter(|w| !w.message().contains(" in calcit.core/"))
+        .map(|w| w.message().to_owned())
+        .collect();
+      assert!(r.is_ok(), "`assert-type t {target}` on {value} should pass (#2682): {:?}", r.err());
+      assert!(w.is_empty(), "unexpected warnings for `{target}`: {w:?}");
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
