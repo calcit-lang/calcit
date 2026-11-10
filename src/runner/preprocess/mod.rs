@@ -5733,7 +5733,7 @@ fn preprocess_list_call(
             scope_types,
             file_ns,
             def_name.as_ref(),
-            call_location.clone(),
+            preferred_source_call_location(call_location.clone(), call_stack),
             check_warnings,
           );
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
@@ -6442,7 +6442,7 @@ fn preprocess_known_function_call(
       scope_types,
       file_ns,
       def_name,
-      call_location.clone(),
+      preferred_source_call_location(call_location.clone(), call_stack),
       check_warnings,
     );
     warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns, call_stack);
@@ -9274,6 +9274,7 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
     && should_emit_project_source_lint(file_ns)
     && let Some(location) = location.clone()
   {
+    let def_name = if def_name == "??" { location.def.as_ref() } else { def_name };
     report_option_nil_check(
       format!(
         "`{operation}` on Option value `{value}` in {file_ns}/{def_name} is always {}",
@@ -12559,7 +12560,10 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   if !and_tail {
     warn_on_nominal_enum_truthiness(
       &cond_form,
-      args.first().and_then(option_check_location),
+      args
+        .first()
+        .and_then(option_check_location)
+        .or_else(|| preferred_source_call_location(None, ctx.call_stack)),
       ctx.scope_types,
       ctx.file_ns,
       ctx.check_warnings,

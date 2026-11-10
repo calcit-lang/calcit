@@ -2714,6 +2714,39 @@ fn option_truthiness_is_an_error_except_as_the_last_and_operand() {
 }
 
 #[test]
+fn nil_tests_on_option_literals_are_errors() {
+  run_with_large_stack(|| {
+    // `nil?` resolves to a builtin proc whose head carries no coordinate, and
+    // inside `let` the call has none either; the error falls back to the
+    // enclosing source form instead of degrading to a warning.
+    let entries = load_snippet_entries(
+      "let\n    a $ nil? None\n    b $ nil? (Some 1)\n    c $ non-nil? None\n    d $ non-nil? (Some 1)\n  [] a b c d",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("nil tests on Option literals preprocess into blocking advisories");
+    let nil_checks = runner::preprocess::take_advisories()
+      .into_iter()
+      .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
+      .collect::<Vec<_>>();
+    assert_eq!(nil_checks.len(), 4, "every literal nil test fails: {nil_checks:?}");
+    for check in &nil_checks {
+      assert_ne!(check.location().def.as_ref(), calcit::calcit::GENERATED_DEF);
+      assert!(!check.message().contains("/??"), "names the def: {}", check.message());
+    }
+    assert!(
+      !warnings
+        .borrow()
+        .iter()
+        .any(|warning| warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")),
+      "no leftover warning: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
