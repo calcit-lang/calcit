@@ -1861,8 +1861,8 @@
         'test-struct-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-inference ()
             let
-                addr $ %{} Address $ :city |sh
-                p $ %{} Person (:name |n) (:age 20) (:address addr)
+                addr $ Address :city |sh
+                p $ Person :name |n :age 20 :address addr
               assert-type p $ :: Person
               &inspect-type p
               let
@@ -1881,10 +1881,9 @@
         'test-type-ref-combos $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-type-ref-combos ()
             let
-                addr $ %{} Address $ :city |sh
-                person $ %{} Person (:name |n) (:age 20) (:address addr)
-                job $ %{} Job (:title |dev)
-                  :status $ %:: Status :ok 1
+                addr $ Address :city |sh
+                person $ Person :name |n :age 20 :address addr
+                job $ Job :title |dev :status $ %:: Status :ok 1
               assert-type person $ :: Person
               assert-type job $ :: Job
               &inspect-type person

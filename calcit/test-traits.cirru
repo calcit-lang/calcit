@@ -1153,7 +1153,7 @@
                 s $ #{} 1 2
                 text |abc
                 enum_value $ :: :demo 1
-                struct_value $ %{} Person0 $ :name |A
+                struct_value $ Person0 :name |A
               assert= 3 $ count-with-trait xs
               assert= 1 $ count-with-trait m
               assert= 2 $ count-with-trait s

@@ -3175,6 +3175,8 @@ fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<
 
 /// Error code for type syntax that `calcit edit format` rewrites into the compact quote form.
 pub const LEGACY_TYPE_SYNTAX_WARNING: &str = "W_LEGACY_TYPE_SYNTAX";
+/// `%{} Struct` where the direct constructor applies (#2654); a non-blocking note.
+pub const PERCENT_STRUCT_LITERAL_WARNING: &str = "W_PERCENT_STRUCT_LITERAL";
 pub const LEGACY_TYPE_SYNTAX_CODE: &str = "E_LEGACY_TYPE_SYNTAX";
 
 /// One-line Cirru for diagnostics: nested lists in parentheses, a trailing
