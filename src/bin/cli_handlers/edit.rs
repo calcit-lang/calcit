@@ -308,6 +308,26 @@ fn handle_merge(opts: &EditMergeCommand, snapshot_file: &str) -> Result<(), Stri
   ))
 }
 
+/// Namespaces of every module the snapshot's entries load, so `edit format`
+/// does not shorten a type name to an alias that a dependency namespace
+/// shadows. `None` when a module cannot be loaded.
+fn load_dependency_namespaces(snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Option<HashSet<String>> {
+  let base_dir = Path::new(snapshot_file).parent().unwrap_or(Path::new("."));
+  let module_folder = calcit::project_module_folder(base_dir);
+  let mut namespaces = HashSet::new();
+  let mut seen = HashSet::new();
+  for entry in snapshot.entries.values() {
+    for module_path in &entry.modules {
+      if !seen.insert(module_path.clone()) {
+        continue;
+      }
+      let module = calcit::load_module(module_path, base_dir, &module_folder).ok()?;
+      namespaces.extend(module.files.keys().cloned());
+    }
+  }
+  Some(namespaces)
+}
+
 fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
   let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   let mut original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
@@ -317,7 +337,8 @@ fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), St
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
   let canonicalized_type_forms = snapshot::canonicalize_snapshot_type_syntax(&mut snapshot);
   let shortened_options = snapshot::shorten_snapshot_option_constructors(&mut snapshot);
-  let shortened_type_names = snapshot::shorten_snapshot_type_names(&mut snapshot);
+  let dependency_namespaces = load_dependency_namespaces(&snapshot, snapshot_file);
+  let shortened_type_names = snapshot::shorten_snapshot_type_names(&mut snapshot, dependency_namespaces.as_ref());
   let formatted_content = render_snapshot_content(&snapshot)?;
 
   if formatted_content == original_content {
