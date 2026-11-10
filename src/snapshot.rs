@@ -5641,12 +5641,32 @@ pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool
   (Cirru::List(rewritten), changed)
 }
 
+/// Definition names of `calcit.core`. A bare name in `assert-type` that
+/// matches one resolves to the core definition even when the namespace
+/// declares its own, so only the quoted spelling names the local one.
+fn core_def_names() -> &'static HashSet<String> {
+  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
+  NAMES.get_or_init(|| {
+    crate::load_core_snapshot()
+      .ok()
+      .and_then(|core| {
+        core
+          .files
+          .get(crate::calcit::CORE_NS)
+          .map(|file| file.defs.keys().cloned().collect())
+      })
+      .unwrap_or_default()
+  })
+}
+
 /// Names that a bare type position in this namespace resolves to its own
-/// Struct or Enum declaration.
+/// Struct or Enum declaration: names shadowing a core definition are left out.
 fn local_nominal_type_names(file: &FileInSnapShot) -> HashSet<String> {
+  let core = core_def_names();
   file
     .defs
     .iter()
+    .filter(|(name, _)| !core.contains(name.as_str()))
     .filter(|(_, entry)| {
       matches!(&entry.code, Cirru::List(items)
         if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum")))
@@ -7347,6 +7367,8 @@ mod tests {
       let (rewritten, changed) = unquote_assertion_type_names(&parse_one(source), &local);
       assert_eq!((rewritten, changed), (parse_one(expected), count), "{source}");
     }
+    // A local `Result` shadows the core one only when quoted, so it stays quoted.
+    assert!(core_def_names().contains("Result") && core_def_names().contains("Option"));
   }
 
   #[test]

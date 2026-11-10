@@ -1994,7 +1994,7 @@
           :examples $ []
           :schema $ quote $ Fn (test-types-inference.shadow/Option Number) (-> Bool)
         'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value Result) (nil? value)
+          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
           :examples $ []
           :schema $ quote $ Fn test-types-inference.shadow/Result (-> Bool)
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
@@ -2003,7 +2003,7 @@
                 expected-option $ :other-option fields
                 expected-result $ :other-result fields
               assert-type expected-option $ Option Number
-              assert-type expected-result Result
+              assert-type expected-result 'Result
               and
                 = expected-option $ :option fields
                 = expected-result $ :result fields
