@@ -8,6 +8,9 @@
 //! Three families of rewrites:
 //! 1. Map literal `{} (:k v)` → Struct literal `%{} Struct (:k v)` when param is struct-typed
 //! 2. Loose struct `?{} :k v` → Struct literal `%{} Struct :k v` when param is struct-typed
+//!
+//! In families 1 and 2 a plain `T` payload for an `Option<T>` field is wrapped
+//! as `Option :some` and an omitted Option field becomes `Option :none` (#2652).
 //! 3. Enum literal `:: :tag ...` → Named enum `%:: Enum :tag ...` when param is enum-typed
 
 use std::cell::RefCell;
@@ -20,7 +23,7 @@ use crate::calcit::{
   ImportInfo, LocatedWarning,
 };
 
-use super::{core_import, gen_check_warning};
+use super::{ScopeTypes, core_import, gen_check_warning, lift_option_field_payload};
 
 // ---------------------------------------------------------------------------
 // Unified argument rewriting loop
@@ -85,22 +88,7 @@ pub(crate) fn try_rewrite_map_args_to_structs(
   fn_info: &CalcitFn,
   expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
   processed_args: &CalcitList,
-  file_ns: &str,
-  def_name: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) -> Option<CalcitList> {
-  rewrite_args_by_expected_type(
-    expected_types.unwrap_or(&fn_info.arg_types),
-    processed_args,
-    |arg, expected, idx| try_rewrite_single_map_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings),
-  )
-}
-
-/// Rewrite loose struct literal arguments to struct literals when struct-typed.
-pub(crate) fn try_rewrite_loose_struct_args_to_structs(
-  fn_info: &CalcitFn,
-  expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
-  processed_args: &CalcitList,
+  scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -109,7 +97,26 @@ pub(crate) fn try_rewrite_loose_struct_args_to_structs(
     expected_types.unwrap_or(&fn_info.arg_types),
     processed_args,
     |arg, expected, idx| {
-      try_rewrite_single_loose_struct_to_struct(arg, expected, file_ns, def_name, &fn_info.name, idx, check_warnings)
+      try_rewrite_single_map_to_struct(arg, expected, scope_types, file_ns, def_name, &fn_info.name, idx, check_warnings)
+    },
+  )
+}
+
+/// Rewrite loose struct literal arguments to struct literals when struct-typed.
+pub(crate) fn try_rewrite_loose_struct_args_to_structs(
+  fn_info: &CalcitFn,
+  expected_types: Option<&[Arc<CalcitTypeAnnotation>]>,
+  processed_args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Option<CalcitList> {
+  rewrite_args_by_expected_type(
+    expected_types.unwrap_or(&fn_info.arg_types),
+    processed_args,
+    |arg, expected, idx| {
+      try_rewrite_single_loose_struct_to_struct(arg, expected, scope_types, file_ns, def_name, &fn_info.name, idx, check_warnings)
     },
   )
 }
@@ -157,9 +164,11 @@ fn omitted_struct_field_value(struct_def: &CalcitStructDef, field_idx: usize, fi
 }
 
 /// Try to rewrite a single hashmap literal to a struct literal if the expected type is a struct.
+#[allow(clippy::too_many_arguments)]
 fn try_rewrite_single_map_to_struct(
   arg: &Calcit,
   expected_type: &Arc<CalcitTypeAnnotation>,
+  scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   fn_name: &str,
@@ -220,7 +229,12 @@ fn try_rewrite_single_map_to_struct(
   for (field_idx, field) in struct_def.fields.iter().enumerate() {
     struct_items.push(Calcit::Tag(field.to_owned()));
     if let Some(value) = provided_fields.get(field) {
-      struct_items.push((*value).to_owned());
+      // A plain `T` for an `Option<T>` field is wrapped as `Option :some` (#2652).
+      let lifted = struct_def
+        .field_types
+        .get(field_idx)
+        .and_then(|field_type| lift_option_field_payload(value, field_type, &struct_def.generics, scope_types, file_ns));
+      struct_items.push(lifted.unwrap_or_else(|| (*value).to_owned()));
     } else {
       struct_items.push(omitted_struct_field_value(&struct_def, field_idx, file_ns));
     }
@@ -230,9 +244,11 @@ fn try_rewrite_single_map_to_struct(
 }
 
 /// Try to rewrite a single loose struct literal (`?{} :field val ...`) to a struct literal.
+#[allow(clippy::too_many_arguments)]
 fn try_rewrite_single_loose_struct_to_struct(
   arg: &Calcit,
   expected_type: &Arc<CalcitTypeAnnotation>,
+  scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   fn_name: &str,
@@ -294,7 +310,12 @@ fn try_rewrite_single_loose_struct_to_struct(
   for (field_idx, field) in struct_def.fields.iter().enumerate() {
     struct_items.push(Calcit::Tag(field.to_owned()));
     if let Some(value) = provided_fields.get(field) {
-      struct_items.push((*value).to_owned());
+      // A plain `T` for an `Option<T>` field is wrapped as `Option :some` (#2652).
+      let lifted = struct_def
+        .field_types
+        .get(field_idx)
+        .and_then(|field_type| lift_option_field_payload(value, field_type, &struct_def.generics, scope_types, file_ns));
+      struct_items.push(lifted.unwrap_or_else(|| (*value).to_owned()));
     } else {
       struct_items.push(omitted_struct_field_value(&struct_def, field_idx, file_ns));
     }

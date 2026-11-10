@@ -5392,7 +5392,18 @@ fn preprocess_list_call(
         }
 
         // Check for struct field access after processing arguments
-        let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        let mut processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        // Struct literal construction (`%{}`, or a direct constructor call that
+        // lowers to it) wraps plain payloads of Option fields (#2652).
+        if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
+          && let Some(lifted) = lift_struct_literal_options(&processed_args, scope_types, file_ns)
+        {
+          processed_args = lifted;
+          ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
+          for item in processed_args.iter() {
+            ys = ys.push(item.to_owned());
+          }
+        }
         if !is_nil_bridge_head(&head_form) {
           for arg in processed_args.iter() {
             check_value_position_nil_branch(arg, "call argument", true, scope_types, file_ns, call_stack, None)?;
@@ -6385,6 +6396,7 @@ fn preprocess_known_function_call(
       info.as_ref(),
       checked_expected_types,
       &current_args,
+      scope_types,
       file_ns,
       def_name,
       check_warnings,
@@ -6397,6 +6409,7 @@ fn preprocess_known_function_call(
       info.as_ref(),
       checked_expected_types,
       &current_args,
+      scope_types,
       file_ns,
       def_name,
       check_warnings,
@@ -7637,6 +7650,67 @@ fn struct_constructor_field_name(field: &Calcit) -> Option<&str> {
     Calcit::Str(name) | Calcit::Symbol { sym: name, .. } => Some(name),
     _ => None,
   }
+}
+
+/// Typed struct literal construction (#2652): a payload of type `T` for a
+/// field declared `Option<T>` becomes `Option :some payload`. This covers
+/// `%{}`, direct constructor calls and map literals rewritten to a struct;
+/// assignments such as `assoc` keep exact payloads. Payloads that
+/// are already Option-shaped, open (`Dynamic`), or bound to a struct generic
+/// are left alone so a value is never wrapped twice.
+pub(crate) fn lift_option_field_payload(
+  value: &Calcit,
+  field_type: &CalcitTypeAnnotation,
+  struct_generics: &[Arc<str>],
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+) -> Option<Calcit> {
+  if !field_type.is_option_type() || struct_generics.iter().any(|name| field_type.contains_type_var_named(name)) {
+    return None;
+  }
+  let payload = field_type.option_payload()?;
+  if matches!(payload.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return None;
+  }
+  let actual = resolve_type_value(value, scope_types)?;
+  if matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nil) || actual.option_payload().is_some() {
+    return None;
+  }
+  if type_inference::constructor_payload_is_proven(&actual, field_type)
+    || !type_inference::constructor_payload_is_proven(&actual, &payload)
+  {
+    return None;
+  }
+  Some(Calcit::from(vec![
+    Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+    core_import("Option", file_ns),
+    Calcit::tag("some"),
+    value.to_owned(),
+  ]))
+}
+
+/// Applies [`lift_option_field_payload`] to every explicit field of a struct
+/// literal (`[NativeStruct, prototype, :field value ...]`).
+fn lift_struct_literal_options(args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) -> Option<CalcitList> {
+  let prototype = args.first()?;
+  let value = resolve_struct_value(prototype, scope_types)?;
+  let items = args.iter().skip(1).collect::<Vec<_>>();
+  if !items.len().is_multiple_of(2) || items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return None;
+  }
+  let struct_type = CalcitTypeAnnotation::StructValue(value.struct_ref.clone());
+  let mut lifted = false;
+  let mut next = vec![prototype.to_owned()];
+  for pair in items.as_chunks::<2>().0 {
+    next.push(pair[0].to_owned());
+    let replacement = struct_constructor_field_name(pair[0])
+      .and_then(|field| value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field))
+      .and_then(|index| type_inference::resolve_struct_field_type_by_index(&struct_type, index))
+      .and_then(|field_type| lift_option_field_payload(pair[1], &field_type, &value.struct_ref.generics, scope_types, file_ns));
+    lifted |= replacement.is_some();
+    next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
+  }
+  lifted.then(|| CalcitList::from(next.as_slice()))
 }
 
 /// Check resolved constructor shapes and payloads after lowering. Both public

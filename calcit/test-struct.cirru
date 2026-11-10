@@ -218,15 +218,35 @@
             :label $ Option String
           :examples $ []
           :schema $ quote StructDef
-          :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
-            :code $ quote $ do
-              assert= (Option :some 0)
-                :count $ OptionFields :count (Option :some 0) :label $ Option :none
-              assert= (Option :none)
-                :count $ OptionFields :count (Option :none) :label $ Option :some |saved
-              assert= (Option :some |)
-                :label $ OptionFields :count (Option :none) :label $ Option :some |
-            :tags $ #{} :option-fields :unit
+          :tests $ []
+            %{} 'TestEntry (:name |direct-constructor-admits-option-values)
+              :code $ quote $ do
+                assert= (Option :some 0)
+                  :count $ OptionFields :count (Option :some 0) :label $ Option :none
+                assert= (Option :none)
+                  :count $ OptionFields :count (Option :none) :label $ Option :some |saved
+                assert= (Option :some |)
+                  :label $ OptionFields :count (Option :none) :label $ Option :some |
+              :tags $ #{} :option-fields :unit
+            %{} 'TestEntry (:name |literal-constructors-wrap-plain-option-values)
+              :code $ quote $ let
+                  n 3
+                assert= (Option :some 2)
+                  option-fields-count $ {} $ :count 2
+                assert= (Option :none)
+                  option-fields-count $ {} $ :label |a
+                assert= (Option :some 5)
+                  option-fields-count $ {} $ :count (Option :some 5)
+                assert= (Option :some 6)
+                  option-fields-count $ ?{} :count 6
+                assert= (Option :some 3)
+                  :count $ OptionFields :count n
+                assert= (Option :some |b)
+                  :label $ OptionFields :label |b
+                assert= (Option :some 4)
+                  :count $ %{} OptionFields (:count 4)
+                    :label $ Option :none
+              :tags $ #{} :option-fields :unit
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name String) (:age Number) (:position Tag)
           :examples $ []
@@ -559,6 +579,11 @@
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ assert= ([] 7 nil) (nullish-literal-list)
             :tags $ #{} :collection-proof
+        'option-fields-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-fields-count (fields) (:count fields)
+          :examples $ []
+          :schema $ quote $ Fn OptionFields
+            -> $ Option Number
         'option-fields-from-literal $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-fields-from-literal (fields) fields
           :examples $ []

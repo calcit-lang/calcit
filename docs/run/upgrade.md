@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 Struct 字面量自动包装 Option 字段（#2652）
+
+构造 Struct 的字面量里，字段声明为 `Option<T>`、给出的值类型已知是 `T` 时，编译器自动包成 `Option :some value`。适用于直接构造器、`%{}`，以及按期望类型改写成 Struct 的 `{}` / `?{}`。以前这类写法报 `W_FN_ARG_TYPE_MISMATCH`（"field `:size` expects Option<number>, but got number"），现在可以通过；已经写成 `Option :some value` 的代码不受影响，也不会被重复包装。
+
+这让组件 props 可以从 `Map Tag Dynamic` 改成带 Option 字段的 Struct，调用处继续写 `{} (:label |a) (:size 2)`。其他位置不做隐式转换：`assoc`、函数参数和返回值里把 `T` 交给 `Option<T>` 仍然报错。
+
 ## 0.41.0 删除 `--compat-types`（#2655）
 
 `--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。
