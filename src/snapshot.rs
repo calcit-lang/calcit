@@ -5607,6 +5607,15 @@ fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
 /// names, type slots `'*name` and qualified names stay as written, and quoted
 /// data and `quasiquote` templates are not touched.
 pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool) -> (Cirru, usize) {
+  let bound = binding_names(node);
+  unquote_assertion_type_names_in(node, bare_ok, &|name| bound.contains(name))
+}
+
+fn unquote_assertion_type_names_in(
+  node: &Cirru,
+  bare_ok: &dyn Fn(&str) -> bool,
+  locally_bound: &dyn Fn(&str) -> bool,
+) -> (Cirru, usize) {
   let Cirru::List(items) = node else {
     return (node.clone(), 0);
   };
@@ -5620,7 +5629,7 @@ pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool
   let mut rewritten = Vec::with_capacity(items.len());
   let mut changed = 0;
   for item in items {
-    let (next, count) = unquote_assertion_type_names(item, bare_ok);
+    let (next, count) = unquote_assertion_type_names_in(item, bare_ok, locally_bound);
     rewritten.push(next);
     changed += count;
   }
@@ -5631,6 +5640,7 @@ pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool
     && !name.is_empty()
     && !name.starts_with(['\'', '*'])
     && !name.contains('/')
+    && !locally_bound(name)
     && (CalcitTypeAnnotation::canonical_type_symbol_name(name) == Some(name)
       || CalcitTypeAnnotation::open_family_type(name).is_some()
       || (head == Some("assert-type") && bare_ok(name)))
@@ -5639,6 +5649,63 @@ pub fn unquote_assertion_type_names(node: &Cirru, bare_ok: &dyn Fn(&str) -> bool
     changed += 1;
   }
   (Cirru::List(rewritten), changed)
+}
+
+/// Names that `let`, `&let`, `fn`, `defn`, `defmacro` or `loop` bind anywhere
+/// in a tree. A local binding can hold a Struct/Enum definition, and a bare
+/// name in `assert-type` then resolves to it, so such names keep the quote.
+fn binding_names(node: &Cirru) -> HashSet<String> {
+  fn add_leaves(node: &Cirru, out: &mut HashSet<String>) {
+    match node {
+      Cirru::Leaf(name) => {
+        out.insert(name.to_string());
+      }
+      Cirru::List(items) => items.iter().for_each(|item| add_leaves(item, out)),
+    }
+  }
+  fn walk(node: &Cirru, out: &mut HashSet<String>) {
+    let Cirru::List(items) = node else { return };
+    let head = match items.first() {
+      Some(Cirru::Leaf(head)) => head.as_ref(),
+      _ => "",
+    };
+    match head {
+      "quote" => return,
+      "let" | "loop" => {
+        if let Some(Cirru::List(pairs)) = items.get(1) {
+          for pair in pairs {
+            if let Cirru::List(pair) = pair
+              && let Some(name) = pair.first()
+            {
+              add_leaves(name, out);
+            }
+          }
+        }
+      }
+      "&let" => {
+        if let Some(Cirru::List(pair)) = items.get(1)
+          && let Some(name) = pair.first()
+        {
+          add_leaves(name, out);
+        }
+      }
+      "fn" => {
+        if let Some(params) = items.get(1) {
+          add_leaves(params, out);
+        }
+      }
+      "defn" | "defmacro" => {
+        if let Some(params) = items.get(2) {
+          add_leaves(params, out);
+        }
+      }
+      _ => {}
+    }
+    items.iter().for_each(|item| walk(item, out));
+  }
+  let mut out = HashSet::new();
+  walk(node, &mut out);
+  out
 }
 
 /// Definition names of `calcit.core`. A bare name in `assert-type` that
@@ -7362,6 +7429,13 @@ mod tests {
       ("assert-type x 'number", "assert-type x 'number", 0),
       ("quote $ assert-type x 'Number", "quote $ assert-type x 'Number", 0),
       ("quasiquote $ assert-type ~x 'Number", "quasiquote $ assert-type ~x 'Number", 0),
+      // A local binding of the same name may hold a Struct definition.
+      (
+        "let ((Task other/Task)) (assert-type x 'Task)",
+        "let ((Task other/Task)) (assert-type x 'Task)",
+        0,
+      ),
+      ("fn (Number) (assert-type x 'Number)", "fn (Number) (assert-type x 'Number)", 0),
     ];
     for (source, expected, count) in cases {
       let (rewritten, changed) = unquote_assertion_type_names(&parse_one(source), &local);

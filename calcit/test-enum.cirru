@@ -113,7 +113,7 @@
                   hint-fn $ Fn Payload $ -> String
                   :value record
                 record $ Payload :value |Ada
-              assert-type record Payload
+              assert-type record 'Payload
               read record
           :examples $ []
           :schema $ quote $ Fn (-> String)
@@ -141,7 +141,7 @@
                   hint-fn $ Fn String $ -> Payload
                   let
                       record $ recursive/Payload :value Payload
-                    assert-type record Payload
+                    assert-type record 'Payload
                     assert-type record Payload
                     , record
               :value $ read |Ada
