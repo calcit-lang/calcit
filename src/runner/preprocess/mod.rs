@@ -16631,7 +16631,10 @@ fn qualify_assert_type_form(form: &Calcit, file_ns: &str, scope_types: &ScopeTyp
       let bare = sym.trim_start_matches('\'');
       if scope_types.type_reference(bare).is_some() || scope_types.generic_names().iter().any(|name| name.as_ref() == bare) {
         form.to_owned()
-      } else if !bare.contains('/') && !CalcitTypeAnnotation::is_builtin_type_symbol_name(bare) && program::has_def_code(file_ns, bare)
+      } else if !bare.contains('/')
+        && file_ns != calcit::CORE_NS
+        && !CalcitTypeAnnotation::is_builtin_type_symbol_name(bare)
+        && program::has_def_code(file_ns, bare)
       {
         // A same-namespace definition such as a union `V` would otherwise be
         // read as a type variable inside `List V`.
@@ -16645,10 +16648,19 @@ fn qualify_assert_type_form(form: &Calcit, file_ns: &str, scope_types: &ScopeTyp
         qualify_decoder_type_form(form, file_ns)
       }
     }
+    // The head names a type constructor such as `List` or `Fn`, never a
+    // user definition, so only the arguments are qualified.
     Calcit::List(items) => Calcit::from(
       items
         .iter()
-        .map(|item| qualify_assert_type_form(item, file_ns, scope_types))
+        .enumerate()
+        .map(|(idx, item)| {
+          if idx == 0 && matches!(item, Calcit::Symbol { .. }) {
+            item.to_owned()
+          } else {
+            qualify_assert_type_form(item, file_ns, scope_types)
+          }
+        })
         .collect::<Vec<_>>(),
     ),
     _ => form.to_owned(),
