@@ -2073,6 +2073,44 @@ fn assert_type_resolves_struct_through_as_alias() {
 }
 
 #[test]
+fn assert_type_qualifies_same_namespace_union_in_type_forms() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (value, target, passes) in [
+      ("([] |a)", "$ List app.main/V", true),
+      ("([] |a)", "$ List V", true),
+      ("|a", "V", true),
+      ("([] :k)", "$ List V", false),
+      (":k", "V", false),
+    ] {
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(&format!("let ((t {value})) (assert-type t {target}) t")).expect("parse");
+      let extra = snapshot::create_file_from_snippet("def V $ defunion V String Number").expect("parse");
+      file.defs.extend(extra.defs.into_iter().filter(|(k, _)| k == "V"));
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let r = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      if passes {
+        assert!(
+          r.is_ok(),
+          "`assert-type t {target}` on {value} should pass (#2682): {:?}",
+          r.err().map(|e| e.msg)
+        );
+        let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def.clone(), &[]);
+        assert!(
+          ran.is_ok(),
+          "`assert-type t {target}` on {value} should hold at runtime: {:?}",
+          ran.err()
+        );
+      } else {
+        assert!(r.is_err(), "`assert-type t {target}` on {value} must be rejected");
+      }
+    }
+  });
+}
+
+#[test]
 fn assert_type_resolves_short_names_in_type_forms() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

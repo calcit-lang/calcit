@@ -16627,10 +16627,20 @@ fn decoder_type_form_to_cirru(form: &Calcit) -> Option<cirru_parser::Cirru> {
 /// full path. Lexical type names and generics keep their local meaning.
 fn qualify_assert_type_form(form: &Calcit, file_ns: &str, scope_types: &ScopeTypes) -> Calcit {
   match form {
-    Calcit::Symbol { sym, .. } => {
+    Calcit::Symbol { sym, info, location } => {
       let bare = sym.trim_start_matches('\'');
       if scope_types.type_reference(bare).is_some() || scope_types.generic_names().iter().any(|name| name.as_ref() == bare) {
         form.to_owned()
+      } else if !bare.contains('/') && !CalcitTypeAnnotation::is_builtin_type_symbol_name(bare) && program::has_def_code(file_ns, bare)
+      {
+        // A same-namespace definition such as a union `V` would otherwise be
+        // read as a type variable inside `List V`.
+        let quote_prefix = if sym.starts_with('\'') { "'" } else { "" };
+        Calcit::Symbol {
+          sym: Arc::from(format!("{quote_prefix}{file_ns}/{bare}")),
+          info: info.to_owned(),
+          location: location.to_owned(),
+        }
       } else {
         qualify_decoder_type_form(form, file_ns)
       }

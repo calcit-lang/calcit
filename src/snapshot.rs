@@ -6171,7 +6171,11 @@ pub fn shorten_snapshot_type_names(snapshot: &mut Snapshot, dependency_namespace
       // Code type positions: `assert-type` and compact `hint-fn` (#2682).
       // There a bare name that calcit.core also defines resolves to core, and
       // a local binding shadows a definition, so neither is produced.
-      let bound = binding_names(&entry.code);
+      // Bindings in examples and tests shadow names there just as they do in code.
+      let mut bound = binding_names(&entry.code);
+      for tree in entry.examples.iter().chain(entry.tests.iter().map(|test| &test.code)) {
+        bound.extend(binding_names(tree));
+      }
       let code_shorten = |leaf: &str| {
         names.shorten(leaf, &generics).filter(|short| {
           short.contains('/')
