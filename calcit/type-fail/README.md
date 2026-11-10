@@ -2,8 +2,8 @@
 
 这个目录存放**预期在 preprocess 阶段失败**的示例，用来验证最近增加的 `:schema` 类型描述能正确生效。
 
-Calcit 0.14 默认启用严格预处理诊断。下方显式 `--strict-types` 的示例还会覆盖零类型债务
-preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--compat-types`。
+Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types` 只是重申默认行为；
+0.41.0 删除了 `--compat-types`，不再有关闭严格诊断的开关。
 
 ## 运行方式
 

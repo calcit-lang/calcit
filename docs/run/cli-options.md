@@ -183,9 +183,7 @@ Warn when dynamic method dispatch cannot be specialized at preprocess time, and 
 calcit --warn-dyn-method
 ```
 
-In compatibility mode, Dynamic receivers used with nominal Option/Result methods
-continue to report `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Strict mode rejects the
-same ambiguous execution path with `E_DYNAMIC_METHOD_DISPATCH` for prefix calls
+Dynamic receivers used with nominal Option/Result methods are rejected with `E_DYNAMIC_METHOD_DISPATCH` for prefix calls
 or `E_DYNAMIC_POSTFIX_METHOD` for postfix calls. Give the receiver a concrete
 `Option<T>` / `Result<T, E>` schema, or use the matching visible `option:*` /
 `result:*` function inside an explicitly reviewed open adapter.
@@ -204,7 +202,7 @@ classified as a dynamic callable instead.
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。
 严格诊断本身不运行数量预算（旧的 `analyze quality` baseline 已在 0.41.0 删除）。
 
-### 默认严格诊断、入口预检查与兼容模式
+### 默认严格诊断与入口预检查
 
 Calcit 0.14 起，普通调用默认启用严格预处理诊断。项目无需额外开关，也会对无法证明安全的类型操作收到稳定的 `E_*` 诊断：
 
@@ -282,7 +280,7 @@ calcit calcit.cirru --check-only --all-defs --format edn
 type slot 绑定照常报 `E_LEGACY_TYPE_SYNTAX`，`W_OPEN_FAMILY` 汇总在通过后打印，与不带 `--incremental` 的 `--check-only` 一致。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
-> **弃用**：`--strict-types` 与 `--compat-types` 现在会在 stderr 打印一行弃用提示，行为保持不变；`--strict-types` 只是重复默认的严格诊断，`--compat-types` 没有替代，应改为修复报告的类型诊断。0.31.0 仍保留这两个选项（仓库的生态严格模式检查脚本还在使用），计划在之后的非 patch 版本删除，补丁版本不会删除它们。
+> **弃用 / 删除**：`--strict-types` 会在 stderr 打印一行弃用提示，行为不变，它只是重复默认的严格诊断。`--compat-types` 已在 0.41.0 删除，没有替代；旧命令行会报 "`--compat-types` was removed in 0.41.0"，应改为修复报告的类型诊断，见 [upgrade.md](upgrade.md#0410-删除---compat-types2655)。
 
 `--strict-types` 可显式确认严格策略，并在执行或代码生成前预检查所选入口；它不声明项目没有 Dynamic 或其他统计债务：
 
@@ -299,25 +297,17 @@ calcit --strict-types js
 开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
 不由数量预算决定。
 
-Use `--compat-types` only as a temporary migration escape hatch when an older
-project still needs the pre-0.14 warning behavior:
-
-```bash
-calcit --compat-types --check-only
-calcit calcit.cirru --compat-types js
-```
-
-`--compat-types` disables the default strict diagnostic promotion, the
-default assertion-proof preflight (#2121), and the
-implicit JS FFI `:error` policy. It does not erase explicitly configured entry
-policies. It cannot be combined with `--strict-types`; the CLI rejects that
-contradictory request.
+There is no switch that turns the strict diagnostics off. The former
+`--compat-types` escape hatch was removed in 0.41.0; a command line that still
+passes it fails before running and points to the upgrade notes. The read-only
+`analyze weak-types --only dynamic-method` report still lists every dispatch strict checking
+would reject, because it is a migration inventory and does not decide whether
+code passes.
 
 `--no-proof-audit` keeps every other strict diagnostic but skips the default
 assertion-proof audit (#2121) for check-only (including `--check-only --ns`), run and `js`. Use it for
 programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
-`calcit/test.cirru`. It is rejected together with `--compat-types`, which
-already skips the audit. Setting `CALCIT_PROOF_AUDIT=0` in the environment has
+`calcit/test.cirru`. Setting `CALCIT_PROOF_AUDIT=0` in the environment has
 the same effect for every command of a run; Calcit's own CI check-all uses it for
 its fixture programs.
 
@@ -343,8 +333,7 @@ their `E_NIL_CALLBACK_SENTINEL` and `W_MAP_KV_UNPROVEN_CONTRACT` /
 points to `filter-map-kv` with `MapEntryDecision :keep key value` or
 `MapEntryDecision :drop` (or `map-list-kv` for a `List<U>` result).
 
-These compatibility paths remain available only with `--compat-types` during
-ecosystem migration. Partial Struct construction is not auto-fixed because the
+Partial Struct construction is not auto-fixed because the
 compiler cannot infer whether an omitted business field should become
 `Option<T>`, gain a default, or be supplied by the caller.
 
@@ -379,8 +368,7 @@ remain valid function evidence during Snapshot migration. Normal Snapshot-loaded
 legacy runtime `Fn` or whole-`Dynamic` macro schema fails during loading with its
 definition path. When a boundary is genuinely open, keep `Dynamic` only in the
 specific argument, return, or `Expr<Dynamic>` position so `analyze weak-types`
-can report and baseline that exact decision. Compatibility mode continues to
-inventory these definitions while their schemas are migrated.
+can report and baseline that exact decision.
 
 `E_ERASED_GENERIC_RELATION` rejects a project call when a `Dynamic` argument
 occupies a declared generic position that is related to another argument,
@@ -388,8 +376,7 @@ variadic item, nested type, or return position. For example, passing `Dynamic`
 to `Fn<T>(T) -> T` prevents strict preprocessing from proving the promised
 input/output relationship. Narrow or validate the value before the call. If
 the callee is intentionally open, put that operation behind a small adapter
-whose structured contract does not claim the generic relationship. With
-`--compat-types`, the existing compatibility behavior is unchanged.
+whose structured contract does not claim the generic relationship.
 
 当公开集合函数使用 `C: Mappable` 一类 trait facade 时，receiver 的具体 payload
 关系可能要等到 List、Set、Map、Option 或 Result 实现被选中后才完整。严格模式会把
@@ -418,7 +405,7 @@ argument whose contract contains a closed Struct or Enum. Decode text with
 `parse-cirru-edn-as` / `try-parse-cirru-edn-as`, decode an evaluated host value
 with `decode-map-as` / `try-decode-map-as`, or validate and narrow it inside a
 small typed FFI adapter. The diagnostic identifies the argument and target
-contract. Compatibility mode keeps the existing gradual migration behavior. A type slot
+contract. A type slot
 bound to a Struct/Enum contract is resolved before this check, so entry-level
 and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
 bindings are treated conservatively as protected boundaries instead of being

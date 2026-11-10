@@ -498,7 +498,7 @@ fn run_cli() -> Result<(), String> {
     return Ok(());
   }
 
-  if let Some(hint) = cli_handlers::deprecated_type_policy_flag_hint(cli_args.strict_types, cli_args.compat_types) {
+  if let Some(hint) = cli_handlers::deprecated_type_policy_flag_hint(cli_args.strict_types) {
     eprintln!("{hint}");
   }
 
@@ -510,10 +510,6 @@ fn run_cli() -> Result<(), String> {
     cli_handlers::set_tips_level("full")?;
   }
 
-  let strict_type_policy = resolve_strict_type_policy(cli_args.strict_types, cli_args.compat_types)?;
-  if cli_args.no_proof_audit && cli_args.compat_types {
-    return Err("`--no-proof-audit` is redundant with `--compat-types`, which already skips the proof audit.".to_owned());
-  }
   // `CALCIT_PROOF_AUDIT=0` is the same switch for a whole run of fixture
   // programs, such as the repository's check-all in CI.
   let proof_audit_env_off = std::env::var("CALCIT_PROOF_AUDIT").is_ok_and(|value| value == "0");
@@ -562,10 +558,9 @@ fn run_cli() -> Result<(), String> {
   }
 
   // Query/analyze commands may run preprocessing before the normal program-loading path.
-  // Strict diagnostics are the default; the explicit flag confirms that
-  // choice while the compatibility switch remains a migration escape hatch.
-  runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || strict_type_policy.diagnostics);
-  runner::preprocess::set_strict_types(strict_type_policy.diagnostics);
+  // Strict diagnostics are always on; `--strict-types` only restates them.
+  runner::preprocess::set_warn_dyn_method(true);
+  runner::preprocess::set_strict_types(true);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
   cli_handlers::set_verbose_mutation_output(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
@@ -587,6 +582,12 @@ fn run_cli() -> Result<(), String> {
   }
   // The echo above shows what the user typed; dispatch then uses the analyzer that owns the view.
   let (cli_args, analyze_view) = cli_handlers::normalize_consolidated_views(cli_args)?;
+  // The dynamic-method report lists every dispatch that strict checking would
+  // reject at its first occurrence, so it preprocesses without strict promotion.
+  // It is a read-only migration report and never decides whether code passes.
+  if matches!(analyze_view, Some(AnalyzeView::DynamicMethods(_))) {
+    runner::preprocess::set_strict_types(false);
+  }
 
   builtins::effects::init_effects_states();
 
@@ -600,7 +601,7 @@ fn run_cli() -> Result<(), String> {
     let (mut snapshot, input_cache, project_namespaces) =
       analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
     input_cache.ensure_complete()?;
-    apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+    apply_strict_feature_policy_defaults(&mut snapshot)?;
     let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
     reject_legacy_quoted_declarations(&snapshot, &project_namespaces)?;
     // The cold check reports the same snapshot-level diagnostics as a plain
@@ -715,7 +716,7 @@ fn run_cli() -> Result<(), String> {
             None,
           )
         };
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        apply_strict_feature_policy_defaults(&mut snapshot)?;
         return run_check_types(options, &snapshot, &cli_args.input, input_cache);
       }
       AnalyzeView::CallGraphDiff(diff_cmd) => {
@@ -725,7 +726,7 @@ fn run_cli() -> Result<(), String> {
         let (mut snapshot, input_cache, project_namespaces) =
           analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
         input_cache.ensure_complete()?;
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        apply_strict_feature_policy_defaults(&mut snapshot)?;
         let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
         return run_dynamic_methods(
           options,
@@ -738,7 +739,7 @@ fn run_cli() -> Result<(), String> {
       }
       AnalyzeView::DeprecatedCalls(options) => {
         let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        apply_strict_feature_policy_defaults(&mut snapshot)?;
         return run_deprecated(options, &snapshot);
       }
       AnalyzeView::DynamicMethods(_) | AnalyzeView::CountCalls(_) => {}
@@ -759,12 +760,12 @@ fn run_cli() -> Result<(), String> {
               None,
             )
           };
-          apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+          apply_strict_feature_policy_defaults(&mut snapshot)?;
           return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
       }
       AnalyzeSubcommand::Verify(options) => {
-        return verification::run(options, &cli_args.input, strict_type_policy.diagnostics);
+        return verification::run(options, &cli_args.input);
       }
       _ => {}
     },
@@ -956,7 +957,7 @@ fn run_cli() -> Result<(), String> {
       },
     );
   }
-  apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+  apply_strict_feature_policy_defaults(&mut snapshot)?;
   let selected_entry = snapshot.active_entry()?.clone();
   let configured_run_mode = selected_entry.mode;
   let watch_js = should_emit_js(&cli_args.subcommand, configured_run_mode)
@@ -1117,7 +1118,7 @@ fn run_cli() -> Result<(), String> {
           .incremental
           .then(|| analysis_cache::InputCacheStats::bypassed("schema-evidence-requires-preprocessing")),
       ),
-      AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input, strict_type_policy.diagnostics),
+      AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
     }
   } else {
@@ -1716,29 +1717,10 @@ fn should_emit_js(subcommand: &Option<CalcitCommand>, configured_run_mode: snaps
   matches!(subcommand, Some(CalcitCommand::EmitJs(_))) || (subcommand.is_none() && configured_run_mode == snapshot::SnapshotRunMode::Js)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct StrictTypePolicy {
-  diagnostics: bool,
-}
-
-/// Resolve explicit strict and compatibility policies without silently
-/// overriding either choice.
-fn resolve_strict_type_policy(strict_types: bool, compat_types: bool) -> Result<StrictTypePolicy, String> {
-  if strict_types && compat_types {
-    return Err("`--strict-types` and `--compat-types` cannot be used together".to_owned());
-  }
-  Ok(StrictTypePolicy {
-    diagnostics: !compat_types,
-  })
-}
-
 /// Strict diagnostics are the default, so a missing JS FFI policy becomes an
 /// in-memory error default without rewriting an existing Snapshot.
 /// An entry that deliberately declares allow/warn/error keeps that choice.
-fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot, strict_diagnostics: bool) -> Result<(), String> {
-  if !strict_diagnostics {
-    return Ok(());
-  }
+fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot) -> Result<(), String> {
   let entry_name = snapshot.active_entry_name().to_owned();
   let entry = snapshot
     .entries
@@ -2494,7 +2476,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir: Option<IrEmitOptio
   }
   ensure_host_running("codegen")?;
 
-  // `--no-proof-audit` and `--compat-types` skip the preflight, so the
+  // `--no-proof-audit` skips the preflight, so the
   // blocking advisories still have to stop the emit here. They go into the
   // same diagnostic artifact as ordinary warnings, so neither hides the other.
   let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
@@ -3009,12 +2991,8 @@ mod tests {
 
   #[test]
   fn strict_diagnostics_default_missing_js_ffi_policy_to_error_without_overriding_explicit_choices() {
-    let mut compatibility = snapshot::Snapshot::default();
-    apply_strict_feature_policy_defaults(&mut compatibility, false).expect("compatibility policy");
-    assert!(!compatibility.active_entry().unwrap().feature_policy.contains_key("js-ffi"));
-
     let mut strict_default = snapshot::Snapshot::default();
-    apply_strict_feature_policy_defaults(&mut strict_default, true).expect("strict policy");
+    apply_strict_feature_policy_defaults(&mut strict_default).expect("strict policy");
     assert_eq!(
       strict_default.active_entry().unwrap().feature_policy.get("js-ffi"),
       Some(&snapshot::FeaturePolicy::Error)
@@ -3032,17 +3010,9 @@ mod tests {
         .unwrap()
         .feature_policy
         .insert("js-ffi".to_owned(), policy);
-      apply_strict_feature_policy_defaults(&mut configured, true).expect("explicit policy");
+      apply_strict_feature_policy_defaults(&mut configured).expect("explicit policy");
       assert_eq!(configured.active_entry().unwrap().feature_policy.get("js-ffi"), Some(&policy));
     }
-  }
-
-  #[test]
-  fn strict_type_policy_defaults_diagnostics_without_quality_budgets() {
-    assert_eq!(resolve_strict_type_policy(false, false), Ok(StrictTypePolicy { diagnostics: true }));
-    assert_eq!(resolve_strict_type_policy(true, false), Ok(StrictTypePolicy { diagnostics: true }));
-    assert_eq!(resolve_strict_type_policy(false, true), Ok(StrictTypePolicy { diagnostics: false }));
-    assert!(resolve_strict_type_policy(true, true).is_err());
   }
 
   #[test]

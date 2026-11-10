@@ -76,7 +76,7 @@ fn full_report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
 }
 
 fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
-  let mut args = vec!["--compat-types", "analyze", "weak-types", "--only", "dynamic-method"];
+  let mut args = vec!["analyze", "weak-types", "--only", "dynamic-method"];
   if incremental {
     args.push("--incremental");
   }
@@ -101,10 +101,7 @@ fn dynamic_methods_reports_findings_without_a_count_policy() {
   assert!(report["data"]["filters"].get("max").is_none());
   assert_eq!(report["diagnostics"], serde_json::json!([]));
 
-  let obsolete_budget = run_calcit(
-    &snapshot,
-    &["--compat-types", "analyze", "weak-types", "--only", "dynamic-method", "--max", "0"],
-  );
+  let obsolete_budget = run_calcit(&snapshot, &["analyze", "weak-types", "--only", "dynamic-method", "--max", "0"]);
   assert!(
     !obsolete_budget.status.success(),
     "the obsolete count budget must not remain a CLI policy"
@@ -112,7 +109,7 @@ fn dynamic_methods_reports_findings_without_a_count_policy() {
 }
 
 fn incremental_check(snapshot: &Path) -> Output {
-  run_calcit(snapshot, &["--compat-types", "--check-only", "--incremental"])
+  run_calcit(snapshot, &["--check-only", "--incremental"])
 }
 
 fn report_with_entry(snapshot: &Path, analyzer: &str, entry: &str, incremental: bool) -> serde_json::Value {
@@ -587,7 +584,7 @@ fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure
 fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
-  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
+  fs::copy("calcit/add.cirru", &snapshot).expect("strict fixture should copy");
 
   let cold = incremental_check(&snapshot);
   assert_success(&cold, "cold incremental strict check");
@@ -608,13 +605,7 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
 
   let add_unrelated = run_calcit(
     &snapshot,
-    &[
-      "edit",
-      "def",
-      "ffi-evidence.main/cache-probe",
-      "--code",
-      "quote $ defn cache-probe () 1",
-    ],
+    &["edit", "def", "app.main/cache-probe", "--code", "quote $ defn cache-probe () 1"],
   );
   assert_success(&add_unrelated, "add out-of-closure definition");
   let unrelated = incremental_check(&snapshot);
@@ -625,19 +616,20 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
     "stdout: {unrelated_stdout}"
   );
 
-  let schema_change = run_calcit(
+  let definition_change = run_calcit(
     &snapshot,
     &[
       "edit",
-      "schema",
-      "ffi-evidence.main/query-host",
+      "def",
+      "app.main/main!",
+      "--overwrite",
       "--code",
-      "quote $ Fn JsObject (-> Dynamic) (:features :js-ffi)",
+      "quote $ defn main! () (+ 1 3)",
     ],
   );
-  assert_success(&schema_change, "change reachable schema");
+  assert_success(&definition_change, "change reachable definition");
   let invalidated = incremental_check(&snapshot);
-  assert_success(&invalidated, "strict check after reachable schema edit");
+  assert_success(&invalidated, "strict check after reachable definition edit");
   let invalidated_stdout = String::from_utf8_lossy(&invalidated.stdout);
   assert!(
     invalidated_stdout.contains("preprocessing-cached=false status=cold reason=dependency-closure-changed"),
@@ -649,7 +641,7 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
     &[
       "edit",
       "def",
-      "ffi-evidence.main/reload!",
+      "app.main/reload!",
       "--overwrite",
       "--code",
       "quote $ defn reload! () missing-strict-check-definition",
@@ -666,12 +658,12 @@ fn incremental_check_only_reuses_only_a_successful_unchanged_entry_closure() {
 fn incremental_check_only_reports_policy_invalidation_separately() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
-  fs::copy("tests/fixtures/ffi-boundary-strict.cirru", &snapshot).expect("analysis fixture should copy");
+  fs::copy("calcit/add.cirru", &snapshot).expect("strict fixture should copy");
 
   let cold = incremental_check(&snapshot);
   assert_success(&cold, "cold incremental strict check");
 
-  let policy_change = run_calcit(&snapshot, &["--compat-types", "--warn-dyn-method", "--check-only", "--incremental"]);
+  let policy_change = run_calcit(&snapshot, &["--no-proof-audit", "--check-only", "--incremental"]);
   assert_success(&policy_change, "incremental strict check after policy change");
   let stdout = String::from_utf8_lossy(&policy_change.stdout);
   assert!(
@@ -793,7 +785,6 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
   let incremental = run_calcit(
     &snapshot,
     &[
-      "--compat-types",
       "analyze",
       "weak-types",
       "--only",
@@ -812,15 +803,7 @@ fn incremental_dynamic_methods_rejects_a_cached_module_that_can_no_longer_load()
 
   let uncached = run_calcit(
     &snapshot,
-    &[
-      "--compat-types",
-      "analyze",
-      "weak-types",
-      "--only",
-      "dynamic-method",
-      "--format",
-      "json",
-    ],
+    &["analyze", "weak-types", "--only", "dynamic-method", "--format", "json"],
   );
   assert!(!uncached.status.success(), "incomplete uncached snapshot should fail");
 }

@@ -80,8 +80,7 @@ Under the default strict diagnostics, passing that open `Dynamic` result directl
 function argument whose contract contains a Struct or Enum is
 `E_DYNAMIC_NOMINAL_ARGUMENT`. This also covers matching containers such as
 `List<Dynamic>` entering `List<Person>`. Decode at the boundary instead of
-letting application code accidentally treat an open map as a nominal value;
-`--compat-types` retains the warning path while a codebase migrates.
+letting application code accidentally treat an open map as a nominal value.
 
 These Result-returning parser methods currently run on the native and JavaScript backends. The WASM backend does not yet support the underlying parser procedures or `try`-based wrappers; the standard WASM validation suite confirms that unsupported parser definitions are skipped without affecting supported exports.
 

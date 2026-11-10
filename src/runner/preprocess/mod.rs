@@ -444,8 +444,8 @@ pub fn with_restored_compiled_program<R>(f: impl FnOnce() -> R) -> R {
   f()
 }
 
-/// Run a check under directional assertion proof unless `--compat-types` or
-/// `--no-proof-audit` turned it off (#2121). Ordinary checking then agrees
+/// Run a check under directional assertion proof unless `--no-proof-audit`
+/// turned it off (#2121). Ordinary checking then agrees
 /// with the strict workflow instead of accepting Dynamic in both directions.
 /// The audit restores the compiled program afterwards, so codegen and
 /// execution still use ordinary compilation output.

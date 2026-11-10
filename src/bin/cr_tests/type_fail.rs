@@ -2129,7 +2129,7 @@ fn assertion_proof_keeps_assert_equal_option_erasure_quiet() {
 }
 
 /// #2121: the default preflight proves directional Dynamic flows, while
-/// `--compat-types` keeps accepting them.
+/// the internal non-strict mode keeps accepting them.
 #[test]
 fn default_proof_rejects_directional_dynamic_flows() {
   let cases = [
@@ -2157,7 +2157,7 @@ fn default_proof_rejects_directional_dynamic_flows() {
         }
       }
       let _compat = StrictTypesReset::disabled();
-      run_check_only(&load_fixture_entries(&path)).expect("--compat-types keeps the old behavior");
+      run_check_only(&load_fixture_entries(&path)).expect("non-strict mode keeps the old behavior");
     });
   }
 }
@@ -4053,7 +4053,7 @@ fn literal_equality_narrows_only_the_true_branch() {
 /// #1554: a value-position use of a branch without an else (or an explicit nil
 /// join) is a strict `E_IMPLICIT_NIL_BRANCH` at a call argument or a concrete
 /// return, an advisory at a `let` binding, and a `W_IMPLICIT_NIL_BRANCH` warning
-/// under `--compat-types`; statement position, an explicit else and an `Option`
+/// in non-strict mode; statement position, an explicit else and an `Option`
 /// result stay silent.
 #[test]
 fn value_position_nil_branch_is_a_strict_error() {

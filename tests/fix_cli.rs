@@ -3393,17 +3393,6 @@ fn unsafe_boundary_fix_accepts_explicit_adapters_and_rejects_unrelated_errors() 
   );
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 
-  let compat = Command::new(env!("CARGO_BIN_EXE_calcit"))
-    .arg("--compat-types")
-    .arg(&snapshot)
-    .arg("fix")
-    .args(selector)
-    .output()
-    .expect("compatibility-mode preview");
-  assert!(!compat.status.success());
-  assert!(String::from_utf8_lossy(&compat.stderr).contains("requires strict types"));
-  assert_eq!(fs::read(&snapshot).unwrap(), original);
-
   assert_success(
     &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.boundary"]),
     "add independent owner",

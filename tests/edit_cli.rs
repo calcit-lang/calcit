@@ -1605,18 +1605,6 @@ fn definition_attached_calcit_tests_cover_created_macro_expansion() {
   let snapshot = Path::new("calcit/test-edit-defmacro.cirru");
   let strict = run_calcit(snapshot, &["test", "app.main/main!", "--tag", "macro-edit", "--require-match"]);
   assert_success(&strict, "definition-attached strict macro tests");
-  let optional_compat = run_calcit(
-    snapshot,
-    &[
-      "--compat-types",
-      "test",
-      "app.main/main!",
-      "--tag",
-      "macro-edit-compat",
-      "--require-match",
-    ],
-  );
-  assert_success(&optional_compat, "definition-attached optional compatibility test");
 }
 
 #[test]

@@ -18,9 +18,6 @@
             %{} 'TestEntry (:name |required-expands)
               :code $ quote $ assert= 1 (required-id 1)
               :tags $ #{} :macro-edit
-            %{} 'TestEntry (:name |optional-expands)
-              :code $ quote $ assert= 2 (optional-id 2 20)
-              :tags $ #{} :macro-edit-compat
             %{} 'TestEntry (:name |rest-expands)
               :code $ quote $ assert= 3 (rest-id 3 4 5)
               :tags $ #{} :macro-edit

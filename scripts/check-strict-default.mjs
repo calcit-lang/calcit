@@ -5,24 +5,8 @@ import { copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { traitRejectionCases } from "./check-map-add-trait-boundary.mjs";
 
 const binary = process.env.CALCIT_STRICT_BIN ?? process.env.CALCIT_BIN ?? "./target/debug/calcit";
-
-// Ordinary project entrypoints must never silently opt back into compatibility mode.
-const entrypoints = ["package.json"];
-for (const dir of ["scripts", ".github/workflows"]) {
-  for (const name of readdirSync(dir, { recursive: true })) {
-    if (/\.(?:js|mjs|sh|ts|ya?ml)$/.test(name)) entrypoints.push(`${dir}/${name}`);
-  }
-}
-for (const path of entrypoints) {
-  if (path === "scripts/check-strict-default.mjs") continue;
-  const source = readFileSync(path, "utf8");
-  if (source.includes("--compat-types")) {
-    throw new Error(`${path} must not enable compatibility mode in the default workflow`);
-  }
-}
 
 // This script checks the default proof audit itself, so a fixture-wide opt-out does not apply.
 delete process.env.CALCIT_PROOF_AUDIT;
@@ -68,7 +52,7 @@ const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--che
 expectStatus(scoped, 1, "proof audit of a scoped non-host coercion");
 assert.match(scoped.stdout + scoped.stderr, /E_FN_RETURN_UNPROVEN/);
 
-// A compatibility policy cannot equate separately declared lexical binders.
+// Separately declared lexical binders are never equated.
 for (const inner of ["T", "U"]) {
   const source = `fn (outer)
   hint-fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)
@@ -77,8 +61,8 @@ for (const inner of ["T", "U"]) {
         hint-fn $ {} (:args $ [] '${inner}) (:return '${inner}) (:generics $ [] '${inner})
         , outer
     &+ (callback 1) 1`;
-  const rejected = run(["--compat-types", "eval", source]);
-  expectStatus(rejected, 1, `compatibility preserves ${inner} binder identity`);
+  const rejected = run(["eval", source]);
+  expectStatus(rejected, 1, `strict checking preserves ${inner} binder identity`);
   assert.match(rejected.stderr, /E_ERASED_GENERIC_RELATION/);
 }
 
@@ -338,7 +322,6 @@ try {
 // including ones no entry references. Core builtin placeholders are excluded, like `--check-only --ns`.
 // The language-feature test project keeps idioms the default proof audit rejects, so it opts out of the audit only.
 expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs", "--no-proof-audit"]), 0, "all-defs check of the test project");
-expectStatus(run(["calcit/test.cirru", "--check-only", "--no-proof-audit", "--compat-types"]), 1, "--no-proof-audit conflicts with --compat-types");
 // `--no-proof-audit` skips only the assertion-proof audit; the directional fixture fails by default and passes without it.
 const directionalProof = run(["calcit/type-fail/directional-default-p21.cirru", "--check-only"]);
 expectStatus(directionalProof, 1, "the default proof audit rejects a directional Dynamic argument");
@@ -588,17 +571,13 @@ try {
     "--code", "quote $ Fn (-> Number)"]), 0,
     "declare the replay entry contract without annotating inferred loop parameters");
   const hintSelection = ["--init-fn", "calcit.core/parameter-recheck-replay", "--reload-fn", "calcit.core/parameter-recheck-replay"];
-  // Compatibility regressions belong here, not in ordinary project entrypoints.
-  for (const [mode, policy] of [["strict", []], ["compat", ["--compat-types"]]]) {
-    expectStatus(run(["src/cirru/calcit-core.cirru", ...policy, "test", "calcit.core/hint-fn", "--tag", "parameter-recheck", "--require-match"]), 0,
-      `${mode} source-hint attached test`);
-    expectStatus(run([snapshot, ...policy, ...hintSelection]), 0, `${mode} source-hint native replay`);
-    const hintOutput = join(asyncFixture, `hint-recheck-${mode}`);
-    expectStatus(run([snapshot, ...policy, ...hintSelection, "--emit-path", hintOutput, "js"]), 0,
-      `${mode} source-hint JS generation`);
-    const replay = await import(pathToFileURL(join(hintOutput, "calcit.core.mjs")).href);
-    assert.equal(replay.parameter_recheck_replay(), 1, `${mode} JS preserves the trailing source hint`);
-  }
+  expectStatus(run(["src/cirru/calcit-core.cirru", "test", "calcit.core/hint-fn", "--tag", "parameter-recheck", "--require-match"]), 0,
+    "source-hint attached test");
+  expectStatus(run([snapshot, ...hintSelection]), 0, "source-hint native replay");
+  const hintOutput = join(asyncFixture, "hint-recheck");
+  expectStatus(run([snapshot, ...hintSelection, "--emit-path", hintOutput, "js"]), 0, "source-hint JS generation");
+  const replay = await import(pathToFileURL(join(hintOutput, "calcit.core.mjs")).href);
+  assert.equal(replay.parameter_recheck_replay(), 1, "JS preserves the trailing source hint");
 } finally {
   await rm(asyncFixture, { recursive: true, force: true });
 }
@@ -612,66 +591,24 @@ if (!unscoped.stderr.includes("E_UNSCOPED_UNSAFE_COERCE")) {
   throw new Error(`default strict failure lost its stable code:\n${unscoped.stderr}`);
 }
 
-const compatibility = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--compat-types", "--check-only"]);
-expectStatus(compatibility, 0, "compatibility escape hatch");
-
-// Compatibility preprocessing must not turn duplicate origins into runtime
-// precedence. Replay the migrated contracts without relaxing any
-// ordinary entrypoint or the compatibility scanner above.
-const traitSnapshot = "calcit/test-traits.cirru";
-const traitFixture = await mkdtemp(join(tmpdir(), "calcit-compat-trait-"));
-try {
-  const snapshot = join(traitFixture, "calcit.cirru");
-  await copyFile(traitSnapshot, snapshot);
-  await symlink(resolve("node_modules"), join(traitFixture, "node_modules"), "dir");
-  // Restore only the original negatives in this isolated policy fixture;
-  // ordinary source remains completely replayable with strict checking.
-  for (const [name, code] of traitRejectionCases()) {
-    const tag = name === "fresh-origin-rejects-stale-impl" ? "trait-identity-runtime" : "trait-runtime";
-    expectStatus(run([snapshot, "edit", "add-test", "test-traits.main/test-explicit-trait-call", name,
-      "--tags", tag, "--input-format", "cirru", "--code", `quote $ ${code}`]), 0, `restore ${name} in the private policy fixture`);
-  }
-  const traitTests = run([snapshot, "--compat-types", "test",
-    "test-traits.main/test-explicit-trait-call", "--tag", "trait-runtime", "--require-match"]);
-  expectStatus(traitTests, 0, "compatibility native duplicate-trait contracts");
-  const definition = run([snapshot, "query", "def", "test-traits.main/test-explicit-trait-call", "--format", "json"]);
-  expectStatus(definition, 0, "read duplicate-trait contracts");
-  const runtimeTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-runtime"));
-  assert.equal(runtimeTests.length, 6);
-  const identityTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-identity-runtime"));
-  assert.equal(identityTests.length, 1);
-  expectStatus(run([snapshot, "--compat-types", "test", "test-traits.main/test-explicit-trait-call",
-    "--tag", "trait-identity-runtime", "--require-match"]), 0, "fresh trait identity rejects a stale implementation");
-  // This private replay deliberately returns Number, unlike the Unit source routine.
-  const replayEdits = JSON.stringify([
-    ["edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
-      "--input-format", "json-ast", "--code", JSON.stringify([
-        "defn", "test-explicit-trait-call", [], ...runtimeTests.concat(identityTests).map(test => test.code), "1",
-      ])],
-    ["edit", "schema", "test-traits.main/test-explicit-trait-call", "--input-format", "json-ast", "--code",
-      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]])],
-  ]);
-  const replayPreview = run([snapshot, "edit", "transaction", "--code", replayEdits, "--dry-run", "--format", "json"]);
-  expectStatus(replayPreview, 0, "preview compatibility trait replay");
-  const edit = run([snapshot, "edit", "transaction", "--code", replayEdits,
-    "--expect-revision", JSON.parse(replayPreview.stdout).scoped_revision, "--format", "edn"]);
-  expectStatus(edit, 0, "assemble compatibility trait replay");
-  const output = join(traitFixture, "js-out");
-  const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
-    "--reload-fn", "test-traits.main/test-explicit-trait-call"];
-  expectStatus(run([snapshot, ...selection, "--compat-types"]), 0, "compatibility native assembled replay");
-  expectStatus(run([snapshot, ...selection, "--compat-types", "--emit-path", output, "js"]), 0,
-    "compatibility JS duplicate-trait generation");
-  const generated = await import(pathToFileURL(join(output, "test-traits.main.mjs")).href);
-  assert.equal(generated.test_explicit_trait_call(), 1, "generated JS must preserve duplicate-trait runtime errors");
-} finally {
-  await rm(traitFixture, { recursive: true, force: true });
+// The compatibility escape hatch was removed in 0.41.0 (#2655); the old flag fails with a pointer.
+for (const args of [
+  ["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--compat-types", "--check-only"],
+  ["calcit/test.cirru", "--check-only", "--no-proof-audit", "--compat-types"],
+  ["calcit/test.cirru", "--strict-types", "--compat-types", "--check-only"],
+]) {
+  const removed = run(args);
+  expectStatus(removed, 1, `removed flag: ${args.join(" ")}`);
+  assert.match(removed.stderr, /`--compat-types` was removed in 0\.41\.0/);
 }
 
-// This isolated policy fixture exercises otherwise rejected runtime operands.
-// Keep compatibility tests here, alongside the existing compatibility contracts;
-// ordinary entrypoints remain covered by the unchanged scanner above.
-const spreadFixture = await mkdtemp(join(tmpdir(), "calcit-compat-spread-"));
+// Duplicate trait origins are rejected before execution in every target;
+// scripts/check-map-add-trait-boundary.mjs covers them. The old runtime replay
+// needed `--compat-types`, removed in 0.41.0.
+
+// Malformed spreads and lexical optional parameters are rejected in every
+// target. Their old runtime replays relied on `--compat-types`, removed in 0.41.0.
+const spreadFixture = await mkdtemp(join(tmpdir(), "calcit-strict-spread-"));
 try {
   const snapshot = join(spreadFixture, "calcit.cirru");
   const project = spreadFixture;
@@ -679,7 +616,7 @@ try {
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   const inFixture = (...args) => {
     const result = run([snapshot, ...args]);
-    expectStatus(result, 0, `compatibility spread fixture: ${args.slice(0, 3).join(" ")}`);
+    expectStatus(result, 0, `spread fixture: ${args.slice(0, 3).join(" ")}`);
     return result.stdout;
   };
   inFixture("edit", "add-ns", "calcit.spread-evidence");
@@ -693,69 +630,14 @@ try {
     inFixture("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
     for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
-      const rejected = run([snapshot, "--compat-types", "--emit-path", join(project, "malformed"), ...mode]);
-      expectStatus(rejected, 1, `compatibility rejects malformed spread: ${expression} ${mode}`);
+      const rejected = run([snapshot, "--emit-path", join(project, "malformed"), ...mode]);
+      expectStatus(rejected, 1, `rejects malformed spread: ${expression} ${mode}`);
       assert.match(rejected.stderr, /E_SPREAD_TYPE_MISMATCH/);
       assert.match(rejected.stderr, /expected.*got/);
     }
   }
-  const opaque = [
-    [["[]", ":b"], 1],
-    [["[]"], 2],
-    [["{}", [":bad", "1"]], undefined],
-    [["#{}", ":b"], undefined],
-    ["0", undefined],
-    ["16392.5", undefined],
-  ];
-  for (let index = 0; index < opaque.length; index++) {
-    const [body, expected] = opaque[index];
-    const remaining = [["{}", [":a", "1"], [":b", "2"], [":c", "3"]], ".dissoc", ":a", "&", ["dynamic-spread-keys"]];
-    // Observe the Map using its existing count proc: compatibility mode does
-    // not retain enough result evidence for `.len` in this opaque ABI fixture.
-    const count = ["&map:count", remaining];
-    const result = expected === undefined ? count : ["let", [["result", count]], ["assert=", String(expected), "result"], "result"];
-    const operations = [
-      ["edit", "def", "calcit.spread-evidence/dynamic-spread-keys", ...(index === 0 ? [] : ["--overwrite"]), "--input-format", "json-ast", "--code",
-        JSON.stringify(["defn", "dynamic-spread-keys", [], body])],
-      ["edit", "schema", "calcit.spread-evidence/dynamic-spread-keys", "--input-format", "cirru", "--code",
-        "quote $ Fn (-> Dynamic)"],
-      ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code",
-        JSON.stringify(["defwasm-export", "run-tests", [], result])],
-    ];
-    const transaction = JSON.stringify(operations);
-    const preview = JSON.parse(inFixture("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
-    inFixture("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
-    const native = run([snapshot, "--compat-types"]);
-    assert.ifError(native.error);
-    assert.equal(native.status, expected === undefined ? 1 : 0, native.stderr);
-    if (expected === undefined) assert.match(native.stderr, /expected list for spreading/);
-    const opaqueJs = join(project, `opaque-js-${index}`);
-    inFixture("--compat-types", "--emit-path", opaqueJs, "js");
-    const generated = await import(pathToFileURL(join(opaqueJs, "calcit.spread-evidence.mjs")).href);
-    if (expected === undefined) assert.throws(() => generated.run_tests());
-    else assert.equal(generated.run_tests(), expected);
-    const opaqueWasm = join(project, `opaque-wasm-${index}`);
-    inFixture("--compat-types", "--emit-path", opaqueWasm, "wasm");
-    const module = new WebAssembly.Module(await readFile(join(opaqueWasm, "program.wasm")));
-    const imports = {};
-    for (const { module: namespace, name, kind } of WebAssembly.Module.imports(module)) {
-      assert.equal(kind, "function");
-      (imports[namespace] ??= {})[name] = () => { throw new Error(`Unexpected host call: ${namespace}.${name}`); };
-    }
-    const instance = new WebAssembly.Instance(module, imports);
-    if (expected === undefined) assert.throws(() => instance.exports["run-tests"](), WebAssembly.RuntimeError);
-    else assert.equal(instance.exports["run-tests"](), expected);
-  }
-  console.log("Compatibility spread boundaries retain native/JS/WASM runtime contracts");
+  console.log("Malformed spreads are rejected in native/JS/WASM");
 
-  // Legacy source is rejected by default; its retained compatibility path
-  // still obtains arity from lexical markers rather than schema slot count.
-  const optionalTests = ["let", [["alias", "legacy-sink"]],
-    ["assert=", "7", ["legacy-sink", "&", ["[]", "7"]]],
-    ["assert=", "7", ["legacy-sink", "&", ["[]", "7", "8"]]],
-    ["assert=", "7", ["alias", "&", ["[]", "7"]]],
-    ["assert=", "7", ["legacy-rest", "&", ["[]", "7"]]],
-    ["assert=", "7", ["legacy-rest", "&", ["[]", "7", "8", "9", "10"]]]];
   const edits = [];
   for (const [name, params, rest] of [["legacy-sink", ["x", "?", "y"], false], ["legacy-rest", ["x", "?", "y", "&", "values"], true]]) {
     edits.push(
@@ -764,40 +646,19 @@ try {
         JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", "'Number", "'Number"]], [":return", "'Number"], ...(rest ? [[":rest", "'Number"]] : [])]])],
     );
   }
-  edits.push(
-    ["edit", "add-test", "calcit.spread-evidence/legacy-sink", "lexical-optional-spreads", "--tags", "unit", "--input-format", "json-ast", "--code", JSON.stringify(optionalTests)],
-    ["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(["defn", "run-tests", [], optionalTests, "7"])],
-  );
+  edits.push(["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defn run-tests () (legacy-sink & ([] 7))"]);
   const transaction = JSON.stringify(edits);
   const preview = JSON.parse(inFixture("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
   inFixture("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
   const strictOptional = run([snapshot, "--check-only"]);
-  expectStatus(strictOptional, 1, "default strict still rejects lexical optional parameters");
+  expectStatus(strictOptional, 1, "default strict rejects lexical optional parameters");
   assert.match(strictOptional.stderr, /E_LEGACY_OPTIONAL_PARAM/);
-  inFixture("--compat-types", "test", "calcit.spread-evidence/legacy-sink", "--require-match");
-  inFixture("--compat-types");
-  const optionalJs = join(project, "optional-js");
-  inFixture("--compat-types", "--emit-path", optionalJs, "js");
-  assert.equal((await import(pathToFileURL(join(optionalJs, "calcit.spread-evidence.mjs")).href)).run_tests(), 7);
-  for (const expression of ["legacy-sink & ([])", "legacy-sink & ([] 7 8 9)", "legacy-rest & ([])"]) {
-    const edits = JSON.stringify([["edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
-      `quote $ defn run-tests () (${expression})`]]);
-    const preview = JSON.parse(inFixture("edit", "transaction", "--code", edits, "--dry-run", "--format", "json"));
-    inFixture("edit", "transaction", "--code", edits, "--expect-revision", preview.scoped_revision);
-    const rejected = run([snapshot, "--compat-types", "--check-only"]);
-    expectStatus(rejected, 1, `lexical optional bounds still reject ${expression}`);
-    assert.match(rejected.stderr, /W_FN_ARG_TYPE_MISMATCH/);
-  }
-  console.log("Lexical optional spreads retain native/JS compatibility and default strict rejection");
+  console.log("Lexical optional parameters are rejected by default");
 } finally {
   await rm(spreadFixture, { recursive: true, force: true });
 }
 
-const conflict = run(["calcit/test.cirru", "--strict-types", "--compat-types", "--check-only"]);
-expectStatus(conflict, 1, "conflicting type policies");
-if (!conflict.stderr.includes("cannot be used together")) {
-  throw new Error(`conflicting policy failure was not actionable:\n${conflict.stderr}`);
-}
 
 const evalResult = run(["eval", "+ 1 2"]);
 expectStatus(evalResult, 0, "default strict eval");
@@ -893,5 +754,5 @@ if (!invalidMapDissoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
 }
 
 console.log(
-  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, open-container merge/concat, and Map assoc/dissoc method types",
+  "Strict-default CLI smoke passed: valid, failure, removed --compat-types, eval, core Option/Result methods, open-container merge/concat, and Map assoc/dissoc method types",
 );

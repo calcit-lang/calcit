@@ -24,6 +24,19 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 删除 `--compat-types`（#2655）
+
+`--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。
+
+迁移方法：
+
+1. 从 CI、`package.json` 脚本和 Makefile 中删掉 `--compat-types`。
+2. 运行 `calcit --check-only`，逐项修复报告的类型诊断。需要先看完整清单时用 `calcit --check-only --keep-going`。
+3. 旧的 `?` 参数（`E_LEGACY_OPTIONAL_PARAM`）改为末尾的 `Option<T>` 参数；不带 else 的分支（`E_IMPLICIT_NIL_BRANCH`）改为返回 `Option` 或补上 else 值，见 [strict-nil-migration.md](strict-nil-migration.md)。
+4. 程序确实要用开放 `Dynamic` 写法、只想跳过断言证明审计时，用 `--no-proof-audit`；其他严格诊断仍然生效。
+
+`calcit analyze weak-types --only dynamic-method` 仍会列出严格检查会拒绝的全部动态方法调用。它是只读的迁移清单，不决定代码能否通过。`--warn-dyn-method` 与 `--strict-types` 只是重申默认行为。
+
 ## 0.41.0 删除 `analyze check-types`、`analyze check-public` 与 `analyze quality`（#2655）
 
 这三个子命令自 0.31.0 起已标为弃用，现在删除。运行旧写法会直接报错，stdout 为空，stderr 写明替代写法，不会读写 Snapshot：
@@ -645,19 +658,13 @@ calcit query def calcit.core/cirru-quote:to-list --raw
 - `:js-ffi` 适配器里 `unsafe-coerce raw 'String` 这类非 host 目标不算证据，返回值会报
   `E_FN_RETURN_UNPROVEN`；改用上面的 kind 守卫，host 对象用 `js-cast`。`:erased-cache` 适配器不受影响。
 - 只想保留其余严格诊断、暂时跳过这项审计时，加 `--no-proof-audit`。它只关闭断言证明审计，
-  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行。
-  它不能与 `--compat-types` 同时使用：
+  其它严格诊断照常；Calcit 仓库里 `calcit/test.cirru` 这类语言特性测试程序就这样运行：
 
 ```bash
 calcit calcit.cirru --no-proof-audit --check-only
 ```
 
-- 只为暂时回到旧行为时，加 `--compat-types`：它关闭默认的严格诊断提升，也跳过这项审计；项目里显式配置的入口策略仍然生效（该选项计划在之后的非 patch 版本删除）：
-
-```bash
-calcit --compat-types --check-only
-calcit calcit.cirru --compat-types js
-```
+- 0.31.0 当时还可以用 `--compat-types` 暂时回到旧行为；该选项已在 0.41.0 删除，见 [0.41.0 删除 `--compat-types`](#0410-删除---compat-types2655)。
 
 ## 0.31.0 泛型工厂与局部别名证明（#2414）
 
@@ -971,7 +978,7 @@ defn call-value (f args)
 | `if ok x nil` 作为实参或具体返回类型的结尾 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装；确属宿主边界的返回声明为 `JsNullish<T>` |
 | `let ((y (when ok x))) …`（提示） | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
 
-迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。需要分批迁移时可暂用 `--compat-types`。
+迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。当时需要分批迁移可暂用 `--compat-types`；该选项已在 0.41.0 删除。
 
 已知受影响的下游位置：Triadica/triadica-space 的 `triadica.comp.drag-point/comp-drag-point`（`:on-mousemove $ if-not ignore-moving? (fn …)` 作为 `{}` 的实参）。改写成 `if ignore-moving? nil (fn …)` 属于 nil 合并，同样被拒绝。可选的修改：
 

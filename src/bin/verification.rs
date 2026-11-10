@@ -414,7 +414,6 @@ fn prepare_entry_snapshot(
   module_folder: &Path,
   module_cache: &mut HashMap<String, snapshot::Snapshot>,
   core_snapshot: &snapshot::Snapshot,
-  strict_diagnostics: bool,
 ) -> Result<snapshot::Snapshot, String> {
   let mut selected = base_snapshot.clone();
   selected.select_entry(Some(entry_name))?;
@@ -430,7 +429,7 @@ fn prepare_entry_snapshot(
       &module_path,
     )?;
   }
-  apply_strict_feature_policy_defaults(&mut selected, strict_diagnostics)?;
+  apply_strict_feature_policy_defaults(&mut selected)?;
   attach_missing_core_namespaces(&mut selected, core_snapshot.clone());
   Ok(selected)
 }
@@ -608,12 +607,7 @@ fn print_human(
   }
 }
 
-fn run_inner(
-  options: &VerifyCommand,
-  output_format: StructuredOutputFormat,
-  snapshot_file: &str,
-  strict_diagnostics: bool,
-) -> Result<(), String> {
+fn run_inner(options: &VerifyCommand, output_format: StructuredOutputFormat, snapshot_file: &str) -> Result<(), String> {
   let input_path = PathBuf::from(snapshot_file);
   calcit::validate_snapshot_path(&input_path)?;
   let mut content =
@@ -653,7 +647,6 @@ fn run_inner(
       &module_folder,
       &mut module_cache,
       &core_snapshot,
-      strict_diagnostics,
     )?;
     let entry = selected.active_entry()?;
     let target = target_label(entry);
@@ -691,10 +684,10 @@ fn run_inner(
   }
 }
 
-pub fn run(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: bool) -> Result<(), String> {
+pub fn run(options: &VerifyCommand, snapshot_file: &str) -> Result<(), String> {
   let output_format = StructuredOutputFormat::parse(&options.format, "verify")?;
   let _output_guard = crate::ProgramOutputGuard::new(output_format != StructuredOutputFormat::Human, false);
-  match run_inner(options, output_format, snapshot_file, strict_diagnostics) {
+  match run_inner(options, output_format, snapshot_file) {
     Ok(()) => Ok(()),
     Err(message) => {
       if matches!(output_format, StructuredOutputFormat::Edn | StructuredOutputFormat::Json)
