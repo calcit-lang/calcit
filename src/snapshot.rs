@@ -5651,8 +5651,8 @@ fn unquote_assertion_type_names_in(
   (Cirru::List(rewritten), changed)
 }
 
-/// Names that `let`, `&let`, `fn`, `defn`, `defmacro` or `loop` bind anywhere
-/// in a tree. A local binding can hold a Struct/Enum definition, and a bare
+/// Names that `let`, `&let`, `let[]`, `if-let`, `when-let`, `loop`, `fn`,
+/// `defn` or `defmacro` bind anywhere in a tree. A local binding can hold a Struct/Enum definition, and a bare
 /// name in `assert-type` then resolves to it, so such names keep the quote.
 fn binding_names(node: &Cirru) -> HashSet<String> {
   fn add_leaves(node: &Cirru, out: &mut HashSet<String>) {
@@ -5682,11 +5682,17 @@ fn binding_names(node: &Cirru) -> HashSet<String> {
           }
         }
       }
-      "&let" => {
+      "&let" | "if-let" | "when-let" => {
         if let Some(Cirru::List(pair)) = items.get(1)
           && let Some(name) = pair.first()
         {
           add_leaves(name, out);
+        }
+      }
+      // `let[] (a b) xs` destructures into the listed names.
+      "let[]" => {
+        if let Some(names) = items.get(1) {
+          add_leaves(names, out);
         }
       }
       "fn" => {
@@ -7436,6 +7442,16 @@ mod tests {
         0,
       ),
       ("fn (Number) (assert-type x 'Number)", "fn (Number) (assert-type x 'Number)", 0),
+      (
+        "let[] (Number b) xs (assert-type 1 'Number)",
+        "let[] (Number b) xs (assert-type 1 'Number)",
+        0,
+      ),
+      (
+        "when-let (Task t) (assert-type x 'Task)",
+        "when-let (Task t) (assert-type x 'Task)",
+        0,
+      ),
     ];
     for (source, expected, count) in cases {
       let (rewritten, changed) = unquote_assertion_type_names(&parse_one(source), &local);
