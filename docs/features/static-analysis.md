@@ -271,6 +271,14 @@ is a value, not nil, so these always take the same branch. Use `.some?` /
 project namespaces only and fails the check like `E_OPTION_ERASED_TO_NIL`.
 `Result` and application enums keep the `W_NOMINAL_ENUM_LEGACY_USE` warning.
 
+A direct call to an `option:*` helper (`option:unwrap-or`, `option:map`,
+`option:fold` and the rest) in project source is a `W_OPTION_HELPER_CALL`
+warning (0.41.0, #2653). The helpers are the implementations behind the Option
+methods, so call `.unwrap-or` / `.map` / `.fold` instead. Calls that a core
+macro expands to, such as the `option:fold` of `if-let`, are not reported.
+`calcit fix --rule core-option-method-v1` rewrites calls whose receiver is a
+proven Option.
+
 An Option turned back into nil is an `E_OPTION_ERASED_TO_NIL` error (blocking
 since 0.36.0, #2124): `.unwrap-or X nil`
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a

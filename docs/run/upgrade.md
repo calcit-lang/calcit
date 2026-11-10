@@ -56,6 +56,18 @@ core 新增 `Some` 和 `None`：`Some x` 等价于 `Option :some x`，`None` 等
 
 `Result` 和应用自己定义的 enum 仍然只报 `W_NOMINAL_ENUM_LEGACY_USE` 警告。
 
+## 0.41.0 直接调用 `option:*` 给警告 `W_OPTION_HELPER_CALL`（#2653）
+
+`option:some?`、`option:none?`、`option:unwrap`、`option:unwrap-or`、`option:map`、`option:and-then`、`option:or-else`、`option:fold` 是 Option 方法背后的内部实现，不是给应用调用的拼写。0.41.0 起，项目代码里直接写这些调用会报 `W_OPTION_HELPER_CALL` 警告。测试运行器遇到警告会拦下，所以带这些调用的测试会失败，需要迁移。core 宏展开出来的调用（例如 `if-let` 展开成 `option:fold`）不报。
+
+| 以前 | 改成 |
+| --- | --- |
+| `option:unwrap-or opt 0` | `.unwrap-or opt 0` 或 `opt .unwrap-or 0` |
+| `option:map opt f` | `.map opt f` |
+| `option:fold opt on-none on-some` | `.fold opt on-none on-some` |
+
+其余几个同理，把 `option:` 换成 `.`。接收者能证明是 Option 的调用，可以用 `calcit fix --rule core-option-method-v1` 预览后加 `--apply` 自动改写；这条规则 0.41.0 起也覆盖 `map`、`and-then`、`or-else`、`fold`。证明不了接收者类型的调用会标成 `requires-review`，需要手动改，并先确认接收者确实是 Option。
+
 ## 0.41.0 `edit format` 去掉断言里单个类型名的 quote（#2654）
 
 `calcit edit format` 把 `assert-type x 'Number`、`unsafe-coerce raw 'String` 改为裸写的 `Number` / `String`，`assert-type` 里同一命名空间的 Struct / Enum 名和所在定义的泛型名（如 `assert-type p 'Point`、`assert-type x 'T`）也一并改写。以下名字保留 quote，因为裸写会指向别的定义、改变断言的类型：与 `calcit.core` 同名的本地类型（如自定义的 `Result`，裸写 `Result` 指向 core），以及在所在定义里被 `let` / `fn` 参数等局部绑定的同名名字。含义不变，旧写法仍可加载；格式化后 diff 里会出现这类单行变化。
@@ -395,7 +407,7 @@ calcit <snapshot> edit format
 | 读取 JS 宿主属性的 `Optional<T>` | `JsNullish<T>`，转换时用 `js-nullish->option` |
 | `hint-fn $ Fn (Optional Number) ...` 的局部函数 | 参数改为 `Option Number`，或去掉可空声明并在调用前用 `when` / `nil?` 收窄 |
 
-参数或字段从 `Optional<T>` 改为 `Option<T>` 后，函数体也要一起改：`Option :none` 不是 `nil`，`nil? (Option :none)` 为 false，原来的 `nil?` / `some?` / `if value` 判断会静默走错分支而不报类型错误。把这类判断改成 `match`（`(:some v)` / `(:none)`）或 `Option` 的方法（如 `option:fold`、`.unwrap-or`）。如果旧代码曾把 `nil` 当作“有值”传递，改写后要显式决定它对应 `Option :none` 还是 `Option :some nil`。
+参数或字段从 `Optional<T>` 改为 `Option<T>` 后，函数体也要一起改：`Option :none` 不是 `nil`，`nil? (Option :none)` 为 false，原来的 `nil?` / `some?` / `if value` 判断会静默走错分支而不报类型错误。把这类判断改成 `match`（`(:some v)` / `(:none)`）或 `Option` 的方法（如 `.fold`、`.unwrap-or`）。如果旧代码曾把 `nil` 当作“有值”传递，改写后要显式决定它对应 `Option :none` 还是 `Option :some nil`。
 
 `nil->option` 仍是显式桥：`nil` 得到 `Option :none`，其余值得到 `Option :some value`，已有的 `Option` 不会被展开。它的 schema 改为 `Fn T (-> $ Option T) (:generics T)`。推导出的 nil 合并（例如 `nil->option $ if c x`）得到 `Option<T>`，字面 `nil` 得到 `Option<Never>`，可以赋给任意 `Option<T>`。宿主 `JsNullish<T>` 仍不被接受，需要先 `js-present?` 收窄，或在接受不透明 payload 合同后用 `js-nullish->option`。
 
@@ -1930,7 +1942,7 @@ let
 空字符串或越界位置得到 `none`，有效位置得到 Unicode scalar 字符，不需要在业务源码中补 `assert-type`。
 
 ```cirru
-option:unwrap-or (first |🌱树) |
+.unwrap-or (first |🌱树) |
 ```
 
 上例返回 `|🌱`。字符串查询保留 primitive 的 Option 结果；接收者与索引仍从左到右各求值一次。

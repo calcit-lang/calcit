@@ -153,7 +153,7 @@
           :code $ quote $ fn () (hint-fn Async)
             let
                 a $ {} $ :a 1
-                b $ option:unwrap $ get a :a
+                b $ .unwrap $ get a :a
                 ret $ js-await $ match b
                   1 $ new js/Promise $ fn (resolve reject) (resolve |one)
                   2 $ new js/Promise $ fn (resolve reject) (resolve |two)

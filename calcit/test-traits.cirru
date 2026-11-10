@@ -1694,15 +1694,15 @@
               do
                 assert= (Option :some 1) present
                 assert= (Option :some |x) (nth open-list 1)
-                assert= 1 $ option:unwrap-or present 0
-                assert= 1 $ option:fold present
+                assert= 1 $ .unwrap-or present 0
+                assert= 1 $ .fold present
                   fn () 0
                   fn (value) value
                 assert= 1 $ if-let (value present) value 0
                 assert= true $ =
-                  option:unwrap-or (first open-list) 0
+                  .unwrap-or (first open-list) 0
                   , 1
-                assert= true $ = 1 $ option:unwrap-or (first open-list) 0
+                assert= true $ = 1 $ .unwrap-or (first open-list) 0
                 assert=
                   [] ([] 0 1) ([] 1 |x)
                   map-indexed open-list $ fn (idx value) ([] idx value)

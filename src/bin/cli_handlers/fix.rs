@@ -824,6 +824,9 @@ pub(crate) fn handle_fix_command(
       warnings
         .iter()
         .filter(|warning| warning.code() != Some(REMOVED_DATA_API_DIAGNOSTIC))
+        // Helper calls left for review keep their own warning; they are what
+        // `core-option-method-v1` reports, not an effect of the staged fix.
+        .filter(|warning| warning.code() != Some("W_OPTION_HELPER_CALL"))
         .map(ToString::to_string)
         .collect::<Vec<_>>()
     };
@@ -3428,6 +3431,26 @@ fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNo
       method: ".unwrap-or",
       definition: "calcit.core/option:unwrap-or",
       arity: 2,
+    }),
+    (CoreNominalMethodKind::Option, "option:map") => Some(CoreNominalMethod {
+      method: ".map",
+      definition: "calcit.core/option:map",
+      arity: 2,
+    }),
+    (CoreNominalMethodKind::Option, "option:and-then") => Some(CoreNominalMethod {
+      method: ".and-then",
+      definition: "calcit.core/option:and-then",
+      arity: 2,
+    }),
+    (CoreNominalMethodKind::Option, "option:or-else") => Some(CoreNominalMethod {
+      method: ".or-else",
+      definition: "calcit.core/option:or-else",
+      arity: 2,
+    }),
+    (CoreNominalMethodKind::Option, "option:fold") => Some(CoreNominalMethod {
+      method: ".fold",
+      definition: "calcit.core/option:fold",
+      arity: 3,
     }),
     (CoreNominalMethodKind::Result, "result:unwrap-or") => Some(CoreNominalMethod {
       method: ".unwrap-or",

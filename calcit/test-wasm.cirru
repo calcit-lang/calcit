@@ -701,12 +701,12 @@
                       %:: MapEntryDecision :keep k $ &* v 10
                       %:: MapEntryDecision :drop
               &+ (&map:count output)
-                option:unwrap $ &map:get output :c
+                .unwrap $ &map:get output :c
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-find-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-found ()
-            option:unwrap-or
+            .unwrap-or
               find ([] 1 2 3)
                 fn (x) (> x 1)
               , -1
@@ -714,7 +714,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-find-index-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-index-found ()
-            option:unwrap-or
+            .unwrap-or
               find-index ([] 1 2 3)
                 fn (x) (> x 1)
               , -1
@@ -722,7 +722,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-find-index-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-index-not-found ()
-            option:unwrap-or
+            .unwrap-or
               find-index ([] 1 2 3)
                 fn (x) (> x 9)
               , -1
@@ -730,7 +730,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-find-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-find-not-found ()
-            option:unwrap-or
+            .unwrap-or
               find ([] 1 2 3)
                 fn (x) (> x 9)
               , -1
@@ -862,7 +862,7 @@
             :tags $ #{} :core :wasm
         'test-list-first-generic $ %{} 'CodeEntry (:doc "|generic first() on list via invoke")
           :code $ quote $ defwasm-export test-list-first-generic ()
-            option:unwrap $ first $ [] 42 99
+            .unwrap $ first $ [] 42 99
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-list-flat-map-method $ %{} 'CodeEntry (:doc "|typed List .flat-map keeps mapped element order")
@@ -902,8 +902,8 @@
             let
                 xs $ [] 10 20 30
               &+
-                option:unwrap-or (xs .get 1) -1
-                option:unwrap-or (xs .get 2) -1
+                .unwrap-or (xs .get 1) -1
+                .unwrap-or (xs .get 2) -1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-list-join-string $ %{} 'CodeEntry
@@ -918,7 +918,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-list-max-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-max-empty ()
-            option:unwrap-or
+            .unwrap-or
               .max $ []
               , -1
           :examples $ []
@@ -945,7 +945,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-list-rest-generic-first $ %{} 'CodeEntry (:doc "|generic rest() on list via invoke")
           :code $ quote $ defwasm-export test-list-rest-generic-first ()
-            option:unwrap $ first $ rest ([] 10 20 30)
+            .unwrap $ first $ rest ([] 10 20 30)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-list-reverse $ %{} 'CodeEntry (:doc "|reverse a list")
@@ -1047,8 +1047,8 @@
             &let
               m $ &map:assoc (&{} a 10 b 20) b 99
               &+
-                option:unwrap $ &map:get m a
-                option:unwrap $ &map:get m b
+                .unwrap $ &map:get m a
+                .unwrap $ &map:get m b
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
         'test-map-contains $ %{} 'CodeEntry (:doc "|contains checks key presence")
@@ -1099,7 +1099,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-map-get $ %{} 'CodeEntry (:doc "|map get by key")
           :code $ quote $ defwasm-export test-map-get ()
-            option:unwrap $ &map:get (&{} :a 10 :b 20 :c 30) :b
+            .unwrap $ &map:get (&{} :a 10 :b 20 :c 30) :b
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-map-hash-index1 $ %{} 'CodeEntry (:doc "|second 5 bits of number hash")
@@ -1148,7 +1148,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
           :code $ quote $ defwasm-export test-map-merge-method ()
-            option:unwrap $ &map:get
+            .unwrap $ &map:get
                 &{} :a 1 :b 2
                 , .merge (&{} :b 3) (&{} :b 99)
               , :b
@@ -1156,7 +1156,7 @@
           :schema $ quote $ Fn (-> Number)
         'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
           :code $ quote $ defwasm-export test-map-merge-value ()
-            option:unwrap $ &map:get
+            .unwrap $ &map:get
               &merge (&{} :a 1 :b 2) (&{} :b 99)
               , :b
           :examples $ []
@@ -1166,8 +1166,8 @@
             &let
               m $ &{} a 10 b 20
               &+
-                option:unwrap $ &map:get m a
-                option:unwrap $ &map:get m b
+                .unwrap $ &map:get m a
+                .unwrap $ &map:get m b
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
         'test-map?-true $ %{} 'CodeEntry (:doc "|map? on map returns true (1)")
@@ -1474,14 +1474,14 @@
           :schema $ quote $ Fn (-> Number)
         'test-set-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on set")
           :code $ quote $ defwasm-export test-set-max-method ()
-            option:unwrap-or
+            .unwrap-or
               .max $ #{} 10 20 30 15
               , -1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-set-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on set")
           :code $ quote $ defwasm-export test-set-min-method ()
-            option:unwrap-or
+            .unwrap-or
               .min $ #{} 10 20 30 15
               , -1
           :examples $ []
@@ -1607,12 +1607,12 @@
           :schema $ quote $ Fn (-> Number)
         'test-str-find-index-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-found ()
-            option:unwrap-or (.find-index |hello |ell) -1
+            .unwrap-or (.find-index |hello |ell) -1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-str-find-index-not-found $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-find-index-not-found ()
-            option:unwrap-or (.find-index |hello |xyz) -1
+            .unwrap-or (.find-index |hello |xyz) -1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-str-first $ %{} 'CodeEntry
@@ -1653,7 +1653,7 @@
           :code $ quote $ defwasm-export test-str-nth ()
             if
               =
-                option:unwrap $ &str:nth |hello 1
+                .unwrap $ &str:nth |hello 1
                 , |e
               , 1 0
           :examples $ []
@@ -1707,7 +1707,7 @@
                   = (&hash oa) (&hash ob)
                   = (&hash -0) (&hash 0)
                   =
-                    option:unwrap $ &map:get (&{} -1 8) -1
+                    .unwrap $ &map:get (&{} -1 8) -1
                     , 8
                 , 1 0
           :examples $ []
@@ -1761,7 +1761,7 @@
               point $ %{} Point (:x 1) (:y 2)
               if
                 &=
-                  option:unwrap $ &struct:definition point
+                  .unwrap $ &struct:definition point
                   , Point
                 , 1 0
           :examples $ []
@@ -1850,7 +1850,7 @@
                   = (:x point) 1
                   = (:z different) 3
                   =
-                    option:unwrap $ &map:get (&struct:to-map different) :z
+                    .unwrap $ &map:get (&struct:to-map different) :z
                     , 3
                   = (&struct:get-name different) :Point
                   not $ .contains-field? different :x
@@ -1870,10 +1870,10 @@
               if
                 and
                   =
-                    option:unwrap $ &map:get m b
+                    .unwrap $ &map:get m b
                     , 10
                   =
-                    option:unwrap $ &map:get m other
+                    .unwrap $ &map:get m other
                     , 20
                 , 1 0
           :examples $ []
@@ -1919,8 +1919,8 @@
               &let
                 m $ &struct:to-map point
                 &+
-                  option:unwrap $ &map:get m :x
-                  option:unwrap $ &map:get m :y
+                  .unwrap $ &map:get m :x
+                  .unwrap $ &map:get m :y
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-tag-eq $ %{} 'CodeEntry (:doc "|Tag equality — same tags")

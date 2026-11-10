@@ -381,12 +381,12 @@
                 without-two $ &map:dissoc strings "|two words"
               assert= true $ result:ok? tags-result
               assert= 2 $ count tags
-              assert= |one $ option:unwrap $ &map:get tags :a
-              assert= "|two words" $ option:unwrap $ &map:get tags :b
+              assert= |one $ .unwrap $ &map:get tags :a
+              assert= "|two words" $ .unwrap $ &map:get tags :b
               assert= true $ result:ok? strings-result
               assert= 2 $ count strings
-              assert= 2 $ option:unwrap $ &map:get strings "|two words"
-              assert= -3 $ option:unwrap $ &map:get strings |tail
+              assert= 2 $ .unwrap $ &map:get strings "|two words"
+              assert= -3 $ .unwrap $ &map:get strings |tail
               assert= 1 $ count without-two
               assert= false $ &map:contains? without-two "|two words"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
@@ -594,7 +594,7 @@
           :code $ quote $ defn edn-transform-count-map (data)
             let
                 next-count $ &+
-                  option:unwrap $ &map:get data |count
+                  .unwrap $ &map:get data |count
                   , 1
                 refinement :int32
               if (&number:fits? next-count refinement)

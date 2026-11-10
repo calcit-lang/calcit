@@ -553,7 +553,7 @@
             :tags $ #{} :pairs-map-proof
         'mixed-origin $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mixed-origin ()
-            option:fold (Option :some true)
+            .fold (Option :some true)
               fn () $ left/Item :n 1
               fn (present?) (right/Item :n 2)
           :examples $ []
@@ -711,7 +711,7 @@
           :code $ quote $ defn group-open-rows (rows)
             group-by (&map:vals rows)
               fn (row)
-                option:unwrap $ &map:get row :finished-time
+                .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
@@ -729,7 +729,7 @@
                 group-items group-by
               group-items (&map:vals rows)
                 fn (row)
-                  option:unwrap $ &map:get row :finished-time
+                  .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
@@ -745,7 +745,7 @@
           :code $ quote $ defn group-open-rows-arrow (rows)
             -> rows (&map:vals)
               group-by $ fn (row)
-                option:unwrap $ &map:get row :finished-time
+                .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
@@ -760,7 +760,7 @@
         'read-open-members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-open-members (rows)
             map rows $ fn (row)
-              option:unwrap $ &map:get row :title
+              .unwrap $ &map:get row :title
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Dynamic
@@ -2889,7 +2889,7 @@
             let
                 order &list:sort-by
               order rows $ fn (row)
-                option:unwrap $ &map:get row :n
+                .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -2909,7 +2909,7 @@
                 order &list:sort-by
                 copy-order order
               copy-order rows $ fn (row)
-                option:unwrap $ &map:get row :n
+                .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -2954,7 +2954,7 @@
                 copy-order order
               set! order &list:sort-by
               copy-order rows $ fn (row)
-                option:unwrap $ &map:get row :n
+                .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -2972,7 +2972,7 @@
         'direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct (rows)
             &list:sort-by rows $ fn (row)
-              option:unwrap $ &map:get row :n
+              .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3007,7 +3007,7 @@
         'method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn method (rows)
             rows .sort-by $ fn (row)
-              option:unwrap $ &map:get row :n
+              .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3063,7 +3063,7 @@
         'named-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn named-selector (rows)
             &list:sort-by rows $ defn select-key (row)
-              option:unwrap $ &map:get row :n
+              .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3080,7 +3080,7 @@
         'prefix-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn prefix-method (rows)
             .sort-by rows $ fn (row)
-              option:unwrap $ &map:get row :n
+              .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3102,7 +3102,7 @@
                   order :inner
                 assert= :inner order
               order rows $ fn (row)
-                option:unwrap $ &map:get row :n
+                .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3119,7 +3119,7 @@
         'threaded $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn threaded (rows)
             -> rows $ &list:sort-by $ fn (row)
-              option:unwrap $ &map:get row :n
+              .unwrap $ &map:get row :n
           :examples $ []
           :schema $ quote $ Fn
             List $ Map Tag Number
@@ -3217,8 +3217,8 @@
           :code $ quote $ defn sort-date-strings (dates)
             sort dates $ fn (x y)
               &compare
-                option:unwrap-or (first y) |
-                option:unwrap-or (first x) |
+                .unwrap-or (first y) |
+                .unwrap-or (first x) |
           :examples $ []
           :schema $ quote $ Fn (List String)
             -> $ List String

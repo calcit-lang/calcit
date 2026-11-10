@@ -311,7 +311,7 @@
         'test-effect $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing effect")
             println "|Env mode:" $ get-env |mode
-            println "|Env mode:" $ option:unwrap-or (get-env |m0) "|default m0"
+            println "|Env mode:" $ .unwrap-or (get-env |m0) "|default m0"
             eprintln "|stdout message"
             let
                 missing-file $ fs:path |/calcit-result-contract-does-not-exist/file

@@ -2776,6 +2776,28 @@ fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
 }
 
 #[test]
+fn direct_option_helper_calls_warn_but_core_macro_expansions_do_not() {
+  run_with_large_stack(|| {
+    // `if-let` expands to `option:fold`; only the written helper calls warn (#2653).
+    let entries = load_snippet_entries(
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (option:unwrap-or x 0) (option:map x inc) (if-let (v x) v 0) (.unwrap-or x 0)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("helper calls preprocess with warnings");
+    let helper_calls = warnings
+      .borrow()
+      .iter()
+      .filter(|warning| warning.code() == Some("W_OPTION_HELPER_CALL"))
+      .map(|warning| warning.message().to_owned())
+      .collect::<Vec<_>>();
+    assert_eq!(helper_calls.len(), 2, "{helper_calls:?}");
+    assert!(helper_calls[0].contains("`.unwrap-or`"), "{helper_calls:?}");
+    assert!(helper_calls[1].contains("`.map`"), "{helper_calls:?}");
+  });
+}
+
+#[test]
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
