@@ -10,8 +10,7 @@ Calcit 的默认严格诊断把隐式缺失值视为编译错误；迁移期间�
 | `E_LEGACY_OPTIONAL_PARAM` | `defn f (required ? optional) ...` 或等价 `fn` | 移除 `?`，把末尾参数声明成 `Option<T>`；省略实参时自动插入 `Option :none`，显式调用处写 `Option :some value` / `Option :none`。 |
 | `E_PARTIAL_STRUCT_NIL_FILL` | `%{}? Struct ...` 与 `&%{}? Struct ...` | 用 `%{}` 显式提供全部字段。真正可缺失的字段声明为 `Option<T>` 并提供 `Option :none`；不要自动猜测业务默认值。 |
 | `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
-| `E_NIL_CALLBACK_SENTINEL` | An inline `map-kv` callback has a return path that uses `nil` to drop an entry, including an `if` without an else branch | Use `filter-map-kv`; return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path. A `nil` nested inside the returned key/value pair remains ordinary data and is not rejected. |
-| `W_MAP_KV_UNPROVEN_CONTRACT` / `E_MAP_KV_UNPROVEN_CONTRACT` | Typed project code calls legacy `map-kv`, whose heterogeneous pair and nil/enum drop protocol cannot prove output key/value types. Compatibility mode warns and exposes only `Dynamic`; strict mode rejects it. | Use `filter-map-kv` with `MapEntryDecision` when the result remains a Map or entries may be dropped. Use `map-list-kv` for `Fn(K,V)->U` collection into `List<U>`. |
+| `map-kv` / `.map-kv` (removed in 0.41.0) | Legacy Map transform whose pair and nil/enum drop protocol could not prove output key/value types; it is no longer in calcit.core | Use `filter-map-kv` with `MapEntryDecision :keep key value` or `MapEntryDecision :drop` when the result remains a Map or entries may be dropped. Use `map-list-kv` for `Fn(K,V)->U` collection into `List<U>`. |
 | `E_IMPLICIT_NIL_BRANCH` / `W_IMPLICIT_NIL_BRANCH` | An `if` / `when` without an else branch, or a branch joining `nil` with a concrete value, used as a call or method argument or as the end of a function whose return is declared with a concrete type. Strict mode rejects it; `--compat-types` reports the warning. Since 0.33.0 a `let` initializer is rejected too, because the join has no Calcit type once `Optional<T>` is removed; under `--compat-types` the binding is treated as Dynamic. The branch infers an internal nil join `T?` that no schema can spell | Return `Option :some value` / `Option :none` (wrap an existing nil with `nil->option`) or add an explicit else value. Statement-position branches, `nil->option` arguments, declared nullable parameters or returns, `Dynamic` returns and `calcit.core` are not reported. A branch written wholly by a macro (the `if` and its operands all come from the macro body) is skipped, but a library macro that wraps the caller's form in an else-less `if` (e.g. `defmacro maybe (c x) (quasiquote (if ~c ~x))` used as `str \|x (maybe flag \|b)`) is reported at the call site; wrap it as `nil->option (maybe flag \|b)` and handle the Option (e.g. `.unwrap-or`), or give the macro an else value. `case` / `cond` without a default raise on no match and never yield nil. |
 | `E_LEGACY_OPTIONAL_TYPE` | The Snapshot still spells legacy `Optional<T>` (`'Optional`, `calcit.core/Optional`, `(:: 'Optional T)` or an `:optional` field head) in a schema, `defstruct` field, `defenum` payload, local `hint-fn`, `assert-type` / `unsafe-coerce` target or decoder target. `Optional<T>` was removed in 0.33.0, so loading fails before any check, run, edit or format; the message lists up to 20 positions with their definition path, only the first one inside each schema or code form, so reload after fixing them to find the rest. It replaces `E_LEGACY_OPTIONAL_SCHEMA` / `W_LEGACY_OPTIONAL_SCHEMA` and `W_LEGACY_OPTIONAL_TYPE` from 0.31–0.32 | Use `Option<T>` for Calcit absence (wrap an existing nil with `nil->option`), `JsNullish<T>` only at JS FFI boundaries, `Result<T,E>` for failures, or `Unit` for effects. `calcit fix` does not rewrite schemas. A 0.33.0 binary cannot load the Snapshot, so edit it with a 0.32.x `calcit` first. See [upgrade.md](upgrade.md#033-删除-optional-公共-schema-与旧-optional-类型) for the locate-and-migrate steps. |
 
@@ -22,14 +21,12 @@ nil inside typed code.
 运行时 `nil`、Cirru EDN nil 以及明确的 untyped/FFI 边界不会删除；上述错误只阻断
 typed code 中静默制造 nil 的语法。
 
-`E_NIL_CALLBACK_SENTINEL` is intentionally conservative. It checks only
-structurally visible return paths of inline `fn` / `defn` callbacks. It does not
-guess through named callbacks or reject `[] key nil`, where nil is the mapped
-value rather than a drop sentinel.
+`E_NIL_CALLBACK_SENTINEL` was removed in 0.41.0 together with `map-kv`, the
+only call whose callback could use nil as a drop sentinel; `filter-map-kv`
+callbacks return `MapEntryDecision :drop` instead.
 
-`E_NIL_CALLBACK_SENTINEL` 采用保守检查：只分析内联 `fn` / `defn` 回调中结构上
-可见的返回路径，不猜测具名回调；`[] key nil` 中的 nil 是映射后的值，不是丢弃
-sentinel，因此不会被拒绝。
+`E_NIL_CALLBACK_SENTINEL` 已在 0.41.0 随 `map-kv` 一起删除；它只检查 `map-kv`
+回调用 nil 丢弃条目的写法，`filter-map-kv` 的回调改用 `MapEntryDecision :drop`。
 
 ## Ecosystem audit / 生态审计
 

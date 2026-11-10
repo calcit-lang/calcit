@@ -7316,8 +7316,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           // The preprocessor normally expands this to nested `&let` forms, but intercept here
           // as a fallback for cases where the macro expansion hasn't occurred.
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
-          // `map-kv xs f` — apply a binary function to each map entry, returning a new map.
-          "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
           // `filter-map-kv xs f` — consume typed :keep/:drop decisions.
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
           // `'` — list literal constructor (calcit.core/'), same as ([] a b c).
@@ -7382,7 +7380,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
-        "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
         _ => {}
       }
@@ -7445,7 +7442,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
-          "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
           _ => {}
         }

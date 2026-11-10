@@ -506,7 +506,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
+            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :keys &map:keys) (:: :map &map:map) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -10589,135 +10589,6 @@
                   [] ([] 0 1) ([] 1 :ready)
                   map-indexed xs $ fn (idx value) ([] idx value)
               :tags $ #{} :core :unit
-        'map-kv $ %{} 'CodeEntry
-          :doc "|Legacy compatibility boundary. Its callback may return a two-item list or a legacy nil/enum drop sentinel, so the result is intentionally Dynamic. Typed code must migrate to filter-map-kv and MapEntryDecision :keep/:drop."
-          :code $ quote $ defn map-kv (xs f)
-            &map:fold-kv xs ({})
-              defn %map-kv (acc key value)
-                hint-fn $ Fn Map K V $ -> Map
-                &let
-                  result $ f key value
-                  if (list? result)
-                    do
-                      assert "|expected pair returned when mapping hashmap" $ &= 2 $ &list:count result
-                      &map:assoc acc (&list:nth result 0) (&list:nth result 1)
-                    if
-                      or (nil? result) (enum? result)
-                      , acc $ raise $ str-spaced "|map-kv expected list or nil, got:" result
-          :examples $ []
-          :schema $ quote $ Fn (Map K V)
-            Fn K V $ -> Q
-            -> Dynamic
-            :generics K V Q
-          :tests $ []
-            %{} 'TestEntry (:name |transforms-each-entry)
-              :code $ quote $ assert= (&{} :a 11 :b 12)
-                map-kv (&{} :a 1 :b 2)
-                  fn (k v)
-                    [] k $ + v 10
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |skips-nil-results)
-              :code $ quote $ assert= (&{} :a 11 :b 12)
-                map-kv (&{} :a 1 :b 2 :c 13)
-                  fn (k v)
-                    if (< v 10)
-                      [] k $ + v 10
-                      :: :none
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |empty-and-legacy-drop-sentinels)
-              :code $ quote $ do
-                assert= ({})
-                  map-kv ({})
-                    fn (key value) (raise |empty-callback-must-not-run)
-                assert= ({})
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) nil
-                assert= ({})
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) (:: :none)
-                assert= ({})
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) (Option :none)
-                assert= ({})
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) (Option :some 7)
-              :tags $ #{} :core :map-kv-legacy :unit
-            %{} 'TestEntry (:name |retains-callback-and-malformed-result-errors)
-              :code $ quote $ do
-                assert= |map-callback-failed $ try
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) (raise |map-callback-failed)
-                  fn (message) message
-                assert= "|expected pair returned when mapping hashmap (&= 2 (&list:count result))" $ try
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) ([])
-                  fn (message) message
-                assert= "|expected pair returned when mapping hashmap (&= 2 (&list:count result))" $ try
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) ([] 1)
-                  fn (message) message
-                assert= "|expected pair returned when mapping hashmap (&= 2 (&list:count result))" $ try
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) ([] 1 2 3)
-                  fn (message) message
-                assert= "|map-kv expected list or nil, got: 3" $ try
-                  map-kv
-                    {} (:a 1) (:b 2)
-                    fn (key value) 3
-                  fn (message) message
-              :tags $ #{} :core :map-kv-legacy :unit
-            %{} 'TestEntry (:name |preserves-order-collisions-and-input-3)
-              :code $ quote $ let
-                  input $ .assoc
-                    {} (|k0 1) (|k1 2)
-                    , |added 3
-                  trace $ ref $ [] 0
-                  source-calls $ ref 0
-                  expected $ map-list-kv input $ fn (key value) value
-                  result $ map-kv
-                    do (swap! source-calls inc) input
-                    fn (key value)
-                      reset! trace $ append (deref trace) value
-                      [] |collision value
-                assert= (prepend expected 0) (deref trace)
-                assert= 1 $ deref source-calls
-                assert=
-                  {} $ |collision $ .unwrap (.last expected)
-                  , result
-                assert=
-                  {} (|k0 1) (|k1 2) (|added 3)
-                  , input
-              :tags $ #{} :core :map-kv-legacy :unit
-            %{} 'TestEntry (:name |preserves-order-collisions-and-input-40)
-              :code $ quote $ let
-                  input $ .assoc
-                    {} (|k0 1) (|k1 2) (|k2 3) (|k3 4) (|k4 5) (|k5 6) (|k6 7) (|k7 8) (|k8 9) (|k9 10) (|k10 11) (|k11 12) (|k12 13) (|k13 14) (|k14 15) (|k15 16) (|k16 17) (|k17 18) (|k18 19) (|k19 20) (|k20 21) (|k21 22) (|k22 23) (|k23 24) (|k24 25) (|k25 26) (|k26 27) (|k27 28) (|k28 29) (|k29 30) (|k30 31) (|k31 32) (|k32 33) (|k33 34) (|k34 35) (|k35 36) (|k36 37) (|k37 38) (|k38 39)
-                    , |added 40
-                  trace $ ref $ [] 0
-                  source-calls $ ref 0
-                  expected $ map-list-kv input $ fn (key value) value
-                  result $ map-kv
-                    do (swap! source-calls inc) input
-                    fn (key value)
-                      reset! trace $ append (deref trace) value
-                      [] |collision value
-                assert= (prepend expected 0) (deref trace)
-                assert= 1 $ deref source-calls
-                assert=
-                  {} $ |collision $ .unwrap (.last expected)
-                  , result
-                assert=
-                  {} (|k0 1) (|k1 2) (|k2 3) (|k3 4) (|k4 5) (|k5 6) (|k6 7) (|k7 8) (|k8 9) (|k9 10) (|k10 11) (|k11 12) (|k12 13) (|k13 14) (|k14 15) (|k15 16) (|k16 17) (|k17 18) (|k18 19) (|k19 20) (|k20 21) (|k21 22) (|k22 23) (|k23 24) (|k24 25) (|k25 26) (|k26 27) (|k27 28) (|k28 29) (|k29 30) (|k30 31) (|k31 32) (|k32 33) (|k33 34) (|k34 35) (|k35 36) (|k36 37) (|k37 38) (|k38 39) (|added 40)
-                  , input
-              :tags $ #{} :core :map-kv-legacy :unit
         'map-list-kv $ %{} 'CodeEntry
           :doc "|Collects one output value per map entry with a typed key/value callback. Returns List<U> from Map<K,V> and Fn(K,V)->U without erasing the key/value relation."
           :code $ quote $ defn map-list-kv (xs f)

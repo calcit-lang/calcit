@@ -127,27 +127,9 @@ assoc-in config $ [] :server :port $ 8080
 
 ## Iterating & Transforming
 
-### `map-kv` — transform entries
-
-Returns a new map. The callback transforms each entry and returns a two-item list
-containing the output key and value:
-
-```cirru.no-check
-let
-    m $ {} (:a 1) (:b 2) (:c 13)
-    doubled $ map-kv m $ fn (k v) ([] k (* v 2))
-  println doubled
-  ; => ({} (:a 2) (:b 4) (:c 26))
-```
-
-This is a legacy compatibility boundary. Native and JavaScript execution also
-accepts `nil` or an enum value as a drop sentinel, so the callback result cannot
-prove the output key/value relation. Its static result is therefore explicitly
-`Dynamic`, and compatibility mode reports
-`W_MAP_KV_UNPROVEN_CONTRACT` at every typed project call. Strict mode rejects
-the call with `E_MAP_KV_UNPROVEN_CONTRACT`; a structurally visible nil return
-keeps the more specific `E_NIL_CALLBACK_SENTINEL`. Migrate both transform-only
-and transform-and-drop code to `filter-map-kv`.
+`map-kv` was removed in 0.41.0. Use `filter-map-kv`, whose callback returns
+`MapEntryDecision :keep key value` or `MapEntryDecision :drop`, when the result
+stays a Map; use `map-list-kv` to collect a `List<U>`.
 
 ### `map-list-kv` — collect typed entry results
 

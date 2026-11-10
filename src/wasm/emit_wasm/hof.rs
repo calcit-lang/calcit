@@ -1047,12 +1047,6 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// `map-kv xs f` — apply binary `f(k, v) → [k', v']` to every entry of a map, returning a new map.
-/// Iterates via `__rt_map_linearize` which returns a flat `[n_pairs, k0, v0, k1, v1, ...]` buffer.
-pub(super) fn emit_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  emit_map_kv_impl(ctx, args, false)
-}
-
 /// `filter-map-kv xs f` — apply binary `f(k, v) → MapEntryDecision<k', v'>`,
 /// associating `:keep` payloads and omitting `:drop` results.
 pub(super) fn emit_filter_map_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {

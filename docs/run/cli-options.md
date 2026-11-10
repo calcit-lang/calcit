@@ -338,21 +338,11 @@ implicitly:
   distinct `Nil` value. Replace returned `nil` / `;nil` with `&unit`, or end the
   body with an effect that already returns Unit. Intermediate nil expressions
   are not classified as the function return.
-- `E_NIL_CALLBACK_SENTINEL`: an inline `map-kv` callback has a structurally
-  visible return path that uses `nil` to drop an entry. Use `filter-map-kv` and
-  return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every
-  path. A nil nested inside the returned pair remains map data.
-
-Strict typing separately gates the unproven legacy `map-kv` result contract;
-these diagnostics are not limited to callbacks that return nil:
-
-- `W_MAP_KV_UNPROVEN_CONTRACT`: compatibility-mode typed project code called
-  legacy `map-kv`. Its pair/drop protocol exposes only `Dynamic`;
-  migrate to `filter-map-kv` and `MapEntryDecision` for a Map result, or
-  `map-list-kv` for a typed `List<U>` result.
-- `E_MAP_KV_UNPROVEN_CONTRACT`: strict-mode form of the same migration gate.
-  It rejects both prefix `map-kv` and postfix `.map-kv` calls rather than
-  allowing an expected result type to invent unproven key/value bindings.
+`map-kv` and the Map method `.map-kv` were removed in 0.41.0, together with
+their `E_NIL_CALLBACK_SENTINEL` and `W_MAP_KV_UNPROVEN_CONTRACT` /
+`E_MAP_KV_UNPROVEN_CONTRACT` gates. A call now reports the removed name and
+points to `filter-map-kv` with `MapEntryDecision :keep key value` or
+`MapEntryDecision :drop` (or `map-list-kv` for a `List<U>` result).
 
 These compatibility paths remain available only with `--compat-types` during
 ecosystem migration. Partial Struct construction is not auto-fixed because the

@@ -196,7 +196,6 @@ try {
       // Audit real core callers outside the compatibility boundary: map K/V
       // inputs and each returned function's A/C relation must survive (#2319).
       for (const [definition, copyName, returnsFunction] of [
-        ["calcit.core/map-kv", "map-kv-copy", false],
         ["calcit.core/&fn:map", "fn-map-copy", true],
         ["calcit.core/&fn:bind", "fn-bind-copy", true],
         ["calcit.core/&fn:apply", "fn-apply-copy", true],
