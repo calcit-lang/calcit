@@ -11,8 +11,7 @@ const run = (...args) => execFileSync(binary, args, {
 });
 const traitSnapshot = resolve("calcit/test-traits.cirru");
 
-// Importing this fixture factory must not execute CLI/host checks. The
-// dedicated compatibility-policy script reuses exactly the same negatives.
+// Duplicate-trait source negatives, rejected before execution or codegen.
 export function traitRejectionCases() {
   const duplicateStruct = (impls, effect = false) => `let
     Person $ impl-traits Person0 ${impls}

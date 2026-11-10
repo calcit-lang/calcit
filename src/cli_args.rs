@@ -46,9 +46,6 @@ pub struct ToplevelCalcit {
   /// explicitly request strict diagnostics (already the default)
   #[argh(switch)]
   pub strict_types: bool,
-  /// temporarily restore pre-0.14 compatibility diagnostics during migration
-  #[argh(switch)]
-  pub compat_types: bool,
   /// keep strict diagnostics but skip the default assertion-proof audit
   #[argh(switch)]
   pub no_proof_audit: bool,

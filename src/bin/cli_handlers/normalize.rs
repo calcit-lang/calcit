@@ -169,6 +169,14 @@ fn subcommand_position(args: &[String]) -> Option<usize> {
 /// and the leaf right after it) is inspected, so positional values such as
 /// `docs read <file> <heading>` or `--entry tree` are never mistaken for commands.
 pub fn removed_command_error(args: &[String]) -> Option<String> {
+  // Top-level switches come before the subcommand, so a value after it is never mistaken for one.
+  let top_level = &args[1.min(args.len())..subcommand_position(args).unwrap_or(args.len())];
+  if top_level.iter().take_while(|arg| *arg != "--").any(|arg| arg == "--compat-types") {
+    return Some(
+      "`--compat-types` was removed in 0.41.0 and has no replacement; fix the reported type diagnostics instead. See docs/run/upgrade.md."
+        .to_owned(),
+    );
+  }
   let position = subcommand_position(args)?;
   let group = args[position].as_str();
   if !REMOVED_GROUPS.contains(&group) {
@@ -237,21 +245,14 @@ fn format_hint(subject: &str, new: &str) -> String {
 /// Returns the one-line migration hint for the retired type-policy flags.
 ///
 /// Strict diagnostics are the default, so `--strict-types` only restates the
-/// default (it still pre-checks the entry) and `--compat-types` is a temporary
-/// escape hatch; both flags stay accepted until the next non-patch release.
-pub fn deprecated_type_policy_flag_hint(strict_types: bool, compat_types: bool) -> Option<String> {
-  match (strict_types, compat_types) {
-    (true, false) => Some(format_hint(
+/// default (it still pre-checks the entry); it stays accepted with a hint.
+pub fn deprecated_type_policy_flag_hint(strict_types: bool) -> Option<String> {
+  strict_types.then(|| {
+    format_hint(
       "`--strict-types`",
       "the default strict diagnostics (pair them with `--check-only` to pre-check the entry)",
-    )),
-    (false, true) => Some(
-      "[Deprecated] `--compat-types` will be removed in the next non-patch release and has no replacement; fix the reported type diagnostics instead. See docs/run/upgrade.md."
-        .to_owned(),
-    ),
-    (true, true) => Some(format_hint("`--strict-types` and `--compat-types`", NO_REPLACEMENT)),
-    (false, false) => None,
-  }
+    )
+  })
 }
 
 /// The analyzer selected by a merged `analyze` option that has no parsed entry of its own.
@@ -639,10 +640,8 @@ mod tests {
   #[test]
   fn type_policy_flags_report_deprecation_only_when_used() {
     use super::deprecated_type_policy_flag_hint as hint;
-    assert!(hint(false, false).is_none());
-    assert!(hint(true, false).unwrap().contains("`--strict-types`"));
-    assert!(hint(false, true).unwrap().contains("`--compat-types`"));
-    assert!(hint(true, true).unwrap().contains("`--strict-types` and `--compat-types`"));
+    assert!(hint(false).is_none());
+    assert!(hint(true).unwrap().contains("`--strict-types`"));
   }
 
   #[test]
@@ -755,6 +754,14 @@ mod tests {
       assert!(!error.contains('\n'), "message should be one line: {error}");
     }
     assert_eq!(removed_command_error(&args(&["analyze", "weak-types", "--only", "coverage"])), None);
+    for cli_args in [
+      &["--compat-types", "--check-only"][..],
+      &["calcit.cirru", "--compat-types", "test", "--tag", "unit"][..],
+    ] {
+      let error = removed_command_error(&args(cli_args)).expect("removed flag should be explained");
+      assert!(error.contains("`--compat-types` was removed in 0.41.0"), "{error}");
+    }
+    assert_eq!(removed_command_error(&args(&["eval", "--compat-types"])), None);
   }
 
   #[test]

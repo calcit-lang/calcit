@@ -2229,7 +2229,6 @@ fn dynamic_bound_type_slots_fail_the_check() {
   for args in [
     &["test"][..],
     &["--no-proof-audit", "js"][..],
-    &["--compat-types", "js"][..],
     &["ir"][..],
     &["--check-only", "--ns", "app.main"][..],
   ] {

@@ -25,9 +25,9 @@ leads_to:
 
 本文是按需读取的完整 Agent 指南。每次进入项目默认只读取下方的紧凑契约（`calcit docs agents --contract`）；遇到复杂重构或目标专用能力时，再加载相关章节或 `--full`，不把整篇指南常驻上下文。
 
-Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处理诊断。旧项目迁移期间只能显式使用
-`--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 显式确认严格诊断，并在执行或代码生成前检查所选入口，
-不额外运行 Dynamic 数量或 quality baseline 门槛。两种开关不能同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
+Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处理诊断，没有关闭它的开关：`--compat-types`
+已在 0.41.0 删除。`--strict-types` 只是重申默认的严格诊断（已弃用），不额外运行 Dynamic 数量或 quality baseline 门槛。
+遇到类型诊断时应修复代码，而不是寻找兼容开关。
 
 业务迁移先区分静态契约矛盾和真正开放的输入：decode 后使用 `Result :ok` 的受检 payload，
 不要继续传原始 Map，也不要用 `assert-type` 冒充运行时校验。
@@ -581,7 +581,7 @@ defstruct Profile (:name String) (:bio (quote (Option String)))
 Profile :name |Ada
 ```
 
-这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(Option :none)` 或 `(Option :some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；默认严格诊断会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 及其底层写法 `&%{}?` 已退役，包括 `--compat-types` 在内都会触发 `E_PARTIAL_STRUCT_NIL_FILL`；修改旧接口时应迁移到 `Option` 和完整 `%{}` 构造。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。`Nil` 与 `Unit` 是不同类型：声明返回 `Unit` 的函数应返回 `&unit` 或以 Unit effect 结束；默认严格诊断以 `E_NIL_FOR_UNIT` 拒绝返回位置的 `nil` / `;nil`。
+这项语法糖只处理**结尾连续的** `Option` 参数：位于必填参数之前的 `Option` 仍然必须显式传 `(Option :none)` 或 `(Option :some value)`，带 rest 参数的函数也不会自动补值。`?` 参数只用于兼容已有的非类型化 API，其缺省值是 `nil`；默认严格诊断会以 `E_LEGACY_OPTIONAL_PARAM` 拒绝它。`%{}?` 及其底层写法 `&%{}?` 已退役，会触发 `E_PARTIAL_STRUCT_NIL_FILL`；修改旧接口时应迁移到 `Option` 和完整 `%{}` 构造。在 FFI 或非类型化边界之外，缺失值使用 `Option`，失败使用 `Result`，无有效返回值使用 `Unit`。`Nil` 与 `Unit` 是不同类型：声明返回 `Unit` 的函数应返回 `&unit` 或以 Unit effect 结束；默认严格诊断以 `E_NIL_FOR_UNIT` 拒绝返回位置的 `nil` / `;nil`。
 
 函数作为回调时，也必须接受回调契约承诺的全部参数数量和类型。内置函数的可选参数沿用其运行时范围，例如 `trim` 可接受一或两个 String，所以可以直接用于 `map strings trim`；这不会把第二个 String 改成可空类型。`format-cirru-edn` 的可选 Bool 同理。需要精确范围时查询 `calcit query def calcit.core/trim` 的 Runtime Proc arity；不能仅由参数类型列表推断哪些内置参数可省略。
 

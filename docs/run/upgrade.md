@@ -24,6 +24,19 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 删除 `--compat-types`（#2655）
+
+`--compat-types` 曾在迁移期间关闭默认的严格诊断、默认的断言证明预检（#2121）和隐式的 JS FFI `:error` 策略，从 0.31.0 起已标为弃用，现在删除，没有替代。命令行里仍带它的运行、检查和代码生成会在执行前失败，并报 "`--compat-types` was removed in 0.41.0"。`eval` 后面的同名参数属于被求值的内容，不受影响。
+
+迁移方法：
+
+1. 从 CI、`package.json` 脚本和 Makefile 中删掉 `--compat-types`。
+2. 运行 `calcit --check-only`，逐项修复报告的类型诊断。需要先看完整清单时用 `calcit --check-only --keep-going`。
+3. 旧的 `?` 参数（`E_LEGACY_OPTIONAL_PARAM`）改为末尾的 `Option<T>` 参数；不带 else 的分支（`E_IMPLICIT_NIL_BRANCH`）改为返回 `Option` 或补上 else 值，见 [strict-nil-migration.md](strict-nil-migration.md)。
+4. 程序确实要用开放 `Dynamic` 写法、只想跳过断言证明审计时，用 `--no-proof-audit`；其他严格诊断仍然生效。
+
+`analyze dynamic-methods` 仍会列出严格检查会拒绝的全部动态方法调用。它是只读的迁移清单，不决定代码能否通过。`--warn-dyn-method` 与 `--strict-types` 只是重申默认行为。
+
 ## 0.41.0 删除 `analyze check-types`、`analyze check-public` 与 `analyze quality`（#2655）
 
 这三个子命令自 0.31.0 起已标为弃用，现在删除。运行旧写法会直接报错，stdout 为空，stderr 写明替代写法，不会读写 Snapshot：

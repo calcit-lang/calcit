@@ -231,7 +231,7 @@ schema 声明 `:features :decode-boundary` 后，`analyze weak-types` 把参数�
 
 `Fn` schema 写了 `(:open :reflect)`、`(:open :decode)`、`(:open :host)`，或 `calcit.core` 里由检查器内建规则决定类型的 `(:open :intrinsic)` 时，签名内部的 schema Dynamic 归到 `intentional-open`，不计入 `unresolved`，不产生 `W_SCHEMA_DYNAMIC`，该定义的 coverage 也不因此降为 partial。理由的写法见 [类型指南](../type-guidance.md)。
 
-For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`; `--compat-types` retains the existing return-mismatch warning for migration. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
+For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
 
 `unsafe-coerce` is reported separately as `unsafe-coerce` with the explicit `explicit-unsafe` intent, its exact `code@...` path, and the asserted target schema. JSON occurrence rows add an `evidence` object with the static input form, whether the containing definition declares `:js-ffi`, and whether the namespace follows the `js-ffi.raw.*` adapter convention. This is static source evidence, not a claimed runtime proof of the host value. JSON adds `W_JS_FFI_UNCHECKED_COERCE` whenever the selected scope contains one or more assertions. Keep each assertion in a narrow adapter and cover both accepted and rejected host values with runtime-contract tests.
 
@@ -598,7 +598,7 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 `get-in` 返回 `Result<T, PathError>`，适合开放 Map/List 路径；未知 payload 仍为 Dynamic。调用方应区分缺失的 `PathError :missing` 与形状错误的 `PathError :shape`，不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的已证明静态路径仍提供 `Option<Leaf>`；开放路径提供 `Option<Dynamic>`，具体使用前先 decode/narrow，并显式处理缺失。回调输出不能用来证明开放输入。
 
-默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
+默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。
 
 ### Complex Types
 
@@ -765,9 +765,9 @@ defn factorial (n acc)
 - Macro-generated functions (e.g., from `loop` macro)
 - `calcit.core` namespace functions
 
-This compatibility exception applies only with `--compat-types`. Under the
-default strict diagnostics, `?` parameters fail earlier with `E_LEGACY_OPTIONAL_PARAM` and
-must migrate to trailing `Option<T>` parameters.
+In ordinary programs `?` parameters never reach this check: strict
+diagnostics reject them earlier with `E_LEGACY_OPTIONAL_PARAM`, and they must
+migrate to trailing `Option<T>` parameters.
 
 ## Type Inference
 
