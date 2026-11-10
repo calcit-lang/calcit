@@ -160,6 +160,23 @@ let
 
 默认值由构造器和下文的 map 字面量改写在编译期补齐，生成的构造调用与手写全部字段相同；低层 `%{}` 不补默认值。
 
+### Option 字段自动包装
+
+从 0.41.0 起，在构造 Struct 的字面量里，字段声明为 `Option<T>`、而给出的值类型已知是 `T` 时，编译器自动把它包成 `Option :some value`。这适用于直接构造器、`%{}`，以及按期望类型改写成 Struct 的 map 字面量 `{}` 和 `?{}`。省略 Option 字段的规则不变：直接构造器和 map 字面量改写补 `Option :none`，`%{}` 仍要求写出全部字段，缺失值要显式写 `Option :none`：
+
+```cirru
+let
+    Props $ defstruct Props (:label String) (:size $ Option Number)
+    size 2
+  assert= (Option :some 2) $ :size $ Props :label |a :size size
+  assert= (Option :none) $ :size $ Props :label |b
+  assert= (Option :some 3) $ :size $ Props :label |c :size (Option :some 3)
+```
+
+组件 props 因此可以声明成带 Option 字段的 Struct，调用处仍写 `{} (:label |a) (:size 2)`。
+
+只在构造处包装，不做其他隐式转换：`assoc`、函数参数和返回值里把 `T` 交给 `Option<T>` 仍是类型错误。以下情况也不包装，值按原样检查：值已经是 Option；值是 `nil`；值的类型是 `Dynamic` 或未知；字段类型是 `Option<Dynamic>`（即使给的是普通数字也要写 `Option :some`）；字段类型含 Struct 的泛型参数；编译期解析不出 prototype 或字段名（例如 `%{}` 用了动态 prototype），这时即使运行时字段是 Option 也要手写 `Option :some`。所以不会出现 `Option<Option<T>>` 这类重复包装。
+
 低层 `%{}` 宏只用于动态 prototype；类型能静态解析时使用上面的直接构造器。它的写法如下：
 
 ```cirru
@@ -471,6 +488,8 @@ Requirements for the rewrite to trigger:
 - The argument at the call site must be a hashmap literal (`{}` with tag keys)
 - All keys in the hashmap must be tags (`:field-name`)
 - The struct definition must be resolvable at preprocess time
+
+The rewritten literal fills omitted fields like the direct constructor does and wraps a plain `T` value for an `Option<T>` field as `Option :some` (see “Option 字段自动包装” above).
 
 If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
 
