@@ -2843,7 +2843,7 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
         "strict" => VerificationCheckKind::Strict,
         "quality" => {
           return Err(format!(
-            "{owner}.checks: `quality` was removed; replace it with `strict` and behavior tests; use analyze quality only for an existing migration baseline"
+            "{owner}.checks: `quality` was removed; replace it with `strict` and behavior tests"
           ));
         }
         "dynamic-methods" => {

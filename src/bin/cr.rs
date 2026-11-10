@@ -20,8 +20,6 @@ mod verification;
 mod deprecated_api;
 #[path = "../public_api_check.rs"]
 mod public_api_check;
-#[path = "../quality_gate.rs"]
-mod quality_gate;
 #[path = "../type_coverage.rs"]
 mod type_coverage;
 
@@ -48,7 +46,7 @@ use calcit::calcit::{CalcitErr, CalcitFnTypeAnnotation, CalcitTypeAnnotation, Lo
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{
   AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, DeprecatedCommand, DynamicMethodsCommand,
-  EffectsGraphCommand, QualityCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
+  EffectsGraphCommand, TestCommand, ToplevelCalcit, WeakTypesCommand,
 };
 use calcit::codegen::gen_ir::IrEmitOptions;
 use calcit::js_ffi_source::{JsFfiSource, parse_js_source};
@@ -236,27 +234,6 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
     }
   }
   Ok(())
-}
-
-fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse(&options.format, "quality")?;
-  let _output_guard = ProgramOutputGuard::new(true, false);
-  configure_analysis_entry_type_slots(snapshot)?;
-  let effective =
-    type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
-  let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;
-  match output_format {
-    cli_handlers::StructuredOutputFormat::Human => print!("{}", quality_gate::format_quality_report(&outcome)),
-    structured => structured.print_json_text(&quality_gate::format_quality_json(&outcome)?)?,
-  }
-  if outcome.passed {
-    Ok(())
-  } else {
-    Err(format!(
-      "Static quality gate failed with {} regression(s). Run `calcit docs read library-quality.md --full` for the baseline and CI workflow.",
-      outcome.violations.len()
-    ))
-  }
 }
 
 fn collect_dynamic_method_findings(
@@ -475,7 +452,7 @@ fn resolve_public_wasm_options(
   }
 }
 
-/// Shared by `--check-only --ns` and the deprecated `analyze check-public` alias.
+/// The public-definition check that `--check-only --ns` runs.
 fn run_public_check(
   options: &cli_args::CheckPublicCommand,
   entries: &ProgramEntries,
@@ -519,10 +496,6 @@ fn run_cli() -> Result<(), String> {
   if cli_args.version {
     println!("{}", cli_args::CALCIT_VERSION);
     return Ok(());
-  }
-
-  if let Some(hint) = cli_handlers::deprecated_command_hint(&cli_args) {
-    eprintln!("{hint}");
   }
 
   if let Some(hint) = cli_handlers::deprecated_type_policy_flag_hint(cli_args.strict_types, cli_args.compat_types) {
@@ -731,6 +704,20 @@ fn run_cli() -> Result<(), String> {
       return cli_handlers::handle_ffi_command(ffi_cmd, &cli_args.input);
     }
     Some(CalcitCommand::Analyze(_)) if analyze_view.is_some() => match analyze_view.as_ref().expect("checked above") {
+      AnalyzeView::Coverage(options) => {
+        let (mut snapshot, input_cache) = if options.incremental {
+          let (snapshot, stats, _) =
+            analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+          (snapshot, Some(stats))
+        } else {
+          (
+            cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?,
+            None,
+          )
+        };
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        return run_check_types(options, &snapshot, &cli_args.input, input_cache);
+      }
       AnalyzeView::CallGraphDiff(diff_cmd) => {
         return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
       }
@@ -760,21 +747,6 @@ fn run_cli() -> Result<(), String> {
       AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
         return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);
       }
-      AnalyzeSubcommand::CheckTypes(options) => {
-        let (mut snapshot, input_cache) = if options.incremental {
-          let (snapshot, stats, _) =
-            analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
-          (snapshot, Some(stats))
-        } else {
-          (
-            cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?,
-            None,
-          )
-        };
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
-        return run_check_types(options, &snapshot, &cli_args.input, input_cache);
-      }
-      AnalyzeSubcommand::CheckPublic(_) => {}
       AnalyzeSubcommand::WeakTypes(options) => {
         if !options.schema_evidence {
           let (mut snapshot, input_cache) = if options.incremental {
@@ -790,11 +762,6 @@ fn run_cli() -> Result<(), String> {
           apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
           return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
-      }
-      AnalyzeSubcommand::Quality(options) => {
-        let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
-        return run_quality(options, &snapshot);
       }
       AnalyzeSubcommand::Verify(options) => {
         return verification::run(options, &cli_args.input, strict_type_policy.diagnostics);
@@ -1048,10 +1015,6 @@ fn run_cli() -> Result<(), String> {
 
   // Check-only mode: just preprocess/validate without execution or codegen
   let check_only = cli_args.check_only || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(js_opts)) if js_opts.check_only);
-  let is_public_check = matches!(
-    &cli_args.subcommand,
-    Some(CalcitCommand::Analyze(analyze_cmd)) if matches!(&analyze_cmd.subcommand, AnalyzeSubcommand::CheckPublic(_))
-  );
 
   if check_only {
     eval_once = true;
@@ -1065,7 +1028,7 @@ fn run_cli() -> Result<(), String> {
 
   // Explicit strict mode can preflight the selected entry before execution or
   // codegen, but type correctness must not depend on an analyzer budget.
-  if cli_args.strict_types && !check_only && !is_public_check && !is_eval_mode {
+  if cli_args.strict_types && !check_only && !is_eval_mode {
     runner::preprocess::with_restored_compiled_program(|| run_check_only(&entries))?;
   } else if !check_only && !is_eval_mode && (cli_args.subcommand.is_none() || use_configured_js_mode) {
     run_entry_proof_preflight(&entries, use_configured_js_mode.then_some(cli_args.emit_path.as_str()))?;
@@ -1130,8 +1093,8 @@ fn run_cli() -> Result<(), String> {
       AnalyzeView::DynamicMethods(options) => {
         run_dynamic_methods(options, &entries, &snapshot, &project_namespaces, &cli_args.input, None)
       }
-      AnalyzeView::CallGraphDiff(_) | AnalyzeView::DeprecatedCalls(_) => {
-        unreachable!("call-graph --diff and weak-types --only deprecated-call return before the snapshot loads")
+      AnalyzeView::CallGraphDiff(_) | AnalyzeView::DeprecatedCalls(_) | AnalyzeView::Coverage(_) => {
+        unreachable!("call-graph --diff and weak-types --only deprecated-call|coverage return before the snapshot loads")
       }
     }
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
@@ -1146,10 +1109,6 @@ fn run_cli() -> Result<(), String> {
         &cli_args.emit_path,
         &snapshot,
       ),
-      AnalyzeSubcommand::CheckPublic(options) => {
-        run_public_check(options, &entries, &snapshot, &project_namespaces, cli_args.strict_types)
-      }
-      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot, &cli_args.input, None),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(
         weak_type_options,
         &snapshot,
@@ -1158,7 +1117,6 @@ fn run_cli() -> Result<(), String> {
           .incremental
           .then(|| analysis_cache::InputCacheStats::bypassed("schema-evidence-requires-preprocessing")),
       ),
-      AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
       AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input, strict_type_policy.diagnostics),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
     }
@@ -4207,20 +4165,6 @@ mod tests {
     assert_eq!(weak_value["data"]["summary"]["intents"]["declared-unit"], 0);
     assert!(weak_value["data"]["summary"].get("dynamic_usage").is_none());
     assert_eq!(weak_value["data"]["summary"]["hits"], 3);
-    let quality = quality_gate::analyze_quality(
-      &QualityCommand {
-        ns: Some("app.main".to_owned()),
-        ns_prefix: None,
-        deps: false,
-        baseline: None,
-        write_baseline: None,
-        format: "json".to_owned(),
-      },
-      &snapshot,
-    )
-    .expect("quality fixture should analyze");
-    assert_eq!(quality.metrics.schema_dynamic, 2);
-    assert_eq!(quality.metrics.unresolved, 3);
     assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
     let mut check_summary_options = check_options.clone();

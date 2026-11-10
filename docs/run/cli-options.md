@@ -202,8 +202,7 @@ classified as a dynamic callable instead.
 
 默认严格诊断进一步要求 `unsafe-coerce` 位于当前函数声明了 `:features $ #{} :js-ffi`（或类型擦除缓存恢复点用的 `:erased-cache`）的结构化 `Fn` schema 内，
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。
-只有显式运行已弃用的 `analyze quality` 时，经过作用域检查的转换才会计入逐 definition 的 `unsafeCoerce` 质量 baseline；
-严格诊断本身不运行数量预算。
+严格诊断本身不运行数量预算（旧的 `analyze quality` baseline 已在 0.41.0 删除）。
 
 ### 默认严格诊断、入口预检查与兼容模式
 
@@ -298,7 +297,7 @@ calcit --strict-types js
 旧 entry 可显式设置 `calcit config set feature-policy.js-ffi warn`（或 `allow`）分阶段迁移，并用
 `calcit config show` 核对策略。默认严格诊断也包含定位到源码的未类型化 JS FFI 检查。
 开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
-不由 `analyze quality` 的数量预算决定。已有项目仍可显式运行该迁移期报告，但它不是严格检查的一部分。
+不由数量预算决定。
 
 Use `--compat-types` only as a temporary migration escape hatch when an older
 project still needs the pre-0.14 warning behavior:

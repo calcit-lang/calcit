@@ -316,13 +316,11 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | 默认预处理、`--check-only` | 由同一套类型关系产生 warning/error，决定类型正确性 | 保留为唯一正确性门槛 |
 | `weak-types`（含 `coverage` 视图） | 只读定位缺失 schema、开放边界和迁移候选 | 保留确有用户场景的源码定位；不按命中数量阻断编译 |
 | `weak-types --only dynamic-method` | 只读查看未能静态分派的方法 | 默认严格诊断负责阻断未证明分派；不再提供数量上限 |
-| `quality`、baseline | 旧项目显式选择的迁移预算 | 已弃用，下一个非 patch 版本删除 |
+| `quality`、baseline | 旧项目显式选择的迁移预算 | 0.41.0 删除，见 `docs/run/upgrade.md` |
 | `--check-only --ns`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
 | `effects-graph` | 只读列出 State / Transform / Effect；效果只来自 core `:tags`、宿主 proc descriptor tags、core 方法实现表、项目或模块定义自身的效果 `:tags` 与调用图，找不到声明时报告 `unknown` | 不进入函数类型，不阻断编译；规则见仓库 `RFCs/06-15-effects-graph-rfc.md` 第 3.3 节 |
 
-`analyze quality` 已弃用，运行时会在 stderr 输出迁移提示，下一个非 patch 版本删除；在此之前它继续读取已有 v1/v2 baseline。它把 `coverage`、`weak-types` 与 `deprecated-call` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只接受已存在的文件，且拒绝任何 definition 的预算增加；旧版扁平 baseline 则按原有汇总指标比较。升级 v1/扁平文件到 v2 时，原先未记录的 `unsafeCoerce` 预算也从零开始，须先消除新增债务。
-
-内置 Cirru core 曾使用 `config/calcit-core-quality.cirru` 记录逐 definition 的迁移数量。该文件暂留作历史参考，但 `yarn check-all`、PR 和发布流程不再运行数量门槛，也不应为了通过检查而刷新它。core 的类型正确性由编译器诊断与测试判断；仍需补齐 core 公开定义的严格可达性检查，而不是重新设定 Dynamic 数量阈值。显式 `analyze quality --baseline` 仅服务尚未迁走的旧项目。
+`analyze quality` 与它读取的 baseline 已在 0.41.0 删除（#2655）。类型正确性由默认严格的 `--check-only` 决定，`analyze weak-types` 及其 `coverage`、`deprecated-call` 视图只用来定位迁移项。内置 core 的历史 baseline `config/calcit-core-quality.cirru` 也一并删除；core 的类型正确性由编译器诊断与测试判断，不设 Dynamic 数量阈值。
 
 [`docs/core-dynamic-classification.md`](../core-dynamic-classification.md) 保留逐位置的人工审阅记录：每个 schema-Dynamic 路径标明所属子系统、`migrate` 或 `retain-reviewed` 决策及原因。`yarn check-core-dynamic-classification` 仅检查文档与当前源码是否同步；有意修改契约并审阅后，再运行 `yarn generate-core-dynamic-classification` 更新清单。它不替代编译器的 warning/error，也不以位置数量决定正确性。调用方可见的输出槽位要与 receiver 槽位分开审阅：具有静态类型和字面量路径的 `get-in` 可恢复 `Result<T, PathError>`，具有静态类型的 List/Map/Set `filter` 调用会降级到保持形状的 core 定义；Dynamic receiver、动态路径、Struct 遍历以及不支持的集合能力不能沿用这一较窄结论。历史迁移记录见 [calcit#701](https://github.com/calcit-lang/calcit/issues/701)，optional indexed access 的 bound-slot 正确性另见 [calcit#694](https://github.com/calcit-lang/calcit/issues/694)。
 

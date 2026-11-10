@@ -91,7 +91,7 @@ JS 项目先安装锁定的 runtime 依赖，再运行与本地一致的严格�
 
 Browser 项目应运行等价的 headless-browser test；只有 codegen 成功不能证明 runtime 契约。
 
-新项目不要生成 quality baseline。`weak-types` 及其 `coverage` 视图只用于迁移定位；类型正确性由默认严格预处理的 warning/error 决定。`analyze quality --baseline ...` 已弃用，下一个非 patch 版本删除；仍在使用的项目改为 `--check-only` 加 `analyze weak-types` 视图。完整的 entry、example、后端测试与消费者回归要求见 [Calcit 类库项目验收与质量门禁](../run/library-quality.md)。
+新项目不要生成 quality baseline。`weak-types` 及其 `coverage` 视图只用于迁移定位；类型正确性由默认严格预处理的 warning/error 决定。`analyze quality --baseline ...` 已在 0.41.0 删除；仍在使用的项目删掉这一步，改为 `--check-only` 加 `analyze weak-types` 视图。完整的 entry、example、后端测试与消费者回归要求见 [Calcit 类库项目验收与质量门禁](../run/library-quality.md)。
 
 The JavaScript runtime dependency remains in `package.json`/its lockfile. Keep it compatible with the
 Calcit release declared by the project, and execute generated JS in CI; a successful codegen alone does

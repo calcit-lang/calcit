@@ -450,7 +450,7 @@ lowering 也保留这些宽度：整数使用 `i32` / `i64`，浮点数使用 `f
 
 对已知 receiver 的集合调用，成员类型会先进入 inline callback 的参数与函数体，再由同一份 contract 检查调用参数和推断返回值。`any?`、`every?` 与 `each` 因而不需要让 callback 暂存未实例化的泛型，也不需要为使用它们的宏增加例外。
 
-## 严格检查与迁移期 quality baseline
+## 严格检查与迁移清单
 
 新项目以默认严格预处理和实际目标测试作为发布门禁：
 
@@ -461,9 +461,9 @@ calcit calcit.cirru --entry test
 
 `analyze weak-types --only coverage` 与 `analyze weak-types` 只帮助定位迁移清单，不决定程序是否类型正确，也不输出 Dynamic 比例、shape/family 排名或另一套关系判断。需要清理时使用 kind、intent、definition、path 和 detail 回到源码；值能否进入 typed code 只由严格预处理诊断决定。
 
-对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`weak-types`（含 `coverage` 视图）和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
+对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`weak-types`（含 `coverage` 视图）使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
 
-已弃用的 `analyze quality` 与 baseline 在下一个非 patch 版本删除，用法见 [静态分析](features/static-analysis.md)；它们不能替代严格预处理和实际目标测试。
+`analyze quality` 与 baseline 已在 0.41.0 删除，迁移见 [升级说明](run/upgrade.md)。
 
 不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。迁移不提高已有预算，并同时保证默认严格检查通过；债务清零后从项目 CI 删除 baseline 命令和文件。代码能否进入具体类型由同一套类型证明决定，不以 coverage 或 Dynamic 数量充当正确性证明，也不预告未经交付的删除版本。
 

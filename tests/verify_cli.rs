@@ -516,7 +516,7 @@ fn obsolete_dynamic_method_profile_gate_has_a_read_only_migration_hint() {
 }
 
 #[test]
-fn obsolete_quality_profile_gate_points_to_strict_and_existing_baselines() {
+fn obsolete_quality_profile_gate_points_to_strict_checks() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   let source = snapshot_source(VALID_ENTRIES).replace(":checks $ [] :strict", ":checks $ [] :strict :quality");
@@ -527,7 +527,7 @@ fn obsolete_quality_profile_gate_points_to_strict_and_existing_baselines() {
   let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("failure should remain one JSON envelope");
   assert_eq!(value["diagnostics"][0]["code"], "E_VERIFY_CONFIG");
   assert!(value["diagnostics"][0]["message"].as_str().is_some_and(|message| {
-    message.contains("replace it with `strict` and behavior tests") && message.contains("existing migration baseline")
+    message.contains("replace it with `strict` and behavior tests") && !message.contains("analyze quality")
   }));
 }
 

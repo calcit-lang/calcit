@@ -24,6 +24,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.0 删除 `analyze check-types`、`analyze check-public` 与 `analyze quality`（#2655）
+
+这三个子命令自 0.31.0 起已标为弃用，现在删除。运行旧写法会直接报错，stdout 为空，stderr 写明替代写法，不会读写 Snapshot：
+
+| 删除的写法 | 替代写法 |
+| --- | --- |
+| `calcit analyze check-types [--only none,partial,full]` | `calcit analyze weak-types --only coverage [--coverage-level none,partial,full]` |
+| `calcit analyze check-public --ns <ns> [--deps] [--summary-only]` | `calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn\|json]` |
+| `calcit analyze quality [--baseline <file>]` | `calcit --check-only`（类型正确性）加 `calcit analyze weak-types [--only coverage\|deprecated-call]`（定位迁移项） |
+
+结构化输出的命令名不变：coverage 视图仍是 `analyze.check-types`，`--check-only --ns` 仍是 `analyze.check-public`，按命令名解析的脚本不需要改。
+
+`analyze quality` 没有一对一替代，baseline 文件（如 `config/calcit-quality.cirru`）不再被读取。CI 里删掉这一步和对应的 baseline 文件，由默认严格的 `--check-only` 决定是否通过；需要看剩余迁移项时再运行 `analyze weak-types`。内置 core 的历史 baseline `config/calcit-core-quality.cirru` 也一并删除。
+
 ## 0.41.0 删除 `map-kv`（#2655）
 
 `calcit.core/map-kv` 和 Map 方法 `.map-kv` 已删除。调用处会报 removed-name 诊断并指向替代写法：
