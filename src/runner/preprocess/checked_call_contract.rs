@@ -286,9 +286,24 @@ pub(crate) fn resolve_checked_call_contract(
     })?;
   // Collection operations see a homogeneous tuple as `List T`. A heterogeneous
   // tuple has no element type, so the receiver must be a List it cannot prove.
+  // A named alias such as `Vec3` is expanded first so it reads like the
+  // inline `Tuple Number Number Number`.
+  let receiver_type = match receiver_type.as_ref() {
+    T::Tuple(_) => receiver_type,
+    _ => match CalcitTypeAnnotation::expand_schema_alias(&receiver_type) {
+      expanded if matches!(expanded.as_ref(), T::Tuple(_)) && fn_def != "nth" => expanded,
+      _ => receiver_type,
+    },
+  };
+  // `map` / `map-indexed` keep the length of a homogeneous tuple: every slot
+  // gets the callback's output type (F3).
+  let mut homogeneous_tuple_len = None;
   let receiver_type = match receiver_type.as_ref() {
     T::Tuple(slots) if fn_def != "nth" => match T::homogeneous_tuple_item(slots) {
-      Some(item) => Arc::new(T::List(item.clone())),
+      Some(item) => {
+        homogeneous_tuple_len = Some(slots.len());
+        Arc::new(T::List(item.clone()))
+      }
       None => {
         let mut expected_types = vec![Arc::new(T::List(calcit::DYNAMIC_TYPE.clone()))];
         expected_types.resize(required_arity, calcit::DYNAMIC_TYPE.clone());
@@ -575,7 +590,9 @@ pub(crate) fn resolve_checked_call_contract(
     }),
     ("map", T::List(item_type)) | ("map", T::Set(item_type)) if !is_syntax_member(item_type) => {
       let output_type = mapper_output_type(args.get(1)?, scope_types, std::slice::from_ref(item_type), "MapOutput");
-      let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
+      let (return_type, target) = if let Some(len) = homogeneous_tuple_len {
+        (Arc::new(T::Tuple(Arc::new(vec![output_type.clone(); len]))), "&list:map")
+      } else if matches!(receiver_type.as_ref(), T::List(_)) {
         (Arc::new(T::List(output_type.clone())), "&list:map")
       } else {
         (Arc::new(T::Set(output_type.clone())), "&set:map")
@@ -598,7 +615,10 @@ pub(crate) fn resolve_checked_call_contract(
           receiver_type.clone(),
           fn_type(vec![Arc::new(T::Number), item_type.clone()], output_type.clone()),
         ]),
-        return_type: Arc::new(T::List(output_type)),
+        return_type: match homogeneous_tuple_len {
+          Some(len) => Arc::new(T::Tuple(Arc::new(vec![output_type; len]))),
+          None => Arc::new(T::List(output_type)),
+        },
         lowering: None,
       })
     }
