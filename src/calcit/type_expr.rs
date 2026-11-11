@@ -123,6 +123,17 @@ pub(crate) fn desugar_bare_form(form: &Calcit) -> Option<Result<Calcit, String>>
 /// head ends in an uppercase name (see `desugar_bare_form`). Grammar errors
 /// inside it are left to the type-expression parser, so `List number` still
 /// reports `E_TYPE_EXPR_SYNTAX` instead of reading as a legacy form.
+/// How many of the forms after the name of a `defstruct` / `defenum` are the
+/// leading `(:generics T …)` and `(:where (T Debug) …)` clauses (#2700). They
+/// hold type variables and bounds, not members, so source readers skip them.
+pub(crate) fn data_definition_clause_count(after_name: &[Cirru]) -> usize {
+  let is_clause = |form: Option<&Cirru>, name: &str| matches!(form, Some(Cirru::List(items)) if matches!(items.first(), Some(Cirru::Leaf(tag)) if tag.as_ref() == name));
+  if !is_clause(after_name.first(), ":generics") {
+    return 0;
+  }
+  if is_clause(after_name.get(1), ":where") { 2 } else { 1 }
+}
+
 pub(crate) fn is_bare_compact_payload(payload: &Cirru) -> bool {
   let Cirru::List(items) = payload else {
     return false;

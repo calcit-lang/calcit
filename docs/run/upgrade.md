@@ -24,6 +24,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 `defstruct` / `defenum` 用 `(:generics …)` / `(:where …)` 子句（#2700）
+
+数据定义的泛型参数和约束改成和 `Fn` 一样的子句写法，放在名字之后、字段或变体之前：
+
+```cirru.no-run
+defstruct Box (:generics T) (:value T)
+defstruct ShownBox (:generics T)
+  :where $ T Debug
+  :value T
+defenum Result (:generics T E) (:ok T) (:err E)
+```
+
+0.41 的位置式写法 `defstruct Box ([] T)` 和其后的 `{} $ T Debug` 在 0.42.x 仍可加载，`calcit edit format` 会把它们改写成子句（同时去掉类型变量上的 quote），0.43.0 删除旧写法。只写 `(:where …)` 而没有前面的 `(:generics …)` 会报错。字段或变体不能在开头位置取名 `:generics` / `:where`。
+
 ## 0.41.2 解析不到的类型名报 `E_UNKNOWN_TYPE_NAME`（#2691）
 
 schema、`hint-fn` 和 `assert-type` 里写了不存在的类型名（例如把 `Number` 拼成 `Nubmer`）时，检查现在报 `E_UNKNOWN_TYPE_NAME`，并给出编辑距离最近的候选名。以前这个名字被当成一个新的名义类型，函数体不依赖参数类型时检查一直通过，调用方才收到 ``expected `'Nubmer` `` 这样的不匹配。按提示改成正确的名字，或者补上 `:refer` / `:as` 引入。只在别的 entry 里加载的模块不受影响。
