@@ -286,12 +286,13 @@ pub(crate) fn resolve_checked_call_contract(
     })?;
   // Collection operations see a homogeneous tuple as `List T`. A heterogeneous
   // tuple has no element type, so the receiver must be a List it cannot prove.
-  // A named alias such as `Vec3` is expanded first so it reads like the
-  // inline `Tuple Number Number Number`.
+  // A named tuple alias reads like its inline tuple. Map lookup also needs
+  // the expanded receiver so its checked contract agrees with get lowering.
   let receiver_type = match receiver_type.as_ref() {
     T::Tuple(_) => receiver_type,
     _ => match CalcitTypeAnnotation::expand_schema_alias(&receiver_type) {
       expanded if matches!(expanded.as_ref(), T::Tuple(_)) && fn_def != "nth" => expanded,
+      expanded if matches!(expanded.as_ref(), T::Map(_, _)) && fn_def == "get" => expanded,
       _ => receiver_type,
     },
   };
