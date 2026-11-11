@@ -209,6 +209,28 @@ information is missing.
 `get` 才会在运行值为 Struct 时返回 `Option<Dynamic>`。这样“静态必填字段”和“开放数据可选查询”
 在源码中保持可见区别，也不需要增加平行的 dynamic API。
 
+### Destructuring fields with `let{}`
+
+`let{}` binds several fields of a statically typed Struct by name. Each name is
+expanded to the required field read `(:name value)`, so every binding keeps the
+declared field type, and the data expression is evaluated once:
+
+```cirru
+let
+    Task $ defstruct Task (:id Number) (:text String) (:done? Bool)
+    task $ Task :id 1 :text |write :done? false
+  let{} (id text done?) task
+    assert= 1 id
+    assert= |write text
+    assert= false done?
+```
+
+`let{}` 只用于 Struct：名字必须是该 Struct 声明过的字段，写错字段名在检查期报
+`W_UNKNOWN_STRUCT_FIELD`（例如 ``Field `:txt` does not exist in struct `Task` ``）；
+receiver 不是静态已知的 Struct（Map、`Dynamic`）时与 `(:field value)` 一样报
+`W_REQUIRED_STRUCT_FIELD_TYPE`，不会退化成返回 Option 的 `get`。Map 继续用 `let`
+绑定一次后逐个 `get`，并处理 Option。
+
 Nested nominal fields keep the namespace where their declaration was written.
 This means a concise same-namespace field type such as `'Router` remains
 statically resolvable even when the outer Struct flows into another namespace:

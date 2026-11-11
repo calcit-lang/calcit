@@ -1761,10 +1761,10 @@
             -> $ Expr Bool
         'trait-listener-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn trait-listener-host (value)
-            unsafe-coerce value $ Fn test-traits.main/MyFoo $ -> Unit
+            unsafe-coerce value $ Fn test-traits.main/Greeter $ -> Unit
           :examples $ []
           :schema $ quote $ Fn Dynamic
-            -> $ Fn MyFoo $ -> Unit
+            -> $ Fn Greeter $ -> Unit
             :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |nominal-trait-callback)
             :code $ quote $ assert= :fn

@@ -5818,8 +5818,8 @@ fn binding_names(node: &Cirru) -> HashSet<String> {
           add_leaves(name, out);
         }
       }
-      // `let[] (a b) xs` destructures into the listed names.
-      "let[]" => {
+      // `let[] (a b) xs` and `let{} (a b) record` destructure into the listed names.
+      "let[]" | "let{}" => {
         if let Some(names) = items.get(1) {
           add_leaves(names, out);
         }
@@ -9147,7 +9147,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 54,
+      macro_count, 55,
       "update the audited bundled macro inventory when core macros change"
     );
   }

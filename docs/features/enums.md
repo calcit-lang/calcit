@@ -431,6 +431,47 @@ Requirements for the rewrite to trigger:
 
 If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
 
+## 裸 tag 改写为零载荷分支
+
+期望类型是确定的 enum 时（参数、struct 字段或函数返回值的声明），裸 tag 字面量直接表示同名的零载荷分支，检查期改写成完整构造：
+
+```cirru
+let
+    Filter $ defenum Filter (:all) (:active) (:done) (:tagged String)
+    show-filter $ fn (f)
+      hint-fn $ Fn Filter (-> String)
+      match f
+        (:all) |all
+        (:active) |active
+        (:done) |done
+        (:tagged t) t
+  ; `:active` 被改写成 `Filter :active`
+  assert= |active $ show-filter :active
+```
+
+```cirru.no-check
+defstruct View (:filter Filter) (:title String)
+
+%{} View (:filter :done) (:title |todo)   ; 字段：Filter :done
+defn default-filter () :all               ; 返回值声明为 Filter：Filter :all
+  hint-fn $ Fn (-> Filter)
+```
+
+规则：
+
+- 期望类型是 `Dynamic`、`Tag`、类型变量，或者不是 enum 时，tag 保持原样；
+- 期望类型是 `defunion` 时，只有在 union 没有 `Tag` 成员、且恰好一个 enum 成员有这个零载荷分支时才改写；
+- core 的 `Option` / `Result` 不参与改写，`Option :none` 要写全；
+- 返回值的改写覆盖最后一个表达式本身，以及最后一个 `if` 的两个分支。
+
+检查期报错：
+
+| 编码 | 情况 |
+| --- | --- |
+| `E_ENUM_TAG_UNKNOWN` | tag 不是该 enum 的分支，例如 `Filter has no :actve variant`，并列出全部分支 |
+| `E_ENUM_TAG_NEEDS_PAYLOAD` | 分支带载荷（如 `:tagged`），裸 tag 不能构造 |
+| `E_ENUM_TAG_AMBIGUOUS` | union 中多个 enum 成员都有这个零载荷分支，需要写出 `Filter :all` |
+
 ## Notes
 
 - Enum values are immutable and retain their enum definition.
