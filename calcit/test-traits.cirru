@@ -1810,18 +1810,18 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-declared-generic-slots)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] T) (:value Number)
-                  right $ defstruct ComparedRecord ([] T U) (:value Number)
+                  left $ defstruct ComparedRecord (:generics T) (:value Number)
+                  right $ defstruct ComparedRecord (:generics T U) (:value Number)
                 assert= false $ = left right
                 assert= 2 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |distinguishes-trait-bounds)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] T)
-                    {} $ T Debug
+                  left $ defstruct ComparedRecord (:generics T)
+                    :where $ T Debug
                     :value T
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ T ToString
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ T ToString
                     :value T
                 assert= false $ = left right
                 assert= 2 $ count $ #{} left right
@@ -1838,11 +1838,11 @@
               :code $ quote $ let
                   left-origin $ deftrait Marker
                   right-origin $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] T)
-                    {} $ T left-origin
+                  left $ defstruct ComparedRecord (:generics T)
+                    :where $ T left-origin
                     :value T
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ T right-origin
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ T right-origin
                     :value T
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
@@ -1862,18 +1862,18 @@
               :code $ quote $ let
                   marker $ deftrait Marker
                   implementation $ defimpl MarkerImpl marker
-                  left $ defstruct ComparedRecord ([] T) (:value Number)
-                  right $ defstruct ComparedRecord ([] T U) (:value Number)
+                  left $ defstruct ComparedRecord (:generics T) (:value Number)
+                  right $ defstruct ComparedRecord (:generics T U) (:value Number)
                 assert= false $ = (impl-traits left implementation) (impl-traits right implementation)
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-equivalent-trait-bound-forms)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] T)
-                    {} $ T marker
+                  left $ defstruct ComparedRecord (:generics T)
+                    :where $ T marker
                     :value T
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ T $ [] marker
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ T $ [] marker
                     :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -1984,8 +1984,8 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-deduplicated-generic-parameters)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] T) (:value T)
-                  right $ defstruct ComparedRecord ([] T T) (:value T)
+                  left $ defstruct ComparedRecord (:generics T) (:value T)
+                  right $ defstruct ComparedRecord (:generics T T) (:value T)
                 assert= true $ = left right
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
@@ -2049,11 +2049,11 @@
             %{} 'TestEntry (:name |preserves-string-bound-keys)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] T)
-                    {} $ T marker
+                  left $ defstruct ComparedRecord (:generics T)
+                    :where $ T marker
                     :value T
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ |:T marker
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ |:T marker
                     :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -2062,9 +2062,9 @@
             %{} 'TestEntry (:name |does-not-invent-bounds-from-tag-keys)
               :code $ quote $ let
                   marker $ deftrait Marker
-                  left $ defstruct ComparedRecord ([] T) (:value T)
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ :T marker
+                  left $ defstruct ComparedRecord (:generics T) (:value T)
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ :T marker
                     :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -2072,9 +2072,9 @@
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |does-not-invent-bounds-from-scalar-types)
               :code $ quote $ let
-                  left $ defstruct ComparedRecord ([] T) (:value T)
-                  right $ defstruct ComparedRecord ([] T)
-                    {} $ T 'Number
+                  left $ defstruct ComparedRecord (:generics T) (:value T)
+                  right $ defstruct ComparedRecord (:generics T)
+                    :where $ T 'Number
                     :value T
                 assert= true $ = left right
                 assert= 0 $ &compare left right
@@ -2111,7 +2111,7 @@
     'test-traits.struct-left $ %{} 'FileEntry
       :defs $ {}
         'GenericBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct GenericBox ([] T) (:value T)
+          :code $ quote $ defstruct GenericBox (:generics T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'Point $ %{} 'CodeEntry (:doc |)
@@ -2220,7 +2220,7 @@
           :schema $ quote $ Fn (-> StructDef)
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
-            defstruct Holder ([] Point) (:point Point)
+            defstruct Holder (:generics Point) (:point Point)
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-holder $ %{} 'CodeEntry (:doc |)
@@ -2268,7 +2268,7 @@
           :schema $ quote $ Fn (-> StructDef)
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
-            defstruct Holder ([] Point) (:point Point)
+            defstruct Holder (:generics Point) (:point Point)
           :examples $ []
           :schema $ quote $ Fn (-> StructDef)
         'make-holder $ %{} 'CodeEntry (:doc |)

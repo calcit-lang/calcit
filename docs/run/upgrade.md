@@ -24,6 +24,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 `defstruct` / `defenum` 用 `(:generics …)` / `(:where …)` 子句（#2700）
+
+数据定义的泛型参数和约束改成和 `Fn` 一样的子句写法，放在名字之后、字段或变体之前：
+
+```cirru.no-run
+defstruct Box (:generics T) (:value T)
+defstruct ShownBox (:generics T)
+  :where $ T Debug
+  :value T
+defenum Result (:generics T E) (:ok T) (:err E)
+```
+
+0.41 的位置式写法 `defstruct Box ([] T)` 和其后的 `{} $ T Debug` 在 0.42.x 仍可加载，`calcit edit format` 会把它们改写成子句（同时去掉类型变量上的 quote），0.43.0 删除旧写法。只写 `(:where …)` 而没有前面的 `(:generics …)` 会报错。字段或变体不能在开头位置取名 `:generics` / `:where`。
+
 ## 0.42.0 阻断检查的 `W_` 诊断改名为 `E_`（#2699）
 
 下面这些诊断一直会让 `--check-only`、运行、测试和 codegen 失败，但编码是 `W_`、消息以 `[Warn]` 开头、列在 `Warnings:` 下。0.42.0 起编码改为 `E_`，消息前缀改为 `[Error]`，标题改为 `Errors:`，汇总改为 `Found N errors …`。检查结果不变，只是名字和文案反映实际行为。其中 8 个原本就有同名 `E_`（feature policy 为 `:error` 或严格模式下立即中止时用的），现在两种情况共用一个编码。

@@ -52,7 +52,7 @@
           :examples $ []
           :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct ContextBox ([] T) (:value T)
+          :code $ quote $ defstruct ContextBox (:generics T) (:value T)
             :count $ Option Number
           :examples $ []
           :schema $ quote StructDef

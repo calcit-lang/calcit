@@ -98,7 +98,8 @@ fn desugar_compact_definition_types(ys: &[Cirru]) -> Option<Result<Vec<Cirru>, S
     }
     return changed.then_some(Ok(rewritten));
   }
-  for entry in rewritten.iter_mut().skip(2) {
+  let clauses = crate::calcit::type_expr::data_definition_clause_count(&rewritten[2.min(rewritten.len())..]);
+  for entry in rewritten.iter_mut().skip(2 + clauses) {
     let Cirru::List(items) = entry else { continue };
     // Members may also be wrapped in one `{}` form: `defstruct Box $ {} (:items $ List Number)`.
     if matches!(items.first(), Some(Cirru::Leaf(brace)) if brace.as_ref() == "{}") {

@@ -24,19 +24,19 @@
           :examples $ []
           :schema $ quote StructDef
         'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct CallbackEnvelope ([] T)
+          :code $ quote $ defstruct CallbackEnvelope (:generics T)
             :holder $ test-types-inference.main/CallbackHolder T
           :examples $ []
           :schema $ quote StructDef
         'CallbackHolder $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct CallbackHolder ([] T)
+          :code $ quote $ defstruct CallbackHolder (:generics T)
             :callback $ Fn
               Fn T $ -> Number
               -> Number
           :examples $ []
           :schema $ quote StructDef
         'EmptyFieldBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct EmptyFieldBox ([] T S)
+          :code $ quote $ defstruct EmptyFieldBox (:generics T S)
             :items $ List T
             :seed S
           :examples $ []
@@ -1954,7 +1954,7 @@
     'test-types-inference.shadow $ %{} 'FileEntry
       :defs $ {}
         'Option $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Option ([] T) (:none) (:some T)
+          :code $ quote $ defenum Option (:generics T) (:none) (:some T)
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-option)
