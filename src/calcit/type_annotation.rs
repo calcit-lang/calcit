@@ -303,6 +303,11 @@ thread_local! {
   /// edge while keeping independent compatibility checks isolated.
   static TYPE_RELATION_SLOT_STACK: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
   static COMPATIBILITY_RELATION_VISITS: Cell<Option<usize>> = const { Cell::new(None) };
+  /// Union pairs currently being related (#2687). Recursive unions reach the
+  /// same `(actual, expected, mode)` pair again through their members; such a
+  /// pair is assumed to hold (coinductively), so the relation terminates
+  /// instead of recursing until the Rust stack overflows.
+  static UNION_RELATION_ASSUMPTIONS: RefCell<HashSet<UnionRelationKey>> = RefCell::new(HashSet::new());
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
@@ -970,6 +975,49 @@ fn with_type_relation_symbol<T>(
   }
   let _guard = SymbolGuard { stack, key };
   Some(f())
+}
+
+/// `(actual union, expected union, proof mode)`.
+type UnionRelationKey = (Arc<str>, Arc<str>, bool);
+
+struct UnionRelationAssumption {
+  key: UnionRelationKey,
+}
+
+impl Drop for UnionRelationAssumption {
+  fn drop(&mut self) {
+    UNION_RELATION_ASSUMPTIONS.with(|active| {
+      active.borrow_mut().remove(&self.key);
+    });
+  }
+}
+
+fn union_relation_identity(union_def: &CalcitUnionDef) -> Arc<str> {
+  match union_def.definition_ref() {
+    Some(reference) => reference.clone(),
+    None => Arc::from(union_def.name.ref_str()),
+  }
+}
+
+/// Record that `actual` is being related to `expected`. Returns `None` when
+/// the same pair is already being related further up the stack: the caller
+/// then treats the pair as holding, which is the coinductive reading of a
+/// recursive union. The guard removes the pair once that check finishes, so
+/// sibling and later relations are unaffected.
+fn enter_union_relation_assumption(
+  actual: &CalcitUnionDef,
+  expected: &CalcitUnionDef,
+  mode: PlainRelationMode,
+) -> Option<UnionRelationAssumption> {
+  let key = (
+    union_relation_identity(actual),
+    union_relation_identity(expected),
+    matches!(mode, PlainRelationMode::Proof),
+  );
+  let entered = UNION_RELATION_ASSUMPTIONS.with(|active| active.borrow_mut().insert(key.clone()));
+  // `then`, not `then_some`: building a guard for a pair that is already
+  // active would drop it at once and remove the outer caller's entry.
+  entered.then(|| UnionRelationAssumption { key })
 }
 
 fn type_ref_arity_resolution_key(name: &str) -> Arc<str> {
@@ -5081,6 +5129,12 @@ impl CalcitTypeAnnotation {
       (Some(actual), Some(expected)) => {
         let Ok(members) = actual.checked_members() else {
           return Some(Mismatch);
+        };
+        // Recursive unions come back to this same pair through their members.
+        // Assume the pair holds while it is being checked, so the cycle closes
+        // here instead of overflowing the stack (#2687).
+        let Some(_assumption) = enter_union_relation_assumption(&actual, &expected, mode) else {
+          return Some(Proven);
         };
         let mut result = Proven;
         for member in members {

@@ -86,6 +86,7 @@ defn tree-total (t)
 - 自引用要放在 `List`、`Map`、`Set` 等容器的元素位置，或者成员 struct 的字段里（`defunion Doc String Section`，`Section` 的 `:children` 是 `List Doc`），这样每一层都有一个具体的值；
 - 有期望类型时，`[] 1 ([] 2 3)` 这样的嵌套字面量直接按 `Tree` 检查；
 - 运行时判断只看外层种类；受检解码（`parse-cirru-edn-as` 等）会逐层解码，错误给出出错的位置；
+- 两个递归 union 之间也能比较：`Map Tag NumericTree` 可以传给 `Map Tag MixedTree`（`NumericTree` 的每个成员都在 `MixedTree` 里），反过来则报类型不匹配；
 - 直接把自己当成员（`defunion A String A`）或者只经过其他 union 绕回自己，展开不会终止，报 `E_UNION_MEMBER_INVALID`。
 
 struct 字段同样可以引用自己所在的 struct，例如 `defstruct Node (:data Number) (:children (Map Tag Node))`。
