@@ -256,7 +256,7 @@ nil-joined cause, while a nil join over `DynFn` keeps the dynamic-callable cause
 
 Calling a value whose static type is Dynamic, such as `(x 1)` when `x` has a
 Dynamic schema or `((.unwrap-or ...))` from an extra indentation level, reports
-`W_DYNAMIC_CALL`: the call fails at runtime unless the value is a function.
+`E_DYNAMIC_CALL`: the call fails at runtime unless the value is a function.
 Narrow it first with `(if (fn? x) (x 1) ...)`, or give it an `Fn` schema.
 Calls whose head a macro builds itself and calls inside `:js-ffi` definitions
 are not reported. A macro that moves a caller-written value into head position,
@@ -269,10 +269,10 @@ or the Option used directly as an `if` / `when` / `or` / `and` condition. `None`
 is a value, not nil, so these always take the same branch. Use `.some?` /
 `.none?`, `if-let` / `match`, or `.unwrap-or` for a default. It is reported in
 project namespaces only and fails the check like `E_OPTION_ERASED_TO_NIL`.
-`Result` and application enums keep the `W_NOMINAL_ENUM_LEGACY_USE` warning.
+`Result` and application enums still report `E_NOMINAL_ENUM_LEGACY_USE`, which also fails the check.
 
 A direct call to an `option:*` helper (`option:unwrap-or`, `option:map`,
-`option:fold` and the rest) in project source is a `W_OPTION_HELPER_CALL`
+`option:fold` and the rest) in project source is a `E_OPTION_HELPER_CALL`
 warning (0.41.0, #2653). The helpers are the implementations behind the Option
 methods, so call `.unwrap-or` / `.map` / `.fold` instead. Calls that a core
 macro expands to, such as the `option:fold` of `if-let`, are not reported.
@@ -363,14 +363,14 @@ defn load-user (id)
   todo! "|implement user lookup"
 ```
 
-Each occurrence emits `W_TODO` with the containing namespace, definition, and
+Each occurrence emits `E_TODO` with the containing namespace, definition, and
 structural path. A static String literal is required for the message; invalid
 messages or extra arguments are rejected as type/arity errors before codegen;
 they do not emit a completion warning. The placeholder is accepted in a
 declared return position without manufacturing a return-type mismatch, but the
 warning remains a completion-gate failure until the body is implemented.
 
-`raise "|TODO..."` does not emit `W_TODO`, because ordinary exception behavior
+`raise "|TODO..."` does not emit `E_TODO`, because ordinary exception behavior
 and implementation-completion status are separate concerns.
 
 `analyze.weak-types` 的 `schema_version: 9`（0.33.0 起，删除了 `summary.intents.declared-optional`）保留单次共享扫描得到的 kind、intent、definition、path、detail、evidence 与 suggestion，并提供两个显式 opt-in 的证据视图。`--ffi-evidence` 在同一 envelope 的 `data.evidence.ffi_boundaries` 中报告 browser、Node、npm import、WebGPU 与 unknown host 分类、结构路径、nullable/unsafe 证据、静态 caller、精确 schema helper 候选，以及 review-only trait/adapter manifest；每个 boundary 都携带稳定的信息代码 `I_FFI_BOUNDARY_EVIDENCE`。它不执行代码、不写 Snapshot，也不声称第三方契约可信。Cirru EDN 是首选结构化格式，JSON 继续用于互操作。
@@ -418,7 +418,7 @@ For namespace-level definitions, `:schema` is stored on the definition entry and
 
 The preprocessor propagates a named function's schema into its parameter bindings. This means field access, method dispatch, generic return inference, and return checks inside the body use the declared types instead of falling back to `:dynamic`. A `:rest` schema is preserved as a variadic element type both for calls and when the function is passed as a higher-order callback; every concrete rest argument is checked against that element type. Known collection receivers can also recover contracts hidden by a polymorphic compatibility facade: `filter`, `any?`, and `every?` require `T -> Bool` for List and Set, while `each` constrains the callback input to `T` and allows any return type. `map` requires `T -> U` for List and Set, and a Set receiver specializes to `&set:map`. `foldl` and `reduce` recover accumulator `U` from the initial value and require `U, T -> U`; a native `foldl` result preserves that initial accumulator type only when the reducer has a concrete compatible `Fn` signature, while `DynFn` leaves the result `Dynamic`. `apply` similarly recovers a concrete or generic callable return only when a non-Dynamic homogeneous `List<T>` member satisfies every fixed/rest callable input and the spread cardinality proves the callable arity; heterogeneous-position callables, unknown-length fixed calls, unknown functions, and trait-bounded generics deliberately keep the compatibility result `Dynamic`. Two-argument `sort` and `&list:sort` preserve `List<T>` and require a `T, T -> Number` comparator. The function form of `&list:sort-by` requires a `T -> K` selector, while its Tag field-selector compatibility path remains open. `interleave` requires both inputs and its result to share one `List<T>` member type; callers must normalize heterogeneous inputs or opt into `List<Dynamic>` explicitly at a reviewed boundary. One-argument natural sorting is unchanged. For Map, iteration, predicate, and fold callbacks receive the heterogeneous runtime `[key value]` pair as `List<Dynamic>` without inventing a homogeneous `K = V` relation; a Map mapper must also return a `List<Dynamic>` pair. Syntax-typed macro collections remain on their phase-aware open contracts, including sort specialization. Native proc typed-rest validation follows the runtime contract: `&map:dissoc` validates every key against the receiver's `K`, while `&list:concat` and `&merge` require every remaining collection to preserve the first collection's member types. By contrast, `[]` and `#{}` use `Variadic<T>` only as common-member inference evidence and intentionally fall back to `Dynamic` for heterogeneous literals.
 
-`if` 两个分支合流时会保留“可能缺失”的信息：当一个分支是具体类型、另一个是同一 payload 的 `Option<T>` 时，合流结果是 `Option<T>`，而不是退化为 `Dynamic` 或直接取具体分支。因此把 `(if c 0 (min xs))` 的结果直接用于算术会报告 `W_FN_ARG_TYPE_MISMATCH`，并提示先用 `.unwrap-or` 或 `match` 处理缺失分支；只有两侧本来就可互用时才沿用较宽的 Dynamic 形状，以免误报。
+`if` 两个分支合流时会保留“可能缺失”的信息：当一个分支是具体类型、另一个是同一 payload 的 `Option<T>` 时，合流结果是 `Option<T>`，而不是退化为 `Dynamic` 或直接取具体分支。因此把 `(if c 0 (min xs))` 的结果直接用于算术会报告 `E_FN_ARG_TYPE_MISMATCH`，并提示先用 `.unwrap-or` 或 `match` 处理缺失分支；只有两侧本来就可互用时才沿用较宽的 Dynamic 形状，以免误报。
 
 ### 展开参数的集合边界
 
@@ -718,7 +718,7 @@ defn f (xs) (count xs)
 
 ### Struct 构造完整性
 
-能够静态解析的 Struct 构造会在 macro 展开后的同一校验路径中检查字段数量、重复或未知的字面量字段名和字段值类型。不完整的 `%{} Point (:x 1)` 不再等到 native 执行或生成的 JS 才报错；默认严格检查使用现有 `W_FN_ARG_TYPE_MISMATCH` 定位到源码构造调用，并阻止生成应用产物。
+能够静态解析的 Struct 构造会在 macro 展开后的同一校验路径中检查字段数量、重复或未知的字面量字段名和字段值类型。不完整的 `%{} Point (:x 1)` 不再等到 native 执行或生成的 JS 才报错；默认严格检查使用现有 `E_FN_ARG_TYPE_MISMATCH` 定位到源码构造调用，并阻止生成应用产物。
 
 推荐使用 `Point :x 1 :y 2`。
 
@@ -898,7 +898,7 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 
 ### 返回契约与 async 尾返回
 
-函数声明的返回类型需要由最后一个实际执行表达式证明；末尾注入的 `hint-fn` 元数据不能遮住这个表达式。已知矛盾报告 `W_FN_RETURN_TYPE_MISMATCH`，不会因为实际值属于 Fn 而跳过检查；明确声明为 Dynamic 的保存和传递仍然允许。
+函数声明的返回类型需要由最后一个实际执行表达式证明；末尾注入的 `hint-fn` 元数据不能遮住这个表达式。已知矛盾报告 `E_FN_RETURN_TYPE_MISMATCH`，不会因为实际值属于 Fn 而跳过检查；明确声明为 Dynamic 的保存和传递仍然允许。
 
 async 函数的返回契约描述完成后的逻辑结果。若尾表达式是另一个 async 调用，只在当前函数也明确标记 async 时检查它的逻辑结果：Number 结果不能转发成 String，普通同步函数也不能把尚未完成的调用当成 Number。这个边界不为普通参数自动插入 await，不改变尚在迁移的开放类型策略；具体 backend 仍会独立拒绝不支持的 async 控制流。JS 的 Promise 转发和已有 Component async import 尾调用分别通过真实宿主回放验证，不代表 native 新增了异步等待语法。
 

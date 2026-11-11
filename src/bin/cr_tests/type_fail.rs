@@ -208,7 +208,7 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
         warnings
           .borrow()
           .iter()
-          .all(|warning| warning.code() != Some("W_NOMINAL_ENUM_LEGACY_USE")),
+          .all(|warning| warning.code() != Some("E_NOMINAL_ENUM_LEGACY_USE")),
         "stored values must use ordinary field diagnostics, not nullable-receiver warnings"
       );
     }
@@ -226,10 +226,10 @@ fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
       .expect("nil comparison should produce a type diagnostic, not a preprocessing failure");
     let warnings = warnings.borrow();
     assert!(
-      warnings.iter().any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+      warnings.iter().any(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
         && warning.message().contains("enum Option<:number>")
         && warning.message().contains(":nil")),
-      "expected W_FN_ARG_TYPE_MISMATCH for Option vs nil: {warnings:?}"
+      "expected E_FN_ARG_TYPE_MISMATCH for Option vs nil: {warnings:?}"
     );
   });
 }
@@ -249,7 +249,7 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
       .expect("nil->option with JsNullish should produce a type diagnostic, not a preprocessing failure");
     let warnings = warnings.borrow();
     assert!(
-      warnings.iter().any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+      warnings.iter().any(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
         && warning.message().contains("calcit.core/nil->option")
         && warning.message().contains("js-nullish<:number>")),
       "nil->option must keep rejecting JsNullish arguments: {warnings:?}"
@@ -354,8 +354,8 @@ fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {
     let call = collect(":missing ev");
     assert_eq!(shorthand, call, "shorthand and tag call must report identical diagnostics");
     assert!(
-      shorthand.iter().any(|(code, _)| code.as_deref() == Some("W_UNKNOWN_STRUCT_FIELD")),
-      "unknown field must be reported with W_UNKNOWN_STRUCT_FIELD: {shorthand:?}"
+      shorthand.iter().any(|(code, _)| code.as_deref() == Some("E_UNKNOWN_STRUCT_FIELD")),
+      "unknown field must be reported with E_UNKNOWN_STRUCT_FIELD: {shorthand:?}"
     );
   });
 }
@@ -631,7 +631,7 @@ fn reset_diagnostic_renders_the_call_head_once() {
     let warnings = warnings.borrow();
     let matched: Vec<_> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_RESET_ARG_TYPE_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_RESET_ARG_TYPE_MISMATCH"))
       .collect();
     assert_eq!(matched.len(), 1, "{warnings:?}");
     let message = matched[0].message();
@@ -943,7 +943,7 @@ fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
       let warnings = warnings.borrow();
       assert!(
         warnings.iter().any(|warning| {
-          warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+          warning.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
         }),
         "{name}: invalid callback passed without a typed diagnostic: {warnings:?}"
       );
@@ -1036,7 +1036,7 @@ fn contextual_callback_output_does_not_bind_output_only_generic() {
     );
     assert!(
       warnings.iter().any(|warning| {
-        warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
           && warning
             .message()
             .contains("declares return type `:number`, but body returns `:string`")
@@ -1045,7 +1045,7 @@ fn contextual_callback_output_does_not_bind_output_only_generic() {
     );
     assert!(
       !warnings.iter().any(|warning| {
-        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") && warning.message().contains("arg 2 expects type `:string`")
+        warning.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH") && warning.message().contains("arg 2 expects type `:string`")
       }),
       "the callback result must not specialize T before the later ordinary argument: {warnings:?}"
     );
@@ -1154,7 +1154,7 @@ fn contextual_callback_method_owned_output_generic_is_open() {
       !warnings.iter().any(|warning| {
         matches!(
           warning.code(),
-          Some("W_METHOD_ARG_TYPE_MISMATCH" | "W_FN_RETURN_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH")
+          Some("E_METHOD_ARG_TYPE_MISMATCH" | "E_FN_RETURN_TYPE_MISMATCH" | "E_LOCAL_FN_ARG_TYPE_MISMATCH")
         )
       }),
       "a valid callback result must not produce a method type diagnostic: {warnings:?}"
@@ -1186,7 +1186,7 @@ fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
     let warnings = warnings.borrow();
     assert!(
       warnings.iter().any(|warning| {
-        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+        warning.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
       }),
       "a concrete callback result must not satisfy a captured lexical generic without a typed diagnostic: {warnings:?}"
     );
@@ -1341,7 +1341,7 @@ fn if_join_preserves_option_payload_for_arithmetic_checks() {
       warnings
         .borrow()
         .iter()
-        .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("Option")),
+        .any(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("Option")),
       "expected an Option payload mismatch diagnostic: {:?}",
       warnings.borrow()
     );
@@ -1794,7 +1794,7 @@ fn strict_type_fail_host_value_equality_reports_stable_warning_code() {
     let warnings = warnings.borrow();
     let host_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_HOST_VALUE_EQUALITY"))
+      .filter(|warning| warning.code() == Some("E_HOST_VALUE_EQUALITY"))
       .map(|warning| warning.message().to_owned())
       .collect::<Vec<_>>();
     for (definition, position) in [
@@ -2255,7 +2255,7 @@ fn assertion_proof_keeps_assert_equal_option_erasure_quiet() {
       .filter_map(|warning| warning.code().map(str::to_owned))
       .collect::<Vec<_>>();
     assert!(
-      !codes.iter().any(|code| code == "W_NOMINAL_ENUM_LEGACY_USE"),
+      !codes.iter().any(|code| code == "E_NOMINAL_ENUM_LEGACY_USE"),
       "explicit Dynamic erasure must not warn as a nullable use: {codes:?}"
     );
   });
@@ -2337,7 +2337,7 @@ fn strict_callback_parameters_are_contravariant_at_the_nominal_boundary() {
       warnings
         .borrow()
         .iter()
-        .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("fn(dynamic, dynamic)")),
+        .any(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("fn(dynamic, dynamic)")),
       "open parameters must not excuse a wrong arity: {:?}",
       warnings.borrow()
     );
@@ -2371,7 +2371,7 @@ fn strict_fixed_arity_callbacks_fill_variadic_slots() {
         warnings
           .borrow()
           .iter()
-          .any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains(detail)),
+          .any(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains(detail)),
         "{entry} should be rejected: {:?}",
         warnings.borrow()
       );
@@ -2401,7 +2401,7 @@ fn strict_family_bounds_admit_named_members_only() {
         warnings
           .borrow()
           .iter()
-          .any(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH") && warning.message().contains(&expected)),
+          .any(|warning| warning.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH") && warning.message().contains(&expected)),
         "{entry} must report a family bound mismatch: {:?}",
         warnings.borrow()
       );
@@ -2448,7 +2448,7 @@ fn strict_type_fail_generic_callback_output_keeps_map_value_type() {
     assert!(
       warnings
         .iter()
-        .any(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains("&map:assoc")),
+        .any(|warning| warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH") && warning.message().contains("&map:assoc")),
       "generic callback output must retain its value type: {warnings:?}"
     );
   });
@@ -2557,7 +2557,7 @@ fn type_fail_typed_rest_spread_checks_the_list_element_contract() {
           let warnings = warnings.borrow();
           let mismatches = warnings
             .iter()
-            .filter(|warning| matches!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH")))
+            .filter(|warning| matches!(warning.code(), Some("E_FN_ARG_TYPE_MISMATCH" | "E_LOCAL_FN_ARG_TYPE_MISMATCH")))
             .collect::<Vec<_>>();
           assert_eq!(mismatches.len(), 1, "a Number spread cannot satisfy rest String: {warnings:?}");
           assert_eq!(mismatches[0].expected(), Some(expected));
@@ -2593,7 +2593,7 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
       let warnings = warnings.borrow();
       let matched: Vec<&LocatedWarning> = warnings
         .iter()
-        .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
+        .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH"))
         .collect();
       assert_eq!(
         matched.len(),
@@ -2601,7 +2601,7 @@ fn type_fail_call_arg_fixture_reports_warning_code() {
         "expected exactly one arg-type warning for {path}, got: {warnings:?}"
       );
       let warning = matched[0];
-      assert_eq!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH"));
+      assert_eq!(warning.code(), Some("E_FN_ARG_TYPE_MISMATCH"));
       assert!(
         warning.message().contains(expected_msg),
         "warning message for {path} was: {}",
@@ -2802,7 +2802,7 @@ fn mixed_public_equality_reports_guided_type_mismatches() {
     let equality_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
           && ["calcit.core/=`", "calcit.core/not=`", "calcit.core//=`"]
             .iter()
             .any(|operation| warning.message().contains(operation))
@@ -2872,7 +2872,7 @@ fn nil_tests_on_option_literals_are_errors() {
       !warnings
         .borrow()
         .iter()
-        .any(|warning| warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")),
+        .any(|warning| warning.code() == Some("E_NOMINAL_ENUM_LEGACY_USE")),
       "no leftover warning: {:?}",
       warnings.borrow()
     );
@@ -2922,7 +2922,7 @@ fn direct_option_helper_calls_warn_but_core_macro_expansions_do_not() {
     let helper_calls = warnings
       .borrow()
       .iter()
-      .filter(|warning| warning.code() == Some("W_OPTION_HELPER_CALL"))
+      .filter(|warning| warning.code() == Some("E_OPTION_HELPER_CALL"))
       .map(|warning| warning.message().to_owned())
       .collect::<Vec<_>>();
     assert_eq!(helper_calls.len(), 2, "{helper_calls:?}");
@@ -2954,7 +2954,7 @@ fn option_migration_source_calls_fail_during_preprocessing() {
     for operation in ["=", "assoc"] {
       assert!(
         warnings.iter().any(|warning| {
-          warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")
+          warning.code() == Some("E_NOMINAL_ENUM_LEGACY_USE")
             && warning.message().contains(&format!("`{operation}` consumes nominal enum `Option`"))
         }),
         "ordinary source call `{operation}` should report an Option migration warning, got: {warnings:?}"
@@ -2962,7 +2962,7 @@ fn option_migration_source_calls_fail_during_preprocessing() {
     }
     assert!(
       warnings.iter().any(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && warning.message().contains("Proc `starts-with?` arg 1 expects type `:string`")
           && warning.message().contains("Option")
       }),
@@ -2980,7 +2980,7 @@ fn parse_cirru_list_rejects_non_string_before_runtime() {
       .expect("invalid parser input should produce a type warning before runtime");
     assert!(
       warnings.borrow().iter().any(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && warning.message().contains("Proc `parse-cirru-list` arg 1 expects type `:string`")
           && warning.message().contains("got `:number`")
       }),
@@ -2999,7 +2999,7 @@ fn format_cirru_rejects_non_list_before_runtime() {
       .expect("invalid formatter input should produce a type warning before runtime");
     assert!(
       warnings.borrow().iter().any(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && warning.message().contains("Proc `format-cirru` arg 1 expects type `list`")
           && warning.message().contains("got `:number`")
       }),
@@ -3018,7 +3018,7 @@ fn format_cirru_one_liner_rejects_non_list_before_runtime() {
       .expect("invalid one-line formatter input should produce a type warning before runtime");
     assert!(
       warnings.borrow().iter().any(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && warning
             .message()
             .contains("Proc `format-cirru-one-liner` arg 1 expects type `list`")
@@ -3099,7 +3099,7 @@ fn dynamic_option_method_receiver_fails_during_preprocessing() {
     let warnings = warnings.borrow();
     let matched = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
+      .filter(|warning| warning.code() == Some("E_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
       .collect::<Vec<_>>();
     assert_eq!(matched.len(), 1, "expected one Dynamic Option-method warning, got: {warnings:?}");
     assert!(matched[0].message().contains("`.unwrap-or`"));
@@ -3125,7 +3125,7 @@ fn option_fold_callbacks_share_return_type_during_preprocessing() {
       assert!(
         warnings
           .iter()
-          .any(|warning| { warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/option:fold") }),
+          .any(|warning| { warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/option:fold") }),
         "option:fold callback mismatch should be reported for {snippet:?}, got: {warnings:?}"
       );
     }
@@ -3145,7 +3145,7 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
     for inferred in ["Option<:number>", "Option<:string>"] {
       let warning = warnings
         .iter()
-        .find(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains(inferred))
+        .find(|warning| warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH") && warning.message().contains(inferred))
         .unwrap_or_else(|| panic!("missing mismatch for {inferred}; warnings: {warnings:?}"));
       assert!(warning.message().contains("inferred type"), "warning: {warning:?}");
       assert!(
@@ -3173,7 +3173,7 @@ fn required_struct_field_access_inside_local_fn_keeps_its_diagnostic() {
       assert!(
         warnings
           .iter()
-          .any(|warning| warning.code() == Some("W_REQUIRED_STRUCT_FIELD_TYPE")),
+          .any(|warning| warning.code() == Some("E_REQUIRED_STRUCT_FIELD_TYPE")),
         "hint {hint:?} must keep the required field diagnostic, got: {warnings:?}"
       );
     }
@@ -3202,7 +3202,7 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
     let warnings = warnings.borrow();
     let required_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_REQUIRED_STRUCT_FIELD_TYPE"))
+      .filter(|warning| warning.code() == Some("E_REQUIRED_STRUCT_FIELD_TYPE"))
       .collect::<Vec<_>>();
     assert_eq!(
       required_warnings.len(),
@@ -3217,7 +3217,7 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
 
     let unknown_field_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_UNKNOWN_STRUCT_FIELD"))
+      .filter(|warning| warning.code() == Some("E_UNKNOWN_STRUCT_FIELD"))
       .collect::<Vec<_>>();
     assert_eq!(
       unknown_field_warnings.len(),
@@ -3275,7 +3275,7 @@ fn collection_path_operations_do_not_traverse_struct_fields() {
     let warnings = warnings.borrow();
     let path_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_STRUCT_PATH_OPERATION"))
+      .filter(|warning| warning.code() == Some("E_STRUCT_PATH_OPERATION"))
       .collect::<Vec<_>>();
     assert_eq!(
       path_warnings.len(),
@@ -3311,7 +3311,7 @@ fn type_fail_trait_method_generic_receiver_fixture_reports_warning_code() {
     let warnings = warnings.borrow();
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH"))
       .collect();
     assert_eq!(matched.len(), 1, "expected one method argument warning, got: {warnings:?}");
     assert!(
@@ -3331,7 +3331,7 @@ fn type_fail_trait_method_generic_receiver_fixture_reports_warning_code() {
     let callback_warnings = callback_warnings.borrow();
     let return_warnings: Vec<&LocatedWarning> = callback_warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH"))
       .collect();
     assert_eq!(
       return_warnings.len(),
@@ -3367,7 +3367,7 @@ fn type_fail_generic_where_bound_fixture_reports_warning_code() {
     let warnings = warnings.borrow();
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH"))
       .collect();
     assert_eq!(
       matched.len(),
@@ -3375,7 +3375,7 @@ fn type_fail_generic_where_bound_fixture_reports_warning_code() {
       "expected exactly one generic where-bound warning, got: {warnings:?}"
     );
     let warning = matched[0];
-    assert_eq!(warning.code(), Some("W_GENERIC_WHERE_BOUND_MISMATCH"));
+    assert_eq!(warning.code(), Some("E_GENERIC_WHERE_BOUND_MISMATCH"));
     assert!(
       warning.message().contains("`:number`")
         && warning.message().contains("Mappable")
@@ -3407,7 +3407,7 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
     let warnings = warnings.borrow();
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH"))
       .collect();
     assert_eq!(
       matched.len(),
@@ -3415,7 +3415,7 @@ fn type_fail_core_map_where_bound_fixture_reports_warning_code() {
       "expected exactly one generic where-bound warning, got: {warnings:?}"
     );
     let warning = matched[0];
-    assert_eq!(warning.code(), Some("W_GENERIC_WHERE_BOUND_MISMATCH"));
+    assert_eq!(warning.code(), Some("E_GENERIC_WHERE_BOUND_MISMATCH"));
     assert!(
       warning.message().contains("`:number`")
         && warning.message().contains("Mappable")
@@ -3444,7 +3444,7 @@ fn type_fail_slice_receiver_trait_fixture_reports_warning_code() {
     let warnings = warnings.borrow();
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_GENERIC_WHERE_BOUND_MISMATCH"))
+      .filter(|warning| warning.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH"))
       .collect();
     assert_eq!(
       matched.len(),
@@ -3474,7 +3474,7 @@ fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
     let warnings = warnings.borrow();
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/update"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/update"))
       .collect();
     assert_eq!(matched.len(), 3, "expected update key and callback warnings, got: {warnings:?}");
     assert!(
@@ -3513,7 +3513,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let matched: Vec<&LocatedWarning> = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
           && (warning.message().contains("calcit.core/get")
             || warning.message().contains("calcit.core/includes?")
             || warning.message().contains("calcit.core/contains?")
@@ -3645,7 +3645,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let proc_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && ["&map:dissoc", "&list:concat", "&merge"]
             .iter()
             .any(|proc| warning.message().contains(&format!("Proc `{proc}`")))
@@ -3682,7 +3682,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let filter_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/filter"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/filter"))
       .collect::<Vec<_>>();
     assert_eq!(
       filter_warnings.len(),
@@ -3722,7 +3722,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let iteration_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
           && ["calcit.core/any?", "calcit.core/every?", "calcit.core/each"]
             .iter()
             .any(|name| warning.message().contains(name))
@@ -3759,7 +3759,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let map_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/map"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/map"))
       .collect::<Vec<_>>();
     assert_eq!(
       map_warnings.len(),
@@ -3789,7 +3789,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let fold_warnings = warnings
       .iter()
       .filter(|warning| {
-        matches!(warning.code(), Some("W_PROC_ARG_TYPE_MISMATCH") | Some("W_FN_ARG_TYPE_MISMATCH"))
+        matches!(warning.code(), Some("E_PROC_ARG_TYPE_MISMATCH") | Some("E_FN_ARG_TYPE_MISMATCH"))
           && (warning.message().contains("Proc `foldl`") || warning.message().contains("calcit.core/reduce"))
       })
       .collect::<Vec<_>>();
@@ -3820,7 +3820,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let sort_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && (warning.message().contains("Proc `sort`") || warning.message().contains("Proc `&list:sort`"))
       })
       .collect::<Vec<_>>();
@@ -3851,7 +3851,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let sort_by_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:sort-by"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:sort-by"))
       .collect::<Vec<_>>();
     assert_eq!(
       sort_by_warnings.len(),
@@ -3865,7 +3865,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let list_apply_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:apply"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/&list:apply"))
       .collect::<Vec<_>>();
     assert_eq!(
       list_apply_warnings.len(),
@@ -3887,7 +3887,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let list_apply_method_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.apply`"))
+      .filter(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.apply`"))
       .collect::<Vec<_>>();
     assert_eq!(
       list_apply_method_warnings.len(),
@@ -3909,7 +3909,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let interleave_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/interleave"))
+      .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/interleave"))
       .collect::<Vec<_>>();
     assert_eq!(
       interleave_warnings.len(),
@@ -3931,7 +3931,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let partial_binding_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
           && warning
             .message()
             .contains("type-fail-collection-member-contract.main/partial-generic-check")
@@ -3952,7 +3952,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let partial_variadic_binding_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_FN_ARG_TYPE_MISMATCH")
           && warning
             .message()
             .contains("type-fail-collection-member-contract.main/partial-variadic-check")
@@ -3974,7 +3974,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
-        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch!`"))
       })
       .collect::<Vec<_>>();
@@ -4006,7 +4006,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let variadic_method_warnings = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))
+      .filter(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))
       .collect::<Vec<_>>();
     assert_eq!(
       variadic_method_warnings.len(),
@@ -4106,7 +4106,7 @@ fn type_fail_type_slot_fixture_is_repeatable_across_program_loads() {
       let warning_count = warnings
         .borrow()
         .iter()
-        .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH"))
+        .filter(|warning| warning.code() == Some("E_FN_ARG_TYPE_MISMATCH"))
         .count();
       assert_eq!(warning_count, 1);
     }
@@ -4257,7 +4257,7 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
     let warnings = warnings.borrow();
     let dynamic_calls = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_DYNAMIC_CALL"))
+      .filter(|warning| warning.code() == Some("E_DYNAMIC_CALL"))
       .collect::<Vec<_>>();
     // The unnarrowed variable, the computed head and the caller-written head
     // that `->` moves into place report; `fn?` and an Fn schema prove the head.
@@ -4438,14 +4438,14 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
   run_with_large_stack(|| {
     let nullable_return = |body: &str| format!("fn (flag) (hint-fn $ Fn Bool (-> $ JsNullish Number)) {body}");
     let cases = [
-      ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
-      ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
-      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
+      ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
+      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
       ("matching-payload", nullable_return("(if flag 7 nil)"), None),
       (
         "wrong-argument-payload",
         "fn (flag) (hint-fn $ Fn Bool (-> Unit)) $ let ((take $ fn (v) (hint-fn $ Fn (JsNullish Number) (-> Unit)) &unit)) $ take $ if flag |bad nil".to_owned(),
-        Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"),
+        Some("E_LOCAL_FN_ARG_TYPE_MISMATCH"),
       ),
     ];
     for (label, function, expected_code) in cases {
@@ -4910,7 +4910,7 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
     let warnings = warnings.borrow();
     let truthy = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_CONSTANT_TRUTHY_CONDITION"))
+      .filter(|warning| warning.code() == Some("E_CONSTANT_TRUTHY_CONDITION"))
       .collect::<Vec<_>>();
     // `if (count xs)`, `if s`, `when (count xs)`, `and (count xs) …`, and
     // `or s …`, and a hand-written `if s s false`; the Bool tests and the
@@ -4959,7 +4959,7 @@ fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
         .expect("a non-Enum receiver should produce a type diagnostic, not a preprocessing failure");
       let warnings = warnings.borrow();
       assert!(
-        warnings.iter().any(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+        warnings.iter().any(|warning| warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
           && warning
             .message()
             .contains(&format!("Proc `{proc_name}` arg 1 expects type {expected}, but got {actual}"))),
@@ -5086,17 +5086,17 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
 
     for (body, code) in [
       // `let[]` expands to `&list:nth`, which checks the same literal index.
-      ("let[] (a b c) t a", "W_TUPLE_INDEX"),
+      ("let[] (a b c) t a", "E_TUPLE_INDEX"),
       // A heterogeneous tuple has no element type, so it is never a List.
-      ("conj t 1", "W_FN_ARG_TYPE_MISMATCH"),
+      ("conj t 1", "E_FN_ARG_TYPE_MISMATCH"),
       // Shape-rebuilding traits need the value used as `List T` first.
-      ("rest t", "W_GENERIC_WHERE_BOUND_MISMATCH"),
+      ("rest t", "E_GENERIC_WHERE_BOUND_MISMATCH"),
       // A tuple read still goes through the ordinary proc arity check.
-      ("&list:nth t 0 1", "W_PROC_ARG_TYPE_MISMATCH"),
+      ("&list:nth t 0 1", "E_PROC_ARG_TYPE_MISMATCH"),
       // Only a Number index reads a homogeneous tuple as `List T`.
       (
         "let ((h (assert-type ([] 1 2) (quote $ Tuple Number Number)))) (&list:nth h :bad)",
-        "W_TUPLE_INDEX",
+        "E_TUPLE_INDEX",
       ),
     ] {
       let entries = load_snippet_entries(&format!("let ((t ({tuple}))) ({body})"));
@@ -5183,19 +5183,19 @@ fn strict_type_fail_union_rules_report_stable_codes() {
       ("calcit/type-fail/union-str.cirru", "E_UNION_REQUIRES_MATCH"),
       ("calcit/type-fail/union-method.cirru", "E_UNION_REQUIRES_MATCH"),
       ("calcit/type-fail/union-postfix-method.cirru", "E_UNION_REQUIRES_MATCH"),
-      ("calcit/type-fail/union-to-string.cirru", "W_FN_ARG_TYPE_MISMATCH"),
-      ("calcit/type-fail/union-member-not-in-union.cirru", "W_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-to-string.cirru", "E_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-member-not-in-union.cirru", "E_FN_ARG_TYPE_MISMATCH"),
       ("calcit/type-fail/union-dynamic-to-union.cirru", "E_CALL_ARGUMENT_UNPROVEN"),
       ("calcit/type-fail/union-member-dynamic.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-member-result.cirru", "E_UNION_MEMBER_INVALID"),
-      ("calcit/type-fail/union-option-nil.cirru", "W_FN_ARG_TYPE_MISMATCH"),
-      ("calcit/type-fail/union-js-nullish-other.cirru", "W_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-option-nil.cirru", "E_FN_ARG_TYPE_MISMATCH"),
+      ("calcit/type-fail/union-js-nullish-other.cirru", "E_FN_ARG_TYPE_MISMATCH"),
       ("calcit/type-fail/union-self-member.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-member-dup-kind.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-dup-pattern-name.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-unused-invalid.cirru", "E_UNION_MEMBER_INVALID"),
       ("calcit/type-fail/union-inline.cirru", "E_UNION_INLINE"),
-      ("calcit/type-fail/union-where-bound.cirru", "W_GENERIC_WHERE_BOUND_MISMATCH"),
+      ("calcit/type-fail/union-where-bound.cirru", "E_GENERIC_WHERE_BOUND_MISMATCH"),
     ];
     let _strict = StrictTypesReset::enabled();
     for (fixture, code) in cases {

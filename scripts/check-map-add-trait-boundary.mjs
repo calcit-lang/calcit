@@ -88,7 +88,7 @@ async function checkTraitBoundaries() {
         "test-traits.main/invalid-map-add-trait", "--check-only");
     } catch (error) {
       const detail = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
-      assert.match(detail, /W_GENERIC_WHERE_BOUND_MISMATCH.*trait Add/,
+      assert.match(detail, /E_GENERIC_WHERE_BOUND_MISMATCH.*trait Add/,
         "a Map must fail the generic Add bound, not an unrelated check");
       rejected = true;
     }

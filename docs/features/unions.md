@@ -176,7 +176,7 @@ union 值在 `match` 之前只能原样传递、放进容器或交给泛型函�
 | `string? v`、`number? v` 等类型谓词      | `E_UNION_PREDICATE`      |
 | `= v \|a`、`not= v 1` 等与字面量比较     | `E_UNION_LITERAL_EQ`     |
 | `str v`、`.method v` 方法调用           | `E_UNION_REQUIRES_MATCH` |
-| 传给具体成员类型的参数                   | `W_FN_ARG_TYPE_MISMATCH` |
+| 传给具体成员类型的参数                   | `E_FN_ARG_TYPE_MISMATCH` |
 
 类型谓词不会让推断收窄，留着只会造成误解，所以直接报错。与字面量的相等比较同理，之后会在类型层面统一限制 equality。
 

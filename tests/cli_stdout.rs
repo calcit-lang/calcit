@@ -164,7 +164,7 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
   let wrong_type = run(&["eval", "--dep", "./", "app.main/increment |not-a-number"]);
   assert!(!wrong_type.status.success());
   assert!(
-    String::from_utf8_lossy(&wrong_type.stderr).contains("[W_FN_ARG_TYPE_MISMATCH]"),
+    String::from_utf8_lossy(&wrong_type.stderr).contains("[E_FN_ARG_TYPE_MISMATCH]"),
     "{}",
     String::from_utf8_lossy(&wrong_type.stderr)
   );

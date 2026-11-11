@@ -12,7 +12,7 @@ const fixture = await mkdtemp(join(tmpdir(), "calcit-identity-conversion-fix-"))
 try {
   const rejectedList = spawnSync(binary, ["calcit/test.cirru", "eval", "to-string $ [] 1"], { encoding: "utf8", timeout: 60000 });
   assert.notEqual(rejectedList.status, 0, "List input must fail strict preprocessing before conversion");
-  assert.match(rejectedList.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+  assert.match(rejectedList.stderr, /E_GENERIC_WHERE_BOUND_MISMATCH/);
 
   const snapshot = join(fixture, "calcit.cirru");
   await copyFile("calcit/test-wasm.cirru", snapshot);
@@ -49,7 +49,7 @@ try {
     { encoding: "utf8", timeout: 60000 });
   assert.equal(invalidPreview.error, undefined);
   assert.notEqual(invalidPreview.status, 0, "an unproven Dynamic conversion must block staged validation");
-  assert.match(invalidPreview.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+  assert.match(invalidPreview.stderr, /E_GENERIC_WHERE_BOUND_MISMATCH/);
   assert.equal(await readFile(snapshot, "utf8"), invalidSource, "failed validation must not write partial fixes");
   run(snapshot, "query", "def", "test-wasm.conversion/dynamic-string");
   run(snapshot, "edit", "rm-def", "test-wasm.conversion/dynamic-string");

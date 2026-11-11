@@ -27,7 +27,7 @@ for (const [expression, expected] of [
 for (const expression of ["to-tag 1", "to-tag ([] 1)", "to-symbol :ready", "to-symbol nil"]) {
   const result = spawnSync(binary, [snapshot, "eval", expression], { encoding: "utf8" });
   assert.notEqual(result.status, 0, `${expression} must fail strict checking`);
-  assert.match(result.stderr, /W_FN_ARG_TYPE_MISMATCH/);
+  assert.match(result.stderr, /E_FN_ARG_TYPE_MISMATCH/);
 }
 
 const stringConversion = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/to-string", "--format", "json"], { encoding: "utf8" }));
@@ -37,7 +37,7 @@ assert.notEqual(removedTurnString.status, 0, "turn-string was removed from calci
 for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)"]) {
   const result = spawnSync(binary, [snapshot, "eval", expression], { encoding: "utf8" });
   assert.notEqual(result.status, 0, `${expression} must fail strict trait-bound checking`);
-  assert.match(result.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+  assert.match(result.stderr, /E_GENERIC_WHERE_BOUND_MISMATCH/);
 }
 for (const [source, expected] of [["nil", ""], ["true", "true"], [":ready", "ready"], ["0.5", "0.5"]]) {
   const native = execFileSync(binary, [snapshot, "eval", `to-string ${source}`], { encoding: "utf8" });
@@ -286,7 +286,7 @@ try {
   // before WASM-specific specialization can run.
   assert.match(spread.stderr, /expected 1 args in to-string.*got spreading form/);
   assert.match(spread.stderr, /test-wasm\.main\/test-to-string-spread/);
-  assert.match(spread.stderr, /Found 1 warnings during preprocessing/);
+  assert.match(spread.stderr, /Found 1 errors during preprocessing/);
 } finally {
   await rm(output, { recursive: true, force: true });
 }

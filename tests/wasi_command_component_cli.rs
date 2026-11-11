@@ -332,7 +332,7 @@ fn manifest_result_payload_mismatch_fails_strict_preprocessing() {
   );
   let diagnostic = String::from_utf8_lossy(&check.stderr);
   assert!(
-    diagnostic.contains("W_FN_RETURN_TYPE_MISMATCH") && diagnostic.contains("Manifest") && diagnostic.contains(":string"),
+    diagnostic.contains("E_FN_RETURN_TYPE_MISMATCH") && diagnostic.contains("Manifest") && diagnostic.contains(":string"),
     "{diagnostic}"
   );
 }

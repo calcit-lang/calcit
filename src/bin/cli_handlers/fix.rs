@@ -22,7 +22,7 @@ use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn}
 use crate::type_coverage;
 
 const REMOVED_DATA_API_RULE: &str = "removed-data-api-v1";
-const REMOVED_DATA_API_DIAGNOSTIC: &str = "W_REMOVED_DATA_API";
+const REMOVED_DATA_API_DIAGNOSTIC: &str = "E_REMOVED_DATA_API";
 const REDUNDANT_DO_RULE: &str = "redundant-do-v1";
 const REDUNDANT_DO_DIAGNOSTIC: &str = "FIX_REDUNDANT_DO";
 const SINGLE_EXPRESSION_DO_RULE: &str = "single-expression-do-v1";
@@ -826,7 +826,7 @@ pub(crate) fn handle_fix_command(
         .filter(|warning| warning.code() != Some(REMOVED_DATA_API_DIAGNOSTIC))
         // Helper calls left for review keep their own warning; they are what
         // `core-option-method-v1` reports, not an effect of the staged fix.
-        .filter(|warning| warning.code() != Some("W_OPTION_HELPER_CALL"))
+        .filter(|warning| warning.code() != Some("E_OPTION_HELPER_CALL"))
         .map(ToString::to_string)
         .collect::<Vec<_>>()
     };
@@ -5690,7 +5690,7 @@ mod tests {
   #[test]
   fn removed_data_fix_is_derived_from_the_current_diagnostic() {
     let metadata = fix_rule_metadata(REMOVED_DATA_API_RULE);
-    assert_eq!(metadata.diagnostic_code, "W_REMOVED_DATA_API");
+    assert_eq!(metadata.diagnostic_code, "E_REMOVED_DATA_API");
     assert_eq!(metadata.evidence_source, "current-diagnostic");
     assert_eq!(metadata.lifecycle, "current-semantics");
     assert!(!metadata.source_version_required);
@@ -5713,7 +5713,7 @@ mod tests {
   fn generated_operation_carries_path_and_expected_leaf() {
     let suggestion = FixSuggestion {
       rule_id: "removed-data-api-v1",
-      diagnostic_code: "W_REMOVED_DATA_API",
+      diagnostic_code: "E_REMOVED_DATA_API",
       semantic_layer: "surface",
       source_file: "calcit.cirru".to_owned(),
       definition: "app.main/main!".to_owned(),
@@ -5961,7 +5961,7 @@ mod tests {
     let key = ("app.main".to_owned(), "main!".to_owned(), vec![3, 0]);
     let first = FixSuggestion {
       rule_id: "removed-data-api-v1",
-      diagnostic_code: "W_REMOVED_DATA_API",
+      diagnostic_code: "E_REMOVED_DATA_API",
       semantic_layer: "surface",
       source_file: "calcit.cirru".to_owned(),
       definition: "app.main/main!".to_owned(),

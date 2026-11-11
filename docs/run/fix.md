@@ -160,7 +160,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 
 当前稳定规则包括：
 
-- `removed-data-api-v1` 复用编译器已有的 `W_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
+- `removed-data-api-v1` 复用编译器已有的 `E_REMOVED_DATA_API` 解析结果。只有一对一的名称迁移
   （例如 `tuple-enum` 到 `enum-definition`）标为 `machine-applicable`；`tuple?` 需要在值判断与定义判断之间选择，因而只返回
   `requires-review`，其 `replacement` 为 `null`。
 - `redundant-do-v1` 整理 `defn`、`fn`、`let`、`let[]` 及嵌套 `do` 的 variadic body。父结构本来就按顺序执行多项、
@@ -183,7 +183,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-option-method-v1` 在原有取值迁移之外，也把 `option:some?` / `option:none?` 改为
   `value .some?` / `value .none?`，0.41.0 起还把 `option:map` / `option:and-then` / `option:or-else` /
   `option:fold` 改为 `.map` / `.and-then` / `.or-else` / `.fold`（项目代码直接调用这些 helper 会报
-  `W_OPTION_HELPER_CALL`）。只有编译器已解析到对应 core helper、接收者静态类型
+  `E_OPTION_HELPER_CALL`）。只有编译器已解析到对应 core helper、接收者静态类型
   能证明分派到同一个 Option 方法的源码调用才自动改写。取值调用仍改为 `value .unwrap`
   或 `value .unwrap-or fallback`；唯一的空值 fallback 特例是
   `option:unwrap-or (Option :none) fallback`：源码引用须证明构造器
@@ -315,7 +315,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   Dynamic 保存/传递可以保持原写法；未知 T 不能靠目标 Number 获得证明。
   当参数类型正是返回泛型 `'T` 时，`list?`、`map?`、`string?` 等类别谓词守卫的分支把 `'T` 视为该类别，
   分支出口按该类别证明；未被守卫的出口、作用于其他值的谓词和开放结果仍须证明原泛型契约；守卫分支若含 `set!` 重绑定局部，则放弃该收窄。
-  producer 实现与返回声明矛盾时，既有 `W_FN_RETURN_TYPE_MISMATCH` 同样使审计失败，不能借用该声明获得空建议。
+  producer 实现与返回声明矛盾时，既有 `E_FN_RETURN_TYPE_MISMATCH` 同样使审计失败，不能借用该声明获得空建议。
   将报告中的 definition 与 path 传给 `calcit query type-at <definition> --path <path> --format edn`
   可读取同一源码节点；展开后无法保留尾表达式坐标时，path 为声明根节点 `code`。
   规则复用 compiler 的共同证明关系与既有 suggestion，不运行程序猜类型，也不自动补 schema、选择 decoder、

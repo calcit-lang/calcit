@@ -30,7 +30,7 @@ assert.equal(fieldMethod.return_type, "bool");
 const invalid = "let ((Point (defstruct Point (:x Number))) (point (%{} Point (:x 1)))) (point .contains-field? |x)";
 const mismatch = spawnSync(binary, ["src/cirru/calcit-core.cirru", "eval", invalid], { encoding: "utf8" });
 assert.notEqual(mismatch.status, 0, "String field names must fail strict type checking");
-assert.match(mismatch.stderr, /W_METHOD_ARG_TYPE_MISMATCH/);
+assert.match(mismatch.stderr, /E_METHOD_ARG_TYPE_MISMATCH/);
 
 const output = await mkdtemp(join(tmpdir(), "calcit-struct-field-js-"));
 try {
@@ -282,12 +282,12 @@ try {
       const expectedDiagnostic = name === "wrong-method-update"
         ? /struct update field `:db` expects type/
         : name === "borrowed-return"
-          ? /W_FN_RETURN_TYPE_MISMATCH/
+          ? /E_FN_RETURN_TYPE_MISMATCH/
           : name.startsWith("borrowed-generic-")
             ? /E_ERASED_GENERIC_RELATION/
             : name === "open-cannot-prove-applied"
               ? /E_DYNAMIC_NOMINAL_ARGUMENT/
-              : /W_FN_ARG_TYPE_MISMATCH/;
+              : /E_FN_ARG_TYPE_MISMATCH/;
       assert.match(diagnostics, expectedDiagnostic, `${name} ${mode}`);
       assert.deepEqual(await readFile(snapshot), original);
     }

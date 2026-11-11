@@ -24,6 +24,45 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 阻断检查的 `W_` 诊断改名为 `E_`（#2699）
+
+下面这些诊断一直会让 `--check-only`、运行、测试和 codegen 失败，但编码是 `W_`、消息以 `[Warn]` 开头、列在 `Warnings:` 下。0.42.0 起编码改为 `E_`，消息前缀改为 `[Error]`，标题改为 `Errors:`，汇总改为 `Found N errors …`。检查结果不变，只是名字和文案反映实际行为。其中 8 个原本就有同名 `E_`（feature policy 为 `:error` 或严格模式下立即中止时用的），现在两种情况共用一个编码。
+
+| 0.41 编码 | 0.42 编码 |
+| --- | --- |
+| `W_CONSTANT_TRUTHY_CONDITION` | `E_CONSTANT_TRUTHY_CONDITION` |
+| `W_CORE_FN_ARG_TYPE_MISMATCH` | `E_CORE_FN_ARG_TYPE_MISMATCH` |
+| `W_DYNAMIC_CALL` | `E_DYNAMIC_CALL` |
+| `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` | `E_DYNAMIC_NOMINAL_METHOD_RECEIVER` |
+| `W_FN_ARG_TYPE_MISMATCH` | `E_FN_ARG_TYPE_MISMATCH` |
+| `W_FN_RETURN_TYPE_MISMATCH` | `E_FN_RETURN_TYPE_MISMATCH` |
+| `W_GENERIC_WHERE_BOUND_MISMATCH` | `E_GENERIC_WHERE_BOUND_MISMATCH` |
+| `W_HOST_VALUE_EQUALITY` | `E_HOST_VALUE_EQUALITY` |
+| `W_JS_FFI_FEATURE_REQUIRED` | `E_JS_FFI_FEATURE_REQUIRED` |
+| `W_JS_FFI_FIELD_READONLY` | `E_JS_FFI_FIELD_READONLY` |
+| `W_JS_FFI_FIELD_TYPE_MISMATCH` | `E_JS_FFI_FIELD_TYPE_MISMATCH` |
+| `W_JS_FFI_NULLABLE_DEREF` | `E_JS_FFI_NULLABLE_DEREF` |
+| `W_JS_FFI_NULLABLE_PREDICATE` | `E_JS_FFI_NULLABLE_PREDICATE` |
+| `W_JS_FFI_UNKNOWN_FIELD` | `E_JS_FFI_UNKNOWN_FIELD` |
+| `W_LOCAL_FN_ARG_TYPE_MISMATCH` | `E_LOCAL_FN_ARG_TYPE_MISMATCH` |
+| `W_METHOD_ARG_TYPE_MISMATCH` | `E_METHOD_ARG_TYPE_MISMATCH` |
+| `W_NOMINAL_ENUM_LEGACY_USE` | `E_NOMINAL_ENUM_LEGACY_USE` |
+| `W_OPTION_HELPER_CALL` | `E_OPTION_HELPER_CALL` |
+| `W_PROC_ARG_TYPE_MISMATCH` | `E_PROC_ARG_TYPE_MISMATCH` |
+| `W_RECUR_ARG_TYPE_MISMATCH` | `E_RECUR_ARG_TYPE_MISMATCH` |
+| `W_REMOVED_DATA_API` | `E_REMOVED_DATA_API` |
+| `W_REQUIRED_STRUCT_FIELD_TYPE` | `E_REQUIRED_STRUCT_FIELD_TYPE` |
+| `W_RESET_ARG_TYPE_MISMATCH` | `E_RESET_ARG_TYPE_MISMATCH` |
+| `W_STRUCT_DYNAMIC_RAW_ACCESS` | `E_STRUCT_DYNAMIC_RAW_ACCESS` |
+| `W_STRUCT_INDEX_RAW_ACCESS` | `E_STRUCT_INDEX_RAW_ACCESS` |
+| `W_STRUCT_PATH_OPERATION` | `E_STRUCT_PATH_OPERATION` |
+| `W_STRUCT_RAW_ACCESS` | `E_STRUCT_RAW_ACCESS` |
+| `W_TODO` | `E_TODO` |
+| `W_TUPLE_INDEX` | `E_TUPLE_INDEX` |
+| `W_UNKNOWN_STRUCT_FIELD` | `E_UNKNOWN_STRUCT_FIELD` |
+
+按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS` 和 `P_*` 也不变。
+
 ## 0.41.2 解析不到的类型名报 `E_UNKNOWN_TYPE_NAME`（#2691）
 
 schema、`hint-fn` 和 `assert-type` 里写了不存在的类型名（例如把 `Number` 拼成 `Nubmer`）时，检查现在报 `E_UNKNOWN_TYPE_NAME`，并给出编辑距离最近的候选名。以前这个名字被当成一个新的名义类型，函数体不依赖参数类型时检查一直通过，调用方才收到 ``expected `'Nubmer` `` 这样的不匹配。按提示改成正确的名字，或者补上 `:refer` / `:as` 引入。只在别的 entry 里加载的模块不受影响。

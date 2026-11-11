@@ -39,7 +39,7 @@ fn whole_diff_triple_into_a_list_parameter_is_rejected() {
   assert!(!output.status.success(), "{text}");
   // Only `count-rows triple` breaks; `&list:nth triple 0`, `count triple` and
   // `count-rows rows` (a `List CirruNode` into `List Dynamic`) still pass.
-  let mismatches: Vec<&str> = text.lines().filter(|line| line.contains("W_FN_ARG_TYPE_MISMATCH")).collect();
+  let mismatches: Vec<&str> = text.lines().filter(|line| line.contains("E_FN_ARG_TYPE_MISMATCH")).collect();
   assert_eq!(mismatches.len(), 1, "{text}");
   assert!(mismatches[0].contains("count-rows"), "{text}");
   assert!(mismatches[0].contains("tuple<set<string>"), "{text}");

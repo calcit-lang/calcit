@@ -1459,7 +1459,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
         compile_errors.insert(
           test.id(),
           format!(
-            "Found {} warnings, test blocked: {}",
+            "Found {} errors, test blocked: {}",
             warnings.len(),
             warnings.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ")
           ),
@@ -2324,9 +2324,9 @@ fn check_entries(entries: &ProgramEntries, emit_output: bool, prove: bool) -> Re
   // Report warnings
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
-    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    eprintln!("\n{} ({} errors)", "Errors:".red(), warnings.len());
     LocatedWarning::print_list(&warnings);
-    let warning_summary = format!("Found {} warnings during preprocessing", warnings.len());
+    let warning_summary = format!("Found {} errors during preprocessing", warnings.len());
     // Blocking errors are printed too, so warnings do not hide them.
     if let Err(errors) = report_broad_type_errors(broad_type_errors) {
       return Err(format!("{errors}; {warning_summary}"));
@@ -2559,7 +2559,7 @@ fn throw_on_js_warnings(warnings: &[LocatedWarning], js_file_path: &Path) -> Res
     fs::write(js_file_path, format!("export default \"{}\";", content.trim().escape_default()))
       .map_err(|e| format!("failed to write diagnostic artifact {}: {e}", js_file_path.display()))?;
     Err(format!(
-      "Found {} warnings, codegen blocked. errors in {}.mjs",
+      "Found {} errors, codegen blocked. errors in {}.mjs",
       warnings.len(),
       COMPILE_ERRORS_FILE,
     ))
@@ -2576,7 +2576,7 @@ fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
       content = format!("{content}\n{warn}");
     }
 
-    Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))
+    Err(format!("Found {} errors in preprocessing, re-run blocked.", warnings.len()))
   } else {
     Ok(())
   }

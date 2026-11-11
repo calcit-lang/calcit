@@ -426,7 +426,7 @@ fn semantic_query_entry_selects_modules_slots_policy_and_search_override() {
       assert!(
         report["diagnostics"]
           .as_array()
-          .is_some_and(|items| items.iter().any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH")),
+          .is_some_and(|items| items.iter().any(|item| item["code"] == "E_FN_RETURN_TYPE_MISMATCH")),
         "the other slot binding must not satisfy NumberBox: {report}"
       );
     }
@@ -709,7 +709,7 @@ fn open_path_write_proof_does_not_invent_receiver_shapes() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     if label == "empty-update" {
       assert!(
-        stderr.contains("W_FN_RETURN_TYPE_MISMATCH") && stderr.contains("body returns `:string`"),
+        stderr.contains("E_FN_RETURN_TYPE_MISMATCH") && stderr.contains("body returns `:string`"),
         "{label}: {output}\n{stderr}"
       );
     } else {

@@ -96,7 +96,7 @@ nullable/unsafe 证据与 review-only helper/trait/adapter 候选；`fix --workf
 - `:source-version-required`：当前规范化固定为 `false`。
 
 例如 `removed-data-api-v1` 虽保留稳定 rule ID，但其候选直接来自当前 strict checker 的
-`W_REMOVED_DATA_API`，不检查 source release。rule ID 中的 `v1` 版本化的是机器协议和行为，不是来源版本。
+`E_REMOVED_DATA_API`，不检查 source release。rule ID 中的 `v1` 版本化的是机器协议和行为，不是来源版本。
 
 ## Preset 生命周期
 

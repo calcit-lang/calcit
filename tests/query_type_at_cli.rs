@@ -133,7 +133,7 @@ fn field_calls_report_the_field_type_not_the_receiver_type() {
     (
       "app.main/map-a",
       "calcit.core/Option Number",
-      vec!["W_REQUIRED_STRUCT_FIELD_TYPE".to_owned()],
+      vec!["E_REQUIRED_STRUCT_FIELD_TYPE".to_owned()],
     ),
   ] {
     let (_, report) = type_at_in("tests/fixtures/type-at-field-call.cirru", target, "@3");

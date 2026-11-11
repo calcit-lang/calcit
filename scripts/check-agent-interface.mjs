@@ -761,9 +761,9 @@ const scenarios = [
       if (
         result.data.changed !== true ||
         suggestion?.rule_id !== "removed-data-api-v1" ||
-        suggestion?.diagnostic_code !== "W_REMOVED_DATA_API" ||
+        suggestion?.diagnostic_code !== "E_REMOVED_DATA_API" ||
         rule?.rule_id !== "removed-data-api-v1" ||
-        rule?.diagnostic_code !== "W_REMOVED_DATA_API" ||
+        rule?.diagnostic_code !== "E_REMOVED_DATA_API" ||
         rule?.evidence_source !== "current-diagnostic" ||
         rule?.lifecycle !== "current-semantics" ||
         rule?.source_version_required !== false
@@ -1252,7 +1252,7 @@ for (const { name, base, expectedStatus = 0, check } of [
       "--path",
       "code@3",
     ],
-    check: (result) => assert.ok(result.diagnostics.some((item) => item.code === "W_FN_ARG_TYPE_MISMATCH")),
+    check: (result) => assert.ok(result.diagnostics.some((item) => item.code === "E_FN_ARG_TYPE_MISMATCH")),
   },
   {
     name: "invalid type EDN failure",

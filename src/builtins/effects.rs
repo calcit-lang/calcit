@@ -40,7 +40,7 @@ pub fn raise(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// Runtime endpoint for the compiler-known `todo!` placeholder.
 ///
 /// Unlike `raise`, this has a fixed shape so preprocessing can reliably emit
-/// W_TODO and tools can identify unfinished scaffolded definitions.
+/// E_TODO and tools can identify unfinished scaffolded definitions.
 pub fn todo(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs {
     [] => CalcitErr::err_str(CalcitErrKind::Effect, "TODO: implementation is pending"),

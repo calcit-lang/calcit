@@ -98,7 +98,7 @@ fn slot_bound_to_union_accepts_callbacks_over_that_union() {
     String::from_utf8_lossy(&rejected.stdout),
     String::from_utf8_lossy(&rejected.stderr)
   );
-  assert!(output.contains("W_FN_ARG_TYPE_MISMATCH"), "{output}");
+  assert!(output.contains("E_FN_ARG_TYPE_MISMATCH"), "{output}");
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn enum_payload_lambdas_take_the_declared_payload_type() {
       .and_then(|rest| rest.split("\n## ").next())
       .unwrap_or_default();
     assert!(
-      section.contains("W_UNKNOWN_STRUCT_FIELD") && section.contains("`:titel`"),
+      section.contains("E_UNKNOWN_STRUCT_FIELD") && section.contains("`:titel`"),
       "{definition} reports the unknown field of `Task`:\n{output}"
     );
   }
@@ -165,7 +165,7 @@ fn option_fn_field_lambdas_take_the_payload_type() {
       .and_then(|rest| rest.split("\n## ").next())
       .unwrap_or_default();
     assert!(
-      section.contains("W_UNKNOWN_STRUCT_FIELD") && section.contains("`:xx`"),
+      section.contains("E_UNKNOWN_STRUCT_FIELD") && section.contains("`:xx`"),
       "{definition} reports the unknown field of `Click`:\n{output}"
     );
   }
@@ -635,7 +635,7 @@ fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
     assert_eq!(report["data"]["summary"]["definitions_checked"], 4, "{report}");
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 1, "{report}");
-    assert_eq!(diagnostics[0]["code"], "W_FN_ARG_TYPE_MISMATCH");
+    assert_eq!(diagnostics[0]["code"], "E_FN_ARG_TYPE_MISMATCH");
     assert_eq!(diagnostics[0]["expected"], ":number");
     assert_eq!(diagnostics[0]["actual"], ":string");
     assert_eq!(
@@ -1194,7 +1194,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
     .expect("diagnostics should be an array");
   let mismatches = diagnostics
     .iter()
-    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .filter(|diagnostic| diagnostic["code"] == "E_RECUR_ARG_TYPE_MISMATCH")
     .collect::<Vec<_>>();
   assert_eq!(mismatches.len(), 2, "report: {report}");
   assert_eq!(mismatches[0]["expected"], ":string");
@@ -1217,7 +1217,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
     .as_array()
     .expect("diagnostics should be an array")
     .iter()
-    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .filter(|diagnostic| diagnostic["code"] == "E_RECUR_ARG_TYPE_MISMATCH")
     .collect::<Vec<_>>();
   assert_eq!(recur_diagnostics.len(), 2, "report: {report}");
   assert_eq!(recur_diagnostics[0]["location"]["def"], "typed-recur");
@@ -1251,7 +1251,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
     .as_array()
     .expect("diagnostics should be an array")
     .iter()
-    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .filter(|diagnostic| diagnostic["code"] == "E_RECUR_ARG_TYPE_MISMATCH")
     .map(|diagnostic| diagnostic["path"].clone())
     .collect::<Vec<_>>();
   assert_eq!(
@@ -1640,7 +1640,7 @@ fn all_defs_reports_unreferenced_definitions_without_changing_default_checks() {
     .iter()
     .find(|item| item["definition"] == "app.main/unreferenced-bad")
     .unwrap();
-  assert_eq!(bad["diagnostics"][0]["code"], "W_FN_ARG_TYPE_MISMATCH");
+  assert_eq!(bad["diagnostics"][0]["code"], "E_FN_ARG_TYPE_MISMATCH");
 
   // The human report shares the keep-going Markdown shape and names the scope.
   let human = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
@@ -1784,7 +1784,7 @@ fn each_method_keeps_the_element_callback_relation() {
       fixture
         .replace(typed_callback, "hint-fn $ Fn String (-> Unit)")
         .replace("assert |kind $ = (:kind r) :font", ", &unit"),
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
     ),
     (
       "open receiver",
@@ -2015,7 +2015,7 @@ fn unrelated_warning_does_not_skip_the_proof_audit_of_other_definitions() {
   };
   assert_eq!(
     status("app.proof/bad-call"),
-    ("failed".to_owned(), vec!["W_FN_ARG_TYPE_MISMATCH".to_owned()])
+    ("failed".to_owned(), vec!["E_FN_ARG_TYPE_MISMATCH".to_owned()])
   );
   assert_eq!(
     status("app.proof/bad-map"),
@@ -2115,13 +2115,13 @@ fn later_union_argument_widens_generic_binding() {
 
   // Real mismatches and invariant references are still refused.
   for (calls, code, detail) in [
-    ("(merge-maps ({} (:width 10)) words)", "W_FN_ARG_TYPE_MISMATCH", "map<tag, string>"),
+    ("(merge-maps ({} (:width 10)) words)", "E_FN_ARG_TYPE_MISMATCH", "map<tag, string>"),
     (
       "(&merge ({} (:width 10)) words)",
-      "W_PROC_ARG_TYPE_MISMATCH",
+      "E_PROC_ARG_TYPE_MISMATCH",
       "in call at app.main/main!",
     ),
-    ("(same-ref r1 r2)", "W_FN_ARG_TYPE_MISMATCH", "ref<"),
+    ("(same-ref r1 r2)", "E_FN_ARG_TYPE_MISMATCH", "ref<"),
   ] {
     let output = check(calls);
     let stderr = String::from_utf8_lossy(&output.stderr);

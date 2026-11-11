@@ -1600,7 +1600,7 @@ fn warn_on_retired_core_import(ns: &str, name: &str, source: &Calcit, warnings: 
   };
   gen_check_warning_with_location(
     format!(
-      "[Warn] unknown `{name}` in {}/{}; `{name}` was removed from calcit.core in {version}, {migration}",
+      "[Error] unknown `{name}` in {}/{}; `{name}` was removed from calcit.core in {version}, {migration}",
       info.at_ns, info.at_def
     ),
     NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), location.clone().unwrap_or_default()),
@@ -1625,13 +1625,13 @@ fn warn_on_removed_data_api_call(
     return;
   };
   let message = format!(
-    "[Warn] `{def}` was removed by the struct/enum data-model migration; use `{}`",
+    "[Error] `{def}` was removed by the struct/enum data-model migration; use `{}`",
     migration.guidance
   );
   if let Some(location) = call_location {
-    gen_check_warning_with_location_code(message, "W_REMOVED_DATA_API", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_REMOVED_DATA_API", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_REMOVED_DATA_API", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_REMOVED_DATA_API", file_ns, check_warnings);
   }
 }
 
@@ -1706,11 +1706,11 @@ fn warn_required_struct_field_type(
     .map(CalcitTypeAnnotation::to_brief_string)
     .unwrap_or_else(|| ":unknown".to_owned());
   let message = format!(
-    "[Warn] required field access `(:{field_name} value)` needs a statically typed Struct with a declared `:{field_name}` field, but the receiver is `{receiver_type_text}` at {file_ns}/{def_name}. Define the Struct and narrow/unwrap the receiver first; use `(get value :{field_name})` only when absence is intentional and handle the returned Option"
+    "[Error] required field access `(:{field_name} value)` needs a statically typed Struct with a declared `:{field_name}` field, but the receiver is `{receiver_type_text}` at {file_ns}/{def_name}. Define the Struct and narrow/unwrap the receiver first; use `(get value :{field_name})` only when absence is intentional and handle the returned Option"
   );
   gen_check_warning_code_at(
     message,
-    "W_REQUIRED_STRUCT_FIELD_TYPE",
+    "E_REQUIRED_STRUCT_FIELD_TYPE",
     file_ns,
     attributable_location,
     check_warnings,
@@ -3783,15 +3783,15 @@ fn preprocess_expr_unguarded(
                   } else if let Some(migration) = removed_data_api_migration(def) {
                     gen_check_warning_with_location_code(
                       format!(
-                        "[Warn] `{def}` was removed by the struct/enum data-model migration; use `{}`",
+                        "[Error] `{def}` was removed by the struct/enum data-model migration; use `{}`",
                         migration.guidance
                       ),
-                      "W_REMOVED_DATA_API",
+                      "E_REMOVED_DATA_API",
                       node_location,
                       check_warnings,
                     );
                   } else {
-                    let mut message = format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" "));
+                    let mut message = format!("[Error] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" "));
                     if let Some((version, migration)) = retired_core_function_migration(def) {
                       message.push_str(&format!("; `{def}` was removed from calcit.core in {version}, {migration}"));
                     }
@@ -3890,7 +3890,7 @@ fn preprocess_expr_unguarded(
     _ => {
       eprintln!("unknown expr: {expr}");
       gen_check_warning(
-        format!("[Warn] unexpected data during preprocess: {expr:?}"),
+        format!("[Error] unexpected data during preprocess: {expr:?}"),
         file_ns,
         check_warnings,
       );
@@ -4802,13 +4802,13 @@ fn preprocess_list_call(
                 ));
               }
               let message = format!(
-                "[Warn] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but its receiver source is {}; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary",
+                "[Error] postfix nominal method `.{method_name}` requires a statically known {receiver_requirement} receiver in {file_ns}/{def_name}, but its receiver source is {}; narrow it with a schema/assertion before using method syntax, or call {helper_hint} at an intentional Dynamic boundary",
                 receiver_cause.label(),
               );
               if let Some(loc) = location {
-                gen_check_warning_with_location_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", loc, check_warnings);
+                gen_check_warning_with_location_code(message, "E_DYNAMIC_NOMINAL_METHOD_RECEIVER", loc, check_warnings);
               } else {
-                gen_check_warning_code(message, "W_DYNAMIC_NOMINAL_METHOD_RECEIVER", file_ns, check_warnings);
+                gen_check_warning_code(message, "E_DYNAMIC_NOMINAL_METHOD_RECEIVER", file_ns, check_warnings);
               }
             } else {
               if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
@@ -4826,7 +4826,7 @@ fn preprocess_list_call(
               }
               if warn_dyn_method_enabled() {
                 let message = format!(
-                  "[Warn] postfix method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+                  "[Error] postfix method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
                   receiver_cause.label(),
                   receiver_cause.migration(),
                 );
@@ -5873,8 +5873,8 @@ fn preprocess_list_call(
               Some(_) => unreachable!("invalid todo! message was rejected above"),
             };
             gen_check_warning_code_at(
-              format!("[Warn] TODO placeholder in {file_ns}/{enclosing_def}{message}"),
-              "W_TODO",
+              format!("[Error] TODO placeholder in {file_ns}/{enclosing_def}{message}"),
+              "E_TODO",
               file_ns,
               call_location.clone(),
               check_warnings,
@@ -6483,7 +6483,7 @@ fn preprocess_known_function_call(
       effective_user_call_schema(info.as_ref()).as_ref(),
       &processed_call_args,
       call_info,
-      "W_FN_ARG_TYPE_MISMATCH",
+      "E_FN_ARG_TYPE_MISMATCH",
       check_warnings,
     );
     reject_strict_unproven_generic_relation(
@@ -6801,7 +6801,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
     if !args.len().is_multiple_of(2) {
       gen_check_warning(
         format!(
-          "[Warn] struct constructor rewrite skipped: `{}` has {} positional argument(s), expected key/value pairs, at {}/{}",
+          "[Error] struct constructor rewrite skipped: `{}` has {} positional argument(s), expected key/value pairs, at {}/{}",
           brief_type_of_value(head_form),
           args.len(),
           file_ns,
@@ -6820,7 +6820,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
         if !struct_def.fields.iter().any(|f| f == key) {
           gen_check_warning(
             format!(
-              "[Warn] struct constructor rewrite skipped for `{}`: key `:{}` is not a field of struct `{}` at {}/{}",
+              "[Error] struct constructor rewrite skipped for `{}`: key `:{}` is not a field of struct `{}` at {}/{}",
               brief_type_of_value(head_form),
               key,
               struct_def.name,
@@ -6835,7 +6835,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
         if provided_fields.insert(key.to_owned(), value).is_some() {
           gen_check_warning(
             format!(
-              "[Warn] struct constructor rewrite skipped for `{}`: duplicate field `:{}` at {}/{}",
+              "[Error] struct constructor rewrite skipped for `{}`: duplicate field `:{}` at {}/{}",
               struct_def.name, key, file_ns, def_name,
             ),
             file_ns,
@@ -6846,7 +6846,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
       } else {
         gen_check_warning(
           format!(
-            "[Warn] struct constructor rewrite skipped for `{}`: all arguments must be tag/value pairs at {}/{}",
+            "[Error] struct constructor rewrite skipped for `{}`: all arguments must be tag/value pairs at {}/{}",
             brief_type_of_value(head_form),
             file_ns,
             def_name,
@@ -6867,7 +6867,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
       {
         gen_check_warning(
           format!(
-            "[Warn] struct constructor rewrite skipped for `{}`: required field `:{}` is missing at {}/{}",
+            "[Error] struct constructor rewrite skipped for `{}`: required field `:{}` is missing at {}/{}",
             struct_def.name, field, file_ns, def_name,
           ),
           file_ns,
@@ -6925,7 +6925,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
     let Some(first_arg) = args.first() else {
       gen_check_warning(
         format!(
-          "[Warn] enum constructor rewrite skipped: `{}` is missing variant tag at {}/{}",
+          "[Error] enum constructor rewrite skipped: `{}` is missing variant tag at {}/{}",
           brief_type_of_value(head_form),
           file_ns,
           def_name
@@ -6939,7 +6939,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
     let Calcit::Tag(tag) = first_arg else {
       gen_check_warning(
         format!(
-          "[Warn] enum constructor rewrite skipped for `{}`: first argument should be a variant tag, at {}/{}",
+          "[Error] enum constructor rewrite skipped for `{}`: first argument should be a variant tag, at {}/{}",
           brief_type_of_value(head_form),
           file_ns,
           def_name,
@@ -6954,7 +6954,7 @@ fn try_rewrite_struct_enum_constructor_head_call(
       let variants: Vec<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
       gen_check_warning(
         format!(
-          "[Warn] enum `{}` does not have variant `:{}`. Available: [{}], at {}/{}",
+          "[Error] enum `{}` does not have variant `:{}`. Available: [{}], at {}/{}",
           enum_def.name(),
           tag.ref_str(),
           variants.join(", "),
@@ -7071,7 +7071,7 @@ fn check_fn_marked_args(
           continue;
         } else {
           gen_check_warning(
-            format!("[Warn] lack of args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
+            format!("[Error] lack of args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
             file_ns,
             check_warnings,
           );
@@ -7080,7 +7080,7 @@ fn check_fn_marked_args(
       }
       (None, Some(_)) => {
         gen_check_warning(
-          format!("[Warn] too many args for {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
+          format!("[Error] too many args for {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
           file_ns,
           check_warnings,
         );
@@ -7114,7 +7114,7 @@ fn check_fn_args(
       if expected_size < (idx + 1) {
         let args = CalcitLocal::display_args(defined_args);
         gen_check_warning(
-          format!("[Warn] expected {expected_size} args in {f_name} `{args}`, got spreading form `{params}`, at {file_ns}/{def_name}"),
+          format!("[Error] expected {expected_size} args in {f_name} `{args}`, got spreading form `{params}`, at {file_ns}/{def_name}"),
           file_ns,
           check_warnings,
         );
@@ -7126,7 +7126,7 @@ fn check_fn_args(
   let accepts_omission = trailing_options > 0 && (expected_size - trailing_options..=expected_size).contains(&actual_size);
   if expected_size != actual_size && !accepts_omission {
     gen_check_warning(
-      format!("[Warn] expected {expected_size} args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
+      format!("[Error] expected {expected_size} args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
       file_ns,
       check_warnings,
     );
@@ -7207,7 +7207,7 @@ fn warn_on_invalid_builtin_import(
   {
     gen_check_warning_with_location(
       format!(
-        "[Warn] import `{target_ns}/{name}` does not exist; bare `{name}` resolves to builtin `calcit.core/{name}` before imports. Remove the stale import or correct its target; use a qualified reference when the module implementation is intended"
+        "[Error] import `{target_ns}/{name}` does not exist; bare `{name}` resolves to builtin `calcit.core/{name}` before imports. Remove the stale import or correct its target; use a qualified reference when the module implementation is intended"
       ),
       location(),
       check_warnings,
@@ -7288,7 +7288,7 @@ fn check_recur_args_in_expr(
           .get_location()
           .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])));
         gen_check_warning_with_location(
-          format!("[Warn] recur expects {expected_arity} args but got {actual_arity} in {file_ns}/{def_name}"),
+          format!("[Error] recur expects {expected_arity} args but got {actual_arity} in {file_ns}/{def_name}"),
           location,
           check_warnings,
         );
@@ -7328,7 +7328,7 @@ fn check_recur_args_in_expr(
             .get_location()
             .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])));
           gen_check_warning_with_location(
-            format!("[Warn] recur expects {expected_arity} args but got {actual_arity} in {file_ns}/{def_name}"),
+            format!("[Error] recur expects {expected_arity} args but got {actual_arity} in {file_ns}/{def_name}"),
             location,
             check_warnings,
           );
@@ -7400,7 +7400,7 @@ fn check_recur_tail_position(body: &[Calcit], file_ns: &str, def_name: &str, che
       .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])));
     gen_check_warning_with_location(
       format!(
-        "[Warn] recur must be called directly in tail position of the function body, otherwise its value would leak as data or be dropped in {file_ns}/{def_name}\n[警告] recur 必须在函数体的尾部位置直接调用, 否则其结果会作为普通数据泄漏或被丢弃: {file_ns}/{def_name}"
+        "[Error] recur must be called directly in tail position of the function body, otherwise its value would leak as data or be dropped in {file_ns}/{def_name}\n[警告] recur 必须在函数体的尾部位置直接调用, 否则其结果会作为普通数据泄漏或被丢弃: {file_ns}/{def_name}"
       ),
       location,
       check_warnings,
@@ -7482,9 +7482,9 @@ fn check_struct_field_access(
           ),
         };
         let message = format!(
-          "[Warn] `{def}` {location_text} at {segment_text} in {file_ns}. Collection path APIs do not traverse Struct fields. End the path before the Struct, unwrap/narrow the value, then use `(:field value)` for reads or `assoc`/`update` for declared field writes"
+          "[Error] `{def}` {location_text} at {segment_text} in {file_ns}. Collection path APIs do not traverse Struct fields. End the path before the Struct, unwrap/narrow the value, then use `(:field value)` for reads or `assoc`/`update` for declared field writes"
         );
-        gen_check_warning_code_at(message, "W_STRUCT_PATH_OPERATION", file_ns, location, check_warnings);
+        gen_check_warning_code_at(message, "E_STRUCT_PATH_OPERATION", file_ns, location, check_warnings);
       }
     }
   }
@@ -7699,12 +7699,12 @@ fn warn_on_raw_struct_index_access(
     None => ("<missing field tag>".to_owned(), "(:field value)".to_owned()),
   };
   let message = format!(
-    "[Warn] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `{field_access_hint}` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
+    "[Error] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `{field_access_hint}` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
     index.lisp_str()
   );
   gen_check_warning_code_at(
     message,
-    "W_STRUCT_INDEX_RAW_ACCESS",
+    "E_STRUCT_INDEX_RAW_ACCESS",
     file_ns,
     field
       .and_then(Calcit::get_location)
@@ -7739,9 +7739,9 @@ fn warn_on_raw_struct_field_access(
   let receiver_type = resolve_type_value(receiver, scope_types);
   let (code, message) = match receiver_type.as_deref().and_then(CalcitTypeAnnotation::resolve_to_struct) {
     Some(_) => (
-      "W_STRUCT_RAW_ACCESS",
+      "E_STRUCT_RAW_ACCESS",
       format!(
-        "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} bypasses the typed source syntax. Use `({field_text} value)` or `value.{field_text}` so the checker exposes the declared field type and lowers the read to indexed `&struct:nth` access"
+        "[Error] direct `&struct:get` for field `{field_text}` in {file_ns} bypasses the typed source syntax. Use `({field_text} value)` or `value.{field_text}` so the checker exposes the declared field type and lowers the read to indexed `&struct:nth` access"
       ),
     ),
     None if matches!(receiver_type.as_deref(), Some(CalcitTypeAnnotation::TypeRef(..))) => {
@@ -7750,9 +7750,9 @@ fn warn_on_raw_struct_field_access(
         .map(CalcitTypeAnnotation::to_brief_string)
         .unwrap_or_else(|| ":unknown".to_owned());
       (
-        "W_STRUCT_DYNAMIC_RAW_ACCESS",
+        "E_STRUCT_DYNAMIC_RAW_ACCESS",
         format!(
-          "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} has unresolved nominal receiver `{type_text}`. Its declaration namespace or dependency could not be recovered, so the field cannot be checked or specialized. Keep/restore a qualified schema such as `'app.schema/Type`, then use `({field_text} value)` or `value.{field_text}`; do not use `&struct:get` to hide an unresolved TypeRef"
+          "[Error] direct `&struct:get` for field `{field_text}` in {file_ns} has unresolved nominal receiver `{type_text}`. Its declaration namespace or dependency could not be recovered, so the field cannot be checked or specialized. Keep/restore a qualified schema such as `'app.schema/Type`, then use `({field_text} value)` or `value.{field_text}`; do not use `&struct:get` to hide an unresolved TypeRef"
         ),
       )
     }
@@ -7762,9 +7762,9 @@ fn warn_on_raw_struct_field_access(
         .map(CalcitTypeAnnotation::to_brief_string)
         .unwrap_or_else(|| ":unknown".to_owned());
       (
-        "W_STRUCT_DYNAMIC_RAW_ACCESS",
+        "E_STRUCT_DYNAMIC_RAW_ACCESS",
         format!(
-          "[Warn] direct `&struct:get` for field `{field_text}` in {file_ns} has receiver type `{type_text}`, so the field cannot be statically checked or specialized. Add/narrow a named Struct schema, then use `({field_text} value)` or `value.{field_text}`; reserve `&struct:get` for an intentional reusable `defimpl` or core/runtime boundary"
+          "[Error] direct `&struct:get` for field `{field_text}` in {file_ns} has receiver type `{type_text}`, so the field cannot be statically checked or specialized. Add/narrow a named Struct schema, then use `({field_text} value)` or `value.{field_text}`; reserve `&struct:get` for an intentional reusable `defimpl` or core/runtime boundary"
         ),
       )
     }
@@ -7912,10 +7912,10 @@ fn check_struct_construction_fields(
     if let Some(problem) = problem {
       gen_check_warning_code_at(
         format!(
-          "[Warn] struct `{}` construction {problem} at {file_ns}/{def_name}",
+          "[Error] struct `{}` construction {problem} at {file_ns}/{def_name}",
           value.struct_ref.name
         ),
-        "W_FN_ARG_TYPE_MISMATCH",
+        "E_FN_ARG_TYPE_MISMATCH",
         file_ns,
         call_location.clone().or_else(|| prototype.get_location()),
         check_warnings,
@@ -7987,12 +7987,12 @@ fn check_struct_construction_fields(
       }
       gen_check_warning_code_at_with_types(
         format!(
-          "[Warn] struct `{}` field `:{field}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
+          "[Error] struct `{}` field `:{field}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
           value.struct_ref.name,
           expected.to_brief_string(),
           actual.to_brief_string(),
         ),
-        "W_FN_ARG_TYPE_MISMATCH",
+        "E_FN_ARG_TYPE_MISMATCH",
         file_ns,
         location,
         expected.to_brief_string(),
@@ -8162,7 +8162,7 @@ fn check_struct_update_fields(
     {
       gen_check_warning(
         format!(
-          "[Warn] struct update field `:{field_name}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
+          "[Error] struct update field `:{field_name}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
           expected_type.to_brief_string(),
           actual_type.to_brief_string(),
         ),
@@ -8220,7 +8220,7 @@ fn check_field_in_struct(
   let available_fields: Vec<&str> = struct_def.fields.iter().map(|f| f.ref_str()).collect();
   gen_check_warning_code_at(
     format!(
-      "[Warn] Field `:{field_name}` does not exist in struct `{}`. Available fields: [{}]. Struct field access is required and never returns nil/Option for a missing field; use a declared field instead",
+      "[Error] Field `:{field_name}` does not exist in struct `{}`. Available fields: [{}]. Struct field access is required and never returns nil/Option for a missing field; use a declared field instead",
       struct_def.name,
       available_fields
         .iter()
@@ -8228,7 +8228,7 @@ fn check_field_in_struct(
         .collect::<Vec<_>>()
         .join(", ")
     ),
-    "W_UNKNOWN_STRUCT_FIELD",
+    "E_UNKNOWN_STRUCT_FIELD",
     file_ns,
     field_arg.get_location().or_else(|| struct_arg.get_location()),
     check_warnings,
@@ -8276,7 +8276,7 @@ pub(crate) fn check_enum_construction(
     let available_variants: Vec<&str> = enum_proto.variants().iter().map(|v| v.tag.ref_str()).collect();
     gen_check_warning(
       format!(
-        "[Warn] Enum `{}` does not have variant `:{tag_name}`. Available variants: [{}], at {file_ns}/{def_name}",
+        "[Error] Enum `{}` does not have variant `:{tag_name}`. Available variants: [{}], at {file_ns}/{def_name}",
         enum_proto.name(),
         available_variants.join(", ")
       ),
@@ -8293,7 +8293,7 @@ pub(crate) fn check_enum_construction(
   if expected_arity != actual_arity {
     gen_check_warning(
       format!(
-        "[Warn] Enum `{}::{}` expects {} payload(s), but got {}, at {file_ns}/{def_name}",
+        "[Error] Enum `{}::{}` expects {} payload(s), but got {}, at {file_ns}/{def_name}",
         enum_proto.name(),
         tag_name,
         expected_arity,
@@ -8319,7 +8319,7 @@ pub(crate) fn check_enum_construction(
       let actual_str = actual_type.as_ref().to_brief_string();
       gen_check_warning(
         format!(
-          "[Warn] Enum `{}::{}` payload {} expects type `{expected_str}`, but got `{actual_str}`, at {file_ns}/{def_name}",
+          "[Error] Enum `{}::{}` payload {} expects type `{expected_str}`, but got `{actual_str}`, at {file_ns}/{def_name}",
           enum_proto.name(),
           tag_name,
           idx + 1
@@ -8448,7 +8448,7 @@ fn check_struct_method_args(
     if expected_count != 0 && expected_count != actual_with_receiver && !accepts_omission {
       gen_check_warning(
         format!(
-          "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+          "[Error] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
         ),
         file_ns,
         check_warnings,
@@ -8473,10 +8473,10 @@ fn check_struct_method_args(
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning_code_at(
           format!(
-            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name} (implementation {implementation_name})",
+            "[Error] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name} (implementation {implementation_name})",
             idx + 2,
           ),
-          "W_METHOD_ARG_TYPE_MISMATCH",
+          "E_METHOD_ARG_TYPE_MISMATCH",
           file_ns,
           call_location.clone(),
           check_warnings,
@@ -8558,7 +8558,7 @@ fn check_struct_method_args(
   if expected_count != actual_with_receiver && !accepts_omission {
     gen_check_warning(
       format!(
-        "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+        "[Error] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
       ),
       file_ns,
       check_warnings,
@@ -8596,10 +8596,10 @@ fn check_struct_method_args(
         };
         gen_check_warning_code_at(
           format!(
-            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}{migration}",
+            "[Error] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}{migration}",
             idx + 2 // +2 because idx is 0-based and we skip receiver (arg 1)
           ),
-          "W_METHOD_ARG_TYPE_MISMATCH",
+          "E_METHOD_ARG_TYPE_MISMATCH",
           file_ns,
           call_location.clone(),
           check_warnings,
@@ -8823,7 +8823,7 @@ fn reject_or_warn_on_dynamic_trait_call(
   }
 
   let message = format!(
-    "[Warn] method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+    "[Error] method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
     receiver_cause.label(),
     receiver_cause.migration(),
   );
@@ -9382,12 +9382,12 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
     return;
   }
   let message = format!(
-    "[Warn] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
+    "[Error] `{operation}` consumes nominal enum `{enum_name}` value `{value}` in {file_ns}/{def_name}; this often indicates a nullable-returning API migrated to a nominal type; {guidance}"
   );
   if let Some(location) = location {
-    gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
   }
 }
 
@@ -9546,10 +9546,10 @@ fn warn_on_direct_option_helper_call(info: &CalcitFn, head: &Calcit, file_ns: &s
   }
   gen_check_warning_with_location_code(
     format!(
-      "[Warn] `{}` is the internal helper behind the Option method `{method}`; call `opt {method} …` instead. `calcit fix --rule core-option-method-v1` rewrites calls whose receiver is a proven Option",
+      "[Error] `{}` is the internal helper behind the Option method `{method}`; call `opt {method} …` instead. `calcit fix --rule core-option-method-v1` rewrites calls whose receiver is a proven Option",
       info.name
     ),
-    "W_OPTION_HELPER_CALL",
+    "E_OPTION_HELPER_CALL",
     location,
     check_warnings,
   );
@@ -9974,12 +9974,12 @@ fn warn_on_nominal_enum_truthiness(
     "use native `match` to select a nominal enum variant explicitly"
   };
   let message = format!(
-    "[Warn] nominal enum `{enum_name}` is used directly as an `if` condition in {file_ns}; this can silently select the truthy branch; {guidance}"
+    "[Error] nominal enum `{enum_name}` is used directly as an `if` condition in {file_ns}; this can silently select the truthy branch; {guidance}"
   );
   if let Some(location) = value.get_location() {
-    gen_check_warning_with_location_code(message, "W_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_NOMINAL_ENUM_LEGACY_USE", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
   }
 }
 
@@ -10036,8 +10036,8 @@ fn warn_on_constant_truthy_condition(
     _ => "test the property you mean explicitly; this value is never nil or false",
   };
   let message =
-    format!("[Warn] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}");
-  gen_check_warning_with_location_code(message, "W_CONSTANT_TRUTHY_CONDITION", location, check_warnings);
+    format!("[Error] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}");
+  gen_check_warning_with_location_code(message, "E_CONSTANT_TRUTHY_CONDITION", location, check_warnings);
 }
 
 /// `cond` with no final `true` pair would fall through to nil; report it at
@@ -10202,7 +10202,7 @@ fn warn_on_method_name_conflict(
         .map(|candidate| candidate.trait_def.origin_label())
         .collect::<Vec<_>>(),
       TraitMethodResolution::Invalid(error) => {
-        let message = format!("[Warn] method `.{method_name}` cannot use invalid trait metadata in {file_ns}/{def_name}: {error}");
+        let message = format!("[Error] method `.{method_name}` cannot use invalid trait metadata in {file_ns}/{def_name}: {error}");
         if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
           gen_check_warning_with_location(message, loc, check_warnings);
         } else {
@@ -10224,7 +10224,7 @@ fn warn_on_method_name_conflict(
   let selected_origin = candidates.first().cloned().unwrap_or_else(|| "<unknown>".to_owned());
 
   let message = format!(
-    "[Warn] method `.{}` has multiple origin candidates ({}) in {}/{}; compatibility dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
+    "[Error] method `.{}` has multiple origin candidates ({}) in {}/{}; compatibility dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
     method_name,
     candidates.join(", "),
     file_ns,
@@ -11438,9 +11438,9 @@ fn warn_on_dynamic_call_head(head: &Calcit, scope_types: &ScopeTypes, file_ns: &
     return;
   };
   let message = format!(
-    "[Warn] calling {label}, whose type is Dynamic, in {file_ns}; it fails at runtime unless it is a function: narrow it with `(if (fn? f) (f ...) ...)` or give it an Fn schema"
+    "[Error] calling {label}, whose type is Dynamic, in {file_ns}; it fails at runtime unless it is a function: narrow it with `(if (fn? f) (f ...) ...)` or give it an Fn schema"
   );
-  gen_check_warning_with_location_code(message, "W_DYNAMIC_CALL", location, check_warnings);
+  gen_check_warning_with_location_code(message, "E_DYNAMIC_CALL", location, check_warnings);
 }
 
 /// Check if an expression's inferred type is callable, and warn if not
@@ -11471,7 +11471,7 @@ fn check_callable_type(
       {
         let type_desc = describe_type(&type_ann);
         gen_check_warning(
-          format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
+          format!("[Error] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
           file_ns,
           check_warnings,
         );
@@ -11489,7 +11489,7 @@ fn check_callable_type(
         let type_desc = describe_type(type_ann);
         gen_check_warning(
           format!(
-            "[Warn] trying to call variable `{}` of non-function type {type_desc}, at {file_ns}/{def_name}",
+            "[Error] trying to call variable `{}` of non-function type {type_desc}, at {file_ns}/{def_name}",
             local.sym
           ),
           file_ns,
@@ -11505,7 +11505,7 @@ fn check_callable_type(
       {
         let type_desc = describe_type(&type_ann);
         gen_check_warning(
-          format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
+          format!("[Error] trying to call a non-function value of type {type_desc}. Expression: `{expr}`, at {file_ns}/{def_name}"),
           file_ns,
           check_warnings,
         );
@@ -13198,7 +13198,7 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
         if let Some((previous, _)) = literals.iter().find(|(seen, _)| *seen == *pattern) {
           gen_check_warning(
             format!(
-              "[Warn] match: duplicated literal pattern `{previous}`, later branch is unreachable, at {}/{}",
+              "[Error] match: duplicated literal pattern `{previous}`, later branch is unreachable, at {}/{}",
               ctx.file_ns,
               ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
             ),
@@ -13280,7 +13280,7 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
         };
         gen_check_warning(
           format!(
-            "[Warn] match: {} pattern `{pattern}` can never equal a value of type {}{hint}, at {}/{}",
+            "[Error] match: {} pattern `{pattern}` can never equal a value of type {}{hint}, at {}/{}",
             match_literal_kind(pattern),
             value_type.to_brief_string(),
             file_ns,
@@ -13461,7 +13461,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
       let missing: Vec<String> = missing.into_iter().map(|name| format!(":{name}")).collect();
       gen_check_warning(
         format!(
-          "[Warn] match on `Data` is not exhaustive. Missing variant(s): [{}], at {}/{}",
+          "[Error] match on `Data` is not exhaustive. Missing variant(s): [{}], at {}/{}",
           missing.join(", "),
           file_ns,
           ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
@@ -13682,7 +13682,7 @@ fn process_match(
             if expected_arity != actual_arity {
               gen_check_warning(
                 format!(
-                  "[Warn] match: variant `{}::{}` expects {} payload(s), but pattern binds {}, at {}/{}",
+                  "[Error] match: variant `{}::{}` expects {} payload(s), but pattern binds {}, at {}/{}",
                   enum_def.name(),
                   pat_tag,
                   expected_arity,
@@ -13698,7 +13698,7 @@ fn process_match(
             let available: Vec<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
             gen_check_warning(
               format!(
-                "[Warn] match: enum `{}` has no variant `:{pat_tag}`. Available: [{}], at {}/{}",
+                "[Error] match: enum `{}` has no variant `:{pat_tag}`. Available: [{}], at {}/{}",
                 enum_def.name(),
                 available.join(", "),
                 ctx.file_ns,
@@ -13810,7 +13810,7 @@ fn process_match(
     if !missing.is_empty() {
       gen_check_warning(
         format!(
-          "[Warn] match on `{}` is not exhaustive. Missing variant(s): [{}], at {}/{}",
+          "[Error] match on `{}` is not exhaustive. Missing variant(s): [{}], at {}/{}",
           enum_def.name(),
           missing.iter().map(|t| format!(":{t}")).collect::<Vec<_>>().join(", "),
           ctx.file_ns,
@@ -15542,7 +15542,7 @@ fn has_valid_wasm_import_body(args: &CalcitList) -> bool {
 fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
     gen_check_warning_with_location(
-      format!("[Warn] local binding `{sym}` shadowed `calcit.core/{sym}`, with {args}"),
+      format!("[Error] local binding `{sym}` shadowed `calcit.core/{sym}`, with {args}"),
       location,
       check_warnings,
     );
@@ -15584,7 +15584,7 @@ fn reports_let_lambda_recheck(code: Option<&str>, message: &str) -> bool {
   match code {
     Some(code) => code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH",
     // Calling a parameter that holds a non-function value has no code yet.
-    None => message.starts_with("[Warn] trying to call "),
+    None => message.starts_with("[Error] trying to call "),
   }
 }
 
@@ -20173,7 +20173,7 @@ mod tests {
     )
     .expect("compatibility mode should retain the nullable dereference warning");
     assert_eq!(warnings.borrow().len(), 1);
-    assert_eq!(warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_DEREF"));
+    assert_eq!(warnings.borrow()[0].code(), Some("E_JS_FFI_NULLABLE_DEREF"));
 
     let optional_warnings = RefCell::new(vec![]);
     reject_or_warn_on_nullable_js_ffi_dereference(
@@ -20200,7 +20200,7 @@ mod tests {
     )
     .expect("compatibility mode should retain the legacy predicate warning");
     assert_eq!(predicate_warnings.borrow().len(), 1);
-    assert_eq!(predicate_warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_PREDICATE"));
+    assert_eq!(predicate_warnings.borrow()[0].code(), Some("E_JS_FFI_NULLABLE_PREDICATE"));
 
     let non_nil_warnings = RefCell::new(vec![]);
     reject_or_warn_on_js_nullish_predicate_mismatch(
@@ -20465,7 +20465,7 @@ mod tests {
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);
       assert_eq!(warnings.borrow().len(), 1, "{operation} should warn");
-      assert_eq!(warnings.borrow()[0].code(), Some("W_NOMINAL_ENUM_LEGACY_USE"));
+      assert_eq!(warnings.borrow()[0].code(), Some("E_NOMINAL_ENUM_LEGACY_USE"));
     }
 
     let method_warnings = RefCell::new(vec![]);
@@ -21163,7 +21163,7 @@ mod tests {
         &warnings,
       )
       .expect("ordinary checking retains return warnings");
-      assert_eq!(warnings.borrow()[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
+      assert_eq!(warnings.borrow()[0].code(), Some("E_FN_RETURN_TYPE_MISMATCH"));
     }
 
     let _strict = StrictTypesGuard::new(true);
@@ -22220,7 +22220,7 @@ mod tests {
     let warnings = warnings.borrow();
     let matched = warnings
       .iter()
-      .filter(|warning| warning.code() == Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
+      .filter(|warning| warning.code() == Some("E_DYNAMIC_NOMINAL_METHOD_RECEIVER"))
       .collect::<Vec<_>>();
     assert_eq!(matched.len(), 1, "expected one Dynamic nominal-method warning, got: {warnings:?}");
     assert!(matched[0].message().contains("statically known Option or Result receiver"));
@@ -22303,7 +22303,7 @@ mod tests {
         warnings
           .borrow()
           .iter()
-          .all(|warning| warning.code() != Some("W_DYNAMIC_NOMINAL_METHOD_RECEIVER")),
+          .all(|warning| warning.code() != Some("E_DYNAMIC_NOMINAL_METHOD_RECEIVER")),
         "{method} must not be treated as an Option/Result method"
       );
     }
@@ -22867,7 +22867,7 @@ mod tests {
       &CallStackList::default(),
     )
     .expect("unknown external field remains a warning");
-    assert_eq!(unknown_warnings.borrow()[0].code(), Some("W_JS_FFI_UNKNOWN_FIELD"));
+    assert_eq!(unknown_warnings.borrow()[0].code(), Some("E_JS_FFI_UNKNOWN_FIELD"));
     let unknown_message = unknown_warnings.borrow()[0].message().to_owned();
     assert!(unknown_message.contains("minimal external-object capability"));
     assert!(unknown_message.contains("`js-cast` at the `:js-ffi` boundary"));
@@ -22886,7 +22886,7 @@ mod tests {
       &CallStackList::default(),
     )
     .expect("mismatched external field value remains a warning");
-    assert_eq!(mismatch_warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_TYPE_MISMATCH"));
+    assert_eq!(mismatch_warnings.borrow()[0].code(), Some("E_JS_FFI_FIELD_TYPE_MISMATCH"));
   }
 
   #[test]
@@ -22907,7 +22907,7 @@ mod tests {
     .expect("warn policy should not reject a read-only field");
 
     assert_eq!(warnings.borrow().len(), 1);
-    assert_eq!(warnings.borrow()[0].code(), Some("W_JS_FFI_FIELD_READONLY"));
+    assert_eq!(warnings.borrow()[0].code(), Some("E_JS_FFI_FIELD_READONLY"));
   }
 
   #[test]
@@ -23420,7 +23420,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_STRUCT_RAW_ACCESS"));
+    assert_eq!(warnings[0].code(), Some("E_STRUCT_RAW_ACCESS"));
     assert!(warnings[0].message().contains("Use `(:name value)`"));
   }
 
@@ -23679,7 +23679,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert!(
-      warnings.iter().any(|warning| warning.code() == Some("W_STRUCT_INDEX_RAW_ACCESS")),
+      warnings.iter().any(|warning| warning.code() == Some("E_STRUCT_INDEX_RAW_ACCESS")),
       "raw source index must not be published from a generic helper: {warnings:?}"
     );
     assert!(warnings.iter().any(|warning| warning.message().contains("matching type evidence")));
@@ -23723,7 +23723,7 @@ mod tests {
       warnings
         .borrow()
         .iter()
-        .all(|warning| warning.code() != Some("W_STRUCT_INDEX_RAW_ACCESS")),
+        .all(|warning| warning.code() != Some("E_STRUCT_INDEX_RAW_ACCESS")),
       "matching typed Snapshot IR must not be treated as hand-written unsafe access"
     );
   }
@@ -23949,7 +23949,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_STRUCT_DYNAMIC_RAW_ACCESS"));
+    assert_eq!(warnings[0].code(), Some("E_STRUCT_DYNAMIC_RAW_ACCESS"));
     assert!(warnings[0].message().contains("Add/narrow a named Struct schema"));
   }
 
@@ -23980,7 +23980,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_STRUCT_DYNAMIC_RAW_ACCESS"));
+    assert_eq!(warnings[0].code(), Some("E_STRUCT_DYNAMIC_RAW_ACCESS"));
     assert!(warnings[0].message().contains("unresolved nominal receiver `'Router`"));
     assert!(warnings[0].message().contains("qualified schema such as `'app.schema/Type`"));
   }
@@ -24120,7 +24120,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert_eq!(warnings[0].code(), Some("W_REQUIRED_STRUCT_FIELD_TYPE"));
+    assert_eq!(warnings[0].code(), Some("E_REQUIRED_STRUCT_FIELD_TYPE"));
     assert!(warnings[0].message().contains("needs a statically typed Struct"));
     assert!(
       warnings[0]
@@ -24168,7 +24168,7 @@ mod tests {
     );
     assert_eq!(
       source_warnings.borrow().first().and_then(LocatedWarning::code),
-      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      Some("E_REQUIRED_STRUCT_FIELD_TYPE"),
       "macro arguments with a source coordinate must keep required Struct diagnostics"
     );
 
@@ -24194,7 +24194,7 @@ mod tests {
     );
     assert_eq!(
       nested_source_warnings.borrow().first().and_then(LocatedWarning::code),
-      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      Some("E_REQUIRED_STRUCT_FIELD_TYPE"),
       "source locations nested in a receiver expression must keep required Struct diagnostics"
     );
 
@@ -24218,7 +24218,7 @@ mod tests {
     let mixed_location_warnings = mixed_location_warnings.borrow();
     assert_eq!(
       mixed_location_warnings.first().and_then(LocatedWarning::code),
-      Some("W_REQUIRED_STRUCT_FIELD_TYPE"),
+      Some("E_REQUIRED_STRUCT_FIELD_TYPE"),
       "a generated location must not hide an attributable receiver location"
     );
     assert_eq!(mixed_location_warnings[0].location().def.as_ref(), "demo");
@@ -24288,7 +24288,7 @@ mod tests {
     );
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].code(), Some("W_REQUIRED_STRUCT_FIELD_TYPE"));
+    assert_eq!(warnings[0].code(), Some("E_REQUIRED_STRUCT_FIELD_TYPE"));
     assert!(warnings[0].message().contains("with a declared `:name` field"));
   }
 
@@ -25950,7 +25950,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     let warning = warnings.first().expect("Option payload mismatch should warn");
-    assert_eq!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH"));
+    assert_eq!(warning.code(), Some("E_FN_ARG_TYPE_MISMATCH"));
     assert!(!warning.message().contains("option:unwrap-or"), "warning: {warning:?}");
     assert!(!warning.message().contains("tag-match"), "warning: {warning:?}");
   }
@@ -26436,11 +26436,11 @@ mod tests {
     assert!(
       warning_messages
         .iter()
-        .any(|message| message.contains("W_TODO") && message.contains("write this")),
+        .any(|message| message.contains("E_TODO") && message.contains("write this")),
       "todo warning missing: {warning_messages:?}"
     );
     assert!(
-      !warning_messages.iter().any(|message| message.contains("W_FN_RETURN_TYPE_MISMATCH")),
+      !warning_messages.iter().any(|message| message.contains("E_FN_RETURN_TYPE_MISMATCH")),
       "todo should be accepted for any declared return type: {warning_messages:?}"
     );
   }
@@ -26469,7 +26469,7 @@ mod tests {
       matches!(processed, Calcit::List(ref items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::Todo)))),
       "todo should remain a compiler-known proc: {processed}"
     );
-    assert!(warnings.borrow().iter().any(|warning| warning.to_string().contains("W_TODO")));
+    assert!(warnings.borrow().iter().any(|warning| warning.to_string().contains("E_TODO")));
   }
 
   #[test]
