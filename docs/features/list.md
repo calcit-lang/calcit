@@ -326,6 +326,20 @@ let
   ; => $ [] 30 40 50
 ```
 
+### 逐位组合两个 List：`zip-with`
+
+`zip-with xs ys f` 按位置把两个 List 交给回调 `(fn (a b) …)`，结果长度取较短的一边。两个长度相同的同构 Tuple（如 `Tuple Number Number Number`，或别名 `Vec3`）组合后仍是同长度的 Tuple，适合向量加法这类运算；其他情况得到 `List U`。
+
+```cirru
+let
+    a $ [] 1 2 3
+    b $ [] 10 20 30
+  println $ zip-with a b &+
+  ; => $ [] 11 22 33
+```
+
+同构 Tuple 上的 `map` / `map-indexed` 同样保持长度，例如 `map v $ fn (x) (&* x k)` 对 `Tuple Number Number Number` 返回 `Tuple Number Number Number`。
+
 ### 按索引配对两个 List
 
 `nth` 返回 `Option<T>`，所以第二个 List 较短时仍能表示缺失，不应把结果误写成必有的裸值：

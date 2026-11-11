@@ -10,7 +10,7 @@
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            println (v-scale ([] 1 2 3) 2) (v-scale-method ([] 1 2 3) 2) (v-labels ([] 1 2 3)) (v-weighted ([] 1 2 3)) (v-alias-scale ([] 1 2 3) 2) (v-keep-big ([] 1 2 3))
+            println (v-scale ([] 1 2 3) 2) (v-scale-method ([] 1 2 3) 2) (v-labels ([] 1 2 3)) (v-weighted ([] 1 2 3)) (v-alias-scale ([] 1 2 3) 2) (v-keep-big ([] 1 2 3)) (v-add ([] 1 2 3) ([] 1 1 1)) (v-alias-add ([] 1 2 3) ([] 1 1 1)) (list-add ([] 1 2) ([] 3 4 5))
             , &unit
           :schema $ quote $ Fn (-> Unit)
         'Vec3 $ %{} 'CodeEntry (:doc |)
@@ -34,3 +34,12 @@
         'v-keep-big $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn v-keep-big (a) (filter a (fn (x) (&> x 1)))
           :schema $ quote $ Fn (Tuple Number Number Number) (-> (List Number))
+        'v-add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn v-add (a b) (zip-with a b &+)
+          :schema $ quote $ Fn (Tuple Number Number Number) (Tuple Number Number Number) (-> (Tuple Number Number Number))
+        'v-alias-add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn v-alias-add (a b) (zip-with a b (fn (x y) (&+ x y)))
+          :schema $ quote $ Fn demo.main/Vec3 demo.main/Vec3 (-> demo.main/Vec3)
+        'list-add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn list-add (a b) (zip-with a b &+)
+          :schema $ quote $ Fn (List Number) (List Number) (-> (List Number))
