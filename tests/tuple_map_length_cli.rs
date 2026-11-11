@@ -1,6 +1,7 @@
 //! `map` / `map-indexed` over a homogeneous tuple keep its length: the result
 //! is a tuple of the same size whose slots carry the callback's output type
-//! (F3). Length-changing operations such as `filter` still return a List.
+//! (F3). `zip-with` over two homogeneous tuples of the same length keeps that
+//! length too. Length-changing operations such as `filter` still return a List.
 
 use std::fs;
 use std::path::PathBuf;
@@ -48,6 +49,9 @@ fn homogeneous_tuple_map_keeps_length() {
     "v-weighted",
     "v-alias-scale",
     "v-keep-big",
+    "v-add",
+    "v-alias-add",
+    "list-add",
     "main!",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
@@ -95,4 +99,43 @@ fn filter_over_a_tuple_still_returns_a_list() {
   assert!(!ok, "{text}");
   assert!(text.contains("demo.main/v-keep-big"), "{text}");
   assert!(text.contains("list<number>"), "{text}");
+}
+
+#[test]
+fn zip_with_needs_two_tuples_of_the_same_length() {
+  // A Tuple paired with a List has no fixed length, so the result is a List.
+  let (ok, text) = check(
+    &replaced(
+      "defn v-add (a b) (zip-with a b &+)\n          :schema $ quote $ Fn (Tuple Number Number Number) (Tuple Number Number Number)",
+      "defn v-add (a b) (zip-with a b &+)\n          :schema $ quote $ Fn (Tuple Number Number Number) (List Number)",
+    ),
+    "zip-list",
+  );
+  assert!(!ok, "{text}");
+  assert!(text.contains("demo.main/v-add"), "{text}");
+  assert!(text.contains("list<number>"), "{text}");
+
+  // Tuples of different lengths also give a List.
+  let (ok, text) = check(
+    &replaced(
+      "defn v-add (a b) (zip-with a b &+)\n          :schema $ quote $ Fn (Tuple Number Number Number) (Tuple Number Number Number)",
+      "defn v-add (a b) (zip-with a b &+)\n          :schema $ quote $ Fn (Tuple Number Number Number) (Tuple Number Number)",
+    ),
+    "zip-len",
+  );
+  assert!(!ok, "{text}");
+  assert!(text.contains("demo.main/v-add"), "{text}");
+}
+
+#[test]
+fn zip_with_callback_inputs_follow_both_sides() {
+  let (ok, text) = check(
+    &replaced(
+      "defn v-alias-add (a b) (zip-with a b (fn (x y) (&+ x y)))",
+      "defn v-alias-add (a b) (zip-with a b (fn (x y) (&+ x (count y))))",
+    ),
+    "zip-input",
+  );
+  assert!(!ok, "{text}");
+  assert!(text.contains("demo.main/v-alias-add"), "{text}");
 }

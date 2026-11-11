@@ -71,7 +71,7 @@ defstruct Person (:name String) (:age Number) (:position Tag)
 
 ## Generic Structs
 
-`defstruct` 在类型名后用 `(:generics T …)` 子句声明泛型参数，写法和 `Fn` 的 `:generics` 一致（0.42.0 起，#2700）；参数和字段类型一样直接写名字，在字段类型和 `assert-type` 里直接写 `Box Number` 套用具体类型。0.41 的位置式写法 `defstruct Box ([] T)` 在 0.42.x 仍可加载，`calcit edit format` 会改写成子句，0.43.0 删除。
+`defstruct` 在类型名后用 `(:generics T …)` 子句声明泛型参数，写法和 `Fn` 的 `:generics` 一致（0.41.1 起，#2700）；参数和字段类型一样直接写名字，在字段类型和 `assert-type` 里直接写 `Box Number` 套用具体类型。0.41.0 的位置式写法 `defstruct Box ([] T)` 仍可加载，`calcit edit format` 会改写成子句，0.43.0 删除。
 
 ```cirru
 let
@@ -117,7 +117,7 @@ let
 Here `:where $ T Debug` means `T` must satisfy the built-in `Debug` trait. The
 `:where` line already becomes a list through indentation, so do not add another outer pair
 of parentheses around it or around `:value T`. The 0.41 spelling `{} $ T Debug` after
-a positional `([] T)` is still read in 0.42.x and rewritten by `calcit edit format`. `%{}` enforces the bound when
+a positional `([] T)` is still read and rewritten by `calcit edit format`. `%{}` enforces the bound when
 constructing a struct value, so the constraint lives on the data definition rather
 than on each individual function schema. Use `Show` instead only when the payload
 has an explicit user-facing presentation implementation.
