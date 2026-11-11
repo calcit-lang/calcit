@@ -7324,26 +7324,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
     Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
     _ => None,
   };
-  let mut generics: Vec<Arc<str>> = vec![];
-  let mut where_bounds = vec![];
-  let mut start_idx = 2;
-
-  if let Some(generics_form) = forms.get(2)
-    && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
-  {
-    generics = vars;
-    start_idx = 3;
-  }
-  let has_where_form = forms.get(start_idx).is_some_and(|form| match form {
-    Calcit::Map(_) => true,
-    Calcit::List(xs) => xs.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head),
-    _ => false,
-  });
-  if has_where_form {
-    let form = forms.get(start_idx)?;
-    where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
-    start_idx += 1;
-  }
+  let (mut generics, where_bounds, start_idx) = parse_data_definition_header(&forms);
   let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>, Option<Calcit>)> = Vec::new();
 
   for item in forms.iter().skip(start_idx) {
@@ -7401,26 +7382,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     Calcit::Symbol { info, .. } => Some(Arc::from(format!("{}/{}", info.at_ns, name.ref_str()))),
     _ => None,
   };
-  let mut generics: Vec<Arc<str>> = vec![];
-  let mut where_bounds = vec![];
-  let mut start_idx = 2;
-
-  if let Some(generics_form) = forms.get(2)
-    && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
-  {
-    generics = vars;
-    start_idx = 3;
-  }
-  let has_where_form = forms.get(start_idx).is_some_and(|form| match form {
-    Calcit::Map(_) => true,
-    Calcit::List(xs) => xs.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head),
-    _ => false,
-  });
-  if has_where_form {
-    let form = forms.get(start_idx)?;
-    where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
-    start_idx += 1;
-  }
+  let (mut generics, where_bounds, start_idx) = parse_data_definition_header(&forms);
 
   let mut variants: Vec<(EdnTag, Calcit)> = Vec::new();
   for item in forms.iter().skip(start_idx) {
@@ -7457,6 +7419,53 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     values: Arc::new(values),
   };
   CalcitEnumDef::from_struct(struct_value).ok()
+}
+
+/// Generic parameters and bounds after the name of `defstruct` / `defenum`:
+/// the `(:generics T …)` and `(:where (T Debug) …)` clauses that `Fn` also
+/// takes (#2700), or the older positional `([] T …)` and `({} (T Debug) …)`.
+/// Returns them with the index of the first field or variant.
+fn parse_data_definition_header(forms: &[&Calcit]) -> (Vec<Arc<str>>, Vec<CalcitGenericBound>, usize) {
+  if let Some(Calcit::List(clause)) = forms.get(2)
+    && is_data_definition_clause(clause, "generics")
+  {
+    let params = Calcit::List(Arc::new(CalcitList::Vector(clause.iter().skip(1).cloned().collect())));
+    let generics = CalcitTypeAnnotation::parse_generics_list(&params).unwrap_or_default();
+    if let Some(Calcit::List(clause)) = forms.get(3)
+      && is_data_definition_clause(clause, "where")
+    {
+      let bounds = std::iter::once(Calcit::Proc(CalcitProc::NativeMap)).chain(clause.iter().skip(1).cloned());
+      let bounds = Calcit::List(Arc::new(CalcitList::Vector(bounds.collect())));
+      let where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(&bounds, generics.as_slice(), true);
+      return (generics, where_bounds, 4);
+    }
+    return (generics, vec![], 3);
+  }
+
+  let mut generics: Vec<Arc<str>> = vec![];
+  let mut where_bounds = vec![];
+  let mut start_idx = 2;
+  if let Some(generics_form) = forms.get(2)
+    && let Some(vars) = CalcitTypeAnnotation::parse_generics_list(generics_form)
+  {
+    generics = vars;
+    start_idx = 3;
+  }
+  let has_where_form = forms.get(start_idx).is_some_and(|form| match form {
+    Calcit::Map(_) => true,
+    Calcit::List(xs) => xs.first().is_some_and(CalcitTypeAnnotation::is_schema_map_literal_head),
+    _ => false,
+  });
+  if has_where_form && let Some(form) = forms.get(start_idx) {
+    where_bounds = CalcitTypeAnnotation::parse_where_bounds_form(form, generics.as_slice(), true);
+    start_idx += 1;
+  }
+  (generics, where_bounds, start_idx)
+}
+
+/// A `(:generics …)` or `(:where …)` clause of a data definition.
+fn is_data_definition_clause(clause: &CalcitList, name: &str) -> bool {
+  matches!(clause.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == name)
 }
 
 /// `defstruct` and `defenum` accept a map-headed wrapper (`$ {} ...`) so data

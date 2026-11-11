@@ -19,7 +19,7 @@
           :examples $ []
           :schema $ quote Dynamic
         'Box $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Box ([] T) (:value T)
+          :code $ quote $ defstruct Box (:generics T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'DemoEnum $ %{} 'CodeEntry (:doc |)

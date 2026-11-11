@@ -193,6 +193,26 @@ fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>)
     return (vec![], vec![]);
   }
 
+  // `(:generics T …)` and `(:where (T Debug) …)` clauses (#2700).
+  if let Some(Cirru::List(clause)) = items.get(2)
+    && matches!(clause.first(), Some(Cirru::Leaf(head)) if head.as_ref() == ":generics")
+  {
+    let generics = clause
+      .iter()
+      .skip(1)
+      .filter_map(|item| match item {
+        Cirru::Leaf(name) => Some(format!("'{}", name.trim_start_matches('\''))),
+        _ => None,
+      })
+      .collect();
+    let where_bounds = match items.get(3) {
+      Some(Cirru::List(clause)) if matches!(clause.first(), Some(Cirru::Leaf(head)) if head.as_ref() == ":where") => {
+        clause.iter().skip(1).map(render_cirru_inline).collect()
+      }
+      _ => vec![],
+    };
+    return (generics, where_bounds);
+  }
   let generics = match items.get(2) {
     // Generic parameters are written `[] T` or the older `[] 'T`.
     Some(Cirru::List(vars))
@@ -1039,7 +1059,8 @@ fn scan_data_declaration_dynamic(code: &Cirru, occurrences: &mut Vec<WeakTypeOcc
   if !matches!(head, "defstruct" | "defenum" | "defunion") {
     return;
   }
-  for (idx, item) in items.iter().enumerate().skip(2) {
+  let clauses = snapshot::data_definition_clause_count(&items[2.min(items.len())..]);
+  for (idx, item) in items.iter().enumerate().skip(2 + clauses) {
     let mut found = vec![];
     let label = match (head, item) {
       ("defunion", _) => {
@@ -3282,7 +3303,8 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
 
     match head {
       "defstruct" => {
-        for field in items.iter().skip(2) {
+        let clauses = snapshot::data_definition_clause_count(&items[2.min(items.len())..]);
+        for field in items.iter().skip(2 + clauses) {
           let Some(parts) = entry_parts(field, ':') else {
             continue;
           };
@@ -3294,7 +3316,8 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
         }
       }
       "defenum" => {
-        for variant in items.iter().skip(2) {
+        let clauses = snapshot::data_definition_clause_count(&items[2.min(items.len())..]);
+        for variant in items.iter().skip(2 + clauses) {
           let Some(parts) = entry_parts(variant, ':') else {
             continue;
           };

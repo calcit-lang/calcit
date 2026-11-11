@@ -61,11 +61,11 @@ let
 
 ## Generic Enums
 
-`defenum` 可以在类型名后接泛型参数列表。泛型参数直接写名字（`[] T E`），旧写法 `[] 'T 'E` 在 0.34.x 仍可使用，`calcit edit format` 会去掉 quote。在断言和复合 payload 里直接写 `ResultX Number String` 套用具体类型。
+`defenum` 在类型名后用 `(:generics T E)` 子句声明泛型参数，和 `Fn` 的 `:generics` 一致（0.41.1 起，#2700）。0.41.0 的位置式写法 `([] T E)` 仍可加载，`calcit edit format` 会改写成子句，0.43.0 删除。在断言和复合 payload 里直接写 `ResultX Number String` 套用具体类型。
 
 ```cirru
 let
-    ResultX $ defenum ResultX ([] T E) (:ok T) (:err E)
+    ResultX $ defenum ResultX (:generics T E) (:ok T) (:err E)
     ok $ ResultX :ok 1
     err $ ResultX :err |oops
   assert-type ok $ ResultX Number String
@@ -78,12 +78,12 @@ At the type level, `quote $ ResultX Number String` means the first slot is bound
 
 ### Generic Enums with `where` Bounds
 
-After the optional generics list, `defenum` may also take a `where` map to constrain type variables with traits. This is useful when enum payloads must support methods like `.debug`.
+After `(:generics …)`, `defenum` may also take a `(:where (T Trait) …)` clause to constrain type variables with traits. This is useful when enum payloads must support methods like `.debug`.
 
 ```cirru
 let
-    ShownMaybe $ defenum ShownMaybe ([] T)
-      {} $ T Debug
+    ShownMaybe $ defenum ShownMaybe (:generics T)
+      :where $ T Debug
       :some T
       :none
     some-val $ ShownMaybe :some 1
@@ -97,7 +97,7 @@ let
     (:none) |none
 ```
 
-The `where` map uses type variables as keys and trait names as values. `%::` checks the variant payloads against those bounds at runtime, so invalid type arguments are rejected when the enum value is created.
+Each `:where` entry starts with a type variable followed by a trait name. `%::` checks the variant payloads against those bounds at runtime, so invalid type arguments are rejected when the enum value is created.
 
 ## Enums with Struct Payloads
 
@@ -117,8 +117,8 @@ Applied generic structs also work in enum payloads:
 
 ```cirru
 let
-    Box $ defstruct Box ([] T) (:value T)
-    Wrapped $ defenum Wrapped ([] T)
+    Box $ defstruct Box (:generics T) (:value T)
+    Wrapped $ defenum Wrapped (:generics T)
       :box $ Box T
       :empty
     value $ Wrapped :box $ %{} Box (:value 1)
@@ -381,9 +381,9 @@ defenum Shape (:point :number :number) (:circle :number)
 
 ; generic struct payloads use applied named types
 
-defstruct Box ([] T) (:value T)
+defstruct Box (:generics T) (:value T)
 
-defenum Wrapped ([] T)
+defenum Wrapped (:generics T)
   :box $ Box T
   :empty
 

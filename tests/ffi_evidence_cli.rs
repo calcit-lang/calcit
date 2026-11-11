@@ -297,7 +297,7 @@ fn strict_workflow_reuses_ffi_boundary_evidence() {
   assert!(boundary["unsafe_paths"].as_array().is_some_and(|items| !items.is_empty()));
 
   // Only external-object traits are trusted host handle targets for `unsafe-coerce`.
-  // An ordinary trait can no longer be written as a return type at all (E_TRAIT_AS_TYPE, #2696).
+  // An ordinary Calcit trait in a return position is now rejected up front by E_TRAIT_AS_TYPE.
   let return_mismatch = |definition: &str| {
     report["diagnostics"]
       .as_array()

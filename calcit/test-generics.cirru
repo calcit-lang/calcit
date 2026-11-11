@@ -11,11 +11,11 @@
     %{} 'FileEntry
       :defs $ {}
         'Box $ %{} 'CodeEntry (:doc "|Generic box struct")
-          :code $ quote $ defstruct Box ([] T) (:value T)
+          :code $ quote $ defstruct Box (:generics T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'Holder $ %{} 'CodeEntry (:doc "|Generic holder wrapping Box")
-          :code $ quote $ defstruct Holder ([] T)
+          :code $ quote $ defstruct Holder (:generics T)
             :box $ Box T
           :examples $ []
           :schema $ quote StructDef
@@ -26,7 +26,7 @@
           :examples $ []
           :schema $ quote StructDef
         'Pair $ %{} 'CodeEntry (:doc "|Generic pair struct")
-          :code $ quote $ defstruct Pair ([] T U) (:left T) (:right U)
+          :code $ quote $ defstruct Pair (:generics T U) (:left T) (:right U)
           :examples $ []
           :schema $ quote StructDef
         'main! $ %{} 'CodeEntry (:doc |)
