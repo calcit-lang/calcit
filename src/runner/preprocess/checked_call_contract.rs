@@ -189,9 +189,45 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     "first" | "last" | "pairs-map" => Some(1),
     "nth" => Some(2),
     "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
-    "assoc-in" | "option:fold" | "update" | "update-in" => Some(3),
+    "assoc-in" | "option:fold" | "update" | "update-in" | "zip-with" => Some(3),
     _ => None,
   }
+}
+
+/// The member type of a `zip-with` input, and its length when it is a
+/// homogeneous tuple (directly or through a named alias).
+fn zip_with_input(type_value: &Arc<CalcitTypeAnnotation>) -> Option<(Arc<CalcitTypeAnnotation>, Option<usize>)> {
+  use CalcitTypeAnnotation as T;
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(type_value);
+  match expanded.as_ref() {
+    T::List(item) if !is_syntax_member(item) => Some((item.clone(), None)),
+    T::Tuple(slots) => T::homogeneous_tuple_item(slots).map(|item| (item.clone(), Some(slots.len()))),
+    _ => None,
+  }
+}
+
+/// `zip-with xs ys f` combines positions with `A, B -> U`. Two homogeneous
+/// tuples of the same length keep that length; anything else gives `List U`.
+fn zip_with_contract(left_type: Arc<CalcitTypeAnnotation>, args: &CalcitList, scope_types: &ScopeTypes) -> Option<CheckedCallContract> {
+  use CalcitTypeAnnotation as T;
+  let right_type = resolve_type_value(args.get(1)?, scope_types).map(resolve_bound_type_slot_chain)?;
+  let (left_item, left_len) = zip_with_input(&left_type)?;
+  let (right_item, right_len) = zip_with_input(&right_type)?;
+  let inputs = [left_item.clone(), right_item.clone()];
+  let output_type = mapper_output_type(args.get(2)?, scope_types, &inputs, "ZipOutput");
+  let return_type = match (left_len, right_len) {
+    (Some(left), Some(right)) if left == right => Arc::new(T::Tuple(Arc::new(vec![output_type.clone(); left]))),
+    _ => Arc::new(T::List(output_type.clone())),
+  };
+  Some(CheckedCallContract {
+    expected_types: Some(vec![
+      Arc::new(T::List(left_item.clone())),
+      Arc::new(T::List(right_item.clone())),
+      fn_type(vec![left_item, right_item], output_type),
+    ]),
+    return_type,
+    lowering: None,
+  })
 }
 
 /// Follow concrete type-slot bindings while leaving unresolved or cyclic slots
@@ -284,6 +320,9 @@ pub(crate) fn resolve_checked_call_contract(
       let payload = resolve_type_value(items.get(payload_index)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
+  if fn_def == "zip-with" {
+    return zip_with_contract(receiver_type, args, scope_types);
+  }
   // Collection operations see a homogeneous tuple as `List T`. A heterogeneous
   // tuple has no element type, so the receiver must be a List it cannot prove.
   // A named alias such as `Vec3` is expanded first so it reads like the

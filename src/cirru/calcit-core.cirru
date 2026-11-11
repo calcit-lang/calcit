@@ -14017,6 +14017,53 @@
                 assert= (&{})
                   zipmap ([]) ([])
               :tags $ #{} :core :lexical-binder :unit
+        'zip-with $ %{} 'CodeEntry
+          :doc "|Combine two lists position by position with a callback (A, B) -> U. The result has the shorter input's length. Two homogeneous tuples of the same length, such as two `Tuple Number Number Number` vectors, give a tuple of that length."
+          :code $ quote $ defn zip-with (xs0 ys0 f)
+            loop
+                acc $ []
+                xs xs0
+                ys ys0
+              hint-fn $ Fn (List U) (List A) (List B)
+                -> $ List U
+              if
+                if (&list:empty? xs) true $ &list:empty? ys
+                , acc $ recur
+                  append acc $ f (&list:nth xs 0) (&list:nth ys 0)
+                  rest xs
+                  rest ys
+          :examples $ []
+            quote $ assert= ([] 11 22 33)
+              zip-with ([] 1 2 3) ([] 10 20 30) $ fn (a b) (&+ a b)
+            quote $ assert= ([] |a1 |b2)
+              zip-with ([] |a |b |c) ([] 1 2)
+                fn (s n) (str s n)
+          :schema $ quote $ Fn (List A) (List B)
+            Fn A B $ -> U
+            -> $ List U
+            :generics A B U
+          :tests $ []
+            %{} 'TestEntry (:name |combines-equally-sized-lists)
+              :code $ quote $ assert= ([] 11 22 33)
+                zip-with ([] 1 2 3) ([] 10 20 30)
+                  fn (a b) (&+ a b)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |stops-at-the-shorter-list)
+              :code $ quote $ do
+                assert= ([] |a1 |b2)
+                  zip-with ([] |a |b |c) ([] 1 2)
+                    fn (s n) (str s n)
+                assert= ([] |a1)
+                  zip-with ([] |a) ([] 1 2)
+                    fn (s n) (str s n)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-either-input-stays-empty)
+              :code $ quote $ do
+                assert= ([])
+                  zip-with ([]) ([] 1) $ fn (a b) (&+ a b)
+                assert= ([])
+                  zip-with ([] 1) ([]) $ fn (a b) (&+ a b)
+              :tags $ #{} :core :unit
         '{,} $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro {,} (& body)
             &let
