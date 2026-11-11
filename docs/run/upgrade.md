@@ -63,6 +63,20 @@ related:
 
 按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS` 和 `P_*` 也不变。
 
+## 0.42.0 trait 写在类型位置报 `E_TRAIT_AS_TYPE`（#2696）
+
+schema、`hint-fn` 和 `assert-type` 里直接写普通 trait 名（例如 `Fn Labeled (-> String)`）现在报 `E_TRAIT_AS_TYPE`。以前这种写法能通过定义检查，但调用时会拒绝所有实现了该 trait 的值，文档描述的“接收者必须实现该 trait”并不成立。改成泛型参数加 `:where` 约束：
+
+```cirru.no-check
+; 旧
+Fn Labeled (-> String)
+; 新
+Fn T (-> String) (:generics T)
+  :where $ T Labeled
+```
+
+`assert-type x Labeled` 改成 `assert-traits x Labeled`。external-object trait（`defexternal` 或带 `:ffi` 的 `deftrait`）不受影响。
+
 ## 0.41.2 解析不到的类型名报 `E_UNKNOWN_TYPE_NAME`（#2691）
 
 schema、`hint-fn` 和 `assert-type` 里写了不存在的类型名（例如把 `Number` 拼成 `Nubmer`）时，检查现在报 `E_UNKNOWN_TYPE_NAME`，并给出编辑距离最近的候选名。以前这个名字被当成一个新的名义类型，函数体不依赖参数类型时检查一直通过，调用方才收到 ``expected `'Nubmer` `` 这样的不匹配。按提示改成正确的名字，或者补上 `:refer` / `:as` 引入。只在别的 entry 里加载的模块不受影响。

@@ -3232,6 +3232,59 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
   });
 }
 
+/// `let{}` binds Struct fields by name; misspelt fields and non-Struct receivers
+/// must be reported at check time whether the data is a symbol or an expression (#2697).
+#[test]
+fn let_struct_destructure_reports_field_and_receiver_errors() {
+  run_with_large_stack(|| {
+    let codes = |body: &str| -> Vec<(Option<String>, String)> {
+      let entries = load_snippet_entries(&format!(
+        "let\n    Task $ defstruct Task (:id Number) (:text String)\n    task $ Task :id 1 :text |a\n  {body}"
+      ));
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      warnings
+        .borrow()
+        .iter()
+        .map(|w| (w.code().map(str::to_owned), w.message().to_string()))
+        .filter(|(_, m)| !m.contains("eprintln"))
+        .collect()
+    };
+    let has = |diagnostics: &[(Option<String>, String)], code: &str, text: &str| {
+      diagnostics.iter().any(|(c, m)| c.as_deref() == Some(code) && m.contains(text))
+    };
+
+    let ok = codes("let{} (id text) task $ + id $ .len text");
+    assert!(ok.is_empty(), "declared fields should check cleanly: {ok:?}");
+
+    for body in ["let{} (id txt) task id", "let{} (id txt) (do task) id"] {
+      let diagnostics = codes(body);
+      assert!(
+        has(
+          &diagnostics,
+          "W_UNKNOWN_STRUCT_FIELD",
+          "Field `:txt` does not exist in struct `Task`"
+        ),
+        "`{body}` must report the misspelt field: {diagnostics:?}"
+      );
+    }
+
+    let mismatch = codes("let{} (text) task $ + text 1");
+    assert!(
+      mismatch.iter().any(|(c, _)| c.as_deref() == Some("W_FN_ARG_TYPE_MISMATCH")),
+      "bindings must keep the declared field type: {mismatch:?}"
+    );
+
+    for body in ["let{} (id) ({} (:id 1)) id", "let{} (id) (identity $ {} (:id 1)) id"] {
+      let diagnostics = codes(body);
+      assert!(
+        has(&diagnostics, "W_REQUIRED_STRUCT_FIELD_TYPE", "required field access `(:id value)`"),
+        "`{body}` must reject a non-Struct receiver: {diagnostics:?}"
+      );
+    }
+  });
+}
+
 #[test]
 fn removed_tag_match_reports_the_published_migration_path() {
   run_with_large_stack(|| {
@@ -5162,6 +5215,44 @@ fn strict_type_fail_unknown_type_name_suggests_candidates() {
         err.contains(&format!("did you mean {candidate}")),
         "{fixture} should suggest {candidate}: {err}"
       );
+    }
+  });
+}
+
+/// A plain trait in a type position is rejected with `E_TRAIT_AS_TYPE` and
+/// points to the `:where` bound (or `assert-traits`) that states the capability.
+#[test]
+fn strict_type_fail_trait_as_type_points_to_where_bound() {
+  run_with_large_stack(|| {
+    let cases = [
+      (
+        "calcit/type-fail/trait-as-type-schema.cirru",
+        "`lib/Labeled` as a type in schema at schema.args.0.item",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-value-schema.cirru",
+        "`lib/Labeled` as a type in schema at schema.item",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-hint-fn.cirru",
+        "`lib/Labeled` as a type in hint-fn at hint-fn.args.0",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-assert-type.cirru",
+        "as a type in assert-type",
+        "assert-traits x app.lib/Labeled",
+      ),
+    ];
+    let _strict = StrictTypesReset::enabled();
+    for (fixture, place, hint) in cases {
+      let entries = load_fixture_entries(fixture);
+      let err = run_check_only(&entries).expect_err(fixture);
+      assert!(err.contains("E_TRAIT_AS_TYPE"), "{fixture} should report E_TRAIT_AS_TYPE: {err}");
+      assert!(err.contains(place), "{fixture} should point at {place}: {err}");
+      assert!(err.contains(hint), "{fixture} should suggest {hint}: {err}");
     }
   });
 }

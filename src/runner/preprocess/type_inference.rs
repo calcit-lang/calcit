@@ -1129,6 +1129,15 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   }
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
+    // `map` over a homogeneous tuple lowers to `&list:map`; the lowered call
+    // still keeps the tuple's length (F3).
+    if def == "&list:map"
+      && let Some(contract) = resolve_checked_call_contract(ns, "map", &args, scope_types)
+      && matches!(contract.return_type.as_ref(), CalcitTypeAnnotation::Tuple(_))
+      && contract_return_captures_only_inputs(&contract.return_type, args.iter(), scope_types)
+    {
+      return Some(contract.return_type);
+    }
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
       && contract_return_captures_only_inputs(&contract.return_type, args.iter(), scope_types)
     {

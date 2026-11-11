@@ -15,6 +15,7 @@ mod redundant_hint;
 mod scope_types;
 mod source_replay;
 mod tail_context;
+mod trait_type_names;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -64,8 +65,8 @@ pub use type_inference::{
   infer_static_type_from_expr, resolve_core_nominal_instance_type,
 };
 use type_rewriting::{
-  build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
-  try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
+  build_enum_ref_node, build_struct_ref_node, coerce_tag_literal, coerce_tail_tag_literals, try_rewrite_enum_args_to_named_enums,
+  try_rewrite_local_fn_enum_args_to_named_enums, try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
 };
 
 use cirru_parser::Cirru;
@@ -1570,10 +1571,6 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "w-log" | "w-js-log" => Some(("0.31.0", "use `dbg`, or an explicit `js/console.log` for the host object view")),
     "wo-log" | "wo-js-log" => Some(("0.31.0", "write `x` for `(wo-log x)`; it returned its argument unchanged")),
     "flipped" => Some(("0.31.0", "write `(f b a)` for `(flipped f a b)`")),
-    "let{}" => Some((
-      "0.31.0",
-      "bind the Map once with `let`, then read each Tag key with `get` and handle the Option result",
-    )),
     "let-destruct" => Some(("0.31.0", "use `let` for a symbol pattern and `let[]` for a `([] ...)` pattern")),
     "remove-watch" => Some(("0.31.0", "use `remove-watch!`")),
     "turn-string" => Some(("0.31.0", "use `to-string`")),
@@ -1673,6 +1670,19 @@ fn source_location_in_namespace(value: &Calcit, file_ns: &str) -> Option<NodeLoc
   }
 }
 
+/// `let{} (a b) data` expands each name into `(:a v)` on a generated local
+/// when `data` is not a plain symbol, so neither the tag nor the receiver
+/// keeps a source coordinate. Those reads are still the user's own field
+/// reads; attribute them to the `let{}` call instead of hiding them as
+/// macro internals.
+fn let_struct_destructure_location(call_stack: &CallStackList) -> Option<NodeLocation> {
+  call_stack
+    .0
+    .iter()
+    .find(|frame| matches!(frame.kind, StackKind::Macro) && frame.ns.as_ref() == calcit::CORE_NS && frame.def.as_ref() == "let{}")
+    .and_then(|frame| find_calcit_location_matching(&frame.code, |location| location.def.as_ref() != GENERATED_DEF))
+}
+
 fn warn_required_struct_field_type(
   field_name: &str,
   receiver: &Calcit,
@@ -1694,7 +1704,8 @@ fn warn_required_struct_field_type(
     .as_ref()
     .filter(|location| location.def.as_ref() != GENERATED_DEF)
     .cloned()
-    .or_else(|| find_calcit_location_matching(receiver, |location| location.def.as_ref() != GENERATED_DEF));
+    .or_else(|| find_calcit_location_matching(receiver, |location| location.def.as_ref() != GENERATED_DEF))
+    .or_else(|| let_struct_destructure_location(call_stack));
   let generated_context = location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
     || find_calcit_location_matching(receiver, |location| location.def.as_ref() == GENERATED_DEF).is_some()
     || call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
@@ -1702,6 +1713,10 @@ fn warn_required_struct_field_type(
     return;
   }
 
+  let def_name = match &attributable_location {
+    Some(location) if def_name == GENERATED_DEF => location.def.as_ref(),
+    _ => def_name,
+  };
   let receiver_type_text = receiver_type
     .map(CalcitTypeAnnotation::to_brief_string)
     .unwrap_or_else(|| ":unknown".to_owned());
@@ -1928,7 +1943,10 @@ fn check_top_level_value_schema(
   if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "def" | "fn")) {
     return Ok(());
   }
-  let expected = type_inference::definition_value_schema(ns, def, program::lookup_def_schema(ns, def));
+  let declared = program::lookup_def_schema(ns, def);
+  let schema_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+  trait_type_names::reject_trait_type_names(&format!("{ns}/{def}"), "schema", &declared, ns, call_stack, Some(schema_location))?;
+  let expected = type_inference::definition_value_schema(ns, def, declared);
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
     return Ok(());
   };
@@ -4924,8 +4942,12 @@ fn preprocess_list_call(
           }
           if let Some(type_info) = resolve_type_value(&processed_arg, scope_types) {
             if type_info.as_ref().resolve_to_struct().is_some() {
-              if def_name.as_ref() != GENERATED_DEF && !inside_struct_match_expansion {
-                check_field_in_struct(&processed_arg, head, scope_types, file_ns, check_warnings);
+              if !inside_struct_match_expansion {
+                if def_name.as_ref() != GENERATED_DEF {
+                  check_field_in_struct(&processed_arg, head, scope_types, file_ns, check_warnings);
+                } else if let Some(location) = let_struct_destructure_location(call_stack) {
+                  check_field_in_struct_at(&processed_arg, head, scope_types, file_ns, Some(location), check_warnings);
+                }
               }
               return Ok(Calcit::from(CalcitList::from(&[
                 Calcit::Proc(CalcitProc::NativeStructGet),
@@ -5524,6 +5546,22 @@ fn preprocess_list_call(
         let mut processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         // Struct literal construction (`%{}`, or a direct constructor call that
         // lowers to it) wraps plain payloads of Option fields (#2652).
+        // Bare tags for enum-typed fields name zero-payload variants (#2701).
+        if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
+          && let Some(coerced) = coerce_struct_literal_tags(
+            &processed_args,
+            scope_types,
+            (file_ns, &def_name),
+            call_stack,
+            call_location.clone(),
+          )?
+        {
+          processed_args = coerced;
+          ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
+          for item in processed_args.iter() {
+            ys = ys.push(item.to_owned());
+          }
+        }
         if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
           && let Some(lifted) = lift_struct_literal_options(&processed_args, scope_types, file_ns)
         {
@@ -5996,6 +6034,32 @@ fn preprocess_list_call(
               ys = ys.push(item.to_owned());
             }
           }
+          // Bare tags at enum-typed parameters of a local function (#2701).
+          if let Some(ref ty) = local_type
+            && let Some(fn_annot) = ty.resolve_to_fn()
+            && ys.drop_left().iter().any(|arg| matches!(arg, Calcit::Tag(_)))
+          {
+            let mut next = vec![ys.first().unwrap().to_owned()];
+            let mut coerced = false;
+            for (idx, arg) in ys.drop_left().iter().enumerate() {
+              let replacement = match fn_annot.arg_types.get(idx) {
+                Some(expected) => coerce_tag_literal(
+                  arg,
+                  expected,
+                  &format!("arg {} of local `{local_sym}`", idx + 1),
+                  (file_ns, &def_name),
+                  call_stack,
+                  call_location.clone(),
+                )?,
+                None => None,
+              };
+              coerced |= replacement.is_some();
+              next.push(replacement.unwrap_or_else(|| arg.to_owned()));
+            }
+            if coerced {
+              ys = CalcitList::new_inner_from(next.as_slice());
+            }
+          }
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
             let local_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
@@ -6424,6 +6488,23 @@ fn preprocess_known_function_call(
         result?
       }
       None => form,
+    };
+    // A bare tag at a definite enum parameter names its zero-payload variant (#2701).
+    let form = if matches!(form, Calcit::Tag(_))
+      && let Some(raw_expected) = active_expected_types.get(arg_idx)
+      && !raw_expected.contains_type_var()
+      && let Some(expected) = expected_type.as_ref()
+      && let Some(rewritten) = coerce_tag_literal(
+        &form,
+        expected,
+        &format!("arg {} of `{}`", arg_idx + 1, info.name),
+        (file_ns, def_name),
+        call_stack,
+        call_location.clone(),
+      )? {
+      rewritten
+    } else {
+      form
     };
     // A parameter that declares nullability already admits the nil exit.
     if !is_nil_bridge_head(&head_form)
@@ -7858,6 +7939,55 @@ fn lift_struct_literal_options(args: &CalcitList, scope_types: &ScopeTypes, file
   lifted.then(|| CalcitList::from(next.as_slice()))
 }
 
+/// Rewrites bare tag values of enum-typed fields in a struct literal
+/// (`[NativeStruct, prototype, :field value ...]`) to zero-payload variants (#2701).
+fn coerce_struct_literal_tags(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  (file_ns, def_name): (&str, &str),
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> Result<Option<CalcitList>, CalcitErr> {
+  let Some(prototype) = args.first() else { return Ok(None) };
+  let items = args.iter().skip(1).collect::<Vec<_>>();
+  if !items.iter().any(|item| matches!(item, Calcit::Tag(_)))
+    || !items.len().is_multiple_of(2)
+    || items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    return Ok(None);
+  }
+  let Some(value) = resolve_struct_value(prototype, scope_types) else {
+    return Ok(None);
+  };
+  let struct_type = CalcitTypeAnnotation::StructValue(value.struct_ref.clone());
+  let mut coerced = false;
+  let mut next = vec![prototype.to_owned()];
+  for pair in items.as_chunks::<2>().0 {
+    next.push(pair[0].to_owned());
+    let replacement = match struct_constructor_field_name(pair[0])
+      .and_then(|field| value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field))
+      .and_then(|index| type_inference::resolve_struct_field_type_by_index(&struct_type, index))
+    {
+      Some(field_type) => coerce_tag_literal(
+        pair[1],
+        &field_type,
+        &format!(
+          "field `:{}` of struct `{}`",
+          struct_constructor_field_name(pair[0]).unwrap_or_default(),
+          value.struct_ref.name
+        ),
+        (file_ns, def_name),
+        call_stack,
+        location.clone(),
+      )?,
+      None => None,
+    };
+    coerced |= replacement.is_some();
+    next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
+  }
+  Ok(coerced.then(|| CalcitList::from(next.as_slice())))
+}
+
 /// Check resolved constructor shapes and payloads after lowering. Both public
 /// spellings reach this path; spread-bearing shapes remain runtime contracts.
 fn check_struct_construction_fields(
@@ -8181,14 +8311,29 @@ fn check_field_in_struct(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  check_field_in_struct_at(struct_arg, field_arg, scope_types, file_ns, None, check_warnings);
+}
+
+/// Like `check_field_in_struct`, but a `source_location` marks the read as the
+/// user's own even when both operands were generated (the field reads that
+/// `let{}` expands to), and the diagnostic points at that location.
+fn check_field_in_struct_at(
+  struct_arg: &Calcit,
+  field_arg: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  source_location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
   // Macro-generated struct dispatch (for example struct pattern matching)
   // may deliberately probe variant-specific fields after its own nominal
   // guard. Source-level field diagnostics are emitted before expansion, so do
   // not report those internal probes as user mistakes.
-  if [struct_arg.get_location(), field_arg.get_location()]
-    .into_iter()
-    .flatten()
-    .any(|location| location.def.as_ref() == GENERATED_DEF)
+  if source_location.is_none()
+    && [struct_arg.get_location(), field_arg.get_location()]
+      .into_iter()
+      .flatten()
+      .any(|location| location.def.as_ref() == GENERATED_DEF)
   {
     return;
   }
@@ -8230,7 +8375,9 @@ fn check_field_in_struct(
     ),
     "E_UNKNOWN_STRUCT_FIELD",
     file_ns,
-    field_arg.get_location().or_else(|| struct_arg.get_location()),
+    source_location
+      .or_else(|| field_arg.get_location())
+      .or_else(|| struct_arg.get_location()),
     check_warnings,
   );
 }
@@ -12081,7 +12228,8 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     return is_builtin_method_candidate(schema.as_ref(), candidate);
   }
   let expected_name = match type_ref {
-    CalcitTypeAnnotation::List(_) => "&core-list-methods",
+    // A tuple value is a list at runtime and dispatches to the list methods.
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => "&core-list-methods",
     CalcitTypeAnnotation::String => "&core-string-methods",
     CalcitTypeAnnotation::Map(_, _) => "&core-map-methods",
     CalcitTypeAnnotation::Set(_) => "&core-set-methods",
@@ -14632,6 +14780,14 @@ pub fn preprocess_defn(
           ctx.call_stack,
           body_fn_hint_location.clone(),
         )?;
+        trait_type_names::reject_trait_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "hint-fn",
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.file_ns,
+          ctx.call_stack,
+          body_fn_hint_location.clone(),
+        )?;
       }
       if let Some(signature) = &body_fn_hint {
         ensure_annotation_slot_representatives(
@@ -14684,6 +14840,14 @@ pub fn preprocess_defn(
           Some(definition_location.clone()),
         )?;
         unknown_type_names::reject_unknown_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "schema",
+          &def_schema,
+          ctx.file_ns,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        trait_type_names::reject_trait_type_names(
           &format!("{}/{}", ctx.file_ns, def_name),
           "schema",
           &def_schema,
@@ -15079,6 +15243,15 @@ pub fn preprocess_defn(
           let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
           resolve_namespace_type_refs_for_body(local, ctx.file_ns).resolve_to_fn()
         });
+      // A declared enum result names zero-payload variants for bare tags in the
+      // returned form (#2701).
+      let tail_tag_return = effective_fn_schema
+        .as_ref()
+        .filter(|signature| !signature.is_async_invocation() && !signature.return_type.contains_type_var())
+        .map(|signature| {
+          let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
+          resolve_namespace_type_refs_for_body(local, ctx.file_ns)
+        });
       // The returned form is the last one that is not a function hint.
       let tail_index = args
         .iter()
@@ -15112,6 +15285,18 @@ pub fn preprocess_defn(
           a,
           preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
         );
+        let form = match tail_tag_return.as_ref().filter(|_| Some(index) == tail_index) {
+          Some(expected) => coerce_tail_tag_literals(
+            &form,
+            expected,
+            "return value",
+            (ctx.file_ns, def_name.as_ref()),
+            ctx.call_stack,
+            ctx.call_location.clone().or(Some(definition_location.clone())),
+          )?
+          .unwrap_or(form),
+          None => form,
+        };
         condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);
@@ -16385,6 +16570,16 @@ fn preprocess_assert_type_with_obligation(
     .and_then(|form| form.get_location())
     .or_else(|| find_preferred_macro_location(ctx.call_stack));
   unknown_type_names::reject_unknown_type_names(
+    &assertion_location
+      .as_ref()
+      .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),
+    "assert-type",
+    &asserted_type,
+    ctx.file_ns,
+    ctx.call_stack,
+    assertion_location.clone(),
+  )?;
+  trait_type_names::reject_trait_type_names(
     &assertion_location
       .as_ref()
       .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),

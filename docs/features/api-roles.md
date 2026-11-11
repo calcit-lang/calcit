@@ -359,7 +359,7 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 
 剩余集中迁移与这些**应用可直接调用**的兼容入口以 **0.31.0** 为计划退场窗口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。计划版本本身不证明这些条件已满足；任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
 
-`%ok/%err`、`defatom`、`remove-watch`、`turn-string`、`let{}`、`let-destruct` 已在 0.31.0 删除，改写方式见[升级指南](../run/upgrade.md#0310-删除最后一批已弃用的核心名字)；`some-in?` 与 `range-bothway` 见[删除已弃用的兼容函数](../run/upgrade.md#0310-删除已弃用的兼容函数)。改写 `let{}` 时原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
+`%ok/%err`、`defatom`、`remove-watch`、`turn-string`、`let{}`、`let-destruct` 已在 0.31.0 删除，改写方式见[升级指南](../run/upgrade.md#0310-删除最后一批已弃用的核心名字)；`some-in?` 与 `range-bothway` 见[删除已弃用的兼容函数](../run/upgrade.md#0310-删除已弃用的兼容函数)。改写 `let{}` 时原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。0.42.0 起 `let{}` 重新加入，但只解构静态已知的 Struct（按字段名绑定，见 [Struct 字段解构](structs.md#destructuring-fields-with-let)），旧的 Map 用法仍按上面的方式改写。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
 
 ### 最终值存在性
 

@@ -889,7 +889,7 @@ fn binding_form_kind(head: &Calcit) -> Option<BindingForm> {
   };
   match name.as_str() {
     "&let" | "if-let" | "when-let" | "&doseq" | "doseq" => Some(BindingForm::Single),
-    "let[]" => Some(BindingForm::Destructure),
+    "let[]" | "let{}" => Some(BindingForm::Destructure),
     "let" | "loop" => Some(BindingForm::Many),
     _ => None,
   }
