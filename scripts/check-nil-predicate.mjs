@@ -19,9 +19,12 @@ assert.deepEqual(canonicalTests.map(test => test.name).sort(), [
 // #2653: a direct `non-nil?` on an Option literal is E_OPTION_NIL_CHECK in
 // a project namespace, so the replay drops those two assertions and checks
 // the same runtime answer through the generic helpers below.
+// The literal is spelled `Option :some x` / `Option :none` or, since 0.41,
+// `Some x` / `None` (#2683).
+const isOptionLiteral = arg => arg === "None"
+  || (Array.isArray(arg) && (arg[0] === "Option" || arg[0] === "Some" || arg[0] === "None"));
 const isDirectOptionNilCheck = form => Array.isArray(form) && form[0] === "assert="
-  && Array.isArray(form[2]) && form[2][0] === "non-nil?"
-  && Array.isArray(form[2][1]) && form[2][1][0] === "Option";
+  && Array.isArray(form[2]) && form[2][0] === "non-nil?" && isOptionLiteral(form[2][1]);
 const tests = canonicalTests.map(test => {
   const code = test.code.__edn_quote;
   return { ...test, code: { __edn_quote: code.filter(form => !isDirectOptionNilCheck(form)) } };

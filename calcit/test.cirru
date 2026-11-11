@@ -147,7 +147,8 @@
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
-          :code $ quote $ def query-search-node-kinds ([] Option None)
+          :code $ quote $ def query-search-node-kinds
+            [] Option $ Option :none
           :examples $ []
           :schema $ quote $ List Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
