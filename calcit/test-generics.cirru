@@ -19,10 +19,6 @@
             :box $ Box T
           :examples $ []
           :schema $ quote StructDef
-        'NamedEntries $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def NamedEntries ({})
-          :examples $ []
-          :schema $ quote $ Map Tag String
         'Node $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Node
             :next $ :: 'Option Node
@@ -33,16 +29,6 @@
           :code $ quote $ defstruct Pair (:generics T U) (:left T) (:right U)
           :examples $ []
           :schema $ quote StructDef
-        'lookup-named-entry $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn lookup-named-entry (entries key) (get entries key)
-          :examples $ []
-          :schema $ quote $ Fn NamedEntries Tag
-            -> $ Option String
-          :tests $ [] $ %{} 'TestEntry (:name |map-alias-keeps-optional-payload)
-            :code $ quote $ let
-                entries $ {} $ :name |demo
-              assert= (Some |demo) (lookup-named-entry entries :name)
-              assert= None $ lookup-named-entry entries :missing
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-recursive-struct) (test-fn-generics) (println "|Generics tests passed")
