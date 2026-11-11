@@ -3262,7 +3262,7 @@ fn let_struct_destructure_reports_field_and_receiver_errors() {
       assert!(
         has(
           &diagnostics,
-          "W_UNKNOWN_STRUCT_FIELD",
+          "E_UNKNOWN_STRUCT_FIELD",
           "Field `:txt` does not exist in struct `Task`"
         ),
         "`{body}` must report the misspelt field: {diagnostics:?}"
@@ -3271,14 +3271,14 @@ fn let_struct_destructure_reports_field_and_receiver_errors() {
 
     let mismatch = codes("let{} (text) task $ + text 1");
     assert!(
-      mismatch.iter().any(|(c, _)| c.as_deref() == Some("W_FN_ARG_TYPE_MISMATCH")),
+      mismatch.iter().any(|(c, _)| c.as_deref() == Some("E_FN_ARG_TYPE_MISMATCH")),
       "bindings must keep the declared field type: {mismatch:?}"
     );
 
     for body in ["let{} (id) ({} (:id 1)) id", "let{} (id) (identity $ {} (:id 1)) id"] {
       let diagnostics = codes(body);
       assert!(
-        has(&diagnostics, "W_REQUIRED_STRUCT_FIELD_TYPE", "required field access `(:id value)`"),
+        has(&diagnostics, "E_REQUIRED_STRUCT_FIELD_TYPE", "required field access `(:id value)`"),
         "`{body}` must reject a non-Struct receiver: {diagnostics:?}"
       );
     }

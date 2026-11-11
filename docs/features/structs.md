@@ -225,9 +225,9 @@ let
 ```
 
 `let{}` 只用于 Struct：名字必须是该 Struct 声明过的字段，写错字段名在检查期报
-`W_UNKNOWN_STRUCT_FIELD`（例如 ``Field `:txt` does not exist in struct `Task` ``）；
+`E_UNKNOWN_STRUCT_FIELD`（例如 ``Field `:txt` does not exist in struct `Task` ``）；
 receiver 不是静态已知的 Struct（Map、`Dynamic`）时与 `(:field value)` 一样报
-`W_REQUIRED_STRUCT_FIELD_TYPE`，不会退化成返回 Option 的 `get`。Map 继续用 `let`
+`E_REQUIRED_STRUCT_FIELD_TYPE`，不会退化成返回 Option 的 `get`。Map 继续用 `let`
 绑定一次后逐个 `get`，并处理 Option。
 
 Nested nominal fields keep the namespace where their declaration was written.

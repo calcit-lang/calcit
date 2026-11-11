@@ -10362,7 +10362,7 @@
                   assert= ([] 8 7) tail
             :tags $ #{} :core :unit
         'let{} $ %{} 'CodeEntry
-          :doc "|Destructures a statically typed Struct by field name: `let{} (id text) task body` binds each name to the required field read `(:name task)`, so every binding keeps the declared field type. A name that is not a field of the Struct is a check-time error (`W_UNKNOWN_STRUCT_FIELD`); a receiver that is not a known Struct is reported like `(:field value)`. The data expression is evaluated once."
+          :doc "|Destructures a statically typed Struct by field name: `let{} (id text) task body` binds each name to the required field read `(:name task)`, so every binding keeps the declared field type. A name that is not a field of the Struct is a check-time error (`E_UNKNOWN_STRUCT_FIELD`); a receiver that is not a known Struct is reported like `(:field value)`. The data expression is evaluated once."
           :code $ quote $ defmacro let{} (fields data & body)
             if
               not $ and (list? fields)
