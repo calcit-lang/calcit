@@ -24,6 +24,19 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 效果边界 `:features :state` / `:io`（#2710）
+
+函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；计划在 0.43.0 改成默认报错。
+
+逐个补声明：
+
+```bash
+calcit edit schema 'app.main/main!' --add-feature state
+calcit edit schema 'app.main/main!' --add-feature io
+```
+
+调试用的 `println` 改成 `dbg`，它不算 `:io`；发布 entry 可以用 `:feature-policy {:dbg :error}` 禁止残留的 `dbg`。读全局 Ref 的渲染函数，优先改成把值作为参数传入。完整规则见 [效果边界](../features/effects.md)。
+
 ## 0.42.0 `analyze program-diff` 用源码写法显示 schema
 
 `calcit analyze program-diff` 的树形输出里，schema 改为显示 Snapshot 文件中 `quote $` 后的写法（如 `"Fn String (-> String)" -> "Fn Number (-> String)"`），不再显示规范化的 `(:: 'Fn ({} (:args ...)))` EDN。变更判定和 `--format edn/json` 的证据字段不变；无法用紧凑写法往返的 schema 仍显示 EDN。

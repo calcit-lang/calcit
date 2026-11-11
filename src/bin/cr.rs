@@ -2208,7 +2208,8 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
 }
 
 /// Bare broad types (#2504) and Options erased to nil (#2124) are errors
-/// since 0.36.0; open type slots since 0.37.0.
+/// since 0.36.0; open type slots since 0.37.0; undeclared effects when the
+/// entry policy says `:error` (#2710).
 fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String> {
   if blocking.is_empty() {
     return Ok(());
@@ -2222,6 +2223,12 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
   let (nil_checks, blocking): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR));
+  let (effects, blocking): (Vec<_>, Vec<_>) = blocking.into_iter().partition(|error| {
+    matches!(
+      error.code(),
+      Some(runner::preprocess::STATE_FEATURE_ERROR | runner::preprocess::IO_FEATURE_ERROR | runner::preprocess::DBG_IN_ENTRY_ERROR)
+    )
+  });
   let (broad, erased): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::BROAD_TYPE_ERROR));
@@ -2250,6 +2257,14 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} Option(s) turned back into nil; keep the Option, `match` both variants, or choose a concrete default",
       snapshot::OPTION_ERASED_ERROR,
       erased.len()
+    ));
+  }
+  if !effects.is_empty() {
+    eprintln!("\n{} ({} undeclared effects)", "Errors:".red(), effects.len());
+    LocatedWarning::print_list(&effects);
+    summaries.push(format!(
+      "Found {} function(s) whose effects are not declared or not allowed by the entry `:feature-policy`; declare `:state` / `:io` in the `Fn` schema, or remove the debug output",
+      effects.len()
     ));
   }
   if !unreasoned.is_empty() {

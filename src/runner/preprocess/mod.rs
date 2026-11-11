@@ -4,6 +4,7 @@ pub use crate::calcit::type_refs::{
 mod broad_type_evidence;
 mod checked_call_contract;
 mod condition_evidence;
+mod effect_features;
 mod explicit_open;
 mod intrinsic_rules;
 mod js_ffi;
@@ -27,6 +28,9 @@ pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundan
 
 use crate::calcit::NullableOrigin;
 pub use broad_type_evidence::push_broad_type_advisory;
+pub use effect_features::{
+  DBG_IN_ENTRY_ERROR, DBG_IN_ENTRY_WARNING, IO_FEATURE_ERROR, IO_FEATURE_WARNING, STATE_FEATURE_ERROR, STATE_FEATURE_WARNING,
+};
 use js_ffi::*;
 pub(crate) use js_ffi::{is_host_value_type, trait_is_external_object};
 pub(crate) use recur_tail::non_tail_recur_forms;
@@ -823,7 +827,7 @@ pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
         | crate::snapshot::UNBOUND_TYPE_SLOT_ERROR
         | crate::snapshot::OPEN_WITHOUT_REASON_ERROR
     )
-  )
+  ) || advisory.code().is_some_and(effect_features::is_blocking_code)
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
@@ -1909,6 +1913,11 @@ fn ensure_ns_def_preprocessed(
         })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
+      if ns != calcit::CORE_NS && should_emit_project_source_lint(ns) {
+        for advisory in effect_features::check_definition(ns, def, &resolved_code) {
+          push_advisory(advisory);
+        }
+      }
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
       mark_audit_proven(ns, def);
 
