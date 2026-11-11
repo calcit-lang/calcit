@@ -62,6 +62,10 @@ related:
 
 按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS`、`W_STRUCT_INDEX_RAW_ACCESS` 和 `P_*` 也不变（它们属于按需开启的分析通道，消息仍以 `[Warn]` 开头）。
 
+## 0.42.0 `analyze program-diff` 用源码写法显示 schema
+
+`calcit analyze program-diff` 的树形输出里，schema 改为显示 Snapshot 文件中 `quote $` 后的写法（如 `"Fn String (-> String)" -> "Fn Number (-> String)"`），不再显示规范化的 `(:: 'Fn ({} (:args ...)))` EDN。变更判定和 `--format edn/json` 的证据字段不变；无法用紧凑写法往返的 schema 仍显示 EDN。
+
 ## 0.41.1 `defstruct` / `defenum` 用 `(:generics …)` / `(:where …)` 子句（#2700）
 
 数据定义的泛型参数和约束改成和 `Fn` 一样的子句写法，放在名字之后、字段或变体之前：

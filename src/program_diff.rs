@@ -848,11 +848,7 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
     (Some(old), Some(new)) => {
       let children = vec![
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
-        diff_optional_edn(
-          "schema",
-          persisted_schema(&old.schema).as_ref(),
-          persisted_schema(&new.schema).as_ref(),
-        ),
+        diff_schema("schema", &old.schema, &new.schema),
         diff_tag_set("tags", &old.tags, &new.tags),
         diff_optional_edn("ffi", old.ffi.as_ref(), new.ffi.as_ref()),
         diff_cirru_list("examples", &old.examples, &new.examples),
@@ -870,6 +866,41 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
 /// Match Snapshot schema serialization, including omission versus explicit Dynamic.
 fn persisted_schema(schema: &Arc<CalcitTypeAnnotation>) -> Option<Edn> {
   (!crate::snapshot::schema_annotation_is_missing(schema)).then(|| crate::snapshot::schema_annotation_to_edn(schema.as_ref()))
+}
+
+/// Source spelling of a schema for review output: the compact payload that
+/// Snapshot files write after `quote $` (e.g. `Fn String (-> String)`), or the
+/// canonical EDN when no compact spelling round-trips.
+fn schema_display(schema: &Arc<CalcitTypeAnnotation>) -> Option<String> {
+  if crate::snapshot::schema_annotation_is_missing(schema) {
+    return None;
+  }
+  Some(match crate::snapshot::schema_annotation_to_storage_edn(schema.as_ref()) {
+    Edn::Quote(compact) => crate::snapshot::render_cirru_inline(&compact),
+    other => other.to_string(),
+  })
+}
+
+/// Compare schemas by their persisted EDN; display them in source spelling.
+fn diff_schema(label: &str, old: &Arc<CalcitTypeAnnotation>, new: &Arc<CalcitTypeAnnotation>) -> DiffNode {
+  let status = match (persisted_schema(old), persisted_schema(new)) {
+    (Some(a), Some(b)) if a == b => DiffStatus::Unchanged,
+    (Some(_), Some(_)) => DiffStatus::Modified,
+    (None, Some(_)) => DiffStatus::Added,
+    (Some(_), None) => DiffStatus::Removed,
+    (None, None) => return DiffNode::new(label, DiffStatus::Unchanged),
+  };
+  let (old_text, new_text) = (schema_display(old), schema_display(new));
+  let node = DiffNode::new(label, status);
+  match status {
+    DiffStatus::Modified => node.with_detail(format!(
+      "{:?} -> {:?}",
+      old_text.unwrap_or_default().replace('\n', "⏎"),
+      new_text.unwrap_or_default().replace('\n', "⏎")
+    )),
+    DiffStatus::Removed => node.with_detail(render_text(&old_text.unwrap_or_default())),
+    _ => node.with_detail(render_text(&new_text.unwrap_or_default())),
+  }
 }
 
 /// Compare persisted metadata structurally; display text is only for review.
@@ -1105,11 +1136,8 @@ fn build_code_entry_tree(label: &str, value: &CodeEntry, status: DiffStatus) -> 
 
   DiffNode::new(label, status).with_children(vec![
     DiffNode::new("doc", status).with_detail(render_text(&value.doc)),
-    DiffNode::new("schema", status).with_detail(
-      persisted_schema(&value.schema)
-        .as_ref()
-        .map_or_else(|| "(none)".to_owned(), |schema| render_text(&schema.to_string())),
-    ),
+    DiffNode::new("schema", status)
+      .with_detail(schema_display(&value.schema).map_or_else(|| "(none)".to_owned(), |text| render_text(&text))),
     build_string_list_tree("tags", &tags, status),
     DiffNode::new("ffi", status).with_detail(value.ffi.as_ref().map_or_else(|| "(none)".to_owned(), ToString::to_string)),
     DiffNode::new("examples", status).with_children(examples),
@@ -1692,8 +1720,8 @@ fn align_sequence<T: Eq>(old: &[T], new: &[T]) -> Vec<SeqEdit> {
 mod tests {
   use super::{
     CirruEditStrategy, DiffNode, DiffStatus, SeqEdit, align_sequence, analyze_cirru_edit_advice, build_entry_tree, cirru_similarity,
-    collect_semantic_evidence, collect_stats, count_cirru_nodes, diff_cirru, diff_code_entry, diff_entries, diff_entry, diff_snapshot,
-    parse_snapshot, render_cirru_diff, render_text,
+    collect_semantic_evidence, collect_stats, count_cirru_nodes, diff_cirru, diff_code_entry, diff_entries, diff_entry, diff_schema,
+    diff_snapshot, parse_snapshot, render_cirru_diff, render_text,
   };
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
@@ -1803,6 +1831,20 @@ mod tests {
         .iter()
         .any(|change| change.definition.as_deref() == Some("ffi-evidence.main/main!") && change.category == "schema-signature")
     );
+  }
+
+  #[test]
+  fn schema_changes_are_displayed_in_source_spelling() {
+    let node = diff_schema("schema", &schema("Fn String (-> String)"), &schema("Fn Number (-> String)"));
+    assert_eq!(node.status, DiffStatus::Modified);
+    assert_eq!(
+      node.detail.as_deref(),
+      Some(r#""Fn String (-> String)" -> "Fn Number (-> String)""#)
+    );
+
+    let same = diff_schema("schema", &schema("Fn String (-> String)"), &schema("Fn String (-> String)"));
+    assert_eq!(same.status, DiffStatus::Unchanged);
+    assert_eq!(same.detail.as_deref(), Some(r#""Fn String (-> String)""#));
   }
 
   fn schema(text: &str) -> std::sync::Arc<crate::calcit::CalcitTypeAnnotation> {
