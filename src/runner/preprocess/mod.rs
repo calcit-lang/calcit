@@ -3820,11 +3820,13 @@ fn preprocess_expr_unguarded(
                       check_warnings,
                     );
                   } else {
+                    let mut code = "E_UNKNOWN_SYMBOL";
                     let mut message = format!("[Error] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" "));
                     if let Some((version, migration)) = retired_core_function_migration(def) {
                       message.push_str(&format!("; `{def}` was removed from calcit.core in {version}, {migration}"));
+                      code = "E_REMOVED_CORE_FUNCTION";
                     }
-                    gen_check_warning_with_location_code(message, "E_UNKNOWN_SYMBOL", node_location, check_warnings);
+                    gen_check_warning_with_location_code(message, code, node_location, check_warnings);
                   }
                   Ok(expr.to_owned())
                 }
@@ -15800,9 +15802,7 @@ fn lambda_arity(form: &Calcit, allow_hint: bool) -> Option<usize> {
 /// callee rejects; findings about the body itself, like a pattern that cannot
 /// match one call's input, stay with the ordinary check of the binding.
 fn reports_let_lambda_recheck(code: Option<&str>) -> bool {
-  code.is_some_and(|code| {
-    code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH" || code == "E_CALL_NON_FUNCTION"
-  })
+  code.is_some_and(|code| code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH" || code == "E_CALL_NON_FUNCTION")
 }
 
 thread_local! {

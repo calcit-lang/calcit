@@ -26,7 +26,7 @@ related:
 
 ## 0.42.0 所有预处理诊断都带编码（#2698）
 
-预处理阶段原来有 50 处诊断没有编码，只靠消息文字区分（例如参数个数不对、调用非函数值、`match` 不完整、未知符号）。0.42.0 起它们都带编码，前缀按通道统一：`E_` 阻断检查，`W_` 列在 `Notes:` 中、检查仍通过，`I_` 是报告与证据，`P_` 只在 `--warn-dyn-method` 等按需分析下出现。消息正文不变，`--format json` 里原来 `code` 为空的条目现在有值。全部编码见 [诊断编码索引](../diagnostic-codes.md)，该文件由 `yarn generate-diagnostic-codes` 从源码生成，CI 检查它与源码同步。
+预处理阶段原来有 50 处诊断没有编码，只靠消息文字区分（例如参数个数不对、调用非函数值、`match` 不完整、未知符号）。0.42.0 起它们都带编码，前缀按通道统一：`E_` 阻断检查，`W_` 默认列在 `Notes:` 中、检查仍通过（`--warn-dyn-method` 打开的 `W_STRUCT_INDEX_RAW_ACCESS`、`W_JS_FFI_UNTYPED_ACCESS` 在该模式下会让检查失败），`I_` 是报告与证据，`P_` 只在 `--warn-dyn-method` 等按需分析下出现。消息正文不变，`--format json` 里原来 `code` 为空的条目现在有值。全部编码见 [诊断编码索引](../diagnostic-codes.md)，该文件由 `yarn generate-diagnostic-codes` 从源码生成，CI 检查它与源码同步。
 
 ## 0.42.0 阻断检查的 `W_` 诊断改名为 `E_`（#2699）
 

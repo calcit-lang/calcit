@@ -1,7 +1,7 @@
 // Generates docs/diagnostic-codes.md from the diagnostic code literals in src/.
 // Usage: node scripts/diagnostic-codes.mjs --write|--check
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const mode = process.argv[2];
@@ -35,21 +35,24 @@ function productionSource(text) {
   return marker === -1 ? text : text.slice(0, marker);
 }
 
-const codePattern = /"([EWIP]_[A-Z][A-Z0-9_]*[A-Z0-9])"/g;
+// Codes appear as whole string literals ("E_FOO") or lead a longer message
+// ("E_FOO: ..."); both start right after an opening quote.
+const codePattern = /"([EWIP]_[A-Z][A-Z0-9_]*[A-Z0-9])(?=["]|: )/g;
 const codes = new Map();
 for (const file of rustFiles(sourceRoot)) {
   const source = productionSource(readFileSync(file, "utf8"));
+  const path = relative(repository, file).split(sep).join("/");
   for (const match of source.matchAll(codePattern)) {
     const code = match[1];
     const files = codes.get(code) ?? new Set();
-    files.add(relative(repository, file));
+    files.add(path);
     codes.set(code, files);
   }
 }
 
 const channels = [
   ["E_", "Error：阻断检查、运行、测试与 codegen"],
-  ["W_", "Warning：列在 `Notes:` 或按需分析报告中，检查仍通过"],
+  ["W_", "Warning：默认列在 `Notes:` 或分析报告中，检查仍通过；`--warn-dyn-method` 打开的 `W_`（如 `W_STRUCT_INDEX_RAW_ACCESS`、`W_JS_FFI_UNTYPED_ACCESS`）在该模式下会让检查失败"],
   ["I_", "Info：报告与证据，不影响检查结果"],
   ["P_", "按需分析：只在 `--warn-dyn-method` 或 `analyze weak-types --only dynamic-method` 下报告"],
 ];
@@ -85,7 +88,7 @@ if (mode === "--write") {
   } catch {
     // treated as out of date below
   }
-  if (current !== output) {
+  if (current.replace(/\r\n/g, "\n") !== output) {
     console.error(
       "docs/diagnostic-codes.md is out of date with the diagnostic codes in src/; run `yarn generate-diagnostic-codes` and commit the result",
     );
