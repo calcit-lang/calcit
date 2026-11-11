@@ -1570,10 +1570,6 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
     "w-log" | "w-js-log" => Some(("0.31.0", "use `dbg`, or an explicit `js/console.log` for the host object view")),
     "wo-log" | "wo-js-log" => Some(("0.31.0", "write `x` for `(wo-log x)`; it returned its argument unchanged")),
     "flipped" => Some(("0.31.0", "write `(f b a)` for `(flipped f a b)`")),
-    "let{}" => Some((
-      "0.31.0",
-      "bind the Map once with `let`, then read each Tag key with `get` and handle the Option result",
-    )),
     "let-destruct" => Some(("0.31.0", "use `let` for a symbol pattern and `let[]` for a `([] ...)` pattern")),
     "remove-watch" => Some(("0.31.0", "use `remove-watch!`")),
     "turn-string" => Some(("0.31.0", "use `to-string`")),
@@ -1673,6 +1669,19 @@ fn source_location_in_namespace(value: &Calcit, file_ns: &str) -> Option<NodeLoc
   }
 }
 
+/// `let{} (a b) data` expands each name into `(:a v)` on a generated local
+/// when `data` is not a plain symbol, so neither the tag nor the receiver
+/// keeps a source coordinate. Those reads are still the user's own field
+/// reads; attribute them to the `let{}` call instead of hiding them as
+/// macro internals.
+fn let_struct_destructure_location(call_stack: &CallStackList) -> Option<NodeLocation> {
+  call_stack
+    .0
+    .iter()
+    .find(|frame| matches!(frame.kind, StackKind::Macro) && frame.ns.as_ref() == calcit::CORE_NS && frame.def.as_ref() == "let{}")
+    .and_then(|frame| find_calcit_location_matching(&frame.code, |location| location.def.as_ref() != GENERATED_DEF))
+}
+
 fn warn_required_struct_field_type(
   field_name: &str,
   receiver: &Calcit,
@@ -1694,7 +1703,8 @@ fn warn_required_struct_field_type(
     .as_ref()
     .filter(|location| location.def.as_ref() != GENERATED_DEF)
     .cloned()
-    .or_else(|| find_calcit_location_matching(receiver, |location| location.def.as_ref() != GENERATED_DEF));
+    .or_else(|| find_calcit_location_matching(receiver, |location| location.def.as_ref() != GENERATED_DEF))
+    .or_else(|| let_struct_destructure_location(call_stack));
   let generated_context = location.as_ref().is_some_and(|location| location.def.as_ref() == GENERATED_DEF)
     || find_calcit_location_matching(receiver, |location| location.def.as_ref() == GENERATED_DEF).is_some()
     || call_stack.0.iter().any(|frame| matches!(frame.kind, StackKind::Macro));
@@ -1702,6 +1712,10 @@ fn warn_required_struct_field_type(
     return;
   }
 
+  let def_name = match &attributable_location {
+    Some(location) if def_name == GENERATED_DEF => location.def.as_ref(),
+    _ => def_name,
+  };
   let receiver_type_text = receiver_type
     .map(CalcitTypeAnnotation::to_brief_string)
     .unwrap_or_else(|| ":unknown".to_owned());
@@ -4924,8 +4938,12 @@ fn preprocess_list_call(
           }
           if let Some(type_info) = resolve_type_value(&processed_arg, scope_types) {
             if type_info.as_ref().resolve_to_struct().is_some() {
-              if def_name.as_ref() != GENERATED_DEF && !inside_struct_match_expansion {
-                check_field_in_struct(&processed_arg, head, scope_types, file_ns, check_warnings);
+              if !inside_struct_match_expansion {
+                if def_name.as_ref() != GENERATED_DEF {
+                  check_field_in_struct(&processed_arg, head, scope_types, file_ns, check_warnings);
+                } else if let Some(location) = let_struct_destructure_location(call_stack) {
+                  check_field_in_struct_at(&processed_arg, head, scope_types, file_ns, Some(location), check_warnings);
+                }
               }
               return Ok(Calcit::from(CalcitList::from(&[
                 Calcit::Proc(CalcitProc::NativeStructGet),
@@ -8181,14 +8199,29 @@ fn check_field_in_struct(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  check_field_in_struct_at(struct_arg, field_arg, scope_types, file_ns, None, check_warnings);
+}
+
+/// Like `check_field_in_struct`, but a `source_location` marks the read as the
+/// user's own even when both operands were generated (the field reads that
+/// `let{}` expands to), and the diagnostic points at that location.
+fn check_field_in_struct_at(
+  struct_arg: &Calcit,
+  field_arg: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  source_location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
   // Macro-generated struct dispatch (for example struct pattern matching)
   // may deliberately probe variant-specific fields after its own nominal
   // guard. Source-level field diagnostics are emitted before expansion, so do
   // not report those internal probes as user mistakes.
-  if [struct_arg.get_location(), field_arg.get_location()]
-    .into_iter()
-    .flatten()
-    .any(|location| location.def.as_ref() == GENERATED_DEF)
+  if source_location.is_none()
+    && [struct_arg.get_location(), field_arg.get_location()]
+      .into_iter()
+      .flatten()
+      .any(|location| location.def.as_ref() == GENERATED_DEF)
   {
     return;
   }
@@ -8230,7 +8263,9 @@ fn check_field_in_struct(
     ),
     "W_UNKNOWN_STRUCT_FIELD",
     file_ns,
-    field_arg.get_location().or_else(|| struct_arg.get_location()),
+    source_location
+      .or_else(|| field_arg.get_location())
+      .or_else(|| struct_arg.get_location()),
     check_warnings,
   );
 }

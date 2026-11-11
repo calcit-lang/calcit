@@ -4530,7 +4530,7 @@ fn collect_redundant_do_paths(node: &Cirru, path: &mut Vec<usize>, output: &mut 
   let body_start = match head {
     Some("defn") => Some(3),
     Some("fn" | "let") => Some(2),
-    Some("let[]") => Some(3),
+    Some("let[]" | "let{}") => Some(3),
     Some("do") => Some(1),
     _ => None,
   };
@@ -5026,7 +5026,7 @@ fn splice_redundant_do_children(node: Cirru) -> Cirru {
   let body_start = match items.first().and_then(leaf_value) {
     Some("defn") => Some(3),
     Some("fn" | "let") => Some(2),
-    Some("let[]") => Some(3),
+    Some("let[]" | "let{}") => Some(3),
     Some("do") => Some(1),
     _ => None,
   };
