@@ -12081,7 +12081,8 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     return is_builtin_method_candidate(schema.as_ref(), candidate);
   }
   let expected_name = match type_ref {
-    CalcitTypeAnnotation::List(_) => "&core-list-methods",
+    // A tuple value is a list at runtime and dispatches to the list methods.
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => "&core-list-methods",
     CalcitTypeAnnotation::String => "&core-string-methods",
     CalcitTypeAnnotation::Map(_, _) => "&core-map-methods",
     CalcitTypeAnnotation::Set(_) => "&core-set-methods",
