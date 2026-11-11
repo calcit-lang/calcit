@@ -194,7 +194,11 @@ fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
     ("schema", "OpenCountable", "quote Dynamic"),
     ("def", "AliasCountable", "quote $ def AliasCountable OpenCountable"),
     ("def", "consume-countable", "quote $ defn consume-countable (x) &unit"),
-    ("schema", "consume-countable", "quote $ Fn calcit.core/Countable (-> Unit)"),
+    (
+      "schema",
+      "consume-countable",
+      "quote $ Fn T (-> Unit) (:generics T) (:where $ T calcit.core/Countable)",
+    ),
     ("def", "main!", "quote $ defn main! () (consume-countable AliasCountable) &unit"),
   ] {
     let target = format!("app.main/{target}");
@@ -208,7 +212,7 @@ fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
   let rejected = run_calcit(&snapshot, &["--check-only"]);
   assert!(!rejected.status.success(), "explicit Dynamic must not recover a Trait capability");
   assert!(
-    String::from_utf8_lossy(&rejected.stderr).contains("E_CALL_ARGUMENT_UNPROVEN"),
+    String::from_utf8_lossy(&rejected.stderr).contains("_GENERIC_WHERE_BOUND_MISMATCH"),
     "{}",
     String::from_utf8_lossy(&rejected.stderr)
   );
