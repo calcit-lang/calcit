@@ -117,6 +117,24 @@ impl Drop for ExpressionContextScope {
   }
 }
 
+struct OptionPayloadScope {
+  previous: Option<Arc<CalcitTypeAnnotation>>,
+}
+
+impl OptionPayloadScope {
+  fn enter(payload: Option<Arc<CalcitTypeAnnotation>>) -> Self {
+    Self {
+      previous: EXPECTED_OPTION_PAYLOAD.with(|cell| cell.replace(payload)),
+    }
+  }
+}
+
+impl Drop for OptionPayloadScope {
+  fn drop(&mut self) {
+    EXPECTED_OPTION_PAYLOAD.with(|cell| *cell.borrow_mut() = self.previous.take());
+  }
+}
+
 /// Compile an owned definition with its own input contract and no caller permissions.
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
@@ -282,9 +300,14 @@ fn preprocess_argument_with_context(
     let context = callback_parameter_context(signature, member_inputs, callee_owned_generics);
     resolve_deferred_let_lambda(sym, scope_types, Some(context), file_ns, check_warnings, call_stack)?;
   }
+  // An `Option (Fn …)` slot also takes a plain lambda (wrapped later by the
+  // Option field lifting) or `Some $ fn …`; both see the payload contract (D4).
+  let option_payload = expected.and_then(|annotation| annotation.option_payload());
+  let _option = OptionPayloadScope::enter(option_payload.clone());
   let _context = ExpressionContextScope::enter(
     expected
       .and_then(|annotation| annotation.resolve_to_fn())
+      .or_else(|| option_payload.as_ref().and_then(|payload| payload.resolve_to_nonoptional_fn()))
       .map(|signature| callback_parameter_context(signature, member_inputs, callee_owned_generics)),
     expected.and_then(|annotation| {
       annotation
@@ -829,6 +852,9 @@ thread_local! {
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through struct literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
   static EXPECTED_STRUCT_TYPE: RefCell<Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>> = const { RefCell::new(None) };
+  /// Payload of an expected `Option T`, consumed by the next call so that
+  /// `Some x` / `Option :some x` checks `x` against `T` (D4).
+  static EXPECTED_OPTION_PAYLOAD: RefCell<Option<Arc<CalcitTypeAnnotation>>> = const { RefCell::new(None) };
   /// Lexical capability permissions of the current function being preprocessed.
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
@@ -5160,6 +5186,8 @@ fn preprocess_list_call(
         } else {
           None
         };
+        // Any call consumes the Option context; only the constructor uses it.
+        let option_payload_hint = EXPECTED_OPTION_PAYLOAD.with(|cell| cell.borrow_mut().take());
 
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap))
           && let Some((ref struct_def, ref annotation)) = struct_hint
@@ -5277,7 +5305,17 @@ fn preprocess_list_call(
               type_inference::resolve_enum_value(enum_arg, scope_types).and_then(|enum_def| {
                 let variant = enum_def.find_variant_by_name(tag.ref_str())?;
                 let payload = variant.payload_types().get(ys.len() - 3)?.clone();
-                let expected = type_inference::resolve_enum_payload_type(&enum_def, payload);
+                // `Some x` in an `Option T` slot takes `T` from that slot (D4).
+                let expected = match option_payload_hint.as_ref() {
+                  Some(hint)
+                    if ys.len() == 3
+                      && tag.ref_str() == "some"
+                      && enum_def.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Option") =>
+                  {
+                    hint.clone()
+                  }
+                  _ => type_inference::resolve_enum_payload_type(&enum_def, payload),
+                };
                 if !expected.contains_type_var() {
                   return Some(expected);
                 }

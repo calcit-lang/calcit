@@ -130,6 +130,57 @@ fn enum_payload_lambdas_take_the_declared_payload_type() {
 }
 
 #[test]
+fn option_fn_field_lambdas_take_the_payload_type() {
+  // An `Option (Fn Click (-> Unit))` field takes an unhinted lambda through a
+  // map literal, a direct constructor and `Some $ fn` alike, and the lambda
+  // sees `Click` as its input type (D4).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/option-fn-field-lambda.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "unhinted lambdas in an Option (Fn …) field",
+  );
+
+  let misspelled_directory = TestDirectory::create();
+  let misspelled = misspelled_directory.snapshot();
+  let source = fs::read_to_string("tests/fixtures/option-fn-field-lambda.cirru").unwrap();
+  fs::write(&misspelled, source.replace("(:x e)", "(:xx e)")).unwrap();
+  let rejected = run_calcit(&misspelled, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "misspelled fields on the callback input are reported");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  for definition in [
+    "demo.main/map-literal",
+    "demo.main/map-literal-some",
+    "demo.main/direct-ctor",
+    "demo.main/direct-ctor-some",
+  ] {
+    let section = output
+      .split(&format!("## `{definition}`"))
+      .nth(1)
+      .and_then(|rest| rest.split("\n## ").next())
+      .unwrap_or_default();
+    assert!(
+      section.contains("W_UNKNOWN_STRUCT_FIELD") && section.contains("`:xx`"),
+      "{definition} reports the unknown field of `Click`:\n{output}"
+    );
+  }
+
+  let wrong_result_directory = TestDirectory::create();
+  let wrong_result = wrong_result_directory.snapshot();
+  fs::write(&wrong_result, source.replace("fn (e) (println |ctor (:x e))", "fn (e) (:x e)")).unwrap();
+  let rejected = run_calcit(&wrong_result, &["--check-only", "--all-defs"]);
+  assert!(
+    !rejected.status.success(),
+    "a callback returning Number for a Unit result is reported"
+  );
+}
+
+#[test]
 fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
