@@ -49,6 +49,10 @@
           :code $ quote $ def NamedEntries ({})
           :examples $ []
           :schema $ quote $ Map Tag String
+        'NamedLabels $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def NamedLabels ([])
+          :examples $ []
+          :schema $ quote $ List String
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
             :number $ Option Number
@@ -909,6 +913,18 @@
                 entries $ {} $ :name |demo
               assert= (Some |demo) (lookup-named-entry entries :name)
               assert= None $ lookup-named-entry entries :missing
+            :tags $ #{} :unit
+        'lookup-named-labels $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lookup-named-labels (labels)
+            [] (first labels) (last labels) (nth labels 1) (get labels 0)
+          :examples $ []
+          :schema $ quote $ Fn NamedLabels
+            -> $ List (Option String)
+          :tests $ [] $ %{} 'TestEntry (:name |list-alias-keeps-optional-access)
+            :code $ quote $ do
+              assert= ([] (Some |a) (Some |b) (Some |b) (Some |a))
+                lookup-named-labels $ [] |a |b
+              assert= ([] None None None None) (lookup-named-labels $ [])
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
