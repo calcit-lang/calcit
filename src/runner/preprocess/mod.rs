@@ -17072,9 +17072,10 @@ pub fn preprocess_parse_cirru_edn_as(
   if let Some(actual) = resolve_type_value(&text_form, ctx.scope_types)
     && !matches!(actual.as_ref(), CalcitTypeAnnotation::String | CalcitTypeAnnotation::Dynamic)
   {
-    return Err(CalcitErr::use_msg_stack_location(
+    return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
       format!("{head} expected String input, got {}", actual.to_brief_string()),
+      "E_DECODE_INPUT_ARG_TYPE_MISMATCH",
       ctx.call_stack,
       text_form.get_location(),
     ));
@@ -22289,6 +22290,7 @@ mod tests {
       error.msg.contains("expected String input, got :number"),
       "unexpected error: {error:?}"
     );
+    assert_eq!(error.code(), Some("E_DECODE_INPUT_ARG_TYPE_MISMATCH"));
   }
 
   #[test]

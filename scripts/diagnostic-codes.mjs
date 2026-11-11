@@ -50,6 +50,27 @@ for (const file of rustFiles(sourceRoot)) {
   }
 }
 
+// Some sites fall back to a code derived from the error kind, such as
+// `format!("E_{}", error.kind…)` producing `E_SYNTAX`; index one code per
+// `CalcitErrKind` variant at each such site.
+const kindFallbackPattern = /format!\("E_\{\}",\s*[\w.]*kind\b/;
+const kindEnum = readFileSync(join(sourceRoot, "calcit.rs"), "utf8").match(/pub enum CalcitErrKind \{([^}]*)\}/);
+if (!kindEnum) throw new Error("CalcitErrKind enum not found in src/calcit.rs");
+const kindCodes = kindEnum[1]
+  .split(",")
+  .map((variant) => variant.trim())
+  .filter(Boolean)
+  .map((variant) => `E_${variant.toUpperCase()}`);
+for (const file of rustFiles(sourceRoot)) {
+  if (!kindFallbackPattern.test(productionSource(readFileSync(file, "utf8")))) continue;
+  const path = relative(repository, file).split(sep).join("/");
+  for (const code of kindCodes) {
+    const files = codes.get(code) ?? new Set();
+    files.add(path);
+    codes.set(code, files);
+  }
+}
+
 const channels = [
   ["E_", "Error：阻断检查、运行、测试与 codegen"],
   ["W_", "Warning：默认列在 `Notes:` 或分析报告中，检查仍通过；`--warn-dyn-method` 打开的 `W_`（如 `W_STRUCT_INDEX_RAW_ACCESS`、`W_JS_FFI_UNTYPED_ACCESS`）在该模式下会让检查失败"],
