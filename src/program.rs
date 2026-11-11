@@ -45,6 +45,16 @@ pub fn active_feature_policy(feature: &str) -> snapshot::FeaturePolicy {
     .unwrap_or_default()
 }
 
+/// The policy the active entry sets for `feature`, or `None` when it does not
+/// mention it (each feature chooses its own default).
+pub fn configured_feature_policy(feature: &str) -> Option<snapshot::FeaturePolicy> {
+  ACTIVE_FEATURE_POLICY
+    .read()
+    .expect("read active feature policy")
+    .get(feature)
+    .copied()
+}
+
 pub fn configure_entry_target(target: Option<snapshot::SnapshotTarget>) {
   let mut active = ACTIVE_TARGET.write().expect("write active entry target");
   *active = target;

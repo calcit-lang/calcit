@@ -606,6 +606,12 @@
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :builtin :internal :meta
+        '&dbg-print $ %{} 'CodeEntry
+          :doc "|Internal output of the `dbg` macro. Prints one line; it is not an `:io` effect, the entry `:feature-policy` key `:dbg` controls it instead."
+          :code $ quote $ defn &dbg-print (text) (println text)
+          :examples $ []
+          :schema $ quote $ Fn String (-> Unit)
+          :tags $ #{} :internal :log
         '&difference $ %{} 'CodeEntry
           :doc "|internal function for set difference\nSyntax: (&difference set1 set2)\nParams: set1 (set), set2 (set)\nReturns: set\nReturns elements in set1 but not in set2"
           :code $ quote &runtime-implementation
@@ -6352,7 +6358,7 @@
                 gensym |v
                 , '_log_tmp
               quasiquote $ &let (~v ~x)
-                println $ str-spaced
+                &dbg-print $ str-spaced
                   format-to-lisp $ quote ~x
                   , |=> ~v
                 ~ v

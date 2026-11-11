@@ -155,6 +155,7 @@
           :schema $ quote $ Fn
             Ref $ Option Dynamic
             -> Dynamic
+            :features :state
           :tests $ []
             %{} 'TestEntry (:name |reader-absence)
               :code $ quote $ assert= nil

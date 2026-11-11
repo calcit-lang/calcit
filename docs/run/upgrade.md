@@ -62,6 +62,19 @@ related:
 
 按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS`、`W_STRUCT_INDEX_RAW_ACCESS` 和 `P_*` 也不变（它们属于按需开启的分析通道，消息仍以 `[Warn]` 开头）。
 
+## 0.42.0 效果边界 `:features :state` / `:io`（#2710）
+
+函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；计划在 0.43.0 改成默认报错。
+
+逐个补声明：
+
+```bash
+calcit edit schema 'app.main/main!' --add-feature state
+calcit edit schema 'app.main/main!' --add-feature io
+```
+
+调试用的 `println` 改成 `dbg`，它不算 `:io`；发布 entry 可以用 `:feature-policy {:dbg :error}` 禁止残留的 `dbg`。读全局 Ref 的渲染函数，优先改成把值作为参数传入。完整规则见 [效果边界](../features/effects.md)。
+
 ## 0.42.0 `analyze program-diff` 用源码写法显示 schema
 
 `calcit analyze program-diff` 的树形输出里，schema 改为显示 Snapshot 文件中 `quote $` 后的写法（如 `"Fn String (-> String)" -> "Fn Number (-> String)"`），不再显示规范化的 `(:: 'Fn ({} (:args ...)))` EDN。变更判定和 `--format edn/json` 的证据字段不变；无法用紧凑写法往返的 schema 仍显示 EDN。
