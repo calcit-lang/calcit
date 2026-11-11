@@ -941,7 +941,10 @@ pub(crate) fn check_proc_arg_types(
   if matches!(proc, CalcitProc::NativeListCount)
     && args.len() == 1
     && let Some(receiver_type) = args.first().and_then(|receiver| resolve_type_value(receiver, scope_types))
-    && matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Tuple(_))
+    && matches!(
+      CalcitTypeAnnotation::expand_schema_alias(&receiver_type).as_ref(),
+      CalcitTypeAnnotation::Tuple(_)
+    )
   {
     return;
   }
@@ -952,6 +955,7 @@ pub(crate) fn check_proc_arg_types(
     && args.len() == 2
     && let (Some(receiver), Some(index)) = (args.first(), args.get(1))
     && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let receiver_type = CalcitTypeAnnotation::expand_schema_alias(&receiver_type)
     && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
   {
     // A computed index on a homogeneous tuple reads it as `List T`, as the
@@ -1778,6 +1782,12 @@ fn collection_literal_matches(
   if let Some(member) = &union_member {
     expected = member.as_ref();
   }
+  let alias_schema = matches!(expected, CalcitTypeAnnotation::TypeRef(..))
+    .then(|| expected.resolve_schema_alias())
+    .flatten();
+  if let Some(schema) = &alias_schema {
+    expected = schema.as_ref();
+  }
   match (items.first(), expected) {
     (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))
     | (Some(Calcit::Proc(CalcitProc::Set)), CalcitTypeAnnotation::Set(member)) => {
@@ -2290,6 +2300,12 @@ fn return_tail_tuple_evidence(
   expected: &CalcitTypeAnnotation,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  // A plain alias such as `Vec3` for `Tuple Number Number Number` checks as
+  // the schema it names.
+  let alias_schema = matches!(expected, CalcitTypeAnnotation::TypeRef(..))
+    .then(|| expected.resolve_schema_alias())
+    .flatten();
+  let expected = alias_schema.as_deref().unwrap_or(expected);
   match expected {
     CalcitTypeAnnotation::Tuple(_) => tuple_literal_evidence(expr, expected, scope_types),
     CalcitTypeAnnotation::Fn(_) => callback_tail_tuple_evidence(expr, actual_type, expected, scope_types),
@@ -2327,6 +2343,10 @@ fn tuple_literal_evidence(
   expected: &CalcitTypeAnnotation,
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  let alias_schema = matches!(expected, CalcitTypeAnnotation::TypeRef(..))
+    .then(|| expected.resolve_schema_alias())
+    .flatten();
+  let expected = alias_schema.as_deref().unwrap_or(expected);
   let (CalcitTypeAnnotation::Tuple(slots), Calcit::List(items)) = (expected, expr) else {
     return None;
   };

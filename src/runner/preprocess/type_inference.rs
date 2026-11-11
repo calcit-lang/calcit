@@ -3188,6 +3188,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   if matches!(proc, CalcitProc::NativeListNth)
     && let (Some(receiver), Some(index)) = (xs.get(1), xs.get(2))
     && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let receiver_type = CalcitTypeAnnotation::expand_schema_alias(&receiver_type)
     && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
   {
     return match tuple_literal_index(index, slots.len()) {
@@ -3537,6 +3538,12 @@ fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_ty
         } else if !next.is_proven_for(current.as_ref()) {
           return calcit::DYNAMIC_TYPE.clone();
         }
+      }
+      // A fresh relation binds one type variable to another, so `'A` and `'B`
+      // would prove each other. Distinct generic members are heterogeneous,
+      // e.g. `[] a b` in a `Tuple A B` constructor stays an open List.
+      Some(current) if (current.contains_type_var() || next.contains_type_var()) && current != &next => {
+        return calcit::DYNAMIC_TYPE.clone();
       }
       Some(current) if !current.as_ref().is_proven_for(next.as_ref()) || !next.as_ref().is_proven_for(current.as_ref()) => {
         return calcit::DYNAMIC_TYPE.clone();

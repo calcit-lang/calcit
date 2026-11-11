@@ -3160,7 +3160,7 @@ fn try_expand_typed_optional_access_call(
   let Some(receiver_type) = resolve_type_value(receiver_expr, scope_types) else {
     return Ok(None);
   };
-  let receiver_type = resolve_bound_type_slot_chain(receiver_type);
+  let receiver_type = CalcitTypeAnnotation::expand_schema_alias(&resolve_bound_type_slot_chain(receiver_type));
   // Other indexed reads see a homogeneous tuple as the List it also is.
   let receiver_type = match receiver_type.as_ref() {
     T::Tuple(slots) if fn_def != "nth" => {
@@ -17769,7 +17769,12 @@ fn reject_strict_unproven_generic_relation(
     && args
       .first()
       .and_then(|receiver| resolve_type_value(receiver, scope_types))
-      .is_some_and(|receiver| matches!(receiver.as_ref(), CalcitTypeAnnotation::Tuple(_)))
+      .is_some_and(|receiver| {
+        matches!(
+          CalcitTypeAnnotation::expand_schema_alias(&receiver).as_ref(),
+          CalcitTypeAnnotation::Tuple(_)
+        )
+      })
   {
     return Ok(());
   }
