@@ -249,14 +249,14 @@ do
 `Option` 是名义类型定义；加上 variant 后，同一定义也能直接构造值。类型表达式仍写在 schema 中，不能把 `Option` 裸名当成已构造的值：
 
 ```cirru
-assert= 3 $ .unwrap $ Option :some 3
+assert= 3 $ .unwrap $ Some 3
 ```
 
 方法在具体接收者上保留类型关系，失败行为也属于该方法的契约：
 
 ```cirru
 assert= 3 $
-  Option :some 3
+  Some 3
   , .unwrap
 ```
 
@@ -273,9 +273,9 @@ do
   assert= true $ |abc .includes? |b
   assert= true $ |abc .contains-index? 1
   assert= false $ |abc .contains-index? 3
-  assert= (Option :some 2)
+  assert= (Some 2)
     ([] 1 2 3) .get 1
-  assert= (Option :some 2)
+  assert= (Some 2)
     ({} (:x 2))
       , .get :x
 ```

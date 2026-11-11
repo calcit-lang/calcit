@@ -147,8 +147,7 @@
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
-          :code $ quote $ def query-search-node-kinds
-            [] Option $ Option :none
+          :code $ quote $ def query-search-node-kinds ([] Option None)
           :examples $ []
           :schema $ quote $ List Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -158,20 +157,20 @@
         'test-anonymous-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing tuple")
             assert= :enum $ type-of $ :: :a :b
-            assert= (Option :some :a)
+            assert= (Some :a)
               nth (:: :a :b) 0
-            assert= (Option :some :b)
+            assert= (Some :b)
               nth (:: :a :b) 1
-            assert= (Option :some :c)
+            assert= (Some :c)
               nth (:: :a :b :c) 2
             assert= 2 $ count $ :: :a :b
             assert= 3 $ count $ :: :a :b :c
             assert= 4 $ count $ :: :a :b :c :d
-            assert= (Option :some :a)
+            assert= (Some :a)
               get (:: :a :b) 0
-            assert= (Option :some :b)
+            assert= (Some :b)
               get (:: :a :b) 1
-            assert= (Option :some :c)
+            assert= (Some :c)
               get (:: :a :b :c) 2
             assert= true $ contains? (:: :a :b :c) 2
             assert= (:: 1 0)
@@ -208,11 +207,10 @@
                   hint-fn $ Fn Number (Option String) (Option Number)
                     -> $ List Dynamic
                   [] a maybe-label maybe-count
-              assert= (f2 1)
-                [] 1 (Option :none) (Option :none)
+              assert= (f2 1) ([] 1 None None)
               assert=
-                f2 2 $ Option :some |ready
-                [] 2 (Option :some |ready) (Option :none)
+                f2 2 $ Some |ready
+                [] 2 (Some |ready) None
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-atom $ %{} 'CodeEntry (:doc |)
@@ -362,9 +360,9 @@
           :code $ quote $ fn () (log-title "|Testing JSON")
             let
                 parsed $ json-parse "|{\"name\":\"demo\",\"items\":[1,null,true],\"meta\":{\"flag\":false}}"
-              assert= (Option :some |demo) (get parsed :name)
+              assert= (Some |demo) (get parsed :name)
               assert=
-                Option :some $ [] 1 nil true
+                Some $ [] 1 nil true
                 get parsed :items
               assert= (Result :ok false)
                 get-in parsed $ [] :meta :flag
@@ -387,7 +385,7 @@
                     assert-type a0-tuple AnyEnum
                     assert= true $ any? (&enum:impls a0-tuple)
                       fn (impl)
-                        = (impl-origin impl) (Option :some NumTrait)
+                        = (impl-origin impl) (Some NumTrait)
               assert-traits a0 NumTrait calcit.core/Debug
               let
                   a1 $ .inc a0
@@ -426,7 +424,7 @@
                 v $ %:: ValueBox :value 1
               assert-type v ValueBox
               assert= 2 $ .deref v
-              assert= (Option :some 1) (nth v 1)
+              assert= (Some 1) (nth v 1)
             let
                 *b $ ref 0
                 *c $ ref 0

@@ -66,7 +66,7 @@
           :code $ quote $ defn check-result-type (r)
             .some? $ enum-definition r
           :examples $ []
-          :schema $ quote $ Fn test-enum.main/Result0 (-> Bool)
+          :schema $ quote $ Fn Result0 (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (println "|All tests passed!")
@@ -76,7 +76,7 @@
           :code $ quote $ defn read-caller-payload (value)
             :wrong $ unwrap-recursive-envelope value
           :examples $ []
-          :schema $ quote $ Fn (test-enum.recursive/Envelope test-enum.main/Payload) (-> Number)
+          :schema $ quote $ Fn (recursive/Envelope Payload) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |generic-argument-keeps-caller-namespace)
             :code $ quote $ assert= 7
               read-caller-payload $ recursive/Envelope :item $ Payload :wrong 7
@@ -87,7 +87,7 @@
               :record payload
               :value payload
           :examples $ []
-          :schema $ quote $ Fn test-enum.recursive/RecordEnvelope (-> String)
+          :schema $ quote $ Fn recursive/RecordEnvelope (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |declared-payload-does-not-bind-caller-shadow)
             :code $ quote $ assert= |Ada
               read-declared-payload $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
@@ -100,7 +100,7 @@
                 :record payload
                 :value payload
           :examples $ []
-          :schema $ quote $ Fn test-enum.recursive/RecordEnvelope (-> String)
+          :schema $ quote $ Fn recursive/RecordEnvelope (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |qualified-payload-ignores-local-shadow)
             :code $ quote $ assert= |Ada
               read-local-shadow $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
@@ -164,7 +164,7 @@
                 foldl children | $ fn (acc child)
                   str acc $ render-short-recursive child
           :examples $ []
-          :schema $ quote $ Fn test-enum.recursive/ContentNode (-> String)
+          :schema $ quote $ Fn recursive/ContentNode (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |recursive-short-names-in-declaration-namespace)
             :code $ quote $ do
               assert= |ab $ render-short-recursive $ recursive/ContentNode :pair (recursive/ContentNode :text |a) (recursive/ContentNode :text |b)
@@ -179,7 +179,7 @@
               (:err msg) msg
               _ :unknown
           :examples $ []
-          :schema $ quote $ Fn test-enum.main/Result0 (-> Dynamic)
+          :schema $ quote $ Fn Result0 (-> Dynamic)
         'test-anonymous-enum-to-named $ %{} 'CodeEntry (:doc "|Test automatic anonymous-enum-to-named rewrite")
           :code $ quote $ defn test-anonymous-enum-to-named ()
             do (println "|Testing anonymous-enum-to-named rewrite...")
@@ -233,10 +233,9 @@
                 assert-type none-value $ Maybe1 Dynamic
                 assert-type pair-value $ Duo Number String
                 assert-type swapped-value $ Duo Number String
-                assert= (Option :some 1)
+                assert= (Some 1)
                   unwrap-maybe $ %:: Maybe1 :some 1
-                assert= (Option :none)
-                  unwrap-maybe $ %:: Maybe1 :none
+                assert= None $ unwrap-maybe $ %:: Maybe1 :none
                 assert= :pair $ &enum:nth pair-value 0
                 assert= 1 $ &enum:nth pair-value 1
                 assert= |hi $ &enum:nth pair-value 2
@@ -301,7 +300,7 @@
                     (:err msg)
                       {} $ :a 2
                   , :a
-              assert= (Option :some 2) picked
+              assert= (Some 2) picked
             println "|✓ match syntax passed"
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -341,11 +340,11 @@
         'unwrap-maybe $ %{} 'CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote $ defn unwrap-maybe (v)
             match v
-              (:none) (Option :none)
-              (:some item) (Option :some item)
+              (:none) None
+              (:some item) (Some item)
           :examples $ []
-          :schema $ quote $ Fn (test-enum.main/Maybe1 T)
-            -> $ calcit.core/Option T
+          :schema $ quote $ Fn (Maybe1 T)
+            -> $ Option T
             :generics T
         'unwrap-recursive-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn unwrap-recursive-envelope (value)
@@ -353,7 +352,7 @@
               :item payload
               , payload
           :examples $ []
-          :schema $ quote $ Fn (test-enum.recursive/Envelope T) (-> T) (:generics T)
+          :schema $ quote $ Fn (recursive/Envelope T) (-> T) (:generics T)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-enum.main
           :require $ test-enum.recursive :as recursive

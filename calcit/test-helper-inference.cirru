@@ -30,7 +30,7 @@
           :examples $ []
         'helper-text $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-text ()
-            .slice "|😀中" 0 $ Option :some 1
+            .slice "|😀中" 0 $ Some 1
           :examples $ []
         'helper-texts $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-texts () ([] |a |bc)
@@ -49,7 +49,7 @@
                   .map (helper-list)
                     fn (x) (inc x)
                 assert= 3 $ .unwrap-or
-                  Option :some $ helper-number
+                  Some $ helper-number
                   , 0
               :tags $ #{} :helper-inference :unit
             %{} 'TestEntry (:name |independent-method-instantiations)

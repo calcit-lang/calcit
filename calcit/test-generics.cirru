@@ -37,7 +37,7 @@
         'pair-right $ %{} 'CodeEntry (:doc "|Return the right value from a generic pair")
           :code $ quote $ defn pair-right (pair) (:right pair)
           :examples $ []
-          :schema $ quote $ Fn (test-generics.main/Pair T U) (-> U) (:generics T U)
+          :schema $ quote $ Fn (Pair T U) (-> U) (:generics T U)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -75,8 +75,8 @@
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let
-                leaf $ Node :next (Option :none) :value 1
-                nested $ Node :next (Option :some leaf) :value 2
+                leaf $ Node :next None :value 1
+                nested $ Node :next (Some leaf) :value 2
               assert= 1 $ :value $ .unwrap (:next nested)
               assert= true $ .none? $ :next leaf
               assert= 2 $ :value nested
@@ -103,6 +103,6 @@
         'unbox $ %{} 'CodeEntry (:doc "|Return value from a generic box")
           :code $ quote $ defn unbox (box) (:value box)
           :examples $ []
-          :schema $ quote $ Fn (test-generics.main/Box T) (-> T) (:generics T)
+          :schema $ quote $ Fn (Box T) (-> T) (:generics T)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-generics.main

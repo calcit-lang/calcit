@@ -112,8 +112,8 @@
                   reassign-same-generic ([] 1) ([] 7)
               :tags $ #{} :generic-assignment :js-ffi :unit
             %{} 'TestEntry (:name |preserves-option-false)
-              :code $ quote $ assert= (Option :some false)
-                reassign-same-generic (Option :some true) (Option :some false)
+              :code $ quote $ assert= (Some false)
+                reassign-same-generic (Some true) (Some false)
               :tags $ #{} :generic-assignment :js-ffi :unit
         'test-async $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()

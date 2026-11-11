@@ -274,8 +274,8 @@ let
       if
         and (> (count data) 0)
           every? data $ fn (x) (>= x 0)
-        Option :some data
-        assert-type (Option :none) (Option (List Number))
+        Some data
+        assert-type None (Option (List Number))
     transform-data $ fn (validated)
       hint-fn $ Fn (List Number) (-> (List Number))
       map validated $ fn (x) (* x 2)

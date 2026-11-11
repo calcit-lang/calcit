@@ -100,7 +100,7 @@
         'forward-named-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn forward-named-callback (callback) (invoke-named-callback callback |abcd)
           :examples $ []
-          :schema $ quote $ Fn test-types.main/NamedCallback (-> Number)
+          :schema $ quote $ Fn NamedCallback (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |forwards-named-fn-contract)
             :code $ quote $ assert= 4
               forward-named-callback $ fn (text) (count text)
@@ -108,7 +108,7 @@
         'invoke-named-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn invoke-named-callback (callback text) (callback text)
           :examples $ []
-          :schema $ quote $ Fn test-types.main/NamedCallback String (-> Number)
+          :schema $ quote $ Fn NamedCallback String (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |invokes-named-fn-contract)
             :code $ quote $ assert= 3
               invoke-named-callback
@@ -162,7 +162,7 @@
           :schema $ quote $ Fn Number (-> Number)
         'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote $ defn slice-as-string (text)
-            .slice text 1 $ Option :some 4
+            .slice text 1 $ Some 4
           :examples $ []
           :schema $ quote $ Fn String (-> String)
         'test-arg-type-hints $ %{} 'CodeEntry (:doc "|Checks arg hint path without emitting warning")
@@ -210,8 +210,8 @@
               assert= :enum-def $ type-of enum-with-impls
               assert= true $ any? (&enum:impls ok)
                 fn (impl)
-                  = (impl-origin impl) (Option :some ResultTrait)
-              assert= (Option :some enum-with-result-impls) (enum-definition ok)
+                  = (impl-origin impl) (Some ResultTrait)
+              assert= (Some enum-with-result-impls) (enum-definition ok)
               assert= "|(%:: 'Result :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
@@ -221,11 +221,11 @@
             let
                 typed-text |calcit
               assert-type typed-text String
-              assert= |alc $ .slice typed-text 1 $ Option :some 4
+              assert= |alc $ .slice typed-text 1 $ Some 4
             let
                 also-text |numbers
               assert-type also-text String
-              assert= |num $ .slice also-text 0 $ Option :some 3
+              assert= |num $ .slice also-text 0 $ Some 3
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
@@ -251,8 +251,8 @@
                 println |second: second-item
                 println |rest: rest-items
                 println |count: list-len
-                assert= (Option :some 1) first-item
-                assert= (Option :some 2) second-item
+                assert= (Some 1) first-item
+                assert= (Some 2) second-item
                 assert= 5 list-len
             , "|List method checks passed"
           :examples $ []
@@ -289,7 +289,7 @@
                 text |hello-world
               assert-type text String
               let
-                  sliced $ .slice text 0 $ Option :some 5
+                  sliced $ .slice text 0 $ Some 5
                   len $ .len text
                   trimmed $ .trim text
                 println "|✓ String methods validated at preprocess"
@@ -317,7 +317,7 @@
               assert-type text String
               ; Call valid string methods
               let
-                  sliced $ .slice text 0 $ Option :some 5
+                  sliced $ .slice text 0 $ Some 5
                   text-len $ .len text
                   first-char $ .first text
                   starts $ .starts-with? text |hello
@@ -329,7 +329,7 @@
                 println |split: splitted
                 assert= |hello sliced
                 assert= 11 text-len
-                assert= (Option :some |h) first-char
+                assert= (Some |h) first-char
                 assert= true starts
             , "|String method checks passed"
           :examples $ []
@@ -369,7 +369,7 @@
                   rest-elems $ .rest typed-list
                 println "|Typed list access - first:" first-elem
                 println "|Typed list access - count:" list-size
-                assert= (Option :some 1) first-elem
+                assert= (Some 1) first-elem
                 assert= 5 list-size
             ; "字符串也有类型相关的方法"
             let
@@ -381,7 +381,7 @@
                 println "|Typed string access - count:" str-len
                 println "|Typed string access - first:" str-first
                 assert= 11 str-len
-                assert= (Option :some |t) str-first
+                assert= (Some |t) str-first
             , "|Typed method access checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)
@@ -411,8 +411,8 @@
                   pair $ assert-type ([] 1 |a) (Tuple Number String)
                   point $ assert-type ([] 3 4) (Tuple Number Number)
                 assert= 2 $ .count pair
-                assert= (Option :some 4) (get point 1)
-                assert= (Option :some 4) (last point)
+                assert= (Some 4) (get point 1)
+                assert= (Some 4) (last point)
               :tags $ #{} :tuple
         'tuple-nested-with-one $ %{} 'CodeEntry (:doc "|Nests a generic tuple inside another tuple")
           :code $ quote $ defn tuple-nested-with-one (x)

@@ -39,7 +39,7 @@
                 schema $ &get-def-schema |test-def-meta.main/MetaSample
               assert= "|Sample definition for def metadata lookup tests" doc
               assert= :Fn $ &enum:nth schema 0
-              assert= (Option :some 'Number)
+              assert= (Some 'Number)
                 get (&enum:nth schema 1) :return
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

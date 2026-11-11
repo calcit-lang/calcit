@@ -322,9 +322,9 @@ The same operations are available as methods on enum values:
 
 ```cirru
 do
-  assert= (Option :some 1) $ nil->option 1
-  assert= (Option :none) $ nil->option nil
-  assert= (Option :some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
+  assert= (Some 1) $ nil->option 1
+  assert= None $ nil->option nil
+  assert= (Some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
   assert= (Result :ok 1.5) $ parse-float |1.5
   assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback
   assert= 0 $

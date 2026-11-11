@@ -27,7 +27,7 @@
             .show $ fn (self)
               println $ &struct:get self :name
             .rename $ fn (self name)
-              hint-fn $ Fn test-struct.main/Lagopus0 String $ -> Dynamic
+              hint-fn $ Fn Lagopus0 String $ -> Dynamic
               .assoc self :name name
           :examples $ []
           :schema $ quote Impl
@@ -65,7 +65,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |omitted-fields-take-declared-defaults)
             :code $ quote $ do
               assert=
-                DefaultFields :host |a :port 8080 :label |guest :mode :read :secure? false :tags ([]) :proxy $ Option :none
+                DefaultFields :host |a :port 8080 :label |guest :mode :read :secure? false :tags ([]) :proxy None
                 DefaultFields :host |a
               assert= 1 $ :port $ DefaultFields :host |a :port 1
               assert= (DefaultOnly :size 12) (DefaultOnly)
@@ -221,41 +221,41 @@
           :tests $ []
             %{} 'TestEntry (:name |direct-constructor-admits-option-values)
               :code $ quote $ do
-                assert= (Option :some 0)
-                  :count $ OptionFields :count (Option :some 0) :label $ Option :none
-                assert= (Option :none)
-                  :count $ OptionFields :count (Option :none) :label $ Option :some |saved
-                assert= (Option :some |)
-                  :label $ OptionFields :count (Option :none) :label $ Option :some |
+                assert= (Some 0)
+                  :count $ OptionFields :count (Some 0) :label None
+                assert= None $ :count $ OptionFields :count None :label (Some |saved)
+                assert= (Some |)
+                  :label $ OptionFields :count None :label $ Some |
               :tags $ #{} :option-fields :unit
             %{} 'TestEntry (:name |literal-constructors-wrap-plain-option-values)
               :code $ quote $ let
                   n 3
-                assert= (Option :some 2)
+                assert= (Some 2)
                   option-fields-count $ {} $ :count 2
-                assert= (Option :none)
-                  option-fields-count $ {} $ :label |a
-                assert= (Option :some 5)
-                  option-fields-count $ {} $ :count (Option :some 5)
-                assert= (Option :some 6)
+                assert= None $ option-fields-count $ {} (:label |a)
+                assert= (Some 5)
+                  option-fields-count $ {} $ :count (Some 5)
+                assert= (Some 6)
                   option-fields-count $ ?{} :count 6
-                assert= (Option :some 3)
+                assert= (Some 3)
                   :count $ OptionFields :count n
-                assert= (Option :some |b)
+                assert= (Some |b)
                   :label $ OptionFields :label |b
-                assert= (Option :some 4)
-                  :count $ %{} OptionFields (:count 4)
-                    :label $ Option :none
+                assert= (Some 4)
+                  :count $ %{} OptionFields (:count 4) (:label None)
               :tags $ #{} :option-fields :unit
             %{} 'TestEntry (:name |some-none-shorthand-equals-long-form)
               :code $ quote $ let
                   some-label $ Some |c
                   counts $ map ([] 1 2) Some
-                assert= (Option :some |c) some-label
-                assert= (Option :none) $ :count $ OptionFields :count None
-                assert= (Option :some 7) $ :count $ OptionFields :count (Some 7)
-                assert= (Option :none) $ option-fields-count $ {} $ :count None
-                assert= ([] (Option :some 1) (Option :some 2)) counts
+                assert= (Some |c) some-label
+                assert= None $ :count $ OptionFields :count None
+                assert= (Some 7)
+                  :count $ OptionFields :count $ Some 7
+                assert= None $ option-fields-count $ {} (:count None)
+                assert=
+                  [] (Some 1) (Some 2)
+                  , counts
                 assert= 7 $ match (Some 7)
                   (:some x) x
                   (:none) 0
@@ -329,14 +329,13 @@
             %{} 'TestEntry
               :name |assigned-value-retains-nominal-and-container-types
               :code $ quote $ let
-                  initial $ Option :some |before
-                  source $ ref $ Option :some |before
+                  initial $ Some |before
+                  source $ ref $ Some |before
                   values $ ref $ [] 1
                   mapping $ ref $ {} (:a 1)
-                assert= (Option :some |after)
-                  assign-option source $ Option :some |after
-                assert= (Option :none)
-                  assign-option source $ Option :none
+                assert= (Some |after)
+                  assign-option source $ Some |after
+                assert= None $ assign-option source None
                 assert= ([] 2 3)
                   assign-alias values $ [] 2 3
                 assert=
@@ -388,7 +387,7 @@
         'check-point-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn check-point-type (p) (struct? p)
           :examples $ []
-          :schema $ quote $ Fn test-struct.main/Point2D (-> Bool)
+          :schema $ quote $ Fn Point2D (-> Bool)
         'checked-literal-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-literal-alias ()
             let
@@ -398,7 +397,7 @@
                 alias values
               NullableNumberStore :values alias :nested $ [] alias
           :examples $ []
-          :schema $ quote $ Fn (-> test-struct.main/NullableNumberStore)
+          :schema $ quote $ Fn (-> NullableNumberStore)
           :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
             :code $ quote $ let
                 stored $ checked-literal-alias
@@ -434,8 +433,8 @@
               assert= (DefaultFields :host |a)
                 default-fields-from-literal $ {} $ :host |a
               assert=
-                DefaultFields :host |b :port 1 :proxy $ Option :some |p
-                default-fields-from-literal $ ?{} :host |b :port 1 :proxy $ Option :some |p
+                DefaultFields :host |b :port 1 :proxy $ Some |p
+                default-fields-from-literal $ ?{} :host |b :port 1 :proxy $ Some |p
               assert= |guest $ :label $ default-fields-from-literal
                 {} $ :host |c
             :tags $ #{} :struct-defaults :unit
@@ -480,7 +479,7 @@
           :code $ quote $ defn nullable-callback-choice (present?) (if present? NullableEvent nil)
           :examples $ []
           :schema $ quote $ Fn Bool
-            -> $ JsNullish test-struct.main/NullableEvent
+            -> $ JsNullish NullableEvent
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
               assert= NullableEvent $ nullable-callback-choice true
@@ -548,8 +547,8 @@
             -> $ JsNullish Number
           :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
             :code $ quote $ let ()
-              assert= 7 $ nullable-match $ Option :some 7
-              assert= nil $ nullable-match $ Option :none
+              assert= 7 $ nullable-match $ Some 7
+              assert= nil $ nullable-match None
             :tags $ #{} :contextual-proof
         'nullable-raised-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-raised-choice (present? value)
@@ -606,13 +605,12 @@
             :name |literal-rewrite-fills-omitted-option-fields-with-none
             :code $ quote $ do
               assert=
-                OptionFields :count $ Option :some 1
-                option-fields-from-literal $ {} $ :count (Option :some 1)
-              assert= (Option :none)
-                :label $ option-fields-from-literal $ {}
-                  :count $ Option :some 1
-              assert= (Option :none)
-                :count $ option-fields-from-literal $ ?{} :label (Option :some |saved)
+                OptionFields :count $ Some 1
+                option-fields-from-literal $ {} $ :count (Some 1)
+              assert= None $ :label $ option-fields-from-literal
+                {} $ :count $ Some 1
+              assert= None $ :count $ option-fields-from-literal
+                ?{} :label $ Some |saved
               assert= (OptionFields)
                 option-fields-from-literal $ {}
             :tags $ #{} :option-fields :unit
@@ -620,7 +618,7 @@
           :code $ quote $ defn read-asserted-map-literal-store (source)
             let
                 store source
-              assert-type store test-struct.main/MapLiteralStore
+              assert-type store MapLiteralStore
               :text store
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> String)
@@ -631,14 +629,13 @@
           :code $ quote $ defn read-context-box (box)
             .unwrap-or (:count box) 160
           :examples $ []
-          :schema $ quote $ Fn (test-struct.main/ContextBox T) (-> Number) (:generics T)
+          :schema $ quote $ Fn (ContextBox T) (-> Number) (:generics T)
           :tests $ [] $ %{} 'TestEntry (:name |generic-contextual-constructors)
             :code $ quote $ let ()
-              assert= 7 $ read-context-box $ ContextBox :value 1 :count (Option :some 7)
+              assert= 7 $ read-context-box $ ContextBox :value 1 :count (Some 7)
               assert= 8 $ read-context-box $ {} (:value |text)
-                :count $ Option :some 8
-              assert= 160 $ read-context-box $ {} (:value 1)
-                :count $ Option :none
+                :count $ Some 8
+              assert= 160 $ read-context-box $ {} (:value 1) (:count None)
               assert= 160 $ read-context-box $ {} (:value 1)
             :tags $ #{} :nominal-contextual
         'read-env-option $ %{} 'CodeEntry (:doc |)
@@ -656,21 +653,21 @@
                   missing-name |__CALCIT_ENV_MISSING_7E01__
                   present-name |__CALCIT_ENV_PROOF_1788__
                 assert= (get-env present-name) (read-env-option present-name)
-                assert= (Option :none) (read-env-option missing-name)
+                assert= None $ read-env-option missing-name
                 assert= |fallback $ .unwrap-or (read-env-option missing-name) |fallback
               :tags $ #{} :env-proof
             %{} 'TestEntry (:name |env-raw-primitive-returns-option)
               :code $ quote $ let
                   missing-name |__CALCIT_ENV_MISSING_7E01__
                   present-name |__CALCIT_ENV_PROOF_1788__
-                assert= (Option :none) (&get-env missing-name)
+                assert= None $ &get-env missing-name
                 assert= (get-env present-name) (&get-env present-name)
                 assert= |fallback $ .unwrap-or (&get-env missing-name) |fallback
               :tags $ #{} :env-proof
         'read-let-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-let-asserted-map-literal-store (source)
             let
-                store $ assert-type source test-struct.main/MapLiteralStore
+                store $ assert-type source MapLiteralStore
               :text store
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> String)
@@ -682,12 +679,12 @@
             + (:value box)
               .unwrap-or (:count box) 160
           :examples $ []
-          :schema $ quote $ Fn (test-struct.main/ContextBox Number) (-> Number)
+          :schema $ quote $ Fn (ContextBox Number) (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |concrete-contextual-constructors)
             :code $ quote $ let ()
-              assert= 9 $ read-number-box $ ContextBox :value 1 :count (Option :some 8)
+              assert= 9 $ read-number-box $ ContextBox :value 1 :count (Some 8)
               assert= 9 $ read-number-box $ {} (:value 1)
-                :count $ Option :some 8
+                :count $ Some 8
             :tags $ #{} :nominal-contextual
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reloaded)
@@ -701,7 +698,7 @@
           :code $ quote $ defn sum-point (p)
             &+ (:x p) (:y p)
           :examples $ []
-          :schema $ quote $ Fn test-struct.main/Point2D (-> Number)
+          :schema $ quote $ Fn Point2D (-> Number)
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
@@ -711,7 +708,7 @@
               println |EDN: data
               assert= true $ any? (&struct:impls data)
                 fn (impl)
-                  = (impl-origin impl) (Option :some BirdTrait)
+                  = (impl-origin impl) (Some BirdTrait)
             let
                 l1 $ %{} Lagopus $ :name |LagopusA
               println |EDN: $ format-cirru-edn l1
@@ -761,7 +758,7 @@
               kitty $ %{} Cat (:name |kitty) (:color :red)
               assert= :Cat $ &struct:get-name kitty
               assert= :red $ :color kitty
-              assert= (Option :some Cat) (&struct:definition kitty)
+              assert= (Some Cat) (&struct:definition kitty)
               assert= true $ &struct:matches? kitty $ %{} Cat (:name |kitty) (:color :red)
               assert= (&struct:to-map kitty) (&{} :name |kitty :color :red)
               assert= 2 $ &struct:count kitty
@@ -823,7 +820,7 @@
                 p0 $ &%{} Person :name | :age 0 :position :none
                 p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                 c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-              assert= (Option :some Person) (&struct:definition p0)
+              assert= (Some Person) (&struct:definition p0)
               assert= 0 $ :age p0
               assert= | $ :name p0
               assert= :none $ :position p0
@@ -868,7 +865,7 @@
                       List $ Option Dynamic
                     [] (get value :age) (get value |name) (get value :missing) (get value 0)
                 assert=
-                  [] (Option :some 20) (Option :some |Chen) (Option :none) (Option :none)
+                  [] (Some 20) (Some |Chen) None None
                   read-open p1
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
@@ -1051,17 +1048,17 @@
         'try-option $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-option (fail?)
             try
-              if fail? (raise |fixture-failure) (Option :some 7)
-              fn (message) (Option :none)
+              if fail? (raise |fixture-failure) (Some 7)
+              fn (message) None
           :examples $ []
           :schema $ quote $ Fn Bool
             -> $ Option Number
           :tests $ []
             %{} 'TestEntry (:name |normal-option)
-              :code $ quote $ assert= (Option :some 7) (try-option false)
+              :code $ quote $ assert= (Some 7) (try-option false)
               :tags $ #{} :try-proof :unit
             %{} 'TestEntry (:name |caught-option)
-              :code $ quote $ assert= (Option :none) (try-option true)
+              :code $ quote $ assert= None (try-option true)
               :tags $ #{} :try-proof :unit
         'try-optional-handler $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-optional-handler (fail?)
@@ -1069,7 +1066,7 @@
               if fail? (raise |fixture-failure) |normal
               fn (message extra)
                 hint-fn $ Fn String (Option Number) (-> String)
-                assert= (Option :none) extra
+                assert= None extra
                 , message
           :examples $ []
           :schema $ quote $ Fn Bool (-> String)

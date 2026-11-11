@@ -215,8 +215,8 @@
           :code $ quote $ defn edn-nominal-roundtrip-main! ()
             let
                 outcome $ EdnOutcome :ready $ assert-type ([] 1 -2) (List Int32)
-                envelope $ EdnEnvelope :request-id |r1 :note (Option :some "|hello world") :outcome outcome
-                typed-result $ assert-type (Result :ok outcome) (Result app.main/EdnOutcome String)
+                envelope $ EdnEnvelope :request-id |r1 :note (Some "|hello world") :outcome outcome
+                typed-result $ assert-type (Result :ok outcome) (Result EdnOutcome String)
               match
                 edn-parse-outcome $ format-cirru-edn outcome
                 (:err _) (quit! 1)
@@ -244,7 +244,7 @@
           :code $ quote $ defn edn-parse-envelope (text) (try-parse-cirru-edn-as text 'EdnEnvelope)
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ Result app.main/EdnEnvelope String
+            -> $ Result EdnEnvelope String
         'edn-parse-int-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-int-list (text)
             try-parse-cirru-edn-as text $ List Int32
@@ -266,7 +266,7 @@
           :code $ quote $ defn edn-parse-job (text) (try-parse-cirru-edn-as text 'EdnJob)
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ Result app.main/EdnJob String
+            -> $ Result EdnJob String
           :tests $ []
             %{} 'TestEntry (:name |round-trips-scalar-struct)
               :code $ quote $ do
@@ -454,7 +454,7 @@
           :code $ quote $ defn edn-parse-outcome (text) (try-parse-cirru-edn-as text 'EdnOutcome)
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ Result app.main/EdnOutcome String
+            -> $ Result EdnOutcome String
           :tests $ [] $ %{} 'TestEntry (:name |parses-nominal-variants)
             :code $ quote $ do
               assert=
@@ -493,7 +493,7 @@
             try-parse-cirru-edn-as text $ Result app.main/EdnOutcome String
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ Result (Result app.main/EdnOutcome String) String
+            -> $ Result (Result EdnOutcome String) String
         'edn-parse-scalars $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn edn-parse-scalars ()
             [] (try-parse-cirru-edn-as "|do 42" 'Int32) (try-parse-cirru-edn-as "|do |hello" 'String) (try-parse-cirru-edn-as "|do :ready" 'Tag) (try-parse-cirru-edn-as "|do true" 'Bool) (try-parse-cirru-edn-as "|do nil" 'Nil) (try-parse-cirru-edn-as "|do 128" 'Int8) (try-parse-cirru-edn-as "|do 1.5" 'Int8) (try-parse-cirru-edn-as "|do |bad" 'Int32) (try-parse-cirru-edn-as "|do :wasi-typed-edn-unknown" 'Tag) (try-parse-cirru-edn-as "|do nil" 'Unit)

@@ -24,14 +24,14 @@
             assert= :many $ try-size $ :: :dyn 1 2 3 4 5
             let
                 ok $ %:: Result :ok 1
-              assert= (Option :some Result) (enum-definition ok)
+              assert= (Some Result) (enum-definition ok)
               assert= "|(%:: 'Result :ok 1)" $ str ok
               assert= true $ &enum-def:has-variant? Result :ok
               assert= 1 $ &enum-def:variant-arity Result :ok
               assert= &unit $ &enum:validate ok :ok
             let
                 plain $ :: :plain 1
-              assert= (Option :none) (enum-definition plain)
+              assert= None $ enum-definition plain
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'try-size $ %{} 'CodeEntry (:doc |)

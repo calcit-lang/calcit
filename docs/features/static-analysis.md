@@ -1180,7 +1180,7 @@ d! $ %:: Op :clear 42
 When an existing Enum definition is the head of a call, prefer `Enum :tag ...`. The preprocessor resolves the definition, checks the variant and payload types, and lowers it to the named constructor. `%:: Enum :tag ...` remains for explicit runtime prototypes, dynamic cross-module construction, and compatibility boundaries.
 
 ```cirru.no-check
-Option :some value
+Some value
 Result :err message
 ```
 

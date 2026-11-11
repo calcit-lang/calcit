@@ -30,10 +30,10 @@ Keep these operations distinct: character count describes Calcit text indexing s
 native、JavaScript 与 WASM 已验证的静态字符串路径中，`first`、`last`、`nth`/`get`、`rest`、`slice` 和相应方法按 Unicode 标量访问，不能把 JS 的 UTF-16 单元偏移或 WASM 的 UTF-8 字节偏移当成 Calcit 索引。组合字符仍可能包含多个标量；这里不提供字素簇或 locale 分词语义。
 
 ```cirru
-assert= (Option :some |😀) $ last |中😀
-assert= (Option :some |中) $ get |A😀中 2
-assert= (Option :none) $ nth |A😀中 3
-assert= |😀中 $ .slice |A😀中文 1 (Option :some 3)
+assert= (Some |😀) $ last |中😀
+assert= (Some |中) $ get |A😀中 2
+assert= None $ nth |A😀中 3
+assert= |😀中 $ .slice |A😀中文 1 (Some 3)
 assert= 2 $ count |é
 ```
 
@@ -50,10 +50,10 @@ native/JS 的非法索引通过既有错误路径报告；当前 WASM 对应为 
 `.find-index` / `str-find-index` 返回首次匹配的 `Option<Number>`，索引同样按 Unicode 标量计数，可直接传给 `.get` 或 `.slice`。找不到返回 `Option :none`；空 pattern 在任意字符串（包括空串）中返回 `Option :some 0`。组合字符不合并为字素簇，也不隐式做 Unicode normalization。
 
 ```cirru
-assert= (Option :some 1) $ |😀中 .find-index |中
-assert= (Option :some 2) $ |éa .find-index |a
-assert= (Option :none) $ |éa .find-index |é
-assert= (Option :some 0) $ | .find-index |
+assert= (Some 1) $ |😀中 .find-index |中
+assert= (Some 2) $ |éa .find-index |a
+assert= None $ |éa .find-index |é
+assert= (Some 0) $ | .find-index |
 assert= |中文 $ |A😀中文 .slice ((|A😀中文 .find-index |中文) .unwrap)
 ```
 

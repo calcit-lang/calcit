@@ -34,12 +34,12 @@
           :code $ quote $ defn counter:add (self other)
             %{} Counter $ :value $ + (:value self) (:value other)
           :examples $ []
-          :schema $ quote $ Fn test-traits.external/Counter test-traits.external/Counter (-> test-traits.external/Counter)
+          :schema $ quote $ Fn Counter Counter (-> Counter)
         'counter:next $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn counter:next (self)
             %{} Counter $ :value $ inc (:value self)
           :examples $ []
-          :schema $ quote $ Fn test-traits.external/Counter (-> test-traits.external/Counter)
+          :schema $ quote $ Fn Counter (-> Counter)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.external
     'test-traits.identity $ %{} 'FileEntry
@@ -74,8 +74,8 @@
                   values $ {} (left |left) (right |right)
                   origins $ #{} left right left
                 assert= 2 $ count values
-                assert= (Option :some |left) (.get values left)
-                assert= (Option :some |right) (.get values right)
+                assert= (Some |left) (.get values left)
+                assert= (Some |right) (.get values right)
                 assert= 2 $ count origins
               :tags $ #{} :trait :unit
             %{} 'TestEntry (:name |keeps-impl-origins-nominal)
@@ -128,7 +128,7 @@
         'AliasFirstImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasFirstImpl AliasFirstOps
             .read-value $ fn (self)
-              hint-fn $ Fn test-traits.main/AliasSharedBase $ -> Number
+              hint-fn $ Fn AliasSharedBase $ -> Number
               , 11
           :examples $ []
           :schema $ quote Impl
@@ -154,7 +154,7 @@
         'AliasGenericImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasGenericImpl AliasGenericOps
             .read-value $ fn (self dispatch!)
-              hint-fn $ Fn test-traits.main/AliasSharedBase
+              hint-fn $ Fn AliasSharedBase
                 Fn Number $ -> R
                 -> R
                 :generics R
@@ -176,7 +176,7 @@
         'AliasSecondImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl AliasSecondImpl AliasFirstOps
             .read-value $ fn (self)
-              hint-fn $ Fn test-traits.main/AliasSharedBase $ -> Number
+              hint-fn $ Fn AliasSharedBase $ -> Number
               , 22
           :examples $ []
           :schema $ quote Impl
@@ -469,7 +469,7 @@
         'RestBoxImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl RestBoxImpl RestBoxOps
             .sum $ fn (self label & values)
-              hint-fn $ Fn test-traits.main/RestBox String & Number $ -> Number
+              hint-fn $ Fn RestBox String & Number $ -> Number
               foldl values (:value self) &+
           :examples $ []
           :schema $ quote Impl
@@ -501,8 +501,8 @@
         'ResultBoxImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl ResultBoxImpl ResultBoxOps
             .find $ fn (self text)
-              hint-fn $ Fn test-traits.main/ResultBox String $ -> (Option Number)
-              Option :some $ :value self
+              hint-fn $ Fn ResultBox String $ -> (Option Number)
+              Some $ :value self
           :examples $ []
           :schema $ quote Impl
         'ResultBoxOps $ %{} 'CodeEntry (:doc |)
@@ -632,7 +632,7 @@
           :code $ quote $ defn branch-open-payload (flag)
             let
                 box $ OpenEnumBox :value $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
-                wrapped $ Option :some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
+                wrapped $ Some $ if flag (ExplicitTraitFalse :item 1) (ExplicitTraitTrue :item 2)
                 expected $ if flag 1 2
                 check-value $ fn (value)
                   hint-fn $ Fn AnyEnum $ -> Bool
@@ -715,7 +715,7 @@
           :code $ quote $ defn core-show:show (p)
             str |Person: $ :name p
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/Person0 (-> String)
+          :schema $ quote $ Fn Person0 (-> String)
         'count-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-with-trait (x) (x .count)
           :examples $ []
@@ -745,11 +745,11 @@
         'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-nominal-contains? (value key) (&trait-call ExplicitContainsOps :contains? value key)
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/ExplicitTraitFalse Number (-> Bool)
+          :schema $ quote $ Fn ExplicitTraitFalse Number (-> Bool)
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/RestBox (List Number) (-> Number)
+          :schema $ quote $ Fn RestBox (List Number) (-> Number)
         'loop-switch $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-switch (index)
             loop
@@ -810,13 +810,13 @@
               assert= &unit repeated-result
               assert= :unit $ type-of initial-result
               assert= :unit $ type-of repeated-result
-              assert= false $ enum-empty? $ Option :none
+              assert= false $ enum-empty? None
               assert= 3 $ count $ [] 1 2 3
             :tags $ #{} :builtin-init-unit :unit
         'make-explicit-trait-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-explicit-trait-value () (ExplicitTraitFalse :item 1)
           :examples $ []
-          :schema $ quote $ Fn (-> test-traits.main/ExplicitTraitFalse)
+          :schema $ quote $ Fn (-> ExplicitTraitFalse)
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
           :examples $ []
@@ -841,12 +841,12 @@
           :code $ quote $ defn myfoo:foo (p)
             str "|foo " $ :name p
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/Person0 (-> String)
+          :schema $ quote $ Fn Person0 (-> String)
         'myfoo:foo2 $ %{} 'CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
           :code $ quote $ defn myfoo:foo2 (p)
             str "|foo2 " $ :name p
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/Person0 (-> String)
+          :schema $ quote $ Fn Person0 (-> String)
         'myzap:a $ %{} 'CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote $ defn myzap:a (_x) |zapA
           :examples $ []
@@ -926,7 +926,7 @@
               :tags $ #{} :impl-origin-portable :open-method-evidence :trait
             %{} 'TestEntry (:name |default-option-impl-is-called)
               :code $ quote $ assert= true
-                open-enum-public (Option :some 1) 0
+                open-enum-public (Some 1) 0
               :tags $ #{} :impl-origin-portable :open-method-evidence :trait
             %{} 'TestEntry (:name |factory-return-contract-keeps-impl)
               :code $ quote $ assert= false
@@ -954,11 +954,11 @@
         'open-make-contains-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-make-contains-value () (println |open-make-contains-value) (OpenContainsFalseLast :item 1)
           :examples $ []
-          :schema $ quote $ Fn (-> test-traits.main/OpenContainsBase)
+          :schema $ quote $ Fn (-> OpenContainsBase)
         'open-pass-contains-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-pass-contains-value (value) value
           :examples $ []
-          :schema $ quote $ Fn test-traits.main/OpenContainsBase (-> test-traits.main/OpenContainsBase)
+          :schema $ quote $ Fn OpenContainsBase (-> OpenContainsBase)
         'recur-construct-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-construct-contains? (value index)
             if (> index 0)
@@ -984,7 +984,7 @@
         'recur-option-variant? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-option-variant? (value index)
             if (> index 0)
-              recur (Option :none) (- index 1)
+              recur None $ - index 1
               contains? value 0
           :examples $ []
           :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
@@ -1068,7 +1068,7 @@
                 m $ {} (:a 1) (:b 2)
                 st $ #{} 1 2 3
                 s |hello
-                opt $ Option :some 1
+                opt $ Some 1
                 Person $ impl-traits Person0 MyFooImpl
                 p $ %{} Person $ :name |Alice
                 ZapPerson $ impl-traits Person0 MyZapAImpl
@@ -1178,7 +1178,7 @@
                   seen $ ref 0
                 assert= false $ empty? $ do
                   reset! seen $ &+ (deref seen) 1
-                  Option :none
+                  , None
                 assert= false $ empty? $ do
                   reset! seen $ &+ (deref seen) 1
                   Result :ok 0
@@ -1218,7 +1218,7 @@
                     hint-fn $ Fn AnyEnum Dynamic $ -> Bool
                     contains? value key
                 assert= true $ throws? $ contains? (ContainsProbe :item 1) 0
-                assert= true $ throws? $ has-open-index (Option :some 1) |bad-key
+                assert= true $ throws? $ has-open-index (Some 1) |bad-key
                 assert= true $ throws? $ contains? nil 0
               :tags $ #{} :contains-dispatch-boundary :trait :unit
             %{} 'TestEntry (:name |contains-keeps-argument-errors)
@@ -1235,7 +1235,7 @@
                 assert= true $ throws? $ contains?
                   do
                     reset! seen $ &+ (deref seen) 1
-                    Option :some 1
+                    Some 1
                   do
                     reset! seen $ &+ (deref seen) 10
                     raise |contains-key-error
@@ -1285,7 +1285,7 @@
               :tags $ #{} :struct-empty-input-evidence :unit
             %{} 'TestEntry (:name |default-recur-method)
               :code $ quote $ assert= true
-                recur-method-contains? (Option :some 1) 2
+                recur-method-contains? (Some 1) 2
               :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
             %{} 'TestEntry (:name |custom-recur-method)
               :code $ quote $ assert= false
@@ -1293,7 +1293,7 @@
               :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
             %{} 'TestEntry (:name |default-recur-public)
               :code $ quote $ assert= true
-                recur-public-contains? (Option :some 1) 2
+                recur-public-contains? (Some 1) 2
               :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
             %{} 'TestEntry (:name |custom-recur-public)
               :code $ quote $ assert= false
@@ -1317,7 +1317,7 @@
               :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
             %{} 'TestEntry (:name |same-impl-new-variant)
               :code $ quote $ assert= true
-                recur-option-variant? (Option :some 1) 2
+                recur-option-variant? (Some 1) 2
               :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
             %{} 'TestEntry (:name |parallel-swap-same-impl)
               :code $ quote $ assert= false
@@ -1542,20 +1542,20 @@
               :tags $ #{} :impl-origin-portable :nominal-proc-evidence :trait
             %{} 'TestEntry (:name |core-number-range)
               :code $ quote $ do
-                assert= true $ &trait-call Contains :contains? (Option :some 1) 0
-                assert= true $ &trait-call Contains :contains? (Option :some 1) -0
-                assert= true $ &trait-call Contains :contains? (Option :some 1) 1.5
-                assert= false $ &trait-call Contains :contains? (Option :some 1) 2
-                assert= false $ &trait-call Contains :contains? (Option :some 1) -1
-                assert= false $ &trait-call Contains :contains? (Option :some 1) (/ 1 0)
-                assert= false $ &trait-call Contains :contains? (Option :some 1) (/ -1 0)
-                assert= false $ &trait-call Contains :contains? (Option :some 1) (sqrt -1)
+                assert= true $ &trait-call Contains :contains? (Some 1) 0
+                assert= true $ &trait-call Contains :contains? (Some 1) -0
+                assert= true $ &trait-call Contains :contains? (Some 1) 1.5
+                assert= false $ &trait-call Contains :contains? (Some 1) 2
+                assert= false $ &trait-call Contains :contains? (Some 1) -1
+                assert= false $ &trait-call Contains :contains? (Some 1) (/ 1 0)
+                assert= false $ &trait-call Contains :contains? (Some 1) (/ -1 0)
+                assert= false $ &trait-call Contains :contains? (Some 1) (sqrt -1)
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |core-family-helper)
               :code $ quote $ do
-                assert= true $ explicit-core-contains? (Option :some 1) 0
-                assert= true $ explicit-core-contains? (Option :some 1) 1.5
-                assert= false $ explicit-core-contains? (Option :some 1) 2
+                assert= true $ explicit-core-contains? (Some 1) 0
+                assert= true $ explicit-core-contains? (Some 1) 1.5
+                assert= false $ explicit-core-contains? (Some 1) 2
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |explicit-origin-not-method-name)
               :code $ quote $ let
@@ -1585,9 +1585,9 @@
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |finite-nested-trait-call)
               :code $ quote $ assert= true
-                &trait-call Contains :contains? (Option :some 1)
+                &trait-call Contains :contains? (Some 1)
                   if
-                    &trait-call Contains :contains? (Option :some 1) 0
+                    &trait-call Contains :contains? (Some 1) 0
                     , 0 2
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
@@ -1633,8 +1633,8 @@
         'test-option-result-map $ %{} 'CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
             let
-                opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none) (Option Number)
+                opt-some $ Some 1
+                opt-none $ assert-type None $ Option Number
                 res-ok $ Result :ok 1
                 res-err $ assert-type (Result :err |oops) (Result Number String)
                 step $ fn (x)
@@ -1644,20 +1644,20 @@
               assert-type opt-none $ Option Number
               assert-type res-ok $ Result Number String
               assert-type res-err $ Result Number String
-              assert= (Option :some 2) (opt-some .map step)
-              assert= (Option :none) (opt-none .map step)
+              assert= (Some 2) (opt-some .map step)
+              assert= None $ opt-none .map step
               assert= (Result :ok 2) (res-ok .map step)
               assert= (Result :err |oops) (res-err .map step)
-              assert= (Option :some 2)
+              assert= (Some 2)
                 opt-some .map $ fn (x) (inc x)
             let
-                opt-some $ Option :some 1
-                opt-none $ assert-type (Option :none) (Option Number)
+                opt-some $ Some 1
+                opt-none $ assert-type None $ Option Number
                 res-ok $ Result :ok 1
                 res-err $ assert-type (Result :err |oops) (Result Number String)
                 to-some $ fn (x)
                   hint-fn $ Fn Number $ -> (Option Number)
-                  Option :some $ inc x
+                  Some $ inc x
                 to-ok $ fn (x)
                   hint-fn $ Fn Number $ -> (Result Number String)
                   Result :ok $ inc x
@@ -1665,8 +1665,8 @@
               assert= true $ opt-none .none?
               assert= 1 $ opt-some .unwrap-or 9
               assert= 9 $ opt-none .unwrap-or 9
-              assert= (Option :some 2) (opt-some .and-then to-some)
-              assert= (Option :none) (opt-none .and-then to-some)
+              assert= (Some 2) (opt-some .and-then to-some)
+              assert= None $ opt-none .and-then to-some
               assert= true $ res-ok .ok?
               assert= true $ res-err .err?
               assert= 1 $ res-ok .unwrap-or 9
@@ -1678,7 +1678,7 @@
                 res-err .unwrap-or 9
                 , .round
               assert= 9 $
-                  assert-type (Option :none) (Option Number)
+                  assert-type None $ Option Number
                   , .unwrap-or 9
                 , .round
               assert= (Result :ok 2) (res-ok .and-then to-ok)
@@ -1692,8 +1692,8 @@
                 open-list $ assert-type ([] 1 |x) (List Dynamic)
                 present $ get open-map :a
               do
-                assert= (Option :some 1) present
-                assert= (Option :some |x) (nth open-list 1)
+                assert= (Some 1) present
+                assert= (Some |x) (nth open-list 1)
                 assert= 1 $ .unwrap-or present 0
                 assert= 1 $ .fold present
                   fn () 0
@@ -1764,7 +1764,7 @@
             unsafe-coerce value $ Fn test-traits.main/MyFoo $ -> Unit
           :examples $ []
           :schema $ quote $ Fn Dynamic
-            -> $ Fn test-traits.main/MyFoo $ -> Unit
+            -> $ Fn MyFoo $ -> Unit
             :features :js-ffi
           :tests $ [] $ %{} 'TestEntry (:name |nominal-trait-callback)
             :code $ quote $ assert= :fn
@@ -1946,8 +1946,8 @@
                 assert= false $ = left right
                 assert= false $ = 0 $ &compare left right
                 assert= 2 $ count $ #{} left right
-                assert= (Option :some |left) (.get values left)
-                assert= (Option :some |right) (.get values right)
+                assert= (Some |left) (.get values left)
+                assert= (Some |right) (.get values right)
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-generic-shadowing-of-nominal-names)
               :code $ quote $ let

@@ -168,9 +168,9 @@ let
 let
     Props $ defstruct Props (:label String) (:size $ Option Number)
     size 2
-  assert= (Option :some 2) $ :size $ Props :label |a :size size
-  assert= (Option :none) $ :size $ Props :label |b
-  assert= (Option :some 3) $ :size $ Props :label |c :size (Option :some 3)
+  assert= (Some 2) $ :size $ Props :label |a :size size
+  assert= None $ :size $ Props :label |b
+  assert= (Some 3) $ :size $ Props :label |c :size (Some 3)
 ```
 
 组件 props 因此可以声明成带 Option 字段的 Struct，调用处仍写 `{} (:label |a) (:size 2)`。
