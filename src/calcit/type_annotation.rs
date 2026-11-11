@@ -288,7 +288,8 @@ static ANY_ENUM_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc
 /// This allows definitions with non-Dynamic schemas to serve as named type aliases.
 fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   let (ns, def) = name.split_once('/')?;
-  lookup_schema_registered(ns, def)
+  let schema = lookup_schema_registered(ns, def)?;
+  Some(super::type_refs::qualify_namespace_type_refs(schema, ns))
 }
 
 thread_local! {

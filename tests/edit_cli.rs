@@ -474,6 +474,62 @@ fn value_schema_accepts_a_bare_local_type_name_and_rejects_an_unknown_one() {
 }
 
 #[test]
+fn formatted_schema_alias_preserves_cross_namespace_callback_type() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(
+    &snapshot,
+    r#"{}
+  :package |app
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!) (:target :native)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'app.lib $ %{} 'FileEntry
+      :defs $ {}
+        'Handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def Handler
+            fn (_packet) &unit
+          :examples $ []
+          :schema $ quote $ Fn app.lib/Packet (-> Unit)
+        'Node $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Node
+            :handlers $ Map Tag app.lib/Handler
+          :examples $ []
+          :schema $ quote StructDef
+        'Packet $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Packet (:value Number)
+          :examples $ []
+          :schema $ quote StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.lib
+    'app.main $ %{} 'FileEntry
+      :defs $ {} $ 'main!
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                node $ lib/Node :handlers $ {} (:go lib/Handler)
+                handler $ .unwrap $ get (:handlers node) :go
+              handler $ lib/Packet :value 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+          :require $ app.lib :as lib
+"#,
+  )
+  .expect("write the callback fixture");
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "qualified callback schema");
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format callback schema");
+  let formatted = fs::read_to_string(&snapshot).expect("read formatted fixture");
+  assert!(formatted.contains("Fn Packet (-> Unit)"), "{formatted}");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "short callback schema");
+}
+
+#[test]
 fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
