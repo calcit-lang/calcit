@@ -546,14 +546,14 @@
     'test-union.member-origin $ %{} 'FileEntry
       :defs $ {}
         'GenericCell $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct GenericCell ([] T) (:value T)
+          :code $ quote $ defstruct GenericCell (:generics T) (:value T)
           :examples $ []
           :schema $ quote StructDef
         'GenericMembers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion GenericMembers Scalar (GenericCell Number) (GenericPacket Number)
           :examples $ []
         'GenericPacket $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum GenericPacket ([] T) (:payload T)
+          :code $ quote $ defenum GenericPacket (:generics T) (:payload T)
           :examples $ []
           :schema $ quote EnumDef
         'Inner $ %{} 'CodeEntry (:doc |)

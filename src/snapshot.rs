@@ -3412,7 +3412,7 @@ fn find_legacy_optional_in_code(node: &Cirru) -> Option<&Cirru> {
     }
     Some(kind @ ("defstruct" | "defenum" | "deftrait")) => items
       .iter()
-      .skip(2)
+      .skip(2 + crate::calcit::type_expr::data_definition_clause_count(&items[2.min(items.len())..]))
       .flat_map(|slot| match slot {
         // The leading `:name` / `.method` is a member name, not a type. A
         // struct field holds one type followed by an optional default value;
@@ -3996,7 +3996,8 @@ fn code_type_slots(items: &[Cirru]) -> Vec<Vec<u16>> {
       }
     };
     let mut slots = vec![];
-    for (index, item) in items.iter().enumerate().skip(2) {
+    let clauses = crate::calcit::type_expr::data_definition_clause_count(&items[2.min(items.len())..]);
+    for (index, item) in items.iter().enumerate().skip(2 + clauses) {
       let Cirru::List(entry) = item else { continue };
       match entry.first() {
         // `deftrait` members may be written as `[] name type`.
@@ -5559,7 +5560,8 @@ fn compact_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
   }
   match head {
     Some(kind @ ("defstruct" | "defenum" | "deftrait")) if items.len() >= 3 => {
-      for slot in rewritten.iter_mut().skip(2) {
+      let clauses = crate::calcit::type_expr::data_definition_clause_count(&rewritten[2..]);
+      for slot in rewritten.iter_mut().skip(2 + clauses) {
         let Cirru::List(entry) = &*slot else { continue };
         let type_indexes: Vec<usize> = match (kind, entry.as_slice()) {
           ("defstruct", [_, _] | [_, _, _]) => vec![1],
@@ -5631,7 +5633,100 @@ pub fn migrate_decoder_type_argument(node: &Cirru) -> Option<Cirru> {
 /// declarations that 0.35.0 removed (#2516) and the quoted compound types that
 /// 0.37.0 removed (#2583).
 fn format_code_type_syntax(node: &Cirru) -> (Cirru, usize) {
-  migrate_code_type_syntax(node)
+  let (code, count) = migrate_code_type_syntax(node);
+  // Positional generics of data declarations become clauses in 0.42.0 (#2700).
+  let (code, clauses) = migrate_data_definition_clauses(&code);
+  (code, count + clauses)
+}
+
+/// How many forms after the name of a `defstruct` / `defenum` are its
+/// `(:generics …)` / `(:where …)` clauses (#2700).
+pub fn data_definition_clause_count(after_name: &[Cirru]) -> usize {
+  crate::calcit::type_expr::data_definition_clause_count(after_name)
+}
+
+/// Rewrite the positional generics and bounds of `defstruct` / `defenum`,
+/// `([] T U)` and `({} (T Debug))`, into the `(:generics T U)` and
+/// `(:where (T Debug))` clauses that `Fn` also takes (#2700). Quotes on the
+/// type variables are dropped. Returns how many declarations changed.
+pub fn migrate_data_definition_clauses(node: &Cirru) -> (Cirru, usize) {
+  let Cirru::List(items) = node else {
+    return (node.clone(), 0);
+  };
+  // Quoted data is not code.
+  if is_cirru_leaf(items.first(), "quote") {
+    return (node.clone(), 0);
+  }
+  let mut rewritten = Vec::with_capacity(items.len());
+  let mut changed = 0;
+  for item in items {
+    let (next, count) = migrate_data_definition_clauses(item);
+    rewritten.push(next);
+    changed += count;
+  }
+  let is_data_definition = matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum"));
+  if !is_data_definition || rewritten.len() < 3 {
+    return (Cirru::List(rewritten), changed);
+  }
+  let Some(params) = positional_generic_params(&rewritten[2]) else {
+    return (Cirru::List(rewritten), changed);
+  };
+  let mut generics = vec![Cirru::leaf(":generics")];
+  generics.extend(params);
+  let mut next = vec![rewritten[0].clone(), rewritten[1].clone(), Cirru::List(generics)];
+  let mut rest = 3;
+  if let Some(bounds) = rewritten.get(3).and_then(positional_where_bounds) {
+    let mut clause = vec![Cirru::leaf(":where")];
+    clause.extend(bounds);
+    next.push(Cirru::List(clause));
+    rest = 4;
+  }
+  next.extend(rewritten.into_iter().skip(rest));
+  (Cirru::List(next), changed + 1)
+}
+
+/// The type variables of a positional generics list `[] T 'U` (or a plain
+/// `(T U)`), without quotes.
+fn positional_generic_params(form: &Cirru) -> Option<Vec<Cirru>> {
+  let Cirru::List(entry) = form else { return None };
+  let skip = usize::from(is_cirru_leaf(entry.first(), "[]"));
+  let params = &entry[skip..];
+  let is_type_var = |param: &Cirru| matches!(param, Cirru::Leaf(name) if name.trim_start_matches('\'').chars().next().is_some_and(|c| c.is_ascii_uppercase()));
+  if params.is_empty() || !params.iter().all(is_type_var) {
+    return None;
+  }
+  Some(
+    params
+      .iter()
+      .map(|param| match param {
+        Cirru::Leaf(name) => Cirru::leaf(name.trim_start_matches('\'')),
+        other => other.clone(),
+      })
+      .collect(),
+  )
+}
+
+/// The entries of a positional bounds map `{} (T Debug) …`, with the quote
+/// dropped from each type variable.
+fn positional_where_bounds(form: &Cirru) -> Option<Vec<Cirru>> {
+  let Cirru::List(entry) = form else { return None };
+  if !is_cirru_leaf(entry.first(), "{}") || entry.len() < 2 {
+    return None;
+  }
+  entry
+    .iter()
+    .skip(1)
+    .map(|bound| match bound {
+      Cirru::List(pair) if pair.len() >= 2 && matches!(pair[0], Cirru::Leaf(_)) => {
+        let mut pair = pair.clone();
+        if let Cirru::Leaf(name) = &pair[0] {
+          pair[0] = Cirru::leaf(name.trim_start_matches('\''));
+        }
+        Some(Cirru::List(pair))
+      }
+      _ => None,
+    })
+    .collect()
 }
 
 /// Drop the quote from a single type name in `assert-type` / `unsafe-coerce`
@@ -5910,7 +6005,9 @@ pub fn unquote_declaration_types(node: &Cirru) -> (Cirru, usize) {
   }
   match head {
     Some(kind @ ("defstruct" | "defenum")) if rewritten.len() >= 3 => {
-      for (index, slot) in rewritten.iter_mut().enumerate().skip(2) {
+      // `(:generics T)` / `(:where (T Debug))` hold bare names already.
+      let clauses = crate::calcit::type_expr::data_definition_clause_count(&rewritten[2..]);
+      for (index, slot) in rewritten.iter_mut().enumerate().skip(2 + clauses) {
         let (next, count) = unquote_member_slot(kind, slot, index == 2);
         *slot = next;
         changed += count;
@@ -8019,6 +8116,42 @@ mod tests {
     let (formatted, count) = unquote_declaration_types(&compound_only);
     assert_eq!(count, 0);
     assert_eq!(formatted, compound_only, "compound types keep their quote");
+  }
+
+  #[test]
+  fn format_rewrites_positional_data_generics_into_clauses() {
+    let cases = [
+      ("defstruct Box ([] T) (:value T)", "defstruct Box (:generics T) (:value T)"),
+      (
+        "defstruct Shown ([] 'T 'U) ({} ('T Debug) (U Show)) (:value T) (:other U)",
+        "defstruct Shown (:generics T U) (:where (T Debug) (U Show)) (:value T) (:other U)",
+      ),
+      (
+        "defenum Result ([] T E) (:ok T) (:err E)",
+        "defenum Result (:generics T E) (:ok T) (:err E)",
+      ),
+      (
+        "let ((Box $ defstruct Box ([] T) (:value T))) Box",
+        "let ((Box $ defstruct Box (:generics T) (:value T))) Box",
+      ),
+    ];
+    for (source, expected) in cases {
+      let (formatted, count) = format_code_type_syntax(&parse_one(source));
+      assert_eq!(formatted, parse_one(expected), "{source}");
+      assert!(count > 0, "{source}");
+      let (again, count) = format_code_type_syntax(&formatted);
+      assert_eq!(count, 0, "{expected} is already formatted");
+      assert_eq!(again, formatted);
+    }
+    for unchanged in [
+      "defstruct Point (:x Number) (:y Number)",
+      "defenum Shape (:circle Number) (:dot)",
+      "quote $ defstruct Box ([] T) (:value T)",
+    ] {
+      let (formatted, count) = migrate_data_definition_clauses(&parse_one(unchanged));
+      assert_eq!(count, 0, "{unchanged}");
+      assert_eq!(formatted, parse_one(unchanged));
+    }
   }
 
   #[test]

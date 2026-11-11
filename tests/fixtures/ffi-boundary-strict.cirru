@@ -16,16 +16,6 @@
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)
           :schema $ quote Trait
-        'Labelled $ %{} 'CodeEntry
-          :doc "|Ordinary Calcit trait: host values coerced to it still need proof."
-          :code $ quote $ deftrait Labelled (.label AnyFn)
-          :examples $ []
-          :schema $ quote Trait
-        'as-label $ %{} 'CodeEntry
-          :doc "|Coercion to an ordinary trait is not a trusted host handle."
-          :code $ quote $ defn as-label (host) (unsafe-coerce host 'ffi-strict.main/Labelled)
-          :examples $ []
-          :schema $ quote $ Fn JsObject (-> ffi-strict.main/Labelled) (:features :js-ffi)
         'as-node $ %{} 'CodeEntry
           :doc "|Coercion to an external-object trait is a retained host boundary."
           :code $ quote $ defn as-node (host) (unsafe-coerce host 'ffi-strict.main/HostNode)
