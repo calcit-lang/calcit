@@ -716,6 +716,10 @@ defn f (xs) (count xs)
 
 当前 entry 没有加载的模块不做判断：`:as` / `:refer` 指向未加载命名空间的名字，以及带点号前缀的全名（如 `respo.dom/DomElement`）保持原样。不带点号的前缀必须是 `:as` 别名，拼错的别名同样报错。
 
+### trait 不能当类型
+
+schema、`hint-fn` 和 `assert-type` 里的类型名解析到普通 trait（`deftrait` 且没有 `:ffi`）时报 `E_TRAIT_AS_TYPE`。trait 描述能力而不是值类型，需要能力时写成泛型参数加约束：`Fn T (-> String) (:generics T) (:where $ T Labeled)`；运行期检查用 `assert-traits`。external-object trait 是宿主句柄的类型，不受此规则限制。
+
 ### Struct 构造完整性
 
 能够静态解析的 Struct 构造会在 macro 展开后的同一校验路径中检查字段数量、重复或未知的字面量字段名和字段值类型。不完整的 `%{} Point (:x 1)` 不再等到 native 执行或生成的 JS 才报错；默认严格检查使用现有 `W_FN_ARG_TYPE_MISMATCH` 定位到源码构造调用，并阻止生成应用产物。
