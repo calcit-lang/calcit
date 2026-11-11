@@ -75,6 +75,17 @@ calcit config set feature-policy.state error
 calcit config set feature-policy.io error
 ```
 
+## 批量补声明
+
+`--check-only` 只报告当前缺声明的函数；给它们补上 feature 后，调用它们的函数才会在下一轮报出来。`calcit fix --rule effect-features-v1` 从编译结果一次算到不动点，给所有带 `Fn` schema 的项目函数补齐缺少的 `:state` / `:io`：
+
+```bash
+calcit fix --rule effect-features-v1 --format json
+calcit fix --rule effect-features-v1 --apply --expect-revision <revision>
+```
+
+每条建议的 `origin_chain` 说明原因：`direct-effect` 是函数体自己的操作，`dependency` 是用到的另一个定义。`--ns` / `--def` 只筛选输出的建议，传递关系仍按整个项目计算。规则只添加 feature，不删除已有声明，也不修改 lambda 自己的 `hint-fn`。
+
 ## `dbg`
 
 `dbg` 打印表达式的源码和值，原样返回值，不算 `:io`，使用它的函数不需要声明：

@@ -525,10 +525,11 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
+  let effect_features = selected_rules.contains(&EFFECT_FEATURES_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule = semantic_refactor || schema_synthesis || optional_parameters || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
-  let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || optional_parameters {
+  let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || optional_parameters || effect_features {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
@@ -552,6 +553,11 @@ pub(crate) fn handle_fix_command(
         | NOMINAL_WRITE_PROOF_RULE
     )
   });
+  // Features propagate to callers, so the plan needs every typed project
+  // function's summary, not only the selected ones.
+  if effect_features && !validation_only {
+    runner::preprocess::start_effect_summaries();
+  }
   let warnings = if selected_rules.contains(&CORE_ABSENCE_RULE) && !validation_only {
     // Old arities can fail before a migration plan exists. Retain those errors
     // as review diagnostics; missing compiler evidence cannot authorize a fix.
@@ -735,6 +741,10 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_ABSENCE_RULE) {
     suggestions.extend(absence::plan(&source_snapshot, snapshot_file, &selected_definitions)?);
+  }
+  if effect_features && !validation_only {
+    let summaries = runner::preprocess::take_effect_summaries();
+    suggestions.extend(effect_features::plan(options, &source_snapshot, snapshot_file, &summaries)?);
   }
   if selected_rules.contains(&REDUNDANT_HINT_FN_RULE) {
     suggestions.extend(plan_redundant_hint_fn_fixes(
@@ -1407,13 +1417,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | OPTIONAL_PARAMETERS_RULE
         | CORE_ABSENCE_RULE
         | REDUNDANT_HINT_FN_RULE
+        | EFFECT_FEATURES_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`, `{REDUNDANT_HINT_FN_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`, `{REDUNDANT_HINT_FN_RULE}`, `{EFFECT_FEATURES_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1462,6 +1473,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_ABSENCE_RULE
         | REDUNDANT_HINT_FN_RULE
+        | EFFECT_FEATURES_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1479,6 +1491,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
         REDUNDANT_HINT_FN_RULE => REDUNDANT_HINT_FN_RULE,
+        EFFECT_FEATURES_RULE => EFFECT_FEATURES_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1535,6 +1548,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
       evidence_source: "current-diagnostic",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
+    EFFECT_FEATURES_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: EFFECT_FEATURES_DIAGNOSTIC,
+      evidence_source: "compiled-effect-summary",
       lifecycle: "current-semantics",
       source_version_required: false,
     },
@@ -2071,6 +2091,8 @@ fn plan_definition_rename(
 }
 
 mod absence;
+mod effect_features;
+use effect_features::{EFFECT_FEATURES_DIAGNOSTIC, EFFECT_FEATURES_RULE};
 mod compiler_review;
 mod local_rename;
 mod macro_context;

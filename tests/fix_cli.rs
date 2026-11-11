@@ -11417,6 +11417,65 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
 }
 
 #[test]
+fn effect_features_rule_adds_missing_features_through_callers() {
+  // `--check-only` only reports the first layer (step-a, read-store); the
+  // fix solves propagation to a fixpoint so one apply leaves no notes (#2710).
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/effect-features-fix.cirru", &snapshot).unwrap();
+  let before = fs::read(&snapshot).unwrap();
+
+  let base = ["fix", "--rule", "effect-features-v1", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "preview effect feature fixes");
+  let report = parse_stdout(&preview);
+  let mut planned: Vec<(String, String)> = report["data"]["suggestions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|suggestion| {
+      assert_eq!(suggestion["applicability"], "machine-applicable");
+      assert_eq!(suggestion["path"], "schema");
+      let features = suggestion["replacement"]["value"].to_string();
+      (suggestion["definition"].as_str().unwrap().to_owned(), features)
+    })
+    .collect();
+  planned.sort();
+  let names: Vec<&str> = planned.iter().map(|(definition, _)| definition.as_str()).collect();
+  assert_eq!(
+    names,
+    [
+      "effect-features-fix.main/both",
+      "effect-features-fix.main/main!",
+      "effect-features-fix.main/read-store",
+      "effect-features-fix.main/step-a",
+      "effect-features-fix.main/step-b",
+    ],
+    "{report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview is read-only");
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply effect feature fixes");
+  let after = fs::read_to_string(&snapshot).unwrap();
+  assert_eq!(after.matches("(:features :io :state)").count(), 2, "both and main!:\n{after}");
+  assert_eq!(after.matches("(:features :io)").count(), 3, "log-line, step-a, step-b:\n{after}");
+  assert!(after.contains("Fn (-> Number) (:features :state)"), "{after}");
+  assert!(after.contains("Fn Number (-> Number)\n"), "pure stays unchanged:\n{after}");
+
+  let recheck = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&recheck, "fixed project checks");
+  assert!(!String::from_utf8_lossy(&recheck.stderr).contains("FEATURE_REQUIRED"));
+}
+
+#[test]
 fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   // Hints on lambdas passed straight to a typed callback slot, returned as a
   // declared `Fn` result, or bound once by `let` (#2637) repeat the signature

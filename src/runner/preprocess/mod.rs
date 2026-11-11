@@ -29,7 +29,8 @@ pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundan
 use crate::calcit::NullableOrigin;
 pub use broad_type_evidence::push_broad_type_advisory;
 pub use effect_features::{
-  DBG_IN_ENTRY_ERROR, DBG_IN_ENTRY_WARNING, IO_FEATURE_ERROR, IO_FEATURE_WARNING, STATE_FEATURE_ERROR, STATE_FEATURE_WARNING,
+  DBG_IN_ENTRY_ERROR, DBG_IN_ENTRY_WARNING, EffectSummary, IO_FEATURE_ERROR, IO_FEATURE_WARNING, STATE_FEATURE_ERROR,
+  STATE_FEATURE_WARNING, start_effect_summaries, take_effect_summaries,
 };
 use js_ffi::*;
 pub(crate) use js_ffi::{is_host_value_type, trait_is_external_object};

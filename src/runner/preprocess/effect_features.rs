@@ -25,7 +25,7 @@
 //! The check runs on the preprocessed definition, so macro expansions are
 //! already resolved to `Proc`, `Syntax`, `Registered` and `Import` heads.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::calcit::{
@@ -134,6 +134,38 @@ fn schema_effects(schema: &CalcitTypeAnnotation) -> HashSet<Effect> {
 struct Scope {
   owner: String,
   declared: HashSet<Effect>,
+  /// The definition's own scope, as opposed to a lambda with its own hint.
+  top: bool,
+}
+
+/// What a definition's own scope needs, before its schema is consulted:
+/// effects it causes itself, and the project definitions it uses whose
+/// features it inherits. `calcit fix --rule effect-features-v1` solves these
+/// to a fixpoint.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EffectSummary {
+  pub state: bool,
+  pub io: bool,
+  pub deps: BTreeSet<(Arc<str>, Arc<str>)>,
+}
+
+/// Summaries keyed by `(namespace, definition)`.
+pub type EffectSummaries = HashMap<(Arc<str>, Arc<str>), EffectSummary>;
+
+static RECORDING: Mutex<Option<EffectSummaries>> = Mutex::new(None);
+
+/// Start collecting [`EffectSummary`] values for every checked definition.
+pub fn start_effect_summaries() {
+  *RECORDING.lock().expect("effect summaries") = Some(HashMap::new());
+}
+
+/// Stop collecting and return the summaries gathered since the last start.
+pub fn take_effect_summaries() -> EffectSummaries {
+  RECORDING.lock().expect("effect summaries").take().unwrap_or_default()
+}
+
+fn recording() -> bool {
+  RECORDING.lock().expect("effect summaries").is_some()
 }
 
 struct Checker<'a> {
@@ -147,6 +179,11 @@ struct Checker<'a> {
   /// Inside a block that ends with `raise`, where `eprintln` reports the failure.
   failure_report: bool,
   advisories: Vec<LocatedWarning>,
+  /// Collected for `calcit fix` when recording is on.
+  summary: Option<EffectSummary>,
+  /// Set while reporting a project definition's features: that need comes
+  /// from a dependency, not from this definition's own body.
+  via_dependency: bool,
 }
 
 /// Check one preprocessed top-level definition. Only `defn` roots are
@@ -161,7 +198,8 @@ pub(crate) fn check_definition(ns: &str, def: &str, resolved: &Calcit) -> Vec<Lo
   let state_policy = Effect::State.policy();
   let io_policy = Effect::Io.policy();
   let dbg_policy = program::configured_feature_policy(DBG_POLICY).unwrap_or(FeaturePolicy::Allow);
-  if state_policy == FeaturePolicy::Allow && io_policy == FeaturePolicy::Allow && dbg_policy == FeaturePolicy::Allow {
+  let record = recording();
+  if !record && state_policy == FeaturePolicy::Allow && io_policy == FeaturePolicy::Allow && dbg_policy == FeaturePolicy::Allow {
     return vec![];
   }
   let mut checker = Checker {
@@ -172,6 +210,8 @@ pub(crate) fn check_definition(ns: &str, def: &str, resolved: &Calcit) -> Vec<Lo
     dbg_reported: false,
     failure_report: false,
     advisories: vec![],
+    summary: record.then(EffectSummary::default),
+    via_dependency: false,
   };
   // Only a structured `Fn` schema can declare features; eval snippets and
   // untyped helpers have none and are not checked.
@@ -182,9 +222,15 @@ pub(crate) fn check_definition(ns: &str, def: &str, resolved: &Calcit) -> Vec<Lo
   let scope = Scope {
     owner: format!("{ns}/{def}"),
     declared: declared_effects(&signature.features),
+    top: true,
   };
   for item in items.iter().skip(3) {
     checker.walk(item, &scope, None);
+  }
+  if let Some(summary) = checker.summary.take()
+    && let Some(store) = RECORDING.lock().expect("effect summaries").as_mut()
+  {
+    store.insert((Arc::from(ns), Arc::from(def)), summary);
   }
   checker.advisories
 }
@@ -214,11 +260,18 @@ impl Checker<'_> {
           self.note_dbg(near);
           return;
         }
-        let declared = if import.ns.as_ref() == crate::calcit::CORE_NS {
+        let core = import.ns.as_ref() == crate::calcit::CORE_NS;
+        let declared = if core {
           core_def_effects(&import.def)
         } else {
+          if scope.top
+            && let Some(summary) = self.summary.as_mut()
+          {
+            summary.deps.insert((import.ns.clone(), import.def.clone()));
+          }
           schema_effects(program::lookup_def_schema(&import.ns, &import.def).as_ref())
         };
+        self.via_dependency = !core;
         for effect in [Effect::State, Effect::Io] {
           if declared.contains(&effect) {
             self.require(
@@ -229,6 +282,7 @@ impl Checker<'_> {
             );
           }
         }
+        self.via_dependency = false;
       }
       Calcit::List(items) => self.walk_list(items, scope, near),
       _ => {}
@@ -349,6 +403,7 @@ impl Checker<'_> {
         let inner = Scope {
           owner: format!("{} (lambda `{name}`)", scope.owner),
           declared,
+          top: false,
         };
         for item in body {
           self.walk(item, &inner, near);
@@ -400,6 +455,15 @@ impl Checker<'_> {
   }
 
   fn require(&mut self, scope: &Scope, effect: Effect, trigger: &str, near: Option<&NodeLocation>) {
+    if scope.top
+      && !self.via_dependency
+      && let Some(summary) = self.summary.as_mut()
+    {
+      match effect {
+        Effect::State => summary.state = true,
+        Effect::Io => summary.io = true,
+      }
+    }
     if scope.declared.contains(&effect) || !self.reported.insert((scope.owner.clone(), effect)) {
       return;
     }
@@ -428,7 +492,7 @@ impl Checker<'_> {
       location,
       Some(code.to_owned()),
       Some(format!(
-        "`:state` / `:io` propagate to callers; set `:feature-policy` `:{feature}` on the entry to control this check"
+        "`:state` / `:io` propagate to callers; `calcit fix --rule effect-features-v1` adds every missing one at once; set `:feature-policy` `:{feature}` on the entry to control this check"
       )),
     ));
   }
