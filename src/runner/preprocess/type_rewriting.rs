@@ -23,7 +23,7 @@ use crate::calcit::{
   ImportInfo, LocatedWarning,
 };
 
-use super::{ScopeTypes, core_import, gen_check_warning, lift_option_field_payload};
+use super::{ScopeTypes, core_import, gen_check_warning_code, lift_option_field_payload};
 
 // ---------------------------------------------------------------------------
 // Unified argument rewriting loop
@@ -195,11 +195,12 @@ fn try_rewrite_single_map_to_struct(
   for chunk in map_items.chunks(2) {
     if let Calcit::Tag(key) = &chunk[0] {
       if !struct_def.fields.iter().any(|f| f == key) {
-        gen_check_warning(
+        gen_check_warning_code(
           format!(
             "[Error] map-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct, at {file_ns}/{def_name}",
             arg_idx + 1,
           ),
+          "E_UNKNOWN_STRUCT_FIELD",
           file_ns,
           check_warnings,
         );
@@ -207,12 +208,13 @@ fn try_rewrite_single_map_to_struct(
       }
       provided_fields.insert(key.to_owned(), chunk[1]);
     } else {
-      gen_check_warning(
+      gen_check_warning_code(
         format!(
           "[Error] map-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
           arg_idx + 1,
           chunk[0]
         ),
+        "E_STRUCT_CONSTRUCTOR_ARGS",
         file_ns,
         check_warnings,
       );
@@ -285,12 +287,13 @@ fn try_rewrite_single_loose_struct_to_struct(
   for chunk in items.chunks(2) {
     if let Calcit::Tag(key) = &chunk[0] {
       if !struct_def.fields.iter().any(|f| f == key) {
-        gen_check_warning(
+        gen_check_warning_code(
           format!(
             "[Error] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct `{}`, at {file_ns}/{def_name}",
             arg_idx + 1,
             struct_def.name,
           ),
+          "E_UNKNOWN_STRUCT_FIELD",
           file_ns,
           check_warnings,
         );
@@ -298,12 +301,13 @@ fn try_rewrite_single_loose_struct_to_struct(
       }
       provided_fields.insert(key.to_owned(), chunk[1]);
     } else {
-      gen_check_warning(
+      gen_check_warning_code(
         format!(
           "[Error] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
           arg_idx + 1,
           chunk[0]
         ),
+        "E_STRUCT_CONSTRUCTOR_ARGS",
         file_ns,
         check_warnings,
       );
@@ -366,11 +370,12 @@ fn try_rewrite_single_enum_to_named_enum(
 
   // Validate: the enum literal needs at least a tag
   if arg_list.len() < 2 {
-    gen_check_warning(
+    gen_check_warning_code(
       format!(
         "[Error] enum-to-named-enum rewrite skipped for `{fn_name}` arg {}: enum literal has no tag, at {file_ns}/{def_name}",
         arg_idx + 1,
       ),
+      "E_ENUM_CONSTRUCTOR_MISSING_TAG",
       file_ns,
       check_warnings,
     );
@@ -383,11 +388,12 @@ fn try_rewrite_single_enum_to_named_enum(
     let variants = enum_def.variants();
     if !variants.iter().any(|v| v.tag.ref_str() == tag_str) {
       let variant_names: Vec<&str> = variants.iter().map(|v| v.tag.ref_str()).collect();
-      gen_check_warning(
+      gen_check_warning_code(
         format!(
           "[Error] Enum `{}` does not have variant `:{tag_str}`. Available variants: {variant_names:?}, at {file_ns}/{def_name}",
           enum_def.name(),
         ),
+        "E_ENUM_TAG_UNKNOWN",
         file_ns,
         check_warnings,
       );

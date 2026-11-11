@@ -539,6 +539,8 @@ jobs:
           node-version: 24
       - name: Verify documentation deployment lifecycle
         run: node --test scripts/docs-deploy.test.mjs
+      - name: Check diagnostic code index is in sync with src/
+        run: node scripts/diagnostic-codes.mjs --check
 
       - uses: actions/download-artifact@v8.0.2
         with:

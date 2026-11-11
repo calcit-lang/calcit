@@ -1018,7 +1018,7 @@ pub(crate) fn check_proc_arg_types(
       } else {
         format!("{min_count}~{max_count}")
       };
-      super::gen_check_warning_with_location(
+      super::gen_check_warning_with_location_code(
         format!(
           "[Error] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
           proc.as_ref(),
@@ -1027,12 +1027,13 @@ pub(crate) fn check_proc_arg_types(
           proc.as_ref(),
           args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
         ),
+        "E_PROC_ARITY",
         arity_location(),
         check_warnings,
       );
     }
   } else if actual_count < min_count {
-    super::gen_check_warning_with_location(
+    super::gen_check_warning_with_location_code(
       format!(
         "[Error] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
         proc.as_ref(),
@@ -1041,6 +1042,7 @@ pub(crate) fn check_proc_arg_types(
         proc.as_ref(),
         args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
       ),
+      "E_PROC_ARITY",
       arity_location(),
       check_warnings,
     );
