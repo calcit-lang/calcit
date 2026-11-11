@@ -37,6 +37,10 @@ calcit edit schema 'app.main/main!' --add-feature io
 
 调试用的 `println` 改成 `dbg`，它不算 `:io`；发布 entry 可以用 `:feature-policy {:dbg :error}` 禁止残留的 `dbg`。读全局 Ref 的渲染函数，优先改成把值作为参数传入。完整规则见 [效果边界](../features/effects.md)。
 
+## 0.42.0 `analyze program-diff` 用源码写法显示 schema
+
+`calcit analyze program-diff` 的树形输出里，schema 改为显示 Snapshot 文件中 `quote $` 后的写法（如 `"Fn String (-> String)" -> "Fn Number (-> String)"`），不再显示规范化的 `(:: 'Fn ({} (:args ...)))` EDN。变更判定和 `--format edn/json` 的证据字段不变；无法用紧凑写法往返的 schema 仍显示 EDN。
+
 ## 0.41.1 `defstruct` / `defenum` 用 `(:generics …)` / `(:where …)` 子句（#2700）
 
 数据定义的泛型参数和约束改成和 `Fn` 一样的子句写法，放在名字之后、字段或变体之前：
