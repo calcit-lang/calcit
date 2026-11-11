@@ -615,7 +615,7 @@ pub(super) fn solve(
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
           "recur argument expects independently inferred payload evidence; a local input remains unresolved",
-          "W_RECUR_ARG_TYPE_MISMATCH",
+          "E_RECUR_ARG_TYPE_MISMATCH",
           ctx.call_stack,
           ctx.call_location.clone().or_else(|| args.first().and_then(Calcit::get_location)),
         ));
@@ -634,7 +634,7 @@ fn constraint_error(ctx: &PreprocessContext) -> CalcitErr {
   CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     "recur argument expects a finite consistent payload type; its constraints contain an incompatible or recursive substitution",
-    "W_RECUR_ARG_TYPE_MISMATCH",
+    "E_RECUR_ARG_TYPE_MISMATCH",
     ctx.call_stack,
     ctx.call_location.clone(),
   )

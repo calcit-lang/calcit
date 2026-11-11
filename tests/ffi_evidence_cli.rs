@@ -282,7 +282,7 @@ fn strict_workflow_reuses_ffi_boundary_evidence() {
       .as_array()
       .unwrap()
       .iter()
-      .any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH")
+      .any(|item| item["code"] == "E_FN_RETURN_TYPE_MISMATCH")
   );
   let boundaries = report["data"]["workflow"]["review_required"]["ffi_boundaries"]
     .as_array()
@@ -303,7 +303,7 @@ fn strict_workflow_reuses_ffi_boundary_evidence() {
       .as_array()
       .unwrap()
       .iter()
-      .any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH" && item["definition"] == definition)
+      .any(|item| item["code"] == "E_FN_RETURN_TYPE_MISMATCH" && item["definition"] == definition)
   };
   assert!(
     !return_mismatch("ffi-strict.main/as-node"),

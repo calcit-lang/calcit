@@ -60,15 +60,15 @@ fn callbacks_declared_over_open_lists_are_rejected() {
   for (call, code) in [
     (
       "map m $ fn (pair) (hint-fn $ Fn (List Dynamic) (-> $ List Dynamic)) pair",
-      "W_FN_ARG_TYPE_MISMATCH",
+      "E_FN_ARG_TYPE_MISMATCH",
     ),
     (
       ".filter m $ fn (pair) (hint-fn $ Fn (List String) (-> Bool)) true",
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
     ),
     (
       "map m $ fn (pair) (hint-fn $ Fn (Tuple Tag Number) (-> $ List Dynamic)) ([] (&list:nth pair 0) 2)",
-      "W_FN_ARG_TYPE_MISMATCH",
+      "E_FN_ARG_TYPE_MISMATCH",
     ),
   ] {
     let snippet = format!("let\n    m $ &{{}} :a 1\n  {call}\n");

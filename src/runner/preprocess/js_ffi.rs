@@ -114,21 +114,21 @@ pub(super) fn require_js_ffi_feature(
   }
 
   let message = format!(
-    "[Warn] {operation} used in {file_ns}/{def_name} without `:js-ffi` feature in schema — isolate host operations in a binding function with `:features $ #{{}} :js-ffi`; read `calcit docs read js-interop.md --full` for the adapter and capability policy"
+    "[Error] {operation} used in {file_ns}/{def_name} without `:js-ffi` feature in schema — isolate host operations in a binding function with `:features $ #{{}} :js-ffi`; read `calcit docs read js-interop.md --full` for the adapter and capability policy"
   );
   if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.replacen("[Warn]", "[Error]", 1),
+      message.clone(),
       "E_JS_FFI_FEATURE_REQUIRED",
       call_stack,
       location,
     ));
   }
   if let Some(location) = location {
-    gen_check_warning_with_location_code(message, "W_JS_FFI_FEATURE_REQUIRED", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_JS_FFI_FEATURE_REQUIRED", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_JS_FFI_FEATURE_REQUIRED", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_JS_FFI_FEATURE_REQUIRED", file_ns, check_warnings);
   }
   Ok(())
 }
@@ -279,14 +279,14 @@ pub(super) fn reject_or_warn_on_nullable_js_ffi_dereference(
     _ => "JS FFI access".to_owned(),
   };
   let message = format!(
-    "[Warn] JsNullish FFI value is dereferenced by `{operation}` in {file_ns}/{def_name}; use optional access, narrow with `js-present?`/`js-nullish?`, then validate or explicitly `unsafe-coerce` the opaque JsObject value"
+    "[Error] JsNullish FFI value is dereferenced by `{operation}` in {file_ns}/{def_name}; use optional access, narrow with `js-present?`/`js-nullish?`, then validate or explicitly `unsafe-coerce` the opaque JsObject value"
   );
 
   let location = head.get_location().or_else(|| receiver.get_location());
   if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.replacen("[Warn]", "[Error]", 1),
+      message.clone(),
       "E_JS_FFI_NULLABLE_DEREF",
       call_stack,
       location,
@@ -294,9 +294,9 @@ pub(super) fn reject_or_warn_on_nullable_js_ffi_dereference(
   }
 
   if let Some(location) = location {
-    gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_DEREF", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_JS_FFI_NULLABLE_DEREF", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_JS_FFI_NULLABLE_DEREF", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_JS_FFI_NULLABLE_DEREF", file_ns, check_warnings);
   }
   Ok(())
 }
@@ -371,11 +371,11 @@ pub(super) fn check_typed_js_field_operation(
   }
   let Some((field_trait, field_type)) = find_trait_field_type(&external_traits, field_name) else {
     let message = format!(
-      "[Warn] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; check the actual host and receiver type, use a minimal external-object capability that declares this field, and validate the host with `js-cast` at the `:js-ffi` boundary; read `calcit docs read js-interop.md --full` for capability contracts"
+      "[Error] `{operation}` cannot access undeclared external-object field `:{field_name}` in {file_ns}/{def_name}; check the actual host and receiver type, use a minimal external-object capability that declares this field, and validate the host with `js-cast` at the `:js-ffi` boundary; read `calcit docs read js-interop.md --full` for capability contracts"
     );
     gen_check_warning_code_at(
       message,
-      "W_JS_FFI_UNKNOWN_FIELD",
+      "E_JS_FFI_UNKNOWN_FIELD",
       file_ns,
       key.get_location().or_else(|| head.get_location()),
       check_warnings,
@@ -388,19 +388,19 @@ pub(super) fn check_typed_js_field_operation(
     && !external_trait_field_is_writable(field_trait, field_name)
   {
     let message = format!(
-      "[Warn] `js-set` cannot write read-only external-object field `:{field_name}` in {file_ns}/{def_name}; add `:writable $ #{{}} :{field_name}` to that trait's `:ffi` metadata or expose a mutating method instead; read `calcit docs read js-interop.md --full` for external-object contracts"
+      "[Error] `js-set` cannot write read-only external-object field `:{field_name}` in {file_ns}/{def_name}; add `:writable $ #{{}} :{field_name}` to that trait's `:ffi` metadata or expose a mutating method instead; read `calcit docs read js-interop.md --full` for external-object contracts"
     );
     let location = key.get_location().or_else(|| head.get_location());
     if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
-        message.replacen("[Warn]", "[Error]", 1),
+        message.clone(),
         "E_JS_FFI_FIELD_READONLY",
         call_stack,
         location,
       ));
     }
-    gen_check_warning_code_at(message, "W_JS_FFI_FIELD_READONLY", file_ns, location, check_warnings);
+    gen_check_warning_code_at(message, "E_JS_FFI_FIELD_READONLY", file_ns, location, check_warnings);
   }
   if operation == "js-set"
     && let Some(value) = args.get(2)
@@ -408,13 +408,13 @@ pub(super) fn check_typed_js_field_operation(
     && !value_type.as_ref().is_compatible_with(field_type.as_ref())
   {
     let message = format!(
-      "[Warn] `js-set` field `:{field_name}` expects {}, got {} in {file_ns}/{def_name}",
+      "[Error] `js-set` field `:{field_name}` expects {}, got {} in {file_ns}/{def_name}",
       field_type.to_brief_string(),
       value_type.to_brief_string()
     );
     gen_check_warning_code_at(
       message,
-      "W_JS_FFI_FIELD_TYPE_MISMATCH",
+      "E_JS_FFI_FIELD_TYPE_MISMATCH",
       file_ns,
       value.get_location().or_else(|| head.get_location()),
       check_warnings,
@@ -536,13 +536,13 @@ pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(
   }
 
   let message = format!(
-    "[Warn] `{operation}` consumes a JsNullish FFI value in {file_ns}/{def_name}; use `js-nullish?` or `js-present?` so host nullability stays explicit"
+    "[Error] `{operation}` consumes a JsNullish FFI value in {file_ns}/{def_name}; use `js-nullish?` or `js-present?` so host nullability stays explicit"
   );
   let location = head.get_location().or_else(|| value.get_location());
   if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.replacen("[Warn]", "[Error]", 1),
+      message.clone(),
       "E_JS_FFI_NULLABLE_PREDICATE",
       call_stack,
       location,
@@ -550,9 +550,9 @@ pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(
   }
 
   if let Some(location) = location {
-    gen_check_warning_with_location_code(message, "W_JS_FFI_NULLABLE_PREDICATE", location, check_warnings);
+    gen_check_warning_with_location_code(message, "E_JS_FFI_NULLABLE_PREDICATE", location, check_warnings);
   } else {
-    gen_check_warning_code(message, "W_JS_FFI_NULLABLE_PREDICATE", file_ns, check_warnings);
+    gen_check_warning_code(message, "E_JS_FFI_NULLABLE_PREDICATE", file_ns, check_warnings);
   }
   Ok(())
 }

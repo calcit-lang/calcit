@@ -90,7 +90,7 @@ try {
     const result = spawnSync(binary, [bad, "--init-fn", "app.main/bad", "--check-only"], { encoding: "utf8", timeout: 60000 });
     assert.ifError(result.error);
     assert.equal(result.status, 1, `${label} must fail closed:\n${result.stdout}\n${result.stderr}`);
-    assert.match(result.stderr, /E_WHOLE_DYNAMIC_PUBLIC_SCHEMA|W_PROC_ARG_TYPE_MISMATCH|expects type|warnings during preprocessing/);
+    assert.match(result.stderr, /E_WHOLE_DYNAMIC_PUBLIC_SCHEMA|E_PROC_ARG_TYPE_MISMATCH|expects type|errors during preprocessing/);
     {
       const original = await readFile(bad, "utf8");
       const coverage = JSON.parse(run(bad, "analyze", "weak-types", "--only", "coverage", "--ns", "app.main", "--format", "json"));

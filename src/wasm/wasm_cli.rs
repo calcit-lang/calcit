@@ -141,9 +141,9 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
 fn reject_preprocess_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>) -> Result<(), String> {
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
-    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    eprintln!("\n{} ({} errors)", "Errors:".red(), warnings.len());
     LocatedWarning::print_list(&warnings);
-    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
+    return Err(format!("Found {} errors during preprocessing", warnings.len()));
   }
 
   Ok(())

@@ -98,8 +98,8 @@ try {
         "--backend", "native,js,wasm"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       for (const [source, diagnostic] of [
-        [".foldl ([] ([] 1 2) ([] 3 4)) 0\n  fn (acc pair)\n    &+ acc pair", /W_PROC_ARG_TYPE_MISMATCH/],
-        [".foldl ([] 1 2) 0\n  fn (acc item)\n    str acc item", /W_FN_RETURN_TYPE_MISMATCH/],
+        [".foldl ([] ([] 1 2) ([] 3 4)) 0\n  fn (acc pair)\n    &+ acc pair", /E_PROC_ARG_TYPE_MISMATCH/],
+        [".foldl ([] 1 2) 0\n  fn (acc item)\n    str acc item", /E_FN_RETURN_TYPE_MISMATCH/],
       ]) {
         const rejected = spawnSync(binary, ["eval", source], options);
         if (rejected.error) throw rejected.error;
@@ -649,7 +649,7 @@ try {
         const output = join(project, `sliceable-${label}-js`);
         const diagnosticPattern = label === "missing-trait-start" || label === "extra-trait-end"
           ? /E_TRAIT_CALL_ARITY|&trait-call method expects .*arguments/
-          : /E_CALL_ARGUMENT_(?:MISMATCH|UNPROVEN)|W_(?:LOCAL_FN|FN|PROC|METHOD)_ARG_TYPE_MISMATCH/;
+          : /E_CALL_ARGUMENT_(?:MISMATCH|UNPROVEN)|E_(?:LOCAL_FN|FN|PROC|METHOD)_ARG_TYPE_MISMATCH/;
         for (const args of [
           ["--check-only", "--all-defs"],
           ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "json"],
@@ -779,7 +779,7 @@ try {
           source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'AnyEnum)\n    :: true $ Option :some 1",
         },
         {
-          label: "bound-missing-impl", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
+          label: "bound-missing-impl", diagnostic: /E_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
           source: "defn producer (input)\n  let\n      transform $ fn (value)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n        , value\n    transform 1\n    , &unit",
         },
         ...["T", "U"].map(inner => ({
@@ -796,13 +796,13 @@ try {
           source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)\n        .slice other 0 (Option :some 1)\n    transform value\n    , &unit",
         },
         {
-          label: "bound-hof-missing-caller-capability", diagnostic: /W_FN_ARG_TYPE_MISMATCH/,
+          label: "bound-hof-missing-caller-capability", diagnostic: /E_FN_ARG_TYPE_MISMATCH/,
           strictDiagnostic: /E_CALL_ARGUMENT_MISMATCH/, returnProof: false,
           schema: "quote $ Fn C (-> Unit) (:generics C)",
           source: "defn producer (value)\n  map ([] value) $ fn (item)\n    hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n    , item\n  , &unit",
         },
         {
-          label: "bound-missing-second-capability", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, returnProof: false,
+          label: "bound-missing-second-capability", diagnostic: /E_GENERIC_WHERE_BOUND_MISMATCH/, returnProof: false,
           schema: "quote $ Fn T (-> Unit) (:generics T) (:where $ T Debug)",
           source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'U) (:return 'U) (:generics $ [] 'U) (:where $ {} ('U $ [] Sliceable Debug))\n        , other\n    transform value\n    , &unit",
         },
@@ -830,7 +830,7 @@ try {
         },
         {
           // The old runtime rejection of a receiver without slice capabilities.
-          label: "rest-requires-sliceable-countable", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
+          label: "rest-requires-sliceable-countable", diagnostic: /E_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
           source: "defn producer (value)\n  rest 1\n  , &unit",
         },
         {
@@ -946,7 +946,7 @@ try {
       assert.deepEqual(descriptorType.data.static_methods ?? [], [], "descriptors do not advertise instance methods");
       assert.deepEqual(await readFile(traitSnapshot), traitSource);
       const descriptorSnapshot = join(project, "trait-descriptor.cirru");
-      const descriptorDiagnostic = /W_GENERIC_WHERE_BOUND_MISMATCH|W_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|unknown method `\.greeting`/;
+      const descriptorDiagnostic = /E_GENERIC_WHERE_BOUND_MISMATCH|E_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|unknown method `\.greeting`/;
       for (const [label, expression, result] of [
         ["direct", "describe Greeting", "'String"],
         ["local-alias", "let ((descriptor Greeting)) (describe descriptor)", "'String"],
@@ -1184,7 +1184,7 @@ try {
       for (const name of ["wrong-element", "wrong-error", "wrong-identity", "wrong-proc-alias", "opaque-definitions", "opaque-proc-alias", "wrong-field"]) {
         const rejected = spawnSync(binary, [directorySnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
         assert.notEqual(rejected.status, 0, `${name}: do not borrow a concrete return declaration`);
-        assert.match(rejected.stdout + rejected.stderr, /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH/);
+        assert.match(rejected.stdout + rejected.stderr, /E_FN_RETURN_UNPROVEN|E_FN_RETURN_TYPE_MISMATCH/);
       }
       execFileSync(binary, ["src/cirru/calcit-core.cirru", "test", "calcit.core/fs:path", "--tag", "native", "--tag", "file", "--require-match"], options);
 
@@ -1298,7 +1298,7 @@ try {
         assert.ifError(rejected.error);
         assert.notEqual(rejected.status, 0, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
         assert.match(rejected.stdout + rejected.stderr,
-          /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH|E_SPREAD_TYPE_MISMATCH|E_JS_FFI_FEATURE_REQUIRED|E_CALL_ARGUMENT_UNPROVEN/);
+          /E_FN_RETURN_UNPROVEN|E_FN_RETURN_TYPE_MISMATCH|E_SPREAD_TYPE_MISMATCH|E_JS_FFI_FEATURE_REQUIRED|E_CALL_ARGUMENT_UNPROVEN/);
         assert.deepEqual(await readFile(arraySnapshot), before, `${name}: a rejected proof must not mutate source`);
       }
       // #2053: actual Unit returns, proof, silent output, and host failures agree.
@@ -1390,7 +1390,7 @@ try {
           if (result.error) throw result.error;
           assert.equal(result.status, rejected ? 1 : 0, `${name}: preserve open input evidence\n${result.stdout}\n${result.stderr}`);
           if (rejected) assert.match(`${result.stdout}\n${result.stderr}`,
-            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
         }
         assert.deepEqual(await readFile(snapshot), before);
       }
@@ -1430,8 +1430,8 @@ try {
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}: reject an unproven updater contract\n${rejected.stdout}\n${rejected.stderr}`);
         const expectedDiagnostic = name === "wrong-known-output"
-          ? /W_FN_RETURN_TYPE_MISMATCH/
-          : /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/;
+          ? /E_FN_RETURN_TYPE_MISMATCH/
+          : /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/;
         assert.match(`${rejected.stdout}\n${rejected.stderr}`, expectedDiagnostic);
         const checked = spawnSync(binary, [snapshot, "--init-fn", "app.update-in-proof/rejected",
           "--reload-fn", "app.update-in-proof/rejected", "--check-only"], options);
@@ -1475,7 +1475,7 @@ try {
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name} style=${style}\n${rejected.stdout}\n${rejected.stderr}`);
           assert.match(`${rejected.stdout}\n${rejected.stderr}`,
-            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|W_FN_ARG_TYPE_MISMATCH/,
+            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|E_FN_ARG_TYPE_MISMATCH/,
             `${name} style=${style}: missing selector contract diagnostic`);
           if (name.startsWith("open-scalar")) {
             for (const mode of [["--check-only"], [], ["js"], ["wasm"], ["wasi"]]) {
@@ -1599,7 +1599,7 @@ try {
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name} threaded=${threaded}\n${rejected.stdout}\n${rejected.stderr}`);
           assert.match(`${rejected.stdout}\n${rejected.stderr}`,
-            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|W_FN_ARG_TYPE_MISMATCH/,
+            /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|E_FN_ARG_TYPE_MISMATCH/,
             `${name} threaded=${threaded}: missing callback contract diagnostic`);
           assert.deepEqual(await readFile(snapshot), before);
         }
@@ -1644,7 +1644,7 @@ try {
         const rejected = spawnSync(binary, [snapshot, "--init-fn", `app.empty-evidence/${name}`, "--check-only"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_RESET_ARG_TYPE_MISMATCH/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_RESET_ARG_TYPE_MISMATCH/);
       }
       for (const name of ["narrowed-assignment", "aliased-assignment", "shadowed-assignment", "dead-branch-assignment", "match-peer-assignment", "shadowed-match-assignment"]) {
         const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
@@ -1720,7 +1720,7 @@ try {
         assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
         const report = JSON.parse(rejected.stdout);
         assert.ok(report.diagnostics.some(diagnostic =>
-          /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/.test(diagnostic.code)),
+          /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_FN_ARG_TYPE_MISMATCH/.test(diagnostic.code)),
         `${name}: ${rejected.stdout}`);
       }
       assert.deepEqual(await readFile(snapshot), enumGenericOriginal);
@@ -1744,7 +1744,7 @@ try {
           "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
       }
       assert.deepEqual(await readFile(snapshot), pairsMapOriginal);
       // #1961: preprocessing proves the same nested literal spreads as lowering,
@@ -1766,8 +1766,8 @@ try {
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
         assert.match(`${rejected.stdout}\n${rejected.stderr}`, name === "nested-wrong-member"
-          ? /W_PROC_ARG_TYPE_MISMATCH/
-          : /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/);
+          ? /E_PROC_ARG_TYPE_MISMATCH/
+          : /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_FN_ARG_TYPE_MISMATCH/);
       }
       assert.deepEqual(await readFile(snapshot), nestedSpreadOriginal);
       // Empty constructors prove a generic collection family without binding its
@@ -1804,8 +1804,8 @@ try {
             "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
-          await assertRejectedArtifacts(output, name, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_LOCAL_FN_ARG_TYPE_MISMATCH|E_RESET_ARG_TYPE_MISMATCH/);
+          await assertRejectedArtifacts(output, name, /E_LOCAL_FN_ARG_TYPE_MISMATCH|E_RESET_ARG_TYPE_MISMATCH/);
         }
       }
       assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
@@ -1827,9 +1827,9 @@ try {
           "--emit-path", output, ...mode], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_ARG_TYPE_MISMATCH|E_METHOD_ARG_TYPE_MISMATCH|E_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
         assert.deepEqual(await readFile(snapshot), nominalOriginal);
-        await assertRejectedArtifacts(output, "nominal callback origin", /W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+        await assertRejectedArtifacts(output, "nominal callback origin", /E_FN_ARG_TYPE_MISMATCH|E_METHOD_ARG_TYPE_MISMATCH|E_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
       }
       // Conditional exits retain their collection evidence independently of the condition.
       execFileSync(process.execPath, [
@@ -1869,10 +1869,10 @@ try {
           const rejected = spawnSync(binary, [snapshot, ...command], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
         }
-        await assertRejectedArtifacts(output, name, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH/, true);
+        await assertRejectedArtifacts(output, name, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|E_FN_ARG_TYPE_MISMATCH/, true);
       }
       const optionalCallableOriginal = await readFile(snapshot);
       for (const snippet of [
@@ -1886,7 +1886,7 @@ try {
           });
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${snippet}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.doesNotMatch(`${rejected.stdout}\n${rejected.stderr}`, /internal compiler error/);
           assert.deepEqual(await readFile(snapshot), optionalCallableOriginal);
         }
@@ -2091,7 +2091,7 @@ try {
       await copyFile(truthinessCore, effectsSnapshot);
       const effectsRun = (...args) => execFileSync(binary, [effectsSnapshot, ...args], options);
       // A typed Number condition is constant-truthy on purpose here, so the
-      // contract lives in a `calcit.core-*` namespace that W_CONSTANT_TRUTHY_CONDITION
+      // contract lives in a `calcit.core-*` namespace that E_CONSTANT_TRUTHY_CONDITION
       // leaves to the language's own backend tests.
       const bumpCount = ["let", [], ["reset!", "truthiness-count", ["inc", ["deref", "truthiness-count"]]]];
       const effectsTest = ["do",
@@ -2323,7 +2323,7 @@ try {
         } else {
           // A concrete mismatch can fail ordinary preprocessing before the proof
           // preview is produced. Require the actual return diagnostic and owner.
-          assert.match(rejected.stderr, /W_FN_RETURN_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
+          assert.match(rejected.stderr, /E_FN_RETURN_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
           assert.ok(rejected.stderr.includes(name), target);
         }
         assert.deepEqual(await readFile(envSnapshot), before);
@@ -2433,7 +2433,7 @@ try {
         if (rejected.stdout.trim()) {
           assert.ok(JSON.parse(rejected.stdout).diagnostics.some(d => d.code === "E_FN_RETURN_UNPROVEN" && d.definition === target), target);
         } else {
-          assert.match(rejected.stderr, /W_FN_RETURN_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
+          assert.match(rejected.stderr, /E_FN_RETURN_TYPE_MISMATCH|E_RESET_ARG_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
           assert.ok(rejected.stderr.includes(name), target);
         }
         assert.deepEqual(await readFile(resetSnapshot), before);
@@ -2527,7 +2527,7 @@ try {
         const sourceShapeConflict = label === "hint-cannot-invent-handler-parameters";
         const diagnostic = sourceShapeConflict
           ? /E_SCHEMA_DEF_MISMATCH/
-          : /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+          : /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|E_FN_RETURN_TYPE_MISMATCH|E_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
         const assertSourceShape = details => {
           if (!sourceShapeConflict) return;
           assert.match(details, /E_SCHEMA_REQUIRED_ARGS/);
@@ -2613,7 +2613,7 @@ try {
         run("edit", "schema", target, "--input-format", "cirru", "--code",
           "quote $ Fn (-> Number)");
         const original = await readFile(snapshot);
-        const diagnostic = /W_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|map-to-struct rewrite skipped/;
+        const diagnostic = /E_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|map-to-struct rewrite skipped/;
         for (const mode of [["--check-only"], [], ["js"]]) {
           const output = join(project, `nominal-${label}-${mode[0] ?? "native"}`);
           const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
@@ -2680,9 +2680,9 @@ try {
             "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), before);
-          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /E_FN_ARG_TYPE_MISMATCH/, true);
         }
       }
       for (const [label, parameters, argumentTypes, member] of [
@@ -2827,7 +2827,7 @@ try {
           "--def", "contextual-rejected", "--format", "edn"], options);
         if (audit.error) throw audit.error;
         assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
-        assert.match(`${audit.stdout}\n${audit.stderr}`, /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH/);
+        assert.match(`${audit.stdout}\n${audit.stderr}`, /E_FN_RETURN_UNPROVEN|E_FN_RETURN_TYPE_MISMATCH/);
         assert.deepEqual(await readFile(snapshot), original);
         // Ordinary compilation retains its migration policy for open returns,
         // while definite contradictions must fail on both existing backends.
@@ -2838,9 +2838,9 @@ try {
               "--emit-path", output, ...mode], options);
             if (rejected.error) throw rejected.error;
             assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
-            assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_RETURN_TYPE_MISMATCH/);
+            assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_TYPE_MISMATCH/);
             assert.deepEqual(await readFile(snapshot), original);
-            if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_RETURN_TYPE_MISMATCH/, true);
+            if (mode[0] === "js") await assertRejectedArtifacts(output, label, /E_FN_RETURN_TYPE_MISMATCH/, true);
           }
         }
       }
@@ -2890,9 +2890,9 @@ try {
             "--reload-fn", "test-struct.main/nullish-rejected", "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
-          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /E_FN_ARG_TYPE_MISMATCH/, true);
         }
       }
       await copyFile("src/cirru/calcit-core.cirru", snapshot);
@@ -2924,8 +2924,8 @@ try {
         "quote $ defstruct RequiredNumber (:value Number)");
       run("edit", "schema", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code", "quote 'StructDef");
       for (const [label, body, diagnostic] of [
-        ["wrong-scalar", "match (data-view |text) ((:string value) (number-only value)) (_ 0)", /W_FN_ARG_TYPE_MISMATCH/],
-        ["open-list-element", "match (data-view ([] 1)) ((:list items) (do (RequiredNumber :value (&list:nth items 0)) 0)) (_ 0)", /W_FN_ARG_TYPE_MISMATCH/],
+        ["wrong-scalar", "match (data-view |text) ((:string value) (number-only value)) (_ 0)", /E_FN_ARG_TYPE_MISMATCH/],
+        ["open-list-element", "match (data-view ([] 1)) ((:list items) (do (RequiredNumber :value (&list:nth items 0)) 0)) (_ 0)", /E_FN_ARG_TYPE_MISMATCH/],
         ["non-exhaustive", "match (data-view 1) ((:number value) value)", /non-exhaustive|not exhaustive|W_MATCH/],
       ]) {
         run("edit", "def", "calcit.data-view-replay/rejected", "--overwrite", "--input-format", "cirru", "--code",
@@ -2964,9 +2964,9 @@ try {
             "--reload-fn", "calcit.update-proof/rejected", "--emit-path", output, ...mode], options);
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${label}: ${result.stdout}\n${result.stderr}`);
-          assert.match(`${result.stdout}\n${result.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${result.stdout}\n${result.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), before);
-          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+          if (mode[0] === "js") await assertRejectedArtifacts(output, label, /E_FN_ARG_TYPE_MISMATCH/, true);
         }
       }
       run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
@@ -3178,7 +3178,7 @@ try {
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|W_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
         assert.deepEqual(await readFile(snapshot), original);
       }
       // A typed caller's name must not lend proof to a shadowing Dynamic local.
@@ -3321,7 +3321,7 @@ try {
         const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-fold-bad", "--format", "edn"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN|W_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN|E_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
         assert.deepEqual(await readFile(snapshot), original);
       }
       run("edit", "rm-def", "calcit.assert-evidence/open-fold-bad");
@@ -3648,9 +3648,9 @@ try {
       const rejected = [
         ...bad.map(expression => [expression, "E_ASSERT_TYPE_MISMATCH"]),
         ...openCalls.map(([expression]) => [expression, "E_CALL_ARGUMENT_UNPROVEN"]),
-        ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
-        ...badCalls.map(expression => [expression, "W_LOCAL_FN_ARG_TYPE_MISMATCH"]),
-        ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)))", "W_FN_ARG_TYPE_MISMATCH"],
+        ...badReturns.map(expression => [expression, "E_FN_RETURN_TYPE_MISMATCH"]),
+        ...badCalls.map(expression => [expression, "E_LOCAL_FN_ARG_TYPE_MISMATCH"]),
+        ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)))", "E_FN_ARG_TYPE_MISMATCH"],
         ["let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Unit)))))) (empty)", "E_NIL_FOR_UNIT"],
       ];
       for (const [expression, diagnostic] of rejected) {
@@ -3670,7 +3670,7 @@ try {
           assert.ok(diagnostics.includes("calcit.assert-evidence/run-tests"), diagnostics);
           if (diagnostic === "E_ASSERT_TYPE_MISMATCH") {
             assert.ok(diagnostics.includes("expected") && diagnostics.includes("got"), diagnostics);
-          } else if (diagnostic === "W_FN_RETURN_TYPE_MISMATCH") {
+          } else if (diagnostic === "E_FN_RETURN_TYPE_MISMATCH") {
             assert.ok(diagnostics.includes("declares return type") && diagnostics.includes("body returns"), diagnostics);
           } else if (diagnostic === "E_NIL_FOR_UNIT") {
             assert.ok(diagnostics.includes("declares Unit but returns nil"), diagnostics);
@@ -3681,7 +3681,7 @@ try {
           } else {
             assert.ok(diagnostics.includes("expects type") && diagnostics.includes("but got"), diagnostics);
           }
-          assert.ok(/preprocessing|warnings, (?:runner|codegen) blocked/.test(diagnostics), diagnostics);
+          assert.ok(/preprocessing|(?:warnings|errors), (?:runner|codegen) blocked/.test(diagnostics), diagnostics);
           if (mode.includes("wasm") || mode.includes("wasi")) {
             await assert.rejects(readFile(join(modeOutputs[index], "program.wasm")), { code: "ENOENT" });
           }
@@ -4024,7 +4024,7 @@ try {
           : name === "nonexhaustive-pre-dispatch-match" ? /match on `Option` is not exhaustive/
           : name === "duplicate-pre-dispatch-constructor-field" ? /duplicate field `:count`/
           : name === "unknown-pre-dispatch-constructor-variant" ? /enum `Option` does not have variant `:unknown`/
-          : ["recursive-pre-dispatch-slot", "indirect-recursive-pre-dispatch-slots"].includes(name) ? /W_RECUR_ARG_TYPE_MISMATCH/
+          : ["recursive-pre-dispatch-slot", "indirect-recursive-pre-dispatch-slots"].includes(name) ? /E_RECUR_ARG_TYPE_MISMATCH/
           : ["wrong-pre-dispatch-method", "wrong-static-literal-method", "wrong-static-expression-method"].includes(name) ? /unknown method `.unknown-method`/
           : name.startsWith("wrong-macro-result-") ? /E_MACRO_EXPANSION_EXPR_TYPE/
           : name.startsWith("wrong-macro-") ? /E_MACRO_INPUT_EXPR_TYPE/
@@ -4055,12 +4055,12 @@ try {
           assert.match(diagnostics, expectedDiagnostic);
           assert.match(diagnostics, /calcit.assert-evidence/);
           if (name.startsWith("raw-shape-")) {
-            assert.match(diagnostics, /W_FN_ARG_TYPE_MISMATCH/);
+            assert.match(diagnostics, /E_FN_ARG_TYPE_MISMATCH/);
             assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
               "resolved raw constructors must locate the source call");
           }
           if (name.startsWith("empty-ref-")) {
-            assert.match(diagnostics, /W_RESET_ARG_TYPE_MISMATCH/);
+            assert.match(diagnostics, /E_RESET_ARG_TYPE_MISMATCH/);
             const fixHint = /give the initializer explicit type context, e\.g\. `ref \$ assert-type \(Option :none\) \$ :: 'Option 'Number`/;
             if (name === "empty-ref-unannotated-write") assert.match(diagnostics, fixHint);
             else assert.doesNotMatch(diagnostics, fixHint);
@@ -4081,7 +4081,7 @@ try {
             : name.startsWith("unwrapped-node") ? "node"
             : name.startsWith("raw-pair-list") ? "children" : null;
           if (field !== null) {
-            assert.match(diagnostics, /W_FN_ARG_TYPE_MISMATCH/);
+            assert.match(diagnostics, /E_FN_ARG_TYPE_MISMATCH/);
             assert.ok(diagnostics.includes(`field \`:${field}\` expects type`), diagnostics);
             assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
               "constructor diagnostics must locate the source call, not only a generated macro");
@@ -4230,9 +4230,9 @@ try {
           const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
-          assert.match(`${result.stdout}\n${result.stderr}`, /expects type|W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${result.stdout}\n${result.stderr}`, /expects type|E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
-          if (mode[0] === "js") await assertRejectedArtifacts(output, name, /expects type|W_FN_ARG_TYPE_MISMATCH/, true);
+          if (mode[0] === "js") await assertRejectedArtifacts(output, name, /expects type|E_FN_ARG_TYPE_MISMATCH/, true);
         }
       }
 
@@ -4276,9 +4276,9 @@ try {
           const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
           if (result.error) throw result.error;
           assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
-          assert.match(`${result.stdout}\n${result.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${result.stdout}\n${result.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
-          if (mode[0] === "js") await assertRejectedArtifacts(output, name, /W_FN_ARG_TYPE_MISMATCH/, true);
+          if (mode[0] === "js") await assertRejectedArtifacts(output, name, /E_FN_ARG_TYPE_MISMATCH/, true);
         }
       }
 
@@ -4358,8 +4358,8 @@ try {
           // 0.36.0 (#2124); `--check-only` still reports the field mismatch first,
           // the JS preflight may stop at the erasure.
           const erases = expression.includes("nil)") && expression.startsWith("match ");
-          const diagnostic = expression.startsWith("if ") ? /W_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/
-            : erases && mode[0] === "js" ? /W_FN_ARG_TYPE_MISMATCH|E_OPTION_ERASED_TO_NIL/ : /W_FN_ARG_TYPE_MISMATCH/;
+          const diagnostic = expression.startsWith("if ") ? /E_FN_ARG_TYPE_MISMATCH|E_IMPLICIT_NIL_BRANCH/
+            : erases && mode[0] === "js" ? /E_FN_ARG_TYPE_MISMATCH|E_OPTION_ERASED_TO_NIL/ : /E_FN_ARG_TYPE_MISMATCH/;
           assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
           assert.deepEqual(await readFile(snapshot), original);
           if (mode[0] === "js") await assertRejectedArtifacts(output, name, diagnostic, true);
@@ -4641,9 +4641,9 @@ try {
             "--reload-fn", "fix-command.main/rejected-map", ...(mode.length === 0 ? ["--check-only"] : []), "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /(?:W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /(?:E_FN_ARG_TYPE_MISMATCH|E_METHOD_ARG_TYPE_MISMATCH|E_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/);
           assert.deepEqual(await readFile(snapshot), original);
-          await assertRejectedArtifacts(output, name, /(?:W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/, mode[0] === "js");
+          await assertRejectedArtifacts(output, name, /(?:E_FN_ARG_TYPE_MISMATCH|E_METHOD_ARG_TYPE_MISMATCH|E_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/, mode[0] === "js");
         }
       }
       for (const [name, body, schema] of [
@@ -4668,7 +4668,7 @@ try {
         const report = JSON.parse(rejected.stdout);
         // Read the actual failed workflow, not the available-rule catalog.
         assert.equal(report.data.workflow.status, "failed");
-        assert.ok(JSON.stringify(report.data.workflow).includes("W_GENERIC_WHERE_BOUND_MISMATCH"),
+        assert.ok(JSON.stringify(report.data.workflow).includes("E_GENERIC_WHERE_BOUND_MISMATCH"),
           `${name}: missing bound diagnostic\n${JSON.stringify(report.data.workflow)}`);
         assert.deepEqual(await readFile(snapshot), original);
       }
@@ -4694,9 +4694,9 @@ try {
           const rejected = spawnSync(binary, [snapshot, "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name} ${mode.join(" ")}\n${rejected.stdout}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_GENERIC_WHERE_BOUND_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
-          await assertRejectedArtifacts(output, name, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+          await assertRejectedArtifacts(output, name, /E_GENERIC_WHERE_BOUND_MISMATCH/);
         }
       }
       // A project may supply calcit.core instead of the embedded namespace.
@@ -4730,9 +4730,9 @@ try {
           const rejected = spawnSync(binary, [snapshot, "--emit-path", output, ...mode], options);
           if (rejected.error) throw rejected.error;
           assert.equal(rejected.status, 1, `${name} source core ${mode.join(" ")}\n${rejected.stderr}`);
-          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+          assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_ARG_TYPE_MISMATCH/);
           assert.deepEqual(await readFile(snapshot), original);
-          await assertRejectedArtifacts(output, name, /W_FN_ARG_TYPE_MISMATCH/);
+          await assertRejectedArtifacts(output, name, /E_FN_ARG_TYPE_MISMATCH/);
         }
       }
     },
@@ -4775,7 +4775,7 @@ try {
       ];
       // Check default proof audit, independently of the enclosing fixture mode.
       const checkedOptions = { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: "1" } };
-      const diagnostic = /W_LOCAL_FN_ARG_TYPE_MISMATCH/;
+      const diagnostic = /E_LOCAL_FN_ARG_TYPE_MISMATCH/;
       for (const [name, callbackType, callee, expression, message] of cases) {
         transact([
           ...define("invoke", ["defn", "invoke", ["callback"], expression], fnType([callbackType])),

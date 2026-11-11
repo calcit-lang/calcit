@@ -274,7 +274,7 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
           .as_array()
           .unwrap()
           .iter()
-          .any(|diagnostic| diagnostic["code"] == "W_PROC_ARG_TYPE_MISMATCH"),
+          .any(|diagnostic| diagnostic["code"] == "E_PROC_ARG_TYPE_MISMATCH"),
         "{report}"
       );
     } else {

@@ -150,7 +150,7 @@ wrapper，也不需要把类型放宽为 Dynamic。
 
 作为函数实参的集合字面量同样逐项检查，泛型参数按已绑定的类型代入。例如 `base` 为
 `Map Tag CssValue` 时，`.merge base $ {} (:display :block) (:height true)` 的第二个
-参数报 `W_METHOD_ARG_TYPE_MISMATCH`（函数写法 `merge` 报 `W_FN_ARG_TYPE_MISMATCH`），
+参数报 `E_METHOD_ARG_TYPE_MISMATCH`（函数写法 `merge` 报 `E_FN_ARG_TYPE_MISMATCH`），
 不再因为混合推导成 `Map Tag Dynamic` 而通过（#2589）。
 
 ## 空集合作累加初值
@@ -237,7 +237,7 @@ let
   assert= 0 $ .unwrap-or (deref cell) 0
 ```
 
-同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `W_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`ref (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
+同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `E_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`ref (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
 
 ```cirru.no-check
 let
@@ -373,7 +373,7 @@ let
 - **写法**：`Tuple A B …`，至少一个位置；可以嵌套，例如 `List (Tuple Tag Number)`、`Fn (Tuple K V) (-> Bool)`。
 - **字面量**：在期望类型是元组的位置（参数、返回值、带 schema 的 `def`、`assert-type`），`[]` 字面量按位置检查，长度不同或某个位置类型不符都会报错。
 - **回调尾部**：不写 `hint-fn` 的 lambda 以 `[] a b` 结尾时，同样按期望的元组位置检查。返回值声明为 `Fn … (-> (Tuple …))` 时直接返回的 lambda，以及声明为 `List (Tuple …)` 时 `map` / `.map` 的回调都适用（`let` 链的最后一个表达式也算），例如 `defn names (ts) $ .map ts $ fn (t) ([] (:title t) (:done t))` 可以写 schema `Fn (List Task) (-> (List (Tuple String Bool)))`（0.40.0，#2645）。
-- **读取**：`let[] (x y) t` 让每个变量得到对应位置的类型。`nth t 0` 的下标必须是字面量，返回该位置的值本身，不包 `Option`（位置总是存在）；越界或非字面量下标报 `E_TUPLE_INDEX`。`let[]` 绑定的变量多于元组长度时报 `W_TUPLE_INDEX`。
+- **读取**：`let[] (x y) t` 让每个变量得到对应位置的类型。`nth t 0` 的下标必须是字面量，返回该位置的值本身，不包 `Option`（位置总是存在）；越界或非字面量下标报 `E_TUPLE_INDEX`。`let[]` 绑定的变量多于元组长度时报 `E_TUPLE_INDEX`。
 - **与 List 的关系**：元素同类型的元组（如 `Tuple Number Number`）可以当作 `List Number` 使用，`first`、`map`、`conj` 等按 List 处理，结果是 `List T`。元素类型不同的元组不能传给任何 List，包括 `List Dynamic`；`List T` 也不能隐式当作元组，长度需要先用 `let[]` 或字面量证明。
 - **能力**：`count`、`=`、`str` 对所有元组可用，同构元组还可以 `map`。`rest`、`reverse`、`sort` 这类返回同一类型的 trait 泛型操作不接受元组，因为结果的长度已经变了；需要时先把同构元组作为 `List T` 传入再调用。
 - **解码**：`decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as` 等受检解码在 Native 与 JS 上可以把 `Tuple` 作为目标，也可以作为 `defunion` 的成员；WASM 后端的受检解码目前不支持 `Tuple` 目标。输入必须是长度完全一致的 list，逐位置检查类型；长度不对或某个位置不符时返回解码错误，例如 `expected tuple of 3 items, got 2`。解码结果在运行时仍是普通 list。

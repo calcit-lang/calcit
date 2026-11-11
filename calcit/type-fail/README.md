@@ -43,7 +43,7 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
 - 前 3 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。
 - `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback；同时验证 `.and-then` callback 不能返回裸 payload。
-- `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
+- `generic-where-bound-mismatch.cirru` 会触发 `E_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。
 - `slice-receiver-trait-mismatch.cirru` 会验证 `slice` 只接受实现 `Sliceable` 的 receiver，拒绝用 `C -> C` 泛型伪装不可切片的值。
 - `update-collection-contract-mismatch.cirru` 会验证已知 `List<T>` / `Map<K,V>` receiver 将索引/键与 `T -> T` / `V -> V` updater contract 带到调用点。
 - `collection-member-contract-mismatch.cirru` 会验证已知 collection receiver 将 `get` / `contains?` 的索引或键、`includes?` 的成员、`assoc` 的索引/键/值，以及 `dissoc` 的所有 rest 索引或键类型带到调用点，包括 Enum 的 Number payload index；它也覆盖原生 `&map:dissoc`、`&list:concat` 与 `&merge` 的同质 variadic contract，`filter` / `any?` / `every?` / `each` / `map` 对 List/Set 成员或 Map pair callback 的输入与返回契约，以及 `filter` / `map` 的具名、inline 和 generic callback 对照，确保 expected output 不会反向证明未知 payload；此外还覆盖 `foldl` / `reduce` 的 accumulator/member reducer 关系，`sort` / `&list:sort` 的 `T, T -> Number` comparator 关系、函数形式 `&list:sort-by` 的 `T -> K` selector 关系，以及 `interleave` 两个输入与返回共享 `List<T>` 的契约；普通参数和 variadic rest 的失败嵌套泛型匹配都不能把候选绑定泄漏给后续参数。
@@ -62,7 +62,7 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
 - `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
 - `unsafe-coerce-global-leak-strict.cirru` 验证标记为 `:js-ffi` 的调用方不能把权限传给被引用的顶层 `defatom` 初始化；即使该值在入口依赖闭包中也必须报 `E_UNSCOPED_UNSAFE_COERCE`。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式允许 Dynamic 作为开放泛型 payload 传递，但拒绝用只接受具体类型的 callback 隐式收窄该绑定，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
-- `callback-contravariance-strict.cirru` 的 `default` entry 是正例：`Fn Dynamic (-> Unit)` 与 `Fn (& Dynamic) (-> Unit)` callback 可以传入只会以 `FsPath` 调用的 callback 参数（参数逆变，rest 参数同样适用）；`reverse`（`FsPath` callback 进入 `Dynamic` 参数槽）、`reverse-rest`（`FsPath` rest callback 进入 `Dynamic` rest 槽）、`rest-for-fixed`（只有 `FsPath` rest 参数的 callback 进入固定 `Dynamic` 参数槽）与 `result`（`Dynamic` 返回值进入 `FsPath` 返回合同）报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，`arity` 报告 `W_FN_ARG_TYPE_MISMATCH`。
+- `callback-contravariance-strict.cirru` 的 `default` entry 是正例：`Fn Dynamic (-> Unit)` 与 `Fn (& Dynamic) (-> Unit)` callback 可以传入只会以 `FsPath` 调用的 callback 参数（参数逆变，rest 参数同样适用）；`reverse`（`FsPath` callback 进入 `Dynamic` 参数槽）、`reverse-rest`（`FsPath` rest callback 进入 `Dynamic` rest 槽）、`rest-for-fixed`（只有 `FsPath` rest 参数的 callback 进入固定 `Dynamic` 参数槽）与 `result`（`Dynamic` 返回值进入 `FsPath` 返回合同）报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，`arity` 报告 `E_FN_ARG_TYPE_MISMATCH`。
 - `union-*.cirru` 覆盖 `defunion` 的限制（见 [Unions](../../docs/features/unions.md)），每个 fixture 对应一个稳定错误码：
   - `union-member-dynamic` / `union-member-option` / `union-member-dup-kind` / `union-dup-pattern-name`：成员含 Dynamic、成员是 core Option、两个成员运行时种类相同、两个成员的模式名相同，报 `E_UNION_MEMBER_INVALID`；
   - `union-unused-invalid`：没有任何代码用到这个 union 的类型，在声明处同样报 `E_UNION_MEMBER_INVALID`；
@@ -72,16 +72,16 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
   - `union-predicate`：union 值上调用 `string?`，报 `E_UNION_PREDICATE`；
   - `union-literal-eq`：union 值与字面量比较，报 `E_UNION_LITERAL_EQ`；
   - `union-str` / `union-method` / `union-postfix-method`：union 值未拆解就 `str` 或调用方法（含后缀写法 `(v .count)`），报 `E_UNION_REQUIRES_MATCH`；
-  - `union-to-string` / `union-member-not-in-union`：union 传给成员类型、非成员类型传给 union，报 `W_FN_ARG_TYPE_MISMATCH`；
+  - `union-to-string` / `union-member-not-in-union`：union 传给成员类型、非成员类型传给 union，报 `E_FN_ARG_TYPE_MISMATCH`；
   - `union-dynamic-to-union`：Dynamic 直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`；
-  - `union-where-bound`：union 不满足 `:where` trait 约束，报 `W_GENERIC_WHERE_BOUND_MISMATCH`。
+  - `union-where-bound`：union 不满足 `:where` trait 约束，报 `E_GENERIC_WHERE_BOUND_MISMATCH`。
 
 ## 自动化测试
 
 这些 fixture 已接到 Rust 测试里，会随 `cargo test` 一起运行。
 
 - schema mismatch fixtures：断言最终错误文本包含 `E_SCHEMA_DEF_MISMATCH`
-- call-site arg mismatch fixtures：断言产生 `W_FN_ARG_TYPE_MISMATCH` / `W_GENERIC_WHERE_BOUND_MISMATCH`
+- call-site arg mismatch fixtures：断言产生 `E_FN_ARG_TYPE_MISMATCH` / `E_GENERIC_WHERE_BOUND_MISMATCH`
 - type-slot hard-fail fixtures：断言错误文本包含具体 slot 绑定失败原因
 - strict type-slot fixture：断言错误文本包含 `E_UNBOUND_TYPE_SLOT`、slot 名称与 schema 路径
 - strict whole-Dynamic fixture：断言错误文本包含 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`、schema 根路径与 `Fn` 迁移建议
@@ -114,11 +114,11 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
 - `E_JS_FFI_NULLABLE_PREDICATE`：strict 项目源码用 `nil?`/`some?`/`non-nil?` 擦除 `JsNullish<T>` 的宿主空值语义
 - `E_UNSCOPED_UNSAFE_COERCE`：strict 项目源码在当前 definition 未声明 `:js-ffi` 时使用 `unsafe-coerce`
 - `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
-- `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
-- `W_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
-- `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`：Option/Result method 的接收者仍为 Dynamic，需先收窄或在明确边界使用函数形式
-- `W_PROC_ARG_TYPE_MISMATCH`：内建 proc 参数类型不匹配
-- `W_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
-- `W_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
-- `W_GENERIC_WHERE_BOUND_MISMATCH`：泛型绑定后的实际类型不满足 `:where` trait 约束
+- `E_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配
+- `E_METHOD_ARG_TYPE_MISMATCH`：静态方法调用参数类型不匹配
+- `E_DYNAMIC_NOMINAL_METHOD_RECEIVER`：Option/Result method 的接收者仍为 Dynamic，需先收窄或在明确边界使用函数形式
+- `E_PROC_ARG_TYPE_MISMATCH`：内建 proc 参数类型不匹配
+- `E_CORE_FN_ARG_TYPE_MISMATCH`：`calcit.core` 函数参数类型不匹配
+- `E_FN_RETURN_TYPE_MISMATCH`：函数声明返回类型与函数体实际返回类型不匹配
+- `E_GENERIC_WHERE_BOUND_MISMATCH`：泛型绑定后的实际类型不满足 `:where` trait 约束
 - type-slot fixture 额外覆盖：struct 绑定、strict 未绑定拒绝、跨程序加载的 slot 状态清理与 entry scope

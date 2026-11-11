@@ -170,7 +170,7 @@ quote $ Fn T T (-> Number) (:generics T)
   :where $ T AnyEnum
 ```
 
-At a call site `T` must bind to a named enum (or, for `AnyStruct`, a named struct). `Dynamic`, the open family type itself, a plain value such as `Number`, or a member of the other family are reported as `W_GENERIC_WHERE_BOUND_MISMATCH`; decode or narrow the value to a concrete type first. Inside the body, a value of type `T` may be passed wherever the family is expected, for example to a reflection helper typed `Fn AnyEnum (-> Number) (:open :reflect)`. The result keeps the caller's type, so `same-enum (%:: Color :red)` is still a `Color`.
+At a call site `T` must bind to a named enum (or, for `AnyStruct`, a named struct). `Dynamic`, the open family type itself, a plain value such as `Number`, or a member of the other family are reported as `E_GENERIC_WHERE_BOUND_MISMATCH`; decode or narrow the value to a concrete type first. Inside the body, a value of type `T` may be passed wherever the family is expected, for example to a reflection helper typed `Fn AnyEnum (-> Number) (:open :reflect)`. The result keeps the caller's type, so `same-enum (%:: Color :red)` is still a `Color`.
 
 ## Keep polymorphic relationships visible
 
@@ -283,7 +283,7 @@ style for typed code.
 That rule has one explicit boundary exception: postfix nominal methods require
 a receiver that preprocessing can identify as `Option` or `Result`. If legacy
 data, configuration, or FFI erases the receiver to `Dynamic`, preprocessing
-reports `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Add a schema or narrow the value
+reports `E_DYNAMIC_NOMINAL_METHOD_RECEIVER`. Add a schema or narrow the value
 before using method syntax; when the boundary intentionally remains Dynamic,
 use the corresponding `option:*` or `result:*` function explicitly. This keeps
 the escape hatch visible and prevents a runtime Option/Result value from being
@@ -316,7 +316,7 @@ Option and use `if-let` or exhaustive `match` when absence is a distinct branch.
 
 Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `non-nil?`, and generic `nil->option` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
-泛型 payload 无法推断时，Calcit 会保留 nominal wrapper，只把未知 payload 标为 `Dynamic`；例如对动态 list 调用 `find` 的结果仍是 `Option<Dynamic>`，而不是裸 `Dynamic`。这会让迁移错误保持可见。若对该 Option 使用 nullable predicate（`non-nil?`/`nil?`），0.41.0 起报 `E_OPTION_NIL_CHECK` 错误；位置式 enum 访问或裸比较报告 `W_NOMINAL_ENUM_LEGACY_USE`。请改用 Option 方法或原生 `match`。
+泛型 payload 无法推断时，Calcit 会保留 nominal wrapper，只把未知 payload 标为 `Dynamic`；例如对动态 list 调用 `find` 的结果仍是 `Option<Dynamic>`，而不是裸 `Dynamic`。这会让迁移错误保持可见。若对该 Option 使用 nullable predicate（`non-nil?`/`nil?`），0.41.0 起报 `E_OPTION_NIL_CHECK` 错误；位置式 enum 访问或裸比较报告 `E_NOMINAL_ENUM_LEGACY_USE`。请改用 Option 方法或原生 `match`。
 
 The same operations are available as methods on enum values:
 

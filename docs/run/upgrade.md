@@ -24,6 +24,44 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 阻断检查的 `W_` 诊断改名为 `E_`（#2699）
+
+下面这些诊断一直会让 `--check-only`、运行、测试和 codegen 失败，但编码是 `W_`、消息以 `[Warn]` 开头、列在 `Warnings:` 下。0.42.0 起编码改为 `E_`，消息前缀改为 `[Error]`，标题改为 `Errors:`，汇总改为 `Found N errors …`。检查结果不变，只是名字和文案反映实际行为。其中 8 个原本就有同名 `E_`（feature policy 为 `:error` 或严格模式下立即中止时用的），现在两种情况共用一个编码。
+
+| 0.41 编码 | 0.42 编码 |
+| --- | --- |
+| `W_CONSTANT_TRUTHY_CONDITION` | `E_CONSTANT_TRUTHY_CONDITION` |
+| `W_CORE_FN_ARG_TYPE_MISMATCH` | `E_CORE_FN_ARG_TYPE_MISMATCH` |
+| `W_DYNAMIC_CALL` | `E_DYNAMIC_CALL` |
+| `W_DYNAMIC_NOMINAL_METHOD_RECEIVER` | `E_DYNAMIC_NOMINAL_METHOD_RECEIVER` |
+| `W_FN_ARG_TYPE_MISMATCH` | `E_FN_ARG_TYPE_MISMATCH` |
+| `W_FN_RETURN_TYPE_MISMATCH` | `E_FN_RETURN_TYPE_MISMATCH` |
+| `W_GENERIC_WHERE_BOUND_MISMATCH` | `E_GENERIC_WHERE_BOUND_MISMATCH` |
+| `W_HOST_VALUE_EQUALITY` | `E_HOST_VALUE_EQUALITY` |
+| `W_JS_FFI_FEATURE_REQUIRED` | `E_JS_FFI_FEATURE_REQUIRED` |
+| `W_JS_FFI_FIELD_READONLY` | `E_JS_FFI_FIELD_READONLY` |
+| `W_JS_FFI_FIELD_TYPE_MISMATCH` | `E_JS_FFI_FIELD_TYPE_MISMATCH` |
+| `W_JS_FFI_NULLABLE_DEREF` | `E_JS_FFI_NULLABLE_DEREF` |
+| `W_JS_FFI_NULLABLE_PREDICATE` | `E_JS_FFI_NULLABLE_PREDICATE` |
+| `W_JS_FFI_UNKNOWN_FIELD` | `E_JS_FFI_UNKNOWN_FIELD` |
+| `W_LOCAL_FN_ARG_TYPE_MISMATCH` | `E_LOCAL_FN_ARG_TYPE_MISMATCH` |
+| `W_METHOD_ARG_TYPE_MISMATCH` | `E_METHOD_ARG_TYPE_MISMATCH` |
+| `W_NOMINAL_ENUM_LEGACY_USE` | `E_NOMINAL_ENUM_LEGACY_USE` |
+| `W_OPTION_HELPER_CALL` | `E_OPTION_HELPER_CALL` |
+| `W_PROC_ARG_TYPE_MISMATCH` | `E_PROC_ARG_TYPE_MISMATCH` |
+| `W_RECUR_ARG_TYPE_MISMATCH` | `E_RECUR_ARG_TYPE_MISMATCH` |
+| `W_REMOVED_DATA_API` | `E_REMOVED_DATA_API` |
+| `W_REQUIRED_STRUCT_FIELD_TYPE` | `E_REQUIRED_STRUCT_FIELD_TYPE` |
+| `W_RESET_ARG_TYPE_MISMATCH` | `E_RESET_ARG_TYPE_MISMATCH` |
+| `W_STRUCT_DYNAMIC_RAW_ACCESS` | `E_STRUCT_DYNAMIC_RAW_ACCESS` |
+| `W_STRUCT_PATH_OPERATION` | `E_STRUCT_PATH_OPERATION` |
+| `W_STRUCT_RAW_ACCESS` | `E_STRUCT_RAW_ACCESS` |
+| `W_TODO` | `E_TODO` |
+| `W_TUPLE_INDEX` | `E_TUPLE_INDEX` |
+| `W_UNKNOWN_STRUCT_FIELD` | `E_UNKNOWN_STRUCT_FIELD` |
+
+按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS`、`W_STRUCT_INDEX_RAW_ACCESS` 和 `P_*` 也不变（它们属于按需开启的分析通道，消息仍以 `[Warn]` 开头）。
+
 ## 0.42.0 效果边界 `:features :state` / `:io`（#2710）
 
 函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；计划在 0.43.0 改成默认报错。

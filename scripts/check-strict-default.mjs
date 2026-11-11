@@ -126,7 +126,7 @@ for (const [label, body] of [
   hint-fn $ {} (:args $ [] 'Dynamic $ :: 'List 'Dynamic) (:return 'Dynamic)
   ${body}`]);
   expectStatus(invalid, 1, `${label} does not prove callability`);
-  assert.match(invalid.stderr, /W_DYNAMIC_CALL/, `${label} retains the existing dynamic-call diagnostic`);
+  assert.match(invalid.stderr, /E_DYNAMIC_CALL/, `${label} retains the existing dynamic-call diagnostic`);
 }
 
 // These programs must fail before execution, so they cannot be attached tests.
@@ -708,17 +708,17 @@ for (const [label, args] of [
 ]) {
   const result = run(["eval", `let ((check (fn (left right) (hint-fn ({} (:generics ([] 'T)) (:args ([] 'T 'T)) (:return 'Unit))) &unit))) (check ${args})`]);
   expectStatus(result, 1, label);
-  if (!result.stderr.includes("W_LOCAL_FN_ARG_TYPE_MISMATCH")) {
+  if (!result.stderr.includes("E_LOCAL_FN_ARG_TYPE_MISMATCH")) {
     throw new Error(`${label} lost its type diagnostic:\n${result.stderr}`);
   }
   const restResult = run(["eval", `let ((check (fn (left & right) (hint-fn ({} (:generics ([] 'T)) (:args ([] 'T)) (:rest 'T) (:return 'Unit))) &unit))) (check ${args})`]);
   expectStatus(restResult, 1, `${label} in local rest call`);
-  if (!restResult.stderr.includes("W_LOCAL_FN_ARG_TYPE_MISMATCH")) {
+  if (!restResult.stderr.includes("E_LOCAL_FN_ARG_TYPE_MISMATCH")) {
     throw new Error(`${label} lost its local rest diagnostic:\n${restResult.stderr}`);
   }
   const equalityResult = run(["eval", `= ${args}`]);
   expectStatus(equalityResult, 1, `${label} in variadic equality`);
-  if (!equalityResult.stderr.includes("W_FN_ARG_TYPE_MISMATCH")) {
+  if (!equalityResult.stderr.includes("E_FN_ARG_TYPE_MISMATCH")) {
     throw new Error(`${label} lost its equality diagnostic:\n${equalityResult.stderr}`);
   }
 }
@@ -728,13 +728,13 @@ expectStatus(validMapMethod, 0, "typed Map .assoc accepts a matching value");
 
 const invalidDirectMapAssoc = run(["eval", "&map:assoc ({} (:a 1)) :b |oops"]);
 expectStatus(invalidDirectMapAssoc, 1, "direct Map association rejects a mismatched value");
-if (!invalidDirectMapAssoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+if (!invalidDirectMapAssoc.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`direct Map association lost its type diagnostic:\n${invalidDirectMapAssoc.stderr}`);
 }
 
 const invalidMapMethod = run(["eval", "let ((m ({} (:a 1)))) (m .assoc :b |oops)"]);
 expectStatus(invalidMapMethod, 1, "typed Map .assoc rejects a mismatched value");
-if (!invalidMapMethod.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+if (!invalidMapMethod.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`typed Map .assoc lost its lowered Proc type diagnostic:\n${invalidMapMethod.stderr}`);
 }
 
@@ -743,13 +743,13 @@ expectStatus(validMapDissoc, 0, "typed Map .dissoc accepts a matching key");
 
 const invalidDirectMapDissoc = run(["eval", "&map:dissoc ({} (:a 1)) |oops"]);
 expectStatus(invalidDirectMapDissoc, 1, "direct Map dissociation rejects a mismatched key");
-if (!invalidDirectMapDissoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+if (!invalidDirectMapDissoc.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`direct Map dissociation lost its type diagnostic:\n${invalidDirectMapDissoc.stderr}`);
 }
 
 const invalidMapDissoc = run(["eval", "let ((m ({} (:a 1)))) (m .dissoc |oops)"]);
 expectStatus(invalidMapDissoc, 1, "typed Map .dissoc rejects a mismatched key");
-if (!invalidMapDissoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+if (!invalidMapDissoc.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`typed Map .dissoc lost its lowered Proc type diagnostic:\n${invalidMapDissoc.stderr}`);
 }
 

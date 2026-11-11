@@ -197,7 +197,7 @@ fn try_rewrite_single_map_to_struct(
       if !struct_def.fields.iter().any(|f| f == key) {
         gen_check_warning(
           format!(
-            "[Warn] map-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct, at {file_ns}/{def_name}",
+            "[Error] map-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct, at {file_ns}/{def_name}",
             arg_idx + 1,
           ),
           file_ns,
@@ -209,7 +209,7 @@ fn try_rewrite_single_map_to_struct(
     } else {
       gen_check_warning(
         format!(
-          "[Warn] map-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
+          "[Error] map-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
           arg_idx + 1,
           chunk[0]
         ),
@@ -287,7 +287,7 @@ fn try_rewrite_single_loose_struct_to_struct(
       if !struct_def.fields.iter().any(|f| f == key) {
         gen_check_warning(
           format!(
-            "[Warn] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct `{}`, at {file_ns}/{def_name}",
+            "[Error] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: key `:{key}` is not a field of struct `{}`, at {file_ns}/{def_name}",
             arg_idx + 1,
             struct_def.name,
           ),
@@ -300,7 +300,7 @@ fn try_rewrite_single_loose_struct_to_struct(
     } else {
       gen_check_warning(
         format!(
-          "[Warn] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
+          "[Error] loose-struct-to-struct rewrite skipped for `{fn_name}` arg {}: non-tag key `{}` found, at {file_ns}/{def_name}",
           arg_idx + 1,
           chunk[0]
         ),
@@ -368,7 +368,7 @@ fn try_rewrite_single_enum_to_named_enum(
   if arg_list.len() < 2 {
     gen_check_warning(
       format!(
-        "[Warn] enum-to-named-enum rewrite skipped for `{fn_name}` arg {}: enum literal has no tag, at {file_ns}/{def_name}",
+        "[Error] enum-to-named-enum rewrite skipped for `{fn_name}` arg {}: enum literal has no tag, at {file_ns}/{def_name}",
         arg_idx + 1,
       ),
       file_ns,
@@ -385,7 +385,7 @@ fn try_rewrite_single_enum_to_named_enum(
       let variant_names: Vec<&str> = variants.iter().map(|v| v.tag.ref_str()).collect();
       gen_check_warning(
         format!(
-          "[Warn] Enum `{}` does not have variant `:{tag_str}`. Available variants: {variant_names:?}, at {file_ns}/{def_name}",
+          "[Error] Enum `{}` does not have variant `:{tag_str}`. Available variants: {variant_names:?}, at {file_ns}/{def_name}",
           enum_def.name(),
         ),
         file_ns,

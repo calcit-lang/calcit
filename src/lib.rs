@@ -391,7 +391,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
   if !warnings.is_empty() {
     return Err(CalcitErr {
       kind: CalcitErrKind::Unexpected,
-      msg: format!("Found {} warnings, runner blocked", warnings.len()),
+      msg: format!("Found {} errors, runner blocked", warnings.len()),
       code: None,
       warnings: Box::new(warnings.to_owned()),
       stack: CallStackList::default(),

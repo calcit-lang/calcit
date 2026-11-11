@@ -42,7 +42,7 @@ try {
         { ...options, env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
       assert.ifError(rejected.error);
       assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
-      assert.match(rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
+      assert.match(rejected.stderr, /E_PROC_ARG_TYPE_MISMATCH/);
       assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
     }
   }
@@ -78,7 +78,7 @@ try {
           env: { ...process.env, CALCIT_PROOF_AUDIT: audit } });
         assert.ifError(rejected.error);
         assert.equal(rejected.status, 1, `${call}: ${args[0]} audit=${audit}\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(rejected.stdout + rejected.stderr, /W_PROC_ARG_TYPE_MISMATCH/);
+        assert.match(rejected.stdout + rejected.stderr, /E_PROC_ARG_TYPE_MISMATCH/);
         assert.match(rejected.stdout + rejected.stderr,
           args.includes("--all-defs") ? /app\.main\/main!/ : /app\.main\/main!.*@\d/);
         assert.doesNotMatch(rejected.stdout, /^spread-must-not-run\r?$/m);
@@ -196,13 +196,13 @@ try {
     const native = spawnSync(binary, [snapshot], options);
     assert.ifError(native.error);
     assert.equal(native.status, 1, native.stdout + native.stderr);
-    assert.match(native.stdout + native.stderr, /W_FN_ARG_TYPE_MISMATCH/);
+    assert.match(native.stdout + native.stderr, /E_FN_ARG_TYPE_MISMATCH/);
     assert.match(native.stdout + native.stderr, /expects 1 args, got 2/);
     const invalidOutput = join(project, `invalid-arity-${index}`);
     const rejected = spawnSync(binary, [snapshot, "--emit-path", invalidOutput, "wasm"], options);
     assert.ifError(rejected.error);
     assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
-    assert.match(rejected.stdout + rejected.stderr, /W_FN_ARG_TYPE_MISMATCH/);
+    assert.match(rejected.stdout + rejected.stderr, /E_FN_ARG_TYPE_MISMATCH/);
     assert.match(rejected.stdout + rejected.stderr, /expects 1 args, got 2/);
     await assert.rejects(readFile(join(invalidOutput, "program.wasm")), { code: "ENOENT" });
   }

@@ -1178,7 +1178,7 @@ fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
         String::from_utf8_lossy(&helper_call.stdout),
         String::from_utf8_lossy(&helper_call.stderr)
       );
-      assert!(output.contains("W_OPTION_HELPER_CALL"), "{output}");
+      assert!(output.contains("E_OPTION_HELPER_CALL"), "{output}");
     }
     let shadow_before = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
     assert!(!shadow_before.status.success());
@@ -2686,7 +2686,7 @@ fn concrete_return_proof_rejects_a_known_spread_argument_contradiction() {
     ],
   );
   assert!(!output.status.success());
-  assert!(String::from_utf8_lossy(&output.stderr).contains("W_PROC_ARG_TYPE_MISMATCH"));
+  assert!(String::from_utf8_lossy(&output.stderr).contains("E_PROC_ARG_TYPE_MISMATCH"));
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 }
 
@@ -3044,7 +3044,7 @@ fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
     for rule in ["assert-type-proof-v1", "concrete-return-proof-v1"] {
       let rejected = run_fix(&snapshot, &["--rule", rule, "--ns", "fix-command.proof", "--format", "json"]);
       assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
-      assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
+      assert!(String::from_utf8_lossy(&rejected.stderr).contains("E_FN_RETURN_TYPE_MISMATCH"));
       assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
     }
   }
@@ -4022,19 +4022,19 @@ fn selected_trait_rest_contract_survives_explicit_spread() {
       "wrong-explicit-rest",
       "&trait-call RestBoxOps :sum box |numbers & items",
       "String",
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
     ),
     (
       "wrong-method-rest",
       ".sum box |numbers & items",
       "String",
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
     ),
     (
       "wrong-explicit-prefix",
       "&trait-call RestBoxOps :sum box 1 & items",
       "Number",
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
     ),
     (
       "unproven-method-spread",
@@ -8649,7 +8649,7 @@ fn staged_fix_rejects_a_new_compiler_warning_without_writing() {
 
   let preview = run_fix(&snapshot, &["--ns", "fix-command.main", "--def", "fixable", "--format", "json"]);
   assert!(!preview.status.success());
-  assert!(String::from_utf8_lossy(&preview.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
+  assert!(String::from_utf8_lossy(&preview.stderr).contains("E_FN_RETURN_TYPE_MISMATCH"));
   assert_eq!(fs::read(&snapshot).expect("rejected fixture should read"), before);
 }
 
@@ -9870,12 +9870,12 @@ fn core_option_method_rule_uses_source_receiver_type_evidence() {
   ] {
     assert_success(&run_calcit(&snapshot, &args), "install lowered receiver contract");
   }
-  // The helper call itself now warns (W_OPTION_HELPER_CALL, #2653), and the
+  // The helper call itself now warns (E_OPTION_HELPER_CALL, #2653), and the
   // test runner blocks on warnings; the migrated call is run below.
   let original = run_calcit(&snapshot, &["test", target, "--require-match"]);
   assert!(
-    String::from_utf8_lossy(&original.stdout).contains("W_OPTION_HELPER_CALL")
-      || String::from_utf8_lossy(&original.stderr).contains("W_OPTION_HELPER_CALL"),
+    String::from_utf8_lossy(&original.stdout).contains("E_OPTION_HELPER_CALL")
+      || String::from_utf8_lossy(&original.stderr).contains("E_OPTION_HELPER_CALL"),
     "the helper call should warn before migration"
   );
   let queried = run_calcit(&snapshot, &["query", "type-at", target, "--path", "3.1", "--format", "json"]);

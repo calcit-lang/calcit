@@ -57,7 +57,7 @@ conservatively inferred as `JsNullish<JsObject>`. The deliberate exception is
 Plain `.-name` and `.!name` dereference their receiver. If the receiver is a
 `JsNullish<JsObject>`, strict project source fails with
 `E_JS_FFI_NULLABLE_DEREF`; compatibility mode reports
-`W_JS_FFI_NULLABLE_DEREF`. Use `.?-name`/`.?!name`, or narrow the receiver
+`E_JS_FFI_NULLABLE_DEREF`. Use `.?-name`/`.?!name`, or narrow the receiver
 before dereferencing it.
 
 Functions containing raw interop should declare `:features $ #{} :js-ffi` in
@@ -67,7 +67,7 @@ nullable dereference or strong-type mismatch diagnostics.
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
 `nil?`/`non-nil?` fails strict project source with
 `E_JS_FFI_NULLABLE_PREDICATE`; compatibility mode reports
-`W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
+`E_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
 `js-nullish->option` only after accepting the opaque payload contract; generic
 `nil->option` does not accept `JsNullish<T>`.
 
@@ -281,12 +281,12 @@ punctuation are supported.
 receiver type and key are static. A tag or string literal key is checked against
 the trait: `js-get` returns `JsNullish<FieldType>`, while `js-set` checks the
 assigned value and emits the mapped JavaScript property name. Unknown fields
-report `W_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
-`W_JS_FFI_FIELD_TYPE_MISMATCH`. External fields are read-only by default. Add
+report `E_JS_FFI_UNKNOWN_FIELD`; incompatible writes report
+`E_JS_FFI_FIELD_TYPE_MISMATCH`. External fields are read-only by default. Add
 only the fields that a host API permits to `:ffi :writable`; otherwise `js-set`
-reports `W_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
+reports `E_JS_FFI_FIELD_READONLY` under a `:warn` or `:error` policy.
 
-`W_JS_FFI_UNKNOWN_FIELD` 的修复先核对实际宿主与接收者能力。优先复用只声明宿主确实支持
+`E_JS_FFI_UNKNOWN_FIELD` 的修复先核对实际宿主与接收者能力。优先复用只声明宿主确实支持
 成员的最小 external-object capability，需要窄化时在 `:js-ffi` 边界通过 `js-cast` 受检转换；
 检查范围见本页“方法调用体验”。同一静态字段改为动态 key 或 raw 访问只是绕过声明，
 不会获得字段类型证明；真正开放的宿主访问继续遵循下文的显式动态边界说明。
@@ -456,7 +456,7 @@ defexternal KeyboardEventHost
 
 external-object trait 的值是宿主句柄，运行时按引用身份比较和哈希。静态检查对 `=`、`not=`、`&=` 的参数，
 以及 `#{}`、`&include`/`&exclude`、Map 字面量与 `assoc`/`get`/`dissoc`/`contains?` 的 Set 成员和 Map 键报告
-`W_HOST_VALUE_EQUALITY`（严格模式下即错误）。需要判断是否同一个宿主对象时用 `identical?`；需要按内容比较或
+`E_HOST_VALUE_EQUALITY`（严格模式下即错误）。需要判断是否同一个宿主对象时用 `identical?`；需要按内容比较或
 作为键时，先在适配器内解码成 Calcit 数据（例如取出 id 字符串）：
 
 ```cirru.no-check
@@ -760,8 +760,8 @@ Common diagnostics:
 | `E_JS_FFI_FEATURE_REQUIRED` | A host operation is outside a marked adapter body. | Add `:js-ffi` to that implementation schema or move the operation into a wrapper. |
 | `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical `:js-ffi` or `:erased-cache` scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. A restore from a type-erased Calcit cache declares `:erased-cache` instead. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
-| `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
-| `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies `nil?`/`non-nil?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
+| `E_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
+| `E_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies `nil?`/`non-nil?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
 | `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
 | `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies `nil?`/`non-nil?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |

@@ -52,7 +52,7 @@ try {
       assert.equal(checked.status, accepted ? 0 : 1, `${name}: ${checked.stdout}\n${checked.stderr}`);
       if (!accepted) {
         const diagnostic = `${checked.stdout}\n${checked.stderr}`;
-        assert.match(diagnostic, /W_FN_ARG_TYPE_MISMATCH/);
+        assert.match(diagnostic, /E_FN_ARG_TYPE_MISMATCH/);
         assert.ok(diagnostic.includes(actual));
         if (actual === ":js-object") {
           assert.match(diagnostic, /first bind it to a local with `let`, then guard that local with `fn\?`/);
@@ -319,7 +319,7 @@ try {
     const rejected = spawnSync(binary, [negativeSnapshot, "--init-fn", "test-nil.main/rejected-rest", "--check-only", "js"],
       { cwd: fixture, encoding: "utf8" });
     assert.notEqual(rejected.status, 0, `reject ${name} before host execution`);
-    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_METHOD_ARG_TYPE_MISMATCH/);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_METHOD_ARG_TYPE_MISMATCH/);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /test-nil\.main\/rejected-rest/);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
     const proof = spawnSync(binary, [negativeSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"],
@@ -329,7 +329,7 @@ try {
     const diagnostics = JSON.parse(proof.stdout).diagnostics;
     const expectedProofCode = name === "wrong-prefix-before-spreads"
       ? /E_CALL_ARGUMENT_UNPROVEN/
-      : /(?:W_METHOD_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH)/;
+      : /(?:E_METHOD_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH)/;
     assert.ok(diagnostics.some(item => item.definition === "test-nil.main/rejected-rest"
       && expectedProofCode.test(item.code)), `retain a source argument diagnostic for ${name}: ${JSON.stringify(diagnostics)}`);
     if (name === "wrong-prefix-before-spreads") {
@@ -426,7 +426,7 @@ try {
     { cwd: fixture, stdio: "pipe" });
   run(moduleSnapshot, "edit", "schema", "app.main/reject-host-equality!", "--input-format", "cirru", "--code",
     "quote $ Fn (-> Unit) (:features :js-ffi)");
-  rejectCast(/W_HOST_VALUE_EQUALITY[^\n]*identical\?/, "app.main/reject-host-equality!");
+  rejectCast(/E_HOST_VALUE_EQUALITY[^\n]*identical\?/, "app.main/reject-host-equality!");
 
   const fileExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js");
   const originalExpression = await readFile(fileExpression, "utf8");

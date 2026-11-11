@@ -24,18 +24,18 @@ try {
 
   const ns = "fix-command.alias-evidence";
   const cases = [
-    [`${ns}/consume-base (${ns}/OtherBase :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/consume-base (fix-command.other-side/AliasBase :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/consume-choice (${ns}/OtherChoice :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/echo-alias 3`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/echo-chain 3`, "W_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/consume-base (${ns}/OtherBase :value 1)`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/consume-base (fix-command.other-side/AliasBase :value 1)`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/consume-choice (${ns}/OtherChoice :value 1)`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/echo-alias 3`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/echo-chain 3`, "E_FN_ARG_TYPE_MISMATCH"],
     [`${ns}/echo-chain`, "expected 1 args"],
     [`${ns}/echo-chain |a |b`, "expected 1 args"],
-    [`${ns}/same-alias 3 |b`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/apply-alias (fn (x) 3) |a`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/apply-alias ${ns}/echo-string 3`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/rest-alias |a 3`, "W_FN_ARG_TYPE_MISMATCH"],
-    [`${ns}/optional-alias (Option :some 3)`, "W_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/same-alias 3 |b`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/apply-alias (fn (x) 3) |a`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/apply-alias ${ns}/echo-string 3`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/rest-alias |a 3`, "E_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/optional-alias (Option :some 3)`, "E_FN_ARG_TYPE_MISMATCH"],
   ];
   for (const [expression, diagnostic] of cases) {
     const result = spawnSync(binary, [snapshot, "eval", "--dep", `${project}/`, "--", expression], options);

@@ -184,7 +184,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     };
     gen_check_warning_code_at(
       format!(
-        "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy {} at {}/{}\n  Expression: `{}`",
+        "[Error] call binds generic `'{}' to `{}`, but it does not satisfy {} at {}/{}\n  Expression: `{}`",
         crate::calcit::type_annotation::source_type_variable(&bound.name),
         diagnostic_type_string(actual_type.as_ref()),
         bound_text,
@@ -197,7 +197,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
         },
         expr_str
       ),
-      "W_GENERIC_WHERE_BOUND_MISMATCH",
+      "E_GENERIC_WHERE_BOUND_MISMATCH",
       ctx.file_ns,
       warning_location,
       ctx.check_warnings,
@@ -884,10 +884,10 @@ fn check_host_value_identity(
     let warning_location = arg.get_location().or_else(|| call.call_location.clone());
     gen_check_warning_code_at(
       format!(
-        "[Warn] `{head_name}` {position}, but `{}` is a host value with no value equality or hash; compare host references with `identical?` or decode the host value into Calcit data first, at {file_ns}/{def_name}",
+        "[Error] `{head_name}` {position}, but `{}` is a host value with no value equality or hash; compare host references with `identical?` or decode the host value into Calcit data first, at {file_ns}/{def_name}",
         diagnostic_type_string(actual_type.as_ref()),
       ),
-      "W_HOST_VALUE_EQUALITY",
+      "E_HOST_VALUE_EQUALITY",
       file_ns,
       warning_location,
       check_warnings,
@@ -969,10 +969,10 @@ pub(crate) fn check_proc_arg_types(
     {
       gen_check_warning_code_at(
         format!(
-          "[Warn] tuple `{}` cannot be read at `{index}`: {reason}, in call at {file_ns}/{def_name}",
+          "[Error] tuple `{}` cannot be read at `{index}`: {reason}, in call at {file_ns}/{def_name}",
           receiver_type.to_brief_string()
         ),
-        "W_TUPLE_INDEX",
+        "E_TUPLE_INDEX",
         file_ns,
         index.get_location().or_else(|| call_location.clone()),
         check_warnings,
@@ -1020,7 +1020,7 @@ pub(crate) fn check_proc_arg_types(
       };
       super::gen_check_warning_with_location(
         format!(
-          "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+          "[Error] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
           proc.as_ref(),
           expected_str,
           actual_count,
@@ -1034,7 +1034,7 @@ pub(crate) fn check_proc_arg_types(
   } else if actual_count < min_count {
     super::gen_check_warning_with_location(
       format!(
-        "[Warn] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+        "[Error] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
         proc.as_ref(),
         min_count,
         actual_count,
@@ -1106,14 +1106,14 @@ pub(crate) fn check_proc_arg_types(
           gen_check_warning_code_at(
             append_option_migration_hint(
               format!(
-                "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+                "[Error] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
                 proc.as_ref(),
                 idx + rest_idx + 1
               ),
               expected_rest_type.as_ref(),
               actual_type.as_ref(),
             ),
-            "W_PROC_ARG_TYPE_MISMATCH",
+            "E_PROC_ARG_TYPE_MISMATCH",
             file_ns,
             warning_location,
             check_warnings,
@@ -1137,14 +1137,14 @@ pub(crate) fn check_proc_arg_types(
       gen_check_warning_code_at(
         append_option_migration_hint(
           format!(
-            "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            "[Error] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             proc.as_ref(),
             idx + 1
           ),
           expected_type.as_ref(),
           actual_type.as_ref(),
         ),
-        "W_PROC_ARG_TYPE_MISMATCH",
+        "E_PROC_ARG_TYPE_MISMATCH",
         file_ns,
         warning_location,
         check_warnings,
@@ -1254,14 +1254,14 @@ pub(crate) fn check_core_fn_arg_types(
       gen_check_warning_code_at(
         append_option_migration_hint(
           format!(
-            "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            "[Error] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             fn_info.name,
             idx + 1
           ),
           expected_type.as_ref(),
           actual_type.as_ref(),
         ),
-        "W_CORE_FN_ARG_TYPE_MISMATCH",
+        "E_CORE_FN_ARG_TYPE_MISMATCH",
         file_ns,
         warning_location,
         check_warnings,
@@ -1379,7 +1379,7 @@ pub(super) fn check_reset_arg_types(
     scope_types,
     file_ns,
     call_location: head_form.get_location(),
-    warning_code: "W_RESET_ARG_TYPE_MISMATCH",
+    warning_code: "E_RESET_ARG_TYPE_MISMATCH",
     check_warnings,
   };
   let message = |index, expected: &str, actual: &str, expr: String| {
@@ -1388,7 +1388,7 @@ pub(super) fn check_reset_arg_types(
     } else {
       ""
     };
-    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`{hint}\n  Expression: ({expr})")
+    format!("[Error] `reset!` arg {index} expects type `{expected}`, but got `{actual}`{hint}\n  Expression: ({expr})")
   };
   if let Some(value) = args.get(1) {
     let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
@@ -1460,7 +1460,7 @@ pub(crate) fn check_resolved_fn_call_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  if check_fn_call_arity(head_form, fn_annot, args, call_info, "W_LOCAL_FN_ARG_TYPE_MISMATCH", check_warnings) {
+  if check_fn_call_arity(head_form, fn_annot, args, call_info, "E_LOCAL_FN_ARG_TYPE_MISMATCH", check_warnings) {
     return;
   }
   if fn_annot.arg_types.is_empty() && fn_annot.rest_type.is_none() {
@@ -1481,12 +1481,12 @@ pub(crate) fn check_resolved_fn_call_arg_types(
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),
-    warning_code: "W_LOCAL_FN_ARG_TYPE_MISMATCH",
+    warning_code: "E_LOCAL_FN_ARG_TYPE_MISMATCH",
     check_warnings,
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
     format!(
-      "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
+      "[Error] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
     )
   });
 }
@@ -1526,7 +1526,7 @@ pub(super) fn check_fn_call_arity(
   let definition = location.as_ref().map_or(call_info.def_name, |location| location.def.as_ref());
   gen_check_warning_code_at(
     format!(
-      "[Warn] Function `{head}` expects {expected} args, got {actual_count} in call at {}/{}",
+      "[Error] Function `{head}` expects {expected} args, got {actual_count} in call at {}/{}",
       call_info.file_ns, definition
     ),
     warning_code,
@@ -1564,12 +1564,12 @@ pub(super) fn check_method_call_arg_types(
     };
     gen_check_warning_code_at(
       format!(
-        "[Warn] Method `{head}` expects {expected} args (including receiver), got {} in call at {}/{}",
+        "[Error] Method `{head}` expects {expected} args (including receiver), got {} in call at {}/{}",
         args.len(),
         call_info.file_ns,
         call_info.def_name
       ),
-      "W_METHOD_ARG_TYPE_MISMATCH",
+      "E_METHOD_ARG_TYPE_MISMATCH",
       call_info.file_ns,
       call_info.call_location.clone(),
       check_warnings,
@@ -1587,13 +1587,13 @@ pub(super) fn check_method_call_arg_types(
       scope_types,
       file_ns: call_info.file_ns,
       call_location: call_info.call_location.clone(),
-      warning_code: "W_METHOD_ARG_TYPE_MISMATCH",
+      warning_code: "E_METHOD_ARG_TYPE_MISMATCH",
       check_warnings,
     },
     |index, expected, actual, _| {
       let role = if has_rest && index > fixed_count { "variadic " } else { "" };
       format!(
-        "[Warn] Method `{head}` {role}arg {index} expects type `{expected}`, but got `{actual}` in call at {}/{}",
+        "[Error] Method `{head}` {role}arg {index} expects type `{expected}`, but got `{actual}` in call at {}/{}",
         call_info.file_ns, call_info.def_name
       )
     },
@@ -1673,7 +1673,7 @@ pub(crate) fn check_user_fn_arg_types(
     scope_types,
     file_ns: call_info.file_ns,
     call_location: call_info.call_location.clone(),
-    warning_code: "W_FN_ARG_TYPE_MISMATCH",
+    warning_code: "E_FN_ARG_TYPE_MISMATCH",
     check_warnings,
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
@@ -1687,7 +1687,7 @@ pub(crate) fn check_user_fn_arg_types(
       ""
     };
     format!(
-      "[Warn] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: `{expr_str}`{migration}"
+      "[Error] Function `{fn_def_ns}/{fn_name}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns_owned}/{def_name}\n  Expression: `{expr_str}`{migration}"
     )
   });
 }
@@ -1716,12 +1716,12 @@ pub(crate) fn check_recur_arg_types(
     scope_types,
     file_ns,
     call_location,
-    warning_code: "W_RECUR_ARG_TYPE_MISMATCH",
+    warning_code: "E_RECUR_ARG_TYPE_MISMATCH",
     check_warnings,
   };
   let message = |index, expected: &str, actual: &str, expression| {
     format!(
-      "[Warn] `recur` argument {index} expects type `{expected}`, but got `{actual}` in {file_ns}/{def_name}\n  Expression: `{expression}`"
+      "[Error] `recur` argument {index} expects type `{expected}`, but got `{actual}` in {file_ns}/{def_name}\n  Expression: `{expression}`"
     )
   };
   if super::strict_types_enabled() {
@@ -2631,11 +2631,11 @@ pub(crate) fn check_function_return_type(
     let actual_str = diagnostic_type_string(actual_type.as_ref());
     gen_check_warning_code_at_with_types(
       append_js_ffi_type_hint(
-        format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
+        format!("[Error] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
         declared_return_type,
         &actual_type,
       ),
-      "W_FN_RETURN_TYPE_MISMATCH",
+      "E_FN_RETURN_TYPE_MISMATCH",
       file_ns,
       last_expr
         .get_location()
@@ -2772,7 +2772,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "a generic payload must not erase the Result wrapper contract");
-    assert_eq!(warnings[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
+    assert_eq!(warnings[0].code(), Some("E_FN_RETURN_TYPE_MISMATCH"));
   }
 
   #[test]
@@ -2841,7 +2841,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "typed local rest args should produce one mismatch: {warnings:?}");
-    assert_eq!(warnings[0].code(), Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"));
+    assert_eq!(warnings[0].code(), Some("E_LOCAL_FN_ARG_TYPE_MISMATCH"));
     assert!(warnings[0].message().contains("arg 2 expects type `:number`"));
   }
 

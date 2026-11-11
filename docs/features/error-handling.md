@@ -186,8 +186,8 @@ defn validate-order (order)
   todo! "|implement order validation"
 ```
 
-`todo!` accepts zero or one static String message. Static preprocessing emits a
-`W_TODO` warning with the definition and path, so normal check/codegen gates
+`todo!` accepts zero or one static String message. Static preprocessing emits an
+`E_TODO` error with the definition and path, so normal check/codegen gates
 continue to report unfinished work. Reaching it at runtime raises a TODO effect;
 JavaScript throws an Error and WASM traps. It is not an alias for `raise`:
 `raise` is an ordinary application error path and does not mean that an Agent

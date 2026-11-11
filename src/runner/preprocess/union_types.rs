@@ -316,7 +316,7 @@ pub(super) fn lower_union_match(
   let covers_all = arms.len() == members.len();
   if covers_all && wildcard.is_some() {
     gen_check_warning(
-      format!("[Warn] match on union {union_name} names every member, so the `_` branch is unreachable, at {file_ns}/{def_name}"),
+      format!("[Error] match on union {union_name} names every member, so the `_` branch is unreachable, at {file_ns}/{def_name}"),
       file_ns,
       ctx.check_warnings,
     );

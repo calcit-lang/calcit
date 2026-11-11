@@ -1759,7 +1759,7 @@ fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
 
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
-    let mut lines = vec![format!("Warnings: ({} warnings)", warnings.len())];
+    let mut lines = vec![format!("Errors: ({} errors)", warnings.len())];
     lines.extend(warnings.iter().map(|w| w.to_string()));
     return Err(lines.join("\n"));
   }
@@ -1773,7 +1773,7 @@ fn run_eval_in_process(entries: &ProgramEntries) -> Result<(), String> {
     Err(e) => {
       let mut lines: Vec<String> = vec![];
       if !e.warnings.is_empty() {
-        lines.push(format!("Warnings: ({} warnings)", e.warnings.len()));
+        lines.push(format!("Errors: ({} errors)", e.warnings.len()));
         lines.extend(e.warnings.iter().map(|w| w.to_string()));
       }
       lines.push(format!("Error: {}", e.msg));

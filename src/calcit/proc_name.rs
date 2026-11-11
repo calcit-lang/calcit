@@ -1444,7 +1444,7 @@ impl CalcitProc {
       }),
       Todo => Some(ProcTypeSignature {
         // `todo!` is a diverging compiler-known placeholder. Dynamic keeps it
-        // assignable to any declared return type while the static W_TODO
+        // assignable to any declared return type while the static E_TODO
         // diagnostic prevents it from being silently forgotten.
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],

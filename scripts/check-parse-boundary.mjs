@@ -70,8 +70,8 @@ try {
   for (const [formatter, input] of [["format-cirru-edn", "42"], ["format-cirru", "([] ([] |a))"]]) {
     for (const flag of ["nil", "0", "|false"]) {
       for (const [snippet, diagnostic] of [
-        [`${formatter} ${input} ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
-        [`let ((format-text ${formatter})) (format-text ${input} ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
+        [`${formatter} ${input} ${flag}`, /E_PROC_ARG_TYPE_MISMATCH/],
+        [`let ((format-text ${formatter})) (format-text ${input} ${flag})`, /E_LOCAL_FN_ARG_TYPE_MISMATCH/],
       ]) {
         for (const lint of ["0", "1"]) {
           const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
