@@ -13987,7 +13987,7 @@
                   rest ys
           :examples $ []
             quote $ assert= ([] 11 22 33)
-              zip-with ([] 1 2 3) ([] 10 20 30) &+
+              zip-with ([] 1 2 3) ([] 10 20 30) $ fn (a b) (&+ a b)
             quote $ assert= ([] |a1 |b2)
               zip-with ([] |a |b |c) ([] 1 2)
                 fn (s n) (str s n)
@@ -14013,9 +14013,9 @@
             %{} 'TestEntry (:name |empty-either-input-stays-empty)
               :code $ quote $ do
                 assert= ([])
-                  zip-with ([]) ([] 1) &+
+                  zip-with ([]) ([] 1) $ fn (a b) (&+ a b)
                 assert= ([])
-                  zip-with ([] 1) ([]) &+
+                  zip-with ([] 1) ([]) $ fn (a b) (&+ a b)
               :tags $ #{} :core :unit
         '{,} $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro {,} (& body)
