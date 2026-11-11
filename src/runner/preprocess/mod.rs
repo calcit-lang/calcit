@@ -19,6 +19,7 @@ mod type_checking;
 mod type_inference;
 mod type_rewriting;
 mod union_types;
+mod unknown_type_names;
 
 pub use intrinsic_rules::intrinsic_rule_summary;
 pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundant_hint_sites};
@@ -14623,6 +14624,16 @@ pub fn preprocess_defn(
         ));
       }
       if let Some(signature) = &body_fn_hint {
+        unknown_type_names::reject_unknown_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "hint-fn",
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.file_ns,
+          ctx.call_stack,
+          body_fn_hint_location.clone(),
+        )?;
+      }
+      if let Some(signature) = &body_fn_hint {
         ensure_annotation_slot_representatives(
           ctx.file_ns,
           &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
@@ -14669,6 +14680,14 @@ pub fn preprocess_defn(
           ctx.file_ns,
           def_name.as_ref(),
           &def_schema,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        unknown_type_names::reject_unknown_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "schema",
+          &def_schema,
+          ctx.file_ns,
           ctx.call_stack,
           Some(definition_location.clone()),
         )?;
@@ -16361,6 +16380,20 @@ fn preprocess_assert_type_with_obligation(
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
   let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
+  let assertion_location = args
+    .get(1)
+    .and_then(|form| form.get_location())
+    .or_else(|| find_preferred_macro_location(ctx.call_stack));
+  unknown_type_names::reject_unknown_type_names(
+    &assertion_location
+      .as_ref()
+      .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),
+    "assert-type",
+    &asserted_type,
+    ctx.file_ns,
+    ctx.call_stack,
+    assertion_location.clone(),
+  )?;
   ensure_annotation_slot_representatives(ctx.file_ns, &asserted_type, ctx.check_warnings, ctx.call_stack)?;
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),

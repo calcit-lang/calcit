@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.2 解析不到的类型名报 `E_UNKNOWN_TYPE_NAME`（#2691）
+
+schema、`hint-fn` 和 `assert-type` 里写了不存在的类型名（例如把 `Number` 拼成 `Nubmer`）时，检查现在报 `E_UNKNOWN_TYPE_NAME`，并给出编辑距离最近的候选名。以前这个名字被当成一个新的名义类型，函数体不依赖参数类型时检查一直通过，调用方才收到 ``expected `'Nubmer` `` 这样的不匹配。按提示改成正确的名字，或者补上 `:refer` / `:as` 引入。只在别的 entry 里加载的模块不受影响。
+
 ## 0.41.1 `edit format` 也缩短 `assert-type` / `hint-fn` 里的类型全名（#2682）
 
 `calcit edit format` 现在用和 schema 相同的规则缩短代码、examples 和测试里的类型全名：`assert-type x 'app.main/Task` 改成 `assert-type x Task`，已 `:refer` 的名字改成短名，`:as` 引入的命名空间改成 `alias/Task`，单个名字的 quote 一并去掉；`hint-fn $ Fn app.lib/Pt (-> Number)` 里的全名也改短。以下情况保留原写法：短名被局部绑定（如 `let` 里同名变量）遮住，或者短名和 `calcit.core` 里的定义重名。`unsafe-coerce` 的目标类型不改。

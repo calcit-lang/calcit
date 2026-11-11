@@ -14156,7 +14156,7 @@
                                 , t0
               , t0
           :examples $ []
-          :schema $ quote $ Fn Syntax (-> Syntax)
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
       :ns $ %{} 'NsEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote $ ns calcit.internal (:require)
     'calcit.test $ %{} 'FileEntry
