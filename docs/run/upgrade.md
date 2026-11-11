@@ -28,7 +28,14 @@ related:
 
 函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；计划在 0.43.0 改成默认报错。
 
-逐个补声明：
+一次补齐整个项目（会沿调用链算到不动点）：
+
+```bash
+calcit fix --rule effect-features-v1 --format json
+calcit fix --rule effect-features-v1 --apply --expect-revision <revision>
+```
+
+也可以逐个补声明：
 
 ```bash
 calcit edit schema 'app.main/main!' --add-feature state
