@@ -1,6 +1,28 @@
 
 {}
   :migrations $ []
+    {} (:family |definitions) (:version |0.41.1) (:issue |#2700)
+      :reason "|defenum_generics_now_use_the_(:generics_…)_clause;_Option_keeps_the_same_type_parameters_and_variants"
+      :before $ {} (:name 'calcit.core/Option) (:runtime-arity nil) (:schema nil)
+        :failure "|名义_enum，some_携带_T，none_无负载"
+        :declaration $ quote $ defenum Option ([] 'T) (:some 'T) (:none)
+      :after $ {} (:name 'calcit.core/Option) (:runtime-arity nil) (:schema nil)
+        :failure "|名义_enum，some_携带_T，none_无负载"
+        :declaration $ quote $ defenum Option (:generics 'T) (:some 'T) (:none)
+    {} (:family |definitions) (:version |0.41.1) (:issue |#2700)
+      :reason "|defenum_generics_now_use_the_(:generics_…)_clause;_Result_keeps_the_same_type_parameters_and_variants"
+      :before $ {} (:name 'calcit.core/Result) (:runtime-arity nil) (:schema nil)
+        :failure "|名义_enum，ok_携带_T，err_携带_E"
+        :declaration $ quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+      :after $ {} (:name 'calcit.core/Result) (:runtime-arity nil) (:schema nil)
+        :failure "|名义_enum，ok_携带_T，err_携带_E"
+        :declaration $ quote $ defenum Result (:generics 'T 'E) (:ok 'T) (:err 'E)
+    {} (:family |definitions) (:version |0.41.1) (:issue |#2700)
+      :reason "|defenum_generics_now_use_the_(:generics_…)_clause;_ControlFlow_keeps_the_same_type_parameter_and_variants"
+      :before $ {} (:name 'calcit.core/ControlFlow) (:runtime-arity nil) (:schema nil)
+        :declaration $ quote $ defenum ControlFlow ([] 'A) (:continue 'A) (:break 'A)
+      :after $ {} (:name 'calcit.core/ControlFlow) (:runtime-arity nil) (:schema nil)
+        :declaration $ quote $ defenum ControlFlow (:generics 'A) (:continue 'A) (:break 'A)
     {} (:family |definitions) (:version |0.35.0) (:issue |#2556)
       :reason "|Cirru_rows_are_strings_or_nested_lists_at_runtime;_the_schema_now_names_them_with_the_recursive_CirruNode_union"
       :before $ {} (:declaration nil)

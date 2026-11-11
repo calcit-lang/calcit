@@ -61,7 +61,7 @@ let
 
 ## Generic Enums
 
-`defenum` 在类型名后用 `(:generics T E)` 子句声明泛型参数，和 `Fn` 的 `:generics` 一致（0.42.0 起，#2700）。0.41 的位置式写法 `([] T E)` 在 0.42.x 仍可加载，`calcit edit format` 会改写成子句，0.43.0 删除。在断言和复合 payload 里直接写 `ResultX Number String` 套用具体类型。
+`defenum` 在类型名后用 `(:generics T E)` 子句声明泛型参数，和 `Fn` 的 `:generics` 一致（0.41.1 起，#2700）。0.41.0 的位置式写法 `([] T E)` 仍可加载，`calcit edit format` 会改写成子句，0.43.0 删除。在断言和复合 payload 里直接写 `ResultX Number String` 套用具体类型。
 
 ```cirru
 let
