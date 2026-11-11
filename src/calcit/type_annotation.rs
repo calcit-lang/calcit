@@ -5258,6 +5258,16 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// The schema a plain alias names, or the type itself when it is not one,
+  /// so shape-directed checks see `Vec3` as the `Tuple Number Number Number`
+  /// it aliases.
+  pub(crate) fn expand_schema_alias(type_value: &Arc<Self>) -> Arc<Self> {
+    match type_value.as_ref() {
+      Self::TypeRef(..) => type_value.resolve_schema_alias().unwrap_or_else(|| type_value.clone()),
+      _ => type_value.clone(),
+    }
+  }
+
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
       Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
