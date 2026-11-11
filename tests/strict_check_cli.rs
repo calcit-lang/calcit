@@ -1995,6 +1995,28 @@ fn referred_union_short_name_is_the_declared_type() {
 }
 
 #[test]
+fn recursive_union_relation_terminates() {
+  // #2687: relating two recursive unions used to recurse through their
+  // members until the stack overflowed. The pair in progress is now assumed
+  // to hold, so the check finishes and real mismatches are still reported.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/recursive-union-relation.cirru", &snapshot).unwrap();
+  let output = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(!stderr.contains("overflowed its stack"), "{stderr}");
+  assert!(
+    stderr.contains("1 failed, 0 blocked"),
+    "only `narrow` should fail\nstdout:\n{stdout}\nstderr:\n{stderr}"
+  );
+  for (def, status) in [("accept", "PASSED"), ("accept-mutual", "PASSED"), ("narrow", "FAILED")] {
+    let section = format!("## `demo.main/{def}`\n\n- status: **{status}**");
+    assert!(stdout.contains(&section), "missing {section}\n{stdout}");
+  }
+}
+
+#[test]
 fn later_union_argument_widens_generic_binding() {
   // #2608: a later `Map Tag Scalar` sets the shared variable to the union,
   // so a narrower first literal is accepted in either argument order.
