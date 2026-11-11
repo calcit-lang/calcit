@@ -2456,12 +2456,18 @@ fn node_transform_summary(node: &EffectsGraphNode) -> String {
     }
   }
 
-  let joined = parts.join("; ");
-  if joined.len() > 120 {
-    format!("{}…", &joined[..117])
-  } else {
-    joined
+  truncate_summary(parts.join("; "), 120)
+}
+
+/// Truncate to at most `max_chars` characters (not bytes), appending `…` when cut,
+/// so multi-byte text such as Chinese docs never splits a UTF-8 char boundary.
+fn truncate_summary(text: String, max_chars: usize) -> String {
+  if text.chars().count() <= max_chars {
+    return text;
   }
+  let keep = max_chars.saturating_sub(3);
+  let cut = text.char_indices().nth(keep).map(|(idx, _)| idx).unwrap_or(text.len());
+  format!("{}…", &text[..cut])
 }
 
 fn render_ste_inputs(node: &EffectsGraphNode, out: &mut String, prefix: &str, display: &SteDisplay<'_>) {
@@ -2733,6 +2739,21 @@ mod tests {
 
   fn strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|item| item.to_string()).collect()
+  }
+
+  #[test]
+  fn truncate_summary_respects_char_boundaries() {
+    let short = "短文档".to_string();
+    assert_eq!(truncate_summary(short.clone(), 120), short);
+    // 200 three-byte chars: byte slicing at 117 would land mid-char and panic.
+    let long: String = "中".repeat(200);
+    let cut = truncate_summary(long, 120);
+    assert_eq!(cut.chars().count(), 118);
+    assert!(cut.ends_with('…'));
+    let mixed: String = format!("{}{}", "a".repeat(116), "文".repeat(10));
+    assert_eq!(truncate_summary(mixed, 120), format!("{}文…", "a".repeat(116)));
+    let ascii = "x".repeat(120);
+    assert_eq!(truncate_summary(ascii.clone(), 120), ascii);
   }
 
   #[test]
