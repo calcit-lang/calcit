@@ -2516,7 +2516,7 @@ try {
         ["too-many-handler-parameters", "'Bool", "try 7 $ fn (message other) 0", false],
         ["open-normal-value", "'Dynamic", "try raw $ fn (message) 0", false],
         ["open-handler-value", "'Dynamic", "try 7 $ fn (message) raw", false],
-        ["open-callable", "'DynFn", "try 7 raw", false],
+        ["open-callable", "'AnyFn", "try 7 raw", false],
       ]) {
         const target = "test-struct.main/try-rejected";
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
