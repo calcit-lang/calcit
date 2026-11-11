@@ -8926,9 +8926,9 @@ fn core_option_method_rule_uses_proven_receiver_and_is_idempotent() {
 fn copy_with_legacy_option_helpers(target: &Path) {
   let source = fs::read_to_string("calcit/test-types-inference.cirru").expect("read type inference Snapshot");
   let legacy = source
-    .replace(".unwrap-or (Option :none) 7", "option:unwrap-or (Option :none) 7")
-    .replace(".none? $ Option :some 1", "option:none? $ Option :some 1")
-    .replace(".some? $ Option :some 1", "option:some? $ Option :some 1");
+    .replace(".unwrap-or None 7", "option:unwrap-or (Option :none) 7")
+    .replace(".none? $ Some 1", "option:none? $ Option :some 1")
+    .replace(".some? $ Some 1", "option:some? $ Option :some 1");
   assert_ne!(legacy, source, "legacy Option helper fixtures should be restored");
   fs::write(target, legacy).expect("write legacy Option Snapshot");
 }
@@ -9051,7 +9051,7 @@ fn core_option_method_rule_migrates_proven_empty_option_with_typed_fallback() {
         "--input-format",
         "cirru",
         "--expect",
-        "quote $ (Option :none) .unwrap-or 7",
+        "quote $ None .unwrap-or 7",
         "--code",
         "quote $ option:unwrap-or (Option :none) 7",
       ],
