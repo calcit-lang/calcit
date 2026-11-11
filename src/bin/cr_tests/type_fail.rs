@@ -5408,6 +5408,8 @@ fn effect_features_follow_entry_policy() {
       ("call-cb", "IO_FEATURE"),
       ("reads-env", "IO_FEATURE"),
       ("uses-dbg", "DBG_IN_ENTRY"),
+      ("calls-inline-io", "IO_FEATURE"),
+      ("shadow-ref", "STATE_FEATURE"),
     ];
     let collect = |policy: snapshot::FeaturePolicy| {
       let entries = load_fixture_entries(path);

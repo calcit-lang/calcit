@@ -246,13 +246,18 @@ impl Checker<'_> {
       Some(Calcit::Syntax(CalcitSyntax::HintFn | CalcitSyntax::Quote, _)) => {}
       Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => self.walk_lambda(items, scope, near),
       Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+        // A local Ref is known only inside its own binding: restore the
+        // previous provenance once the body ends, so an outer binding of the
+        // same name is not exempted by an inner `(ref ...)`.
+        let saved_refs = self.local_refs.clone();
         if let Some(Calcit::List(binding)) = items.get(1)
           && let (Some(Calcit::Local(local)), Some(init)) = (binding.first(), binding.get(1))
         {
+          self.walk(init, scope, near);
+          self.shadow(&local.sym);
           if is_ref_constructor(init) {
             self.local_refs.insert((local.sym.clone(), local.idx));
           }
-          self.walk(init, scope, near);
         }
         let body = items.iter().skip(2).collect::<Vec<_>>();
         let ends_with_raise =
@@ -265,6 +270,7 @@ impl Checker<'_> {
           self.walk(item, scope, near);
         }
         self.failure_report = previous;
+        self.local_refs = saved_refs;
       }
       Some(Calcit::Syntax(CalcitSyntax::Reset, _)) => {
         self.check_ref_target(items.get(1), "reset!", scope, near);
@@ -291,7 +297,21 @@ impl Checker<'_> {
           self.walk(item, scope, near);
         }
       }
-      _ => {
+      head => {
+        // Calling an inline lambda uses the effects its own hint declares;
+        // building one without calling it does not.
+        if let Some(Calcit::List(callee)) = head
+          && matches!(callee.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _)))
+        {
+          for effect in lambda_declared_effects(callee) {
+            self.require(
+              scope,
+              effect,
+              &format!("calls an inline lambda that declares `:{}`", effect.feature()),
+              near,
+            );
+          }
+        }
         for item in items.iter() {
           self.walk(item, scope, near);
         }
@@ -299,18 +319,28 @@ impl Checker<'_> {
     }
   }
 
+  /// Forget local Ref provenance for every binding named `sym`.
+  fn shadow(&mut self, sym: &Arc<str>) {
+    self.local_refs.retain(|(name, _)| name != sym);
+  }
+
   /// A nested function keeps the enclosing scope unless its own hint declares
   /// `:state` or `:io`; then its body is checked against that declaration.
   fn walk_lambda(&mut self, items: &crate::calcit::CalcitList, scope: &Scope, near: Option<&NodeLocation>) {
-    let own = items.iter().skip(3).find_map(|item| match item {
-      Calcit::List(hint) => match hint.call_kind() {
-        CalcitCallKind::TypedFnHint(signature, _) => Some(declared_effects(&signature.features)),
-        _ => None,
-      },
-      _ => None,
-    });
+    // Parameters shadow outer local Refs of the same name inside the body.
+    let saved_refs = self.local_refs.clone();
+    if let Some(Calcit::List(params)) = items.get(2) {
+      for param in params.iter() {
+        match param {
+          Calcit::Local(local) => self.shadow(&local.sym),
+          Calcit::Symbol { sym, .. } => self.shadow(sym),
+          _ => {}
+        }
+      }
+    }
+    let own = lambda_declared_effects(items);
     let body = items.iter().skip(3);
-    match own.filter(|effects| !effects.is_empty()) {
+    match Some(own).filter(|effects| !effects.is_empty()) {
       Some(declared) => {
         let name = match items.get(1) {
           Some(Calcit::Symbol { sym, .. }) => sym.to_string(),
@@ -330,6 +360,7 @@ impl Checker<'_> {
         }
       }
     }
+    self.local_refs = saved_refs;
   }
 
   fn check_ref_target(&mut self, target: Option<&Calcit>, operation: &str, scope: &Scope, near: Option<&NodeLocation>) {
@@ -347,6 +378,8 @@ impl Checker<'_> {
         &format!("uses `{operation}` on `{}`, a Ref not created in this function", local.sym),
         near,
       ),
+      // A Ref built right here, e.g. `(deref (ref 0))`, is local to this function.
+      Some(other) if is_ref_constructor(other) => self.walk(other, scope, near),
       Some(other) => {
         self.require(scope, Effect::State, &format!("uses `{operation}`"), near);
         self.walk(other, scope, near);
@@ -495,6 +528,21 @@ fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut Has
     }
     _ => {}
   }
+}
+
+/// Effects declared by a nested `defn`'s own `hint-fn`, if any.
+fn lambda_declared_effects(items: &crate::calcit::CalcitList) -> HashSet<Effect> {
+  items
+    .iter()
+    .skip(3)
+    .find_map(|item| match item {
+      Calcit::List(hint) => match hint.call_kind() {
+        CalcitCallKind::TypedFnHint(signature, _) => Some(declared_effects(&signature.features)),
+        _ => None,
+      },
+      _ => None,
+    })
+    .unwrap_or_default()
 }
 
 fn is_ref_constructor(form: &Calcit) -> bool {

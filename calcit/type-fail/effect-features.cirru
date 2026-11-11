@@ -24,6 +24,13 @@
           :schema $ quote $ Fn
             Fn Number (-> Unit) (:features :io)
             -> Unit
+        'calls-inline-io $ %{} 'CodeEntry
+          :doc "|Calling an inline lambda that declares :io is a use."
+          :code $ quote $ defn calls-inline-io (x)
+            (fn (y) (hint-fn (Fn Number (-> Unit) (:features :io))) (println y))
+              , x
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Unit)
         'calls-log $ %{} 'CodeEntry (:doc "|Calls an :io function without declaring :io.")
           :code $ quote $ defn calls-log (x) (log-line x)
           :examples $ []
@@ -49,6 +56,9 @@
             call-cb log-line
             uses-dbg 1
             reads-env
+            calls-inline-io 1
+            ref-here
+            shadow-ref *store
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io :state)
@@ -70,6 +80,20 @@
           :examples $ []
           :schema $ quote $ Fn
             -> $ Option String
+        'ref-here $ %{} 'CodeEntry (:doc "|A Ref built at the deref site is local.")
+          :code $ quote $ defn ref-here ()
+            deref $ ref 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'shadow-ref $ %{} 'CodeEntry
+          :doc "|An inner local Ref does not exempt the outer binding of the same name."
+          :code $ quote $ defn shadow-ref (cell)
+            let
+                cell $ ref 0
+              deref cell
+            deref cell
+          :examples $ []
+          :schema $ quote $ Fn (Ref Number) (-> Number)
         'uses-dbg $ %{} 'CodeEntry
           :doc "|dbg is not :io; the entry :dbg policy controls it."
           :code $ quote $ defn uses-dbg (x) (dbg x)
