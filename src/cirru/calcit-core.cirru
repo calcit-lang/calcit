@@ -10361,6 +10361,45 @@
                 do (assert= 9 head)
                   assert= ([] 8 7) tail
             :tags $ #{} :core :unit
+        'let{} $ %{} 'CodeEntry
+          :doc "|Destructures a statically typed Struct by field name: `let{} (id text) task body` binds each name to the required field read `(:name task)`, so every binding keeps the declared field type. A name that is not a field of the Struct is a check-time error (`W_UNKNOWN_STRUCT_FIELD`); a receiver that is not a known Struct is reported like `(:field value)`. The data expression is evaluated once."
+          :code $ quote $ defmacro let{} (fields data & body)
+            if
+              not $ and (list? fields)
+                every? fields symbol?
+              raise $ str-spaced "|let{} expects a list of field names, got:" fields
+            if (&list:empty? fields)
+              raise "|let{} expects at least one field name"
+            let
+                variable? $ symbol? data
+                v $ if variable? data $ gensym |v
+                defs $ map fields $ fn (field)
+                  [] field $ [] (turn-tag field) v
+              if variable?
+                quasiquote $ let (~ defs) (~@ body)
+                quasiquote $ &let (~v ~data)
+                  let (~ defs) (~@ body)
+          :examples $ []
+            quote $ let
+                Point $ defstruct Point (:x Number) (:y Number)
+                p $ Point :x 1 :y 2
+              let{} (x y) p $ + x y
+          :schema $ quote $ Macro SyntaxList (Expr Dynamic)
+            & $ Expr Dynamic
+            -> $ Expr Dynamic
+          :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |destructures-struct-fields-by-name)
+            :code $ quote $ let
+                Task $ defstruct Task (:id Number) (:text String) (:done? Bool)
+                task $ Task :id 1 :text |write :done? false
+              let{} (id text done?) task
+                assert= 1 id
+                assert= |write text
+                assert= false done?
+              assert= 3 $ let{} (id) (Task :id 3 :text |x :done? true) id
+              let{} (text) task
+                assert= 5 $ .len text
+            :tags $ #{} :core :unit
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
