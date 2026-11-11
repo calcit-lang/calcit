@@ -479,7 +479,13 @@ fn warning_diagnostics(warnings: &[LocatedWarning]) -> Vec<VerifyDiagnostic> {
     .map(|warning| VerifyDiagnostic {
       code: warning.code().unwrap_or("W_VERIFY_PREPROCESS").to_owned(),
       phase: "preprocess".to_owned(),
-      severity: "warning".to_owned(),
+      // Collected `E_` diagnostics block the check, so report them as errors.
+      severity: if warning.code().is_some_and(|code| code.starts_with("E_")) {
+        "error"
+      } else {
+        "warning"
+      }
+      .to_owned(),
       message: warning.message().to_owned(),
       detail: Some(warning.as_json()),
     })

@@ -4844,7 +4844,7 @@ fn preprocess_list_call(
               }
               if warn_dyn_method_enabled() {
                 let message = format!(
-                  "[Error] postfix method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+                  "[Warn] postfix method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
                   receiver_cause.label(),
                   receiver_cause.migration(),
                 );
@@ -7780,12 +7780,12 @@ fn warn_on_raw_struct_index_access(
     None => ("<missing field tag>".to_owned(), "(:field value)".to_owned()),
   };
   let message = format!(
-    "[Error] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `{field_access_hint}` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
+    "[Warn] `&struct:nth` for {field_text} at index {} in {file_ns} has no matching concrete nominal Struct layout. A hard-coded index is unsafe in reusable or generic code. Use `{field_access_hint}` on a concrete typed Struct so the compiler derives the index; generic helpers must use a typed trait/accessor or keep a Map boundary. `&struct:nth` is valid only as compiler/runtime IR backed by matching type evidence",
     index.lisp_str()
   );
   gen_check_warning_code_at(
     message,
-    "E_STRUCT_INDEX_RAW_ACCESS",
+    "W_STRUCT_INDEX_RAW_ACCESS",
     file_ns,
     field
       .and_then(Calcit::get_location)
@@ -8970,7 +8970,7 @@ fn reject_or_warn_on_dynamic_trait_call(
   }
 
   let message = format!(
-    "[Error] method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
+    "[Warn] method `.{method_name}` cannot be statically specialized in {file_ns}/{def_name} because its receiver source is {}; {}",
     receiver_cause.label(),
     receiver_cause.migration(),
   );
@@ -10349,7 +10349,7 @@ fn warn_on_method_name_conflict(
         .map(|candidate| candidate.trait_def.origin_label())
         .collect::<Vec<_>>(),
       TraitMethodResolution::Invalid(error) => {
-        let message = format!("[Error] method `.{method_name}` cannot use invalid trait metadata in {file_ns}/{def_name}: {error}");
+        let message = format!("[Warn] method `.{method_name}` cannot use invalid trait metadata in {file_ns}/{def_name}: {error}");
         if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
           gen_check_warning_with_location(message, loc, check_warnings);
         } else {
@@ -10371,7 +10371,7 @@ fn warn_on_method_name_conflict(
   let selected_origin = candidates.first().cloned().unwrap_or_else(|| "<unknown>".to_owned());
 
   let message = format!(
-    "[Error] method `.{}` has multiple origin candidates ({}) in {}/{}; compatibility dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
+    "[Warn] method `.{}` has multiple origin candidates ({}) in {}/{}; compatibility dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
     method_name,
     candidates.join(", "),
     file_ns,
@@ -23874,7 +23874,7 @@ mod tests {
 
     let warnings = warnings.borrow();
     assert!(
-      warnings.iter().any(|warning| warning.code() == Some("E_STRUCT_INDEX_RAW_ACCESS")),
+      warnings.iter().any(|warning| warning.code() == Some("W_STRUCT_INDEX_RAW_ACCESS")),
       "raw source index must not be published from a generic helper: {warnings:?}"
     );
     assert!(warnings.iter().any(|warning| warning.message().contains("matching type evidence")));
@@ -23918,7 +23918,7 @@ mod tests {
       warnings
         .borrow()
         .iter()
-        .all(|warning| warning.code() != Some("E_STRUCT_INDEX_RAW_ACCESS")),
+        .all(|warning| warning.code() != Some("W_STRUCT_INDEX_RAW_ACCESS")),
       "matching typed Snapshot IR must not be treated as hand-written unsafe access"
     );
   }

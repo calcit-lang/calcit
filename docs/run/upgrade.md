@@ -68,14 +68,13 @@ defenum Result (:generics T E) (:ok T) (:err E)
 | `W_REQUIRED_STRUCT_FIELD_TYPE` | `E_REQUIRED_STRUCT_FIELD_TYPE` |
 | `W_RESET_ARG_TYPE_MISMATCH` | `E_RESET_ARG_TYPE_MISMATCH` |
 | `W_STRUCT_DYNAMIC_RAW_ACCESS` | `E_STRUCT_DYNAMIC_RAW_ACCESS` |
-| `W_STRUCT_INDEX_RAW_ACCESS` | `E_STRUCT_INDEX_RAW_ACCESS` |
 | `W_STRUCT_PATH_OPERATION` | `E_STRUCT_PATH_OPERATION` |
 | `W_STRUCT_RAW_ACCESS` | `E_STRUCT_RAW_ACCESS` |
 | `W_TODO` | `E_TODO` |
 | `W_TUPLE_INDEX` | `E_TUPLE_INDEX` |
 | `W_UNKNOWN_STRUCT_FIELD` | `E_UNKNOWN_STRUCT_FIELD` |
 
-按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS` 和 `P_*` 也不变。
+按编码过滤 `--format json` 输出或 stderr 的脚本需要换成新名字；CLI 没有接受编码名的参数，不保留旧名别名。`Notes:` 下列出、检查仍通过的 `W_` 提示（如 `W_PERCENT_STRUCT_LITERAL`、`W_IMPLICIT_NIL_BRANCH`）不变；`--warn-dyn-method` 才报告的 `W_JS_FFI_UNTYPED_ACCESS`、`W_STRUCT_INDEX_RAW_ACCESS` 和 `P_*` 也不变（它们属于按需开启的分析通道，消息仍以 `[Warn]` 开头）。
 
 ## 0.42.0 trait 写在类型位置报 `E_TRAIT_AS_TYPE`（#2696）
 

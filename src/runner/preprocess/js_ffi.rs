@@ -481,14 +481,14 @@ pub(super) fn reject_or_warn_on_untyped_js_ffi_field_access(
   };
 
   let message = format!(
-    "[Error] `{operation}` accesses untyped JS field `:{field_name}` on inferred {receiver_label} in {file_ns}/{def_name}; declare an external-object trait (`deftrait ... :ffi {{:kind :external-object ...}}`) containing that field or method, then coerce the host value to the trait inside the lexical `:js-ffi` adapter; use a dynamic key only when raw lookup semantics are intentional"
+    "[Warn] `{operation}` accesses untyped JS field `:{field_name}` on inferred {receiver_label} in {file_ns}/{def_name}; declare an external-object trait (`deftrait ... :ffi {{:kind :external-object ...}}`) containing that field or method, then coerce the host value to the trait inside the lexical `:js-ffi` adapter; use a dynamic key only when raw lookup semantics are intentional"
   );
 
   let location = head.get_location().or_else(|| receiver.get_location());
   if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.clone(),
+      message.replacen("[Warn]", "[Error]", 1),
       "E_UNTYPED_JS_OBJECT_ACCESS",
       call_stack,
       location,

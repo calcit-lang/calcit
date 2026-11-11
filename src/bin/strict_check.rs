@@ -231,7 +231,7 @@ fn reachable_definitions(
 fn warning_diagnostic(warning: &LocatedWarning) -> CheckDiagnostic {
   let location = warning.location();
   CheckDiagnostic {
-    severity: "warning",
+    severity: located_warning_severity(warning),
     code: warning.code().map(str::to_owned),
     message: warning.message().to_owned(),
     definition: format!("{}/{}", location.ns, location.def),
@@ -240,6 +240,16 @@ fn warning_diagnostic(warning: &LocatedWarning) -> CheckDiagnostic {
     expected: warning.expected().map(str::to_owned),
     actual: warning.actual().map(str::to_owned),
     provenance: Vec::new(),
+  }
+}
+
+/// Collected preprocessing diagnostics with an `E_` code block the check, so
+/// report them as errors; other collected codes keep warning severity.
+fn located_warning_severity(warning: &LocatedWarning) -> &'static str {
+  if warning.code().is_some_and(|code| code.starts_with("E_")) {
+    "error"
+  } else {
+    "warning"
   }
 }
 
