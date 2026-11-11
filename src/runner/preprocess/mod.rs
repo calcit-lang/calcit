@@ -65,8 +65,8 @@ pub use type_inference::{
   infer_static_type_from_expr, resolve_core_nominal_instance_type,
 };
 use type_rewriting::{
-  build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,
-  try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
+  build_enum_ref_node, build_struct_ref_node, coerce_tag_literal, coerce_tail_tag_literals, try_rewrite_enum_args_to_named_enums,
+  try_rewrite_local_fn_enum_args_to_named_enums, try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
 };
 
 use cirru_parser::Cirru;
@@ -5546,6 +5546,22 @@ fn preprocess_list_call(
         let mut processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         // Struct literal construction (`%{}`, or a direct constructor call that
         // lowers to it) wraps plain payloads of Option fields (#2652).
+        // Bare tags for enum-typed fields name zero-payload variants (#2701).
+        if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
+          && let Some(coerced) = coerce_struct_literal_tags(
+            &processed_args,
+            scope_types,
+            (file_ns, &def_name),
+            call_stack,
+            call_location.clone(),
+          )?
+        {
+          processed_args = coerced;
+          ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
+          for item in processed_args.iter() {
+            ys = ys.push(item.to_owned());
+          }
+        }
         if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
           && let Some(lifted) = lift_struct_literal_options(&processed_args, scope_types, file_ns)
         {
@@ -6018,6 +6034,32 @@ fn preprocess_list_call(
               ys = ys.push(item.to_owned());
             }
           }
+          // Bare tags at enum-typed parameters of a local function (#2701).
+          if let Some(ref ty) = local_type
+            && let Some(fn_annot) = ty.resolve_to_fn()
+            && ys.drop_left().iter().any(|arg| matches!(arg, Calcit::Tag(_)))
+          {
+            let mut next = vec![ys.first().unwrap().to_owned()];
+            let mut coerced = false;
+            for (idx, arg) in ys.drop_left().iter().enumerate() {
+              let replacement = match fn_annot.arg_types.get(idx) {
+                Some(expected) => coerce_tag_literal(
+                  arg,
+                  expected,
+                  &format!("arg {} of local `{local_sym}`", idx + 1),
+                  (file_ns, &def_name),
+                  call_stack,
+                  call_location.clone(),
+                )?,
+                None => None,
+              };
+              coerced |= replacement.is_some();
+              next.push(replacement.unwrap_or_else(|| arg.to_owned()));
+            }
+            if coerced {
+              ys = CalcitList::new_inner_from(next.as_slice());
+            }
+          }
           if let Some(Calcit::Local(local)) = ys.first() {
             let updated_args = CalcitList::from(ys.drop_left());
             let local_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
@@ -6446,6 +6488,23 @@ fn preprocess_known_function_call(
         result?
       }
       None => form,
+    };
+    // A bare tag at a definite enum parameter names its zero-payload variant (#2701).
+    let form = if matches!(form, Calcit::Tag(_))
+      && let Some(raw_expected) = active_expected_types.get(arg_idx)
+      && !raw_expected.contains_type_var()
+      && let Some(expected) = expected_type.as_ref()
+      && let Some(rewritten) = coerce_tag_literal(
+        &form,
+        expected,
+        &format!("arg {} of `{}`", arg_idx + 1, info.name),
+        (file_ns, def_name),
+        call_stack,
+        call_location.clone(),
+      )? {
+      rewritten
+    } else {
+      form
     };
     // A parameter that declares nullability already admits the nil exit.
     if !is_nil_bridge_head(&head_form)
@@ -7878,6 +7937,55 @@ fn lift_struct_literal_options(args: &CalcitList, scope_types: &ScopeTypes, file
     next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
   }
   lifted.then(|| CalcitList::from(next.as_slice()))
+}
+
+/// Rewrites bare tag values of enum-typed fields in a struct literal
+/// (`[NativeStruct, prototype, :field value ...]`) to zero-payload variants (#2701).
+fn coerce_struct_literal_tags(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  (file_ns, def_name): (&str, &str),
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> Result<Option<CalcitList>, CalcitErr> {
+  let Some(prototype) = args.first() else { return Ok(None) };
+  let items = args.iter().skip(1).collect::<Vec<_>>();
+  if !items.iter().any(|item| matches!(item, Calcit::Tag(_)))
+    || !items.len().is_multiple_of(2)
+    || items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    return Ok(None);
+  }
+  let Some(value) = resolve_struct_value(prototype, scope_types) else {
+    return Ok(None);
+  };
+  let struct_type = CalcitTypeAnnotation::StructValue(value.struct_ref.clone());
+  let mut coerced = false;
+  let mut next = vec![prototype.to_owned()];
+  for pair in items.as_chunks::<2>().0 {
+    next.push(pair[0].to_owned());
+    let replacement = match struct_constructor_field_name(pair[0])
+      .and_then(|field| value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field))
+      .and_then(|index| type_inference::resolve_struct_field_type_by_index(&struct_type, index))
+    {
+      Some(field_type) => coerce_tag_literal(
+        pair[1],
+        &field_type,
+        &format!(
+          "field `:{}` of struct `{}`",
+          struct_constructor_field_name(pair[0]).unwrap_or_default(),
+          value.struct_ref.name
+        ),
+        (file_ns, def_name),
+        call_stack,
+        location.clone(),
+      )?,
+      None => None,
+    };
+    coerced |= replacement.is_some();
+    next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
+  }
+  Ok(coerced.then(|| CalcitList::from(next.as_slice())))
 }
 
 /// Check resolved constructor shapes and payloads after lowering. Both public
@@ -15135,6 +15243,15 @@ pub fn preprocess_defn(
           let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
           resolve_namespace_type_refs_for_body(local, ctx.file_ns).resolve_to_fn()
         });
+      // A declared enum result names zero-payload variants for bare tags in the
+      // returned form (#2701).
+      let tail_tag_return = effective_fn_schema
+        .as_ref()
+        .filter(|signature| !signature.is_async_invocation() && !signature.return_type.contains_type_var())
+        .map(|signature| {
+          let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
+          resolve_namespace_type_refs_for_body(local, ctx.file_ns)
+        });
       // The returned form is the last one that is not a function hint.
       let tail_index = args
         .iter()
@@ -15168,6 +15285,18 @@ pub fn preprocess_defn(
           a,
           preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
         );
+        let form = match tail_tag_return.as_ref().filter(|_| Some(index) == tail_index) {
+          Some(expected) => coerce_tail_tag_literals(
+            &form,
+            expected,
+            "return value",
+            (ctx.file_ns, def_name.as_ref()),
+            ctx.call_stack,
+            ctx.call_location.clone().or(Some(definition_location.clone())),
+          )?
+          .unwrap_or(form),
+          None => form,
+        };
         condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);
