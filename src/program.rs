@@ -1137,6 +1137,12 @@ pub fn has_def_code(ns: &str, def: &str) -> bool {
   }
 }
 
+/// Whether a source-code namespace is loaded for the current entry.
+pub fn has_ns_code(ns: &str) -> bool {
+  let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
+  program_code.contains_key(ns)
+}
+
 /// List all def names in a source-code namespace.
 pub fn list_source_def_names(ns: &str) -> Vec<Arc<str>> {
   let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
@@ -1256,6 +1262,20 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
     ImportRule::NsAs(_ns) => None,
     ImportRule::NsDefault(_ns) => None,
   }
+}
+
+/// Names a namespace brings in with `:refer`, for "did you mean" hints.
+pub fn list_refer_import_names(ns: &str) -> Vec<Arc<str>> {
+  let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
+  let Some(file) = program.get(ns) else {
+    return vec![];
+  };
+  file
+    .import_map
+    .iter()
+    .filter(|(_, rule)| matches!(rule.as_ref(), ImportRule::NsReferDef(..)))
+    .map(|(name, _)| name.to_owned())
+    .collect()
 }
 
 /// The namespace and definition a `:refer` import name points at.

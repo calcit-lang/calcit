@@ -5121,6 +5121,51 @@ fn type_fail_tuple_reads_and_list_operations_report_tuple_diagnostics() {
   });
 }
 
+/// A type name that resolves to nothing fails the check in a schema, a
+/// `hint-fn` and an `assert-type`, and the error names the nearest real
+/// type (#2691).
+#[test]
+fn strict_type_fail_unknown_type_name_suggests_candidates() {
+  run_with_large_stack(|| {
+    let cases = [
+      (
+        "calcit/type-fail/unknown-type-name-schema.cirru",
+        "`Nubmer` in schema at schema.args.0.item",
+        "`Number`",
+      ),
+      (
+        "calcit/type-fail/unknown-type-name-alias.cirru",
+        "`lib/Pointt` in schema at schema.args.0",
+        "`lib/Point`",
+      ),
+      (
+        "calcit/type-fail/unknown-type-name-hint-fn.cirru",
+        "`Nubmer` in hint-fn",
+        "`Number`",
+      ),
+      (
+        "calcit/type-fail/unknown-type-name-assert-type.cirru",
+        "`Strnig` in assert-type",
+        "`String`",
+      ),
+    ];
+    let _strict = StrictTypesReset::enabled();
+    for (fixture, place, candidate) in cases {
+      let entries = load_fixture_entries(fixture);
+      let err = run_check_only(&entries).expect_err(fixture);
+      assert!(
+        err.contains("E_UNKNOWN_TYPE_NAME"),
+        "{fixture} should report E_UNKNOWN_TYPE_NAME: {err}"
+      );
+      assert!(err.contains(place), "{fixture} should point at {place}: {err}");
+      assert!(
+        err.contains(&format!("did you mean {candidate}")),
+        "{fixture} should suggest {candidate}: {err}"
+      );
+    }
+  });
+}
+
 /// Each `defunion` rule rejects its fixture with a stable code: member
 /// restrictions, exhaustive type-pattern `match`, no predicate or literal
 /// narrowing, no methods or stringification, no Dynamic into a union, and

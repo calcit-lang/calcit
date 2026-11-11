@@ -704,6 +704,18 @@ let
 
 ## Built-in Type Checks
 
+### 类型名必须解析到定义
+
+definition 的 `:schema`、`hint-fn` 和 `assert-type` 里的类型名，要么是内置类型（`Number`、`String`、`List` 等），要么能解析到一个定义：本命名空间的定义、`:refer` 引入的名字、`alias/Def` 或 `namespace/Def` 全名、`calcit.core` 的定义。都不是时报 `E_UNKNOWN_TYPE_NAME`，并按编辑距离给出最多三个候选名：
+
+```text
+; schema: Fn (List Nubmer) (-> Number)
+; E_UNKNOWN_TYPE_NAME: app.main/f uses unknown type name `Nubmer` in schema at schema.args.0.item; ... did you mean `Number`?
+defn f (xs) (count xs)
+```
+
+当前 entry 没有加载的模块不做判断：`:as` / `:refer` 指向未加载命名空间的名字，以及带点号前缀的全名（如 `respo.dom/DomElement`）保持原样。不带点号的前缀必须是 `:as` 别名，拼错的别名同样报错。
+
 ### Struct 构造完整性
 
 能够静态解析的 Struct 构造会在 macro 展开后的同一校验路径中检查字段数量、重复或未知的字面量字段名和字段值类型。不完整的 `%{} Point (:x 1)` 不再等到 native 执行或生成的 JS 才报错；默认严格检查使用现有 `W_FN_ARG_TYPE_MISMATCH` 定位到源码构造调用，并阻止生成应用产物。
