@@ -15799,12 +15799,10 @@ fn lambda_arity(form: &Calcit, allow_hint: bool) -> Option<usize> {
 /// only failures of the values it passes on, such as an argument a typed
 /// callee rejects; findings about the body itself, like a pattern that cannot
 /// match one call's input, stay with the ordinary check of the binding.
-fn reports_let_lambda_recheck(code: Option<&str>, message: &str) -> bool {
-  match code {
-    Some(code) => code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH",
-    // Calling a parameter that holds a non-function value has no code yet.
-    None => message.starts_with("[Error] trying to call "),
-  }
+fn reports_let_lambda_recheck(code: Option<&str>) -> bool {
+  code.is_some_and(|code| {
+    code.ends_with("_ARG_TYPE_MISMATCH") || code == "E_CALL_ARGUMENT_MISMATCH" || code == "E_CALL_NON_FUNCTION"
+  })
 }
 
 thread_local! {
@@ -15911,7 +15909,7 @@ fn recheck_let_lambda_call(
   // Warnings found before a failure are reported whatever happens to it.
   let mut target = check_warnings.borrow_mut();
   for mut warning in warnings.into_inner() {
-    if !reports_let_lambda_recheck(warning.code(), warning.message()) {
+    if !reports_let_lambda_recheck(warning.code()) {
       continue;
     }
     // The suffix names the call, so distinct calls stay distinct while a
@@ -15926,7 +15924,7 @@ fn recheck_let_lambda_call(
   }
   drop(target);
   if let Err(mut error) = rechecked
-    && reports_let_lambda_recheck(error.code.as_deref(), &error.msg)
+    && reports_let_lambda_recheck(error.code.as_deref())
   {
     error.msg.push_str(&called_at);
     return Err(error);
