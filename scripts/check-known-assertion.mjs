@@ -649,7 +649,7 @@ try {
         const output = join(project, `sliceable-${label}-js`);
         const diagnosticPattern = label === "missing-trait-start" || label === "extra-trait-end"
           ? /E_TRAIT_CALL_ARITY|&trait-call method expects .*arguments/
-          : /E_CALL_ARGUMENT_(?:MISMATCH|UNPROVEN)|W_(?:LOCAL_FN|FN|PROC|METHOD)_ARG_TYPE_MISMATCH/;
+          : /E_CALL_ARGUMENT_(?:MISMATCH|UNPROVEN)|E_(?:LOCAL_FN|FN|PROC|METHOD)_ARG_TYPE_MISMATCH/;
         for (const args of [
           ["--check-only", "--all-defs"],
           ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "json"],
@@ -2516,7 +2516,7 @@ try {
         ["too-many-handler-parameters", "'Bool", "try 7 $ fn (message other) 0", false],
         ["open-normal-value", "'Dynamic", "try raw $ fn (message) 0", false],
         ["open-handler-value", "'Dynamic", "try 7 $ fn (message) raw", false],
-        ["open-callable", "'DynFn", "try 7 raw", false],
+        ["open-callable", "'AnyFn", "try 7 raw", false],
       ]) {
         const target = "test-struct.main/try-rejected";
         run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",

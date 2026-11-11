@@ -5200,9 +5200,10 @@ fn strict_type_fail_union_rules_report_stable_codes() {
     let _strict = StrictTypesReset::enabled();
     for (fixture, code) in cases {
       let entries = load_fixture_entries(fixture);
-      if code.starts_with("W_") {
+      // Collected diagnostics (named `W_` before 0.42.0, #2699) fail the check
+      // with a count only, so their codes are read from the collected list.
+      if matches!(code, "E_FN_ARG_TYPE_MISMATCH" | "E_GENERIC_WHERE_BOUND_MISMATCH") {
         let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-        // A warning-level rule may still stop compilation; only the collected codes matter here.
         let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
         let warnings = warnings.borrow();
         assert!(
