@@ -5219,6 +5219,44 @@ fn strict_type_fail_unknown_type_name_suggests_candidates() {
   });
 }
 
+/// A plain trait in a type position is rejected with `E_TRAIT_AS_TYPE` and
+/// points to the `:where` bound (or `assert-traits`) that states the capability.
+#[test]
+fn strict_type_fail_trait_as_type_points_to_where_bound() {
+  run_with_large_stack(|| {
+    let cases = [
+      (
+        "calcit/type-fail/trait-as-type-schema.cirru",
+        "`lib/Labeled` as a type in schema at schema.args.0.item",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-value-schema.cirru",
+        "`lib/Labeled` as a type in schema at schema.item",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-hint-fn.cirru",
+        "`lib/Labeled` as a type in hint-fn at hint-fn.args.0",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
+        "calcit/type-fail/trait-as-type-assert-type.cirru",
+        "as a type in assert-type",
+        "assert-traits x app.lib/Labeled",
+      ),
+    ];
+    let _strict = StrictTypesReset::enabled();
+    for (fixture, place, hint) in cases {
+      let entries = load_fixture_entries(fixture);
+      let err = run_check_only(&entries).expect_err(fixture);
+      assert!(err.contains("E_TRAIT_AS_TYPE"), "{fixture} should report E_TRAIT_AS_TYPE: {err}");
+      assert!(err.contains(place), "{fixture} should point at {place}: {err}");
+      assert!(err.contains(hint), "{fixture} should suggest {hint}: {err}");
+    }
+  });
+}
+
 /// Each `defunion` rule rejects its fixture with a stable code: member
 /// restrictions, exhaustive type-pattern `match`, no predicate or literal
 /// narrowing, no methods or stringification, no Dynamic into a union, and

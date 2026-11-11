@@ -137,7 +137,16 @@ Impl 的 origin 也按这个身份比较，不按 trait 短名合并。native �
 
 `'Trait` 是元数据种类合同，而不是单一描述值身份的持久化类型。显式 trait 调用依据已证明的来源选择方法；接收或返回一般 `'Trait` 的函数并不因此承诺始终选择某个固定声明。
 
-参数合同中的 `'Greeting` 则表示接收者必须实现 Greeting，而不是接收 Greeting 描述值。若 `describe` 要求这个能力，调用 `describe instance` 时须传入附加了匹配 impl 的实例；`describe Greeting` 不能满足合同，即使先经过 `let`、`identity` 或回调传递也一样。
+要求接收者具备某个能力时，用泛型参数加 `:where` 约束写合同；调用处传入附加了匹配 impl 的实例即可，传 `Greeting` 描述值本身不能满足合同：
+
+```cirru.no-check
+defn describe (x) (x .greeting)
+; schema
+Fn T (-> String) (:generics T)
+  :where $ T Greeting
+```
+
+trait 名不能直接写在类型位置。`Fn Greeting (-> String)`、`List Greeting`、`hint-fn $ Fn Greeting (-> String)` 和 `assert-type x Greeting` 都报 `E_TRAIT_AS_TYPE`：trait 描述的是能力，没有值以它为类型，这样写的合同会拒绝所有实现者。按报错提示改成上面的 `:where` 写法；`assert-type` 改成 `assert-traits x Greeting`。external-object trait（`defexternal`，或带 `:ffi` 的 `deftrait`）是宿主句柄的类型，可以继续写在类型位置。
 
 显式调用 `&trait-call Greeting :greeting instance` 的第一个参数选择描述值，后面的接收者仍须证明能力。局部别名与导入别名可以选择同一个描述值；描述值自身不因此拥有 `.greeting` 等实例方法。查询元数据传递函数的返回类型时会显示 `'Trait`，而不是把描述值列成具有这些实例方法的值。
 
@@ -309,10 +318,10 @@ let
 子句头是 Symbol `requires`，与 Tag 形式的成员键区分；旧写法 `('requires Parent)` 仍然接受。
 
 ```cirru.no-check
-deftrait Labeled $ .label $ Fn Labeled $ -> String
+deftrait Labeled $ .label $ Fn T (-> String) (:generics T)
 
 deftrait Greeting (requires Labeled)
-  .greeting $ Fn Greeting (-> String)
+  .greeting $ Fn T (-> String) (:generics T)
 
 def Greeter $ impl-traits
   defstruct Greeter $ :name String
@@ -321,7 +330,7 @@ def Greeter $ impl-traits
 
 - `defimpl GreetingImpl Greeting` 只实现 `Greeting` 自己的方法；`impl-traits` 挂载时同一类型必须也挂载了全部父 trait 的实现，
   否则报 `E_IMPL_MISSING_REQUIRED_TRAIT`。`assert-traits value Greeting` 同样检查父 trait 的实现。
-- `:where T Greeting` 的函数体可以调用 `.label`；`Greeting` 类型的值可以传给要求 `Labeled` 的位置，反方向需要显式检查。
+- `:where $ T Greeting` 的函数体可以调用 `.label`；满足 `Greeting` 约束的类型参数也满足 `Labeled` 约束，反方向需要显式检查。
 - external-object trait 的继承用法见 [JavaScript Interop](js-interop.md)。
 
 ## Checking trait requirements
@@ -379,3 +388,4 @@ Expected output:
 - `requires` 不能形成环。
 - external-object trait 只能 require external-object trait。
 - 以上声明错误统一报 `E_TRAIT_REQUIRES`。
+- 普通 trait 不能写在类型位置（schema、`hint-fn`、`assert-type`），报 `E_TRAIT_AS_TYPE`，改用 `:where` 约束。

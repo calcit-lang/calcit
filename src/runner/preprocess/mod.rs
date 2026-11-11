@@ -15,6 +15,7 @@ mod redundant_hint;
 mod scope_types;
 mod source_replay;
 mod tail_context;
+mod trait_type_names;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -1942,7 +1943,10 @@ fn check_top_level_value_schema(
   if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "def" | "fn")) {
     return Ok(());
   }
-  let expected = type_inference::definition_value_schema(ns, def, program::lookup_def_schema(ns, def));
+  let declared = program::lookup_def_schema(ns, def);
+  let schema_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+  trait_type_names::reject_trait_type_names(&format!("{ns}/{def}"), "schema", &declared, ns, call_stack, Some(schema_location))?;
+  let expected = type_inference::definition_value_schema(ns, def, declared);
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
     return Ok(());
   };
@@ -14668,6 +14672,14 @@ pub fn preprocess_defn(
           ctx.call_stack,
           body_fn_hint_location.clone(),
         )?;
+        trait_type_names::reject_trait_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "hint-fn",
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.file_ns,
+          ctx.call_stack,
+          body_fn_hint_location.clone(),
+        )?;
       }
       if let Some(signature) = &body_fn_hint {
         ensure_annotation_slot_representatives(
@@ -14720,6 +14732,14 @@ pub fn preprocess_defn(
           Some(definition_location.clone()),
         )?;
         unknown_type_names::reject_unknown_type_names(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "schema",
+          &def_schema,
+          ctx.file_ns,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        trait_type_names::reject_trait_type_names(
           &format!("{}/{}", ctx.file_ns, def_name),
           "schema",
           &def_schema,
@@ -16421,6 +16441,16 @@ fn preprocess_assert_type_with_obligation(
     .and_then(|form| form.get_location())
     .or_else(|| find_preferred_macro_location(ctx.call_stack));
   unknown_type_names::reject_unknown_type_names(
+    &assertion_location
+      .as_ref()
+      .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),
+    "assert-type",
+    &asserted_type,
+    ctx.file_ns,
+    ctx.call_stack,
+    assertion_location.clone(),
+  )?;
+  trait_type_names::reject_trait_type_names(
     &assertion_location
       .as_ref()
       .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),
