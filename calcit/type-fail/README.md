@@ -28,6 +28,7 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
 - `cargo run --bin calcit -- calcit/type-fail/untyped-js-object-access-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unbound-trait-field-tag-key-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/js-nullish-dereference-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/effect-features.cirru --check-only`（未声明的 `:state` / `:io` 与发布 entry 里的 `dbg`）
 - `cargo run --bin calcit -- calcit/type-fail/js-nullish-predicate-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unsafe-coerce-unscoped-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`

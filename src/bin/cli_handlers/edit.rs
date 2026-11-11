@@ -1951,9 +1951,9 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     if opts.clear || opts.file.is_some() || opts.code.is_some() {
       return Err("`edit schema --add-feature` cannot be combined with --clear, --file, or --code".to_owned());
     }
-    if feature != "js-ffi" && feature != "erased-cache" {
+    if !matches!(feature.as_str(), "js-ffi" | "erased-cache" | "state" | "io") {
       return Err(format!(
-        "Unsupported schema feature `{feature}`; currently --add-feature supports only `js-ffi` and `erased-cache`"
+        "Unsupported schema feature `{feature}`; --add-feature supports `js-ffi`, `erased-cache`, `state` and `io`"
       ));
     }
     let existing = &file_data.defs[&resolved_definition].schema;

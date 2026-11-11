@@ -5392,3 +5392,69 @@ fn broad_type_notes_name_the_type_checked_calls_pass() {
     assert_eq!(hint("spread-op!"), None, "{notes:?}");
   });
 }
+
+/// Effect boundaries (#2710): undeclared `:state` / `:io` follow the entry
+/// policy, propagate through calls and references, and leave local Refs,
+/// assertion failure output, featured lambdas and `dbg` alone.
+#[test]
+fn effect_features_follow_entry_policy() {
+  run_with_large_stack(|| {
+    let path = "calcit/type-fail/effect-features.cirru";
+    let ns = "type-fail-effect-features.main";
+    let expected = [
+      ("read-store", "STATE_FEATURE"),
+      ("calls-log", "IO_FEATURE"),
+      ("passes-log", "IO_FEATURE"),
+      ("call-cb", "IO_FEATURE"),
+      ("reads-env", "IO_FEATURE"),
+      ("uses-dbg", "DBG_IN_ENTRY"),
+    ];
+    let collect = |policy: snapshot::FeaturePolicy| {
+      let entries = load_fixture_entries(path);
+      program::configure_entry_feature_policy(&HashMap::from([
+        ("state".to_owned(), policy),
+        ("io".to_owned(), policy),
+        ("dbg".to_owned(), policy),
+      ]));
+      let _ = runner::preprocess::take_advisories();
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let advisories = runner::preprocess::take_advisories();
+      program::configure_entry_feature_policy(&HashMap::new());
+      result.expect("effect diagnostics are advisories, not compile errors");
+      let mut found = advisories
+        .iter()
+        .filter_map(|advisory| {
+          let code = advisory.code()?;
+          let kind = code.strip_prefix("W_").or_else(|| code.strip_prefix("E_"))?;
+          let kind = kind.strip_suffix("_REQUIRED").unwrap_or(kind);
+          matches!(kind, "STATE_FEATURE" | "IO_FEATURE" | "DBG_IN_ENTRY").then(|| {
+            let def = advisory.message().split_whitespace().nth(1).unwrap_or_default().to_owned();
+            (def, code.to_owned(), runner::preprocess::is_blocking_advisory(advisory))
+          })
+        })
+        .collect::<Vec<_>>();
+      found.sort();
+      found
+    };
+
+    for (policy, prefix, blocking) in [
+      (snapshot::FeaturePolicy::Warn, "W_", false),
+      (snapshot::FeaturePolicy::Error, "E_", true),
+    ] {
+      let found = collect(policy);
+      let mut wanted = expected
+        .iter()
+        .map(|(def, kind)| {
+          let suffix = if *kind == "DBG_IN_ENTRY" { "" } else { "_REQUIRED" };
+          (format!("{ns}/{def}"), format!("{prefix}{kind}{suffix}"), blocking)
+        })
+        .collect::<Vec<_>>();
+      wanted.sort();
+      assert_eq!(found, wanted, "effect diagnostics under {policy:?}");
+    }
+
+    assert!(collect(snapshot::FeaturePolicy::Allow).is_empty(), ":allow reports nothing");
+  });
+}
