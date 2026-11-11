@@ -2027,6 +2027,139 @@ fn retired_core_functions_report_preferred_spelling() {
 }
 
 #[test]
+fn assert_type_resolves_struct_through_as_alias() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let build = |target: &str| {
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(&format!(
+          "ns app.main\n  :require\n    app.lib :as lib\n\nlet ((t (lib/Task :n 1))) (assert-type t {target}) t"
+        ))
+        .expect("alias fixture should parse"),
+      );
+      snapshot.files.insert(
+        "app.lib".to_owned(),
+        snapshot::create_file_from_snippet("defstruct Task (:n Number)").expect("struct fixture should parse"),
+      );
+      prepare_snapshot_entries(snapshot)
+    };
+
+    let entries = build("lib/Task");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("`assert-type t lib/Task` should resolve the `:as` alias (#2682)");
+    let app_warnings: Vec<_> = warnings
+      .borrow()
+      .iter()
+      .filter(|warning| !warning.message().contains(" in calcit.core/"))
+      .map(|warning| warning.message().to_owned())
+      .collect();
+    assert!(app_warnings.is_empty(), "unexpected warnings: {app_warnings:?}");
+
+    let entries = build("lib/Nope");
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_err()
+        || warnings
+          .borrow()
+          .iter()
+          .any(|warning| !warning.message().contains(" in calcit.core/")),
+      "an unknown alias target must still be reported"
+    );
+  });
+}
+
+#[test]
+fn assert_type_qualifies_same_namespace_union_in_type_forms() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (value, target, passes) in [
+      ("([] |a)", "$ List app.main/V", true),
+      ("([] |a)", "$ List V", true),
+      ("|a", "V", true),
+      ("([] :k)", "$ List V", false),
+      (":k", "V", false),
+    ] {
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(&format!("let ((t {value})) (assert-type t {target}) t")).expect("parse");
+      let extra = snapshot::create_file_from_snippet("def V $ defunion V String Number").expect("parse");
+      file.defs.extend(extra.defs.into_iter().filter(|(k, _)| k == "V"));
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let r = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      if passes {
+        assert!(
+          r.is_ok(),
+          "`assert-type t {target}` on {value} should pass (#2682): {:?}",
+          r.err().map(|e| e.msg)
+        );
+        let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def.clone(), &[]);
+        assert!(
+          ran.is_ok(),
+          "`assert-type t {target}` on {value} should hold at runtime: {:?}",
+          ran.err()
+        );
+      } else {
+        assert!(r.is_err(), "`assert-type t {target}` on {value} must be rejected");
+      }
+    }
+  });
+}
+
+#[test]
+fn assert_type_resolves_short_names_in_type_forms() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (value, target) in [
+      ("(lib/Task :n 1)", "'app.lib/Task"),
+      ("|a", "lib/U"),
+      ("|a", "'app.lib/U"),
+      ("([] (lib/Task :n 1))", "$ List lib/Task"),
+      ("([] (lib/Task :n 1))", "$ List app.lib/Task"),
+      ("|a", "U"),
+      ("([] (lib/Task :n 1))", "$ List Task"),
+      ("([] |a)", "$ List U"),
+      ("([] |a)", "$ List lib/U"),
+      ("(lib/Task :n 1)", "Task"),
+    ] {
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(&format!(
+          "ns app.main\n  :require\n    app.lib :as lib\n    app.lib :refer $ Task U\n\nlet ((t {value})) (assert-type t {target}) t"
+        ))
+        .expect("parse"),
+      );
+      snapshot.files.insert(
+        "app.lib".to_owned(),
+        snapshot::create_file_from_snippet("defstruct Task (:n Number)\n\ndef U $ defunion U String Number").expect("parse"),
+      );
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let r = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let w: Vec<_> = warnings
+        .borrow()
+        .iter()
+        .filter(|w| !w.message().contains(" in calcit.core/"))
+        .map(|w| w.message().to_owned())
+        .collect();
+      assert!(r.is_ok(), "`assert-type t {target}` on {value} should pass (#2682): {:?}", r.err());
+      assert!(w.is_empty(), "unexpected warnings for `{target}`: {w:?}");
+      let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def.clone(), &[]);
+      assert!(
+        ran.is_ok(),
+        "`assert-type t {target}` on {value} should also hold at runtime: {:?}",
+        ran.err()
+      );
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

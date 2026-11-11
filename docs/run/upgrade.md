@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.41.1 `edit format` 也缩短 `assert-type` / `hint-fn` 里的类型全名（#2682）
+
+`calcit edit format` 现在用和 schema 相同的规则缩短代码、examples 和测试里的类型全名：`assert-type x 'app.main/Task` 改成 `assert-type x Task`，已 `:refer` 的名字改成短名，`:as` 引入的命名空间改成 `alias/Task`，单个名字的 quote 一并去掉；`hint-fn $ Fn app.lib/Pt (-> Number)` 里的全名也改短。以下情况保留原写法：短名被局部绑定（如 `let` 里同名变量）遮住，或者短名和 `calcit.core` 里的定义重名。`unsafe-coerce` 的目标类型不改。
+
+同时 `assert-type x lib/Task` 现在能解析 `:as` 引入的命名空间，与 schema 和 `hint-fn` 一致；以前这个写法在断言里解析不到。含义不变，格式化后 diff 里会出现这类单行变化。
+
 ## 0.41.0 Struct 字面量自动包装 Option 字段（#2652）
 
 构造 Struct 的字面量里，字段声明为 `Option<T>`、给出的值类型已知是 `T` 时，编译器自动包成 `Option :some value`。适用于直接构造器、`%{}`，以及按期望类型改写成 Struct 的 `{}` / `?{}`。以前这类写法报 `W_FN_ARG_TYPE_MISMATCH`（"field `:size` expects Option<number>, but got number"），现在可以通过；已经写成 `Option :some value` 的代码不受影响，也不会被重复包装。
@@ -82,7 +88,7 @@ Struct 定义在项目里时，`calcit fix --rule named-struct-constructor-v1` �
 
 普通值定义的 `:schema` 现在也接受短名：`Store` 定义在同一个命名空间、或用 `(app.schema :refer $ Store)` 引入时，写 `quote Store` 即可；用 `:as` 引入时写 `schema/Store`。以前这个位置只认 `app.schema/Store` 这样的全名，而 `Fn`、`assert-type` 等位置早就能用短名。短名按定义所在命名空间解析，顺序是本地定义、`:refer`、`calcit.core`。`calcit edit schema` 遇到解析不到的短名会报错，防止拼错的名字被当成新类型。
 
-`calcit edit format` 会把 schema 里能无歧义缩短的全名改短：同命名空间的 `my.ns/Foo` 和已 `:refer` 的 `lib.ns/Foo` 改成 `Foo`；本地或 `:refer` 里没有同名定义时，`calcit.core/Option` 改成 `Option`；用 `:as` 引入的命名空间改成 `alias/Foo`。本地有同名定义遮住时保留原写法，例如本地定义了 `Result`，`calcit.core/Result` 不会被缩短。只改 `:schema`，代码里的 `hint-fn` / `assert-type` 不动。含义不变，格式化后 diff 里会出现这类单行变化。
+`calcit edit format` 会把 schema 里能无歧义缩短的全名改短：同命名空间的 `my.ns/Foo` 和已 `:refer` 的 `lib.ns/Foo` 改成 `Foo`；本地或 `:refer` 里没有同名定义时，`calcit.core/Option` 改成 `Option`；用 `:as` 引入的命名空间改成 `alias/Foo`。本地有同名定义遮住时保留原写法，例如本地定义了 `Result`，`calcit.core/Result` 不会被缩短。0.41.0 只改 `:schema`；从 0.41.1 起代码里的 `assert-type` / `hint-fn` 也会缩短，见下文 #2682。含义不变，格式化后 diff 里会出现这类单行变化。
 
 ## 0.41.0 删除 `--compat-types`（#2655）
 

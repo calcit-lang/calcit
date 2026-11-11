@@ -16255,9 +16255,24 @@ fn preprocess_assert_type_with_obligation(
   // are kept as-is instead of being parsed as resolved types.
   let asserted_type_form = match type_form {
     Calcit::Symbol { sym, info, .. } if !sym.starts_with('\'') => {
+      let is_nominal_def = |ns: &str, def: &str| {
+        program::lookup_def_code(ns, def).is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+      };
+      // `alias/Task` names the definition through an `:as` import, as it does
+      // in a schema and in `hint-fn` (#2682).
       let nominal_target = runner::parse_ns_def(sym)
-        .filter(|(ns, def)| {
-          program::lookup_def_code(ns, def).is_some_and(|code| crate::calcit::type_annotation::code_resolves_to_nominal_type_def(&code))
+        .and_then(|(ns, def)| {
+          if is_nominal_def(&ns, &def) {
+            Some((ns, def))
+          } else if program::has_def_code(&ns, &def) {
+            // A real `ns/def` that is not nominal (a union, a schema alias)
+            // keeps its own identity; an alias must not shadow it.
+            None
+          } else {
+            program::lookup_ns_target_in_import(&info.at_ns, &ns)
+              .filter(|target| is_nominal_def(target, &def))
+              .map(|_| (ns, def))
+          }
         })
         .or_else(|| {
           if program::lookup_def_code(&info.at_ns, sym)
@@ -16283,10 +16298,10 @@ fn preprocess_assert_type_with_obligation(
           ctx.call_stack,
         )?
       } else {
-        type_form.to_owned()
+        qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types)
       }
     }
-    _ => type_form.to_owned(),
+    _ => qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types),
   };
 
   let local_nominal_type = match type_form {
@@ -16603,6 +16618,52 @@ fn decoder_type_form_to_cirru(form: &Calcit) -> Option<cirru_parser::Cirru> {
       Some(cirru_parser::Cirru::List(nodes))
     }
     _ => crate::data::cirru::calcit_to_cirru(form).ok(),
+  }
+}
+
+/// Qualify `alias/Def` and `:refer`-imported names anywhere in an `assert-type`
+/// type form, so the short spellings written by `edit format` (#2682), such as
+/// `List lib/Task` or a referred union `U`, name the same declaration as the
+/// full path. Lexical type names and generics keep their local meaning.
+fn qualify_assert_type_form(form: &Calcit, file_ns: &str, scope_types: &ScopeTypes) -> Calcit {
+  match form {
+    Calcit::Symbol { sym, info, location } => {
+      let bare = sym.trim_start_matches('\'');
+      if scope_types.type_reference(bare).is_some() || scope_types.generic_names().iter().any(|name| name.as_ref() == bare) {
+        form.to_owned()
+      } else if !bare.contains('/')
+        && file_ns != calcit::CORE_NS
+        && !CalcitTypeAnnotation::is_builtin_type_symbol_name(bare)
+        && program::has_def_code(file_ns, bare)
+      {
+        // A same-namespace definition such as a union `V` would otherwise be
+        // read as a type variable inside `List V`.
+        let quote_prefix = if sym.starts_with('\'') { "'" } else { "" };
+        Calcit::Symbol {
+          sym: Arc::from(format!("{quote_prefix}{file_ns}/{bare}")),
+          info: info.to_owned(),
+          location: location.to_owned(),
+        }
+      } else {
+        qualify_decoder_type_form(form, file_ns)
+      }
+    }
+    // The head names a type constructor such as `List` or `Fn`, never a
+    // user definition, so only the arguments are qualified.
+    Calcit::List(items) => Calcit::from(
+      items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+          if idx == 0 && matches!(item, Calcit::Symbol { .. }) {
+            item.to_owned()
+          } else {
+            qualify_assert_type_form(item, file_ns, scope_types)
+          }
+        })
+        .collect::<Vec<_>>(),
+    ),
+    _ => form.to_owned(),
   }
 }
 
