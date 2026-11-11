@@ -53,7 +53,7 @@ const scenarios = [
     check(result) {
       assert.equal(result.data.id, "calcit.core/option:some?");
       assert.match(result.data.doc, /\.some\?/);
-      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Option :some 1\n  , .some?");
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Some 1\n  , .some?");
     },
   },
   ...["def", "schema", "context"].map(command => ({
@@ -130,7 +130,8 @@ const scenarios = [
       assert.equal(result.data.examples.total, count);
       assert.equal(result.data.examples.items.length, count);
       for (const example of result.data.examples.items) {
-        assert.ok(example.cirru.includes(`${constructor} :`));
+        // Option examples use the 0.41 short constructors `Some` / `None` (#2683).
+        assert.match(example.cirru, constructor === "Option" ? /\b(?:Some|None)\b|Option :/ : new RegExp(`${constructor} :`));
         assert.ok(example.cirru.includes(method));
         assert.doesNotMatch(example.cirru, /%(?:some|none|ok|err)\b/);
         assert.ok(!example.cirru.includes(helper), "the implementation helper is not the recommended call form");
@@ -1771,7 +1772,7 @@ const viewTasks = [
     task: "one definition: option:some? usage example",
     snapshot: "src/cirru/calcit-core.cirru",
     args: ["query", "examples", "calcit.core/option:some?"],
-    answer: /Option :some 1\n\s+, \.some\?/,
+    answer: /Some 1\n\s+, \.some\?/,
   },
   {
     task: "impact before edit: add-numbers callers",

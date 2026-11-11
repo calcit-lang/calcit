@@ -187,20 +187,21 @@
                   , Response
                 prewrapped $ decode-map-as
                   {} (:code 201)
-                    :message $ Option :some |already
+                    :message $ Some |already
                     :body $ {} $ :kind :json
                   , Response
               assert= 200 $ :code response
               ; a bare decoder target inside a loop's recursive-input preparation stays a type position
               assert= 1 $ loop
                   n 0
-                  value $ Option :none
+                  value None
                 if (&< n 1)
-                  recur 1 $ Option :some $ count $ decode-map-as ([] 7) $ List Number
+                  recur 1 $ Some $ count
+                    decode-map-as ([] 7) (List Number)
                   value .unwrap-or 0
-              assert= (Option :some |ok) (:message response)
-              assert= (Option :none) (:message no-message)
-              assert= (Option :some |already) (:message prewrapped)
+              assert= (Some |ok) (:message response)
+              assert= None $ :message no-message
+              assert= (Some |already) (:message prewrapped)
               assert= true $ try
                 do
                   decode-map-as

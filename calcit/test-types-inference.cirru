@@ -75,7 +75,7 @@
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl SliceReceiverImpl Sliceable
             .slice $ fn (self start end)
-              hint-fn $ Fn test-types-inference.main/SliceReceiver Number (Option Number) (-> test-types-inference.main/SliceReceiver)
+              hint-fn $ Fn SliceReceiver Number (Option Number) (-> SliceReceiver)
               struct-with self
                 :n $ + (:n self) start
                 :end end
@@ -121,7 +121,7 @@
                 shorten $ fn (item)
                   hint-fn $ Fn T (-> T) (:generics T)
                     :where $ T Sliceable
-                  .slice item 0 $ Option :some 1
+                  .slice item 0 $ Some 1
               shorten value
           :examples $ []
           :schema $ quote $ Fn C (-> C) (:generics C)
@@ -158,7 +158,7 @@
         'bounded-multiple $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-multiple (value)
             assert-type (.debug value) String
-            .slice value 0 $ Option :some 1
+            .slice value 0 $ Some 1
           :examples $ []
           :schema $ quote $ Fn C (-> C) (:generics C)
             :where $ C Debug Sliceable
@@ -186,7 +186,7 @@
               :tags $ #{} :bounded-binder :generic :lexical-binder :unit
         'bounded-slice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-slice (value)
-            value .slice 0 $ Option :some 1
+            value .slice 0 $ Some 1
           :examples $ []
           :schema $ quote $ Fn C (-> C) (:generics C)
             :where $ C Sliceable
@@ -203,14 +203,14 @@
             if flag (empty-field-box seed) (empty-field-box seed)
           :examples $ []
           :schema $ quote $ Fn Bool String
-            -> $ test-types-inference.main/EmptyFieldBox Number String
+            -> $ EmptyFieldBox Number String
         'call-callback-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-callback-envelope (dispatch! envelope)
             call-callback-holder dispatch! $ :holder envelope
           :examples $ []
           :schema $ quote $ Fn
             Fn T $ -> Number
-            test-types-inference.main/CallbackEnvelope T
+            CallbackEnvelope T
             -> Number
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |nested-nominal-callback-keeps-number-input)
@@ -227,7 +227,7 @@
           :examples $ []
           :schema $ quote $ Fn
             Fn T $ -> Number
-            test-types-inference.main/CallbackHolder T
+            CallbackHolder T
             -> Number
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |inline-nominal-callback-keeps-number-input)
@@ -256,7 +256,7 @@
             assert= 0 $ .len $ :items box
             assert= |seed $ :seed box
           :examples $ []
-          :schema $ quote $ Fn (test-types-inference.main/EmptyFieldBox Number String) (-> Unit)
+          :schema $ quote $ Fn (EmptyFieldBox Number String) (-> Unit)
         'crossed-binder-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn crossed-binder-first (head-value other-value)
             hint-fn $ Fn D C (-> D) (:generics C D)
@@ -279,8 +279,8 @@
                 crossed-binder-first ([] 1 2) |other
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-option-before-number)
-              :code $ quote $ assert= (Option :some |Ada)
-                crossed-binder-first (Option :some |Ada) 17
+              :code $ quote $ assert= (Some |Ada)
+                crossed-binder-first (Some |Ada) 17
               :tags $ #{} :function-contract :generic :lexical-binder :unit
         'dynamic-last-compat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dynamic-last-compat (value) (.last value)
@@ -293,12 +293,12 @@
             EmptyFieldBox :items ([]) :seed seed
           :examples $ []
           :schema $ quote $ Fn S
-            -> $ test-types-inference.main/EmptyFieldBox T S
+            -> $ EmptyFieldBox T S
             :generics T S
           :tests $ []
             %{} 'TestEntry (:name |keeps-element-binder-of-empty-field)
               :code $ quote $ let
-                  box $ assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox Number String)
+                  box $ assert-type (empty-field-box |seed) (EmptyFieldBox Number String)
                 do
                   assert= ([]) (:items box)
                   assert= |seed $ :seed box
@@ -307,8 +307,8 @@
               :tags $ #{} :empty-field-struct :unit
             %{} 'TestEntry (:name |independent-return-instantiations)
               :code $ quote $ do
-                assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox Number String)
-                assert-type (empty-field-box |seed) (test-types-inference.main/EmptyFieldBox String String)
+                assert-type (empty-field-box |seed) (EmptyFieldBox Number String)
+                assert-type (empty-field-box |seed) (EmptyFieldBox String String)
                 assert= |seed $ :seed $ empty-field-box |seed
               :tags $ #{} :empty-field-struct :return-only-generic :unit
             %{} 'TestEntry (:name |declared-return-context)
@@ -319,7 +319,7 @@
               :tags $ #{} :empty-field-struct :return-only-generic :unit
             %{} 'TestEntry (:name |caller-generic-and-transparent-let)
               :code $ quote $ let
-                  box $ assert-type (lexical-field-box 7) (test-types-inference.main/EmptyFieldBox Number Number)
+                  box $ assert-type (lexical-field-box 7) (EmptyFieldBox Number Number)
                 assert= 7 $ :seed box
                 assert= 0 $ .len $ :items box
               :tags $ #{} :empty-field-struct :return-only-generic :unit
@@ -341,12 +341,11 @@
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |keeps-number-and-string-element-types)
             :code $ quote $ do
-              assert= (Option :some 2)
+              assert= (Some 2)
                 find-last-matching-index ([] 1 2 1) 1
-              assert= (Option :some 2)
+              assert= (Some 2)
                 find-last-matching-index ([] |a |target |target) |target
-              assert= (Option :none)
-                find-last-matching-index ([] |a |b) |target
+              assert= None $ find-last-matching-index ([] |a |b) |target
             :tags $ #{} :list-reverse-index :unit
         'find-last-positive-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn find-last-positive-index (xs)
@@ -357,12 +356,10 @@
           :tests $ []
             %{} 'TestEntry (:name |typed-number-receiver)
               :code $ quote $ do
-                assert= (Option :some 3)
+                assert= (Some 3)
                   find-last-positive-index $ [] -2 0 1 3
-                assert= (Option :none)
-                  find-last-positive-index $ [] -2 0
-                assert= (Option :none)
-                  find-last-positive-index $ []
+                assert= None $ find-last-positive-index $ [] -2 0
+                assert= None $ find-last-positive-index $ []
               :tags $ #{} :list-reverse-index :unit
             %{} 'TestEntry (:name |propagates-predicate-error)
               :code $ quote $ assert= |predicate-failure
@@ -376,7 +373,7 @@
             %{} 'TestEntry (:name |records-callback-order-and-stops)
               :code $ quote $ let
                   seen $ ref $ [] 0
-                assert= (Option :some 2)
+                assert= (Some 2)
                   .find-last-index ([] 1 2 3 4)
                     fn (value)
                       reset! seen $ .append (deref seen) value
@@ -390,25 +387,25 @@
             -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |no-rest)
-              :code $ quote $ assert= (Option :none) (first-rest-value |prefix)
+              :code $ quote $ assert= None (first-rest-value |prefix)
               :tags $ #{} :unit
             %{} 'TestEntry (:name |direct-rest)
-              :code $ quote $ assert= (Option :some |one) (first-rest-value |prefix |one |two)
+              :code $ quote $ assert= (Some |one) (first-rest-value |prefix |one |two)
               :tags $ #{} :unit
             %{} 'TestEntry (:name |list-rest)
-              :code $ quote $ assert= (Option :some |one)
+              :code $ quote $ assert= (Some |one)
                 spread-first-rest $ [] |one |two
               :tags $ #{} :unit
             %{} 'TestEntry (:name |empty-list)
-              :code $ quote $ assert= (Option :none)
+              :code $ quote $ assert= None
                 spread-first-rest $ []
               :tags $ #{} :unit
             %{} 'TestEntry (:name |literal-rest)
-              :code $ quote $ assert= (Option :some |one)
+              :code $ quote $ assert= (Some |one)
                 first-rest-value |prefix & $ [] |one |two
               :tags $ #{} :unit
             %{} 'TestEntry (:name |explicit-before-list)
-              :code $ quote $ assert= (Option :some |one)
+              :code $ quote $ assert= (Some |one)
                 first-rest-value |prefix |one & $ [] |two |three
               :tags $ #{} :unit
             %{} 'TestEntry (:name |single-evaluation)
@@ -418,7 +415,7 @@
                     hint-fn $ Fn $ -> (List String)
                     swap! calls inc
                     [] |one
-                assert= (Option :some |one)
+                assert= (Some |one)
                   first-rest-value |prefix & $ supply
                 assert= 1 $ deref calls
               :tags $ #{} :unit
@@ -454,7 +451,7 @@
             let
                 parsed $ if enabled (Result :ok 1) (Result :err |missing)
                 value $ match parsed
-                  (:ok n) (Option :some n)
+                  (:ok n) (Some n)
                   (:err error) (raise error)
               value .unwrap
           :examples $ []
@@ -466,8 +463,7 @@
                 fn (error) (= error |missing)
             :tags $ #{} :unit
         'infer-named-none-fallback $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn infer-named-none-fallback ()
-            .unwrap-or (Option :none) 7
+          :code $ quote $ defn infer-named-none-fallback () (.unwrap-or None 7)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |named-none-fallback)
@@ -500,8 +496,7 @@
               assert= 4 $ infer-named-result-ok-open 4
             :tags $ #{} :unit
         'infer-none-fallback $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn infer-none-fallback ()
-            .unwrap-or (Option :none) 7
+          :code $ quote $ defn infer-none-fallback () (.unwrap-or None 7)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |none-fallback-number)
@@ -509,7 +504,7 @@
             :tags $ #{} :unit
         'infer-option-none-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-none-predicate ()
-            .none? $ Option :some 1
+            .none? $ Some 1
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
@@ -519,7 +514,7 @@
           :doc "|Option presence is checked with methods or match, not by comparing with nil."
           :code $ quote $ defn infer-option-presence-without-nil (enabled)
             let
-                value $ if enabled (Option :some 1) (Option :none)
+                value $ if enabled (Some 1) None
               match value
                 (:some n) n
                 (:none) 0
@@ -529,14 +524,14 @@
             :code $ quote $ do
               assert= 1 $ infer-option-presence-without-nil true
               assert= 0 $ infer-option-presence-without-nil false
-              assert= true $ .some? $ Option :some 1
-              assert= true $ .none? $ Option :none
-              assert= 7 $ .unwrap-or (Option :none) 7
-              assert= 1 $ .unwrap-or (Option :some 1) 7
+              assert= true $ .some? $ Some 1
+              assert= true $ .none? None
+              assert= 7 $ .unwrap-or None 7
+              assert= 1 $ .unwrap-or (Some 1) 7
             :tags $ #{} :unit
         'infer-option-some-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-some-predicate ()
-            .some? $ Option :some 1
+            .some? $ Some 1
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
@@ -545,7 +540,7 @@
         'infer-raise-left $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-left (enabled)
             let
-                value $ if enabled (raise |missing-left) (Option :some 2)
+                value $ if enabled (raise |missing-left) (Some 2)
               value .unwrap
           :examples $ []
           :schema $ quote $ Fn Bool (-> Number)
@@ -558,7 +553,7 @@
         'infer-raise-right $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-raise-right (enabled)
             let
-                value $ if enabled (Option :some 1) (raise |missing-right)
+                value $ if enabled (Some 1) (raise |missing-right)
               value .unwrap
           :examples $ []
           :schema $ quote $ Fn Bool (-> Number)
@@ -673,7 +668,7 @@
               , box
           :examples $ []
           :schema $ quote $ Fn S
-            -> $ test-types-inference.main/EmptyFieldBox Number S
+            -> $ EmptyFieldBox Number S
             :generics S
         'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-capture (value)
@@ -975,19 +970,19 @@
           :code $ quote $ defn number-field-box (seed) (empty-field-box seed)
           :examples $ []
           :schema $ quote $ Fn String
-            -> $ test-types-inference.main/EmptyFieldBox Number String
+            -> $ EmptyFieldBox Number String
         'option-recur-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-recur-sum (n acc)
             if (&<= n 0) (acc.unwrap-or 0)
               recur (dec n)
-                Option :some $ &+ (acc.unwrap-or 0) n
+                Some $ &+ (acc.unwrap-or 0) n
           :examples $ []
           :schema $ quote $ Fn Number (Option Number) (-> Number)
           :tests $ []
             %{} 'TestEntry (:name |omitted-option-preserves-recursion)
               :code $ quote $ do
                 assert= 15 $ option-recur-sum 5
-                assert= 25 $ option-recur-sum 5 $ Option :some 10
+                assert= 25 $ option-recur-sum 5 $ Some 10
                 assert= 0 $ option-recur-sum 0
                 , &unit
               :tags $ #{} :option-call-arity :unit
@@ -1001,26 +996,26 @@
                   fn (end)
                     hint-fn $ Fn (Option Number) (-> Number)
                     end.unwrap-or 7
-                  Option :some 11
+                  Some 11
                 assert= 7 $
                   fn (end)
                     hint-fn $ Fn (Option Number) (-> Number)
                     end.unwrap-or 7
-                  Option :none
+                  , None
                 assert= 6 $
                   fn (n acc)
                     hint-fn $ Fn Number (Option Number) (-> Number)
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
-                        Option :some $ &+ (acc.unwrap-or 0) n
+                        Some $ &+ (acc.unwrap-or 0) n
                   , 3
                 assert= 16 $
                   fn (n acc)
                     hint-fn $ Fn Number (Option Number) (-> Number)
                     if (&<= n 0) (acc.unwrap-or 0)
                       recur (dec n)
-                        Option :some $ &+ (acc.unwrap-or 0) n
-                  , 3 $ Option :some 10
+                        Some $ &+ (acc.unwrap-or 0) n
+                  , 3 $ Some 10
                 , &unit
               :tags $ #{} :option-call-arity :unit
         'option-recursive-count $ %{} 'CodeEntry (:doc |)
@@ -1032,8 +1027,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
             :code $ quote $ do
               assert= 9 $ option-recursive-count 2
-              assert= 99 $ option-recursive-count 0 $ Option :some 99
-              assert= 9 $ option-recursive-count 2 $ Option :some 99
+              assert= 99 $ option-recursive-count 0 $ Some 99
+              assert= 9 $ option-recursive-count 2 $ Some 99
               , &unit
             :tags $ #{} :option-call-arity :unit
         'read-state-metadata $ %{} 'CodeEntry (:doc |)
@@ -1122,7 +1117,7 @@
             let
                 wrap-value $ fn (other)
                   hint-fn $ Fn T $ -> (Option T)
-                  Option :some other
+                  Some other
               wrap-value value
           :examples $ []
           :schema $ quote $ Fn C
@@ -1130,20 +1125,18 @@
             :generics C
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
-              :code $ quote $ assert= (Option :some 17) (renamed-captured-option-payload 17)
+              :code $ quote $ assert= (Some 17) (renamed-captured-option-payload 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-string)
-              :code $ quote $ assert= (Option :some |Ada) (renamed-captured-option-payload |Ada)
+              :code $ quote $ assert= (Some |Ada) (renamed-captured-option-payload |Ada)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-list-payload)
               :code $ quote $ assert=
-                Option :some $ [] 1 2
+                Some $ [] 1 2
                 renamed-captured-option-payload $ [] 1 2
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-nested-absence)
-              :code $ quote $ assert=
-                Option :some $ Option :none
-                renamed-captured-option-payload $ Option :none
+              :code $ quote $ assert= (Some None) (renamed-captured-option-payload None)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
         'renamed-inherited-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn renamed-inherited-count (value)
@@ -1203,27 +1196,25 @@
             hint-fn $ {}
               :args $ [] 'T
               :generics $ [] 'T
-            Option :some value
+            Some value
           :examples $ []
           :schema $ quote $ Fn C
             -> $ Option C
             :generics C
           :tests $ []
             %{} 'TestEntry (:name |preserves-number)
-              :code $ quote $ assert= (Option :some 17) (renamed-option-payload 17)
+              :code $ quote $ assert= (Some 17) (renamed-option-payload 17)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-string)
-              :code $ quote $ assert= (Option :some |Ada) (renamed-option-payload |Ada)
+              :code $ quote $ assert= (Some |Ada) (renamed-option-payload |Ada)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-list-payload)
               :code $ quote $ assert=
-                Option :some $ [] 1 2
+                Some $ [] 1 2
                 renamed-option-payload $ [] 1 2
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-nested-absence)
-              :code $ quote $ assert=
-                Option :some $ Option :none
-                renamed-option-payload $ Option :none
+              :code $ quote $ assert= (Some None) (renamed-option-payload None)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
         'same-named-inherited-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-named-inherited-count (value)
@@ -1249,8 +1240,8 @@
         'same-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-nominal-absence-fields (fields)
             let
-                expected-number $ Option :none
-                expected-text $ Option :none
+                expected-number None
+                expected-text None
                 expected-result $ Result :ok 1
               assert-type expected-number $ Option Number
               assert-type expected-text $ Option String
@@ -1260,27 +1251,27 @@
                 = expected-text $ :text fields
                 = expected-result $ :result fields
           :examples $ []
-          :schema $ quote $ Fn test-types-inference.main/NominalAbsenceFields (-> Bool)
+          :schema $ quote $ Fn NominalAbsenceFields (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |same-typed-nominal-fields)
               :code $ quote $ assert= true
-                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 1
+                same-nominal-absence-fields $ NominalAbsenceFields :number None :text None :result $ Result :ok 1
               :tags $ #{} :unit
             %{} 'TestEntry (:name |number-payload-is-different)
               :code $ quote $ assert= false
-                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :some 2) :text (Option :none) :result $ Result :ok 1
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Some 2) :text None :result $ Result :ok 1
               :tags $ #{} :unit
             %{} 'TestEntry (:name |text-payload-is-different)
               :code $ quote $ assert= false
-                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :some |x) :result $ Result :ok 1
+                same-nominal-absence-fields $ NominalAbsenceFields :number None :text (Some |x) :result $ Result :ok 1
               :tags $ #{} :unit
             %{} 'TestEntry (:name |result-payload-is-different)
               :code $ quote $ assert= false
-                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 2
+                same-nominal-absence-fields $ NominalAbsenceFields :number None :text None :result $ Result :ok 2
               :tags $ #{} :unit
             %{} 'TestEntry (:name |result-error-is-different)
               :code $ quote $ assert= false
-                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :err |error
+                same-nominal-absence-fields $ NominalAbsenceFields :number None :text None :result $ Result :err |error
               :tags $ #{} :unit
         'same-type-second $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-type-second (left right) right
@@ -1289,11 +1280,11 @@
           :tests $ []
             %{} 'TestEntry (:name |empty-option-before-payload)
               :code $ quote $ assert= |x
-                .unwrap $ same-type-second (Option :none) (Option :some |x)
+                .unwrap $ same-type-second None $ Some |x
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |empty-option-after-payload)
               :code $ quote $ assert= true
-                .none? $ same-type-second (Option :some |x) (Option :none)
+                .none? $ same-type-second (Some |x) None
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |empty-list-before-elements)
               :code $ quote $ let
@@ -1306,13 +1297,13 @@
                   choose $ fn (left right)
                     hint-fn $ Fn T T (-> T) (:generics T)
                     , right
-                assert= |x $ .unwrap $ choose (Option :none) (Option :some |x)
+                assert= |x $ .unwrap $ choose None (Some |x)
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |variadic-equality-bottom-refinement)
               :code $ quote $ do
-                assert= false $ = (Option :none) (Option :some 1)
-                assert= false $ = (Option :some 1) (Option :none)
-                assert= false $ = (Option :none) (Option :none) (Option :some 1)
+                assert= false $ = None $ Some 1
+                assert= false $ = (Some 1) None
+                assert= false $ = None None $ Some 1
                 assert= false $ = ([]) ([] 1)
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |local-variadic-bottom-refinement)
@@ -1320,7 +1311,7 @@
                   check $ fn (left & right)
                     hint-fn $ Fn T & T (-> Unit) (:generics T)
                     , &unit
-                assert= &unit $ check (Option :none) (Option :some |x) (Option :none)
+                assert= &unit $ check None (Some |x) None
               :tags $ #{} :bottom :generic :unit
             %{} 'TestEntry (:name |nil-remains-a-concrete-generic)
               :code $ quote $ assert= nil (same-type-second nil nil)
@@ -1341,36 +1332,36 @@
           :tests $ []
             %{} 'TestEntry (:name |custom-omitted-end)
               :code $ quote $ let
-                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  source $ SliceReceiverWithMethods :n 7 :end $ Some 9
                   result $ slice-with-contract source 2
                 assert= 9 $ :n result
-                assert= (Option :none) (:end result)
+                assert= None $ :end result
               :tags $ #{} :sliceable-option :unit
             %{} 'TestEntry (:name |custom-specified-end)
               :code $ quote $ let
-                  source $ SliceReceiverWithMethods :n 7 :end $ Option :none
-                  result $ slice-with-contract source 2 $ Option :some 5
+                  source $ SliceReceiverWithMethods :n 7 :end None
+                  result $ slice-with-contract source 2 $ Some 5
                 assert= 9 $ :n result
-                assert= (Option :some 5) (:end result)
+                assert= (Some 5) (:end result)
               :tags $ #{} :sliceable-option :unit
             %{} 'TestEntry (:name |custom-method-and-trait)
               :code $ quote $ let
-                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  source $ SliceReceiverWithMethods :n 7 :end $ Some 9
                   method-result $ .slice source 2
-                  trait-result $ &trait-call Sliceable :slice source 2 $ Option :some 5
+                  trait-result $ &trait-call Sliceable :slice source 2 $ Some 5
                   trait-omitted $ &trait-call Sliceable :slice source 2
                 assert= 9 $ :n method-result
-                assert= (Option :none) (:end method-result)
-                assert= (Option :some 5) (:end trait-result)
-                assert= (Option :none) (:end trait-omitted)
+                assert= None $ :end method-result
+                assert= (Some 5) (:end trait-result)
+                assert= None $ :end trait-omitted
               :tags $ #{} :sliceable-option :unit
             %{} 'TestEntry (:name |custom-function-reference)
               :code $ quote $ let
-                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  source $ SliceReceiverWithMethods :n 7 :end $ Some 9
                   forward slice-with-contract
                   result $ forward source 2
                 assert= 9 $ :n result
-                assert= (Option :none) (:end result)
+                assert= None $ :end result
               :tags $ #{} :sliceable-option :unit
         'spread-first-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn spread-first-rest (items) (first-rest-value |prefix & items)
@@ -1500,7 +1491,7 @@
                       Fn Number (Option Number) (-> Number)
                       -> Unit
                     assert= 7 $ callback 7
-                    assert= 9 $ callback 7 $ Option :some 2
+                    assert= 9 $ callback 7 $ Some 2
                     assert= 7 $ callback & $ [] 7
                     , &unit
                   invoke-rest $ fn (callback values)
@@ -1576,8 +1567,8 @@
           :doc "|Pins assert-type and inferred types for Option and absence-returning core lookups."
           :code $ quote $ defn test-legacy-optional-inference ()
             let
-                opt-some $ Option :some 10
-                opt-none $ Option :none
+                opt-some $ Some 10
+                opt-none None
               assert-type opt-some $ Option Number
               assert-type opt-none $ Option Number
               &inspect-type opt-some
@@ -1632,8 +1623,8 @@
                 miss-index $ str-find-index |abc |z
               assert= 1 raw-hit-index
               assert= -1 raw-miss-index
-              assert= (Option :some 1) hit-index
-              assert= (Option :none) miss-index
+              assert= (Some 1) hit-index
+              assert= None miss-index
               assert-type raw-hit-index Number
               assert-type raw-miss-index Number
               assert-type hit-index $ Option Number
@@ -1912,15 +1903,15 @@
         'write-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-nominal-absence-fields (fields number text result)
             -> fields
-              .assoc :number $ Option :some number
-              .assoc :text $ Option :some text
+              .assoc :number $ Some number
+              .assoc :text $ Some text
               .assoc :result result
           :examples $ []
-          :schema $ quote $ Fn test-types-inference.main/NominalAbsenceFields Number String (Result Number String) (-> test-types-inference.main/NominalAbsenceFields)
+          :schema $ quote $ Fn NominalAbsenceFields Number String (Result Number String) (-> NominalAbsenceFields)
           :tests $ []
             %{} 'TestEntry (:name |option-and-result-fields)
               :code $ quote $ let
-                  original $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 0
+                  original $ NominalAbsenceFields :number None :text None :result $ Result :ok 0
                   changed $ write-nominal-absence-fields original 7 |ready $ Result :err |failed
                 assert= 7 $ .unwrap $ :number changed
                 assert= |ready $ .unwrap $ :text changed
@@ -1930,15 +1921,15 @@
               :tags $ #{} :unit
             %{} 'TestEntry (:name |method-field-write)
               :code $ quote $ let
-                  original $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 0
-                  changed $ .assoc original :text $ Option :some |method
+                  original $ NominalAbsenceFields :number None :text None :result $ Result :ok 0
+                  changed $ .assoc original :text $ Some |method
                 assert= |method $ .unwrap $ :text changed
               :tags $ #{} :unit
             %{} 'TestEntry (:name |collection-values)
               :code $ quote $ let
-                  value $ Option :some 3
-                  values $ [] $ Option :some 1
-                  mapping $ {} $ :number (Option :some 1)
+                  value $ Some 3
+                  values $ [] $ Some 1
+                  mapping $ {} $ :number (Some 1)
                   changed-list $ .assoc values 0 value
                   changed-map $ .assoc mapping :number value
                 assert= ([] value) changed-list
@@ -1948,8 +1939,8 @@
               :tags $ #{} :unit
             %{} 'TestEntry (:name |nested-collection-value)
               :code $ quote $ let
-                  value $ Option :some 3
-                  mapping $ {} $ :number (Option :some 1)
+                  value $ Some 3
+                  mapping $ {} $ :number (Some 1)
                   changed $ assoc-in
                     {} $ :branch mapping
                     [] :branch :number
@@ -1991,11 +1982,11 @@
             assert-type value $ Option Number
             nil? value
           :examples $ []
-          :schema $ quote $ Fn (test-types-inference.shadow/Option Number) (-> Bool)
+          :schema $ quote $ Fn (Option Number) (-> Bool)
         'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
           :examples $ []
-          :schema $ quote $ Fn test-types-inference.shadow/Result (-> Bool)
+          :schema $ quote $ Fn Result (-> Bool)
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-shadow-fields (fields)
             let
@@ -2007,7 +1998,7 @@
                 = expected-option $ :option fields
                 = expected-result $ :result fields
           :examples $ []
-          :schema $ quote $ Fn test-types-inference.shadow/ShadowFields (-> Bool)
+          :schema $ quote $ Fn ShadowFields (-> Bool)
           :tests $ []
             %{} 'TestEntry (:name |same-shadow-nominal-fields)
               :code $ quote $ assert= true

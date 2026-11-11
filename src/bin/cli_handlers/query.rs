@@ -2165,7 +2165,11 @@ mod type_query_tests {
       panic!("sum-point should have a function schema");
     };
     let argument_type = annotation.arg_types.first().expect("sum-point argument type");
-    let struct_def = argument_type.resolve_to_struct().expect("source-backed Point2D should resolve");
+    // The schema writes the short name `Point2D` (#2683); it resolves in the
+    // declaring namespace, as preprocessing does.
+    let struct_def =
+      calcit::calcit::with_type_annotation_warning_context("test-struct.main/sum-point", || argument_type.resolve_to_struct())
+        .expect("source-backed Point2D should resolve");
 
     assert_eq!(struct_def.name.ref_str(), "Point2D");
     assert_eq!(struct_def.index_of("x"), Some(0));

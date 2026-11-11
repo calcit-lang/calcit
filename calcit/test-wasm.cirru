@@ -155,7 +155,7 @@
         'point:score $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score (self) (:value self)
           :examples $ []
-          :schema $ quote $ Fn test-wasm.main/PointValue (-> Number)
+          :schema $ quote $ Fn PointValue (-> Number)
         'point:score-through-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score-through-helper (x) (point:generic-score x)
           :examples $ []
@@ -468,90 +468,90 @@
           :schema $ quote $ Fn (-> Number)
         'test-enum-invalid-direct-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-false ()
-            .contains? (Option :some 1) false
+            .contains? (Some 1) false
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-nil ()
-            .contains? (Option :some 1) nil
+            .contains? (Some 1) nil
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-string ()
-            .contains? (Option :some 1) |0
+            .contains? (Some 1) |0
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-tag ()
-            .contains? (Option :some 1) :zero
+            .contains? (Some 1) :zero
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-direct-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-direct-true ()
-            .contains? (Option :some 1) true
+            .contains? (Some 1) true
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-false ()
-            enum-index-helper (Option :some 1) false
+            enum-index-helper (Some 1) false
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-nil ()
-            enum-index-helper (Option :some 1) nil
+            enum-index-helper (Some 1) nil
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-string ()
-            enum-index-helper (Option :some 1) |0
+            enum-index-helper (Some 1) |0
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-tag ()
-            enum-index-helper (Option :some 1) :zero
+            enum-index-helper (Some 1) :zero
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-helper-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-helper-true ()
-            enum-index-helper (Option :some 1) true
+            enum-index-helper (Some 1) true
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-ordered $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-ordered ()
             .contains?
-              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-receiver) (Some 1)
               do (println |enum-key) nil
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-false ()
-            &trait-call Contains :contains? (Option :some 1) false
+            &trait-call Contains :contains? (Some 1) false
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-nil $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-nil ()
-            &trait-call Contains :contains? (Option :some 1) nil
+            &trait-call Contains :contains? (Some 1) nil
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-string ()
-            &trait-call Contains :contains? (Option :some 1) |0
+            &trait-call Contains :contains? (Some 1) |0
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-tag ()
-            &trait-call Contains :contains? (Option :some 1) :zero
+            &trait-call Contains :contains? (Some 1) :zero
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-invalid-trait-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-invalid-trait-true ()
-            &trait-call Contains :contains? (Option :some 1) true
+            &trait-call Contains :contains? (Some 1) true
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-key-error ()
             .contains?
-              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-receiver) (Some 1)
               do (println |enum-key) (raise |enum-key-error)
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
@@ -559,12 +559,12 @@
           :code $ quote $ defwasm-export test-enum-map-set-equality ()
             if
               &=
-                Option :some $ &{} :item $ Option :some 1
-                Option :some $ &{} :item $ Option :some 1
+                Some $ &{} :item $ Some 1
+                Some $ &{} :item $ Some 1
               if
                 &=
-                  Option :some $ #{} 1 2
-                  Option :some $ #{} 2 1
+                  Some $ #{} 1 2
+                  Some $ #{} 2 1
                 , 1 0
               , 0
           :examples $ []
@@ -573,28 +573,28 @@
           :code $ quote $ defwasm-export test-enum-map-set-inequality ()
             if
               &=
-                Option :some $ &{} :item $ Option :some 1
-                Option :some $ &{} :item $ Option :some 2
+                Some $ &{} :item $ Some 1
+                Some $ &{} :item $ Some 2
               , 0 $ if
                 &=
-                  Option :some $ #{} 1 2
-                  Option :some $ #{} 1 3
+                  Some $ #{} 1 2
+                  Some $ #{} 1 3
                 , 0 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-enum-number-index-direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-direct (index)
-            .contains? (Option :some 1) index
+            .contains? (Some 1) index
           :examples $ []
           :schema $ quote $ Fn Number (-> Bool)
         'test-enum-number-index-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-helper (index)
-            enum-index-helper (Option :some 1) index
+            enum-index-helper (Some 1) index
           :examples $ []
           :schema $ quote $ Fn Number (-> Bool)
         'test-enum-number-index-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-number-index-trait (index)
-            &trait-call Contains :contains? (Option :some 1) index
+            &trait-call Contains :contains? (Some 1) index
           :examples $ []
           :schema $ quote $ Fn Number (-> Bool)
         'test-enum-receiver-error $ %{} 'CodeEntry (:doc |)
@@ -606,32 +606,31 @@
           :schema $ quote $ Fn (-> Bool)
         'test-enum-recur-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-recur-key-error ()
-            recur-enum-key-failure? (Option :some 1) 2
+            recur-enum-key-failure? (Some 1) 2
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-recur-receiver-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-recur-receiver-error ()
-            recur-enum-receiver-failure? (Option :some 1) 2
+            recur-enum-receiver-failure? (Some 1) 2
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-structural-equality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-equality ()
             if
-              &= (Option :some 1) (Option :some 1)
+              &= (Some 1) (Some 1)
               if
                 &=
-                  [] $ Option :some 1
-                  [] $ Option :some 1
+                  [] $ Some 1
+                  [] $ Some 1
                 if
                   &=
-                    &{} :item $ Option :some 1
-                    &{} :item $ Option :some 1
+                    &{} :item $ Some 1
+                    &{} :item $ Some 1
                   if
                     &=
-                      Option :some $ Option :some 1
-                      Option :some $ Option :some 1
-                    if
-                      &= (Option :none) (Option :none)
+                      Some $ Some 1
+                      Some $ Some 1
+                    if (&= None None)
                       if
                         &= (:: :ok 1) (:: :ok 1)
                         , 1 0
@@ -645,11 +644,11 @@
         'test-enum-structural-inequality $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-structural-inequality ()
             if
-              &= (Option :some 1) (Option :some 2)
+              &= (Some 1) (Some 2)
               , 0 $ if
                 &= (:: :ok 1) (:: :err 1)
                 , 0 $ if
-                  &= (Option :none) (Option :some 1)
+                  &= None $ Some 1
                   , 0 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
@@ -664,14 +663,14 @@
         'test-enum-trait-invalid-ordered $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-trait-invalid-ordered ()
             &trait-call Contains :contains?
-              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-receiver) (Some 1)
               do (println |enum-key) nil
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'test-enum-trait-key-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-enum-trait-key-error ()
             &trait-call Contains :contains?
-              do (println |enum-receiver) (Option :some 1)
+              do (println |enum-receiver) (Some 1)
               do (println |enum-key) (raise |enum-key-error)
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
@@ -679,7 +678,7 @@
           :code $ quote $ defwasm-export test-enum-trait-receiver-error ()
             &trait-call Contains :contains?
               do (println |enum-receiver)
-                if (= 1 1) (raise |enum-receiver-error) (Option :some 1)
+                if (= 1 1) (raise |enum-receiver-error) (Some 1)
               do (println |enum-key) 0
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
@@ -1259,15 +1258,14 @@
           :schema $ quote $ Fn (-> Number)
         'test-option-some-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-option-some-method ()
-            (Option :some 1) .some?
+            (Some 1) .some?
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
           :tests $ [] $ %{} 'TestEntry (:name |typed-predicate)
             :code $ quote $ assert= true (test-option-some-method)
             :tags $ #{} :wasm
         'test-option-unwrap-or $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export test-option-unwrap-or ()
-            (Option :none) .unwrap-or 7
+          :code $ quote $ defwasm-export test-option-unwrap-or () (None .unwrap-or 7)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'test-pow $ %{} 'CodeEntry (:doc "|pow via host import")
@@ -1516,7 +1514,7 @@
             let
                 offset 4
                 option-value $ .unwrap-or
-                  .map (Option :some 3)
+                  .map (Some 3)
                     fn (x)
                       hint-fn $ Fn Number $ -> Number
                       + x offset
@@ -1544,7 +1542,7 @@
           :code $ quote $ defwasm-export test-static-option-result-methods ()
             let
                 option-value $ .unwrap-or
-                  .map (Option :some 3) wasm-add-four
+                  .map (Some 3) wasm-add-four
                   , 0
                 result-value $ .unwrap-or
                   .map (Result :ok 5) wasm-add-four
@@ -1697,8 +1695,8 @@
                 lb $ [] b
                 sa $ #{} a
                 sb $ #{} b
-                oa $ Option :some a
-                ob $ Option :some b
+                oa $ Some a
+                ob $ Some b
               if
                 and
                   = (&hash ma) (&hash mb)

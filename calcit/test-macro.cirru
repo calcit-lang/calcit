@@ -131,22 +131,17 @@
         'test-if-let $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|if let")
             assert= 6 $ if-let
-              a $ Option :some $ + 1 2 3
+              a $ Some $ + 1 2 3
               , a 0
             assert= 0 $ if-let
               a $ get (&{}) :a
               + 1 2
               , 0
-            assert= 2 $ if-let
-              a $ Option :none
-              , 1 2
-            assert= (Option :none)
+            assert= 2 $ if-let (a None) 1 2
+            assert= None $ when-let (a None) 1 2
+            assert= (Some 2)
               when-let
-                a $ Option :none
-                , 1 2
-            assert= (Option :some 2)
-              when-let
-                a $ Option :some 10
+                a $ Some 10
                 , 1 2
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

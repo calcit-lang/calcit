@@ -575,7 +575,7 @@ defn request (url trace-id timeout-ms)
   println url trace-id timeout-ms
 
 request |/health
-request |/health (Option :some |trace-1)
+request |/health (Some |trace-1)
 
 defstruct Profile (:name String) (:bio (quote (Option String)))
 Profile :name |Ada
@@ -665,8 +665,8 @@ let
     xs $ [] 10 20
   assert= 2 $ count |A😀
   assert= 5 $ &str:utf8-byte-count |A😀
-  assert= (Option :some 20) $ xs.get 1
-  assert= (Option :none) $ xs.get 2
+  assert= (Some 20) $ xs.get 1
+  assert= None $ xs.get 2
   assert= true $ xs.contains-index? 1
   assert= false $ xs.contains-index? 20
   assert= true $ xs.includes? 20

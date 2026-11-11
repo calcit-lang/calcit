@@ -78,11 +78,10 @@
                 assert= (Result :ok 2)
                   read-indexed-typed $ [] $ [] 1 2
                 assert=
-                  Result :ok $ Option :some 2
-                  read-optional-typed $ &{} :value $ Option :some 2
-                assert=
-                  Result :ok $ Option :none
-                  read-optional-typed $ &{} :value $ Option :none
+                  Result :ok $ Some 2
+                  read-optional-typed $ &{} :value $ Some 2
+                assert= (Result :ok None)
+                  read-optional-typed $ &{} :value None
                 assert= 3 $ .unwrap-or
                   get-in (write-typed data 3) ([] :a :b)
                   , 0

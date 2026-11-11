@@ -207,9 +207,9 @@ let
 ```cirru
 loop
     n 0
-    value $ Option :none
+    value None
   if (&< n 1)
-    recur 1 $ Option :some 7
+    recur 1 $ Some 7
     (value .unwrap) .to-string
 ```
 
@@ -229,11 +229,11 @@ loop
 
 ```cirru
 let
-    cell $ ref $ assert-type (Option :none)
+    cell $ ref $ assert-type None
       quote $ Option Number
-  reset! cell $ Option :some 7
+  reset! cell $ Some 7
   assert= 7 $ .unwrap-or (deref cell) 0
-  reset! cell $ Option :none
+  reset! cell None
   assert= 0 $ .unwrap-or (deref cell) 0
 ```
 
@@ -241,8 +241,8 @@ let
 
 ```cirru.no-check
 let
-    cell $ ref $ Option :none
-  reset! cell $ Option :some 7
+    cell $ ref None
+  reset! cell $ Some 7
 ```
 
 这样 Ref 的类型只由构造位置决定，与后续写入的出现顺序无关，也不会把尚未推导的槽当作 Dynamic。`loop` 参数可以从 `recur` 输入推导空变体的 payload，但 Ref 不按写入推导。
@@ -566,7 +566,7 @@ Profile :name |Ada
 已知 Enum 定义时使用头部调用：
 
 ```cirru.no-check
-Option :some value
+Some value
 
 Result :err message
 ```

@@ -158,7 +158,7 @@ let
   ; => $ [] 2 3 4 5
   println $ butlast xs
   ; => $ [] 1 2 3 4
-  println $ slice xs 1 (Option :some 3)
+  println $ slice xs 1 (Some 3)
   ; => $ [] 2 3
   println $ take xs 3
   ; => $ [] 1 2 3

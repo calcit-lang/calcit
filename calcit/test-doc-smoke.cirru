@@ -47,7 +47,7 @@
           :schema $ quote $ Fn (-> Unit)
         'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
-            assert= (Option :some DocTrait) (impl-origin DocTraitImpl)
+            assert= (Some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-impl-traits-struct-enum-only $ %{} 'CodeEntry
@@ -79,7 +79,7 @@
                     str-spaced |native-dot $ :name x
                 DotPerson $ impl-traits DocPerson0 DotImpl
                 p $ %{} DotPerson $ :name |Bob
-              assert= (Option :some DocTrait) (impl-origin DotImpl)
+              assert= (Some DocTrait) (impl-origin DotImpl)
               assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

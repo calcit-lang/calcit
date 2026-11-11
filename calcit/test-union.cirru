@@ -233,7 +233,7 @@
                   (:square width) (str "|square " width)
               (String text) text
           :examples $ []
-          :schema $ quote $ Fn test-union.main/AliasValue (-> String)
+          :schema $ quote $ Fn AliasValue (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |nominal-alias-patterns)
             :code $ quote $ do
               assert= "|point 1" $ describe-alias $ PointAlias :x 1 :y 2
@@ -264,19 +264,17 @@
             %{} 'TestEntry (:name |option-member-matches-separately)
               :code $ quote $ do
                 assert= ([] |present |plain |absent |absent)
-                  describe-maybe |a (Option :some |plain) (Option :none) (nil->option nil)
+                  describe-maybe |a (Some |plain) None $ nil->option nil
                 assert= ([] "|point 1")
-                  describe-maybe $ Option :some $ Point :x 1 :y 2
+                  describe-maybe $ Some $ Point :x 1 :y 2
               :tags $ #{} :union :unit
             %{} 'TestEntry (:name |option-member-decodes-from-open-data)
               :code $ quote $ do
                 assert= ([] |absent)
-                  describe-maybe $ decode-map-as
-                    segment-raw $ Option :none
-                    , MaybeGeo
+                  describe-maybe $ decode-map-as (segment-raw None) MaybeGeo
                 assert= ([] |plain)
                   describe-maybe $ decode-map-as
-                    segment-raw $ Option :some |plain
+                    segment-raw $ Some |plain
                     , MaybeGeo
               :tags $ #{} :union :unit
         'erased-cells $ %{} 'CodeEntry
@@ -329,8 +327,7 @@
             assert= |auto $ css-text $ :width (Style :width |auto)
             assert= |12px $ patch-text $ StylePatch :width 12
             assert= ([] |present |absent "|circle 2")
-              describe-maybe (Point :x 1 :y 1) (Option :none)
-                Option :some $ Shape :circle 2
+              describe-maybe (Point :x 1 :y 1) None $ Some $ Shape :circle 2
             assert= 10 $ tree-total $ [] 1 ([] 2 3)
               [] $ [] 4
             assert= 5 $ json-size $ [] |a ([] 1 false)
@@ -451,13 +448,10 @@
               assert= (Shape :circle 3)
                 round-trip-geo $ Shape :circle 3
               assert= |plain $ round-trip-geo |plain
-              assert= (Option :none)
-                decode-map-as
-                  encode-map-as (Option :none) MaybeGeo
-                  , MaybeGeo
+              assert= None $ decode-map-as (encode-map-as None MaybeGeo) MaybeGeo
               let
-                  some-point $ Option :some $ Point :x 1 :y 2
-                  nested $ Option :some $ Option :none
+                  some-point $ Some $ Point :x 1 :y 2
+                  nested $ Some None
                 assert= some-point $ decode-map-as (encode-map-as some-point MaybeGeo) MaybeGeo
                 assert= nested $ decode-map-as
                   encode-map-as nested $ Option MaybeGeo
