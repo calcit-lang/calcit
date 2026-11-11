@@ -476,21 +476,19 @@ fn infer_entry(snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<Strin
 fn warning_diagnostics(warnings: &[LocatedWarning]) -> Vec<VerifyDiagnostic> {
   warnings
     .iter()
-    .map(|warning| VerifyDiagnostic {
-      code: warning.code().unwrap_or("W_VERIFY_PREPROCESS").to_owned(),
-      phase: "preprocess".to_owned(),
+    .map(|warning| {
       // Collected `E_` (or uncoded `[Error]`) diagnostics block the check, so report them as errors.
-      severity: if warning
+      let is_error = warning
         .code()
-        .map_or_else(|| warning.message().starts_with("[Error]"), |code| code.starts_with("E_"))
-      {
-        "error"
-      } else {
-        "warning"
+        .map_or_else(|| warning.message().starts_with("[Error]"), |code| code.starts_with("E_"));
+      let fallback_code = if is_error { "E_VERIFY_PREPROCESS" } else { "W_VERIFY_PREPROCESS" };
+      VerifyDiagnostic {
+        code: warning.code().unwrap_or(fallback_code).to_owned(),
+        phase: "preprocess".to_owned(),
+        severity: if is_error { "error" } else { "warning" }.to_owned(),
+        message: warning.message().to_owned(),
+        detail: Some(warning.as_json()),
       }
-      .to_owned(),
-      message: warning.message().to_owned(),
-      detail: Some(warning.as_json()),
     })
     .collect()
 }
