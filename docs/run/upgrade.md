@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.42.0 `analyze program-diff` 用源码写法显示 schema
+
+`calcit analyze program-diff` 的树形输出里，schema 改为显示 Snapshot 文件中 `quote $` 后的写法（如 `"Fn String (-> String)" -> "Fn Number (-> String)"`），不再显示规范化的 `(:: 'Fn ({} (:args ...)))` EDN。变更判定和 `--format edn/json` 的证据字段不变；无法用紧凑写法往返的 schema 仍显示 EDN。
+
 ## 0.41.1 `defstruct` / `defenum` 用 `(:generics …)` / `(:where …)` 子句（#2700）
 
 数据定义的泛型参数和约束改成和 `Fn` 一样的子句写法，放在名字之后、字段或变体之前：
