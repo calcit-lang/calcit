@@ -1929,7 +1929,10 @@ fn check_top_level_value_schema(
   if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "def" | "fn")) {
     return Ok(());
   }
-  let expected = type_inference::definition_value_schema(ns, def, program::lookup_def_schema(ns, def));
+  let declared = program::lookup_def_schema(ns, def);
+  let schema_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+  trait_type_names::reject_trait_type_names(&format!("{ns}/{def}"), "schema", &declared, ns, call_stack, Some(schema_location))?;
+  let expected = type_inference::definition_value_schema(ns, def, declared);
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
     return Ok(());
   };

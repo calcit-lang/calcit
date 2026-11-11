@@ -5178,6 +5178,11 @@ fn strict_type_fail_trait_as_type_points_to_where_bound() {
         "(:where $ T lib/Labeled)",
       ),
       (
+        "calcit/type-fail/trait-as-type-value-schema.cirru",
+        "`lib/Labeled` as a type in schema at schema.item",
+        "(:where $ T lib/Labeled)",
+      ),
+      (
         "calcit/type-fail/trait-as-type-hint-fn.cirru",
         "`lib/Labeled` as a type in hint-fn at hint-fn.args.0",
         "(:where $ T lib/Labeled)",
