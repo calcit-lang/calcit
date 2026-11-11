@@ -243,10 +243,14 @@ fn warning_diagnostic(warning: &LocatedWarning) -> CheckDiagnostic {
   }
 }
 
-/// Collected preprocessing diagnostics with an `E_` code block the check, so
-/// report them as errors; other collected codes keep warning severity.
+/// Collected preprocessing diagnostics with an `E_` code (or an uncoded
+/// `[Error]` message) block the check, so report them as errors; other
+/// collected diagnostics keep warning severity.
 fn located_warning_severity(warning: &LocatedWarning) -> &'static str {
-  if warning.code().is_some_and(|code| code.starts_with("E_")) {
+  if warning
+    .code()
+    .map_or_else(|| warning.message().starts_with("[Error]"), |code| code.starts_with("E_"))
+  {
     "error"
   } else {
     "warning"
