@@ -207,7 +207,7 @@ let
 ```cirru
 loop
     n 0
-    value $ Option :none
+    value None
   if (&< n 1)
     recur 1 $ Some 7
     (value .unwrap) .to-string
@@ -233,7 +233,7 @@ let
       quote $ Option Number
   reset! cell $ Some 7
   assert= 7 $ .unwrap-or (deref cell) 0
-  reset! cell $ Option :none
+  reset! cell None
   assert= 0 $ .unwrap-or (deref cell) 0
 ```
 
@@ -241,7 +241,7 @@ let
 
 ```cirru.no-check
 let
-    cell $ ref $ Option :none
+    cell $ ref None
   reset! cell $ Some 7
 ```
 
