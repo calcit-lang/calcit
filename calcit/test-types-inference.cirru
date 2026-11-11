@@ -45,6 +45,10 @@
           :code $ quote $ defstruct Job (:title String) (:status Status)
           :examples $ []
           :schema $ quote StructDef
+        'NamedEntries $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def NamedEntries ({})
+          :examples $ []
+          :schema $ quote $ Map Tag String
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
             :number $ Option Number
@@ -895,6 +899,17 @@
               assert= :b $ literal-equality-tag |a
               assert= :b $ literal-equality-tag 1
             :tags $ #{} :literal-equality :unit
+        'lookup-named-entry $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lookup-named-entry (entries key) (get entries key)
+          :examples $ []
+          :schema $ quote $ Fn NamedEntries Tag
+            -> $ Option String
+          :tests $ [] $ %{} 'TestEntry (:name |map-alias-keeps-optional-payload)
+            :code $ quote $ let
+                entries $ {} $ :name |demo
+              assert= (Some |demo) (lookup-named-entry entries :name)
+              assert= None $ lookup-named-entry entries :missing
+            :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
