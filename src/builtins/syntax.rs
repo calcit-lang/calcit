@@ -140,7 +140,14 @@ pub fn defmacro(expr: &CalcitListView<'_>, _scope: &CalcitScope, def_ns: &str) -
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let signature = match crate::program::lookup_def_schema(def_ns, s).as_ref() {
-        CalcitTypeAnnotation::Macro(signature) => signature.clone(),
+        // Resolve nominal names (`model/Story`, refers) from the macro's declaring
+        // namespace, so contracts keep their meaning at call sites elsewhere (#2686).
+        schema @ CalcitTypeAnnotation::Macro(signature) => {
+          match crate::calcit::type_refs::qualify_namespace_type_refs(Arc::new(schema.clone()), def_ns).as_ref() {
+            CalcitTypeAnnotation::Macro(qualified) => qualified.clone(),
+            _ => signature.clone(),
+          }
+        }
         CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::Dynamic => {
           return CalcitErr::err_str(
             CalcitErrKind::Type,

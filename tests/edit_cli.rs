@@ -530,6 +530,68 @@ fn formatted_schema_alias_preserves_cross_namespace_callback_type() {
 }
 
 #[test]
+fn formatted_macro_contracts_resolve_aliases_from_the_declaring_namespace() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(
+    &snapshot,
+    r#"{}
+  :package |app
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!) (:target :native)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'app.macros $ %{} 'FileEntry
+      :defs $ {}
+        'make-story $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro make-story ()
+            quasiquote $ app.model/Story :title |demo
+          :examples $ []
+          :schema $ quote $ Macro
+            -> $ Expr app.model/Story
+        'retitle $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defmacro retitle (story)
+            quasiquote $ assoc ~story :title |again
+          :examples $ []
+          :schema $ quote $ Macro (Expr app.model/Story)
+            -> $ Expr app.model/Story
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.macros
+          :require $ app.model :as model
+    'app.main $ %{} 'FileEntry
+      :defs $ {} $ 'main!
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            &let
+              story $ retitle $ make-story
+              , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+          :require $ app.macros :refer $ make-story retitle
+    'app.model $ %{} 'FileEntry
+      :defs $ {} $ 'Story
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Story (:title String)
+          :examples $ []
+          :schema $ quote StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.model
+"#,
+  )
+  .expect("write the macro contract fixture");
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "qualified macro contracts");
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format macro contracts");
+  let formatted = fs::read_to_string(&snapshot).expect("read formatted fixture");
+  assert!(formatted.contains("Expr model/Story"), "{formatted}");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "aliased macro contracts");
+}
+
+#[test]
 fn schema_feature_edit_preserves_contract_and_works_in_guarded_transaction() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
