@@ -5466,3 +5466,20 @@ fn effect_features_follow_entry_policy() {
     assert!(collect(snapshot::FeaturePolicy::Allow).is_empty(), ":allow reports nothing");
   });
 }
+
+/// A `deftype` alias applied to the wrong number of type arguments fails
+/// with `E_TYPE_ALIAS_ARITY`; a value that breaks the aliased shape is an
+/// ordinary argument mismatch (#2725).
+#[test]
+fn strict_type_fail_deftype_alias_checks_arity_and_shape() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/deftype-arity.cirru");
+    let err = run_check_only(&entries).expect_err("deftype arity");
+    assert!(err.contains("E_TYPE_ALIAS_ARITY"), "{err}");
+    assert!(err.contains("`(Pair A B)`"), "{err}");
+
+    let entries = load_fixture_entries("calcit/type-fail/deftype-shape-mismatch.cirru");
+    run_check_only(&entries).expect_err("a two-slot alias rejects a String slot");
+  });
+}

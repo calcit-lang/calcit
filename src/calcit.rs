@@ -65,6 +65,7 @@ pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub(crate) use type_annotation::checkpoint_type_slot_declarations;
+pub(crate) use type_annotation::type_alias_declaration;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitNumericRefinement, CalcitTypeAnnotation, DYNAMIC_TYPE, FnOpenReason,
   FnOpenReasonNote, MacroCapability, MacroExpansionType, MacroSignature, MacroSyntaxType, NullableOrigin, SchemaKind,

@@ -1117,11 +1117,13 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   scope_types: &ScopeTypes,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   // A tuple position always exists, so `nth` with a literal index returns the
-  // bare slot value, matching its `&list:nth` lowering.
+  // bare slot value, matching its `&list:nth` lowering. A named tuple alias
+  // reads like its inline tuple, as the lowering expands it.
   if ns == calcit::CORE_NS
     && def == "nth"
     && let (Some(receiver), Some(index)) = (call_expr.get(1), call_expr.get(2))
     && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
+    && let receiver_type = CalcitTypeAnnotation::expand_schema_alias(&receiver_type)
     && let CalcitTypeAnnotation::Tuple(slots) = receiver_type.as_ref()
     && let Ok(index) = tuple_literal_index(index, slots.len())
   {

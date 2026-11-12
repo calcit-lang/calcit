@@ -6975,6 +6975,32 @@
                 macroexpand $ quote $ deftrait Child
                   .label $ quote $ Fn (-> String)
             :tags $ #{} :core :unit
+        'deftype $ %{} 'CodeEntry
+          :doc "|定义类型别名：(deftype Name Type) 或带泛型的 (deftype Name (:generics A B) Type)，Type 按类型语法读取，如 `Tuple Number Number Number`。在 schema、hint-fn、assert-type 里写 Name 或 (Name Arg ...) 时展开成 Type；泛型参数个数必须一致。运行时值是 quote 后的类型表达式，只用于查看。"
+          :code $ quote $ defmacro deftype (name & clauses)
+            assert "|deftype expects the alias name as a symbol" $ symbol? name
+            &let
+              n $ &list:count clauses
+              &let
+                generics-clause? $ fn (form)
+                  hint-fn $ Fn Dynamic $ -> Bool
+                  if (list? form)
+                    if
+                      &> (&list:count form) 0
+                      = :generics $ &list:nth form 0
+                      , false
+                    , false
+                if (= n 1)
+                  quasiquote $ quote $ ~ (&list:nth clauses 0)
+                  if
+                    and (= n 2)
+                      generics-clause? $ &list:nth clauses 0
+                    quasiquote $ quote $ ~ (&list:nth clauses 1)
+                    raise "|deftype expects (deftype Name Type) or (deftype Name (:generics A ...) Type)"
+          :examples $ []
+          :schema $ quote $ Macro Syntax (& Syntax)
+            -> $ Expr Dynamic
+          :tags $ #{} :macro :type
         'deftype-slot $ %{} 'CodeEntry
           :doc "|Declare a named compile-time type slot supplied by a library. Syntax: (deftype-slot :slot-name). Applications should bind the slot for each entry with calcit config set-type-slot; an unbound slot falls back to :dynamic."
           :code $ quote &runtime-implementation

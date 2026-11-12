@@ -11,6 +11,8 @@ Calcit 0.14 起默认启用严格预处理诊断。下方显式 `--strict-types`
 
 - `cargo run --bin calcit -- calcit/type-fail/schema-required-arity.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unknown-type-name-schema.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/deftype-arity.cirru --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/deftype-shape-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-rest-missing.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-rest-unexpected.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-call-arg-type-mismatch.cirru --check-only`

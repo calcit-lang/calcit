@@ -22,6 +22,7 @@ mod type_inference;
 mod type_rewriting;
 mod union_types;
 mod unknown_type_names;
+mod value_type_aliases;
 
 pub use intrinsic_rules::intrinsic_rule_summary;
 pub use redundant_hint::{RedundantHintSite, clear_redundant_hint_sites, redundant_hint_sites};
@@ -15147,6 +15148,13 @@ pub fn preprocess_defn(
           ctx.call_stack,
           body_fn_hint_location.clone(),
         )?;
+        value_type_aliases::note_value_type_aliases(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "hint-fn",
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.file_ns,
+          body_fn_hint_location.clone(),
+        );
         trait_type_names::reject_trait_type_names(
           &format!("{}/{}", ctx.file_ns, def_name),
           "hint-fn",
@@ -15214,6 +15222,13 @@ pub fn preprocess_defn(
           ctx.call_stack,
           Some(definition_location.clone()),
         )?;
+        value_type_aliases::note_value_type_aliases(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "schema",
+          &def_schema,
+          ctx.file_ns,
+          Some(definition_location.clone()),
+        );
         trait_type_names::reject_trait_type_names(
           &format!("{}/{}", ctx.file_ns, def_name),
           "schema",

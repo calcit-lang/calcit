@@ -284,12 +284,109 @@ static ANY_STRUCT_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> =
   LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct")))));
 static ANY_ENUM_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::AnonymousEnum));
 
-/// Try to resolve a TypeRef name (formatted as "ns/def") as a schema-based type alias.
-/// This allows definitions with non-Dynamic schemas to serve as named type aliases.
-fn resolve_type_ref_as_schema(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+/// Resolve a TypeRef name (formatted as "ns/def") as a type alias.
+///
+/// A `deftype` definition expands to its declared type, with `args` bound to
+/// its generics; missing arguments read as Dynamic (arity is reported by
+/// `validate_applied_type_args`). Any other definition with a non-Dynamic
+/// schema still serves as a value-style alias for compatibility.
+fn resolve_type_ref_as_schema(name: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Option<Arc<CalcitTypeAnnotation>> {
   let (ns, def) = name.split_once('/')?;
+  if let Some(alias) = lookup_def_code_registered(ns, def).and_then(|code| type_alias_from_code(&code)) {
+    return Some(alias.expand(ns, args));
+  }
   let schema = lookup_schema_registered(ns, def)?;
   Some(super::type_refs::qualify_namespace_type_refs(schema, ns))
+}
+
+/// A `deftype` declaration read from definition source.
+pub(crate) struct TypeAliasDecl {
+  pub generics: Vec<Arc<str>>,
+  pub body: Calcit,
+}
+
+impl TypeAliasDecl {
+  /// The aliased type with `args` substituted for the generics.
+  fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(&self.body), &self.generics);
+    let parsed = super::type_refs::qualify_namespace_type_refs(parsed, ns);
+    if self.generics.is_empty() {
+      return parsed;
+    }
+    let bindings: TypeBindings = self
+      .generics
+      .iter()
+      .enumerate()
+      .map(|(index, name)| (name.clone(), args.get(index).cloned().unwrap_or_else(|| DYNAMIC_TYPE.clone())))
+      .collect();
+    parsed.substitute_type_vars(&bindings)
+  }
+}
+
+/// Whether `name` ("ns/def") is declared with `deftype`.
+pub(crate) fn is_type_alias_definition(name: &str) -> bool {
+  type_alias_declaration(name).is_some()
+}
+
+/// The `deftype` declaration behind `name` ("ns/def"), if any.
+pub(crate) fn type_alias_declaration(name: &str) -> Option<TypeAliasDecl> {
+  let (ns, def) = name.trim_start_matches('\'').split_once('/')?;
+  lookup_def_code_registered(ns, def).and_then(|code| type_alias_from_code(&code))
+}
+
+fn is_deftype_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "deftype")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "deftype")
+}
+
+/// Read `(deftype Name body)` or `(deftype Name (:generics A B) body)` from
+/// definition source without evaluating it; `quote`, thunk and `def`
+/// wrappers are peeled as for `defunion`.
+pub(crate) fn type_alias_from_code(code: &Calcit) -> Option<TypeAliasDecl> {
+  match code {
+    Calcit::Thunk(thunk) => type_alias_from_code(thunk.get_code()),
+    Calcit::List(items) => {
+      let head = items.first()?;
+      if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+      {
+        return type_alias_from_code(items.get(1)?);
+      }
+      if is_def_head(head) {
+        return type_alias_from_code(items.get(2)?);
+      }
+      if !is_deftype_head(head) {
+        return None;
+      }
+      match items.len() {
+        3 => Some(TypeAliasDecl {
+          generics: vec![],
+          body: items.get(2)?.to_owned(),
+        }),
+        4 => Some(TypeAliasDecl {
+          generics: deftype_generics(items.get(2)?)?,
+          body: items.get(3)?.to_owned(),
+        }),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The names in a `(:generics A B)` clause.
+fn deftype_generics(form: &Calcit) -> Option<Vec<Arc<str>>> {
+  let Calcit::List(items) = form else { return None };
+  if !matches!(items.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "generics") {
+    return None;
+  }
+  items
+    .iter()
+    .skip(1)
+    .map(|item| match item {
+      Calcit::Symbol { sym, .. } => Some(sym.to_owned()),
+      _ => None,
+    })
+    .collect()
 }
 
 thread_local! {
@@ -2235,9 +2332,13 @@ impl CalcitTypeAnnotation {
         if !entered {
           return Ok(());
         }
-        let declared_arity = self
-          .resolve_to_struct()
-          .map(|definition| ("struct", definition.name.to_string(), definition.generics.len()))
+        let declared_arity = type_alias_declaration(name)
+          .map(|alias| ("type alias", name.trim_start_matches('\'').to_string(), alias.generics.len()))
+          .or_else(|| {
+            self
+              .resolve_to_struct()
+              .map(|definition| ("struct", definition.name.to_string(), definition.generics.len()))
+          })
           .or_else(|| {
             self
               .resolve_to_enum()
@@ -2642,7 +2743,7 @@ impl CalcitTypeAnnotation {
     {
       return true;
     }
-    if resolve_type_ref_as_schema(stripped).is_some_and(
+    if resolve_type_ref_as_schema(stripped, &[]).is_some_and(
       |resolved| matches!(resolved.as_ref(), Self::Trait(resolved_trait) if Self::trait_references_match(resolved_trait, target)),
     ) {
       return true;
@@ -5206,7 +5307,12 @@ impl CalcitTypeAnnotation {
           if !visited.insert(key) {
             return None;
           }
-          let schema = resolve_type_ref_as_schema(stripped)?;
+          if is_type_alias_definition(stripped) {
+            // `deftype` already binds its own generics to `args`.
+            let schema = resolve_type_ref_as_schema(stripped, args)?;
+            return resolve(&schema, visited, depth + 1);
+          }
+          let schema = resolve_type_ref_as_schema(stripped, &[])?;
           let (signature, optional) = resolve(&schema, visited, depth + 1)?;
           if signature.generics.len() != args.len() {
             return None;
@@ -5251,10 +5357,10 @@ impl CalcitTypeAnnotation {
         return current;
       };
       let name = name.trim_start_matches('\'').trim_start_matches(':');
-      if !args.is_empty() || !visited.insert(name.to_owned()) {
+      if (!args.is_empty() && !is_type_alias_definition(name)) || !visited.insert(name.to_owned()) {
         return None;
       }
-      current = Some(resolve_type_ref_as_schema(name)?);
+      current = Some(resolve_type_ref_as_schema(name, args)?);
     }
   }
 
@@ -5282,7 +5388,7 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.core_impl_list_symbol(),
-      Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
+      Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
       _ => None,
     }
@@ -5359,7 +5465,7 @@ impl CalcitTypeAnnotation {
       Self::Struct(struct_def, _) | Self::StructValue(struct_def) => Some(struct_def.impls.to_vec()),
       Self::Enum(enum_def, _) | Self::EnumValue(enum_def) => Some(enum_def.impls().to_vec()),
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.collect_static_impls(),
-      Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.collect_static_impls()),
+      Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.collect_static_impls()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.collect_static_impls()),
       _ => self.core_impl_list_symbol().and_then(|symbol| {
         lookup_runtime_ready_registered(CORE_NS, symbol)
@@ -5931,8 +6037,8 @@ impl CalcitTypeAnnotation {
       }
       // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
       // try to resolve it as a type alias by looking up the definition's schema.
-      (Self::TypeRef(name, _), other) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name) {
+      (Self::TypeRef(name, args), other) => {
+        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
           let Ok(_guard) = enter_alias_relation(name, other, true, false) else {
             return false;
           };
@@ -5940,8 +6046,8 @@ impl CalcitTypeAnnotation {
         }
         false
       }
-      (other, Self::TypeRef(name, _)) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name) {
+      (other, Self::TypeRef(name, args)) => {
+        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
           let Ok(_guard) = enter_alias_relation(name, other, false, false) else {
             return false;
           };
@@ -6316,14 +6422,14 @@ impl CalcitTypeAnnotation {
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (Self::TypeRef(name, _), other) => match resolve_type_ref_as_schema(name) {
+      (Self::TypeRef(name, args), other) => match resolve_type_ref_as_schema(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
           Ok(_guard) => resolved.prove_with_staged_bindings(other, bindings),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
       },
-      (other, Self::TypeRef(name, _)) => match resolve_type_ref_as_schema(name) {
+      (other, Self::TypeRef(name, args)) => match resolve_type_ref_as_schema(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, false, true) {
           Ok(_guard) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
           Err(reason) => NeedsBoundary(reason),
@@ -12025,7 +12131,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       if nominal_match {
         true
       } else if expected_args.is_empty()
-        && let Some(resolved) = resolve_type_ref_as_schema(expected_name)
+        && let Some(resolved) = resolve_type_ref_as_schema(expected_name, &[])
       {
         let Ok(_guard) = enter_alias_relation(expected_name, expected, false, false) else {
           return false;
