@@ -1965,6 +1965,16 @@ fn check_top_level_value_schema(
   }
   let declared = program::lookup_def_schema(ns, def);
   let schema_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+  // A misspelled name stays a symbolic reference, so it would surface only
+  // as a mismatch against the initializer (#2721).
+  unknown_type_names::reject_unknown_type_names(
+    &format!("{ns}/{def}"),
+    "schema",
+    &declared,
+    ns,
+    call_stack,
+    Some(schema_location.clone()),
+  )?;
   trait_type_names::reject_trait_type_names(&format!("{ns}/{def}"), "schema", &declared, ns, call_stack, Some(schema_location))?;
   let expected = type_inference::definition_value_schema(ns, def, declared);
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
