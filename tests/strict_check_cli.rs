@@ -2455,3 +2455,27 @@ fn lambdas_in_return_position_and_bound_once_take_the_expected_callable_type() {
     );
   }
 }
+
+#[test]
+fn effect_error_policy_blocks_native_runs_without_the_proof_audit() {
+  // Under `:feature-policy {:io :error}` an undeclared `:io` blocks the runner
+  // whether or not the proof audit runs, as type errors do (#2723).
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/effect-io-error-policy.cirru", &snapshot).unwrap();
+  let runs: [(&[&str], bool); 3] = [(&[], false), (&["--no-proof-audit"], false), (&[], true)];
+  for (args, env_off) in runs {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_calcit"));
+    command.arg("--tips-level").arg("none").arg(&snapshot).args(args);
+    if env_off {
+      command.env("CALCIT_PROOF_AUDIT", "0");
+    }
+    let output = command.output().expect("calcit command should run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+      !output.status.success() && !stdout.contains("ran") && stderr.contains("[E_IO_FEATURE_REQUIRED]"),
+      "{args:?} env_off={env_off} must block the run\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+  }
+}
