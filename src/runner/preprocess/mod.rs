@@ -265,6 +265,11 @@ fn preprocess_argument_with_context(
           call_stack,
         )?);
       }
+      // Members are still arguments of the literal's constructor call, so a
+      // branch that silently yields nil is rejected as on the plain call path.
+      for member in processed.iter().skip(1) {
+        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
+      }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
     }
@@ -288,6 +293,11 @@ fn preprocess_argument_with_context(
           check_warnings,
           call_stack,
         )?);
+      }
+      // Members are still arguments of the literal's constructor call, so a
+      // branch that silently yields nil is rejected as on the plain call path.
+      for member in processed.iter().skip(1) {
+        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
       }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
@@ -321,6 +331,11 @@ fn preprocess_argument_with_context(
           check_warnings,
           call_stack,
         )?);
+      }
+      // Members are still arguments of the literal's constructor call, so a
+      // branch that silently yields nil is rejected as on the plain call path.
+      for member in processed.iter().skip(1) {
+        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
       }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
@@ -419,13 +434,6 @@ fn preprocess_expected_form(
       check_warnings,
       call_stack,
     )?;
-    // Members are still arguments of the literal's constructor call, so a
-    // branch that silently yields nil is rejected as on the plain call path.
-    if let Calcit::List(items) = &processed {
-      for member in items.iter().skip(1) {
-        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
-      }
-    }
     return Ok(Some(processed));
   }
   Ok(None)
