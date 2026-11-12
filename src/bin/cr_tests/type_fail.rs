@@ -5192,6 +5192,11 @@ fn strict_type_fail_unknown_type_name_suggests_candidates() {
         "`lib/Point`",
       ),
       (
+        "calcit/type-fail/unknown-type-name-def.cirru",
+        "`Nubmer` in schema at schema",
+        "`Number`",
+      ),
+      (
         "calcit/type-fail/unknown-type-name-hint-fn.cirru",
         "`Nubmer` in hint-fn",
         "`Number`",
