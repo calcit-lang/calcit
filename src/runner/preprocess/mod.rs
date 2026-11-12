@@ -3571,7 +3571,7 @@ pub fn preprocess_expr(
   if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && literal_takes_member_context(expr, annotation))
     && let Some(expected) = tail_context::take_for_current()
   {
-    return preprocess_argument_with_context(
+    let processed = preprocess_argument_with_context(
       expr,
       Some((&expected.annotation, false, &[])),
       scope_defs,
@@ -3579,7 +3579,15 @@ pub fn preprocess_expr(
       file_ns,
       check_warnings,
       call_stack,
-    );
+    )?;
+    // Members are still arguments of the literal's constructor call, so a
+    // branch that silently yields nil is rejected as on the plain call path.
+    if let Calcit::List(items) = &processed {
+      for member in items.iter().skip(1) {
+        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
+      }
+    }
+    return Ok(processed);
   }
   let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
