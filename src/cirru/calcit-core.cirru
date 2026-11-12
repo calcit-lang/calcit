@@ -3878,7 +3878,7 @@
           :tags $ #{} :builtin :internal :syntax
         'Add $ %{} 'CodeEntry (:doc "|Core trait: Add")
           :code $ quote $ deftrait Add
-            .add $ Fn T T (-> T) (:generics T)
+            .add $ Fn Self Self (-> Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3897,14 +3897,14 @@
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
           :code $ quote $ deftrait Compare
-            .compare $ Fn T T (-> Number) (:generics T)
+            .compare $ Fn Self Self (-> Number)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Contains $ %{} 'CodeEntry
           :doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。"
           :code $ quote $ deftrait Contains
-            .contains? $ Fn T K (-> Bool) (:generics T K)
+            .contains? $ Fn Self K (-> Bool) (:generics K)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3931,7 +3931,7 @@
           :tags $ #{} :data
         'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote $ deftrait Countable
-            .count $ Fn T (-> Number) (:generics T)
+            .count $ Fn Self (-> Number)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3952,7 +3952,7 @@
         'Debug $ %{} 'CodeEntry
           :doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation."
           :code $ quote $ deftrait Debug
-            .debug $ Fn T (-> String) (:generics T)
+            .debug $ Fn Self (-> String)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3965,13 +3965,13 @@
         'Emptyable $ %{} 'CodeEntry
           :doc "|产生与接收者保持同一类型的空值。Self 是方法自身声明的接收者泛型，不是新语法；泛型函数通过 Emptyable 约束调用 .empty。内建实现覆盖 Number、String、List、Map、Set。"
           :code $ quote $ deftrait Emptyable
-            .empty $ Fn Self (-> Self) (:generics Self)
+            .empty $ Fn Self (-> Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Eq $ %{} 'CodeEntry (:doc "|Core trait: Eq")
           :code $ quote $ deftrait Eq
-            .eq? $ Fn T T (-> Bool) (:generics T)
+            .eq? $ Fn Self Self (-> Bool)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4049,7 +4049,7 @@
           :tags $ #{} :internal :trait-impl
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote $ deftrait Len
-            .len $ Fn T (-> Number) (:generics T)
+            .len $ Fn Self (-> Number)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4086,13 +4086,13 @@
           :tags $ #{} :data
         'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote $ deftrait Mappable
-            .map $ Fn T Fn (-> T) (:generics T)
+            .map $ Fn Self Fn (-> Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Multiply $ %{} 'CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote $ deftrait Multiply
-            .multiply $ Fn T T (-> T) (:generics T)
+            .multiply $ Fn Self Self (-> Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4272,7 +4272,7 @@
           :tags $ #{} :data :internal
         'Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote $ deftrait Serialize
-            .serialize $ Fn T (-> String) (:generics T)
+            .serialize $ Fn Self (-> String)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4287,14 +4287,14 @@
         'Show $ %{} 'CodeEntry
           :doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl."
           :code $ quote $ deftrait Show
-            .show $ Fn T (-> String) (:generics T)
+            .show $ Fn Self (-> String)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Sliceable $ %{} 'CodeEntry
           :doc "|切片保持 receiver 类型的能力。slice 方法接收 receiver、Number 起点、Option<Number> 终点并返回原 receiver 类型；省略末尾 Option 自动补 none。List/String 使用内部适配器，自定义实现显式匹配 some/none，不需要 Countable。"
           :code $ quote $ deftrait Sliceable
-            .slice $ Fn T Number (Option Number) (-> T) (:generics T)
+            .slice $ Fn Self Number (Option Number) (-> Self)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4322,7 +4322,7 @@
         'ToString $ %{} 'CodeEntry
           :doc "|标量转文本的类型契约；与 Show 的用户展示、Debug 的诊断表示不同。仅有明确实现的值支持 .to-string。"
           :code $ quote $ deftrait ToString
-            .to-string $ Fn T (-> String) (:generics T)
+            .to-string $ Fn Self (-> String)
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait

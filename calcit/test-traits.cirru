@@ -257,7 +257,7 @@
           :schema $ quote StructDef
         'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
           :code $ quote $ deftrait Greeting (requires Labeled)
-            .greeting $ Fn test-traits.main/Greeting $ -> String
+            .greeting $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
           :tests $ []
@@ -299,7 +299,7 @@
             :tags $ #{} :struct-origin :unit
         'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
           :code $ quote $ deftrait Labeled
-            .label $ Fn test-traits.main/Labeled $ -> String
+            .label $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
         'LabeledImpl $ %{} 'CodeEntry (:doc |)
@@ -1778,7 +1778,7 @@
       :defs $ {}
         'Greeting $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Greeting
-            .greeting $ Fn test-traits.metadata/Greeting $ -> String
+            .greeting $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
         'GreetingAlias $ %{} 'CodeEntry (:doc |)

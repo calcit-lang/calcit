@@ -5483,3 +5483,19 @@ fn strict_type_fail_deftype_alias_checks_arity_and_shape() {
     run_check_only(&entries).expect_err("a two-slot alias rejects a String slot");
   });
 }
+
+#[test]
+fn strict_type_fail_deftrait_self_receiver_and_self_reference() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/trait-self-receiver.cirru");
+    let err = run_check_only(&entries).expect_err("a Self trait method must take Self first");
+    assert!(err.contains("E_TRAIT_SELF_RECEIVER"), "{err}");
+    assert!(err.contains("`.make`"), "{err}");
+
+    let entries = load_fixture_entries("calcit/type-fail/trait-names-itself.cirru");
+    let err = run_check_only(&entries).expect_err("a trait signature cannot name the trait itself");
+    assert!(err.contains("E_TRAIT_AS_TYPE"), "{err}");
+    assert!(err.contains("write `Self`"), "{err}");
+  });
+}
