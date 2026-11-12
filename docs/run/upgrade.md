@@ -24,6 +24,19 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.43.0 类型别名用 `deftype` 声明（#2725）
+
+新增 `deftype` 声明类型别名，可以带泛型：
+
+```cirru.no-check
+deftype Vec3 $ Tuple Number Number Number
+deftype Pair (:generics A B) (Tuple A B)
+```
+
+原来用值定义当别名的写法（`def Vec3 ([] 0 0 0)` 加 `:schema` `Tuple Number Number Number`，或用 `defn` 加 `Fn` schema 表示回调类型）仍然可以用，但在 schema 或 `hint-fn` 里引用时会在 `Notes:` 中给出 `W_VALUE_TYPE_ALIAS`，消息里带有替换用的 `deftype` 写法，检查仍通过。迁移时用 `calcit edit def <ns/Name> --overwrite` 换成 `deftype`，再用 `calcit edit schema <ns/Name>` 清掉原来的 schema；如果别名的值在代码里被当作普通值读取，改写前先改掉这些读取。值式别名会在之后的非 patch 版本退役。
+
+带泛型的别名必须给齐类型参数，写成 `(Pair Number String)`；个数不对时报 `E_TYPE_ALIAS_ARITY`。
+
 ## 0.42.0 所有预处理诊断都带编码（#2698）
 
 预处理阶段原来有 50 处诊断没有编码，只靠消息文字区分（例如参数个数不对、调用非函数值、`match` 不完整、未知符号）。0.42.0 起它们都带编码，前缀按通道统一：`E_` 阻断检查，`W_` 默认列在 `Notes:` 中、检查仍通过（`--warn-dyn-method` 打开的 `W_STRUCT_INDEX_RAW_ACCESS`、`W_JS_FFI_UNTYPED_ACCESS` 在该模式下会让检查失败），`I_` 是报告与证据，`P_` 只在 `--warn-dyn-method` 等按需分析下出现。消息正文不变，`--format json` 里原来 `code` 为空的条目现在有值。全部编码见 [诊断编码索引](../diagnostic-codes.md)，该文件由 `yarn generate-diagnostic-codes` 从源码生成，CI 检查它与源码同步。

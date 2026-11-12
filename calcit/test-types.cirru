@@ -20,10 +20,17 @@
             .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
+        'Labeler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Labeler (:generics T)
+            Fn T $ -> String
+          :examples $ []
         'NamedCallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn NamedCallback (text) (count text)
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
+        'Pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Pair (:generics A B) (Tuple A B)
+          :examples $ []
         'Person $ %{} 'CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote $ defstruct Person (:name String) (:age nil)
           :examples $ []
@@ -68,10 +75,17 @@
             .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
+        'Vec2 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Vec2 (Tuple Number Number)
+          :examples $ []
         'add-numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn add-numbers (a b) (&+ a b)
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
+        'apply-labeler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn apply-labeler (f x) (f x)
+          :examples $ []
+          :schema $ quote $ Fn (Labeler Number) Number (-> String)
         'chained-return-type $ %{} 'CodeEntry (:doc "|Uses return-type hinting more than once")
           :code $ quote $ defn chained-return-type (base extra)
             let
@@ -144,10 +158,15 @@
             println |Done!
             ; Note: Struct field validation requires explicit type annotations
             ; in unit tests via assert-type with Struct instances.
+            test-deftype
             test-numeric-refinements
             ; Currently not supported for runtime Struct literals.
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
+        'pair-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn pair-first (p) (nth p 0)
+          :examples $ []
+          :schema $ quote $ Fn (Pair Number String) (-> Number)
         'process-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn process-string (s) (str s |!!!)
           :examples $ []
@@ -216,6 +235,23 @@
             , "|defstruct/defenum checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)
+        'test-deftype $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-deftype ()
+            assert= ([] 4 6)
+              vec2-add ([] 1 2) ([] 3 4)
+            assert= 3 $ &+ 1 $ nth
+              vec2-add ([] 1 0) ([] 1 0)
+              , 0
+            assert= 1 $ pair-first $ [] 1 |a
+            assert= |n:2 $ apply-labeler
+              fn (n) (str |n: n)
+              , 2
+            assert=
+              quote $ Tuple Number Number
+              , Vec2
+            println "|✓ deftype aliases passed"
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-dynamic-methods $ %{} 'CodeEntry (:doc "|Ensures .slice target type is validated")
           :code $ quote $ defn test-dynamic-methods ()
             let
@@ -439,5 +475,10 @@
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)
+        'vec2-add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn vec2-add (a b)
+            let[] (x y) a $ let[] (p q) b $ [] (&+ x p) (&+ y q)
+          :examples $ []
+          :schema $ quote $ Fn Vec2 Vec2 (-> Vec2)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-types.main

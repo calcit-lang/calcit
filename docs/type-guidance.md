@@ -415,20 +415,27 @@ match
 当前 WASM typed EDN parser 只支持已声明的标量及顶层同质标量集合子集；嵌套集合仍明确拒绝，
 本例不表示新增 WASM 支持，也不替代 #1538 的通用断言/调用证明收紧。
 
-## Schema 类型别名在各后端一致展开
+## 用 `deftype` 声明类型别名
 
-非 Dynamic definition schema 可以通过完整的 `'namespace/definition` 名称作为类型别名使用。别名只复用底层类型关系，不创建新的运行时包装；需要名义身份时仍应使用 `defstruct` 或 `defenum`。
+`deftype` 给一个类型表达式起名字，可以带泛型参数。别名只复用底层类型关系，不创建新的运行时包装；需要名义身份时仍应使用 `defstruct` 或 `defenum`。
 
 ```bash
-calcit edit def app.schema/Items --code 'quote $ def Items $ []'
-calcit edit schema app.schema/Items --code "quote \$ List Number"
-calcit edit def app.schema/NamedCallback --code 'quote $ defn NamedCallback (text) (count text)'
-calcit edit schema app.schema/NamedCallback --code "quote \$ Fn String (-> Number)"
+calcit edit def app.schema/Vec3 --code 'quote $ deftype Vec3 $ Tuple Number Number Number'
+calcit edit def app.schema/Pair --code 'quote $ deftype Pair (:generics A B) (Tuple A B)'
+calcit edit def app.schema/Labeler --code 'quote $ deftype Labeler (:generics T) (Fn T (-> String))'
 ```
 
-别名定义本身仍是一个普通的值，其他代码可以直接读取它，因此初始化表达式必须属于它发布的 schema：数据别名给出该类型的代表值（如上例的空 List），Fn 别名使用参数个数与 schema 一致的 `defn`，函数体按同一签名检查。`def Items &unit` 这类占位写法声明了 `List<Number>` 却求值为 Unit；只要该定义被预处理（作为值被引用，或 `--check-only --all-defs` / `--ns` 检查全部定义），就会报告 `E_SCHEMA_DEF_MISMATCH`，诊断会提示替换 `&unit` 占位。
+之后在 schema、`hint-fn`、`assert-type`、Struct 字段和 Enum payload 里写 `Vec3`（同命名空间、`:refer` 引入）、`schema/Vec3` 或全名，都按 `Tuple Number Number Number` 检查，包括字面量、`nth` / `get` / `let[]`。带泛型的别名写成 `(Pair Number String)`、`(Labeler Number)`，类型参数按位置代入；个数不对报 `E_TYPE_ALIAS_ARITY`。静态检查、Native 构造验证和 JavaScript codegen 都按同一底层类型判断值。
 
-此后 `'app.schema/Items` 可用于 Struct 字段、Enum payload、callback 或 trait 边界。静态检查、Native 构造验证和 JavaScript codegen 都按同一底层 schema 判断值；不要为 Native 单独增加 coercion。类型别名不能接收泛型实参，循环别名也不会退化成 Dynamic，而是作为无法证明的类型关系拒绝。
+别名定义的运行时值是 quote 后的类型表达式，例如 `Vec3` 求值为 `(quote $ Tuple Number Number Number)`，只用于查看，不要当作业务数据使用。
+
+旧写法里，带非 Dynamic schema 的值定义也能当别名（`def Items $ []` 加 schema `List Number`，或 `defn` 加 `Fn` schema）。它们仍然按 schema 展开，但在 schema 和 `hint-fn` 里引用时给出 `W_VALUE_TYPE_ALIAS`，提示换成 `deftype`，迁移步骤见[升级指南](run/upgrade.md#0430-类型别名用-deftype-声明2725)。
+
+限制：
+
+- 循环别名不会退化成 Dynamic，而是作为无法证明的类型关系拒绝。
+- 值式别名不能接收泛型实参，需要泛型时改用 `deftype`。
+- 没有自动把值式别名改写成 `deftype` 的 `fix` 规则：改写会改变定义的运行时值，而且现有生态里几乎没有这种写法。
 
 ## 数值 refinement 只携带边界证明
 

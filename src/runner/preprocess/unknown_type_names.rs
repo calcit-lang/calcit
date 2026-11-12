@@ -213,6 +213,31 @@ pub(super) fn unknown_type_name_error(
   )
 }
 
+pub(crate) const TYPE_ALIAS_ARITY_ERROR: &str = "E_TYPE_ALIAS_ARITY";
+
+/// A `deftype` reference applied to the wrong number of type arguments:
+/// `(path, name, generics, actual)`.
+type AliasArityMismatch = (String, Arc<str>, Vec<Arc<str>>, usize);
+
+/// The first `deftype` reference in `annotation` with the wrong arity.
+fn find_type_alias_arity_mismatch(annotation: &Arc<CalcitTypeAnnotation>, file_ns: &str, path: &str) -> Option<AliasArityMismatch> {
+  super::find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      let (ns, def) = program::resolve_type_name_in_ns(file_ns, name)?;
+      let alias = crate::calcit::type_alias_declaration(&format!("{ns}/{def}"))?;
+      (alias.generics.len() != args.len()).then(|| {
+        (
+          candidate_path.to_owned(),
+          Arc::from(format!("{ns}/{def}")),
+          alias.generics.clone(),
+          args.len(),
+        )
+      })
+    }
+    _ => None,
+  })
+}
+
 /// Reject an unresolved nominal reference in `annotation`.
 pub(super) fn reject_unknown_type_names(
   owner: &str,
@@ -222,10 +247,28 @@ pub(super) fn reject_unknown_type_names(
   call_stack: &CallStackList,
   location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
-  match find_unknown_type_name(annotation, file_ns, position) {
-    Some(unknown) => Err(unknown_type_name_error(owner, position, &unknown, file_ns, call_stack, location)),
-    None => Ok(()),
+  if let Some(unknown) = find_unknown_type_name(annotation, file_ns, position) {
+    return Err(unknown_type_name_error(owner, position, &unknown, file_ns, call_stack, location));
   }
+  if let Some((path, name, generics, actual)) = find_type_alias_arity_mismatch(annotation, file_ns, position) {
+    let short = name.rsplit_once('/').map_or(name.as_ref(), |(_, def)| def);
+    let usage = if generics.is_empty() {
+      short.to_owned()
+    } else {
+      format!("({short} {})", generics.join(" "))
+    };
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "{owner} applies type alias `{name}` to {actual} type argument(s) in {position} at {path}, but its deftype declares {}; write it as `{usage}`",
+        generics.len()
+      ),
+      TYPE_ALIAS_ARITY_ERROR,
+      call_stack,
+      location,
+    ));
+  }
+  Ok(())
 }
 
 #[cfg(test)]

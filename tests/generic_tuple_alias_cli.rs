@@ -9,6 +9,10 @@ use std::process::Command;
 const FIXTURE: &str = "tests/fixtures/generic-tuple-alias.cirru";
 
 fn check(source: &str, label: &str) -> (bool, String) {
+  check_with(source, label, &["--check-only", "--ns", "demo.main"])
+}
+
+fn check_with(source: &str, label: &str, args: &[&str]) -> (bool, String) {
   let dir = std::env::temp_dir().join(format!("calcit-generic-tuple-alias-{label}-{}", std::process::id()));
   let _ = fs::remove_dir_all(&dir);
   fs::create_dir_all(&dir).unwrap();
@@ -18,7 +22,7 @@ fn check(source: &str, label: &str) -> (bool, String) {
     .env("NO_COLOR", "1")
     .args(["--tips-level", "none"])
     .arg(&snapshot)
-    .args(["--check-only", "--ns", "demo.main"])
+    .args(args)
     .output()
     .expect("calcit command should run");
   let _ = fs::remove_dir_all(&dir);
@@ -62,4 +66,31 @@ fn tuple_alias_slots_are_still_checked() {
   let (ok, text) = check(&replaced("(&* (nth a 1) (nth a 1))", "(&* (nth a 3) (nth a 1))"), "index");
   assert!(!ok, "{text}");
   assert!(text.contains("out of range for a tuple of 3"), "{text}");
+}
+
+#[test]
+fn value_style_alias_gets_a_deftype_note() {
+  let source = fs::read_to_string(FIXTURE).unwrap();
+  // Notes are listed by the whole-entry check, not the `--ns` report.
+  let (ok, text) = check_with(&source, "note", &["--check-only"]);
+  assert!(ok, "{text}");
+  assert!(text.contains("W_VALUE_TYPE_ALIAS"), "{text}");
+  assert!(text.contains("deftype Vec3 $ Tuple Number Number Number"), "{text}");
+}
+
+#[test]
+fn deftype_alias_checks_like_the_value_alias() {
+  let from = "          :code $ quote $ def Vec3 ([] 0 0 0)\n          :schema $ quote $ Tuple Number Number Number";
+  let to = "          :code $ quote $ deftype Vec3 $ Tuple Number Number Number";
+  let source = replaced(from, to);
+  let (ok, text) = check(&source, "deftype");
+  assert!(ok, "{text}");
+  assert!(!text.contains("W_VALUE_TYPE_ALIAS"), "{text}");
+  for def in ["v-add", "v-len2", "v-count"] {
+    assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
+  }
+  let broken = source.replace("[] (&+ x p) (&+ y q) (&+ z r)", "[] (&+ x p) |y (&+ z r)");
+  let (ok, text) = check(&broken, "deftype-slot");
+  assert!(!ok, "{text}");
+  assert!(text.contains("tuple<number, string, number>"), "{text}");
 }
