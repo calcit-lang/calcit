@@ -3,7 +3,10 @@
 //! enum variant are accepted wherever the position's type is known, including
 //! `if` branches and `&let` bodies in argument position and the members of
 //! `[]` / `#{}` / `{}` literals in argument or return position, `match`
-//! branches, variant payloads and the later operands of `=`.
+//! branches, variant payloads, the later operands of `=`, method and local
+//! function arguments, Tuple literals and literals in receiver-fixed slots,
+//! and the results of callbacks and generic parameters that the call's own
+//! expected type fixes.
 
 use std::fs;
 use std::path::PathBuf;
@@ -65,6 +68,18 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-union-match",
     "tag-data-view-match",
     "match-scrutinee-keeps-tag",
+    "tag-method-arg",
+    "tag-local-fn-arg",
+    "tag-tuple-return",
+    "tag-tuple-list",
+    "tag-assoc-field",
+    "tag-map-callback",
+    "tag-map-callback-if",
+    "tag-method-callback",
+    "tag-user-hof",
+    "tag-generic-slot",
+    "tag-generic-literal",
+    "plain-callback-tags",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
@@ -87,6 +102,10 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("green 1"), "{text}");
   assert!(text.contains("red green green 1"), "{text}");
   assert!(text.contains("red green\n"), "{text}");
+  assert!(text.contains("red green green 2"), "{text}");
+  assert!(text.contains("red,red"), "{text}");
+  assert!(text.contains("green,green green,red red red green 3"), "{text}");
+  assert!(text.contains("green,green,red\n"), "{text}");
 }
 
 #[test]
@@ -151,6 +170,69 @@ fn a_wrong_tag_is_reported_at_its_position() {
       "data-view-match-typo",
       "E_ENUM_TAG_UNKNOWN",
       "return value",
+    ),
+    (
+      "(.unwrap-or o :red)",
+      "(.unwrap-or o :rde)",
+      "method-arg-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "method argument",
+    ),
+    (
+      "f :green",
+      "f :grene",
+      "local-fn-arg-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "argument of a local function",
+    ),
+    (
+      "([] :green 1)",
+      "([] :grene 1)",
+      "tuple-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "collection member",
+    ),
+    (
+      "([] :red :red)",
+      "([] :red :rgb)",
+      "assoc-field-payload",
+      "E_ENUM_TAG_NEEDS_PAYLOAD",
+      "collection member",
+    ),
+    (
+      "(fn (n) :green)",
+      "(fn (n) :grene)",
+      "callback-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "callback result",
+    ),
+    (
+      "(fn (m) :red)",
+      "(fn (m) :rgb)",
+      "method-callback-payload",
+      "E_ENUM_TAG_NEEDS_PAYLOAD",
+      "callback result",
+    ),
+    (
+      "(fn (k) :red)",
+      "(fn (k) |red)",
+      "user-hof-wrong-type",
+      "declares return type",
+      "list<string>",
+    ),
+    (
+      "(pick :green)",
+      "(pick :grene)",
+      "generic-slot-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "arg 1 of `pick`",
+    ),
+    (
+      "(pick ([] :green :green :red))",
+      "(pick ([] :green :grene :red))",
+      "generic-literal-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "collection member",
     ),
   ] {
     let (ok, text) = check(&replaced(from, to), label);

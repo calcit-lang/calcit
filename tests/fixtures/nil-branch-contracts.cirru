@@ -315,6 +315,33 @@
               probe true
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic)
+        'case-list-arg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn case-list-arg ()
+            let
+                probe $ fn (flag)
+                  hint-fn $ Fn Bool $ -> Number
+                  take-open-list $ [] (if flag 1) 2
+              probe true
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
+        'case-tuple-arg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn case-tuple-arg ()
+            let
+                probe $ fn (flag)
+                  hint-fn $ Fn Bool $ -> Number
+                  take-open-pair $ [] (if flag 1) 2
+              probe true
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
+        'case-list-arg-nullable $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn case-list-arg-nullable ()
+            let
+                probe $ fn (flag)
+                  hint-fn $ Fn Bool $ -> Number
+                  take-nullable-list $ [] (if flag 1) 2
+              probe true
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'case-list-ret-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn case-list-ret-ok ()
             let
@@ -719,6 +746,18 @@
           :code $ quote $ defn take-js (n) &unit
           :examples $ []
           :schema $ quote $ Fn (JsNullish Number) (-> Unit)
+        'take-nullable-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn take-nullable-list (xs) 1
+          :examples $ []
+          :schema $ quote $ Fn (List (JsNullish Number)) (-> Number)
+        'take-open-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn take-open-list (xs) 1
+          :examples $ []
+          :schema $ quote $ Fn (List Dynamic) (-> Number)
+        'take-open-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn take-open-pair (p) 1
+          :examples $ []
+          :schema $ quote $ Fn (Tuple Dynamic Number) (-> Number)
         'take-num $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn take-num (n) n
           :examples $ []
