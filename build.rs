@@ -618,7 +618,9 @@ fn main() {
     // before user code. wasm-ld's 1 MiB default stack is too small for that
     // valid workload in an unoptimized WASI build, where it otherwise
     // underflows the shadow stack and traps as an out-of-bounds memory access.
-    println!("cargo:rustc-link-arg-bin=calcit-wasi-preprocess-harness=-zstack-size=4194304");
+    // 4 MiB stopped being enough once expected-type context (#2738) deepened
+    // argument preprocessing; native workers already run with 32 MiB.
+    println!("cargo:rustc-link-arg-bin=calcit-wasi-preprocess-harness=-zstack-size=8388608");
   }
 
   let out_dir = env::var_os("OUT_DIR").unwrap();
