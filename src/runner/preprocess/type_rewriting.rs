@@ -647,7 +647,8 @@ pub(crate) fn coerce_tag_literal(
 }
 
 /// [`coerce_tag_literal`] for a function's returned form: the tag may sit
-/// directly in tail position or in the branches of a tail `if`.
+/// directly in tail position or in a tail branch of `if`, `&let` (and so
+/// `let`) or `match` (#2722).
 pub(crate) fn coerce_tail_tag_literals(
   form: &Calcit,
   expected: &CalcitTypeAnnotation,
@@ -656,24 +657,59 @@ pub(crate) fn coerce_tail_tag_literals(
   call_stack: &crate::call_stack::CallStackList,
   location: Option<crate::calcit::NodeLocation>,
 ) -> Result<Option<Calcit>, crate::calcit::CalcitErr> {
-  match form {
-    Calcit::Tag(_) => coerce_tag_literal(form, expected, position, ctx, call_stack, location),
-    Calcit::List(items)
-      if matches!(items.first(), Some(Calcit::Syntax(crate::calcit::CalcitSyntax::If, _))) && matches!(items.len(), 3 | 4) =>
-    {
-      let mut changed = false;
-      let mut next = Vec::with_capacity(items.len());
-      for (idx, item) in items.iter().enumerate() {
-        let replacement = if idx >= 2 {
-          coerce_tail_tag_literals(item, expected, position, ctx, call_stack, location.clone())?
-        } else {
-          None
-        };
-        changed |= replacement.is_some();
-        next.push(replacement.unwrap_or_else(|| item.to_owned()));
-      }
-      Ok(changed.then(|| Calcit::from(next)))
+  use crate::calcit::CalcitSyntax;
+  let recur = |item: &Calcit| coerce_tail_tag_literals(item, expected, position, ctx, call_stack, location.clone());
+  // A match branch is `(pattern body)`; only the body is returned.
+  let recur_branch = |branch: &Calcit| -> Result<Option<Calcit>, crate::calcit::CalcitErr> {
+    let Calcit::List(pair) = branch else { return Ok(None) };
+    if pair.len() != 2 {
+      return Ok(None);
     }
+    let Some(body) = recur(&pair[1])? else { return Ok(None) };
+    Ok(Some(Calcit::from(vec![pair[0].to_owned(), body])))
+  };
+  let Calcit::List(items) = form else {
+    return match form {
+      Calcit::Tag(_) => coerce_tag_literal(form, expected, position, ctx, call_stack, location),
+      _ => Ok(None),
+    };
+  };
+  let replace = |indexes: &mut dyn Iterator<Item = usize>,
+                 rewrite: &dyn Fn(&Calcit) -> Result<Option<Calcit>, crate::calcit::CalcitErr>|
+   -> Result<Option<Calcit>, crate::calcit::CalcitErr> {
+    let mut next = items.to_vec();
+    let mut changed = false;
+    for idx in indexes {
+      if let Some(replacement) = rewrite(&next[idx])? {
+        next[idx] = replacement;
+        changed = true;
+      }
+    }
+    Ok(changed.then(|| Calcit::from(next)))
+  };
+  match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => replace(&mut (2..items.len()), &recur),
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => replace(&mut std::iter::once(items.len() - 1), &recur),
+    // A statically known enum match is preprocessed into
+    // `(match value enum-def branch-table)`.
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) if items.len() == 4 && matches!(items.get(2), Some(Calcit::EnumDef(_))) => {
+      let Some(Calcit::List(table)) = items.get(3) else { return Ok(None) };
+      let mut slots = table.to_vec();
+      let mut changed = false;
+      for slot in slots.iter_mut() {
+        if let Some(replacement) = recur_branch(slot)? {
+          *slot = replacement;
+          changed = true;
+        }
+      }
+      if !changed {
+        return Ok(None);
+      }
+      let mut next = items.to_vec();
+      next[3] = Calcit::from(slots);
+      Ok(Some(Calcit::from(next)))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) if items.len() > 2 => replace(&mut (2..items.len()), &recur_branch),
     _ => Ok(None),
   }
 }

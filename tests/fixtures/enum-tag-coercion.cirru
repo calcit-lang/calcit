@@ -64,11 +64,28 @@
           :code $ quote $ defn pick-filter (done?)
             if done? :done :all
           :schema $ quote $ Fn Bool (-> Filter)
+        'with-filter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn with-filter (v) (assoc v :filter :done)
+          :schema $ quote $ Fn View (-> View)
+        'let-filter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn let-filter (n)
+            let
+                a $ + n 1
+              , :active
+          :schema $ quote $ Fn Number (-> Filter)
+        'flip-mode $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn flip-mode (m)
+            match m
+              (:all) :all
+              (:light) :dark
+              (:dark) :light
+          :schema $ quote $ Fn Mode (-> Mode)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println (show-filter :all) (show-filter (default-filter)) (show-filter (pick-filter true)) (show-choice :done) (show-choice 2) (show-tag :all) (show-either (Mode :all))
             println $ render-view $ %{} View (:filter :done) (:title |direct)
             println $ render-view $ {} (:filter :active) (:title |map)
+            println $ str |tails (show-filter $ :filter $ with-filter $ %{} View (:filter :all) (:title |t)) (show-filter $ let-filter 1) (show-mode $ flip-mode $ Mode :light)
             let
                 local $ fn (f)
                   hint-fn $ Fn Filter (-> String)
