@@ -464,7 +464,9 @@ defn default-filter () :all               ; 返回值声明为 Filter：Filter :
 - 期望类型是 `Dynamic`、`Tag`、类型变量，或者不是 enum 时，tag 保持原样；
 - 期望类型是 `defunion` 时，只有在 union 没有 `Tag` 成员、且恰好一个 enum 成员有这个零载荷分支时才改写；
 - core 的 `Option` / `Result` 不参与改写，`Option :none` 要写全；
-- 返回值的改写覆盖最后一个表达式本身，以及最后一个 `if` 的两个分支。
+- 返回值的改写覆盖最后一个表达式本身，以及最后一个 `if`、`let`、`match` 的分支；
+- 期望类型会向里传（0.43.0，#2733）：实参位置上 `if` 的分支和 `let` 的最后一个表达式、`[]` / `#{}` / `{}` 字面量的成员也会改写，例如参数类型是 `List Filter` 时可以写 `[] :all :done`，返回类型是 `Map String Filter` 时可以写 `{} (|a :all)`；
+- `let` 绑定的裸 tag 类型是 `Tag`，不会因为之后被当作 enum 使用而改写，绑定处要写 `Filter :all`。
 
 检查期报错：
 
