@@ -91,6 +91,9 @@ use strum::ParseError;
 pub(crate) use scope_types::ScopeTypes;
 
 /// Keep proven member inputs distinct from incomplete inference (e.g. pair slots).
+/// Travels on the one expected-type offer (`tail_context::Expected.callback`),
+/// so only the function expression written in the offered position reads it.
+#[derive(Clone)]
 struct ExpectedFunctionContext {
   signature: Arc<CalcitFnTypeAnnotation>,
   member_inputs: bool,
@@ -108,30 +111,22 @@ struct ExpectedFunctionContext {
 
 type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Arc<str>]);
 
-struct ExpressionContextScope {
-  previous_fn: Option<ExpectedFunctionContext>,
-}
-
-impl ExpressionContextScope {
-  fn enter(context: Option<ExpectedFunctionContext>) -> Self {
-    Self {
-      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
-    }
-  }
-}
-
-impl Drop for ExpressionContextScope {
-  fn drop(&mut self) {
-    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
-  }
+/// Offers a callback contract to the function expression preprocessed next by
+/// the current handler, and hides any other pending offer meanwhile (#2733).
+fn offer_callback(context: Option<ExpectedFunctionContext>) -> tail_context::TailScope {
+  tail_context::TailScope::offer(context.map(|context| tail_context::Expected {
+    annotation: Arc::new(CalcitTypeAnnotation::Fn(context.signature.clone())),
+    position: "function in a typed position",
+    location: None,
+    callback: Some(Arc::new(context)),
+  }))
 }
 
 /// Compile an owned definition with its own input contract and no caller permissions.
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
   _generated: OutsideGeneratedSpecialization,
-  _expression: ExpressionContextScope,
-  _tail: tail_context::SuspendScope,
+  _tail: tail_context::TailScope,
   _features: FunctionFeaturesScope,
   _host_nullish: HostNullishReturnScope,
 }
@@ -153,8 +148,7 @@ impl DefinitionContextScope {
     };
     Self {
       _generated: OutsideGeneratedSpecialization::enter(),
-      _expression: ExpressionContextScope::enter(context),
-      _tail: tail_context::SuspendScope::enter(),
+      _tail: offer_callback(context),
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
       },
@@ -337,15 +331,15 @@ fn preprocess_argument_with_offered_return(
   // An `Option (Fn …)` slot also takes a plain lambda (wrapped later by the
   // Option field lifting) or `Some $ fn …`; both see the payload contract (D4).
   let option_payload = expected.and_then(|annotation| annotation.option_payload());
-  let _context = ExpressionContextScope::enter(
-    expected
-      .and_then(|annotation| annotation.resolve_to_fn())
-      .or_else(|| option_payload.as_ref().and_then(|payload| payload.resolve_to_nonoptional_fn()))
-      .map(|signature| ExpectedFunctionContext {
+  let callback = expected
+    .and_then(|annotation| annotation.resolve_to_fn())
+    .or_else(|| option_payload.as_ref().and_then(|payload| payload.resolve_to_nonoptional_fn()))
+    .map(|signature| {
+      Arc::new(ExpectedFunctionContext {
         offered_return,
         ..callback_parameter_context(signature, member_inputs, callee_owned_generics)
-      }),
-  );
+      })
+    });
   // Forms nested in this position (`if` branches, `&let` bodies, literal
   // members) see the expected type too. A direct tag is left to the caller,
   // which names the position; a literal that was not handled above must not
@@ -355,6 +349,7 @@ fn preprocess_argument_with_offered_return(
       annotation: annotation.clone(),
       position: "value in a typed position",
       location: None,
+      callback,
     },
   ));
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
@@ -1050,10 +1045,6 @@ fn format_inspect_type_coord(coord: &[u16]) -> String {
 
 thread_local! {
   static PREPROCESS_COMPILE_GUARD: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
-  /// When set, `preprocess_defn` for anonymous `fn` will use this as the expected
-  /// function type to inject arg types into the fn body's scope_types.
-  /// This enables type checking for callback parameters (e.g., `d!` in `:on-click $ fn (e d!) ...`).
-  static EXPECTED_FN_TYPE: RefCell<Option<ExpectedFunctionContext>> = const { RefCell::new(None) };
   /// Lexical capability permissions of the current function being preprocessed.
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
@@ -4426,7 +4417,7 @@ fn preprocess_immediate_call_context(
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
       });
-      let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+      let _context = offer_callback(Some(ExpectedFunctionContext {
         signature,
         member_inputs: false,
         immediate: true,
@@ -6817,8 +6808,8 @@ fn preprocess_known_function_call(
   }
 
   // Process arguments with type-aware preprocessing for Fn-typed params.
-  // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
-  // preprocess_defn can inject arg types into anonymous fn params' scope_types.
+  // A Fn-typed parameter offers its contract to the argument, so an inline
+  // lambda there takes its parameter types from it.
   for (arg_idx, a) in args.iter().enumerate() {
     if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
       has_spread = true;
@@ -6975,7 +6966,6 @@ fn preprocess_known_function_call(
     );
 
     // Always clear the hints after preprocessing, even on error
-    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
     HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
@@ -6993,7 +6983,6 @@ fn preprocess_known_function_call(
           check_warnings,
           call_stack,
         );
-        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
         result?
       }
       None => form,
@@ -15541,15 +15530,16 @@ pub fn preprocess_defn(
 
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
-      // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
+      // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks read the offered contract.
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
       // A lambda in return position takes the enclosing declared result (#2637).
-      let tail_signature = tail_context::take_for_current();
-      let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take()).or_else(|| {
-        tail_signature
-          .and_then(|expected| expected.annotation.resolve_to_fn())
-          .map(|signature| callback_parameter_context(signature, false, &[]))
+      let expected_context = tail_context::take_for_current().and_then(|expected| match expected.callback {
+        Some(context) => Some(context.as_ref().clone()),
+        None => expected
+          .annotation
+          .resolve_to_fn()
+          .map(|signature| callback_parameter_context(signature, false, &[])),
       });
       let expected_callee_owned_generics = expected_context
         .as_ref()
@@ -15886,6 +15876,7 @@ pub fn preprocess_defn(
             annotation: resolve_namespace_type_refs_for_body(local, ctx.file_ns),
             position: "return value",
             location: ctx.call_location.clone().or(Some(definition_location.clone())),
+            callback: None,
           }
         });
       // A callback whose own contract leaves the result to inference takes
@@ -16482,7 +16473,7 @@ fn recheck_let_lambda_call(
     fn_kind: SchemaKind::Fn,
     features: Arc::new(HashSet::new()),
   });
-  let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+  let _context = offer_callback(Some(ExpectedFunctionContext {
     signature,
     member_inputs: false,
     immediate: true,
@@ -16659,8 +16650,7 @@ fn compile_let_lambda(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Arc<CalcitTypeAnnotation>), CalcitErr> {
-  let _context = ExpressionContextScope::enter(context);
-  let _tail = tail_context::SuspendScope::enter();
+  let _context = offer_callback(context);
   let _features = FunctionFeaturesScope {
     previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(features)),
   };
@@ -19380,32 +19370,32 @@ mod tests {
       rest_type: None,
       features: Arc::new(HashSet::new()),
     });
-    EXPECTED_FN_TYPE.with(|cell| {
-      *cell.borrow_mut() = Some(ExpectedFunctionContext {
-        signature: signature.clone(),
-        member_inputs: true,
-        immediate: true,
-        callee_owned_generics: Arc::new(vec![]),
-        offered_return: None,
-      });
-    });
+    let _caller = offer_callback(Some(ExpectedFunctionContext {
+      signature: signature.clone(),
+      member_inputs: true,
+      immediate: true,
+      callee_owned_generics: Arc::new(vec![]),
+      offered_return: None,
+    }));
+    // The offer addresses the form one level below the caller.
+    let offered_callback = || {
+      let _form = tail_context::DepthGuard::enter();
+      tail_context::peek_for_current().and_then(|expected| expected.callback)
+    };
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
     HOST_NULLISH_RETURN_FORMS.with(|cell| *cell.borrow_mut() = HashSet::from([1usize]));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let _owned = DefinitionContextScope::enter("tests.context", "owned", &Calcit::Nil);
-      assert!(EXPECTED_FN_TYPE.with(|cell| cell.borrow().is_none()));
+      assert!(offered_callback().is_none());
       assert!(CURRENT_FN_FEATURES.with(|cell| cell.borrow().is_none()));
       assert!(HOST_NULLISH_RETURN_FORMS.with(|cell| cell.borrow().is_empty()));
       panic!("exercise owned-context unwinding");
     }));
     assert!(result.is_err());
-    EXPECTED_FN_TYPE.with(|cell| {
-      let state = cell.borrow();
-      let restored = state.as_ref().expect("restore caller function context");
-      assert!(restored.member_inputs);
-      assert!(restored.immediate);
-      assert!(Arc::ptr_eq(&restored.signature, &signature));
-    });
+    let restored = offered_callback().expect("restore caller function context");
+    assert!(restored.member_inputs);
+    assert!(restored.immediate);
+    assert!(Arc::ptr_eq(&restored.signature, &signature));
     assert!(CURRENT_FN_FEATURES.with(|cell| {
       cell
         .borrow()
@@ -20234,7 +20224,7 @@ mod tests {
       rest_type: None,
       features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
     });
-    let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+    let _context = offer_callback(Some(ExpectedFunctionContext {
       signature,
       member_inputs: true,
       immediate: true,

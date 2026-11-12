@@ -48,6 +48,13 @@
 - 做法：删掉 `EXPECTED_STRUCT_TYPE` 和 `EXPECTED_OPTION_PAYLOAD` 两个线程局部量。`{}` / struct 构造和 `Option` 构造在调用入口直接读自己位置上的期望类型（`tail_context::peek_for_current`），不再由调用方提前写入、再由「下一个调用」取走。原来的 `is_option_constructor_head` 判断随之删除：offer 本来就按深度寻址，只有构造表达式自身能读到。
 - 实参位置现在也把含类型变量的期望类型放进上下文，因为原来的 struct 线程局部量不排除泛型 struct；各个使用方（裸 tag、字面量成员、回调结果）仍各自排除类型变量，行为不变。
 - 构造语法糖（`Task :title …` 改写成 `%{}`）和 `Some x` 简写降级后用 `TailScope::forward` 把 offer 交给降级后的表达式。
-- 仍保留：`EXPECTED_FN_TYPE`，它带着回调的 `member_inputs`、`immediate`、callee 拥有的类型变量等信息，单独处理。
+- 仍保留：`EXPECTED_FN_TYPE`，见第七步。
 - 依据：四组探针（h1–h4）结果与改动前一致；本地 lib 1101、bin 503、两组 CLI 测试、core `:tests` 749 通过。
 
+
+## 第七步：期望 Fn 并入同一上下文
+
+- 做法：删掉最后一个线程局部量 `EXPECTED_FN_TYPE` 和 `ExpressionContextScope`。回调的附加信息（`member_inputs`、`immediate`、callee 拥有的类型变量、`offered_return`）作为 `tail_context::Expected.callback` 随同一个 offer 传递；`preprocess_defn` 只读自己深度上的 offer，有 `callback` 用它，没有就从 Fn 注解取默认上下文。
+- 其他入口（顶层 `def x $ fn …`、立即调用的 `((fn …) …)`、let 绑定 lambda 的编译与复查）改用 `offer_callback`，它同时遮住外层 offer，所以 `SuspendScope` 也删除了。
+- 行为差别：原来的线程局部量被「第一个遇到的 `fn`」取走，`(if c (fn …) (fn …))` 只有第一个分支拿到回调结果的期望类型，嵌在非尾位置的无关 lambda 也可能误拿。现在按深度寻址，两个分支都拿到，无关位置拿不到。新增测试 `tag-callback-branches`。
+- 依据：四组探针（h1–h4）结果与第六步一致（46/34/25/11）。
