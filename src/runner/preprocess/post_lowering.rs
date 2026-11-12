@@ -430,7 +430,13 @@ pub(super) fn validate_definition(
     }
   }
   let location = violations.iter().find_map(|violation| violation.location.clone());
-  let mut error = CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, message, call_stack, location);
+  let mut error = CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Unexpected,
+    message,
+    "E_POST_LOWERING_INVARIANT",
+    call_stack,
+    location,
+  );
   *error.provenance = violations.into_iter().flat_map(|violation| violation.chain).collect();
   Err(error)
 }
