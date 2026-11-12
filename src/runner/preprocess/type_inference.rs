@@ -3221,37 +3221,6 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       element_type.clone()
     });
   }
-  if matches!(
-    proc,
-    CalcitProc::NativeListRest
-      | CalcitProc::NativeListSlice
-      | CalcitProc::NativeListReverse
-      | CalcitProc::NativeListDistinct
-      | CalcitProc::Butlast
-      | CalcitProc::Sort
-      | CalcitProc::NativeListSort
-      | CalcitProc::NativeListDissoc
-  ) && let Some(first_arg) = xs.get(1)
-    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-    && let CalcitTypeAnnotation::List(_) = type_value.as_ref()
-  {
-    return Some(type_value.clone());
-  }
-  // Range always returns List(Number)
-  if matches!(proc, CalcitProc::Range) {
-    return Some(Arc::new(CalcitTypeAnnotation::List(tag_annotation("number"))));
-  }
-  // Split/SplitLines always return List(String)
-  if matches!(proc, CalcitProc::Split | CalcitProc::SplitLines) {
-    return Some(Arc::new(CalcitTypeAnnotation::List(tag_annotation("string"))));
-  }
-  if matches!(proc, CalcitProc::NativeMapGet)
-    && let Some(first_arg) = xs.get(1)
-    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-    && let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref()
-  {
-    return Some(core_option_type(val_type.clone()));
-  }
   if matches!(proc, CalcitProc::NativeMapDissoc | CalcitProc::NativeMapDiffNew)
     && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
@@ -3275,13 +3244,6 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       CalcitTypeAnnotation::List(entry)
     }));
   }
-  if matches!(proc, CalcitProc::NativeSetToList)
-    && let Some(first_arg) = xs.get(1)
-    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-    && let CalcitTypeAnnotation::Set(element_type) = type_value.as_ref()
-  {
-    return Some(Arc::new(CalcitTypeAnnotation::List(element_type.clone())));
-  }
   if matches!(
     proc,
     CalcitProc::NativeExclude | CalcitProc::NativeDifference | CalcitProc::NativeSetIntersection
@@ -3290,20 +3252,6 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     && let CalcitTypeAnnotation::Set(_) = type_value.as_ref()
   {
     return Some(type_value.clone());
-  }
-  if matches!(proc, CalcitProc::AtomDeref)
-    && let Some(first_arg) = xs.get(1)
-    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-    && let CalcitTypeAnnotation::Ref(element_type) = type_value.as_ref()
-  {
-    return Some(element_type.clone());
-  }
-  if matches!(proc, CalcitProc::NativeListToSet)
-    && let Some(first_arg) = xs.get(1)
-    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
-    && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref()
-  {
-    return Some(Arc::new(CalcitTypeAnnotation::Set(element_type.clone())));
   }
   if matches!(proc, CalcitProc::NativeNamedEnumNew)
     && let Some(tuple_type) = infer_enum_annotation(xs, scope_types)
