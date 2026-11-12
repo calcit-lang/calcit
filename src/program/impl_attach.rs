@@ -304,3 +304,40 @@ pub(crate) fn generated_attachments() -> HashMap<DefKey, Calcit> {
     .map(|(key, (_, generated))| (key.to_owned(), generated.to_owned()))
     .collect()
 }
+
+/// Whether the code, as written or attached, defines a struct or enum.
+pub(crate) fn code_defines_nominal_type(code: &Calcit) -> bool {
+  let Calcit::List(items) = code else { return false };
+  match items.first().and_then(symbol_name) {
+    Some("defstruct" | "defenum") => true,
+    Some("def") => items.get(2).is_some_and(code_defines_nominal_type),
+    Some("impl-traits" | GENERATED_ATTACH_HEAD) => items.get(1).is_some_and(code_defines_nominal_type),
+    _ => false,
+  }
+}
+
+/// Whether the code is attachment at the top of a definition, `impl-traits …`
+/// or `def X (impl-traits …)`, with the plain or the qualified head.
+pub(crate) fn code_is_top_level_impl_traits(code: &Calcit) -> bool {
+  let Calcit::List(items) = code else { return false };
+  match items.first().and_then(symbol_name) {
+    Some("impl-traits" | GENERATED_ATTACH_HEAD) => true,
+    Some("def") => items.get(2).is_some_and(code_is_top_level_impl_traits),
+    _ => false,
+  }
+}
+
+/// Whether the definition's current code is attachment written by hand: an
+/// `impl-traits` head that this module did not generate from `(:impls …)`.
+pub(crate) fn is_hand_written_top_level_impl_traits(ns: &str, def: &str, code: &Calcit) -> bool {
+  if !code_is_top_level_impl_traits(code) {
+    return false;
+  }
+  let key: DefKey = (Arc::from(ns), Arc::from(def));
+  let generated = WRITTEN_CODE
+    .lock()
+    .expect("lock written type code")
+    .get(&key)
+    .is_some_and(|(_, generated)| generated == code);
+  !generated
+}

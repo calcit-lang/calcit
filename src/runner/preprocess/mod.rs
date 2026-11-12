@@ -4632,6 +4632,16 @@ fn process_macro_source(
   {
     trait_type_names::check_deftrait_self_contract(args, ctx.file_ns, ctx.call_stack)?;
   }
+  if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "defimpl" && !calcit::is_bundled_core_ns(ctx.file_ns) {
+    reject_legacy_defimpl_name(
+      args,
+      ctx.scope_defs,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.call_stack,
+      ctx.call_location.clone(),
+    )?;
+  }
   reject_cond_without_default(info, args, ctx.call_location.clone(), ctx.call_stack)?;
 
   let code = Calcit::List(source.clone());
@@ -7116,6 +7126,22 @@ fn preprocess_known_function_call(
     );
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
+  if info.def_ns.as_ref() == calcit::CORE_NS
+    && info.name.as_ref() == "impl-traits"
+    && !calcit::is_bundled_core_ns(file_ns)
+    && program::lookup_def_code(file_ns, def_name)
+      .is_some_and(|code| program::impl_attach::is_hand_written_top_level_impl_traits(file_ns, def_name, &code))
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Syntax,
+      format!(
+        "{file_ns}/{def_name}: a top-level definition no longer attaches impls with `impl-traits`; list the traits on the type, `defstruct T … (:impls Trait …)`, and write each implementation as `defimpl T Trait …` in the type's or the trait's namespace. `impl-traits` stays for structs and enums defined inside a function"
+      ),
+      LEGACY_IMPL_TRAITS_ERROR,
+      call_stack,
+      call_location.clone(),
+    ));
+  }
   let mut call_has_type_warnings = false;
   if !has_spread {
     let mut current_args = processed_call_args;
@@ -10769,6 +10795,53 @@ fn reject_cond_without_default(
       .into(),
   );
   Err(error)
+}
+
+const LEGACY_DEFIMPL_NAME_ERROR: &str = "E_LEGACY_DEFIMPL_NAME";
+const LEGACY_IMPL_TRAITS_ERROR: &str = "E_LEGACY_IMPL_TRAITS";
+
+/// `defimpl T Trait …` names the struct or enum it implements: a local bound to
+/// a struct/enum definition, or a top-level one. The retired
+/// `defimpl ImplName Trait …` named the implementation instead.
+fn reject_legacy_defimpl_name(
+  args: &CalcitList,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+  call_location: Option<crate::calcit::NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let Some(Calcit::Symbol { sym: name, .. }) = args.first() else {
+    return Ok(());
+  };
+  let names_type = if scope_defs.contains(name) {
+    match scope_types.get(name).map(AsRef::as_ref) {
+      Some(CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)) => true,
+      // A local without a known type still names a value written in scope,
+      // never the implementation being defined.
+      Some(annotation) => matches!(annotation, CalcitTypeAnnotation::Dynamic),
+      // `Impl $ defimpl Impl Trait …` sees its own binding before it has a type.
+      None => false,
+    }
+  } else {
+    program::names_nominal_type_definition(file_ns, name)
+  };
+  if names_type {
+    return Ok(());
+  }
+  let trait_name = match args.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => sym.to_string(),
+    _ => String::from("Trait"),
+  };
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Syntax,
+    format!(
+      "`defimpl {name} {trait_name} …` names the struct or enum it implements, and `{name}` is not one. The form `defimpl ImplName Trait` is retired: write `defimpl T {trait_name} …` with the type `T`, and at the top level list the trait on the type with `(:impls {trait_name})`"
+    ),
+    LEGACY_DEFIMPL_NAME_ERROR,
+    call_stack,
+    call_location,
+  ))
 }
 
 fn reject_legacy_trait_method_tag_syntax(

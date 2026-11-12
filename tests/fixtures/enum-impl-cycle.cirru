@@ -11,21 +11,17 @@
     %{} 'FileEntry
       :defs $ {}
         '%make-plugin $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn %make-plugin (value) (%:: Plugin :item value)
+          :code $ quote $ defn %make-plugin (value) (Plugin :item value)
           :examples $ []
           :schema $ quote $ Fn Number (-> fix-command.reader/Plugin)
           :tests $ [] $ %{} 'TestEntry (:name |nominal-method)
             :code $ quote $ assert= 3
               .render $ %make-plugin 3
         'Plugin $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def Plugin (impl-traits Plugin0 PluginImpl)
+          :code $ quote $ defenum Plugin (:item Number) (:impls PluginTrait)
           :examples $ []
-        'Plugin0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Plugin0 (:item Number)
-          :examples $ []
-          :schema $ quote EnumDef
         'PluginImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl PluginImpl PluginTrait (.render plugin-get)
+          :code $ quote $ defimpl Plugin PluginTrait (.render plugin-get)
           :examples $ []
           :schema $ quote Impl
         'PluginTrait $ %{} 'CodeEntry (:doc |)

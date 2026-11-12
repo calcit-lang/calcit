@@ -6689,14 +6689,14 @@
                 _ 0
             :tags $ #{} :core :unit
         'defimpl $ %{} 'CodeEntry
-          :doc "|macro for defining trait implementation values\nSyntax: (defimpl ImplName Trait (.method value) ...)\nParams: ImplName (symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: name and trait must be symbols; legacy tag names/origins are retired with E_LEGACY_DEFIMPL_TAG. Define a capability with deftrait and pass its symbol. This macro does not attach an impl to a target type/value; use `impl-traits` separately.\nExpands to &impl::new"
+          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: at the top level, the type lists the trait with `(:impls Trait …)` and the compiler attaches this implementation, found in the type's or the trait's namespace. Inside a function, `Type` is the local struct/enum and the returned impl is attached with `impl-traits`. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
             if
               not $ symbol? name
-              raise $ str-spaced "|defimpl expects an impl name symbol (E_LEGACY_DEFIMPL_TAG); legacy tag names are retired. Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              raise $ str-spaced "|defimpl expects an impl name symbol (E_LEGACY_DEFIMPL_TAG); legacy tag names are retired. Actual:" name "|Fix: rewrite as (defimpl Type Trait ...)."
             if
               not $ symbol? trait
-              raise $ str-spaced "|defimpl expects a nominal trait symbol (E_LEGACY_DEFIMPL_TAG); legacy tag origins are retired, define the trait with deftrait and pass its symbol. Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              raise $ str-spaced "|defimpl expects a nominal trait symbol (E_LEGACY_DEFIMPL_TAG); legacy tag origins are retired, define the trait with deftrait and pass its symbol. Actual:" trait "|Fix: rewrite as (defimpl Type Trait ...)."
             assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
             assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
               &let

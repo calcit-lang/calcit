@@ -37,14 +37,11 @@
     'app.model $ %{} 'FileEntry
       :defs $ {}
         '%item $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def %item
-            impl-traits
-              defenum %item $ :item String
-              , ItemImpl
+          :code $ quote $ defenum %item (:item String) (:impls ItemOps)
           :examples $ []
           :schema $ quote EnumDef
         'ItemImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl ItemImpl ItemOps
+          :code $ quote $ defimpl %item ItemOps
             .get-name $ fn (self)
               hint-fn $ Fn app.model/%item $ -> String
               match self $

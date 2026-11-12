@@ -40,7 +40,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'ResultImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl ResultImpl ResultTrait
+          :code $ quote $ defimpl Result0 ResultTrait
             .dummy $ fn $ _x
           :examples $ []
           :schema $ quote Impl

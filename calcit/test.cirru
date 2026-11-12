@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         '%A $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl %A AtomDerefTrait
+          :code $ quote $ defimpl AtomBox AtomDerefTrait
             .deref $ fn (self)
               match self $
                 :atom x
@@ -19,7 +19,7 @@
           :examples $ []
           :schema $ quote Impl
         '%r $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl %r DemoGetTrait
+          :code $ quote $ defimpl Demo DemoGetTrait
             .get $ fn (self) 1
           :examples $ []
           :schema $ quote Impl
@@ -32,11 +32,7 @@
           :examples $ []
           :schema $ quote $ Ref Number
         'AtomBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def AtomBox (impl-traits AtomBox0 %A)
-          :examples $ []
-          :schema $ quote EnumDef
-        'AtomBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum AtomBox (:atom Dynamic)
+          :code $ quote $ defenum AtomBox (:atom Dynamic) (:impls AtomDerefTrait)
           :examples $ []
           :schema $ quote EnumDef
         'AtomDerefTrait $ %{} 'CodeEntry (:doc |)
@@ -44,11 +40,7 @@
           :examples $ []
           :schema $ quote Trait
         'Demo $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def Demo (impl-traits Demo0 %r)
-          :examples $ []
-          :schema $ quote EnumDef
-        'Demo0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Demo (:a Dynamic)
+          :code $ quote $ defenum Demo (:a Dynamic) (:impls DemoGetTrait)
           :examples $ []
           :schema $ quote EnumDef
         'DemoGetTrait $ %{} 'CodeEntry (:doc |)
@@ -56,7 +48,7 @@
           :examples $ []
           :schema $ quote Trait
         'Deref $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl Deref DerefTrait
+          :code $ quote $ defimpl ValueBox DerefTrait
             .deref $ fn (self) 2
           :examples $ []
           :schema $ quote Impl
@@ -65,18 +57,14 @@
           :examples $ []
           :schema $ quote Trait
         'Num $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl Num NumTrait
+          :code $ quote $ defimpl NumBox NumTrait
             .inc $ fn (x) (update x 1 inc)
             .show $ fn (x)
               str $ &enum:nth x 1
           :examples $ []
           :schema $ quote Impl
         'NumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def NumBox (impl-traits NumBox0 Num)
-          :examples $ []
-          :schema $ quote EnumDef
-        'NumBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum NumBox (:number Number)
+          :code $ quote $ defenum NumBox (:number Number) (:impls NumTrait)
           :examples $ []
           :schema $ quote EnumDef
         'NumTrait $ %{} 'CodeEntry (:doc |)
@@ -84,11 +72,7 @@
           :examples $ []
           :schema $ quote Trait
         'ValueBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def ValueBox (impl-traits ValueBox0 Deref)
-          :examples $ []
-          :schema $ quote EnumDef
-        'ValueBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum ValueBox (:value Dynamic)
+          :code $ quote $ defenum ValueBox (:value Dynamic) (:impls DerefTrait)
           :examples $ []
           :schema $ quote EnumDef
         'cross-module-counter-next $ %{} 'CodeEntry (:doc |)

@@ -11,25 +11,21 @@
     'app.core $ %{} 'FileEntry
       :defs $ {}
         '%Atom $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def %Atom (impl-traits AtomState HookAtomImpl)
+          :code $ quote $ defenum %Atom (:atom Number) (:impls HookAtomOps)
           :examples $ []
-        'AtomState $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum AtomState (:atom Number)
-          :examples $ []
-          :schema $ quote EnumDef
         'HookAtomImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl HookAtomImpl HookAtomOps (.deref deref-atom)
+          :code $ quote $ defimpl %Atom HookAtomOps (.deref deref-atom)
           :examples $ []
           :schema $ quote Impl
         'HookAtomOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait HookAtomOps
-            .deref $ Fn app.core/AtomState $ -> Dynamic
+            .deref $ Fn app.core/%Atom $ -> Dynamic
           :examples $ []
           :schema $ quote Trait
         'deref-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn deref-atom (self) 1
           :examples $ []
-          :schema $ quote $ Fn app.core/AtomState (-> Number)
+          :schema $ quote $ Fn app.core/%Atom (-> Number)
         'make-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-atom () (%:: %Atom :atom 1)
           :examples $ []

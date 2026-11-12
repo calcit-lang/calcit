@@ -19,17 +19,13 @@
           :examples $ []
           :schema $ quote Trait
         'AlgebraBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def AlgebraBox (impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl)
-          :examples $ []
-          :schema $ quote Dynamic
-        'AlgebraBox0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AlgebraBox0 (:value Dynamic)
+          :code $ quote $ defstruct AlgebraBox (:value Dynamic) (:impls AlgebraMap AlgebraBind AlgebraApply AlgebraMappend)
           :examples $ []
           :schema $ quote StructDef
         'AlgebraBoxApplyImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl AlgebraBoxApplyImpl AlgebraApply
+          :code $ quote $ defimpl AlgebraBox AlgebraApply
             .apply $ fn (box fs)
-              hint-fn $ Fn AlgebraBox0 AlgebraBox0 $ -> Dynamic
+              hint-fn $ Fn AlgebraBox AlgebraBox $ -> Dynamic
               let
                   f $ &struct:get fs :value
                 if (fn? f)
@@ -38,24 +34,24 @@
           :examples $ []
           :schema $ quote Impl
         'AlgebraBoxBindImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl AlgebraBoxBindImpl AlgebraBind
+          :code $ quote $ defimpl AlgebraBox AlgebraBind
             .bind $ fn (box f)
               f $ &struct:get box :value
           :examples $ []
           :schema $ quote Impl
         'AlgebraBoxMapImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl AlgebraBoxMapImpl AlgebraMap
+          :code $ quote $ defimpl AlgebraBox AlgebraMap
             .map $ fn (box f)
-              hint-fn $ Fn AlgebraBox0
+              hint-fn $ Fn AlgebraBox
                 Fn Dynamic $ -> Dynamic
                 -> Dynamic
               .assoc box :value $ f $ &struct:get box :value
           :examples $ []
           :schema $ quote Impl
         'AlgebraBoxMappendImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl AlgebraBoxMappendImpl AlgebraMappend
+          :code $ quote $ defimpl AlgebraBox AlgebraMappend
             .mappend $ fn (a b)
-              hint-fn $ Fn AlgebraBox0 AlgebraBox0 $ -> Dynamic
+              hint-fn $ Fn AlgebraBox AlgebraBox $ -> Dynamic
               .assoc a :value $ + (&struct:get a :value) (&struct:get b :value)
           :examples $ []
           :schema $ quote Impl

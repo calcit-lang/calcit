@@ -23,7 +23,7 @@
           :examples $ []
           :schema $ quote Trait
         'DocTraitImpl $ %{} 'CodeEntry (:doc "|Doc smoke impl")
-          :code $ quote $ defimpl DocTraitImpl DocTrait
+          :code $ quote $ defimpl DocPerson0 DocTrait
             .label $ fn (x)
               str-spaced |doc $ &struct:get x :name
           :examples $ []

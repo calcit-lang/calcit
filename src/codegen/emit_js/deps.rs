@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitLocal};
-use crate::program::{CompiledFileData, DefId};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation};
+use crate::program::{CompiledDef, CompiledFileData, DefId};
 
 pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
   match xs {
@@ -14,6 +14,46 @@ pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
     Calcit::List(zs) => zs.iter().any(|z| contains_symbol(z, symbol)),
     _ => false,
   }
+}
+
+/// Whether `symbol` is read while the form itself is evaluated, outside the
+/// bodies of the functions it defines, which only read it when called.
+fn reads_symbol_eagerly(xs: &Calcit, symbol: &str) -> bool {
+  match xs {
+    Calcit::Fn { .. } => false,
+    Calcit::List(zs) if matches!(zs.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => false,
+    Calcit::List(zs) => zs.iter().any(|z| reads_symbol_eagerly(z, symbol)),
+    Calcit::Thunk(thunk) => reads_symbol_eagerly(thunk.get_code(), symbol),
+    _ => contains_symbol(xs, symbol),
+  }
+}
+
+/// Whether a compiled definition is a `defimpl` value, by its source head or its `Impl` schema.
+fn is_impl_definition(compiled: &CompiledDef) -> bool {
+  let source_is_defimpl = compiled.source_code.as_ref().is_some_and(|code| match code {
+    Calcit::List(items) => match items.first() {
+      Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "defimpl" || sym.as_ref() == "calcit.core/defimpl",
+      Some(Calcit::Import(CalcitImport { def, .. })) => def.as_ref() == "defimpl",
+      _ => false,
+    },
+    _ => false,
+  });
+  source_is_defimpl
+    || matches!(compiled.schema.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "impl"))
+}
+
+fn reaches(from: &Arc<str>, to: &Arc<str>, graph: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> bool {
+  let mut stack = vec![from.to_owned()];
+  let mut seen: HashSet<Arc<str>> = HashSet::new();
+  while let Some(name) = stack.pop() {
+    if &name == to {
+      return true;
+    }
+    if seen.insert(name.to_owned()) {
+      stack.extend(graph.get(&name).into_iter().flatten().cloned());
+    }
+  }
+  false
 }
 
 #[cfg(test)]
@@ -58,6 +98,22 @@ pub(super) fn sort_compiled_defs_by_deps(file: &CompiledFileData) -> Vec<Arc<str
       }
     }
     deps_graph.insert(name.to_owned(), deps_info);
+  }
+
+  // A type and the impl attached to it refer to each other: the type reads the
+  // impl while it is built, and the impl's methods read the type only when
+  // called. For an impl definition, drop a lazy edge into its own dependency
+  // cycle so the impl is emitted before the types that attach it. Only impls
+  // are pruned: a plain function may be called while another value is
+  // initialized, so the values its body reads must keep their place.
+  let full_graph = deps_graph.clone();
+  for (name, deps) in deps_graph.iter_mut() {
+    let compiled = &file.defs[name];
+    if !is_impl_definition(compiled) {
+      continue;
+    }
+    let form = &compiled.codegen_form;
+    deps.retain(|dep| reads_symbol_eagerly(form, dep) || !reaches(dep, name, &full_graph));
   }
 
   sort_names_by_graph(def_names, &deps_graph)

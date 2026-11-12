@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'EnumImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum metadata")
-          :code $ quote $ defimpl EnumImpl EnumMetadata
+          :code $ quote $ defimpl Result EnumMetadata
             .dummy $ fn $ self
           :examples $ []
           :schema $ quote Impl
@@ -54,7 +54,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'ResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum tuple tests")
-          :code $ quote $ defimpl ResultImpl ResultTrait
+          :code $ quote $ defimpl Result ResultTrait
             .describe $ fn (self)
               match self
                 (:ok value) (str "|ok " value)
@@ -66,7 +66,7 @@
           :examples $ []
           :schema $ quote Trait
         'StructImpl $ %{} 'CodeEntry (:doc "|Trait impl for struct metadata")
-          :code $ quote $ defimpl StructImpl StructMetadata
+          :code $ quote $ defimpl Person StructMetadata
             .dummy $ fn $ self
           :examples $ []
           :schema $ quote Impl
@@ -375,7 +375,7 @@
           :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
             let
                 PersonGreeting $ deftrait PersonGreeting $ .greet AnyFn
-                PersonImpl $ defimpl PersonImpl PersonGreeting $ .greet
+                PersonImpl $ defimpl Person PersonGreeting $ .greet
                   fn (self)
                     str "|Hello, I'm " $ :name self
                 Person $ impl-traits Person PersonImpl

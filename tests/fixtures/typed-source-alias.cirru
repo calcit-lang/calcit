@@ -11,11 +11,7 @@
     'fix-command.alias-evidence $ %{} 'FileEntry
       :defs $ {}
         'AliasBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct AliasBase (:value Number)
-          :examples $ []
-          :schema $ quote StructDef
-        'AliasEnriched $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def AliasEnriched (impl-traits AliasBase AliasMarkerImpl)
+          :code $ quote $ defstruct AliasBase (:value Number) (:impls AliasMarker)
           :examples $ []
           :schema $ quote StructDef
         'AliasMarker $ %{} 'CodeEntry (:doc |)
@@ -23,17 +19,17 @@
           :examples $ []
           :schema $ quote Trait
         'AliasMarkerImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl AliasMarkerImpl AliasMarker
+          :code $ quote $ defimpl AliasBase AliasMarker
           :examples $ []
           :schema $ quote Impl
         'ChoiceBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum ChoiceBase (:value Number)
+          :code $ quote $ defenum ChoiceBase (:value Number) (:impls AliasMarker)
           :examples $ []
           :schema $ quote EnumDef
-        'ChoiceEnriched $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def ChoiceEnriched (impl-traits ChoiceBase AliasMarkerImpl)
+        'ChoiceBase-AliasMarker $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ChoiceBase AliasMarker
           :examples $ []
-          :schema $ quote EnumDef
+          :schema $ quote Impl
         'OtherBase $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OtherBase (:value Number)
           :examples $ []
@@ -143,13 +139,13 @@
             .unwrap-or x |fallback
           :examples $ []
         'produce-choice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn produce-choice () (ChoiceEnriched :value 1)
+          :code $ quote $ defn produce-choice () (ChoiceBase :value 1)
           :examples $ []
-          :schema $ quote $ Fn (-> fix-command.alias-evidence/ChoiceEnriched)
+          :schema $ quote $ Fn (-> fix-command.alias-evidence/ChoiceBase)
         'produce-enriched $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn produce-enriched () (AliasEnriched :value 1)
+          :code $ quote $ defn produce-enriched () (AliasBase :value 1)
           :examples $ []
-          :schema $ quote $ Fn (-> fix-command.alias-evidence/AliasEnriched)
+          :schema $ quote $ Fn (-> fix-command.alias-evidence/AliasBase)
         'range-proc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def range-proc &list:range
           :examples $ []

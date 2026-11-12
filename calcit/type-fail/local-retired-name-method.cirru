@@ -16,14 +16,11 @@
     %{} 'FileEntry
       :defs $ {}
         'LocalPath $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def LocalPath
-            impl-traits
-              defstruct LocalPath $ :path String
-              , LocalPathImpl
+          :code $ quote $ defstruct LocalPath (:path String) (:impls Writer)
           :examples $ []
           :schema $ quote StructDef
         'LocalPathImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl LocalPathImpl Writer
+          :code $ quote $ defimpl LocalPath Writer
             .write-text $ fn (self content) content
           :examples $ []
           :schema $ quote Impl

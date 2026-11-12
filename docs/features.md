@@ -81,7 +81,7 @@ Use this section as a keyword index for `calcit docs read`:
 - **Numbers**: number spec, NaN, rounding, bitwise, rem, parse-float
 - **Pattern Matching**: enum, match, anonymous enum, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
-- **Methods**: trait, impl-traits, method dispatch, trait-call
+- **Methods**: trait, `(:impls …)` + defimpl, impl-traits (local), method dispatch, trait-call
 - **Interop**: js interop, async, promise, js-await
 - **Architecture**: imports, namespace, module, dependency
 
