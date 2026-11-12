@@ -2220,7 +2220,9 @@ fn run_blocking_advisory_preflight(entries: &ProgramEntries) -> Result<(), Strin
     let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
     // The run compiles again and queues the notes itself.
     drop(rest);
-    if init_result.is_ok() && check_warnings.borrow().is_empty() {
+    // A native run compiles only `init_fn`, so warnings from `reload_fn`
+    // must not hide its blocking advisories.
+    if init_result.is_ok() {
       report_broad_type_errors(blocking)?;
     }
     Ok(())
