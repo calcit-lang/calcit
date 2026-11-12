@@ -3221,6 +3221,16 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       element_type.clone()
     });
   }
+  // An empty map literal gives the generic signature no evidence for `V`, so
+  // read the receiver's value type directly: `(&map:get (&{}) k)` stays
+  // `Option<Never>`, as the public `get` contract already reports.
+  if matches!(proc, CalcitProc::NativeMapGet)
+    && let Some(first_arg) = xs.get(1)
+    && let Some(type_value) = resolve_type_value(first_arg, scope_types)
+    && let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref()
+  {
+    return Some(core_option_type(val_type.clone()));
+  }
   if matches!(proc, CalcitProc::NativeMapDissoc | CalcitProc::NativeMapDiffNew)
     && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
