@@ -100,6 +100,11 @@ struct ExpectedFunctionContext {
   /// contract. Their ownership distinguishes unresolved result slots from
   /// captured lexical variables with the same source spelling.
   callee_owned_generics: Arc<Vec<Arc<str>>>,
+  /// What the caller's own expected type says this callback returns, when
+  /// the signature still leaves the result to inference (#2733). It types
+  /// forms written in the callback's return position and is never a
+  /// constraint or evidence for the callee's variables.
+  offered_return: Option<Arc<CalcitTypeAnnotation>>,
 }
 
 type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Arc<str>]);
@@ -163,6 +168,7 @@ impl DefinitionContextScope {
         member_inputs: false,
         immediate: false,
         callee_owned_generics: Arc::new(vec![]),
+        offered_return: None,
       })
     } else {
       None
@@ -197,6 +203,7 @@ fn callback_parameter_context(
     member_inputs,
     immediate: false,
     callee_owned_generics: Arc::new(callee_owned_generics.to_vec()),
+    offered_return: None,
   }
 }
 
@@ -230,6 +237,22 @@ fn resolve_callback_constructor(
 fn preprocess_argument_with_context(
   expr: &Calcit,
   context: Option<ExpectedArgumentContext<'_>>,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  preprocess_argument_with_offered_return(expr, context, None, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+}
+
+/// `preprocess_argument_with_context` for a callback argument whose result
+/// the caller's expected type already names (see `offered_return`).
+#[allow(clippy::too_many_arguments)]
+fn preprocess_argument_with_offered_return(
+  expr: &Calcit,
+  context: Option<ExpectedArgumentContext<'_>>,
+  offered_return: Option<Arc<CalcitTypeAnnotation>>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
@@ -356,7 +379,10 @@ fn preprocess_argument_with_context(
     expected
       .and_then(|annotation| annotation.resolve_to_fn())
       .or_else(|| option_payload.as_ref().and_then(|payload| payload.resolve_to_nonoptional_fn()))
-      .map(|signature| callback_parameter_context(signature, member_inputs, callee_owned_generics)),
+      .map(|signature| ExpectedFunctionContext {
+        offered_return,
+        ..callback_parameter_context(signature, member_inputs, callee_owned_generics)
+      }),
     expected.and_then(|annotation| {
       annotation
         .resolve_to_struct_with_ref()
@@ -437,6 +463,62 @@ fn preprocess_expected_form(
     return Ok(Some(processed));
   }
   Ok(None)
+}
+
+/// The type the call being preprocessed is expected to produce, when it is
+/// definite enough to read the callee's result variables from (#2733).
+fn offered_call_result() -> Option<Arc<CalcitTypeAnnotation>> {
+  tail_context::peek_for_current()
+    .map(|expected| expected.annotation)
+    .filter(|offered| contextual_generic_typing_enabled() && !offered.contains_type_var() && !contains_dynamic_type(offered.as_ref()))
+}
+
+/// Match a callee's result pattern against the offered call result. The
+/// variables this fixes are a reading of the context only: arguments still
+/// have to prove them on their own.
+fn offered_result_bindings(
+  offered: Option<&Arc<CalcitTypeAnnotation>>,
+  pattern: &Arc<CalcitTypeAnnotation>,
+) -> Option<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> {
+  let offered = offered?;
+  if !pattern.contains_type_var() {
+    return None;
+  }
+  let mut bindings = HashMap::new();
+  offered
+    .prove_with_bindings(pattern.as_ref(), &mut bindings)
+    .is_proven()
+    .then_some(bindings)
+}
+
+/// The result a callback parameter is expected to produce once the offered
+/// call result fixes the variable its contract leaves open.
+fn offered_callback_return(
+  bindings: Option<&HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>>,
+  expected: Option<&Arc<CalcitTypeAnnotation>>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let bindings = bindings?;
+  let signature = expected?.resolve_to_nonoptional_fn()?;
+  signature
+    .return_type
+    .contains_type_var()
+    .then(|| signature.return_type.substitute_type_vars(bindings))
+    .filter(|result| !result.contains_type_var())
+}
+
+/// A generic value parameter filled in from the offered call result.
+fn offered_value_slot(
+  bindings: Option<&HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>>,
+  expected: Option<&Arc<CalcitTypeAnnotation>>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let bindings = bindings?;
+  let slot = match expected?.as_ref() {
+    CalcitTypeAnnotation::Variadic(item) => item,
+    _ => expected?,
+  };
+  (slot.contains_type_var() && slot.resolve_to_nonoptional_fn().is_none())
+    .then(|| slot.substitute_type_vars(bindings))
+    .filter(|slot| !slot.contains_type_var())
 }
 
 /// A literal's member in its expected member type: like an argument, and a
@@ -4406,6 +4488,7 @@ fn preprocess_immediate_call_context(
           member_inputs: false,
           immediate: true,
           callee_owned_generics: Arc::new(vec![]),
+          offered_return: None,
         }),
         None,
       );
@@ -5665,6 +5748,8 @@ fn preprocess_list_call(
             // used by postfix methods. Process the receiver before deriving it.
             let mut member_inputs = false;
             let mut method_generics = None;
+            // The callee's result in terms of the variables its parameters use.
+            let mut result_pattern = None;
             let expected_type = if !has_spread
               && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
               && ys.len() >= 3
@@ -5743,6 +5828,7 @@ fn preprocess_list_call(
               .and_then(|context| {
                 member_inputs = context.receiver_specialized;
                 method_generics = Some(context.callee_owned_generics);
+                result_pattern = Some(context.return_type);
                 context.argument_types.get(ys.len() - 2).cloned()
               })
             } else if !has_spread
@@ -5792,6 +5878,7 @@ fn preprocess_list_call(
               // do not invent a signature for an open Fn/DynFn value.
               callable_contract.as_ref().and_then(|signature| {
                 member_inputs = !callable_bindings.is_empty();
+                result_pattern = Some(signature.return_type.substitute_type_vars(&callable_bindings));
                 signature
                   .arg_types
                   .get(ys.len() - 1)
@@ -5835,11 +5922,17 @@ fn preprocess_list_call(
                 .as_deref()
                 .or_else(|| callable_contract.as_ref().map(|signature| signature.generics.as_slice()))
                 .unwrap_or(&[]);
-              preprocess_argument_with_context(
+              // A callback whose result the call's expected type already
+              // names sees that result in its return position (#2733).
+              let offered_bindings = result_pattern
+                .as_ref()
+                .and_then(|pattern| offered_result_bindings(offered_call_result().as_ref(), pattern));
+              preprocess_argument_with_offered_return(
                 a,
                 expected_type
                   .as_ref()
                   .map(|annotation| (annotation, member_inputs, callee_generics)),
+                offered_callback_return(offered_bindings.as_ref(), expected_type.as_ref()),
                 scope_defs,
                 scope_types,
                 file_ns,
@@ -6722,6 +6815,9 @@ fn preprocess_known_function_call(
         .any(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(form).is_some())
     }));
   let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  // The type this call is expected to produce, kept to read the callee's
+  // result variables from it (#2733).
+  let offered_result = offered_call_result();
   // A later ordinary argument can be the only evidence for a type variable
   // returned by an earlier callback (for example `Fn() -> T, T`). Gather that
   // evidence before constructing callback context so the callback body cannot
@@ -6893,12 +6989,31 @@ fn preprocess_known_function_call(
     } else {
       None
     };
-    let result = preprocess_argument_with_context(
+    // What the call's own expected type says about this argument: the
+    // callee's result pattern is matched against it, and the variables it
+    // fixes fill this parameter. The reading is contextual only; the
+    // argument still has to prove the variables on its own (#2733).
+    let offered_bindings = if has_spread {
+      None
+    } else {
+      let pattern = refreshed_checked_contract
+        .as_ref()
+        .or(checked_contract.as_ref())
+        .map(|contract| &contract.return_type)
+        .unwrap_or(&info.return_type);
+      let pattern = resolve_namespace_type_refs_for_body(pattern.substitute_type_vars(&preprocessing_type_bindings), &info.def_ns);
+      offered_result_bindings(offered_result.as_ref(), &pattern)
+    };
+    let offered_slot = offered_value_slot(offered_bindings.as_ref(), expected_type.as_ref());
+    let offered_return = offered_callback_return(offered_bindings.as_ref(), expected_type.as_ref());
+    let receiver_fixed = receiver_fixed.or_else(|| offered_slot.clone().filter(|slot| literal_takes_member_context(a, slot)));
+    let result = preprocess_argument_with_offered_return(
       a,
       receiver_fixed
         .as_ref()
         .or(expected_type.as_ref())
         .map(|annotation| (annotation, member_inputs, callback_output_binders.as_slice())),
+      offered_return,
       scope_defs,
       scope_types,
       file_ns,
@@ -6956,6 +7071,8 @@ fn preprocess_known_function_call(
       // Type variables bound by earlier arguments are already substituted,
       // so `(= color :red)` reads the tag as the enum of `color` (#2733).
       Some(expected)
+    } else if let Some(slot) = offered_slot {
+      Some(slot)
     } else if info.def_ns.as_ref() == calcit::CORE_NS && !has_spread {
       let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
       staged.push(form.clone());
@@ -9244,6 +9361,8 @@ fn check_struct_method_args(
 /// Method inputs and whether they rely on a receiver-specific callback relation.
 struct MethodArgumentContext {
   argument_types: Vec<Arc<CalcitTypeAnnotation>>,
+  /// The method result with the receiver's variables filled in.
+  return_type: Arc<CalcitTypeAnnotation>,
   receiver_specialized: bool,
   callee_owned_generics: Vec<Arc<str>>,
 }
@@ -9355,6 +9474,7 @@ fn expected_method_argument_types(
       })
       .collect::<HashMap<_, _>>();
     return Some(MethodArgumentContext {
+      return_type: fn_annotation.return_type.substitute_type_vars(&bindings),
       receiver_specialized: false,
       callee_owned_generics: fn_annotation
         .generics
@@ -9371,6 +9491,7 @@ fn expected_method_argument_types(
     });
   }
   Some(MethodArgumentContext {
+    return_type: fn_annotation.return_type.substitute_type_vars(&bindings),
     receiver_specialized: specialized_types.is_some(),
     callee_owned_generics: fn_annotation
       .generics
@@ -15491,6 +15612,7 @@ pub fn preprocess_defn(
         invalidate_assignable_refinements(&mut body_types);
       }
       let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
+      let offered_return = expected_context.as_ref().and_then(|context| context.offered_return.clone());
       let expected_fn_schema = expected_context.map(|context| {
         let signature = context.signature;
         // A fixed callback context describes individual inputs, not a rest
@@ -15812,6 +15934,18 @@ pub fn preprocess_defn(
             location: ctx.call_location.clone().or(Some(definition_location.clone())),
           }
         });
+      // A callback whose own contract leaves the result to inference takes
+      // the result its caller is expected to produce (#2733).
+      let tail_result = match (tail_result, offered_return) {
+        (Some(expected), Some(offered)) if infer_contextual_callback && expected.annotation.contains_type_var() => {
+          Some(tail_context::Expected {
+            annotation: offered,
+            position: "callback result",
+            ..expected
+          })
+        }
+        (tail_result, _) => tail_result,
+      };
       // The returned form is the last one that is not a function hint.
       let tail_index = args
         .iter()
@@ -16400,6 +16534,7 @@ fn recheck_let_lambda_call(
       member_inputs: false,
       immediate: true,
       callee_owned_generics: Arc::new(vec![]),
+      offered_return: None,
     }),
     None,
   );
@@ -19300,6 +19435,7 @@ mod tests {
         member_inputs: true,
         immediate: true,
         callee_owned_generics: Arc::new(vec![]),
+        offered_return: None,
       });
     });
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
@@ -20154,6 +20290,7 @@ mod tests {
         member_inputs: true,
         immediate: true,
         callee_owned_generics: Arc::new(vec![]),
+        offered_return: None,
       }),
       None,
     );
