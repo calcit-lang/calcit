@@ -22,6 +22,10 @@ pub(super) struct Expected {
   /// Where to report a form rejected for this position, when it has no
   /// location of its own (a tag literal).
   pub(super) location: Option<crate::calcit::NodeLocation>,
+  /// What a callback written here learns from the position besides its
+  /// type: whether its inputs are proven, the callee's own output variables,
+  /// and the result the caller expects from it.
+  pub(super) callback: Option<Arc<super::ExpectedFunctionContext>>,
 }
 
 thread_local! {
@@ -112,23 +116,4 @@ pub(super) fn current_offer_is(test: impl FnOnce(&CalcitTypeAnnotation) -> bool)
       .as_ref()
       .is_some_and(|(target, expected)| *target == depth && test(&expected.annotation))
   })
-}
-
-/// Hide any pending offer while compiling another definition on demand.
-pub(super) struct SuspendScope {
-  previous: Option<(usize, Expected)>,
-}
-
-impl SuspendScope {
-  pub(super) fn enter() -> Self {
-    Self {
-      previous: TAIL.with(|cell| cell.borrow_mut().take()),
-    }
-  }
-}
-
-impl Drop for SuspendScope {
-  fn drop(&mut self) {
-    TAIL.with(|cell| *cell.borrow_mut() = self.previous.take());
-  }
 }

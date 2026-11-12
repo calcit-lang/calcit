@@ -157,6 +157,12 @@
             map xs $ fn (n)
               if (&> n 1) :red :green
           :schema $ quote $ Fn (List Number) (-> (List Color))
+        'tag-callback-branches $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-callback-branches (xs warm?)
+            map xs $ if warm?
+              fn (n) (if (&> n 1) :red :green)
+              fn (n) (if (&> n 1) :green :red)
+          :schema $ quote $ Fn (List Number) Bool (-> (List Color))
         'tag-method-callback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tag-method-callback (xs) (.map xs (fn (m) :red))
           :schema $ quote $ Fn (List Number) (-> (List Color))
@@ -207,5 +213,5 @@
             println $ show-colors (:tags (tag-assoc-field (Task :title |t :tags ([]))))
             println (show-colors (tag-map-callback ([] 1 2))) (show-colors (tag-map-callback-if ([] 1 2))) (show-colors (tag-method-callback ([] 1))) (show-colors (tag-user-hof ([] 1))) (show-color (tag-generic-slot)) (count (plain-callback-tags ([] 1 2 3)))
             println $ show-colors (tag-generic-literal)
-            println (show-color (tag-recur-arg 2 (Color :red))) (show-color (tag-recur-if 2 (Color :green))) (show-colors (tag-recur-list 1 ([]))) (lambda-recur-arg 1 (fn (x) x)) (show-color (tag-type-slot-tail 1))
+            println (show-color (tag-recur-arg 2 (Color :red))) (show-color (tag-recur-if 2 (Color :green))) (show-colors (tag-recur-list 1 ([]))) (lambda-recur-arg 1 (fn (x) x)) (show-color (tag-type-slot-tail 1)) (show-colors (tag-callback-branches ([] 1 2) false))
           :schema $ quote $ Fn (-> Unit) (:features :io)
