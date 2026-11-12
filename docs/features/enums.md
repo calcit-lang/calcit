@@ -467,6 +467,7 @@ defn default-filter () :all               ; 返回值声明为 Filter：Filter :
 - 返回值的改写覆盖最后一个表达式本身，以及最后一个 `if`、`let`、`match` 的分支；
 - 期望类型会向里传（0.43.0，#2733）：实参位置上 `if` 的分支和 `let` 的最后一个表达式、`[]` / `#{}` / `{}` 字面量的成员也会改写，例如参数类型是 `List Filter` 时可以写 `[] :all :done`，返回类型是 `Map String Filter` 时可以写 `{} (|a :all)`；
 - `match` 的分支结果、enum 分支的载荷和 `=` 的后续操作数同样适用（0.43.0，#2733）：返回类型是 `Option Filter` 时可以写 `Some :all`，载荷声明为 `Filter` 的分支可以写 `Wrap :one :all`，`filter` 的类型是 `Filter` 时可以写 `= filter :all`；
+- 方法实参和局部函数的实参同样适用（0.43.0，#2733）：`o` 是 `Option Filter` 时可以写 `.unwrap-or o :all`；`Tuple Filter Number` 位置上的 `[] :all 1` 按位置读每一项；core 函数的参数由接收者确定时也一样，例如 `assoc task :tags ([] :all)` 按字段类型 `List Filter` 读字面量；
 - `let` 绑定的裸 tag 类型是 `Tag`，不会因为之后被当作 enum 使用而改写，绑定处要写 `Filter :all`。
 
 检查期报错：

@@ -269,6 +269,30 @@ fn preprocess_argument_with_context(
       return Ok(Calcit::from(processed));
     }
   }
+  // A `[]` literal with one item per slot takes each Tuple slot type by position.
+  if let Some(CalcitTypeAnnotation::Tuple(slots)) = expected.map(AsRef::as_ref)
+    && literal_candidate
+    && let Calcit::List(items) = expr
+    && let Some(head) = items.first()
+  {
+    let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    if matches!(processed_head, Calcit::Proc(CalcitProc::List)) {
+      let mut processed = vec![processed_head];
+      for (item, slot) in items.iter().skip(1).zip(slots.iter()) {
+        processed.push(preprocess_literal_member(
+          item,
+          Some((slot, member_inputs, callee_owned_generics)),
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?);
+      }
+      reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
+      return Ok(Calcit::from(processed));
+    }
+  }
   let member = match expected.map(AsRef::as_ref) {
     Some(CalcitTypeAnnotation::List(member)) => Some((CalcitProc::List, member)),
     Some(CalcitTypeAnnotation::Set(member)) => Some((CalcitProc::Set, member)),
@@ -443,6 +467,7 @@ fn literal_takes_member_context(expr: &Calcit, expected: &CalcitTypeAnnotation) 
   let constructor = match expected {
     CalcitTypeAnnotation::Map(_, _) if items.len() % 2 == 1 => CalcitProc::NativeMap,
     CalcitTypeAnnotation::List(_) => CalcitProc::List,
+    CalcitTypeAnnotation::Tuple(slots) if items.len() == slots.len() + 1 => CalcitProc::List,
     CalcitTypeAnnotation::Set(_) => CalcitProc::Set,
     _ => return false,
   };
@@ -5841,15 +5866,33 @@ fn preprocess_list_call(
               }
               None => form,
             };
-            // A bare tag as a variant payload names a zero-payload variant of
-            // the declared payload enum: `(Some :red)` for `Option Color` (#2733).
-            let form = if matches!(form, Calcit::Tag(_))
-              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew))
-              && let Some(expected) = expected_type.as_ref().filter(|expected| !expected.contains_type_var())
+            // A bare tag names a zero-payload variant of the enum this slot
+            // declares: a variant payload (`(Some :red)` for `Option Color`), a
+            // method argument, or an argument of a local function (#2733).
+            let tag_position = match &head_form {
+              _ if !matches!(form, Calcit::Tag(_)) => None,
+              Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some("variant payload"),
+              Calcit::Method(_, calcit::MethodKind::Invoke(_)) => Some("method argument"),
+              _ if callable_contract.is_some() => Some("argument of a local function"),
+              _ => None,
+            };
+            // The tag itself is no evidence for a method's type variables:
+            // read the slot from the receiver and the preceding arguments.
+            let tag_slot = match (&head_form, tag_position, ys.get(1)) {
+              (Calcit::Method(name, _), Some(_), Some(receiver)) if !has_spread => resolve_type_value(receiver, scope_types)
+                .and_then(|receiver_type| {
+                  let preceding = ys.iter().skip(1).cloned().collect::<Vec<_>>();
+                  expected_method_argument_types(receiver_type.as_ref(), name, &CalcitList::from(preceding.as_slice()), scope_types)
+                })
+                .and_then(|context| context.argument_types.get(ys.len() - 2).cloned()),
+              _ => expected_type.clone(),
+            };
+            let form = if let Some(position) = tag_position
+              && let Some(expected) = tag_slot.as_ref().filter(|expected| !expected.contains_type_var())
               && let Some(rewritten) = coerce_tag_literal(
                 &form,
                 expected,
-                "variant payload",
+                position,
                 (
                   file_ns,
                   call_stack.0.first().map(|frame| frame.def.as_ref()).unwrap_or(def_name.as_ref()),
@@ -6825,10 +6868,28 @@ fn preprocess_known_function_call(
     let member_inputs = refreshed_core_types.is_some()
       || (declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input));
     let warnings_before = check_warnings.borrow().len();
+    // A core parameter that the receiver fixes (the field type in `assoc` on
+    // a struct) also types the members of a literal written there (#2733).
+    let receiver_fixed = if info.def_ns.as_ref() == calcit::CORE_NS
+      && !has_spread
+      && matches!(a, Calcit::List(_))
+      && expected_type
+        .as_ref()
+        .is_none_or(|expected| expected.contains_type_var() || matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic))
+    {
+      let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
+      staged.extend(args.iter().skip(arg_idx).cloned());
+      type_checking::specialize_core_expected_types(&info, &CalcitList::from(staged.as_slice()), scope_types, &info.arg_types)
+        .and_then(|specialized| specialized.get(arg_idx).cloned())
+        .filter(|expected| !expected.contains_type_var() && literal_takes_member_context(a, expected))
+    } else {
+      None
+    };
     let result = preprocess_argument_with_context(
       a,
-      expected_type
+      receiver_fixed
         .as_ref()
+        .or(expected_type.as_ref())
         .map(|annotation| (annotation, member_inputs, callback_output_binders.as_slice())),
       scope_defs,
       scope_types,
