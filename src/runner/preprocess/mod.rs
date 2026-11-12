@@ -238,6 +238,7 @@ fn preprocess_argument_with_context(
   let expected = context.map(|(annotation, _, _)| annotation);
   let member_inputs = context.is_some_and(|(_, member_inputs, _)| member_inputs);
   let callee_owned_generics = context.map(|(_, _, binders)| binders).unwrap_or_default();
+  let literal_candidate = expected.is_some_and(|annotation| literal_takes_member_context(expr, annotation));
   if let Some(CalcitTypeAnnotation::Map(key, value)) = expected.map(AsRef::as_ref)
     && let Calcit::List(items) = expr
     && items.len() % 2 == 1
@@ -253,7 +254,7 @@ fn preprocess_argument_with_context(
     if matches!(processed_head, Calcit::Proc(CalcitProc::NativeMap)) {
       let mut processed = vec![processed_head];
       for (index, item) in items.iter().skip(1).enumerate() {
-        processed.push(preprocess_argument_with_context(
+        processed.push(preprocess_literal_member(
           item,
           Some((if index % 2 == 0 { key } else { value }, member_inputs, callee_owned_generics)),
           scope_defs,
@@ -286,7 +287,7 @@ fn preprocess_argument_with_context(
     if matches!(processed_head, Calcit::Proc(proc) if proc == constructor) {
       let mut processed = vec![processed_head];
       for item in items.iter().skip(1) {
-        processed.push(preprocess_argument_with_context(
+        processed.push(preprocess_literal_member(
           item,
           Some((member, member_inputs, callee_owned_generics)),
           scope_defs,
@@ -322,7 +323,66 @@ fn preprocess_argument_with_context(
         .map(|(definition, _)| (definition, annotation.clone()))
     }),
   );
+  // Forms nested in this position (`if` branches, `&let` bodies, literal
+  // members) see the expected type too. A direct tag is left to the caller,
+  // which names the position; a literal that was not handled above must not
+  // re-enter this function.
+  let _expected = tail_context::TailScope::offer(
+    expected
+      .filter(|annotation| !literal_candidate && !matches!(expr, Calcit::Tag(_)) && !annotation.contains_type_var())
+      .map(|annotation| tail_context::Expected {
+        annotation: annotation.clone(),
+        position: "value in a typed position",
+      }),
+  );
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+}
+
+/// A literal's member in its expected member type: like an argument, and a
+/// bare tag there names a zero-payload variant of an expected enum (#2733).
+fn preprocess_literal_member(
+  expr: &Calcit,
+  context: Option<ExpectedArgumentContext<'_>>,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let form = preprocess_argument_with_context(expr, context, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+  if let Calcit::Tag(_) = form
+    && let Some((expected, _, _)) = context
+    && !expected.contains_type_var()
+  {
+    let def_name = call_stack
+      .0
+      .first()
+      .map(|frame| frame.def.clone())
+      .unwrap_or_else(|| Arc::from("?"));
+    if let Some(rewritten) = coerce_tag_literal(&form, expected, "collection member", (file_ns, &def_name), call_stack, None)? {
+      return Ok(rewritten);
+    }
+  }
+  Ok(form)
+}
+
+/// Whether `expr` is a `[]` / `#{}` / `&{}` literal written where a List, Set
+/// or Map is expected, so its members take the expected member types.
+fn literal_takes_member_context(expr: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
+  let Calcit::List(items) = expr else { return false };
+  let Some(head) = items.first() else { return false };
+  let constructor = match expected {
+    CalcitTypeAnnotation::Map(_, _) if items.len() % 2 == 1 => CalcitProc::NativeMap,
+    CalcitTypeAnnotation::List(_) => CalcitProc::List,
+    CalcitTypeAnnotation::Set(_) => CalcitProc::Set,
+    _ => return false,
+  };
+  (matches!(head, Calcit::Proc(proc) if *proc == constructor)
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == constructor.as_ref())
+    || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == constructor.as_ref()))
+    && !items.iter().skip(1).any(|item| {
+      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
 }
 
 #[cfg(not(test))]
@@ -3481,8 +3541,45 @@ pub fn preprocess_expr(
   if let Calcit::Symbol { sym, .. } = expr
     && has_deferred_let_lambda(sym, scope_types)
   {
-    let context = tail_context::take_for_current().map(|signature| callback_parameter_context(signature, false, &[]));
+    let context = tail_context::take_for_current()
+      .and_then(|expected| expected.annotation.resolve_to_fn())
+      .map(|signature| callback_parameter_context(signature, false, &[]));
     resolve_deferred_let_lambda(sym, scope_types, context, file_ns, check_warnings, call_stack)?;
+  }
+  // A bare tag where an enum is expected names its zero-payload variant (#2733).
+  if let Calcit::Tag(_) = expr
+    && tail_context::current_offer_is(|annotation| !annotation.contains_type_var())
+    && let Some(expected) = tail_context::take_for_current()
+  {
+    let def_name = call_stack
+      .0
+      .first()
+      .map(|frame| frame.def.clone())
+      .unwrap_or_else(|| Arc::from("?"));
+    if let Some(rewritten) = coerce_tag_literal(
+      expr,
+      &expected.annotation,
+      expected.position,
+      (file_ns, &def_name),
+      call_stack,
+      None,
+    )? {
+      return Ok(rewritten);
+    }
+  }
+  // A collection literal hands the expected member type to its items (#2733).
+  if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && literal_takes_member_context(expr, annotation))
+    && let Some(expected) = tail_context::take_for_current()
+  {
+    return preprocess_argument_with_context(
+      expr,
+      Some((&expected.annotation, false, &[])),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
   }
   let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
@@ -15077,9 +15174,11 @@ pub fn preprocess_defn(
       // unrelated functions nested in its body or returned by a later macro.
       // A lambda in return position takes the enclosing declared result (#2637).
       let tail_signature = tail_context::take_for_current();
-      let expected_context = EXPECTED_FN_TYPE
-        .with(|cell| cell.borrow_mut().take())
-        .or_else(|| tail_signature.map(|signature| callback_parameter_context(signature, false, &[])));
+      let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take()).or_else(|| {
+        tail_signature
+          .and_then(|expected| expected.annotation.resolve_to_fn())
+          .map(|signature| callback_parameter_context(signature, false, &[]))
+      });
       let expected_callee_owned_generics = expected_context
         .as_ref()
         .map(|context| context.callee_owned_generics.clone())
@@ -15400,13 +15499,17 @@ pub fn preprocess_defn(
         PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
       let initial_rewrites = post_lowering::Scope::checkpoint();
 
-      // A declared `Fn` result types a lambda written as the last body form (#2637).
+      // The declared result is what the last body form is expected to produce
+      // (#2637, #2733).
       let tail_result = effective_fn_schema
         .as_ref()
         .filter(|signature| !signature.is_async_invocation())
-        .and_then(|signature| {
+        .map(|signature| {
           let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
-          resolve_namespace_type_refs_for_body(local, ctx.file_ns).resolve_to_fn()
+          tail_context::Expected {
+            annotation: resolve_namespace_type_refs_for_body(local, ctx.file_ns),
+            position: "return value",
+          }
         });
       // A declared enum result names zero-payload variants for bare tags in the
       // returned form (#2701).
