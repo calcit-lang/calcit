@@ -189,6 +189,10 @@
           :code $ quote $ defn lambda-recur-arg (n f)
             if (&= n 0) (f 1) (recur (&- n 1) (fn (x) (&+ x 40)))
           :schema $ quote $ Fn Number (Fn Number (-> Number)) (-> Number)
+        'tag-type-slot-tail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-type-slot-tail (n)
+            with-type-slot (:callback Color) (&+ n 1) :green
+          :schema $ quote $ Fn Number (-> Color)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println (lambda-if-arg true) (lambda-if-arg false) (lambda-let-arg 5)
@@ -203,5 +207,5 @@
             println $ show-colors (:tags (tag-assoc-field (Task :title |t :tags ([]))))
             println (show-colors (tag-map-callback ([] 1 2))) (show-colors (tag-map-callback-if ([] 1 2))) (show-colors (tag-method-callback ([] 1))) (show-colors (tag-user-hof ([] 1))) (show-color (tag-generic-slot)) (count (plain-callback-tags ([] 1 2 3)))
             println $ show-colors (tag-generic-literal)
-            println (show-color (tag-recur-arg 2 (Color :red))) (show-color (tag-recur-if 2 (Color :green))) (show-colors (tag-recur-list 1 ([]))) (lambda-recur-arg 1 (fn (x) x))
+            println (show-color (tag-recur-arg 2 (Color :red))) (show-color (tag-recur-if 2 (Color :green))) (show-colors (tag-recur-list 1 ([]))) (lambda-recur-arg 1 (fn (x) x)) (show-color (tag-type-slot-tail 1))
           :schema $ quote $ Fn (-> Unit) (:features :io)

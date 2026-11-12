@@ -110,7 +110,7 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("red,red"), "{text}");
   assert!(text.contains("green,green green,red red red green 3"), "{text}");
   assert!(text.contains("green,green,red\n"), "{text}");
-  assert!(text.contains("green red red,green,green 41"), "{text}");
+  assert!(text.contains("green red red,green,green 41 green"), "{text}");
 }
 
 #[test]

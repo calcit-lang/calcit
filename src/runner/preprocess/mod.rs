@@ -2387,7 +2387,11 @@ fn preprocess_with_type_slot_block(
   // Preprocess body expressions under the override
   let mut preprocessed_body: Vec<Calcit> = Vec::with_capacity(body_args.len());
   let mut preprocess_err: Option<CalcitErr> = None;
-  for expr in body_args.iter() {
+  let last_index = body_args.len() - 1;
+  for (index, expr) in body_args.iter().enumerate() {
+    // The last body expression is the value of the whole form, so the type
+    // offered to `with-type-slot` reaches it one depth level down (#2733).
+    let _tail = (index == last_index).then(tail_context::TailScope::forward);
     match preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack) {
       Ok(form) => {
         condition_evidence::establish_normal_exit(&form, scope_types);
