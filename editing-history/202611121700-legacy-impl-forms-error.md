@@ -16,7 +16,7 @@
 
 - 仓库内的 snapshot、fixtures 和文档代码块全部改写成新形状。
 - 原来用同一个基类型挂不同实现的顶层别名，拆成各自独立的类型，或改由函数内 `impl-traits` 构造。test-traits 里需要保持同一名义类型的回归测试（ExplicitTrait*、OpenContains*）改为后者，仍以 `OpenContainsBase` 为基类型，由 `explicit-trait-false`、`open-contains-false` 等函数在函数体内挂载，挂载的实现和顺序不变。不要让基类型用 `(:impls …)` 带上一个实现，再在局部挂上同一 trait 的另一个实现：运行时 `&trait-call` 会报 `E_DUPLICATE_TRAIT_IMPL`。`explicit-nominal-contains?` 的参数不再静态带有实现，`&trait-call` 的返回值无法证明，因此改成 `if … true false`。构造函数的返回类型是不带实现的基类型，依赖静态实现的测试(`:where` 约束、core `contains?` 走 trait 方法)要在 `let` 里直接 `impl-traits` 构造值。
-- 兼容边界：WASM 后端不编译函数体内的 `impl-traits`（报 `E_WASM_NIL_TYPE_EVIDENCE` / `E_WASM_TRAIT_RESOLUTION`），所以改用局部挂载的 `impl-origin-portable` 测试在 WASM 上无法通过；`node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --tag impl-origin-portable --backend native,wasm` 可复现。这组测试在 WASM 上如何处理，等待 Jon 决定。
+- 兼容边界：WASM 后端不编译函数体内的 `impl-traits`（报 `E_WASM_NIL_TYPE_EVIDENCE` / `E_WASM_TRAIT_RESOLUTION`），所以改用局部挂载的 `impl-origin-portable` 测试在 WASM 上无法通过；`node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --tag impl-origin-portable --backend native,wasm` 可复现。Jon 在 2026-11-12 决定这组测试 WASM/WASI 不再运行：受影响的 42 个测试 ID 逐个写入 `scripts/core-tests-exclusions.cirru` 的 `:wasm` 和 `:wasi`，原因以 `unsupported` 开头并注明实际诊断；native/JS 继续完整运行，同标签下其余 11 个测试仍在 WASM 上运行。
 
 ## 验证
 
