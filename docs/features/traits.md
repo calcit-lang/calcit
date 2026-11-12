@@ -41,8 +41,25 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 Use `deftrait` to define a trait and its method signatures (including type annotations).
 
 ```cirru
-deftrait MyFoo $ .foo $ Fn T (-> String) (:generics T)
+deftrait MyFoo $ .foo $ Fn Self (-> String)
 ```
+
+### 接收者类型 `Self`
+
+方法签名里的 `Self` 表示实现这个 trait 的接收者类型，不需要写 `(:generics Self)`。`Self` 可以出现在其他参数、返回值和容器里：
+
+```cirru.no-check
+deftrait Shape
+  .area $ Fn Self (-> Number)
+  .scale $ Fn Self Number (-> Self)
+  .siblings $ Fn Self (-> (List Self))
+```
+
+- 只要有一个方法用了 `Self`，每个方法的第一个参数都必须是 `Self`，因为方法按这个接收者分派；否则报 `E_TRAIT_SELF_RECEIVER`。
+- 只服务一种接收者的 trait 可以继续写具体类型，例如 core 的 `OptionOps` 写 `Fn (Option T) …`。
+- 签名里写 trait 自己的名字（`.label $ Fn Labeled (-> String)`）报 `E_TRAIT_AS_TYPE`，应改写为 `Self`。external-object trait 的成员仍以宿主句柄类型作接收者，不受影响。
+- `Self` 只在 `deftrait` 的方法签名里有意义；在其他 schema 里写 `Self` 报 `E_UNKNOWN_TYPE_NAME`。
+- `:where $ T Shape` 约束下，`x .scale 2` 的返回类型是 `T`。
 
 普通 trait 的完整方法签名使用具体类型或显式声明的泛型；方法参数、返回值、容器和嵌套回调中的 `Dynamic` 沿用现有的拒绝规则。`deftrait` 中静态声明的这些签名会在预处理阶段报告定义位置。未提供完整合同的 `'Fn` 仍保留既有动态方法语义；需要保留输入、存储与返回之间的类型关系时，优先使用泛型合同。
 
@@ -53,7 +70,7 @@ Use `defimpl` to create a nominal impl value for a trait.
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)
@@ -80,7 +97,7 @@ Examples:
 let
     PersonA0 $ defstruct PersonA $ :name String
     MyFooA $ deftrait MyFooA $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     MyFooImplA $ defimpl MyFooImplA MyFooA $ .foo
       fn (p) (assert-type p PersonA0)
         str-spaced |foo $ :name p
@@ -96,7 +113,7 @@ let
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
     ImplB $ defimpl ImplB MyFoo $ :: .foo
       fn (p) (assert-type p Person0)
@@ -164,7 +181,7 @@ Syntax:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     StructDef0 $ defstruct StructDef $ :name String
     ImplA $ defimpl ImplA MyFoo $ .foo
       fn (p) (assert-type p StructDef0)
@@ -187,7 +204,7 @@ let
 do (; struct example)
   let
       MyFoo $ deftrait MyFoo
-        .foo $ Fn T (-> String) (:generics T)
+        .foo $ Fn Self (-> String)
       Person0 $ defstruct Person (:name String)
       MyFooImpl $ defimpl MyFooImpl MyFoo
         .foo $ fn (p) (assert-type p Person0)
@@ -198,7 +215,7 @@ do (; struct example)
   ; enum example
   let
       ResultTrait $ deftrait ResultTrait
-        .describe $ Fn T (-> String) (:generics T)
+        .describe $ Fn Self (-> String)
       ResultImpl $ defimpl ResultImpl ResultTrait
         .describe $ fn (x)
           match x
@@ -261,9 +278,9 @@ Example with two traits sharing the same method name:
 ```cirru.no-check
 let
     MyZapA $ deftrait MyZapA
-      .zap $ Fn T (-> String) (:generics T)
+      .zap $ Fn Self (-> String)
     MyZapB $ deftrait MyZapB
-      .zap $ Fn T (-> String) (:generics T)
+      .zap $ Fn Self (-> String)
     MyZapAImpl $ defimpl MyZapAImpl MyZapA
       .zap $ fn (_x) |zapA
     MyZapBImpl $ defimpl MyZapBImpl MyZapB
@@ -298,7 +315,7 @@ You can also inspect impl origins directly when validating trait dispatch:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     Shape0 $ defenum Shape $ :point Number Number
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (t)
@@ -318,10 +335,10 @@ let
 子句头是 Symbol `requires`，与 Tag 形式的成员键区分；旧写法 `('requires Parent)` 仍然接受。
 
 ```cirru.no-check
-deftrait Labeled $ .label $ Fn T (-> String) (:generics T)
+deftrait Labeled $ .label $ Fn Self (-> String)
 
 deftrait Greeting (requires Labeled)
-  .greeting $ Fn T (-> String) (:generics T)
+  .greeting $ Fn Self (-> String)
 
 def Greeter $ impl-traits
   defstruct Greeter $ :name String
@@ -346,7 +363,7 @@ Notes:
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
-      Fn T (-> String) (:generics T)
+      Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
     MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
       fn (p) (assert-type p Person0)

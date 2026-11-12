@@ -4519,6 +4519,15 @@ fn process_macro_source(
   )?;
 
   reject_legacy_trait_method_tag_syntax(info, args, ctx.file_ns, def_name, ctx.call_stack)?;
+  // External-object traits are host handle types, so their members name the
+  // trait itself as the receiver; they keep that shape.
+  if info.def_ns.as_ref() == calcit::CORE_NS
+    && info.name.as_ref() == "deftrait"
+    && !macro_name_is_external_object(info, ctx.file_ns, def_name)
+    && !args.iter().any(|item| matches!(item, Calcit::Tag(tag) if tag.ref_str() == "ffi"))
+  {
+    trait_type_names::check_deftrait_self_contract(args, ctx.file_ns, ctx.call_stack)?;
+  }
   reject_cond_without_default(info, args, ctx.call_location.clone(), ctx.call_stack)?;
 
   let code = Calcit::List(source.clone());

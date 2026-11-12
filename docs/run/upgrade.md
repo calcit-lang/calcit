@@ -24,6 +24,24 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.43.0 trait 方法签名用 `Self`（#2727）
+
+`deftrait` 的方法签名里可以直接写 `Self` 表示接收者类型，不再需要 `(:generics T)`：
+
+```cirru.no-check
+; 之前
+deftrait Shape $ .scale $ Fn T Number (-> T) (:generics T)
+; 之后
+deftrait Shape $ .scale $ Fn Self Number (-> Self)
+```
+
+旧写法照常可用。两处会变成错误：
+
+- 签名里写 trait 自己的名字，例如 `deftrait Labeled $ .label $ Fn Labeled (-> String)`，报 `E_TRAIT_AS_TYPE`，改成 `Fn Self (-> String)`。之前这样写不报错，但实现者传不进去。
+- 用了 `Self` 的 trait，每个方法的第一个参数都必须是 `Self`，否则报 `E_TRAIT_SELF_RECEIVER`。
+
+core 的 `Add`、`Eq`、`Show`、`Len` 等改用 `Self` 书写，签名含义不变。
+
 ## 0.43.0 类型别名用 `deftype` 声明（#2725）
 
 新增 `deftype` 声明类型别名，可以带泛型：

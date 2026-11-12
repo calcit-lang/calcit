@@ -757,6 +757,147 @@ fn validate_trait_method_signature(method_type: &CalcitTypeAnnotation, type_form
 /// definition, builtin types and slots are kept as written, and `Fn`/`Macro`
 /// schemas are left to the schema parser because they bind their own
 /// `:generics`.
+/// Inside a `deftrait` method signature, `Self` is the implicit receiver type
+/// parameter: a compact `Fn` schema that mentions `Self` without declaring it
+/// gets `Self` added to its `(:generics …)` clause (or a new clause). Other
+/// forms are returned unchanged.
+pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
+  fn is_self_symbol(item: &Calcit) -> bool {
+    matches!(item, Calcit::Symbol { sym, .. } if sym.trim_start_matches('\'') == "Self")
+  }
+  fn mentions_self(form: &Calcit) -> bool {
+    match form {
+      Calcit::List(list) => list.iter().any(mentions_self),
+      other => is_self_symbol(other),
+    }
+  }
+  fn is_quote_head(head: &Calcit) -> bool {
+    match head {
+      Calcit::Syntax(CalcitSyntax::Quote, _) => true,
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "quote",
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == "quote",
+      _ => false,
+    }
+  }
+  fn is_fn_head(item: &Calcit) -> bool {
+    match item {
+      Calcit::Symbol { sym, .. } => sym.trim_start_matches('\'') == "Fn",
+      Calcit::List(list) => list.len() == 2 && list.first().is_some_and(is_quote_head) && list.get(1).is_some_and(is_fn_head),
+      _ => false,
+    }
+  }
+  fn is_tuple_head(item: &Calcit) -> bool {
+    match item {
+      Calcit::Proc(CalcitProc::NativeEnum) => true,
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "::",
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == "::",
+      _ => false,
+    }
+  }
+  fn is_map_head(item: &Calcit) -> bool {
+    match item {
+      Calcit::Proc(CalcitProc::NativeMap) => true,
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "{}",
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == "{}",
+      _ => false,
+    }
+  }
+  // `Self`, `'Self` or `(quote Self)`.
+  fn names_self(item: &Calcit) -> bool {
+    match item {
+      Calcit::List(list) => list.len() == 2 && list.first().is_some_and(is_quote_head) && list.get(1).is_some_and(is_self_symbol),
+      other => is_self_symbol(other),
+    }
+  }
+  fn quoted_self_like(form: &Calcit) -> Option<Calcit> {
+    match form {
+      Calcit::List(list) if names_self(form) => Some(Calcit::List(list.to_owned())),
+      Calcit::List(list) => list.iter().find_map(quoted_self_like),
+      _ => None,
+    }
+  }
+  fn is_generics_clause(item: &Calcit) -> bool {
+    matches!(item, Calcit::List(clause) if matches!(clause.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "generics"))
+  }
+  fn self_symbol_like(form: &Calcit) -> Option<Calcit> {
+    match form {
+      Calcit::Symbol { info, location, .. } => Some(Calcit::Symbol {
+        sym: Arc::from("Self"),
+        info: info.to_owned(),
+        location: location.to_owned(),
+      }),
+      Calcit::List(list) => list.iter().find_map(self_symbol_like),
+      _ => None,
+    }
+  }
+  let Calcit::List(list) = form else {
+    return form.to_owned();
+  };
+  if list.len() == 2 && list.first().is_some_and(is_quote_head) {
+    return match list.get(1) {
+      Some(inner @ Calcit::List(_)) => Calcit::from(vec![list[0].to_owned(), with_implicit_self_generic(inner)]),
+      _ => form.to_owned(),
+    };
+  }
+  if !mentions_self(form) {
+    return form.to_owned();
+  }
+  // Canonical `(:: 'Fn ({} (:args …) (:return …) (:generics ([] 'T))))`.
+  if list.len() == 3
+    && list.first().is_some_and(is_tuple_head)
+    && list.get(1).is_some_and(is_fn_head)
+    && let Some(Calcit::List(map)) = list.get(2)
+    && map.first().is_some_and(is_map_head)
+  {
+    let Some(self_item) = quoted_self_like(form) else {
+      return form.to_owned();
+    };
+    let mut entries: Vec<Calcit> = map.iter().cloned().collect();
+    let generics_index = entries.iter().position(is_generics_clause);
+    match generics_index {
+      Some(index) => {
+        let Calcit::List(entry) = &entries[index] else { unreachable!() };
+        let Some(Calcit::List(names)) = entry.get(1) else {
+          return form.to_owned();
+        };
+        if names.iter().any(names_self) {
+          return form.to_owned();
+        }
+        let mut name_items: Vec<Calcit> = names.iter().cloned().collect();
+        name_items.insert(1.min(name_items.len()), self_item);
+        entries[index] = Calcit::from(vec![entry[0].to_owned(), Calcit::from(name_items)]);
+      }
+      None => {
+        let list_head = Calcit::Proc(CalcitProc::List);
+        entries.push(Calcit::from(vec![
+          Calcit::tag("generics"),
+          Calcit::from(vec![list_head, self_item]),
+        ]));
+      }
+    }
+    return Calcit::from(vec![list[0].to_owned(), list[1].to_owned(), Calcit::from(entries)]);
+  }
+  if !list.first().is_some_and(is_fn_head) {
+    return form.to_owned();
+  }
+  let Some(self_symbol) = self_symbol_like(form) else {
+    return form.to_owned();
+  };
+  let mut items: Vec<Calcit> = list.iter().cloned().collect();
+  if let Some(index) = items.iter().position(is_generics_clause) {
+    let Calcit::List(clause) = &items[index] else { unreachable!() };
+    if clause.iter().skip(1).any(is_self_symbol) {
+      return form.to_owned();
+    }
+    let mut clause_items: Vec<Calcit> = clause.iter().cloned().collect();
+    clause_items.insert(1, self_symbol);
+    items[index] = Calcit::from(clause_items);
+  } else {
+    items.push(Calcit::from(vec![Calcit::tag("generics"), self_symbol]));
+  }
+  Calcit::from(items)
+}
+
 pub(crate) fn qualify_trait_member_type_form(form: &Calcit, fallback_ns: &str) -> Calcit {
   fn qualify_name(name: &str, info: &CalcitSymbolInfo, fallback_ns: &str) -> Option<String> {
     if name.is_empty() || name.contains('/') || name.starts_with('*') || CalcitTypeAnnotation::is_builtin_type_symbol_name(name) {
@@ -837,7 +978,7 @@ pub(crate) fn qualify_trait_member_type_form(form: &Calcit, fallback_ns: &str) -
       _ => form.to_owned(),
     }
   }
-  walk(form, fallback_ns, false)
+  walk(&with_implicit_self_generic(form), fallback_ns, false)
 }
 
 /// Preserve quoted type syntax while sharing parsing and validation across both phases.
@@ -2389,6 +2530,48 @@ pub fn with_type_slot_runtime(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn implicit_self_generic_is_added_to_trait_fn_schemas() {
+    let sym = |name: &str| Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("app.main"),
+        at_def: Arc::from("T"),
+      }),
+      location: None,
+    };
+    let arrow = |ret: Calcit| Calcit::from(vec![sym("->"), ret]);
+    let compact = Calcit::from(vec![sym("Fn"), sym("Self"), arrow(sym("Self"))]);
+    assert_eq!(
+      with_implicit_self_generic(&compact).to_string(),
+      Calcit::from(vec![
+        sym("Fn"),
+        sym("Self"),
+        arrow(sym("Self")),
+        Calcit::from(vec![Calcit::tag("generics"), sym("Self")])
+      ])
+      .to_string()
+    );
+    let with_clause = Calcit::from(vec![
+      sym("Fn"),
+      sym("Self"),
+      sym("K"),
+      arrow(sym("Bool")),
+      Calcit::from(vec![Calcit::tag("generics"), sym("K")]),
+    ]);
+    let generics_clause = Calcit::from(vec![Calcit::tag("generics"), sym("Self"), sym("K")]).to_string();
+    assert!(with_implicit_self_generic(&with_clause).to_string().contains(&generics_clause));
+    let declared = Calcit::from(vec![
+      sym("Fn"),
+      sym("Self"),
+      arrow(sym("Self")),
+      Calcit::from(vec![Calcit::tag("generics"), sym("Self")]),
+    ]);
+    assert_eq!(with_implicit_self_generic(&declared).to_string(), declared.to_string());
+    let no_self = Calcit::from(vec![sym("Fn"), sym("T"), arrow(sym("T"))]);
+    assert_eq!(with_implicit_self_generic(&no_self).to_string(), no_self.to_string());
+  }
   use crate::calcit::{
     CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnUsageMeta, CalcitGenericBound, CalcitLocal, CalcitScope, CalcitSymbolInfo,
   };
