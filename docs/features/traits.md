@@ -167,6 +167,28 @@ trait 名不能直接写在类型位置。`Fn Greeting (-> String)`、`List Gree
 
 显式调用 `&trait-call Greeting :greeting instance` 的第一个参数选择描述值，后面的接收者仍须证明能力。局部别名与导入别名可以选择同一个描述值；描述值自身不因此拥有 `.greeting` 等实例方法。查询元数据传递函数的返回类型时会显示 `'Trait`，而不是把描述值列成具有这些实例方法的值。
 
+## 顶层定义：`(:impls …)` 与 `defimpl Type Trait`
+
+顶层的 struct/enum 在 `(:impls …)` 子句里列出它实现的 trait，每个实现写成一个顶层 `defimpl 类型 trait …`：
+
+```cirru.no-check
+; app.shape
+defstruct Circle (:r Number) (:impls Show geo/Area)
+defimpl Circle Show (.show circle:show)
+; app.geo，trait 所在的 ns
+defimpl shape/Circle Area (.area circle:area)
+```
+
+Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，编译器只在**类型所在的 ns** 和 **trait 所在的 ns** 里找 `defimpl Circle Area`，找到后挂到类型上，效果等同于手写 `impl-traits`，类型只有这一个定义。
+
+- 列出的 trait 两处都没有实现：`E_MISSING_TRAIT_IMPL`。写在第三个 ns 里的实现不会被找到。
+- 同一个 trait 有两个实现：`E_DUPLICATE_TRAIT_IMPL`。
+- `(:impls …)` 里的名字解析不到：`E_UNKNOWN_IMPLS_TRAIT`。
+- 类型没在 `(:impls …)` 里列出的 trait，旁边即使有 `defimpl` 也不会挂上。
+- `(:impls …)` 只用于顶层定义；`let` 里定义的 struct/enum 继续用 `impl-traits` 挂载。
+
+热重载时，改动 `defimpl` 或 `(:impls …)` 会让类型和它的使用者重新编译，即使类型在另一个 ns。
+
 ## Attach impls to struct/enum definitions
 
 `impl-traits` attaches impl records to a **struct/enum type**. Strict checking rejects a call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.

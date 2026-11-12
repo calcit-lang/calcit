@@ -795,6 +795,7 @@
             test-method-introspection
             ; Test requires between ordinary traits
             test-trait-requires
+            source-impl/test-source-defimpl
             assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
           :examples $ []
@@ -1774,6 +1775,7 @@
           :require
             calcit.test :refer $ throws?
             test-traits.metadata :as metadata
+            test-traits.source-impl :as source-impl
     'test-traits.metadata $ %{} 'FileEntry
       :defs $ {}
         'Greeting $ %{} 'CodeEntry (:doc |)
@@ -1787,6 +1789,60 @@
           :schema $ quote Trait
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.metadata
+    'test-traits.source-gauge $ %{} 'FileEntry
+      :defs $ {}
+        'Gauge $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait Gauge
+            .reading $ Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+        'Meter-Gauge $ %{} 'CodeEntry
+          :doc "|Written in the trait's namespace; found because `Meter` lists `Gauge` in `(:impls …)`."
+          :code $ quote $ defimpl si/Meter Gauge (.reading si/meter:reading)
+          :examples $ []
+          :schema $ quote Impl
+        'read-gauge $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-gauge (x) (.reading x)
+          :examples $ []
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Gauge
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.source-gauge
+          :require $ test-traits.source-impl :as si
+    'test-traits.source-impl $ %{} 'FileEntry
+      :defs $ {}
+        'Meter $ %{} 'CodeEntry
+          :doc "|Lists its traits; each `defimpl Meter …` is looked up in this namespace or the trait's."
+          :code $ quote $ defstruct Meter (:value Number) (:impls Add g/Gauge)
+          :examples $ []
+          :schema $ quote StructDef
+        'Meter-Add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Meter Add (.add meter:add)
+          :examples $ []
+          :schema $ quote Impl
+        'meter:add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn meter:add (self other)
+            %{} Meter $ :value $ + (:value self) (:value other)
+          :examples $ []
+          :schema $ quote $ Fn Meter Meter (-> Meter)
+        'meter:reading $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn meter:reading (self) (:value self)
+          :examples $ []
+          :schema $ quote $ Fn Meter (-> Number)
+        'test-source-defimpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-source-defimpl ()
+            let
+                total $ .add
+                  %{} Meter $ :value 1
+                  %{} Meter $ :value 2
+              assert= 3 $ .reading total
+              assert= 3 $ g/read-gauge total
+            println "|defimpl Type Trait attaches through (:impls …)"
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.source-impl
+          :require $ test-traits.source-gauge :as g
     'test-traits.struct-identity $ %{} 'FileEntry
       :defs $ {} $ 'comparison-contract?
         %{} 'CodeEntry (:doc |)

@@ -42,6 +42,21 @@ deftrait Shape $ .scale $ Fn Self Number (-> Self)
 
 core 的 `Add`、`Eq`、`Show`、`Len` 等改用 `Self` 书写，签名含义不变。
 
+## 0.43.0 类型用 `(:impls …)` 列出 trait 实现（#2727）
+
+顶层的 struct/enum 可以不再写第二个 `def X (impl-traits …)`，改为在定义里列出 trait，实现写成 `defimpl 类型 trait`：
+
+```cirru.no-check
+; 之前
+def Counter $ impl-traits (defstruct Counter (:value Number)) CounterAddImpl
+defimpl CounterAddImpl Add (.add counter:add)
+; 之后
+defstruct Counter (:value Number) (:impls Add)
+defimpl Counter Add (.add counter:add)
+```
+
+实现只在类型所在的 ns 或 trait 所在的 ns 里查找。旧写法在本版本仍可使用；`let` 里的局部定义继续用 `impl-traits`。
+
 ## 0.43.0 类型别名用 `deftype` 声明（#2725）
 
 新增 `deftype` 声明类型别名，可以带泛型：
