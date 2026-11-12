@@ -71,7 +71,7 @@ pub use type_inference::{
   infer_static_type_from_expr, resolve_core_nominal_instance_type,
 };
 use type_rewriting::{
-  build_enum_ref_node, build_struct_ref_node, coerce_tag_literal, coerce_tail_tag_literals, try_rewrite_enum_args_to_named_enums,
+  build_enum_ref_node, build_struct_ref_node, coerce_tag_literal, try_rewrite_enum_args_to_named_enums,
   try_rewrite_local_fn_enum_args_to_named_enums, try_rewrite_loose_struct_args_to_structs, try_rewrite_map_args_to_structs,
 };
 
@@ -334,9 +334,77 @@ fn preprocess_argument_with_context(
       .map(|annotation| tail_context::Expected {
         annotation: annotation.clone(),
         position: "value in a typed position",
+        location: None,
       }),
   );
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+}
+
+/// Whether a call head spells the `Option` constructor: `Some` or `Option`.
+fn is_option_constructor_head(head: Option<&Calcit>, scope_defs: &HashSet<Arc<str>>) -> bool {
+  match head {
+    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option" | "calcit.core/Option") && !scope_defs.contains(sym),
+    Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option",
+    _ => false,
+  }
+}
+
+/// Forms typed by the position they are written in (#2733): a bare tag where
+/// an enum is expected, and a collection literal whose members take the
+/// expected member type. Returns `None` when the form is typed bottom-up.
+#[inline(never)]
+fn preprocess_expected_form(
+  expr: &Calcit,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  // A bare tag where an enum is expected names its zero-payload variant (#2733).
+  if let Calcit::Tag(_) = expr
+    && tail_context::current_offer_is(|annotation| !annotation.contains_type_var())
+    && let Some(expected) = tail_context::take_for_current()
+  {
+    let def_name = call_stack
+      .0
+      .first()
+      .map(|frame| frame.def.clone())
+      .unwrap_or_else(|| Arc::from("?"));
+    if let Some(rewritten) = coerce_tag_literal(
+      expr,
+      &expected.annotation,
+      expected.position,
+      (file_ns, &def_name),
+      call_stack,
+      expected.location,
+    )? {
+      return Ok(Some(rewritten));
+    }
+  }
+  // A collection literal hands the expected member type to its items (#2733).
+  if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && literal_takes_member_context(expr, annotation))
+    && let Some(expected) = tail_context::take_for_current()
+  {
+    let processed = preprocess_argument_with_context(
+      expr,
+      Some((&expected.annotation, false, &[])),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    )?;
+    // Members are still arguments of the literal's constructor call, so a
+    // branch that silently yields nil is rejected as on the plain call path.
+    if let Calcit::List(items) = &processed {
+      for member in items.iter().skip(1) {
+        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
+      }
+    }
+    return Ok(Some(processed));
+  }
+  Ok(None)
 }
 
 /// A literal's member in its expected member type: like an argument, and a
@@ -3632,49 +3700,22 @@ pub fn preprocess_expr(
       .map(|signature| callback_parameter_context(signature, false, &[]));
     resolve_deferred_let_lambda(sym, scope_types, context, file_ns, check_warnings, call_stack)?;
   }
-  // A bare tag where an enum is expected names its zero-payload variant (#2733).
-  if let Calcit::Tag(_) = expr
-    && tail_context::current_offer_is(|annotation| !annotation.contains_type_var())
-    && let Some(expected) = tail_context::take_for_current()
+  // Tags and collection literals are rewritten by the type their position
+  // expects. The work lives in a separate frame: this function recurses once
+  // per nesting level and must stay small.
+  if matches!(expr, Calcit::Tag(_) | Calcit::List(_))
+    && tail_context::current_offer_is(|_| true)
+    && let Some(processed) = preprocess_expected_form(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)?
   {
-    let def_name = call_stack
-      .0
-      .first()
-      .map(|frame| frame.def.clone())
-      .unwrap_or_else(|| Arc::from("?"));
-    if let Some(rewritten) = coerce_tag_literal(
-      expr,
-      &expected.annotation,
-      expected.position,
-      (file_ns, &def_name),
-      call_stack,
-      None,
-    )? {
-      return Ok(rewritten);
-    }
-  }
-  // A collection literal hands the expected member type to its items (#2733).
-  if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && literal_takes_member_context(expr, annotation))
-    && let Some(expected) = tail_context::take_for_current()
-  {
-    let processed = preprocess_argument_with_context(
-      expr,
-      Some((&expected.annotation, false, &[])),
-      scope_defs,
-      scope_types,
-      file_ns,
-      check_warnings,
-      call_stack,
-    )?;
-    // Members are still arguments of the literal's constructor call, so a
-    // branch that silently yields nil is rejected as on the plain call path.
-    if let Calcit::List(items) = &processed {
-      for member in items.iter().skip(1) {
-        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
-      }
-    }
     return Ok(processed);
   }
+  // `Some x` written where an `Option T` is expected builds its payload as `T`.
+  // Only the constructor form itself opens the payload context: any other
+  // form would hand it to the first call nested inside, such as a condition.
+  let _option_payload = (matches!(expr, Calcit::List(items) if is_option_constructor_head(items.first(), scope_defs))
+    && tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && annotation.option_payload().is_some())
+    && EXPECTED_OPTION_PAYLOAD.with(|cell| cell.borrow().is_none()))
+  .then(|| OptionPayloadScope::enter(tail_context::peek_for_current().and_then(|expected| expected.annotation.option_payload())));
   let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
@@ -4471,11 +4512,26 @@ enum MacroSourcePhase<'a> {
 
 impl MacroSourcePhase<'_> {
   fn process(&mut self, code: &Calcit, ctx: PreprocessContext) -> Result<Calcit, CalcitErr> {
+    // A macro in a typed position hands the offer to its expansion.
+    let expected = match self {
+      Self::Prepare(_) => None,
+      Self::Check => tail_context::take_for_current(),
+    };
+    self.process_expected(code, ctx, expected)
+  }
+
+  /// Process `code` as the form that produces the enclosing form's value,
+  /// such as a `match` branch body.
+  fn process_expected(
+    &mut self,
+    code: &Calcit,
+    ctx: PreprocessContext,
+    expected: Option<tail_context::Expected>,
+  ) -> Result<Calcit, CalcitErr> {
     match self {
       Self::Prepare(constraints) => recursive_inputs::prepare_expression(code, ctx, constraints),
       Self::Check => {
-        // A macro in return position hands the offer to its expansion.
-        let _tail = tail_context::TailScope::offer(tail_context::take_for_current());
+        let _tail = tail_context::TailScope::offer(expected);
         preprocess_expr(
           code,
           ctx.scope_defs,
@@ -5785,6 +5841,26 @@ fn preprocess_list_call(
               }
               None => form,
             };
+            // A bare tag as a variant payload names a zero-payload variant of
+            // the declared payload enum: `(Some :red)` for `Option Color` (#2733).
+            let form = if matches!(form, Calcit::Tag(_))
+              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew))
+              && let Some(expected) = expected_type.as_ref().filter(|expected| !expected.contains_type_var())
+              && let Some(rewritten) = coerce_tag_literal(
+                &form,
+                expected,
+                "variant payload",
+                (
+                  file_ns,
+                  call_stack.0.first().map(|frame| frame.def.as_ref()).unwrap_or(def_name.as_ref()),
+                ),
+                call_stack,
+                call_location.clone(),
+              )? {
+              rewritten
+            } else {
+              form
+            };
             // Specialize callback context using proven preceding inputs.
             // Nested Dynamic preserves known container shape, not concrete members.
             if !has_spread
@@ -6792,11 +6868,25 @@ fn preprocess_known_function_call(
     // `assoc` on a struct fixes the value to the field type (#2722).
     let tag_expected = if !matches!(form, Calcit::Tag(_)) {
       None
-    } else if let Some(raw_expected) = active_expected_types.get(arg_idx)
-      && !raw_expected.contains_type_var()
-      && !matches!(raw_expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+    } else if let Some(expected) = expected_type
+      .as_ref()
+      .map(|expected| match expected.as_ref() {
+        CalcitTypeAnnotation::Variadic(item) => item.clone(),
+        _ => expected.clone(),
+      })
+      .or_else(|| {
+        // Later rest arguments have no slot of their own in the expected list.
+        (!has_spread && arg_idx >= info.arg_types.len() && contextual_generic_typing_enabled())
+          .then(|| info.rest_type.as_ref())
+          .flatten()
+          .map(|rest| resolve_namespace_type_refs_for_body(rest.substitute_type_vars(&preprocessing_type_bindings), &info.def_ns))
+      })
+      && !expected.contains_type_var()
+      && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
     {
-      expected_type.clone()
+      // Type variables bound by earlier arguments are already substituted,
+      // so `(= color :red)` reads the tag as the enum of `color` (#2733).
+      Some(expected)
     } else if info.def_ns.as_ref() == calcit::CORE_NS && !has_spread {
       let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
       staged.push(form.clone());
@@ -13744,6 +13834,8 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
     );
   }
   let lowered = generated_let(value_sym, args[0].to_owned(), chain, file_ns);
+  // The lowered form stands for the match, so its branches take the same expected type.
+  let _tail = tail_context::TailScope::forward();
   let processed = preprocess_expr(
     &lowered,
     ctx.scope_defs,
@@ -13996,6 +14088,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
   }
 
   let lowered = generated_let(value_sym, call[1].to_owned(), chain, file_ns);
+  let _tail = tail_context::TailScope::forward();
   Ok(Some(preprocess_expr(
     &lowered,
     ctx.scope_defs,
@@ -14066,6 +14159,10 @@ fn process_match(
 
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
 
+  // Each branch body produces the match's value, so it takes the type
+  // expected from the match (#2733). The matched value never does.
+  let expected = if checking { tail_context::take_for_current() } else { None };
+
   // Preprocess the value expression
   let value_form = phase.process(
     args.first().unwrap(),
@@ -14077,6 +14174,8 @@ fn process_match(
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
   if let Some(union_def) = inferred_match_type.as_deref().and_then(union_types::union_of_type) {
+    // The lowered `&let` / `if` chain passes the offer on to each branch body.
+    let _tail = tail_context::TailScope::offer(expected);
     return union_types::lower_union_match(&union_def, &value_form, args, ctx);
   }
   if union_types::has_type_pattern(args) {
@@ -14160,9 +14259,10 @@ fn process_match(
       Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
         has_wildcard = true;
         let mut body_types = ctx.scope_types.clone();
-        let processed_body = phase.process(
+        let processed_body = phase.process_expected(
           body,
           PreprocessContext::new(ctx.scope_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+          expected.clone(),
         )?;
         propagate_scope_widening(&mut joined_scope_types, &body_types, &ScopeTypes::new(), None);
         xs.push(Calcit::from(CalcitList::from(&[pattern.to_owned(), processed_body])));
@@ -14280,9 +14380,10 @@ fn process_match(
             explicitly_open_match && matches!(binding, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
           payload_contracts.bind(binding, open);
         }
-        let processed_body = phase.process(
+        let processed_body = phase.process_expected(
           body,
           PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+          expected.clone(),
         )?;
         // Payload names are branch-local, even when they shadow outer names.
         for binding in processed_pattern.iter().skip(1) {
@@ -15639,16 +15740,8 @@ pub fn preprocess_defn(
           tail_context::Expected {
             annotation: resolve_namespace_type_refs_for_body(local, ctx.file_ns),
             position: "return value",
+            location: ctx.call_location.clone().or(Some(definition_location.clone())),
           }
-        });
-      // A declared enum result names zero-payload variants for bare tags in the
-      // returned form (#2701).
-      let tail_tag_return = effective_fn_schema
-        .as_ref()
-        .filter(|signature| !signature.is_async_invocation() && !signature.return_type.contains_type_var())
-        .map(|signature| {
-          let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
-          resolve_namespace_type_refs_for_body(local, ctx.file_ns)
         });
       // The returned form is the last one that is not a function hint.
       let tail_index = args
@@ -15683,18 +15776,6 @@ pub fn preprocess_defn(
           a,
           preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
         );
-        let form = match tail_tag_return.as_ref().filter(|_| Some(index) == tail_index) {
-          Some(expected) => coerce_tail_tag_literals(
-            &form,
-            expected,
-            "return value",
-            (ctx.file_ns, def_name.as_ref()),
-            ctx.call_stack,
-            ctx.call_location.clone().or(Some(definition_location.clone())),
-          )?
-          .unwrap_or(form),
-          None => form,
-        };
         condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);

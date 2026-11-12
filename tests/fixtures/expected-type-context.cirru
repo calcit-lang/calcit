@@ -66,10 +66,68 @@
         'plain-tags $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn plain-tags () ([] :red :other)
           :schema $ quote $ Fn (-> (List Tag))
+        'Wrap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Wrap (:one Color) (:zero)
+          :schema $ quote EnumDef
+        'tag-eq $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-eq (c) (= c :red)
+          :schema $ quote $ Fn Color (-> Bool)
+        'tag-some-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-some-return () (Some :red)
+          :schema $ quote $ Fn (-> (Option Color))
+        'tag-qualified-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-qualified-option () (calcit.core/Option :some :green)
+          :schema $ quote $ Fn (-> (Option Color))
+        'tag-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-payload () (Wrap :one :green)
+          :schema $ quote $ Fn (-> Wrap)
+        'tag-match-arg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-match-arg (w)
+            show-color $ match w
+              (:one c) c
+              (:zero) :red
+          :schema $ quote $ Fn Wrap (-> String)
+        'tag-match-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-match-return (w)
+            match w
+              (:one c) c
+              (:zero) :green
+          :schema $ quote $ Fn Wrap (-> Color)
+        'NumOrStr $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion NumOrStr Number String
+          :schema $ quote UnionDef
+        'tag-literal-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-literal-match (n)
+            match n
+              0 :red
+              _ :green
+          :schema $ quote $ Fn Number (-> Color)
+        'tag-union-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-union-match (v)
+            match v
+              (Number n) :red
+              (String s) :green
+          :schema $ quote $ Fn NumOrStr (-> Color)
+        'tag-data-view-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-data-view-match (x)
+            match (data-view x)
+              (:string s) :red
+              _ :green
+          :schema $ quote $ Fn Dynamic (-> Color)
+        'match-scrutinee-keeps-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn match-scrutinee-keeps-tag ()
+            match (Some :sentinel)
+              (:some t) (Some :red)
+              (:none) (Option :none)
+          :schema $ quote $ Fn (-> (Option Color))
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println (lambda-if-arg true) (lambda-if-arg false) (lambda-let-arg 5)
             println (apply-all (lambda-list) 1)
             println (tag-if-arg true) (tag-if-arg false) (tag-list-arg)
             println (show-colors (tag-list-return)) (count (tag-set-return)) (count (plain-tags))
+            println (tag-eq (Color :red)) (tag-eq (Color :green)) (tag-match-arg (tag-payload)) (tag-match-arg (Wrap :zero))
+            println (show-color (tag-match-return (Wrap :zero))) (count ([] (tag-some-return)))
+            println (show-color (tag-literal-match 0)) (show-color (tag-literal-match 1)) (show-color (tag-union-match |s)) (count ([] (match-scrutinee-keeps-tag)))
+            println (show-color (tag-data-view-match |s)) (show-color (tag-data-view-match 1))
           :schema $ quote $ Fn (-> Unit) (:features :io)

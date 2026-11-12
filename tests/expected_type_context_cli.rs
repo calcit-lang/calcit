@@ -2,7 +2,8 @@
 //! bottom-up (#2733): an unhinted lambda and a bare tag naming a zero-payload
 //! enum variant are accepted wherever the position's type is known, including
 //! `if` branches and `&let` bodies in argument position and the members of
-//! `[]` / `#{}` / `{}` literals in argument or return position.
+//! `[]` / `#{}` / `{}` literals in argument or return position, `match`
+//! branches, variant payloads and the later operands of `=`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -54,6 +55,16 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-set-return",
     "tag-map-return",
     "plain-tags",
+    "tag-eq",
+    "tag-some-return",
+    "tag-qualified-option",
+    "tag-payload",
+    "tag-match-arg",
+    "tag-match-return",
+    "tag-literal-match",
+    "tag-union-match",
+    "tag-data-view-match",
+    "match-scrutinee-keeps-tag",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
@@ -72,6 +83,10 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("2 3 6"), "{text}");
   assert!(text.contains("red green red,green"), "{text}");
   assert!(text.contains("green,red 1 2"), "{text}");
+  assert!(text.contains("true false green red"), "{text}");
+  assert!(text.contains("green 1"), "{text}");
+  assert!(text.contains("red green green 1"), "{text}");
+  assert!(text.contains("red green\n"), "{text}");
 }
 
 #[test]
@@ -99,6 +114,44 @@ fn a_wrong_tag_is_reported_at_its_position() {
       "collection member",
     ),
     ("(|a :red)", "(|a :rde)", "map-typo", "E_ENUM_TAG_UNKNOWN", "collection member"),
+    ("(= c :red)", "(= c :rde)", "eq-typo", "E_ENUM_TAG_UNKNOWN", "arg 2 of `=`"),
+    ("(Some :red)", "(Some :rde)", "some-typo", "E_ENUM_TAG_UNKNOWN", "variant payload"),
+    (
+      "(Wrap :one :green)",
+      "(Wrap :one :rgb)",
+      "payload-needs-payload",
+      "E_ENUM_TAG_NEEDS_PAYLOAD",
+      "variant payload",
+    ),
+    (
+      "(:zero) :red",
+      "(:zero) :rde",
+      "match-arg-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "value in a typed position",
+    ),
+    (
+      "(:zero) :green",
+      "(:zero) :grene",
+      "match-return-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "return value",
+    ),
+    ("0 :red", "0 :rde", "literal-match-typo", "E_ENUM_TAG_UNKNOWN", "return value"),
+    (
+      "(String s) :green",
+      "(String s) :grene",
+      "union-match-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "return value",
+    ),
+    (
+      "(:string s) :red",
+      "(:string s) :rde",
+      "data-view-match-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "return value",
+    ),
   ] {
     let (ok, text) = check(&replaced(from, to), label);
     assert!(!ok, "{label}:\n{text}");
