@@ -851,11 +851,11 @@ impl CalcitProc {
         arg_types: vec![variadic_dynamic()],
       }),
       Split => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(some_tag("string")),
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       SplitLines => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(some_tag("string")),
         arg_types: vec![some_tag("string")],
       }),
       StartsWith | EndsWith => Some(ProcTypeSignature {
@@ -949,11 +949,11 @@ impl CalcitProc {
         arg_types: vec![some_tag("list"), dynamic_tag()],
       }),
       Butlast | NativeListReverse | NativeListButlast => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list")],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T"))],
       }),
       Range | NativeListRange => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(some_tag("number")),
         arg_types: vec![some_tag("number"), some_tag("number"), some_tag("number")],
       }),
       Sort | NativeListSort => {
@@ -994,8 +994,8 @@ impl CalcitProc {
         arg_types: vec![list_of(type_var("T")), type_var("T")],
       }),
       NativeListSlice => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_tag("number"), some_tag("number")],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T")), some_tag("number"), some_tag("number")],
       }),
       NativeListNth => Some(ProcTypeSignature {
         return_type: type_var("T"),
@@ -1022,8 +1022,8 @@ impl CalcitProc {
         arg_types: vec![list_of(type_var("T"))],
       }),
       NativeListDistinct => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list")],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T"))],
       }),
       NativeListLast => Some(ProcTypeSignature {
         return_type: option_of(type_var("T")),
@@ -1174,8 +1174,8 @@ impl CalcitProc {
         arg_types: vec![some_set(), some_set()],
       }),
       NativeSetToList => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_set()],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T"))],
       }),
       NativeSetCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
