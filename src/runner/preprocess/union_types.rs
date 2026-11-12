@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use super::{
-  PreprocessContext, core_import, gen_check_warning, generated_call, generated_if, generated_let, generated_path_symbol,
+  PreprocessContext, core_import, gen_check_warning_code, generated_call, generated_if, generated_let, generated_path_symbol,
   preprocess_expr,
 };
 use crate::calcit::{
@@ -315,8 +315,9 @@ pub(super) fn lower_union_match(
 
   let covers_all = arms.len() == members.len();
   if covers_all && wildcard.is_some() {
-    gen_check_warning(
+    gen_check_warning_code(
       format!("[Error] match on union {union_name} names every member, so the `_` branch is unreachable, at {file_ns}/{def_name}"),
+      "E_UNION_MATCH_UNREACHABLE_WILDCARD",
       file_ns,
       ctx.check_warnings,
     );

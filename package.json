@@ -39,6 +39,8 @@
     "try-core-tests": "cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --summary-only --require-match",
     "generate-core-dynamic-classification": "node scripts/core-dynamic-classification.mjs --write",
     "check-core-dynamic-classification": "node scripts/core-dynamic-classification.mjs --check",
+    "generate-diagnostic-codes": "node scripts/diagnostic-codes.mjs --write",
+    "check-diagnostic-codes": "node scripts/diagnostic-codes.mjs --check",
     "try-rs": "cargo run --bin calcit -- calcit/test.cirru --no-proof-audit && cargo run --bin calcit -- calcit/test-types-inference.cirru test --tag unit --require-match && cargo run --bin calcit -- calcit/test-types-inference.cirru test 'test-types-inference.main/*dynamic-ref' --require-match",
     "warn-dyn-method": "cargo run --bin calcit -- calcit/test.cirru --no-proof-audit --warn-dyn-method",
     "try-js-brk": "cargo run --bin calcit -- calcit/test.cirru --no-proof-audit js && cp scripts/main.mjs js-out/main.mjs && node --inspect-brk js-out/main.mjs",
