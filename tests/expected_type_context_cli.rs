@@ -63,6 +63,7 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-match-return",
     "tag-literal-match",
     "tag-union-match",
+    "tag-data-view-match",
     "match-scrutinee-keeps-tag",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
@@ -85,6 +86,7 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("true false green red"), "{text}");
   assert!(text.contains("green 1"), "{text}");
   assert!(text.contains("red green green 1"), "{text}");
+  assert!(text.contains("red green\n"), "{text}");
 }
 
 #[test]
@@ -132,6 +134,21 @@ fn a_wrong_tag_is_reported_at_its_position() {
       "(:zero) :green",
       "(:zero) :grene",
       "match-return-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "return value",
+    ),
+    ("0 :red", "0 :rde", "literal-match-typo", "E_ENUM_TAG_UNKNOWN", "return value"),
+    (
+      "(String s) :green",
+      "(String s) :grene",
+      "union-match-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "return value",
+    ),
+    (
+      "(:string s) :red",
+      "(:string s) :rde",
+      "data-view-match-typo",
       "E_ENUM_TAG_UNKNOWN",
       "return value",
     ),

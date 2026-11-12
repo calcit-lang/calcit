@@ -108,6 +108,12 @@
               (Number n) :red
               (String s) :green
           :schema $ quote $ Fn NumOrStr (-> Color)
+        'tag-data-view-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-data-view-match (x)
+            match (data-view x)
+              (:string s) :red
+              _ :green
+          :schema $ quote $ Fn Dynamic (-> Color)
         'match-scrutinee-keeps-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn match-scrutinee-keeps-tag ()
             match (Some :sentinel)
@@ -123,4 +129,5 @@
             println (tag-eq (Color :red)) (tag-eq (Color :green)) (tag-match-arg (tag-payload)) (tag-match-arg (Wrap :zero))
             println (show-color (tag-match-return (Wrap :zero))) (count ([] (tag-some-return)))
             println (show-color (tag-literal-match 0)) (show-color (tag-literal-match 1)) (show-color (tag-union-match |s)) (count ([] (match-scrutinee-keeps-tag)))
+            println (show-color (tag-data-view-match |s)) (show-color (tag-data-view-match 1))
           :schema $ quote $ Fn (-> Unit) (:features :io)
