@@ -43,3 +43,11 @@
 - 边界：参数类型是 `Dynamic`、含类型变量或还是推断中的空槽位时不提供；有可选或 rest 参数的函数、宏不提供（与事后检查跳过的范围一致）。
 - 依据：探针 `probes-2026-11-12/h4`，6 个原先失败的写法全部通过，`loop`、`Tag` 参数、直接自调用不受影响。
 
+## 第六步：期望 Struct 与 Option payload 并入同一上下文
+
+- 做法：删掉 `EXPECTED_STRUCT_TYPE` 和 `EXPECTED_OPTION_PAYLOAD` 两个线程局部量。`{}` / struct 构造和 `Option` 构造在调用入口直接读自己位置上的期望类型（`tail_context::peek_for_current`），不再由调用方提前写入、再由「下一个调用」取走。原来的 `is_option_constructor_head` 判断随之删除：offer 本来就按深度寻址，只有构造表达式自身能读到。
+- 实参位置现在也把含类型变量的期望类型放进上下文，因为原来的 struct 线程局部量不排除泛型 struct；各个使用方（裸 tag、字面量成员、回调结果）仍各自排除类型变量，行为不变。
+- 构造语法糖（`Task :title …` 改写成 `%{}`）和 `Some x` 简写降级后用 `TailScope::forward` 把 offer 交给降级后的表达式。
+- 仍保留：`EXPECTED_FN_TYPE`，它带着回调的 `member_inputs`、`immediate`、callee 拥有的类型变量等信息，单独处理。
+- 依据：四组探针（h1–h4）结果与改动前一致；本地 lib 1101、bin 503、两组 CLI 测试、core `:tests` 749 通过。
+

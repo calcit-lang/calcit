@@ -41,11 +41,10 @@ use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
-    CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef,
-    CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo,
-    LocatedWarning, MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType,
-    SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
-    validate_definition_schema_shape,
+    CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, MacroExpansionType,
+    MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind, brief_type_of_value,
+    pop_type_slot_override, push_type_slot_override, register_type_slot, validate_definition_schema_shape,
   },
   call_stack::{CallStackList, StackKind, find_macro_location_in_def, find_preferred_macro_location},
   codegen, program, runner,
@@ -359,15 +358,6 @@ fn preprocess_argument_with_offered_return(
     },
   ));
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
-}
-
-/// Whether a call head spells the `Option` constructor: `Some` or `Option`.
-fn is_option_constructor_head(head: Option<&Calcit>, scope_defs: &HashSet<Arc<str>>) -> bool {
-  match head {
-    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option" | "calcit.core/Option") && !scope_defs.contains(sym),
-    Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option",
-    _ => false,
-  }
 }
 
 /// Forms typed by the position they are written in (#2733): a bare tag where
