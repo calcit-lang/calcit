@@ -1,6 +1,7 @@
 //! A bare tag at a position whose expected type is a definite enum names its
 //! zero-payload variant (#2701): call arguments, local function arguments,
-//! struct fields, map literals rewritten to structs, and returned forms.
+//! struct fields, map literals rewritten to structs, `assoc` onto an enum
+//! field, and returned forms including `if` / `let` / `match` tails (#2722).
 //! Unknown tags, tags of payload variants and tags shared by several union
 //! members are rejected at check time.
 
@@ -43,7 +44,15 @@ fn bare_tags_at_enum_positions_pass() {
   let source = fs::read_to_string(FIXTURE).unwrap();
   let (ok, text) = check(&source, "pass");
   assert!(ok, "{text}");
-  for def in ["default-filter", "pick-filter", "show-tag", "main!"] {
+  for def in [
+    "default-filter",
+    "pick-filter",
+    "show-tag",
+    "with-filter",
+    "let-filter",
+    "flip-mode",
+    "main!",
+  ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
 }
@@ -61,6 +70,7 @@ fn bare_tags_run_as_enum_values() {
   assert!(text.contains("all active done done 2 all every"), "{text}");
   assert!(text.contains("directdone"), "{text}");
   assert!(text.contains("mapactive"), "{text}");
+  assert!(text.contains("tailsdoneactivedark"), "{text}");
 }
 
 #[test]
@@ -89,6 +99,22 @@ fn unknown_tag_names_the_enum_and_its_variants() {
   let (ok, text) = check(&replaced("println $ local :done", "println $ local :dne"), "local-typo");
   assert!(!ok, "{text}");
   assert!(text.contains("E_ENUM_TAG_UNKNOWN"), "{text}");
+
+  // `assoc` onto an enum field and the tails of `let` / `match` (#2722).
+  for (from, to, label, position) in [
+    (
+      "(assoc v :filter :done)",
+      "(assoc v :filter :dne)",
+      "assoc-typo",
+      "arg 3 of `assoc`",
+    ),
+    (", :active", ", :actve", "let-typo", "return value"),
+    ("(:light) :dark", "(:light) :drak", "match-typo", "return value"),
+  ] {
+    let (ok, text) = check(&replaced(from, to), label);
+    assert!(!ok, "{text}");
+    assert!(text.contains("E_ENUM_TAG_UNKNOWN") && text.contains(position), "{label}:\n{text}");
+  }
 }
 
 #[test]

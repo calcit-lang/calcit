@@ -6565,10 +6565,26 @@ fn preprocess_known_function_call(
       None => form,
     };
     // A bare tag at a definite enum parameter names its zero-payload variant (#2701).
-    let form = if matches!(form, Calcit::Tag(_))
-      && let Some(raw_expected) = active_expected_types.get(arg_idx)
+    // A generic or untyped core parameter counts once the receiver fixes it, as
+    // `assoc` on a struct fixes the value to the field type (#2722).
+    let tag_expected = if !matches!(form, Calcit::Tag(_)) {
+      None
+    } else if let Some(raw_expected) = active_expected_types.get(arg_idx)
       && !raw_expected.contains_type_var()
-      && let Some(expected) = expected_type.as_ref()
+      && !matches!(raw_expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+    {
+      expected_type.clone()
+    } else if info.def_ns.as_ref() == calcit::CORE_NS && !has_spread {
+      let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
+      staged.push(form.clone());
+      staged.extend(args.iter().skip(arg_idx + 1).cloned());
+      type_checking::specialize_core_expected_types(&info, &CalcitList::from(staged.as_slice()), scope_types, &info.arg_types)
+        .and_then(|specialized| specialized.get(arg_idx).cloned())
+        .filter(|expected| !expected.contains_type_var())
+    } else {
+      None
+    };
+    let form = if let Some(expected) = tag_expected.as_ref()
       && let Some(rewritten) = coerce_tag_literal(
         &form,
         expected,
