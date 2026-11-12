@@ -19,6 +19,9 @@ use crate::calcit::CalcitTypeAnnotation;
 pub(super) struct Expected {
   pub(super) annotation: Arc<CalcitTypeAnnotation>,
   pub(super) position: &'static str,
+  /// Where to report a form rejected for this position, when it has no
+  /// location of its own (a tag literal).
+  pub(super) location: Option<crate::calcit::NodeLocation>,
 }
 
 thread_local! {
@@ -77,6 +80,18 @@ pub(super) fn take_for_current() -> Option<Expected> {
     } else {
       None
     }
+  })
+}
+
+/// The offer for the form handled at the current depth, left in place.
+pub(super) fn peek_for_current() -> Option<Expected> {
+  let depth = current_depth();
+  TAIL.with(|cell| {
+    cell
+      .borrow()
+      .as_ref()
+      .filter(|(target, _)| *target == depth)
+      .map(|(_, expected)| expected.clone())
   })
 }
 
