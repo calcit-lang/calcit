@@ -57,6 +57,7 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "plain-tags",
     "tag-eq",
     "tag-some-return",
+    "tag-qualified-option",
     "tag-payload",
     "tag-match-arg",
     "tag-match-return",

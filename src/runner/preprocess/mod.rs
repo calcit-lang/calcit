@@ -342,7 +342,7 @@ fn preprocess_argument_with_context(
 /// Whether a call head spells the `Option` constructor: `Some` or `Option`.
 fn is_option_constructor_head(head: Option<&Calcit>, scope_defs: &HashSet<Arc<str>>) -> bool {
   match head {
-    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option") && !scope_defs.contains(sym),
+    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option" | "calcit.core/Option") && !scope_defs.contains(sym),
     Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option",
     _ => false,
   }
