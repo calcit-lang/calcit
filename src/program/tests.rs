@@ -2187,3 +2187,124 @@ fn incremental_definition_names_follow_snapshot_identifier_rules() {
   .expect("Symbol keys are accepted like in :defs");
   assert!(symbol.changed["app.inc"].added_defs.contains_key("x"));
 }
+
+fn impl_attach_file(ns: &str, imports: &[(&str, &str)], defs: &[(&str, &str)]) -> ProgramFileData {
+  ProgramFileData {
+    import_map: imports
+      .iter()
+      .map(|(alias, target)| (Arc::from(*alias), Arc::new(ImportRule::NsAs(Arc::from(*target)))))
+      .collect(),
+    defs: defs
+      .iter()
+      .map(|(def, source)| {
+        let cirru = cirru_parser::parse(source).expect("parse test source").remove(0);
+        let code = code_to_calcit(&cirru, ns, def, vec![]).expect("build test code");
+        (
+          Arc::from(*def),
+          ProgramDefEntry {
+            tags: Default::default(),
+            code,
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )
+      })
+      .collect(),
+  }
+}
+
+fn impl_attach_program(type_ns_impls: &[(&str, &str)], other_impls: &[(&str, &str)]) -> ProgramCodeData {
+  let mut main_defs = vec![("P", "defstruct P (:name String)"), ("Old", "defimpl Old t/Labeled (.label f)")];
+  main_defs.extend_from_slice(type_ns_impls);
+  HashMap::from([
+    (
+      Arc::from("app.t"),
+      impl_attach_file("app.t", &[], &[("Labeled", "deftrait Labeled (.label (Fn Self (-> String)))")]),
+    ),
+    (Arc::from("app.m"), impl_attach_file("app.m", &[("t", "app.t")], &main_defs)),
+    (
+      Arc::from("app.o"),
+      impl_attach_file("app.o", &[("t", "app.t"), ("m", "app.m")], other_impls),
+    ),
+  ])
+}
+
+#[test]
+fn defimpl_type_trait_attaches_to_its_type_once() {
+  let mut program = impl_attach_program(&[("P-Labeled", "defimpl P t/Labeled (.label f)")], &[]);
+  let attached = impl_attach::attach_source_impls(&mut program).expect("attach impls");
+  assert_eq!(attached, vec![(Arc::from("app.m"), Arc::from("P"))]);
+  let first = program["app.m"].defs["P"].code.to_string();
+  assert_eq!(first, "([] 'calcit.core/impl-traits ([] 'defstruct 'P ([] :name 'String)) 'P-Labeled)");
+  // `defimpl Old …` names its impl, not a type, so it attaches nowhere.
+  assert!(!program["app.m"].defs["Old"].code.to_string().contains("impl-traits"));
+
+  impl_attach::attach_source_impls(&mut program).expect("attach again");
+  assert_eq!(program["app.m"].defs["P"].code.to_string(), first, "attaching is idempotent");
+}
+
+#[test]
+fn defimpl_type_trait_rejects_orphans_and_duplicates() {
+  let mut orphan = impl_attach_program(&[], &[("P-Labeled", "defimpl m/P t/Labeled (.label f)")]);
+  let error = impl_attach::attach_source_impls(&mut orphan).expect_err("orphan impl");
+  assert!(error.starts_with("[E_ORPHAN_IMPL] app.o/P-Labeled"), "{error}");
+
+  let mut duplicate = impl_attach_program(
+    &[
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled2", "defimpl P t/Labeled (.label g)"),
+    ],
+    &[],
+  );
+  let error = impl_attach::attach_source_impls(&mut duplicate).expect_err("duplicate impl");
+  assert!(error.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{error}");
+}
+
+#[test]
+fn reload_attaches_and_detaches_defimpl_in_another_namespace() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let mut program = impl_attach_program(&[], &[]);
+  program.insert(
+    Arc::from("app.t"),
+    impl_attach_file(
+      "app.t",
+      &[("m", "app.m")],
+      &[("Labeled", "deftrait Labeled (.label (Fn Self (-> String)))")],
+    ),
+  );
+  PROGRAM_CODE_DATA.write().expect("seed program code").extend(program);
+  let _ = register_program_def_id("app.m", "P");
+  write_runtime_ready("app.m", "P", Calcit::Nil).expect("seed stale type value");
+
+  let change = |added: bool| {
+    let mut changes = snapshot::ChangesDict::default();
+    let mut info = snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::new(),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::new(),
+    };
+    if added {
+      let code = cirru_parser::parse("defimpl m/P Labeled (.label f)").expect("parse").remove(0);
+      info.added_defs.insert(String::from("P-Labeled"), code.into());
+    } else {
+      info.removed_defs.insert(String::from("P-Labeled"));
+    }
+    changes.changed.insert(Arc::from("app.t"), info);
+    changes
+  };
+
+  apply_code_changes(&change(true)).expect("add impl in the trait namespace");
+  let code = |def: &str| PROGRAM_CODE_DATA.read().expect("read code")["app.m"].defs[def].code.to_string();
+  assert_eq!(
+    code("P"),
+    "([] 'calcit.core/impl-traits ([] 'defstruct 'P ([] :name 'String)) 'app.t/P-Labeled)"
+  );
+  assert_eq!(lookup_runtime_cell("app.m", "P"), Some(RuntimeCell::Cold), "the type is rebuilt");
+
+  apply_code_changes(&change(false)).expect("remove impl");
+  assert_eq!(code("P"), "([] 'defstruct 'P ([] :name 'String))");
+}

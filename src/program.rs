@@ -1,4 +1,5 @@
 mod entry_book;
+mod impl_attach;
 
 #[cfg(test)]
 mod tests;
@@ -1133,6 +1134,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
     xs.insert(ns.to_owned().into(), file_info);
   }
 
+  impl_attach::attach_source_impls(&mut xs)?;
   register_program_def_ids(&xs);
 
   Ok(xs)
@@ -1602,6 +1604,42 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       remove_compiled_def(ns, def);
     }
     program_code.insert(ns.to_owned(), file);
+  }
+
+  // `defimpl Type Trait` attaches to its type's definition, which may live in
+  // a namespace this change did not touch. Re-attach across the program, then
+  // rebuild every type whose attached code changed, with its dependents.
+  let before = impl_attach::generated_attachments(&program_code);
+  let after = impl_attach::attach_source_impls(&mut program_code)?;
+  let mut seed_ids: HashSet<DefId> = HashSet::new();
+  for (ns, def) in before.keys().chain(after.iter()) {
+    let Some(entry) = program_code.get(ns).and_then(|file| file.defs.get(def)) else {
+      continue;
+    };
+    let old_code = before
+      .get(&(ns.to_owned(), def.to_owned()))
+      .cloned()
+      .unwrap_or_else(|| impl_attach::strip_generated_attachment(&entry.code));
+    if old_code != entry.code {
+      seed_ids.insert(register_program_def_id(ns, def));
+    }
+  }
+  drop(program_code);
+  if !seed_ids.is_empty() {
+    let affected = {
+      let compiled = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
+      let mut affected = collect_transitive_dependent_def_ids(&compiled, &seed_ids);
+      affected.extend(seed_ids.iter().copied());
+      affected
+    };
+    for def_id in &affected {
+      clear_runtime_value(*def_id);
+    }
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("open compiled program data");
+    for file in compiled.values_mut() {
+      file.defs.retain(|_, compiled_def| !affected.contains(&compiled_def.def_id));
+    }
+    compiled.retain(|_, file| !file.defs.is_empty());
   }
 
   Ok(())

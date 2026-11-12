@@ -7376,7 +7376,7 @@ fn is_def_head(head: &Calcit) -> bool {
 }
 
 fn is_impl_traits_head(head: &Calcit) -> bool {
-  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "impl-traits")
+  matches!(head, Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "impl-traits" | "calcit.core/impl-traits"))
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "impl-traits")
 }
 
