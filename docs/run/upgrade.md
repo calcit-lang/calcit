@@ -28,6 +28,8 @@ related:
 
 预处理阶段原来有 50 处诊断没有编码，只靠消息文字区分（例如参数个数不对、调用非函数值、`match` 不完整、未知符号）。0.42.0 起它们都带编码，前缀按通道统一：`E_` 阻断检查，`W_` 默认列在 `Notes:` 中、检查仍通过（`--warn-dyn-method` 打开的 `W_STRUCT_INDEX_RAW_ACCESS`、`W_JS_FFI_UNTYPED_ACCESS` 在该模式下会让检查失败），`I_` 是报告与证据，`P_` 只在 `--warn-dyn-method` 等按需分析下出现。消息正文不变，`--format json` 里原来 `code` 为空的条目现在有值。全部编码见 [诊断编码索引](../diagnostic-codes.md)，该文件由 `yarn generate-diagnostic-codes` 从源码生成，CI 检查它与源码同步。
 
+中断预处理的错误（`CalcitErr`）原来也有 66 处没有编码，例如 `if` 参数个数、`match` 分支形状、`&let` 绑定形状、`hint-fn` 写法、未知方法、未知定义。现在它们也都带编码，错误首行从 `[Syntax Error] if expects 2 or 3 arguments, got 4` 变成 `[Syntax Error] [E_IF_ARITY] if expects 2 or 3 arguments, got 4`。`query type-at` 等 JSON 输出不再回退成按错误种类生成的 `E_SYNTAX` / `E_TYPE`，而是给出具体编码。按完整错误文本匹配的脚本需要改成匹配消息正文或编码。
+
 ## 0.42.0 阻断检查的 `W_` 诊断改名为 `E_`（#2699）
 
 下面这些诊断一直会让 `--check-only`、运行、测试和 codegen 失败，但编码是 `W_`、消息以 `[Warn]` 开头、列在 `Warnings:` 下。0.42.0 起编码改为 `E_`，消息前缀改为 `[Error]`，标题改为 `Errors:`，汇总改为 `Found N errors …`。检查结果不变，只是名字和文案反映实际行为。其中 8 个原本就有同名 `E_`（feature policy 为 `:error` 或严格模式下立即中止时用的），现在两种情况共用一个编码。

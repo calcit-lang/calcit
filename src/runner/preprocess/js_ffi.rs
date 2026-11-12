@@ -11,10 +11,12 @@ use crate::calcit::NullableOrigin;
 /// Keep host capability checking distinct from both data decoding and unchecked casts.
 pub(super) fn preprocess_js_cast(head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
   let location = args.first().and_then(Calcit::get_location);
-  let fail = |kind, message| CalcitErr::use_msg_stack_location(kind, message, ctx.call_stack, location.clone());
+  let fail =
+    |kind, code: &str, message| CalcitErr::use_msg_stack_location_with_code(kind, message, code, ctx.call_stack, location.clone());
   if args.len() != 2 {
     return Err(fail(
       CalcitErrKind::Arity,
+      "E_JS_CAST_ARITY",
       String::from("js-cast expects a value and an external-object trait"),
     ));
   }
@@ -34,19 +36,21 @@ pub(super) fn preprocess_js_cast(head_ns: &str, args: &CalcitList, ctx: &mut Pre
   let CalcitTypeAnnotation::Trait(trait_def) = target.as_ref() else {
     return Err(fail(
       CalcitErrKind::Type,
+      "E_JS_CAST_TARGET",
       String::from("js-cast target must be a declared external-object trait"),
     ));
   };
   trait_def
     .validate_reachable_method_schemas()
-    .map_err(|message| fail(CalcitErrKind::Type, message))?;
+    .map_err(|message| fail(CalcitErrKind::Type, "E_JS_CAST_TARGET", message))?;
   for required in trait_def
     .normalized_reachable_traits()
-    .map_err(|message| fail(CalcitErrKind::Type, message))?
+    .map_err(|message| fail(CalcitErrKind::Type, "E_JS_CAST_TARGET", message))?
   {
     if !trait_is_external_object(required.as_ref()) {
       return Err(fail(
         CalcitErrKind::Type,
+        "E_JS_CAST_TARGET",
         format!("js-cast target {} is not an external-object trait", required.origin_label()),
       ));
     }

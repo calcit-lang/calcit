@@ -1347,6 +1347,12 @@ impl CalcitErr {
   pub fn code(&self) -> Option<&str> {
     self.code.as_deref()
   }
+
+  /// Attach a diagnostic code (#2698) to an error built without one.
+  pub fn with_code<C: Into<String>>(mut self, code: C) -> Self {
+    self.code = Some(code.into());
+    self
+  }
 }
 
 /// location of node in Snapshot

@@ -588,6 +588,7 @@ pub fn trace_definition_source_expressions(
       call_stack,
       Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
     )
+    .with_code("E_UNKNOWN_DEFINITION")
   })?;
   let _definition_context = DefinitionContextScope::enter(ns, def, &code);
   let (resolved, expressions) = trace_source_expressions(&code, ns, def, check_warnings, call_stack)?;
@@ -617,8 +618,9 @@ pub fn trace_snapshot_source_expressions(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Vec<SourceExpressionEvidence>, CalcitErr> {
-  let code = crate::data::cirru::code_to_calcit(source, ns, def, vec![])
-    .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, None))?;
+  let code = crate::data::cirru::code_to_calcit(source, ns, def, vec![]).map_err(|message| {
+    CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, None).with_code("E_SOURCE_PARSE")
+  })?;
   fn collect(
     code: &Calcit,
     source: &cirru_parser::Cirru,
@@ -725,6 +727,7 @@ pub fn trace_definition_source_usages(
       call_stack,
       Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
     )
+    .with_code("E_UNKNOWN_DEFINITION")
   })?;
   trace_source_usages(&code, ns, def, check_warnings, call_stack)
 }
@@ -1875,10 +1878,13 @@ fn ensure_ns_def_preprocessed(
       // declarations and all nested function bodies retain their existing path.
       if matches!(&code, Calcit::List(items) if matches!(items.first(), Some(Calcit::List(_)))) {
         let location = Some(NodeLocation::new(ns.into(), def.into(), Arc::new(vec![])));
-        let source = crate::data::cirru::calcit_to_cirru(&code)
-          .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location.clone()))?;
-        crate::snapshot::validate_definition_root(&source, &format!("{ns}/{def}"))
-          .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location))?;
+        let source = crate::data::cirru::calcit_to_cirru(&code).map_err(|message| {
+          CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location.clone())
+            .with_code("E_DEFINITION_ROOT_INVALID")
+        })?;
+        crate::snapshot::validate_definition_root(&source, &format!("{ns}/{def}")).map_err(|message| {
+          CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location).with_code("E_DEFINITION_ROOT_INVALID")
+        })?;
       }
       let _definition_context = DefinitionContextScope::enter(ns, def, &code);
       let _assignable_locals = AssignableLocalsScope::enter(ns, &code);
@@ -1928,12 +1934,15 @@ fn ensure_ns_def_preprocessed(
     None if ns.starts_with('|') || ns.starts_with('"') => Ok(()),
     None => {
       let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-      Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Var,
-        format!("unknown ns/def in program: {ns}/{def}"),
-        call_stack,
-        Some(loc),
-      ))
+      Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Var,
+          format!("unknown ns/def in program: {ns}/{def}"),
+          call_stack,
+          Some(loc),
+        )
+        .with_code("E_UNKNOWN_DEFINITION"),
+      )
     }
   });
 
@@ -2025,33 +2034,42 @@ fn preprocess_with_type_slot_block(
   let head_location = head_form.get_location();
   // --- Parse the binding pair ---
   let Some(binding_expr) = args.first() else {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      "with-type-slot expected a binding pair as first argument, e.g. `(:dispatch-op Op)`",
-      call_stack,
-      head_location,
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        "with-type-slot expected a binding pair as first argument, e.g. `(:dispatch-op Op)`",
+        call_stack,
+        head_location,
+      )
+      .with_code("E_WITH_TYPE_SLOT_BINDING"),
+    );
   };
 
   let Calcit::List(binding_list) = binding_expr else {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      format!("with-type-slot binding must be a list, got: {binding_expr}"),
-      call_stack,
-      binding_expr.get_location(),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!("with-type-slot binding must be a list, got: {binding_expr}"),
+        call_stack,
+        binding_expr.get_location(),
+      )
+      .with_code("E_WITH_TYPE_SLOT_BINDING"),
+    );
   };
 
   if binding_list.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!(
-        "with-type-slot binding must be a 2-element list (:slot-name TypeExpr), got {} elements",
-        binding_list.len()
-      ),
-      call_stack,
-      binding_expr.get_location(),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!(
+          "with-type-slot binding must be a 2-element list (:slot-name TypeExpr), got {} elements",
+          binding_list.len()
+        ),
+        call_stack,
+        binding_expr.get_location(),
+      )
+      .with_code("E_WITH_TYPE_SLOT_BINDING"),
+    );
   }
 
   // Slot name (first element of binding pair)
@@ -2059,12 +2077,15 @@ fn preprocess_with_type_slot_block(
     Calcit::Tag(tag) => Arc::from(tag.ref_str()),
     Calcit::Str(s) => Arc::from(s.as_ref()),
     other => {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!("with-type-slot name must be a tag or string, got: {other}"),
-        call_stack,
-        other.get_location(),
-      ));
+      return Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Type,
+          format!("with-type-slot name must be a tag or string, got: {other}"),
+          call_stack,
+          other.get_location(),
+        )
+        .with_code("E_WITH_TYPE_SLOT_BINDING"),
+      );
     }
   };
 
@@ -2079,12 +2100,15 @@ fn preprocess_with_type_slot_block(
     other => Some(other.to_owned()),
   };
   let Some(resolved) = resolved else {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Unexpected,
-      format!("with-type-slot could not resolve type value for slot `{slot_name}`"),
-      call_stack,
-      raw_type_expr.get_location(),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Unexpected,
+        format!("with-type-slot could not resolve type value for slot `{slot_name}`"),
+        call_stack,
+        raw_type_expr.get_location(),
+      )
+      .with_code("E_WITH_TYPE_SLOT_UNRESOLVED"),
+    );
   };
 
   let import_path: Option<(Arc<str>, Arc<str>)> = match &processed_type_expr {
@@ -2099,15 +2123,18 @@ fn preprocess_with_type_slot_block(
       }
       Calcit::Struct(struct_value) => infer_struct_value_annotation(struct_value, scope_types),
       other => {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Unexpected,
-          format!(
-            "with-type-slot expected an enum or struct import, got: {}",
-            brief_type_of_value(other)
-          ),
-          call_stack,
-          raw_type_expr.get_location(),
-        ));
+        return Err(
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Unexpected,
+            format!(
+              "with-type-slot expected an enum or struct import, got: {}",
+              brief_type_of_value(other)
+            ),
+            call_stack,
+            raw_type_expr.get_location(),
+          )
+          .with_code("E_WITH_TYPE_SLOT_VALUE"),
+        );
       }
     }
   } else {
@@ -2125,15 +2152,18 @@ fn preprocess_with_type_slot_block(
           inferred
         }
         _ => {
-          return Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Unexpected,
-            format!(
-              "with-type-slot expected an enum, struct, or record as type value, got: {}",
-              brief_type_of_value(other)
-            ),
-            call_stack,
-            raw_type_expr.get_location(),
-          ));
+          return Err(
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Unexpected,
+              format!(
+                "with-type-slot expected an enum, struct, or record as type value, got: {}",
+                brief_type_of_value(other)
+              ),
+              call_stack,
+              raw_type_expr.get_location(),
+            )
+            .with_code("E_WITH_TYPE_SLOT_VALUE"),
+          );
         }
       },
     }
@@ -2141,12 +2171,15 @@ fn preprocess_with_type_slot_block(
 
   let body_args = args.drop_left();
   if body_args.is_empty() {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      "with-type-slot expected at least one body expression",
-      call_stack,
-      head_location,
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        "with-type-slot expected at least one body expression",
+        call_stack,
+        head_location,
+      )
+      .with_code("E_WITH_TYPE_SLOT_BODY"),
+    );
   }
 
   // Push the scoped override
@@ -2576,12 +2609,15 @@ pub fn compile_source_def_for_snapshot(
 
   let Some(code) = program::lookup_def_code(ns, def) else {
     let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Var,
-      format!("unknown ns/def in program: {ns}/{def}"),
-      call_stack,
-      Some(loc),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Var,
+        format!("unknown ns/def in program: {ns}/{def}"),
+        call_stack,
+        Some(loc),
+      )
+      .with_code("E_UNKNOWN_DEFINITION"),
+    );
   };
 
   let _definition_context = DefinitionContextScope::enter(ns, def, &code);
@@ -3636,12 +3672,15 @@ fn preprocess_expr_unguarded(
           } else if warn_on_retired_core_import(&ns_alias, &def_part, expr, check_warnings) {
             Ok(expr.clone())
           } else {
-            Err(CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Var,
-              format!("unknown ns target: {def}"),
-              call_stack,
-              expr.get_location(),
-            ))
+            Err(
+              CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Var,
+                format!("unknown ns target: {def}"),
+                call_stack,
+                expr.get_location(),
+              )
+              .with_code("E_UNKNOWN_NAMESPACE"),
+            )
           }
         }
         None => {
@@ -3679,6 +3718,7 @@ fn preprocess_expr_unguarded(
                   call_stack,
                   expr.get_location(),
                 )
+                .with_code("E_SYNTAX_PARSE")
               })?,
               def_ns.to_owned(),
             ))
@@ -4502,13 +4542,15 @@ fn preprocess_list_call(
         return CalcitErr::err_str(
           CalcitErrKind::Type,
           format!("%{{}} _ expects (:field value) entries, but received: {entry}"),
-        );
+        )
+        .map_err(|error| error.with_code("E_RECORD_LITERAL_ENTRY"));
       };
       if pair.len() != 2 {
         return CalcitErr::err_str(
           CalcitErrKind::Arity,
           format!("%{{}} _ expects (:field value) entries, but received: {entry}"),
-        );
+        )
+        .map_err(|error| error.with_code("E_RECORD_LITERAL_ENTRY"));
       }
       items.extend(pair.iter().cloned());
     }
@@ -5021,12 +5063,15 @@ fn preprocess_list_call(
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
           preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, call_stack)
         } else {
-          Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Arity,
-            format!("{head} expected 1 hashmap to call"),
-            call_stack,
-            head.get_location(),
-          ))
+          Err(
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Arity,
+              format!("{head} expected 1 hashmap to call"),
+              call_stack,
+              head.get_location(),
+            )
+            .with_code("E_TAG_CALL_ARITY"),
+          )
         }
       }
 
@@ -5172,23 +5217,30 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_match(name, name_ns, &args, &mut ctx)
         }
-        CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec())
+          .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR")),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
+            .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR"))
         }
         CalcitSyntax::MacroInterpolate => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be preprocessed as operator", &xs.to_vec())
+            .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR"))
         }
         CalcitSyntax::MacroInterpolateSpread => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be preprocessed as operator", &xs.to_vec())
+            .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR"))
         }
       },
-      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Unexpected,
-        format!("does not know how to preprocess a thunk: {head}"),
-        call_stack,
-        head.get_location(),
-      )),
+      Calcit::Thunk(..) => Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!("does not know how to preprocess a thunk: {head}"),
+          call_stack,
+          head.get_location(),
+        )
+        .with_code("E_UNEXPECTED_PREPROCESS_DATA"),
+      ),
 
       // with-type-slot must be intercepted before the generic Proc arm so that its body
       // args are preprocessed while the scoped type override is active.
@@ -5896,23 +5948,29 @@ fn preprocess_list_call(
           let processed_args = CalcitList::from(ys.drop_left());
           if matches!(proc, CalcitProc::Todo) {
             if processed_args.len() > 1 {
-              return Err(CalcitErr::use_msg_stack_location(
-                CalcitErrKind::Arity,
-                format!("todo! expects 0~1 arguments, got {}", processed_args.len()),
-                call_stack,
-                call_location.clone(),
-              ));
+              return Err(
+                CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Arity,
+                  format!("todo! expects 0~1 arguments, got {}", processed_args.len()),
+                  call_stack,
+                  call_location.clone(),
+                )
+                .with_code("E_TODO_ARGS"),
+              );
             }
             if let Some(message) = processed_args.first()
               && !matches!(message, Calcit::Str(_))
             {
               let argument_location = message.get_location().or_else(|| call_location.clone());
-              return Err(CalcitErr::use_msg_stack_location(
-                CalcitErrKind::Type,
-                "todo! expects an optional static String message",
-                call_stack,
-                argument_location,
-              ));
+              return Err(
+                CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Type,
+                  "todo! expects an optional static String message",
+                  call_stack,
+                  argument_location,
+                )
+                .with_code("E_TODO_ARGS"),
+              );
             }
             let enclosing_def = call_location
               .as_ref()
@@ -5967,12 +6025,15 @@ fn preprocess_list_call(
                 .unwrap_or_else(|| trait_def_name.clone());
               let external_object = trait_definition_is_external_object(file_ns, &signature_owner);
               if !external_object && let Some((message, source)) = type_inference::check_trait_method_signatures(&processed_args) {
-                return Err(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Type,
-                  message,
-                  call_stack,
-                  source_location_in_namespace(source, file_ns).or_else(|| call_location.clone()),
-                ));
+                return Err(
+                  CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Type,
+                    message,
+                    call_stack,
+                    source_location_in_namespace(source, file_ns).or_else(|| call_location.clone()),
+                  )
+                  .with_code("E_TRAIT_METHOD_SIGNATURE"),
+                );
               }
               type_inference::check_trait_requires_declaration(&processed_args, file_ns, &trait_def_name)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
@@ -6144,8 +6205,10 @@ fn preprocess_list_call(
             _ => None,
           })
         {
-          register_type_slot(slot_name)
-            .map_err(|msg| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location()))?;
+          register_type_slot(slot_name).map_err(|msg| {
+            CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, msg, call_stack, head.get_location())
+              .with_code("E_TYPE_SLOT_DUPLICATE")
+          })?;
         }
         // Handle &inspect-type: print type information for the given symbol
         if let Some(Calcit::Proc(CalcitProc::NativeInspectType)) = ys.first() {
@@ -6241,12 +6304,10 @@ fn preprocess_list_call(
       }
       h => {
         let loc = h.get_location();
-        Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Unexpected,
-          format!("unknown head `{h}` in {xs}"),
-          call_stack,
-          loc,
-        ))
+        Err(
+          CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, format!("unknown head `{h}` in {xs}"), call_stack, loc)
+            .with_code("E_UNKNOWN_HEAD"),
+        )
       }
     },
   }
@@ -11411,16 +11472,19 @@ fn validate_method_call(
 
     let methods_list = collect_trait_method_names(&traits).join(" ");
     let type_desc = describe_type(type_value.as_ref());
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      append_string_method_receiver_hint(
-        format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
-        method_name,
-        &type_desc,
-      ),
-      call_stack,
-      head.get_location(),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        append_string_method_receiver_hint(
+          format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+          method_name,
+          &type_desc,
+        ),
+        call_stack,
+        head.get_location(),
+      )
+      .with_code("E_UNKNOWN_METHOD"),
+    );
   }
 
   // `Show` is opt-in even while the core implementation tables are still
@@ -11437,7 +11501,7 @@ fn validate_method_call(
       ),
       call_stack,
       head.get_location(),
-    ));
+    ).with_code("E_SHOW_NOT_IMPLEMENTED"));
   }
 
   // String keeps its core `Countable` impl so `count` and trait-bound calls still
@@ -11526,15 +11590,18 @@ fn validate_method_call(
     && let Some((ns, def)) = name.trim_start_matches('\'').trim_start_matches(':').rsplit_once('/')
     && let Err(error) = runner::evaluate_symbol_from_program(def, ns, None, &CallStackList::default())
   {
-    return Err(CalcitErr::use_msg_stack_location(
-      error.kind,
-      format!(
-        "method `.{method_name}` cannot be resolved because receiver type `{ns}/{def}` failed to load: {}",
-        error.msg
-      ),
-      call_stack,
-      head.get_location(),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        error.kind,
+        format!(
+          "method `.{method_name}` cannot be resolved because receiver type `{ns}/{def}` failed to load: {}",
+          error.msg
+        ),
+        call_stack,
+        head.get_location(),
+      )
+      .with_code("E_METHOD_RECEIVER_LOAD_FAILED"),
+    );
   }
 
   // Method not found, generate error
@@ -11555,16 +11622,19 @@ fn validate_method_call(
       head.get_location(),
     ));
   }
-  Err(CalcitErr::use_msg_stack_location(
-    CalcitErrKind::Type,
-    append_string_method_receiver_hint(
-      format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
-      method_name,
-      &type_desc,
-    ),
-    call_stack,
-    head.get_location(),
-  ))
+  Err(
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      append_string_method_receiver_hint(
+        format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+        method_name,
+        &type_desc,
+      ),
+      call_stack,
+      head.get_location(),
+    )
+    .with_code("E_UNKNOWN_METHOD"),
+  )
 }
 
 /// Check if a type annotation represents a callable type (function or method)
@@ -12924,11 +12994,14 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     return preprocess_each_items(head, head_ns, args, ctx);
   }
   if args.len() > 3 {
-    return Err(CalcitErr::use_msg_stack(
-      CalcitErrKind::Syntax,
-      format!("if expects 2 or 3 arguments, got {}", args.len()),
-      ctx.call_stack,
-    ));
+    return Err(
+      CalcitErr::use_msg_stack(
+        CalcitErrKind::Syntax,
+        format!("if expects 2 or 3 arguments, got {}", args.len()),
+        ctx.call_stack,
+      )
+      .with_code("E_IF_ARITY"),
+    );
   }
 
   let cond_form = preprocess_expr(
@@ -13362,12 +13435,15 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
     match pattern {
       Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
         if idx + 1 != pairs.len() {
-          return Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Syntax,
-            "match wildcard `_` must be the last branch of a literal match".to_owned(),
-            ctx.call_stack,
-            pattern.get_location(),
-          ));
+          return Err(
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Syntax,
+              "match wildcard `_` must be the last branch of a literal match".to_owned(),
+              ctx.call_stack,
+              pattern.get_location(),
+            )
+            .with_code("E_MATCH_WILDCARD_NOT_LAST"),
+          );
         }
         default_body = Some(body);
       }
@@ -13387,12 +13463,15 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
         literals.push((pattern, body));
       }
       other => {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Syntax,
-          format!("match mixes literal patterns with enum pattern, got: {other}"),
-          ctx.call_stack,
-          other.get_location(),
-        ));
+        return Err(
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            format!("match mixes literal patterns with enum pattern, got: {other}"),
+            ctx.call_stack,
+            other.get_location(),
+          )
+          .with_code("E_MATCH_MIXED_PATTERNS"),
+        );
       }
     }
   }
@@ -13713,11 +13792,14 @@ fn process_match(
     return Ok(Calcit::from(args.push_left(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))));
   }
   if args.is_empty() {
-    return Err(CalcitErr::use_msg_stack(
-      CalcitErrKind::Syntax,
-      "match expected a value expression and branches".to_owned(),
-      ctx.call_stack,
-    ));
+    return Err(
+      CalcitErr::use_msg_stack(
+        CalcitErrKind::Syntax,
+        "match expected a value expression and branches".to_owned(),
+        ctx.call_stack,
+      )
+      .with_code("E_MATCH_SHAPE"),
+    );
   }
 
   // After the value, remaining args are pairs: (pattern body) (pattern body) ...
@@ -13725,11 +13807,14 @@ fn process_match(
   // Cirru naturally creates this when each branch is on its own indented line.
   let branch_count = args.len() - 1;
   if branch_count == 0 {
-    return Err(CalcitErr::use_msg_stack(
-      CalcitErrKind::Syntax,
-      "match expected value followed by (pattern body) pairs, got 0 branches".to_owned(),
-      ctx.call_stack,
-    ));
+    return Err(
+      CalcitErr::use_msg_stack(
+        CalcitErrKind::Syntax,
+        "match expected value followed by (pattern body) pairs, got 0 branches".to_owned(),
+        ctx.call_stack,
+      )
+      .with_code("E_MATCH_SHAPE"),
+    );
   }
 
   if let Some(lowered) = try_lower_literal_match(args, ctx)? {
@@ -13817,12 +13902,15 @@ fn process_match(
     let pair = match branch {
       Calcit::List(pair_xs) if pair_xs.len() == 2 => pair_xs,
       other => {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Syntax,
-          format!("match branch expected a 2-element list (pattern body), got: {other}"),
-          ctx.call_stack,
-          other.get_location(),
-        ));
+        return Err(
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            format!("match branch expected a 2-element list (pattern body), got: {other}"),
+            ctx.call_stack,
+            other.get_location(),
+          )
+          .with_code("E_MATCH_BRANCH_SHAPE"),
+        );
       }
     };
     let pattern = &pair[0];
@@ -13845,12 +13933,15 @@ fn process_match(
         let pat_tag = match &pat_xs[0] {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            return Err(CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Syntax,
-              format!("match pattern expected a tag as first element, got: {other}"),
-              ctx.call_stack,
-              other.get_location(),
-            ));
+            return Err(
+              CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Syntax,
+                format!("match pattern expected a tag as first element, got: {other}"),
+                ctx.call_stack,
+                other.get_location(),
+              )
+              .with_code("E_MATCH_PATTERN_SHAPE"),
+            );
           }
         };
 
@@ -13931,12 +14022,15 @@ fn process_match(
               processed_pattern.push(local);
             }
             other => {
-              return Err(CalcitErr::use_msg_stack_location(
-                CalcitErrKind::Syntax,
-                format!("match pattern binding expected a symbol, got: {other}"),
-                ctx.call_stack,
-                other.get_location(),
-              ));
+              return Err(
+                CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Syntax,
+                  format!("match pattern binding expected a symbol, got: {other}"),
+                  ctx.call_stack,
+                  other.get_location(),
+                )
+                .with_code("E_MATCH_PATTERN_SHAPE"),
+              );
             }
           }
         }
@@ -13964,12 +14058,15 @@ fn process_match(
         ])));
       }
       other => {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Syntax,
-          format!("match pattern expected (:tag ...) or _, got: {other}"),
-          ctx.call_stack,
-          other.get_location(),
-        ));
+        return Err(
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            format!("match pattern expected (:tag ...) or _, got: {other}"),
+            ctx.call_stack,
+            other.get_location(),
+          )
+          .with_code("E_MATCH_PATTERN_SHAPE"),
+        );
       }
     }
   }
@@ -14694,12 +14791,15 @@ pub fn preprocess_defn(
             zs.push(Calcit::Local(local.clone()));
             Ok(())
           }
-          _ => Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Type,
-            format!("expected defn args to be symbols, got: {y}"),
-            ctx.call_stack,
-            y.get_location(),
-          )),
+          _ => Err(
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Type,
+              format!("expected defn args to be symbols, got: {y}"),
+              ctx.call_stack,
+              y.get_location(),
+            )
+            .with_code("E_DEFN_ARGS_NOT_SYMBOLS"),
+          ),
         }
       })?;
       // A macro can reach a different source definition while retaining its
@@ -14729,16 +14829,19 @@ pub fn preprocess_defn(
       }
       let strict_generated_by_macro = strict_types_enabled() && generated_by_macro;
       if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
-        return Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Syntax,
-          "defwasm-import expects exactly two literal strings for the WASM module and field name",
-          ctx.call_stack,
-          Some(NodeLocation::new(
-            info.at_ns.to_owned(),
-            info.at_def.to_owned(),
-            location.to_owned().unwrap_or_default(),
-          )),
-        ));
+        return Err(
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            "defwasm-import expects exactly two literal strings for the WASM module and field name",
+            ctx.call_stack,
+            Some(NodeLocation::new(
+              info.at_ns.to_owned(),
+              info.at_def.to_owned(),
+              location.to_owned().unwrap_or_default(),
+            )),
+          )
+          .with_code("E_DEFWASM_IMPORT_ARGS"),
+        );
       }
       let definition_location = NodeLocation::new(
         info.at_ns.to_owned(),
@@ -14914,6 +15017,7 @@ pub fn preprocess_defn(
         && crate::js_ffi_source::validate_js_source(&ffi, def_schema.as_ref())
           .map_err(|message| {
             CalcitErr::use_msg_stack_location(CalcitErrKind::Type, message, ctx.call_stack, Some(definition_location.clone()))
+              .with_code("E_JS_FFI_SOURCE_INVALID")
           })?
           .is_some()
       {
@@ -15731,22 +15835,28 @@ pub fn preprocess_defn(
       }
       Ok(Calcit::from(forms))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Syntax,
-      format!("defn/defmacro expected name and args: {a} {b}"),
-      ctx.call_stack,
-      a.get_location().or_else(|| b.get_location()),
-    )),
+    (Some(a), Some(b)) => Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Syntax,
+        format!("defn/defmacro expected name and args: {a} {b}"),
+        ctx.call_stack,
+        a.get_location().or_else(|| b.get_location()),
+      )
+      .with_code("E_DEFN_HEADER"),
+    ),
     (a, b) => {
       let loc = a
         .and_then(|node| node.get_location())
         .or_else(|| b.and_then(|node| node.get_location()));
-      Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Syntax,
-        format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
-        ctx.call_stack,
-        loc,
-      ))
+      Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
+          ctx.call_stack,
+          loc,
+        )
+        .with_code("E_DEFN_HEADER"),
+      )
     }
   }
 }
@@ -16115,12 +16225,15 @@ pub fn preprocess_core_let(
         // Macro-expanded conditions may reprocess an already lowered typed-access binding.
         Calcit::Local(local) => (&local.sym, &local.info, &local.location, Some(local.type_info.clone())),
         a => {
-          return Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Syntax,
-            format!("invalid pair for &let binding: {a} {}", ys[1]),
-            ctx.call_stack,
-            a.get_location().or_else(|| ys[1].get_location()),
-          ));
+          return Err(
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Syntax,
+              format!("invalid pair for &let binding: {a} {}", ys[1]),
+              ctx.call_stack,
+              a.get_location().or_else(|| ys[1].get_location()),
+            )
+            .with_code("E_LET_BINDING_SHAPE"),
+          );
         }
       };
       let a = &ys[1];
@@ -16215,27 +16328,36 @@ pub fn preprocess_core_let(
       }
     }
     Some(a @ Calcit::List(_)) => {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Syntax,
-        format!("expected binding of a pair, got: {a}"),
-        ctx.call_stack,
-        a.get_location(),
-      ));
+      return Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("expected binding of a pair, got: {a}"),
+          ctx.call_stack,
+          a.get_location(),
+        )
+        .with_code("E_LET_BINDING_SHAPE"),
+      );
     }
     Some(a) => {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Syntax,
-        format!("expected binding of a pair, got: {a}"),
-        ctx.call_stack,
-        a.get_location(),
-      ));
+      return Err(
+        CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("expected binding of a pair, got: {a}"),
+          ctx.call_stack,
+          a.get_location(),
+        )
+        .with_code("E_LET_BINDING_SHAPE"),
+      );
     }
     None => {
-      return Err(CalcitErr::use_msg_stack(
-        CalcitErrKind::Syntax,
-        "expected binding of a pair, got nothing".to_owned(),
-        ctx.call_stack,
-      ));
+      return Err(
+        CalcitErr::use_msg_stack(
+          CalcitErrKind::Syntax,
+          "expected binding of a pair, got nothing".to_owned(),
+          ctx.call_stack,
+        )
+        .with_code("E_LET_BINDING_SHAPE"),
+      );
     }
   };
   xs.push(binding);
@@ -16424,7 +16546,7 @@ pub fn preprocess_hint_fn(
       ),
       ctx.call_stack,
       error_location,
-    ));
+    ).with_code("E_HINT_FN_LEGACY_CLAUSES"));
   }
   if args.len() == 2 {
     // The two-argument `(hint-fn f schema)` form was removed in 0.32.0 (#2378).
@@ -16444,15 +16566,18 @@ pub fn preprocess_hint_fn(
     ));
   }
   if args.len() != 1 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!(
-        "hint-fn expects one function type such as `hint-fn $ Fn Number (-> String)`; got {} arguments",
-        args.len()
-      ),
-      ctx.call_stack,
-      args.first().and_then(Calcit::get_location),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!(
+          "hint-fn expects one function type such as `hint-fn $ Fn Number (-> String)`; got {} arguments",
+          args.len()
+        ),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location),
+      )
+      .with_code("E_HINT_FN_ARITY"),
+    );
   }
 
   // preserve hint-fn for JS codegen or other metadata needs
@@ -16469,7 +16594,7 @@ pub fn preprocess_hint_fn(
       "hint-fn expects a function type: use `hint-fn $ Fn Number (-> String)` (or `hint-fn Async`) in a function body; do not use hint-fn as a callback wrapper",
       ctx.call_stack,
       args.get(args.len() - 1).and_then(Calcit::get_location),
-    ));
+    ).with_code("E_HINT_FN_SHAPE"));
   }
   Ok(Calcit::from(ys))
 }
@@ -16491,12 +16616,15 @@ fn preprocess_assert_type_with_obligation(
   retained: Option<source_replay::Assertion>,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!("{head} expected an expression and a type expression, got {}", args.len()),
-      ctx.call_stack,
-      args.first().and_then(|node| node.get_location()),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected an expression and a type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(|node| node.get_location()),
+      )
+      .with_code("E_ASSERT_TYPE_ARITY"),
+    );
   }
 
   let target_raw = args.get(0).unwrap();
@@ -16765,12 +16893,15 @@ pub fn preprocess_unsafe_coerce(
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!("{head} expected a value and a type expression, got {}", args.len()),
-      ctx.call_stack,
-      args.first().and_then(|node| node.get_location()),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected a value and a type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(|node| node.get_location()),
+      )
+      .with_code("E_UNSAFE_COERCE_ARITY"),
+    );
   }
 
   if strict_types_enabled()
@@ -17053,12 +17184,15 @@ pub fn preprocess_parse_cirru_edn_as(
     return Ok(lowered);
   }
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!("{head} expected a string and a type expression, got {}", args.len()),
-      ctx.call_stack,
-      args.first().and_then(Calcit::get_location),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected a string and a type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location),
+      )
+      .with_code("E_PARSE_CIRRU_EDN_AS_ARITY"),
+    );
   }
 
   let text_form = preprocess_expr(
@@ -17091,6 +17225,7 @@ pub fn preprocess_parse_cirru_edn_as(
       ctx.call_stack,
       source_type_form.get_location(),
     )
+    .with_code("E_DECODER_DERIVE")
   })?;
 
   Ok(Calcit::from(vec![
@@ -17111,12 +17246,15 @@ pub fn preprocess_decode_map_as(
     return Ok(lowered);
   }
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!("{head} expected a value and a type expression, got {}", args.len()),
-      ctx.call_stack,
-      args.first().and_then(Calcit::get_location),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected a value and a type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location),
+      )
+      .with_code("E_DECODE_MAP_AS_ARITY"),
+    );
   }
   let value_form = preprocess_expr(
     args.first().expect("validated decode-map-as value"),
@@ -17151,6 +17289,7 @@ pub fn preprocess_decode_map_as(
       ctx.call_stack,
       source_type_form.get_location(),
     )
+    .with_code("E_DECODER_DERIVE")
   })?;
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
@@ -17172,12 +17311,15 @@ pub fn preprocess_encode_map_as(
     return Ok(lowered);
   }
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!("{head} expected a value and a type expression, got {}", args.len()),
-      ctx.call_stack,
-      args.first().and_then(Calcit::get_location),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected a value and a type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location),
+      )
+      .with_code("E_ENCODE_MAP_AS_ARITY"),
+    );
   }
   let value_form = preprocess_expr(
     args.first().expect("validated encode-map-as value"),
@@ -17213,6 +17355,7 @@ pub fn preprocess_encode_map_as(
       ctx.call_stack,
       source_type_form.get_location(),
     )
+    .with_code("E_ENCODER_DERIVE")
   })?;
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
@@ -17229,15 +17372,18 @@ pub fn preprocess_assert_traits(
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() < 2 {
-    return Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      format!(
-        "assert-traits expected an expression and one or more trait definitions, got {head} with {} argument(s).",
-        args.len()
-      ),
-      ctx.call_stack,
-      args.first().and_then(|node| node.get_location()),
-    ));
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!(
+          "assert-traits expected an expression and one or more trait definitions, got {head} with {} argument(s).",
+          args.len()
+        ),
+        ctx.call_stack,
+        args.first().and_then(|node| node.get_location()),
+      )
+      .with_code("E_ASSERT_TRAITS_ARITY"),
+    );
   }
 
   let target_raw = args.get(0).unwrap();
