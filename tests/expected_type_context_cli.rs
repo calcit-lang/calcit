@@ -60,6 +60,9 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-payload",
     "tag-match-arg",
     "tag-match-return",
+    "tag-literal-match",
+    "tag-union-match",
+    "match-scrutinee-keeps-tag",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
@@ -80,6 +83,7 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("green,red 1 2"), "{text}");
   assert!(text.contains("true false green red"), "{text}");
   assert!(text.contains("green 1"), "{text}");
+  assert!(text.contains("red green green 1"), "{text}");
 }
 
 #[test]

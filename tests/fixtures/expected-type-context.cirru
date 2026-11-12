@@ -90,6 +90,27 @@
               (:one c) c
               (:zero) :green
           :schema $ quote $ Fn Wrap (-> Color)
+        'NumOrStr $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion NumOrStr Number String
+          :schema $ quote UnionDef
+        'tag-literal-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-literal-match (n)
+            match n
+              0 :red
+              _ :green
+          :schema $ quote $ Fn Number (-> Color)
+        'tag-union-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-union-match (v)
+            match v
+              (Number n) :red
+              (String s) :green
+          :schema $ quote $ Fn NumOrStr (-> Color)
+        'match-scrutinee-keeps-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn match-scrutinee-keeps-tag ()
+            match (Some :sentinel)
+              (:some t) (Some :red)
+              (:none) (Option :none)
+          :schema $ quote $ Fn (-> (Option Color))
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println (lambda-if-arg true) (lambda-if-arg false) (lambda-let-arg 5)
@@ -98,4 +119,5 @@
             println (show-colors (tag-list-return)) (count (tag-set-return)) (count (plain-tags))
             println (tag-eq (Color :red)) (tag-eq (Color :green)) (tag-match-arg (tag-payload)) (tag-match-arg (Wrap :zero))
             println (show-color (tag-match-return (Wrap :zero))) (count ([] (tag-some-return)))
+            println (show-color (tag-literal-match 0)) (show-color (tag-literal-match 1)) (show-color (tag-union-match |s)) (count ([] (match-scrutinee-keeps-tag)))
           :schema $ quote $ Fn (-> Unit) (:features :io)

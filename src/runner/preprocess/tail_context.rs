@@ -64,6 +64,14 @@ impl TailScope {
   }
 }
 
+impl TailScope {
+  /// Hands the offer of the current form on to the form it lowers to, which
+  /// is preprocessed one level deeper in its place.
+  pub(super) fn forward() -> Self {
+    Self::offer(peek_for_current())
+  }
+}
+
 impl Drop for TailScope {
   fn drop(&mut self) {
     TAIL.with(|cell| *cell.borrow_mut() = self.previous.take());

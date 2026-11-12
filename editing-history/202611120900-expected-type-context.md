@@ -15,3 +15,4 @@
 - 实参位置的 tag：期望类型已经用前面实参绑定的类型变量替换过，所以不再要求原始声明不含类型变量；变长参数（`Variadic T`）取元素类型，超出声明个数的参数用替换后的 rest 类型。`(= c :red)` 因此按 `c` 的 enum 读 tag。
 - 修正第一步的回归：按成员类型下传的字面量绕过了构造调用上的隐式 nil 分支检查，入口转发后对成员补同一检查（`nil_branch_contracts_keep_every_main_rejection`）。
 - 仍未做：`EXPECTED_FN_TYPE` / `EXPECTED_STRUCT_TYPE` / `EXPECTED_OPTION_PAYLOAD` 三个线程局部量并入同一上下文。
+- review 后补充：`match` 降级成 `&let` / `if` 链的三条路径（字面量模式、data view、union 类型模式）用 `TailScope::forward` 把期望类型交给降级后的表达式；`Some` 的 payload 上下文只在构造表达式自身（head 是 `Some` / `Option`）打开，否则会被条件或被匹配值里的第一个调用取走。

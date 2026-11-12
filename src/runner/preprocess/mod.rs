@@ -339,6 +339,15 @@ fn preprocess_argument_with_context(
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
 }
 
+/// Whether a call head spells the `Option` constructor: `Some` or `Option`.
+fn is_option_constructor_head(head: Option<&Calcit>, scope_defs: &HashSet<Arc<str>>) -> bool {
+  match head {
+    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option") && !scope_defs.contains(sym),
+    Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option",
+    _ => false,
+  }
+}
+
 /// Forms typed by the position they are written in (#2733): a bare tag where
 /// an enum is expected, and a collection literal whose members take the
 /// expected member type. Returns `None` when the form is typed bottom-up.
@@ -3700,8 +3709,9 @@ pub fn preprocess_expr(
     return Ok(processed);
   }
   // `Some x` written where an `Option T` is expected builds its payload as `T`.
-  // The offer stays in place for forms that pass it on to their branches.
-  let _option_payload = (matches!(expr, Calcit::List(_))
+  // Only the constructor form itself opens the payload context: any other
+  // form would hand it to the first call nested inside, such as a condition.
+  let _option_payload = (matches!(expr, Calcit::List(items) if is_option_constructor_head(items.first(), scope_defs))
     && tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && annotation.option_payload().is_some())
     && EXPECTED_OPTION_PAYLOAD.with(|cell| cell.borrow().is_none()))
   .then(|| OptionPayloadScope::enter(tail_context::peek_for_current().and_then(|expected| expected.annotation.option_payload())));
@@ -13814,6 +13824,8 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
     );
   }
   let lowered = generated_let(value_sym, args[0].to_owned(), chain, file_ns);
+  // The lowered form stands for the match, so its branches take the same expected type.
+  let _tail = tail_context::TailScope::forward();
   let processed = preprocess_expr(
     &lowered,
     ctx.scope_defs,
@@ -14066,6 +14078,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
   }
 
   let lowered = generated_let(value_sym, call[1].to_owned(), chain, file_ns);
+  let _tail = tail_context::TailScope::forward();
   Ok(Some(preprocess_expr(
     &lowered,
     ctx.scope_defs,
@@ -14151,6 +14164,8 @@ fn process_match(
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
   if let Some(union_def) = inferred_match_type.as_deref().and_then(union_types::union_of_type) {
+    // The lowered `&let` / `if` chain passes the offer on to each branch body.
+    let _tail = tail_context::TailScope::offer(expected);
     return union_types::lower_union_match(&union_def, &value_form, args, ctx);
   }
   if union_types::has_type_pattern(args) {
