@@ -62,3 +62,35 @@ fn callbacks_take_generics_from_later_arguments() {
     "{text}"
   );
 }
+
+#[test]
+fn callback_parameters_keep_their_callable_signature() {
+  let snippet = r#"let
+    take-executor $ fn (executor)
+      hint-fn $ Fn (Fn (Fn Number (-> Unit)) (-> Unit)) (-> Unit)
+      executor $ fn (value)
+        assert= 42 value
+        , &unit
+  take-executor $ fn (deliver)
+    hint-fn $ Fn CALLBACK_TYPE (-> Unit)
+    deliver CALLBACK_VALUE
+    , &unit
+"#;
+  for (parameter, value, accepted) in [("(Fn Number (-> Unit))", "42", true), ("AnyFn", "|wrong", false)] {
+    let code = snippet.replace("CALLBACK_TYPE", parameter).replace("CALLBACK_VALUE", value);
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .env("NO_COLOR", "1")
+      .args(["eval", &code])
+      .output()
+      .expect("calcit command should run");
+    let text = format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.status.success(), accepted, "{text}");
+    if !accepted {
+      assert!(text.contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"), "{text}");
+    }
+  }
+}

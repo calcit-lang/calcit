@@ -12003,6 +12003,20 @@ impl CalcitFnTypeAnnotation {
 
     let mut staged = bindings.clone();
     let mut result = TypeProof::Proven;
+    let mut prove_parameter = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
+      // An erased callable parameter can be invoked without validating its
+      // arguments. It cannot stand in for a parameter with a known signature.
+      if matches!(
+        CalcitTypeAnnotation::expand_schema_alias(actual).as_ref(),
+        CalcitTypeAnnotation::DynFn
+      ) && CalcitTypeAnnotation::expand_schema_alias(expected)
+        .resolve_to_nonoptional_fn()
+        .is_some()
+      {
+        return TypeProof::Mismatch;
+      }
+      expected.prove_with_staged_bindings(actual, &mut staged)
+    };
     for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
       let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
         continue;
@@ -12010,11 +12024,11 @@ impl CalcitFnTypeAnnotation {
       let Some(actual) = self.arg_types.get(idx).or(self.rest_type.as_ref()) else {
         return TypeProof::Mismatch;
       };
-      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+      result = result.and(prove_parameter(actual, expected));
     }
     // #2612: a fixed-arity callable had its extra parameters proven against the rest element above.
     if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
-      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+      result = result.and(prove_parameter(actual, expected));
     }
     result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
     if result.is_proven() {
