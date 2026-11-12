@@ -18,6 +18,7 @@ Calcit uses `try` / `raise` for exception-based error handling. Errors are strin
 - **Catch Errors**: `try (risky-op) (fn (e) ...)`
 - **Throw String**: `raise |something-went-wrong`
 - **Throw Tag**: `raise :invalid-input`
+- **Impossible Branch**: `_ $ unreachable! "|why it cannot happen"`
 - **Match Error**: `if (= e :invalid-input) ...`
 
 ## Basic `try` / `raise`
@@ -193,6 +194,28 @@ JavaScript throws an Error and WASM traps. It is not an alias for `raise`:
 `raise` is an ordinary application error path and does not mean that an Agent
 still needs to implement the code.
 
+## 标记不可能到达的分支：`unreachable!`
+
+`match` 的兜底分支、`if` 里按前置条件不会走到的一侧，用 `unreachable!` 代替 `raise "|unknown …"`：
+
+```cirru.no-check
+defn shape-area (shape)
+  match shape
+    (:circle r) (* 3.14 r r)
+    (:square w) (* w w)
+    _ $ unreachable! "|Shape only has :circle and :square"
+```
+
+- 类型是 `Never`：它不参与分支类型合并，上例的 `match` 仍然推断为 `Number`，可以直接满足 `Fn Shape (-> Number)`。
+- 说明可选，接受任意 String 表达式，例如 `unreachable! $ str "|index " i`；传入非 String 会报 `E_PROC_ARG_TYPE_MISMATCH`，超过一个参数报 `E_PROC_ARITY`。
+- 运行时走到它会抛出错误，消息带上所在定义：`unreachable! reached in app.main/shape-area: Shape only has :circle and :square`。native 抛出 effect 错误，可以被 `try` 捕获；JavaScript 抛出 `Error`；WASM trap。
+- 和 `todo!` 不同，`unreachable!` 不产生诊断，表示"已经实现、按逻辑不会走到"。和 `raise` 不同，它不用于外部输入导致的业务错误，那类情况继续用 `raise` 或 `Result`。
+
+限制：
+
+- 分支已经穷尽时不提示兜底分支多余；union 的 `match` 写全成员再加 `_` 仍按 `E_UNION_MATCH_UNREACHABLE_WILDCARD` 报错。
+- 不提供把 `raise` 改写成 `unreachable!` 的 `fix` 规则：错误消息会改变，而兜底分支是否真的不可达（例如 tag 来自外部输入）只能按具体代码判断，交给 Agent 逐处确认后用 `calcit tree` 修改。
+
 ## Notes
 
 - `raise` accepts any value that can be converted to a string. String literals and tags work best.
@@ -200,6 +223,7 @@ still needs to implement the code.
 - `try` always produces a value: either the result of the body, or the result of the handler.
 - `assert` / `assert=` are for development-time invariants. They generate warnings (not runtime errors) during static analysis.
 - `todo!` is a completion warning and should be removed when the implementation is finished; do not use it for recoverable domain errors.
+- `unreachable!` marks a branch that is implemented but logically impossible; it emits no diagnostic.
 
 ## See Also
 

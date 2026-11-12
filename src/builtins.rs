@@ -418,6 +418,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeAssertTraits => meta::assert_traits(args, call_stack),
     Raise => effects::raise(args),
     Todo => effects::todo(args),
+    Unreachable => effects::unreachable(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
     GetArgs => effects::get_args(args),

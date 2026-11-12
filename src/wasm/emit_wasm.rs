@@ -8299,7 +8299,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
 
     // Raise — terminates execution
-    CalcitProc::Raise => {
+    CalcitProc::Raise | CalcitProc::Unreachable => {
       // `raise` aborts the program; any args are evaluated for side effects but discarded.
       for arg in args {
         emit_expr(ctx, arg)?;

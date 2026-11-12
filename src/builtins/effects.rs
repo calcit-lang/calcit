@@ -50,6 +50,19 @@ pub fn todo(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Runtime endpoint for `unreachable!`.
+///
+/// Preprocessing folds the call site and the optional note into one String,
+/// so the runtime form always carries exactly one message.
+pub fn unreachable(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs {
+    [] => CalcitErr::err_str(CalcitErrKind::Effect, "unreachable! was reached"),
+    [Calcit::Str(message)] => CalcitErr::err_str(CalcitErrKind::Effect, message.to_string()),
+    [other] => CalcitErr::err_str(CalcitErrKind::Effect, format!("unreachable! was reached: {}", other.turn_string())),
+    _ => CalcitErr::err_str(CalcitErrKind::Arity, "unreachable! expects 0~1 arguments"),
+  }
+}
+
 pub fn init_effects_states() {
   // trigger lazy instant
   let _eff = STARTED_INSTANT.read().expect("read instant");

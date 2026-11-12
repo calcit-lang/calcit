@@ -219,6 +219,8 @@ let
   ; => round
 ```
 
+兜底分支按逻辑不会走到时，写 `_ $ unreachable! "|说明"`，它的类型是 `Never`，不影响 `match` 的结果类型，见 [错误处理](error-handling.md#标记不可能到达的分支unreachable)。
+
 ### 字面量模式
 
 `match` 的分支也可以直接比较普通 tag、字符串、数字、`true`/`false` 和 `nil`，用于对非 enum 的值分派。字面量模式写成不带括号的值，`(:tag ...)` 仍然表示 enum 变体：

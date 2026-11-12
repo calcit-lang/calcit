@@ -2692,6 +2692,66 @@ fn core_import(def: &str, file_ns: &str) -> Calcit {
   })
 }
 
+/// Check an `unreachable!` call and fold its call site into the message.
+///
+/// The surface form takes an optional String note. The lowered form always
+/// carries one String: a literal when the note is static, otherwise a
+/// `&str:concat` of the site prefix and the note, so every backend reports
+/// where the impossible branch was reached.
+fn lower_unreachable_call(
+  processed_args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) -> Result<Calcit, CalcitErr> {
+  if processed_args.len() > 1 {
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("unreachable! expects 0~1 arguments, got {}", processed_args.len()),
+        call_stack,
+        call_location,
+      )
+      .with_code("E_PROC_ARITY"),
+    );
+  }
+  let proc_call_location = preferred_source_call_location(call_location, call_stack);
+  let enclosing_def = proc_call_location
+    .as_ref()
+    .map(|location| location.def.to_string())
+    .or_else(|| call_stack.0.first().map(|frame| frame.def.to_string()))
+    .unwrap_or_else(|| def_name.to_owned());
+  let site = if enclosing_def == "??" {
+    format!("unreachable! reached in {file_ns}")
+  } else {
+    format!("unreachable! reached in {file_ns}/{enclosing_def}")
+  };
+  let message = match processed_args.first() {
+    None => Calcit::Str(Arc::from(site)),
+    Some(Calcit::Str(note)) => Calcit::Str(Arc::from(format!("{site}: {note}"))),
+    Some(note) => {
+      check_proc_arg_types(
+        &CalcitProc::Unreachable,
+        processed_args,
+        scope_types,
+        file_ns,
+        &enclosing_def,
+        proc_call_location,
+        check_warnings,
+      );
+      generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeStrConcat),
+        Calcit::Str(Arc::from(format!("{site}: "))),
+        note.to_owned(),
+      ])
+    }
+  };
+  Ok(generated_call(vec![Calcit::Proc(CalcitProc::Unreachable), message]))
+}
+
 /// Store a compiler-generated call in executable list form.
 fn generated_call(items: Vec<Calcit>) -> Calcit {
   Calcit::from(CalcitList::from(items.as_slice()))
@@ -3702,6 +3762,8 @@ fn preprocess_expr_unguarded(
           // to use the same name, so scaffold completion checks stay sound.
           if def.as_ref() == "todo!" {
             Ok(Calcit::Proc(CalcitProc::Todo))
+          } else if def.as_ref() == "unreachable!" {
+            Ok(Calcit::Proc(CalcitProc::Unreachable))
           } else if scope_defs.contains(def) {
             let type_info = scope_types.get(def).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
             Ok(Calcit::Local(CalcitLocal {
@@ -5996,6 +6058,17 @@ fn preprocess_list_call(
               format!("[Error] TODO placeholder in {file_ns}/{enclosing_def}{message}"),
               "E_TODO",
               file_ns,
+              call_location.clone(),
+              check_warnings,
+            );
+          }
+          if matches!(proc, CalcitProc::Unreachable) {
+            return lower_unreachable_call(
+              &processed_args,
+              scope_types,
+              file_ns,
+              def_name.as_ref(),
+              call_stack,
               call_location.clone(),
               check_warnings,
             );
@@ -26898,6 +26971,45 @@ mod tests {
     .expect_err("non-literal todo! message should be rejected before code generation");
     assert!(error.to_string().contains("static String"), "unexpected error: {error}");
     assert!(warnings.borrow().is_empty(), "invalid todo! should not emit a completion warning");
+  }
+
+  #[test]
+  fn unreachable_folds_call_site_into_single_message() {
+    use crate::data::cirru::code_to_calcit;
+    use cirru_parser::Cirru;
+
+    let preprocess = |expr: Cirru| {
+      let code = code_to_calcit(&expr, "tests.unreachable", "pick", vec![]).expect("parse unreachable expression");
+      let mut scope_types = ScopeTypes::new();
+      let warnings = RefCell::new(vec![]);
+      let processed = preprocess_expr(
+        &code,
+        &HashSet::from([Arc::from("unreachable!")]),
+        &mut scope_types,
+        "tests.unreachable",
+        &warnings,
+        &CallStackList::default(),
+      );
+      (processed, warnings.into_inner())
+    };
+
+    let (processed, warnings) = preprocess(Cirru::List(vec![Cirru::leaf("unreachable!"), Cirru::leaf("|closed")]));
+    let processed = processed.expect("preprocess unreachable!");
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    let Calcit::List(items) = &processed else {
+      panic!("unreachable! should stay a call: {processed}")
+    };
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::Unreachable))), "{processed}");
+    assert_eq!(items.len(), 2, "lowered form carries one message: {processed}");
+    assert!(
+      matches!(items.get(1), Some(Calcit::Str(message)) if message.as_ref() == "unreachable! reached in tests.unreachable: closed"),
+      "{processed}"
+    );
+    assert!(type_inference::expression_definitely_diverges(&processed));
+
+    let (processed, _) = preprocess(Cirru::List(vec![Cirru::leaf("unreachable!"), Cirru::leaf("|a"), Cirru::leaf("|b")]));
+    let error = processed.expect_err("two notes should be rejected");
+    assert!(error.to_string().contains("E_PROC_ARITY"), "unexpected error: {error}");
   }
 
   #[test]

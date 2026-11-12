@@ -95,7 +95,7 @@ impl CalcitProc {
       NativeAssertTraits => Raises("the value does not implement the traits"),
 
       // effects
-      Raise | Todo => Raises("always"),
+      Raise | Todo | Unreachable => Raises("always"),
       Quit => Raises("the exit code is not an integer in 0..255; otherwise the process exits"),
       GetEnv => Result("`Option :none` when the variable is unset"),
       GetArgs | MonotonicTimeMs => Total,
