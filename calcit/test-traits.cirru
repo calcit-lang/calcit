@@ -1789,35 +1789,37 @@
           :schema $ quote Trait
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.metadata
-    'test-traits.source-impl $ %{} 'FileEntry
+    'test-traits.source-gauge $ %{} 'FileEntry
       :defs $ {}
-        'Counter-Gauge $ %{} 'CodeEntry
-          :doc "|Written in the trait's namespace; attaches to a type that already has hand-written impls."
-          :code $ quote $ defimpl ext/Counter Gauge (.reading counter:reading)
-          :examples $ []
-          :schema $ quote Impl
         'Gauge $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Gauge
             .reading $ Fn Self $ -> Number
           :examples $ []
           :schema $ quote Trait
+        'Meter-Gauge $ %{} 'CodeEntry
+          :doc "|Written in the trait's namespace; found because `Meter` lists `Gauge` in `(:impls …)`."
+          :code $ quote $ defimpl si/Meter Gauge (.reading si/meter:reading)
+          :examples $ []
+          :schema $ quote Impl
+        'read-gauge $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-gauge (x) (.reading x)
+          :examples $ []
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Gauge
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.source-gauge
+          :require $ test-traits.source-impl :as si
+    'test-traits.source-impl $ %{} 'FileEntry
+      :defs $ {}
         'Meter $ %{} 'CodeEntry
-          :doc "|No impl is attached by hand: each `defimpl Meter …` below attaches when the program loads."
-          :code $ quote $ defstruct Meter (:value Number)
+          :doc "|Lists its traits; each `defimpl Meter …` is looked up in this namespace or the trait's."
+          :code $ quote $ defstruct Meter (:value Number) (:impls Add g/Gauge)
           :examples $ []
           :schema $ quote StructDef
         'Meter-Add $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Meter Add (.add meter:add)
           :examples $ []
           :schema $ quote Impl
-        'Meter-Gauge $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl Meter Gauge (.reading meter:reading)
-          :examples $ []
-          :schema $ quote Impl
-        'counter:reading $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn counter:reading (self) (:value self)
-          :examples $ []
-          :schema $ quote $ Fn ext/Counter (-> Number)
         'meter:add $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn meter:add (self other)
             %{} Meter $ :value $ + (:value self) (:value other)
@@ -1827,11 +1829,6 @@
           :code $ quote $ defn meter:reading (self) (:value self)
           :examples $ []
           :schema $ quote $ Fn Meter (-> Number)
-        'read-gauge $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn read-gauge (x) (.reading x)
-          :examples $ []
-          :schema $ quote $ Fn T (-> Number) (:generics T)
-            :where $ T Gauge
         'test-source-defimpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-source-defimpl ()
             let
@@ -1839,16 +1836,13 @@
                   %{} Meter $ :value 1
                   %{} Meter $ :value 2
               assert= 3 $ .reading total
-              assert= 3 $ read-gauge total
-              assert= 5 $ read-gauge $ %{} ext/Counter (:value 5)
-              assert= 6 $ .reading $ .next
-                %{} ext/Counter $ :value 5
-            println "|defimpl Type Trait attaches at load"
+              assert= 3 $ g/read-gauge total
+            println "|defimpl Type Trait attaches through (:impls …)"
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.source-impl
-          :require $ test-traits.external :as ext
+          :require $ test-traits.source-gauge :as g
     'test-traits.struct-identity $ %{} 'FileEntry
       :defs $ {} $ 'comparison-contract?
         %{} 'CodeEntry (:doc |)

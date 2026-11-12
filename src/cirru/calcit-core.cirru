@@ -6082,6 +6082,12 @@
         'data-definition-clauses $ %{} 'CodeEntry
           :doc "|Read the leading `(:generics T …)` and `(:where (T Debug) …)` clauses of defstruct or defenum, the same clauses a `Fn` type takes, into the generics list and bounds map the macros expand. Entries without these clauses are returned unchanged."
           :code $ quote $ defn data-definition-clauses (entries)
+            if
+              any? entries $ fn (entry)
+                and (list? entry)
+                  not $ empty? entry
+                  &= :impls $ &list:nth entry 0
+              raise "|`(:impls …)` attaches implementations only to a top-level struct or enum definition; inside a function, attach them with `impl-traits`"
             if (data-definition-clause? entries :generics)
               &let
                 generics $ &list:rest $ &list:nth entries 0

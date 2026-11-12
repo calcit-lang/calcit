@@ -1609,18 +1609,15 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   // `defimpl Type Trait` attaches to its type's definition, which may live in
   // a namespace this change did not touch. Re-attach across the program, then
   // rebuild every type whose attached code changed, with its dependents.
-  let before = impl_attach::generated_attachments(&program_code);
+  let before = impl_attach::generated_attachments();
   let after = impl_attach::attach_source_impls(&mut program_code)?;
   let mut seed_ids: HashSet<DefId> = HashSet::new();
-  for (ns, def) in before.keys().chain(after.iter()) {
+  for key in before.keys().chain(after.iter()) {
+    let (ns, def) = key;
     let Some(entry) = program_code.get(ns).and_then(|file| file.defs.get(def)) else {
       continue;
     };
-    let old_code = before
-      .get(&(ns.to_owned(), def.to_owned()))
-      .cloned()
-      .unwrap_or_else(|| impl_attach::strip_generated_attachment(&entry.code));
-    if old_code != entry.code {
+    if before.get(key) != Some(&entry.code) {
       seed_ids.insert(register_program_def_id(ns, def));
     }
   }
