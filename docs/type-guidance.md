@@ -266,6 +266,8 @@ lambda 的参数类型可以从所在位置得到，不必写 `hint-fn`：直接
 
 调用自身所在位置的期望类型还可以反过来确定被调函数的类型变量（0.43.0，#2733）。函数返回类型是 `List Color` 时，`map xs (fn (x) :red)` 里 `map` 的结果变量由 `List Color` 定为 `Color`，回调的返回位置按 `Color` 检查，方法调用 `.map xs (fn (x) :red)` 和自己定义的泛型高阶函数（`Fn (List A) (Fn A (-> B)) (-> (List B))`）相同；泛型参数位置上的裸 tag 和字面量也按这样确定的类型读，例如 `Fn T (-> T)` 的 `pick :red`。这样读出的类型只决定回调返回位置和实参怎样写，类型变量仍然由实参自己的类型证明，所以回调返回了别的类型时照常报返回类型不符。`let` 绑定没有标注时没有期望类型，`let ys (map xs (fn (x) :red))` 得到的仍是 `List Tag`。
 
+`recur` 的每个实参也是有类型的位置（0.43.0，#2733）：它们按所在函数的参数类型检查，所以参数声明为 `Fn Number (-> Number)` 时可以写 `recur (dec n) (fn (x) (inc x))`，声明为 `List Color` 时可以写 `recur (dec n) ([] :red)`。参数没有声明类型、带类型变量，或者函数有可选参数和 rest 参数时，没有这项上下文。
+
 被调函数是泛型、而回调写在确定泛型的实参之前时，回调先从后面的普通实参取得绑定。例如 `record-op` 的 schema 是 `Fn (Fn Store Op (-> Store)) Store Op (-> Store)`，`record-op (fn (store op) …) |base 5` 里 lambda 的 `store` 是 String、`op` 是 Number，不需要 `hint-fn`（0.40.0，#2648）。通过带同样泛型签名的参数或局部别名调用时也一样，rest 实参同样算作后面的实参。后面的实参是 Dynamic 时不提供绑定；后面的实参本身是回调时，它的类型也不作为绑定来源。
 
 ## Dynamic 是边界，不是默认多态

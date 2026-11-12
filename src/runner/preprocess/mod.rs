@@ -5863,6 +5863,17 @@ fn preprocess_list_call(
                   member_inputs = true;
                   types.last().cloned()
                 })
+            } else if !has_spread && matches!(&head_form, Calcit::Proc(CalcitProc::Recur)) {
+              // A tail transfer supplies the parameters of its lexical
+              // function, so each operand is written in a typed position.
+              scope_types
+                .recur_parameter(ys.len() - 1)
+                .filter(|parameter| {
+                  !matches!(parameter.as_ref(), CalcitTypeAnnotation::Dynamic)
+                    && !parameter.contains_type_var()
+                    && !type_inference::has_inferred_empty_slot(parameter)
+                })
+                .cloned()
             } else if !has_spread {
               // A local/indirect callable has the same input contract as a named
               // function. Supply it before checking an inline callback body;
@@ -5886,6 +5897,7 @@ fn preprocess_list_call(
                 Calcit::Proc(
                   CalcitProc::NativeStruct
                     | CalcitProc::NativeNamedEnumNew
+                    | CalcitProc::Recur
                     | CalcitProc::Sort
                     | CalcitProc::NativeListSort
                     | CalcitProc::Foldl
@@ -5965,6 +5977,7 @@ fn preprocess_list_call(
               _ if !matches!(form, Calcit::Tag(_)) => None,
               Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some("variant payload"),
               Calcit::Method(_, calcit::MethodKind::Invoke(_)) => Some("method argument"),
+              Calcit::Proc(CalcitProc::Recur) => Some("recur argument"),
               _ if callable_contract.is_some() => Some("argument of a local function"),
               _ => None,
             };
@@ -15883,6 +15896,9 @@ pub fn preprocess_defn(
         }
         recur_param_types = parameters;
       }
+      // A `recur` in this body is an argument list for these parameters (#2733).
+      body_types
+        .set_recur_parameters((!has_marked_args && !matches!(head, CalcitSyntax::Defmacro)).then_some(recur_param_types.as_slice()));
       // Only the definition's own parameters, not those of a nested `fn`,
       // collect call-site evidence for its `E_BROAD_TYPE` notes.
       if info.at_ns.as_ref() == ctx.file_ns && info.at_def.as_ref() == def_name.as_ref() {

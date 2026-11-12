@@ -5,8 +5,8 @@
 //! `[]` / `#{}` / `{}` literals in argument or return position, `match`
 //! branches, variant payloads, the later operands of `=`, method and local
 //! function arguments, Tuple literals and literals in receiver-fixed slots,
-//! and the results of callbacks and generic parameters that the call's own
-//! expected type fixes.
+//! the results of callbacks and generic parameters that the call's own
+//! expected type fixes, and the operands of `recur`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -80,6 +80,10 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-generic-slot",
     "tag-generic-literal",
     "plain-callback-tags",
+    "tag-recur-arg",
+    "tag-recur-if",
+    "tag-recur-list",
+    "lambda-recur-arg",
   ] {
     assert!(text.contains(&format!("[passed] demo.main/{def} (fn)")), "{def}:\n{text}");
   }
@@ -106,6 +110,7 @@ fn contextual_forms_run_with_their_typed_values() {
   assert!(text.contains("red,red"), "{text}");
   assert!(text.contains("green,green green,red red red green 3"), "{text}");
   assert!(text.contains("green,green,red\n"), "{text}");
+  assert!(text.contains("green red red,green,green 41"), "{text}");
 }
 
 #[test]
@@ -219,6 +224,27 @@ fn a_wrong_tag_is_reported_at_its_position() {
       "user-hof-wrong-type",
       "declares return type",
       "list<string>",
+    ),
+    (
+      "(recur (&- n 1) :green)",
+      "(recur (&- n 1) :grene)",
+      "recur-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "recur argument",
+    ),
+    (
+      "(recur (&- n 1) ([] :red :green :green))",
+      "(recur (&- n 1) ([] :red :rgb :green))",
+      "recur-list-payload",
+      "E_ENUM_TAG_NEEDS_PAYLOAD",
+      "collection member",
+    ),
+    (
+      "(recur (&- n 1) (fn (x) (&+ x 40)))",
+      "(recur (&- n 1) 40)",
+      "recur-wrong-type",
+      "`recur` argument 2",
+      "fn(:number) -> :number",
     ),
     (
       "(pick :green)",

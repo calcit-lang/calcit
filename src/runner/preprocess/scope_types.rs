@@ -22,6 +22,9 @@ pub struct ScopeTypes {
   /// Names that still refer to the parameters of the enclosing top-level
   /// `defn`; any later binding of the name drops it.
   defn_parameters: HashSet<Arc<str>>,
+  /// Parameter types of the innermost enclosing function, the contract a
+  /// `recur` written here has to meet. `None` when its arity is not fixed.
+  recur_parameters: Option<Arc<Vec<Annotation>>>,
 }
 
 impl ScopeTypes {
@@ -37,6 +40,7 @@ impl ScopeTypes {
       generics: HashMap::new(),
       generic_capabilities: None,
       defn_parameters: HashSet::new(),
+      recur_parameters: None,
     }
   }
 
@@ -70,6 +74,16 @@ impl ScopeTypes {
   /// Marks `names` as the parameters of the top-level `defn` being checked.
   pub(super) fn mark_defn_parameters(&mut self, names: &[Arc<str>]) {
     self.defn_parameters = names.iter().cloned().collect();
+  }
+
+  /// Records what a `recur` in the function body being entered transfers to.
+  pub(super) fn set_recur_parameters(&mut self, parameters: Option<&[Annotation]>) {
+    self.recur_parameters = parameters.map(|parameters| Arc::new(parameters.to_vec()));
+  }
+
+  /// The declared type of the `index`-th parameter a `recur` here transfers to.
+  pub(super) fn recur_parameter(&self, index: usize) -> Option<&Annotation> {
+    self.recur_parameters.as_deref()?.get(index)
   }
 
   /// Whether `name` still refers to a parameter of the top-level `defn`.
@@ -276,6 +290,7 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
       generics: HashMap::new(),
       generic_capabilities: None,
       defn_parameters: HashSet::new(),
+      recur_parameters: None,
     }
   }
 }

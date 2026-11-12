@@ -35,3 +35,11 @@
 - 依据：探针 `probes-2026-11-12/h3`，19 个正例由 0 个通过变为 17 个，8 个反例仍被拒绝。
 - 未做：`foldl xs ([]) (fn (acc x) (conj acc :red))`（fold 系 proc 的签名是 Dynamic，归 #2735）；没有标注的 `let` 绑定没有期望类型，不反推。
 - #2742 合并后的 review 意见一并处理：字面量成员的隐式 nil 分支检查收进 `preprocess_literal_member`（它知道成员所在槽位的类型），槽位声明为可空（`JsNullish T`）时不检查，与具名函数实参的规则一致；回归用例 `list-arg-nullable`。
+
+## 第五步：`recur` 的实参
+
+- 问题：`recur` 的实参检查在函数体处理完之后才遍历（`check_recur_args_in_expr`），预处理实参时不知道参数类型，所以 `recur (dec n) :green`、`recur (dec n) (fn (x) x)`、`recur (dec n) ([] :red)` 都按没有上下文处理，再被事后检查报 `E_RECUR_ARG_TYPE_MISMATCH`。
+- 做法：所在函数的参数类型是词法事实，记在 `ScopeTypes.recur_parameters`（进入函数体时设置，嵌套函数各自覆盖）。通用调用路径里 head 是 `recur` 时，该位置的期望类型取对应参数的类型，之后与方法实参、局部函数实参走同一段代码：lambda、字面量、`if` 分支取上下文，裸 tag 改写（位置文字 `recur argument`）。事后的类型检查保留，类型不符仍报 `E_RECUR_ARG_TYPE_MISMATCH`。
+- 边界：参数类型是 `Dynamic`、含类型变量或还是推断中的空槽位时不提供；有可选或 rest 参数的函数、宏不提供（与事后检查跳过的范围一致）。
+- 依据：探针 `probes-2026-11-12/h4`，6 个原先失败的写法全部通过，`loop`、`Tag` 参数、直接自调用不受影响。
+
