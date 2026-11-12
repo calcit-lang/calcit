@@ -288,11 +288,6 @@ fn preprocess_argument_with_offered_return(
           call_stack,
         )?);
       }
-      // Members are still arguments of the literal's constructor call, so a
-      // branch that silently yields nil is rejected as on the plain call path.
-      for member in processed.iter().skip(1) {
-        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
-      }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
     }
@@ -316,11 +311,6 @@ fn preprocess_argument_with_offered_return(
           check_warnings,
           call_stack,
         )?);
-      }
-      // Members are still arguments of the literal's constructor call, so a
-      // branch that silently yields nil is rejected as on the plain call path.
-      for member in processed.iter().skip(1) {
-        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
       }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
@@ -354,11 +344,6 @@ fn preprocess_argument_with_offered_return(
           check_warnings,
           call_stack,
         )?);
-      }
-      // Members are still arguments of the literal's constructor call, so a
-      // branch that silently yields nil is rejected as on the plain call path.
-      for member in processed.iter().skip(1) {
-        check_value_position_nil_branch(member, "call argument", true, scope_types, file_ns, call_stack, None)?;
       }
       reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
       return Ok(Calcit::from(processed));
@@ -533,6 +518,12 @@ fn preprocess_literal_member(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let form = preprocess_argument_with_context(expr, context, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+  // A member is still an argument of the literal's constructor call, so a
+  // branch that silently yields nil is rejected as on the plain call path.
+  // A slot that declares nullability already admits the nil exit.
+  if !context.is_some_and(|(slot, _, _)| matches!(slot.as_ref(), CalcitTypeAnnotation::Nullable(_, _))) {
+    check_value_position_nil_branch(&form, "call argument", true, scope_types, file_ns, call_stack, None)?;
+  }
   if let Calcit::Tag(_) = form
     && let Some((expected, _, _)) = context
     && !expected.contains_type_var()

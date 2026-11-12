@@ -333,6 +333,15 @@
               probe true
           :examples $ []
           :schema $ quote $ Fn (-> Dynamic)
+        'case-list-arg-nullable $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn case-list-arg-nullable ()
+            let
+                probe $ fn (flag)
+                  hint-fn $ Fn Bool $ -> Number
+                  take-nullable-list $ [] (if flag 1) 2
+              probe true
+          :examples $ []
+          :schema $ quote $ Fn (-> Dynamic)
         'case-list-ret-ok $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn case-list-ret-ok ()
             let
@@ -737,6 +746,10 @@
           :code $ quote $ defn take-js (n) &unit
           :examples $ []
           :schema $ quote $ Fn (JsNullish Number) (-> Unit)
+        'take-nullable-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn take-nullable-list (xs) 1
+          :examples $ []
+          :schema $ quote $ Fn (List (JsNullish Number)) (-> Number)
         'take-open-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn take-open-list (xs) 1
           :examples $ []

@@ -34,3 +34,4 @@
 - 覆盖：具名函数调用（含 `map` 这类带 checked contract 的 core 函数，结果模式取 contract 的 `return_type`）、方法调用（`MethodArgumentContext.return_type`）、局部函数值。
 - 依据：探针 `probes-2026-11-12/h3`，19 个正例由 0 个通过变为 17 个，8 个反例仍被拒绝。
 - 未做：`foldl xs ([]) (fn (acc x) (conj acc :red))`（fold 系 proc 的签名是 Dynamic，归 #2735）；没有标注的 `let` 绑定没有期望类型，不反推。
+- #2742 合并后的 review 意见一并处理：字面量成员的隐式 nil 分支检查收进 `preprocess_literal_member`（它知道成员所在槽位的类型），槽位声明为可空（`JsNullish T`）时不检查，与具名函数实参的规则一致；回归用例 `list-arg-nullable`。

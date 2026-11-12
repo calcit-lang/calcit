@@ -4581,6 +4581,7 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("list-ret-ok", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("list-arg", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("tuple-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("list-arg-nullable", false, false, None),
   ("map-callback-ok", true, true, None),
   ("hof-ok", true, true, None),
   ("qfield-nilq", false, false, None),
