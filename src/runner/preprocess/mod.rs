@@ -7137,6 +7137,22 @@ fn preprocess_known_function_call(
     );
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
+  if info.def_ns.as_ref() == calcit::CORE_NS
+    && info.name.as_ref() == "impl-traits"
+    && !calcit::is_bundled_core_ns(file_ns)
+    && program::lookup_def_code(file_ns, def_name)
+      .is_some_and(|code| program::impl_attach::is_hand_written_top_level_impl_traits(file_ns, def_name, &code))
+  {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Syntax,
+      format!(
+        "{file_ns}/{def_name}: a top-level definition no longer attaches impls with `impl-traits`; list the traits on the type, `defstruct T … (:impls Trait …)`, and write each implementation as `defimpl T Trait …` in the type's or the trait's namespace. `impl-traits` stays for structs and enums defined inside a function"
+      ),
+      LEGACY_IMPL_TRAITS_ERROR,
+      call_stack,
+      call_location.clone(),
+    ));
+  }
   let mut call_has_type_warnings = false;
   if !has_spread {
     let mut current_args = processed_call_args;
@@ -7240,21 +7256,6 @@ fn preprocess_known_function_call(
       call_location.clone(),
       check_warnings,
     );
-    if info.def_ns.as_ref() == calcit::CORE_NS
-      && info.name.as_ref() == "impl-traits"
-      && !calcit::is_bundled_core_ns(file_ns)
-      && program::lookup_def_code(file_ns, def_name).is_some_and(|code| program::impl_attach::code_is_top_level_impl_traits(&code))
-    {
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Syntax,
-        format!(
-          "{file_ns}/{def_name}: a top-level definition no longer attaches impls with `impl-traits`; list the traits on the type, `defstruct T … (:impls Trait …)`, and write each implementation as `defimpl T Trait …` in the type's or the trait's namespace. `impl-traits` stays for structs and enums defined inside a function"
-        ),
-        LEGACY_IMPL_TRAITS_ERROR,
-        call_stack,
-        call_location.clone(),
-      ));
-    }
     if info.def_ns.as_ref() == calcit::CORE_NS
       && info.name.as_ref() == "impl-traits"
       && let Some(message) = type_inference::check_impl_attachment_requires(&current_args, scope_types)

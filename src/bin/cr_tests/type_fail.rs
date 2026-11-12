@@ -1407,6 +1407,29 @@ fn top_level_impl_traits_is_rejected() {
 }
 
 #[test]
+fn top_level_qualified_impl_traits_is_rejected() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "def Sized $ deftrait Sized $ .size $ Fn Self (-> Number)\ndefstruct Box0 (:n Number)\ndef SizedImpl $ defimpl Box0 Sized\n  .size $ fn (self) 1\ndef Box $ calcit.core/impl-traits Box0 SizedImpl\ndefn main! () (Box :n 1)",
+    );
+
+    let warnings = RefCell::new(vec![]);
+    let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Box", &warnings, &CallStackList::default())
+      .expect_err("top-level impl-traits must be rejected");
+    let collected = warnings
+      .borrow()
+      .iter()
+      .map(|warning| warning.to_string())
+      .collect::<Vec<_>>()
+      .join("\n");
+    assert!(
+      err.to_string().contains("E_LEGACY_IMPL_TRAITS") || collected.contains("E_LEGACY_IMPL_TRAITS"),
+      "unexpected error: {err}\n{collected}"
+    );
+  });
+}
+
+#[test]
 fn public_check_reaches_unused_definitions_without_changing_entry_check_semantics() {
   run_with_large_stack(|| {
     builtins::effects::init_effects_states();

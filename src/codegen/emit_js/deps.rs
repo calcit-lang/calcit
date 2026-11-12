@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax};
-use crate::program::{CompiledFileData, DefId};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax, CalcitTypeAnnotation};
+use crate::program::{CompiledDef, CompiledFileData, DefId};
 
 pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
   match xs {
@@ -26,6 +26,20 @@ fn reads_symbol_eagerly(xs: &Calcit, symbol: &str) -> bool {
     Calcit::Thunk(thunk) => reads_symbol_eagerly(thunk.get_code(), symbol),
     _ => contains_symbol(xs, symbol),
   }
+}
+
+/// Whether a compiled definition is a `defimpl` value, by its source head or its `Impl` schema.
+fn is_impl_definition(compiled: &CompiledDef) -> bool {
+  let source_is_defimpl = compiled.source_code.as_ref().is_some_and(|code| match code {
+    Calcit::List(items) => match items.first() {
+      Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "defimpl" || sym.as_ref() == "calcit.core/defimpl",
+      Some(Calcit::Import(CalcitImport { def, .. })) => def.as_ref() == "defimpl",
+      _ => false,
+    },
+    _ => false,
+  });
+  source_is_defimpl
+    || matches!(compiled.schema.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "impl"))
 }
 
 fn reaches(from: &Arc<str>, to: &Arc<str>, graph: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> bool {
@@ -86,20 +100,20 @@ pub(super) fn sort_compiled_defs_by_deps(file: &CompiledFileData) -> Vec<Arc<str
     deps_graph.insert(name.to_owned(), deps_info);
   }
 
-  // A definition and the impl attached to it can refer to each other: the type
-  // reads the impl while it is built, and the impl's methods read the type only
-  // when called. Drop such a lazy edge when the target eagerly needs this
-  // definition, so the impl is emitted before the type.
-  let eager_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = deps_graph
-    .iter()
-    .map(|(name, deps)| {
-      let form = &file.defs[name].codegen_form;
-      let eager = deps.iter().filter(|dep| reads_symbol_eagerly(form, dep)).cloned().collect();
-      (name.to_owned(), eager)
-    })
-    .collect();
+  // A type and the impl attached to it refer to each other: the type reads the
+  // impl while it is built, and the impl's methods read the type only when
+  // called. For an impl definition, drop a lazy edge into its own dependency
+  // cycle so the impl is emitted before the types that attach it. Only impls
+  // are pruned: a plain function may be called while another value is
+  // initialized, so the values its body reads must keep their place.
+  let full_graph = deps_graph.clone();
   for (name, deps) in deps_graph.iter_mut() {
-    deps.retain(|dep| eager_graph[name].contains(dep) || !reaches(dep, name, &eager_graph));
+    let compiled = &file.defs[name];
+    if !is_impl_definition(compiled) {
+      continue;
+    }
+    let form = &compiled.codegen_form;
+    deps.retain(|dep| reads_symbol_eagerly(form, dep) || !reaches(dep, name, &full_graph));
   }
 
   sort_names_by_graph(def_names, &deps_graph)

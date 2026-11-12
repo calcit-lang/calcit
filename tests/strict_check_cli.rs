@@ -1036,7 +1036,7 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
   assert_eq!(results.len(), 1);
   assert_eq!(results[0]["status"], "passed");
   let definitions = results[0]["report"]["data"]["definitions"].as_array().unwrap();
-  assert_eq!(definitions.len(), 7);
+  assert_eq!(definitions.len(), 6);
   assert!(definitions.iter().all(|definition| definition["status"] == "passed"));
   let diagnostics = report["diagnostics"].as_array().unwrap();
   assert!(diagnostics.is_empty(), "{diagnostics:?}");

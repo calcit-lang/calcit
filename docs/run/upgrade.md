@@ -3279,7 +3279,7 @@ defimpl :RenderImpl :Render $ .render
   fn (x) str x
 ```
 
-这种 originless inherent method bag 已退役：`defimpl` 现在要求 impl 名与 trait 都是 symbol，遇到 tag 会以
+这种 originless inherent method bag 已退役：`defimpl` 现在要求第一个参数是被实现的 struct/enum 类型、trait 是 symbol，遇到 tag 会以
 `E_LEGACY_DEFIMPL_TAG` 失败。它本来也不会满足 `assert-traits`、函数/数据结构的 `:where` 约束，也不能被
 `&trait-call` 选中。需要能力约束的代码应改成：
 

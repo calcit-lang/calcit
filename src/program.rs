@@ -1180,6 +1180,7 @@ fn names_nominal_type_definition_within(ns: &str, name: &str, depth: usize) -> b
     Some((Arc::from(ns), Arc::from(name)))
   } else {
     lookup_refer_target_in_import(ns, name)
+      .or_else(|| has_def_code(crate::calcit::CORE_NS, name).then(|| (Arc::from(crate::calcit::CORE_NS), Arc::from(name))))
   };
   let Some((target_ns, def)) = target else { return false };
   let Some(code) = lookup_def_code(&target_ns, &def) else {

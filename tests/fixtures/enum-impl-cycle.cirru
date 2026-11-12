@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         '%make-plugin $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn %make-plugin (value) (%:: Plugin :item value)
+          :code $ quote $ defn %make-plugin (value) (Plugin :item value)
           :examples $ []
           :schema $ quote $ Fn Number (-> fix-command.reader/Plugin)
           :tests $ [] $ %{} 'TestEntry (:name |nominal-method)

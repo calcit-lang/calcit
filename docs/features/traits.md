@@ -253,14 +253,13 @@ do (; struct example)
 
 ### Static analysis boundary
 
-For preprocess to resolve impls and inline methods, keep struct/enum definitions and `impl-traits` at **top-level `ns/def`**. If they are created inside `defn`/`defmacro` bodies, preprocess only sees dynamic values and method dispatch cannot be specialized.
+For preprocess to resolve impls and inline methods, keep struct/enum definitions at **top-level `ns/def`** and attach their traits with `(:impls Trait …)`. Types built inside `defn`/`defmacro` bodies with `impl-traits` are only visible to preprocess within that body, and the WASM backend does not compile them.
 
-A public function that constructs a top-level alias may keep the underlying
-nominal type in its return schema—for example, return `Person0` while the body
-constructs `%{} Person`. Preprocess preserves `Person0`'s declared fields and
-adds `Person`'s method evidence when every returning body path proves the same
-attachment. Explicitly diverging paths such as `raise` do not erase that
-evidence; live branches with different attachments remain conservative.
+A function that builds a value with a locally attached type and returns it
+under the base type's schema, such as `Fn Number (-> Person0)`, hands callers
+only `Person0`: the attached impls are not part of the static type, so a
+caller's `:where` bound or method specialization cannot rely on them. Build the
+value in the same body that needs the evidence.
 
 When running `warn-dyn-method`, preprocess emits extra diagnostics for:
 
