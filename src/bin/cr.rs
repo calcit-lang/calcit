@@ -2049,10 +2049,12 @@ fn prove_entries(entries: &ProgramEntries, check_warnings: &RefCell<Vec<LocatedW
 /// The default proof preflight before a native run or JS codegen. A JS
 /// rejection also writes the build-error artifact, as a failed codegen does.
 fn run_entry_proof_preflight(entries: &ProgramEntries, js_emit_path: Option<&str>) -> Result<(), String> {
-  if !runner::preprocess::default_proof_enabled() {
-    return Ok(());
-  }
-  run_default_proof_preflight(entries).inspect_err(|error| {
+  let preflight = if runner::preprocess::default_proof_enabled() {
+    run_default_proof_preflight(entries)
+  } else {
+    run_blocking_advisory_preflight(entries)
+  };
+  preflight.inspect_err(|error| {
     if let Some(emit_path) = js_emit_path {
       let js_file_path = Path::new(emit_path).join(format!("{COMPILE_ERRORS_FILE}.mjs"));
       let written = fs::create_dir_all(emit_path).and_then(|_| {
@@ -2204,6 +2206,24 @@ fn run_default_proof_preflight(entries: &ProgramEntries) -> Result<(), String> {
     }
     // The ordinary entries are compiled now, so the check below only adds the audit.
     check_entries(entries, false, true)
+  })
+}
+
+/// With the proof audit off, the entries still have to clear the blocking
+/// advisories (bare broad types, undeclared effects under an `:error`
+/// policy, …) before a native run, as type errors do (#2723). Ordinary
+/// failures are left to the run, which reports them itself.
+fn run_blocking_advisory_preflight(entries: &ProgramEntries) -> Result<(), String> {
+  runner::preprocess::with_restored_compiled_program(|| {
+    let check_warnings = RefCell::new(vec![]);
+    let (init_result, _reload_result) = compile_entries(entries, &check_warnings);
+    let (blocking, rest) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+    // The run compiles again and queues the notes itself.
+    drop(rest);
+    if init_result.is_ok() && check_warnings.borrow().is_empty() {
+      report_broad_type_errors(blocking)?;
+    }
+    Ok(())
   })
 }
 
