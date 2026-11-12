@@ -11,14 +11,11 @@
     %{} 'FileEntry
       :defs $ {}
         'Label $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def Label
-            impl-traits
-              defstruct Label $ :value String
-              , LabelRenderImpl
+          :code $ quote $ defstruct Label (:value String) (:impls Renderable)
           :examples $ []
           :schema $ quote StructDef
         'LabelRenderImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl LabelRenderImpl Renderable (.render render-label) (.identity label-identity)
+          :code $ quote $ defimpl Label Renderable (.render render-label) (.identity label-identity)
           :examples $ []
           :schema $ quote Impl
         'Renderable $ %{} 'CodeEntry (:doc |)
@@ -67,14 +64,13 @@
                   trace $ ref $ [] |start
                   Override $ deftrait Override $ .assoc
                     Fn T Tag Number (-> String) (:generics T)
-                  implementation $ defimpl CustomAssoc Override $ .assoc
+                  Item0 $ defstruct Item $ :n Number
+                  implementation $ defimpl Item0 Override $ .assoc
                     fn (_self _key _value)
                       assert= ([] |start |callback) @trace
                       reset! trace $ append @trace |method
                       , |wrong
-                  Item $ impl-traits
-                    defstruct Item $ :n Number
-                    , implementation
+                  Item $ impl-traits Item0 implementation
                   change $ fn (data)
                     hint-fn $ Fn Dynamic $ -> Dynamic
                     update data :n $ fn (value)

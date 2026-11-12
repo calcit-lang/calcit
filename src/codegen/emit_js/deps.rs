@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitLocal};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitSyntax};
 use crate::program::{CompiledFileData, DefId};
 
 pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
@@ -14,6 +14,32 @@ pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
     Calcit::List(zs) => zs.iter().any(|z| contains_symbol(z, symbol)),
     _ => false,
   }
+}
+
+/// Whether `symbol` is read while the form itself is evaluated, outside the
+/// bodies of the functions it defines, which only read it when called.
+fn reads_symbol_eagerly(xs: &Calcit, symbol: &str) -> bool {
+  match xs {
+    Calcit::Fn { .. } => false,
+    Calcit::List(zs) if matches!(zs.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => false,
+    Calcit::List(zs) => zs.iter().any(|z| reads_symbol_eagerly(z, symbol)),
+    Calcit::Thunk(thunk) => reads_symbol_eagerly(thunk.get_code(), symbol),
+    _ => contains_symbol(xs, symbol),
+  }
+}
+
+fn reaches(from: &Arc<str>, to: &Arc<str>, graph: &HashMap<Arc<str>, HashSet<Arc<str>>>) -> bool {
+  let mut stack = vec![from.to_owned()];
+  let mut seen: HashSet<Arc<str>> = HashSet::new();
+  while let Some(name) = stack.pop() {
+    if &name == to {
+      return true;
+    }
+    if seen.insert(name.to_owned()) {
+      stack.extend(graph.get(&name).into_iter().flatten().cloned());
+    }
+  }
+  false
 }
 
 #[cfg(test)]
@@ -58,6 +84,22 @@ pub(super) fn sort_compiled_defs_by_deps(file: &CompiledFileData) -> Vec<Arc<str
       }
     }
     deps_graph.insert(name.to_owned(), deps_info);
+  }
+
+  // A definition and the impl attached to it can refer to each other: the type
+  // reads the impl while it is built, and the impl's methods read the type only
+  // when called. Drop such a lazy edge when the target eagerly needs this
+  // definition, so the impl is emitted before the type.
+  let eager_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = deps_graph
+    .iter()
+    .map(|(name, deps)| {
+      let form = &file.defs[name].codegen_form;
+      let eager = deps.iter().filter(|dep| reads_symbol_eagerly(form, dep)).cloned().collect();
+      (name.to_owned(), eager)
+    })
+    .collect();
+  for (name, deps) in deps_graph.iter_mut() {
+    deps.retain(|dep| eager_graph[name].contains(dep) || !reaches(dep, name, &eager_graph));
   }
 
   sort_names_by_graph(def_names, &deps_graph)

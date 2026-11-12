@@ -14,7 +14,7 @@ entry_for:
 ---
 # Polymorphism
 
-Calcit models polymorphism with traits. Traits define method capabilities and can be attached to struct/enum definitions with `impl-traits`.
+Calcit models polymorphism with traits. Traits define method capabilities. A top-level struct/enum lists the traits it implements with `(:impls Trait …)`, and each implementation is written as `defimpl Type Trait …`; inside a function body, `impl-traits` attaches local impl values.
 
 For capability-based dispatch via struct/enum-attached impls (used by struct/enum values created from them), see [Traits](traits.md).
 
@@ -23,8 +23,9 @@ Historically, the idea was inspired by JavaScript, and also [borrowed from a tri
 ## Quick Recipes
 
 - **Define Trait**: `deftrait Show $ .show $ quote $ Fn …`
-- **Implement**: `defimpl ShowImpl Show .show (fn (x) ...)`
-- **Attach**: `impl-traits MyStruct ShowImpl`
+- **Implement**: `defimpl MyStruct Show .show (fn (x) ...)`
+- **Attach (top level)**: `defstruct MyStruct (:name String) (:impls Show)`
+- **Attach (local, inside `let`)**: `impl-traits MyStruct0 show-impl`
 - **Call**: `instance .show` (receiver-first; `.show instance` remains compatible)
 
 ## Key terms
@@ -45,7 +46,8 @@ Use `Debug` for polymorphic helpers that must work with ordinary values. Use
 `Show` only when the API promises a curated presentation format.
 - **Trait impl**: An impl carrying the exact trait value as origin and providing its complete method set.
 - **Inherent method bag**: A compatibility impl without trait origin. It participates only in ordinary `.method` lookup and proves no trait bound.
-- **impl-traits**: Attaches one or more trait impl records to a struct/enum definition.
+- **`(:impls …)`**: The clause on a top-level `defstruct`/`defenum` listing its traits; the compiler finds each `defimpl Type Trait` in the type's or the trait's namespace and attaches it.
+- **impl-traits**: Attaches impl values to a struct/enum inside a function body. Writing it as a top-level definition fails with `E_LEGACY_IMPL_TRAITS`.
 - **assert-traits**: Adds a compile-time hint and performs a nominal runtime check for that exact trait origin.
 
 ## Define a trait
@@ -68,7 +70,7 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Person0 MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str "|foo " $ :name p
     Person $ impl-traits Person0 MyFooImpl
@@ -87,13 +89,13 @@ let
     EqTrait $ deftrait EqTrait $ .eq
       quote $ Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
-    ShowImpl $ defimpl ShowImpl ShowTrait $ .show
+    ShowImpl $ defimpl Person0 ShowTrait $ .show
       fn (p) (assert-type p Person0)
         str |Person: $ :name p
-    EqImpl $ defimpl EqImpl EqTrait $ .eq
+    EqImpl $ defimpl Person0 EqTrait $ .eq
       fn (p) (assert-type p Person0)
         str |eq: $ :name p
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Person0 MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str |foo: $ :name p
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
@@ -110,7 +112,7 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       quote $ Fn T (-> String) (:generics T)
     Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Person0 MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
@@ -121,7 +123,7 @@ let
 
 If the trait is missing or its selected impl is incomplete, `assert-traits` raises an error. Methods are not combined across unrelated impls: implementing `TraitA/.render` never satisfies `TraitB/.render`.
 
-`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. The impl name and trait must be symbols; the legacy tag form `defimpl :Impl :Trait ...` (an originless inherent method bag) is retired and fails with `E_LEGACY_DEFIMPL_TAG`, because it cannot satisfy `assert-traits`, `:where`, or `&trait-call`.
+`defimpl` validates concrete trait implementations when they are created: missing or extra methods and non-callable values are rejected, and native preprocessing compares typed method signatures when metadata is available. The first argument names the struct/enum being implemented and the trait must be a symbol; the old `defimpl ImplName Trait` form fails with `E_LEGACY_DEFIMPL_NAME`. The legacy tag form `defimpl :Impl :Trait ...` (an originless inherent method bag) is retired and fails with `E_LEGACY_DEFIMPL_TAG`, because it cannot satisfy `assert-traits`, `:where`, or `&trait-call`.
 
 ## Generic `:where` bounds on functions
 
@@ -339,7 +341,7 @@ do
 
 ## Notes
 
-- There is no inheritance. Behavior sharing is done via traits and `impl-traits`.
+- There is no inheritance. Behavior sharing is done via traits, `(:impls …)` and `defimpl`.
 - Method calls resolve through attached trait impls first, then built-in implementations.
 - `.method` remains intentionally name-based and follows impl precedence; use `&trait-call` when the trait identity itself is part of the contract.
 - Use `assert-traits` when a function relies on trait methods and you want early, clear failures.

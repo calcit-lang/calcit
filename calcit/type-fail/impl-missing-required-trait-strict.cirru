@@ -20,7 +20,7 @@
           :examples $ []
           :schema $ quote Trait
         'ChildImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl ChildImpl Child
+          :code $ quote $ defimpl Widget Child
             .greet $ fn (x) |ok
           :examples $ []
           :schema $ quote Impl
@@ -29,10 +29,7 @@
           :examples $ []
           :schema $ quote Trait
         'Widget $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def Widget
-            impl-traits
-              defstruct Widget $ :name String
-              , ChildImpl
+          :code $ quote $ defstruct Widget (:name String) (:impls Child)
           :examples $ []
           :schema $ quote StructDef
         'main! $ %{} 'CodeEntry (:doc |)

@@ -76,12 +76,12 @@
           :examples $ []
           :schema $ quote EnumDef
         'SliceReceiver $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct SliceReceiver (:n Number)
+          :code $ quote $ defstruct SliceReceiver (:n Number) (:impls Sliceable)
             :end $ Option Number
           :examples $ []
           :schema $ quote StructDef
         'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl SliceReceiverImpl Sliceable
+          :code $ quote $ defimpl SliceReceiver Sliceable
             .slice $ fn (self start end)
               hint-fn $ Fn SliceReceiver Number (Option Number) (-> SliceReceiver)
               struct-with self
@@ -90,7 +90,7 @@
           :examples $ []
           :schema $ quote Impl
         'SliceReceiverWithMethods $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def SliceReceiverWithMethods (impl-traits SliceReceiver SliceReceiverImpl)
+          :code $ quote $ def SliceReceiverWithMethods SliceReceiver
           :examples $ []
           :schema $ quote StructDef
         'Status $ %{} 'CodeEntry (:doc |)
@@ -1214,7 +1214,7 @@
             %{} 'TestEntry (:name |preserves-custom-empty-receiver)
               :code $ quote $ let
                   Marker $ defstruct EmptyMarker
-                  marker-type $ impl-traits Marker $ defimpl EmptyMarkerImpl Emptyable
+                  marker-type $ impl-traits Marker $ defimpl Marker Emptyable
                     .empty $ fn (value)
                       hint-fn $ Fn Marker $ -> Marker
                       , value

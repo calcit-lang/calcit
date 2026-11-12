@@ -23,11 +23,11 @@
           :examples $ []
           :schema $ quote StructDef
         'BirdImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl BirdImpl BirdTrait
+          :code $ quote $ defimpl Lagopus BirdTrait
             .show $ fn (self)
               println $ &struct:get self :name
             .rename $ fn (self name)
-              hint-fn $ Fn Lagopus0 String $ -> Dynamic
+              hint-fn $ Fn Lagopus String $ -> Dynamic
               .assoc self :name name
           :examples $ []
           :schema $ quote Impl
@@ -91,13 +91,9 @@
           :examples $ []
           :schema $ quote StructDef
         'Lagopus $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def Lagopus (impl-traits Lagopus0 BirdImpl)
+          :code $ quote $ defstruct Lagopus (:name String) (:impls BirdTrait)
           :examples $ []
           :schema $ quote Dynamic
-        'Lagopus0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Lagopus0 (:name String)
-          :examples $ []
-          :schema $ quote StructDef
         'MapLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MapLiteralStore
             {} $ :text String
@@ -702,9 +698,9 @@
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
-                content "|%{} :Lagopus0 (:name |La)"
+                content "|%{} :Lagopus (:name |La)"
                 data $ parse-cirru-edn content $ {}
-                  :Lagopus0 $ %{} Lagopus $ :name |
+                  :Lagopus $ %{} Lagopus $ :name |
               println |EDN: data
               assert= true $ any? (&struct:impls data)
                 fn (impl)

@@ -49,7 +49,7 @@ let
 
 ## 带 trait 的 nominal 构造与循环引用
 
-通过 `impl-traits` 为 Enum 附加方法后，构造器的返回 schema 和方法的 `self` schema
+通过 `(:impls …)`（函数内用 `impl-traits`）为 Enum 附加方法后，构造器的返回 schema 和方法的 `self` schema
 可以引用同一个完整 nominal 名称。方法中的 `match self` 可能在 impl 尚未完成预处理时
 请求 Enum 定义；编译器应从已有源码恢复变体和 payload 类型，而不是把构造结果退化为
 无名的 `Enum`。普通检查、`--check-only --keep-going` 和 `fix --workflow strict --verify`

@@ -36,7 +36,7 @@
           :examples $ []
           :schema $ quote $ Ref Number
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def MeasuredPoint (impl-traits PointValue PointScoreImpl)
+          :code $ quote $ defstruct MeasuredPoint (:value Number) (:impls PointScore)
           :examples $ []
           :schema $ quote StructDef
         'NominalPayload $ %{} 'CodeEntry (:doc |)
@@ -50,17 +50,13 @@
           :schema $ quote StructDef
         'PointScore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait PointScore
-            .score $ Fn test-wasm.main/PointValue $ -> Number
+            .score $ Fn test-wasm.main/MeasuredPoint $ -> Number
           :examples $ []
           :schema $ quote Trait
         'PointScoreImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl PointScoreImpl PointScore (.score point:score)
+          :code $ quote $ defimpl MeasuredPoint PointScore (.score point:score)
           :examples $ []
           :schema $ quote Impl
-        'PointValue $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct PointValue (:value Number)
-          :examples $ []
-          :schema $ quote StructDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
           :code $ quote $ defwasm-export add-two (a b) (&+ a b)
           :examples $ []
@@ -155,7 +151,7 @@
         'point:score $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score (self) (:value self)
           :examples $ []
-          :schema $ quote $ Fn PointValue (-> Number)
+          :schema $ quote $ Fn MeasuredPoint (-> Number)
         'point:score-through-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn point:score-through-helper (x) (point:generic-score x)
           :examples $ []
@@ -1290,7 +1286,7 @@
           :code $ quote $ defwasm-export test-qualified-symbol-helper (x)
             if
               &=
-                point:score $ %{} PointValue $ :value x
+                point:score $ %{} MeasuredPoint $ :value x
                 , x
               , 1 0
           :examples $ []

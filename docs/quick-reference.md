@@ -324,7 +324,7 @@ assert-type f $ Fn T (-> T) (:generics T)
 
 - `deftrait` - define a trait (method set + type signatures)
 - `impl-origin` - get an impl's trait origin as `Option<Trait>`
-- `defimpl` - define a nominal impl value for a trait: `defimpl ImplName Trait ...`
+- `defimpl` - implement a trait for a struct/enum: `defimpl Type Trait ...`; a top-level type lists its traits with `(:impls Trait …)`
 - `impl-traits` - attach impl records to a struct/enum definition (user impls: later impls override earlier ones for same method name)
 - `.method` - normal method dispatch
 - `&trait-call` - explicit trait method call: `&trait-call Trait :method receiver & args`

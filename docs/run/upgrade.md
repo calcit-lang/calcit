@@ -55,7 +55,21 @@ defstruct Counter (:value Number) (:impls Add)
 defimpl Counter Add (.add counter:add)
 ```
 
-实现只在类型所在的 ns 或 trait 所在的 ns 里查找。旧写法在本版本仍可使用；`let` 里的局部定义继续用 `impl-traits`。
+实现只在类型所在的 ns 或 trait 所在的 ns 里查找。`let` 里的局部定义继续用 `impl-traits`，其中的 `defimpl` 同样以类型开头：
+
+```cirru.no-check
+let
+    Point0 $ defstruct Point (:x Number)
+    impl $ defimpl Point0 Show (.show point-show)
+    Point $ impl-traits Point0 impl
+  Point :x 1
+```
+
+旧写法在 0.43.0 起直接报错，迁移须在升级前完成：
+
+- `defimpl ImplName Trait …` 的第一个参数不是 struct/enum 时，报 `E_LEGACY_DEFIMPL_NAME`。改成 `defimpl 类型 Trait …`；顶层的类型再在定义里写 `(:impls Trait)`。
+- 顶层定义写成 `def X (impl-traits …)` 或 `impl-traits` 作为定义体时，报 `E_LEGACY_IMPL_TRAITS`。把 trait 列进类型的 `(:impls …)`，删掉这个定义，引用 `X` 的地方改为引用类型本身。
+- 同一个基类型挂不同实现的多个顶层别名（例如 `def A (impl-traits Base ImplA)` 与 `def B (impl-traits Base ImplB)`）没有直接对应：要么各自定义成独立的类型，要么放进函数里用 `impl-traits`。
 
 ## 0.43.0 类型别名用 `deftype` 声明（#2725）
 
@@ -3272,7 +3286,8 @@ defimpl :RenderImpl :Render $ .render
 ```cirru
 let
     Render $ deftrait Render (.render :fn)
-    RenderImpl $ defimpl RenderImpl Render
+    Widget $ defstruct Widget (:name String)
+    RenderImpl $ defimpl Widget Render
       .render $ fn (x) str x
   , RenderImpl
 ```

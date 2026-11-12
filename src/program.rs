@@ -1,5 +1,5 @@
 mod entry_book;
-mod impl_attach;
+pub(crate) mod impl_attach;
 
 #[cfg(test)]
 mod tests;
@@ -1161,6 +1161,42 @@ pub fn list_source_def_names(ns: &str) -> Vec<Arc<str>> {
   match program_code.get(ns) {
     Some(file) => file.defs.keys().cloned().collect(),
     None => vec![],
+  }
+}
+
+/// Whether `name`, written in `ns`, names a top-level struct or enum.
+pub fn names_nominal_type_definition(ns: &str, name: &str) -> bool {
+  names_nominal_type_definition_within(ns, name, 8)
+}
+
+fn names_nominal_type_definition_within(ns: &str, name: &str, depth: usize) -> bool {
+  if depth == 0 {
+    return false;
+  }
+  let target = if let Some((alias, def)) = name.split_once('/') {
+    let target_ns = lookup_ns_target_in_import(ns, alias).unwrap_or_else(|| Arc::from(alias));
+    Some((target_ns, Arc::from(def)))
+  } else if has_def_code(ns, name) {
+    Some((Arc::from(ns), Arc::from(name)))
+  } else {
+    lookup_refer_target_in_import(ns, name)
+  };
+  let Some((target_ns, def)) = target else { return false };
+  let Some(code) = lookup_def_code(&target_ns, &def) else {
+    return false;
+  };
+  if impl_attach::code_defines_nominal_type(&code) {
+    return true;
+  }
+  // `def PointAlias Point` names the same definition.
+  match &code {
+    Calcit::List(items) if items.len() == 3 && matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if &**sym == "def") => {
+      match &items[2] {
+        Calcit::Symbol { sym, .. } => names_nominal_type_definition_within(&target_ns, sym, depth - 1),
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 

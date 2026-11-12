@@ -304,3 +304,25 @@ pub(crate) fn generated_attachments() -> HashMap<DefKey, Calcit> {
     .map(|(key, (_, generated))| (key.to_owned(), generated.to_owned()))
     .collect()
 }
+
+/// Whether the code, as written or attached, defines a struct or enum.
+pub(crate) fn code_defines_nominal_type(code: &Calcit) -> bool {
+  let Calcit::List(items) = code else { return false };
+  match items.first().and_then(symbol_name) {
+    Some("defstruct" | "defenum") => true,
+    Some("def") => items.get(2).is_some_and(code_defines_nominal_type),
+    Some("impl-traits" | GENERATED_ATTACH_HEAD) => items.get(1).is_some_and(code_defines_nominal_type),
+    _ => false,
+  }
+}
+
+/// Whether the code is attachment written by hand at the top of a definition,
+/// `impl-traits …` or `def X (impl-traits …)`.
+pub(crate) fn code_is_top_level_impl_traits(code: &Calcit) -> bool {
+  let Calcit::List(items) = code else { return false };
+  match items.first().and_then(symbol_name) {
+    Some("impl-traits") => true,
+    Some("def") => items.get(2).is_some_and(code_is_top_level_impl_traits),
+    _ => false,
+  }
+}

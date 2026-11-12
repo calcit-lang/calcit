@@ -26,7 +26,7 @@ Keep two concepts separate:
 `Emptyable` 描述 `.empty` 能力，其方法输入和返回使用同一个接收者泛型 `Self`。
 Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用相同合同。
 泛型函数通过 `:where $ {} ('T 'Emptyable)` 取得能力后，调用 `.empty` 仍得到原来的 `T`，不会抹掉 List 成员或 Map 的 key/value 类型。
-自定义 Struct/Enum 使用普通的 `defimpl ImplName Emptyable` 与 `impl-traits` 提供实现；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
+自定义 Struct/Enum 在定义上写 `(:impls Emptyable)`，再用 `defimpl 类型 Emptyable` 提供实现（函数内的局部类型用 `impl-traits` 挂载）；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
 
 ## Quick Recipes
 
@@ -65,14 +65,14 @@ deftrait Shape
 
 ## Implement a trait
 
-Use `defimpl` to create a nominal impl value for a trait.
+Use `defimpl Type Trait …` to implement a trait for a struct or enum. A top-level type lists its traits with `(:impls …)` and is attached automatically (see “顶层定义” below); inside a function, as here, `defimpl` names the local type and returns an impl value that `impl-traits` attaches.
 
 ```cirru
 let
     MyFoo $ deftrait MyFoo $ .foo
       Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Person0 MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
@@ -82,14 +82,15 @@ let
 
 ### Impl-related syntax (cheatsheet)
 
-**1) `defimpl` argument order (breaking change)**
+**1) `defimpl` argument order**
 
 ```
-defimpl ImplName Trait ...
+defimpl Type Trait ...
 ```
 
-- First argument is the **impl value name**.
+- First argument is the **struct or enum it implements**: at the top level a struct/enum definition, inside a function a local bound to one. The retired `defimpl ImplName Trait` form fails with `E_LEGACY_DEFIMPL_NAME`.
 - 第二个参数必须是具体的 **trait 值**（symbol）。旧 tag method-bag 形式已退役，不能作为用户态 trait 实现。
+- At the top level the type lists the trait with `(:impls Trait …)` and the implementation is attached automatically (see below). Inside a function the result is an impl value attached with `impl-traits`.
 
 Examples:
 
@@ -98,7 +99,7 @@ let
     PersonA0 $ defstruct PersonA $ :name String
     MyFooA $ deftrait MyFooA $ .foo
       Fn Self (-> String)
-    MyFooImplA $ defimpl MyFooImplA MyFooA $ .foo
+    MyFooImplA $ defimpl PersonA0 MyFooA $ .foo
       fn (p) (assert-type p PersonA0)
         str-spaced |foo $ :name p
     PersonA $ impl-traits PersonA0 MyFooImplA
@@ -115,7 +116,7 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
-    ImplB $ defimpl ImplB MyFoo $ :: .foo
+    ImplB $ defimpl Person0 MyFoo $ :: .foo
       fn (p) (assert-type p Person0)
         str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
@@ -125,12 +126,13 @@ let
 
 **3) Nominal trait arguments are required**
 
-`defimpl` requires a symbol for both the impl name and the trait. Passing a tag — the old originless/inherent method bag form `defimpl :MyMarkerImpl :MyMarker ...` — is retired and fails with `E_LEGACY_DEFIMPL_TAG`. It never implemented a nominal trait and could not satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. Define a real trait and pass its symbol:
+`defimpl` requires a symbol for both the type and the trait. Passing a tag — the old originless/inherent method bag form `defimpl :MyMarkerImpl :MyMarker ...` — is retired and fails with `E_LEGACY_DEFIMPL_TAG`. It never implemented a nominal trait and could not satisfy `assert-traits`, a generic `:where` bound, or `&trait-call`. Define a real trait and pass its symbol:
 
 ```cirru
 let
     MyMarker $ deftrait MyMarker (.dummy 'Fn)
-    MyMarkerImpl $ defimpl MyMarkerImpl MyMarker
+    Widget $ defstruct Widget (:name String)
+    MyMarkerImpl $ defimpl Widget MyMarker
       .dummy $ fn (_x) nil
   , MyMarkerImpl
 ```
@@ -191,7 +193,7 @@ Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，�
 
 ## Attach impls to struct/enum definitions
 
-`impl-traits` attaches impl records to a **struct/enum type**. Strict checking rejects a call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
+`impl-traits` attaches impl records to a **struct/enum type defined inside a function** (`let`); a top-level definition uses `(:impls …)` instead, and writing `impl-traits` there fails with `E_LEGACY_IMPL_TRAITS`. Strict checking rejects a call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
 
 Constraints:
 
@@ -205,11 +207,11 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       Fn Self (-> String)
     StructDef0 $ defstruct StructDef $ :name String
-    ImplA $ defimpl ImplA MyFoo $ .foo
+    ImplA $ defimpl StructDef0 MyFoo $ .foo
       fn (p) (assert-type p StructDef0)
         str |A: $ :name p
     MyBar $ deftrait MyBar $ .bar 'Fn
-    ImplB $ defimpl ImplB MyBar $ .bar
+    ImplB $ defimpl StructDef0 MyBar $ .bar
       fn (p) (assert-type p StructDef0)
         str |B: $ :name p
     StructDef $ impl-traits StructDef0 ImplA ImplB
@@ -228,7 +230,7 @@ do (; struct example)
       MyFoo $ deftrait MyFoo
         .foo $ Fn Self (-> String)
       Person0 $ defstruct Person (:name String)
-      MyFooImpl $ defimpl MyFooImpl MyFoo
+      MyFooImpl $ defimpl Person0 MyFoo
         .foo $ fn (p) (assert-type p Person0)
           str-spaced |foo $ :name p
       Person $ impl-traits Person0 MyFooImpl
@@ -238,12 +240,12 @@ do (; struct example)
   let
       ResultTrait $ deftrait ResultTrait
         .describe $ Fn Self (-> String)
-      ResultImpl $ defimpl ResultImpl ResultTrait
+      Result0 $ defenum Result0 (:ok String) (:err String)
+      ResultImpl $ defimpl Result0 ResultTrait
         .describe $ fn (x)
           match x
             (:ok v) (str |ok: v)
             (:err v) (str |err: v)
-      Result0 $ defenum Result0 (:ok String) (:err String)
       MyResult $ impl-traits Result0 ResultImpl
       r $ %:: MyResult :ok |done
     r .describe
@@ -273,7 +275,7 @@ Method checking, callback signature inference, static lowering, and these diagno
 
 Key trait docs examples are mirrored by executable smoke cases in `calcit/test-doc-smoke.cirru`, including:
 
-- `defimpl` argument order (`ImplName` then `Trait`)
+- `defimpl` argument order (`Type` then `Trait`)
 - `assert-traits` local-first requirement
 - `impl-traits` only accepting struct/enum definitions
 
@@ -303,11 +305,11 @@ let
       .zap $ Fn Self (-> String)
     MyZapB $ deftrait MyZapB
       .zap $ Fn Self (-> String)
-    MyZapAImpl $ defimpl MyZapAImpl MyZapA
-      .zap $ fn (_x) |zapA
-    MyZapBImpl $ defimpl MyZapBImpl MyZapB
-      .zap $ fn (_x) |zapB
     Person0 $ defstruct Person (:name String)
+    MyZapAImpl $ defimpl Person0 MyZapA
+      .zap $ fn (_x) |zapA
+    MyZapBImpl $ defimpl Person0 MyZapB
+      .zap $ fn (_x) |zapB
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ Person :name |Alice
   ; strict checking rejects this ambiguous call
@@ -339,7 +341,7 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       Fn Self (-> String)
     Shape0 $ defenum Shape $ :point Number Number
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Shape0 MyFoo $ .foo
       fn (t)
         str |shape: $ &enum:nth t 0
     Shape $ impl-traits Shape0 MyFooImpl
@@ -387,7 +389,7 @@ let
     MyFoo $ deftrait MyFoo $ .foo
       Fn Self (-> String)
     Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl MyFooImpl MyFoo $ .foo
+    MyFooImpl $ defimpl Person0 MyFoo $ .foo
       fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
