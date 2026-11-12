@@ -15,7 +15,7 @@
           :examples $ []
           :schema $ quote StructDef
         'Duo $ %{} 'CodeEntry (:doc "|Generic enum with 2 type variables")
-          :code $ quote $ defenum Duo (T U) (:pair T U) (:swapped U T)
+          :code $ quote $ defenum Duo (:generics T U) (:pair T U) (:swapped U T)
           :examples $ []
           :schema $ quote EnumDef
         'MapLiteralChoice $ %{} 'CodeEntry (:doc |)
@@ -28,7 +28,7 @@
               (:some value) (assert= |ok value)
               (:none) (raise |expected-some)
         'Maybe1 $ %{} 'CodeEntry (:doc "|Generic enum with 1 type variable")
-          :code $ quote $ defenum Maybe1 (T) (:some T) (:none)
+          :code $ quote $ defenum Maybe1 (:generics T) (:some T) (:none)
           :examples $ []
           :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)
@@ -50,14 +50,14 @@
           :examples $ []
           :schema $ quote Trait
         'ShownBox $ %{} 'CodeEntry (:doc "|Generic struct with where-bound on payload type")
-          :code $ quote $ defstruct ShownBox (T)
-            {} $ T Debug
+          :code $ quote $ defstruct ShownBox (:generics T)
+            :where $ T Debug
             :value T
           :examples $ []
           :schema $ quote StructDef
         'ShownMaybe $ %{} 'CodeEntry (:doc "|Generic enum with where-bound on payload type")
-          :code $ quote $ defenum ShownMaybe (T)
-            {} $ T Debug
+          :code $ quote $ defenum ShownMaybe (:generics T)
+            :where $ T Debug
             :some T
             :none
           :examples $ []
@@ -69,7 +69,7 @@
           :schema $ quote $ Fn Result0 (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (println "|All tests passed!")
+            do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (test-unreachable) (println "|All tests passed!")
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'read-caller-payload $ %{} 'CodeEntry (:doc |)
@@ -172,6 +172,14 @@
                 [] (recursive/ContentNode :text |a) (recursive/ContentNode :text |b)
               assert= | $ render-short-recursive $ recursive/ContentNode :list ([])
             :tags $ #{} :enum :nominal-namespace :unit
+        'result-label $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn result-label (r)
+            match r
+              (:ok) |ok
+              (:err msg) msg
+              _ $ unreachable! "|Result0 only has :ok and :err"
+          :examples $ []
+          :schema $ quote $ Fn Result0 (-> String)
         'takes-result $ %{} 'CodeEntry (:doc "|Function accepting Result0 enum type")
           :code $ quote $ defn takes-result (r)
             match r
@@ -316,6 +324,22 @@
               println "|✓ Match validation passed"
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'test-unreachable $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-unreachable ()
+            assert= |ok $ result-label $ %:: Result0 :ok
+            assert= |boom $ result-label $ %:: Result0 :err |boom
+            let
+                n 3
+                doubled $ if (> n 0) (* n 2) (unreachable!)
+              assert= 7 $ &+ doubled 1
+            assert= "|unreachable! reached in test-enum.main/test-unreachable: index 3" $ try
+              unreachable! $ str "|index " 3
+              fn (error) (str error)
+            assert= "|unreachable! reached in test-enum.main/test-unreachable" $ try (unreachable!)
+              fn (error) (str error)
+            println "|✓ unreachable! passed"
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
         'test-where-bound-definitions $ %{} 'CodeEntry
           :doc "|Exercise defstruct/defenum where-map syntax on generic data types"
           :code $ quote $ defn test-where-bound-definitions ()
@@ -364,7 +388,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'Envelope $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum Envelope (T) (:item T)
+          :code $ quote $ defenum Envelope (:generics T) (:item T)
           :examples $ []
           :schema $ quote EnumDef
         'Payload $ %{} 'CodeEntry (:doc |)

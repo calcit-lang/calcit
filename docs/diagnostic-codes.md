@@ -198,7 +198,7 @@
 | `E_PREFLIGHT_PROCS_VERSION` | `src/bin/verification.rs` |
 | `E_PREPROCESS` | `src/bin/cli_handlers/query.rs` |
 | `E_PROC_ARG_TYPE_MISMATCH` | `src/runner/preprocess/type_checking.rs` |
-| `E_PROC_ARITY` | `src/runner/preprocess/type_checking.rs` |
+| `E_PROC_ARITY` | `src/runner/preprocess/mod.rs`<br>`src/runner/preprocess/type_checking.rs` |
 | `E_PUBLIC_CHECK_DEPENDENCY_SCOPE` | `src/public_api_check.rs` |
 | `E_PUBLIC_CHECK_EMPTY_NAMESPACE` | `src/public_api_check.rs` |
 | `E_PUBLIC_CHECK_EMPTY_SCOPE` | `src/public_api_check.rs` |

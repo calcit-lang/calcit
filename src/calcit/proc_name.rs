@@ -108,6 +108,11 @@ pub enum CalcitProc {
   Raise,
   #[strum(serialize = "todo!")]
   Todo,
+  #[strum(serialize = "unreachable!")]
+  Unreachable,
+  /// Lowered `unreachable!`: one String message that already names the site.
+  #[strum(serialize = "&unreachable!")]
+  NativeUnreachable,
   #[strum(serialize = "quit!")]
   Quit,
   #[strum(serialize = "&get-env")]
@@ -1449,6 +1454,12 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],
       }),
+      Unreachable | NativeUnreachable => Some(ProcTypeSignature {
+        // `unreachable!` never returns, so its result is the bottom type and
+        // does not take part in branch type merging.
+        return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),
+        arg_types: vec![some_tag("string")],
+      }),
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("number")],
@@ -1582,7 +1593,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | NativeTraitNew => 1,
+      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | Unreachable | NativeTraitNew => 1,
       _ => 0,
     }
   }
@@ -1672,6 +1683,7 @@ mod tests {
     for (proc, expected) in [
       (CalcitProc::GenerateId, ProcArity { min: 0, max: Some(2) }),
       (CalcitProc::Todo, ProcArity { min: 0, max: Some(1) }),
+      (CalcitProc::Unreachable, ProcArity { min: 0, max: Some(1) }),
       (CalcitProc::Range, ProcArity { min: 1, max: Some(3) }),
       (CalcitProc::NativeListRange, ProcArity { min: 1, max: Some(3) }),
       (CalcitProc::NativeInspectMethods, ProcArity { min: 1, max: Some(2) }),
