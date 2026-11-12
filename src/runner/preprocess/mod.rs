@@ -41,11 +41,10 @@ use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
-    CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef,
-    CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo,
-    LocatedWarning, MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType,
-    SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
-    validate_definition_schema_shape,
+    CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, MacroExpansionType,
+    MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind, brief_type_of_value,
+    pop_type_slot_override, push_type_slot_override, register_type_slot, validate_definition_schema_shape,
   },
   call_stack::{CallStackList, StackKind, find_macro_location_in_def, find_preferred_macro_location},
   codegen, program, runner,
@@ -111,14 +110,12 @@ type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Ar
 
 struct ExpressionContextScope {
   previous_fn: Option<ExpectedFunctionContext>,
-  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
 }
 
 impl ExpressionContextScope {
-  fn enter(context: Option<ExpectedFunctionContext>, structure: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>) -> Self {
+  fn enter(context: Option<ExpectedFunctionContext>) -> Self {
     Self {
       previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
-      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(structure)),
     }
   }
 }
@@ -126,25 +123,6 @@ impl ExpressionContextScope {
 impl Drop for ExpressionContextScope {
   fn drop(&mut self) {
     EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
-    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
-  }
-}
-
-struct OptionPayloadScope {
-  previous: Option<Arc<CalcitTypeAnnotation>>,
-}
-
-impl OptionPayloadScope {
-  fn enter(payload: Option<Arc<CalcitTypeAnnotation>>) -> Self {
-    Self {
-      previous: EXPECTED_OPTION_PAYLOAD.with(|cell| cell.replace(payload)),
-    }
-  }
-}
-
-impl Drop for OptionPayloadScope {
-  fn drop(&mut self) {
-    EXPECTED_OPTION_PAYLOAD.with(|cell| *cell.borrow_mut() = self.previous.take());
   }
 }
 
@@ -175,7 +153,7 @@ impl DefinitionContextScope {
     };
     Self {
       _generated: OutsideGeneratedSpecialization::enter(),
-      _expression: ExpressionContextScope::enter(context, None),
+      _expression: ExpressionContextScope::enter(context),
       _tail: tail_context::SuspendScope::enter(),
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
@@ -359,7 +337,6 @@ fn preprocess_argument_with_offered_return(
   // An `Option (Fn …)` slot also takes a plain lambda (wrapped later by the
   // Option field lifting) or `Some $ fn …`; both see the payload contract (D4).
   let option_payload = expected.and_then(|annotation| annotation.option_payload());
-  let _option = OptionPayloadScope::enter(option_payload.clone());
   let _context = ExpressionContextScope::enter(
     expected
       .and_then(|annotation| annotation.resolve_to_fn())
@@ -368,35 +345,19 @@ fn preprocess_argument_with_offered_return(
         offered_return,
         ..callback_parameter_context(signature, member_inputs, callee_owned_generics)
       }),
-    expected.and_then(|annotation| {
-      annotation
-        .resolve_to_struct_with_ref()
-        .map(|(definition, _)| (definition, annotation.clone()))
-    }),
   );
   // Forms nested in this position (`if` branches, `&let` bodies, literal
   // members) see the expected type too. A direct tag is left to the caller,
   // which names the position; a literal that was not handled above must not
   // re-enter this function.
-  let _expected = tail_context::TailScope::offer(
-    expected
-      .filter(|annotation| !literal_candidate && !matches!(expr, Calcit::Tag(_)) && !annotation.contains_type_var())
-      .map(|annotation| tail_context::Expected {
-        annotation: annotation.clone(),
-        position: "value in a typed position",
-        location: None,
-      }),
-  );
+  let _expected = tail_context::TailScope::offer(expected.filter(|_| !literal_candidate && !matches!(expr, Calcit::Tag(_))).map(
+    |annotation| tail_context::Expected {
+      annotation: annotation.clone(),
+      position: "value in a typed position",
+      location: None,
+    },
+  ));
   preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
-}
-
-/// Whether a call head spells the `Option` constructor: `Some` or `Option`.
-fn is_option_constructor_head(head: Option<&Calcit>, scope_defs: &HashSet<Arc<str>>) -> bool {
-  match head {
-    Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "Some" | "Option" | "calcit.core/Option") && !scope_defs.contains(sym),
-    Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option",
-    _ => false,
-  }
 }
 
 /// Forms typed by the position they are written in (#2733): a bare tag where
@@ -1093,13 +1054,6 @@ thread_local! {
   /// function type to inject arg types into the fn body's scope_types.
   /// This enables type checking for callback parameters (e.g., `d!` in `:on-click $ fn (e d!) ...`).
   static EXPECTED_FN_TYPE: RefCell<Option<ExpectedFunctionContext>> = const { RefCell::new(None) };
-  /// When set, the hashmap literal preprocessor uses this struct definition to look up
-  /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
-  /// This enables type propagation through struct literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
-  static EXPECTED_STRUCT_TYPE: RefCell<Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>> = const { RefCell::new(None) };
-  /// Payload of an expected `Option T`, consumed by the next call so that
-  /// `Some x` / `Option :some x` checks `x` against `T` (D4).
-  static EXPECTED_OPTION_PAYLOAD: RefCell<Option<Arc<CalcitTypeAnnotation>>> = const { RefCell::new(None) };
   /// Lexical capability permissions of the current function being preprocessed.
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
@@ -2433,7 +2387,11 @@ fn preprocess_with_type_slot_block(
   // Preprocess body expressions under the override
   let mut preprocessed_body: Vec<Calcit> = Vec::with_capacity(body_args.len());
   let mut preprocess_err: Option<CalcitErr> = None;
-  for expr in body_args.iter() {
+  let last_index = body_args.len() - 1;
+  for (index, expr) in body_args.iter().enumerate() {
+    // The last body expression is the value of the whole form, so the type
+    // offered to `with-type-slot` reaches it one depth level down (#2733).
+    let _tail = (index == last_index).then(tail_context::TailScope::forward);
     match preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack) {
       Ok(form) => {
         condition_evidence::establish_normal_exit(&form, scope_types);
@@ -3815,13 +3773,6 @@ pub fn preprocess_expr(
   {
     return Ok(processed);
   }
-  // `Some x` written where an `Option T` is expected builds its payload as `T`.
-  // Only the constructor form itself opens the payload context: any other
-  // form would hand it to the first call nested inside, such as a condition.
-  let _option_payload = (matches!(expr, Calcit::List(items) if is_option_constructor_head(items.first(), scope_defs))
-    && tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && annotation.option_payload().is_some())
-    && EXPECTED_OPTION_PAYLOAD.with(|cell| cell.borrow().is_none()))
-  .then(|| OptionPayloadScope::enter(tail_context::peek_for_current().and_then(|expected| expected.annotation.option_payload())));
   let _host_sink_frame = HostSinkFrame::enter(expr, scope_defs);
   note_local_assignment(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
@@ -4238,6 +4189,8 @@ fn preprocess_expr_unguarded(
           && program::has_def_code(calcit::CORE_NS, "Some")
         {
           let call = core_option_shorthand_call("some", &[xs[1].clone()], file_ns, check_warnings, call_stack)?;
+          // The lowered constructor stands in the shorthand's position.
+          let _tail = tail_context::TailScope::forward();
           preprocess_expr(&call, scope_defs, scope_types, file_ns, check_warnings, call_stack)?
         } else {
           into_executable_call(preprocess_list_call(
@@ -4473,16 +4426,13 @@ fn preprocess_immediate_call_context(
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
       });
-      let _context = ExpressionContextScope::enter(
-        Some(ExpectedFunctionContext {
-          signature,
-          member_inputs: false,
-          immediate: true,
-          callee_owned_generics: Arc::new(vec![]),
-          offered_return: None,
-        }),
-        None,
-      );
+      let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+        signature,
+        member_inputs: false,
+        immediate: true,
+        callee_owned_generics: Arc::new(vec![]),
+        offered_return: None,
+      }));
       let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
     }
@@ -4995,6 +4945,8 @@ fn preprocess_list_call(
   if let Some(rewritten) =
     try_rewrite_struct_enum_constructor_head_call(&head_form, &args, scope_types, file_ns, &def_name, check_warnings, call_stack)?
   {
+    // The lowered constructor stands in the sugar's position.
+    let _tail = tail_context::TailScope::forward();
     return preprocess_expr(&rewritten, scope_defs, scope_types, file_ns, check_warnings, call_stack);
   }
 
@@ -5644,14 +5596,22 @@ fn preprocess_list_call(
         let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
         let mut has_spread = false;
 
-        // Consume the immediate nominal context before entering field expressions.
-        let struct_hint = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap | CalcitProc::NativeStruct)) {
-          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().take())
-        } else {
-          None
-        };
-        // Any call consumes the Option context; only the constructor uses it.
-        let option_payload_hint = EXPECTED_OPTION_PAYLOAD.with(|cell| cell.borrow_mut().take());
+        // The type this call's own position expects names the Struct whose
+        // fields a `{}` / struct literal fills, and the payload of an
+        // `Option T` that `Some x` / `Option :some x` builds (D4, #2733).
+        let offered = tail_context::peek_for_current().map(|expected| expected.annotation);
+        let struct_hint = offered
+          .as_ref()
+          .filter(|_| matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap | CalcitProc::NativeStruct)))
+          .and_then(|annotation| {
+            annotation
+              .resolve_to_struct_with_ref()
+              .map(|(definition, _)| (definition, annotation.clone()))
+          });
+        let option_payload_hint = offered
+          .as_ref()
+          .filter(|_| matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew)))
+          .and_then(|annotation| annotation.option_payload());
 
         if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap))
           && let Some((ref struct_def, ref annotation)) = struct_hint
@@ -6932,13 +6892,6 @@ fn preprocess_known_function_call(
       // Nominal names in the callee schema resolve in its declaration namespace, not the caller's (#2027).
       resolve_namespace_type_refs_for_body(expected, &info.def_ns)
     });
-    // Set expected struct type hint if this arg position has a struct-typed param
-    // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
-    let expected_struct = expected_type.as_ref().and_then(|annotation| {
-      annotation
-        .resolve_to_struct_with_ref()
-        .map(|(definition, _)| (definition, annotation.clone()))
-    });
     let mut callback_output_binders = if refreshed_checked_contract.is_none() {
       info.generics.as_ref().clone()
     } else {
@@ -6964,10 +6917,6 @@ fn preprocess_known_function_call(
           }
         }
       }
-    }
-
-    if let Some(struct_def) = expected_struct {
-      EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
     }
 
     HostSinkFrame::set_current_arg_host_nullish(!has_spread && expected_type.as_ref().is_some_and(is_js_nullish_param));
@@ -7027,7 +6976,6 @@ fn preprocess_known_function_call(
 
     // Always clear the hints after preprocessing, even on error
     EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
-    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
     HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
@@ -7046,7 +6994,6 @@ fn preprocess_known_function_call(
           call_stack,
         );
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
-        EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
         result?
       }
       None => form,
@@ -16535,16 +16482,13 @@ fn recheck_let_lambda_call(
     fn_kind: SchemaKind::Fn,
     features: Arc::new(HashSet::new()),
   });
-  let _context = ExpressionContextScope::enter(
-    Some(ExpectedFunctionContext {
-      signature,
-      member_inputs: false,
-      immediate: true,
-      callee_owned_generics: Arc::new(vec![]),
-      offered_return: None,
-    }),
-    None,
-  );
+  let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+    signature,
+    member_inputs: false,
+    immediate: true,
+    callee_owned_generics: Arc::new(vec![]),
+    offered_return: None,
+  }));
   let called_at = call_location
     .cloned()
     .or_else(|| args.iter().find_map(Calcit::get_location))
@@ -16715,7 +16659,7 @@ fn compile_let_lambda(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Arc<CalcitTypeAnnotation>), CalcitErr> {
-  let _context = ExpressionContextScope::enter(context, None);
+  let _context = ExpressionContextScope::enter(context);
   let _tail = tail_context::SuspendScope::enter();
   let _features = FunctionFeaturesScope {
     previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(features)),
@@ -19450,7 +19394,6 @@ mod tests {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let _owned = DefinitionContextScope::enter("tests.context", "owned", &Calcit::Nil);
       assert!(EXPECTED_FN_TYPE.with(|cell| cell.borrow().is_none()));
-      assert!(EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow().is_none()));
       assert!(CURRENT_FN_FEATURES.with(|cell| cell.borrow().is_none()));
       assert!(HOST_NULLISH_RETURN_FORMS.with(|cell| cell.borrow().is_empty()));
       panic!("exercise owned-context unwinding");
@@ -20291,16 +20234,13 @@ mod tests {
       rest_type: None,
       features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
     });
-    let _context = ExpressionContextScope::enter(
-      Some(ExpectedFunctionContext {
-        signature,
-        member_inputs: true,
-        immediate: true,
-        callee_owned_generics: Arc::new(vec![]),
-        offered_return: None,
-      }),
-      None,
-    );
+    let _context = ExpressionContextScope::enter(Some(ExpectedFunctionContext {
+      signature,
+      member_inputs: true,
+      immediate: true,
+      callee_owned_generics: Arc::new(vec![]),
+      offered_return: None,
+    }));
     let mut scope = ScopeTypes::new();
     scope.insert(Arc::from("captured"), calcit::DYNAMIC_TYPE.clone());
     scope.refine(Arc::from("captured"), Arc::new(CalcitTypeAnnotation::Number));
