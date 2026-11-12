@@ -554,7 +554,9 @@
         'branch-open-direct-public $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-open-direct-public (flag)
             let
-                value $ if flag (explicit-trait-false 1) (explicit-trait-true 1)
+                FalseItem $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
+                TrueItem $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
+                value $ if flag (FalseItem :item 1) (TrueItem :item 1)
               contains? value 0
           :examples $ []
           :schema $ quote $ Fn Bool (-> Bool)
@@ -755,12 +757,15 @@
           :schema $ quote $ Fn Number (-> OpenContainsBase)
         'loop-switch $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-switch (index)
-            loop
-                value $ explicit-trait-false 1
-                n index
-              if (> n 0)
-                recur (explicit-trait-true 1) (- n 1)
-                contains? value 0
+            let
+                FalseItem $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
+                TrueItem $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
+              loop
+                  value $ FalseItem :item 1
+                  n index
+                if (> n 0)
+                  recur (TrueItem :item 1) (- n 1)
+                  contains? value 0
           :examples $ []
           :schema $ quote $ Fn Number (-> Bool)
           :tests $ []
@@ -871,10 +876,10 @@
               assert= |zapB actual
               assert= :string $ type-of actual
             :tags $ #{} :result-contract-2386 :trait
-        'open-contains-false $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying OpenContainsFalseImpl.")
+        'open-contains-false $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsFalseImpl last.")
           :code $ quote $ defn open-contains-false (item)
             let
-                T $ impl-traits OpenContainsBase OpenContainsFalseImpl
+                T $ impl-traits OpenContainsBase OpenContainsTrueImpl OpenContainsFalseImpl
               T :item item
           :examples $ []
           :schema $ quote $ Fn Number (-> OpenContainsBase)
@@ -882,10 +887,10 @@
           :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
           :examples $ []
           :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'open-contains-true-value $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying OpenContainsTrueImpl.")
+        'open-contains-true-value $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsTrueImpl last.")
           :code $ quote $ defn open-contains-true-value (item)
             let
-                T $ impl-traits OpenContainsBase OpenContainsTrueImpl
+                T $ impl-traits OpenContainsBase OpenContainsFalseImpl OpenContainsTrueImpl
               T :item item
           :examples $ []
           :schema $ quote $ Fn Number (-> OpenContainsBase)
