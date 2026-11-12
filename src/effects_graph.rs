@@ -127,6 +127,7 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
   (CalcitProc::Unreachable, &["control"]),
+  (CalcitProc::NativeUnreachable, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
   (CalcitProc::ReadFile, &["file", "io"]),
   (CalcitProc::ReadDir, &["file", "io"]),

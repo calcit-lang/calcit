@@ -2694,10 +2694,11 @@ fn core_import(def: &str, file_ns: &str) -> Calcit {
 
 /// Check an `unreachable!` call and fold its call site into the message.
 ///
-/// The surface form takes an optional String note. The lowered form always
-/// carries one String: a literal when the note is static, otherwise a
-/// `&str:concat` of the site prefix and the note, so every backend reports
-/// where the impossible branch was reached.
+/// The surface form takes an optional String note. The lowered form is the
+/// internal `&unreachable!` with one String: a literal when the note is
+/// static, otherwise a `&str:concat` of the site prefix and the note, so every
+/// backend reports where the impossible branch was reached. A separate proc
+/// keeps re-preprocessing of lowered code from prefixing the message again.
 fn lower_unreachable_call(
   processed_args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -2707,6 +2708,20 @@ fn lower_unreachable_call(
   call_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Result<Calcit, CalcitErr> {
+  if processed_args
+    .iter()
+    .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        "unreachable! takes its optional note directly; `&` spread is not supported",
+        call_stack,
+        call_location,
+      )
+      .with_code("E_PROC_ARITY"),
+    );
+  }
   if processed_args.len() > 1 {
     return Err(
       CalcitErr::use_msg_stack_location(
@@ -2723,6 +2738,16 @@ fn lower_unreachable_call(
     .as_ref()
     .map(|location| location.def.to_string())
     .or_else(|| call_stack.0.first().map(|frame| frame.def.to_string()))
+    .or_else(|| {
+      builtins::meta::CURRENT_COMPILING_DEF.with(|current| {
+        current
+          .borrow()
+          .as_deref()
+          .and_then(runner::parse_ns_def)
+          .filter(|(ns, _)| ns.as_ref() == file_ns)
+          .map(|(_, def)| def.to_string())
+      })
+    })
     .unwrap_or_else(|| def_name.to_owned());
   let site = if enclosing_def == "??" {
     format!("unreachable! reached in {file_ns}")
@@ -2749,7 +2774,7 @@ fn lower_unreachable_call(
       ])
     }
   };
-  Ok(generated_call(vec![Calcit::Proc(CalcitProc::Unreachable), message]))
+  Ok(generated_call(vec![Calcit::Proc(CalcitProc::NativeUnreachable), message]))
 }
 
 /// Store a compiler-generated call in executable list form.
@@ -26999,13 +27024,26 @@ mod tests {
     let Calcit::List(items) = &processed else {
       panic!("unreachable! should stay a call: {processed}")
     };
-    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::Unreachable))), "{processed}");
+    assert!(
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeUnreachable))),
+      "{processed}"
+    );
     assert_eq!(items.len(), 2, "lowered form carries one message: {processed}");
     assert!(
       matches!(items.get(1), Some(Calcit::Str(message)) if message.as_ref() == "unreachable! reached in tests.unreachable: closed"),
       "{processed}"
     );
     assert!(type_inference::expression_definitely_diverges(&processed));
+    let reprocessed = preprocess_expr(
+      &processed,
+      &HashSet::new(),
+      &mut ScopeTypes::new(),
+      "tests.unreachable",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect("re-preprocess lowered unreachable!");
+    assert_eq!(reprocessed, processed, "lowering must not prefix the message twice");
 
     let (processed, _) = preprocess(Cirru::List(vec![Cirru::leaf("unreachable!"), Cirru::leaf("|a"), Cirru::leaf("|b")]));
     let error = processed.expect_err("two notes should be rejected");

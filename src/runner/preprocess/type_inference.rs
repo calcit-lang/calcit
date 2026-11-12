@@ -1434,7 +1434,7 @@ pub(crate) fn expression_definitely_diverges(expr: &Calcit) -> bool {
   while let Some(expr) = pending.pop() {
     let Calcit::List(items) = expr else { return false };
     match items.first() {
-      Some(Calcit::Proc(CalcitProc::Raise | CalcitProc::Unreachable)) => {}
+      Some(Calcit::Proc(CalcitProc::Raise | CalcitProc::Unreachable | CalcitProc::NativeUnreachable)) => {}
       Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "raise" => {}
       Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
         pending.push(items.get(items.len() - 1).expect("validated lexical tail"));

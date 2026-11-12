@@ -110,6 +110,9 @@ pub enum CalcitProc {
   Todo,
   #[strum(serialize = "unreachable!")]
   Unreachable,
+  /// Lowered `unreachable!`: one String message that already names the site.
+  #[strum(serialize = "&unreachable!")]
+  NativeUnreachable,
   #[strum(serialize = "quit!")]
   Quit,
   #[strum(serialize = "&get-env")]
@@ -1451,7 +1454,7 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],
       }),
-      Unreachable => Some(ProcTypeSignature {
+      Unreachable | NativeUnreachable => Some(ProcTypeSignature {
         // `unreachable!` never returns, so its result is the bottom type and
         // does not take part in branch type merging.
         return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),

@@ -1083,7 +1083,7 @@ fn gen_call_code(
         _ => Ok(make_fn_wrapper(&ret, has_await)),
       }
     }
-    Calcit::Proc(CalcitProc::Unreachable) => {
+    Calcit::Proc(CalcitProc::Unreachable | CalcitProc::NativeUnreachable) => {
       // Preprocessing folds the call site into the single message argument.
       let message = match body.first() {
         Some(message) if body.len() == 1 => to_js_code(message, ns, local_defs, file_imports, tags, None)?,

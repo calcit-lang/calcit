@@ -314,7 +314,7 @@ impl Checker<'_> {
           }
         }
         let body = items.iter().skip(2).collect::<Vec<_>>();
-        let ends_with_raise = matches!(body.last(), Some(Calcit::List(last)) if matches!(last.first(), Some(Calcit::Proc(CalcitProc::Raise | CalcitProc::Unreachable))));
+        let ends_with_raise = matches!(body.last(), Some(Calcit::List(last)) if matches!(last.first(), Some(Calcit::Proc(CalcitProc::Raise | CalcitProc::Unreachable | CalcitProc::NativeUnreachable))));
         let previous = self.failure_report;
         if ends_with_raise {
           self.failure_report = true;
