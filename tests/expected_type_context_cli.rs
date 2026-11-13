@@ -276,7 +276,7 @@ fn collection_aliases_offer_member_types_without_weakening_checks() {
     .output()
     .expect("calcit command should run");
   assert!(
-    output.status.success() && String::from_utf8_lossy(&output.stdout).contains("2 passed; 0 failed"),
+    output.status.success() && String::from_utf8_lossy(&output.stdout).contains("4 passed; 0 failed"),
     "{}{}",
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)

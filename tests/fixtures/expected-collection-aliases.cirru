@@ -14,12 +14,36 @@
           :code $ quote $ defenum Color (:red) (:green) (:rgb Number Number Number)
           :examples $ []
           :schema $ quote EnumDef
+        'ColorCount $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype ColorCount (Tuple Color Number)
+          :examples $ []
+        'ColorSet $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype ColorSet (Set Color)
+          :examples $ []
         'ColorSlots $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype ColorSlots (:generics T) (Map Color T)
           :examples $ []
         'Palette $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype Palette (List Color)
           :examples $ []
+        'aliased-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn aliased-set () (#{} :green :red)
+          :examples $ []
+          :schema $ quote $ Fn (-> ColorSet)
+          :tests $ [] $ %{} 'TestEntry (:name |infers-enum-set-members)
+            :code $ quote $ assert=
+              #{} (Color :green) (Color :red)
+              aliased-set
+            :tags $ #{} :unit
+        'aliased-tuple $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn aliased-tuple () ([] :green 4)
+          :examples $ []
+          :schema $ quote $ Fn (-> ColorCount)
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-distinct-tuple-slots)
+            :code $ quote $ assert=
+              [] (Color :green) 4
+              aliased-tuple
+            :tags $ #{} :unit
         'lookup-aliased-color $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lookup-aliased-color (xs)
             .unwrap $ &map:get xs $ Color :red
@@ -35,6 +59,12 @@
               [] (Color :red) (Color :green)
               tag-aliased-list-return
             assert= 7 $ lookup-aliased-color $ &{} :red 7
+            assert=
+              [] (Color :green) 4
+              aliased-tuple
+            assert=
+              #{} (Color :green) (Color :red)
+              aliased-set
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'tag-aliased-list-return $ %{} 'CodeEntry (:doc |)
