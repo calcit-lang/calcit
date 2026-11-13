@@ -16,7 +16,7 @@ use std::{
   collections::{HashMap, HashSet},
 };
 
-use crate::calcit::type_annotation::code_resolves_to_nominal_type_def;
+use crate::calcit::type_annotation::{code_declares_data_definition, code_resolves_to_nominal_type_def};
 use crate::{
   builtins,
   calcit::{
@@ -134,6 +134,12 @@ fn resolve_trait_type_ref(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnn
   let Some((ns, def)) = name.rsplit_once('/') else {
     return value;
   };
+  // Struct, enum and union declarations are the common named types here and
+  // can never be traits. Rule them out from the source heads instead of
+  // inferring (and re-parsing) the whole data definition on every lookup.
+  if program::lookup_def_code(ns, def).is_some_and(|code| code_declares_data_definition(&code)) {
+    return value;
+  }
   if let Some(trait_def) = lookup_source_backed_trait_def(ns, def) {
     return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def))));
   }

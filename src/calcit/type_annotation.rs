@@ -7254,6 +7254,41 @@ pub(crate) fn code_resolves_to_nominal_type_def(code: &Calcit) -> bool {
   )
 }
 
+/// Whether source code is written as a `defstruct` / `defenum` / `defunion`
+/// declaration (possibly behind `quote`, `def` or `impl-traits`), judged from
+/// the form heads alone. Unlike [`resolve_type_def_from_code`] it neither
+/// parses fields nor follows aliases, so callers can cheaply rule out
+/// definitions that can never be a trait.
+pub(crate) fn code_declares_data_definition(code: &Calcit) -> bool {
+  if let Calcit::Thunk(thunk) = code {
+    return code_declares_data_definition(thunk.get_code());
+  }
+  let Calcit::List(items) = code else {
+    return false;
+  };
+  let Some(head) = items.first() else {
+    return false;
+  };
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "quote")
+  {
+    return items.get(1).is_some_and(code_declares_data_definition);
+  }
+  if is_def_head(head) {
+    return items.get(2).is_some_and(code_declares_data_definition);
+  }
+  if is_impl_traits_head(head) {
+    return items.get(1).is_some_and(code_declares_data_definition);
+  }
+  is_defstruct_head(head)
+    || is_struct_new_head(head)
+    || is_defenum_head(head)
+    || is_enum_new_head(head)
+    || is_defunion_head(head)
+    || is_union_new_head(head)
+}
+
 pub(crate) fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
   // Follow data-definition aliases without evaluating an unfinished impl.
   // The shared lookup guard covers both source symbols and compiled imports.
@@ -11350,6 +11385,31 @@ mod tests {
     let expected = CalcitTypeAnnotation::from_tag_name("struct");
 
     assert!(actual.is_compatible_with(&expected));
+  }
+
+  #[test]
+  fn data_definition_heads_are_recognized_without_parsing() {
+    let list = |items: Vec<Calcit>| Calcit::from(items);
+    let defstruct = list(vec![
+      symbol("defstruct"),
+      symbol("Point"),
+      list(vec![Calcit::tag("x"), symbol("Number")]),
+    ]);
+    assert!(code_declares_data_definition(&defstruct));
+    assert!(code_declares_data_definition(&list(vec![symbol("defenum"), symbol("Shape")])));
+    assert!(code_declares_data_definition(&list(vec![symbol("defunion"), symbol("Value")])));
+    let wrapped = list(vec![symbol("impl-traits"), defstruct.clone(), symbol("ShowPoint")]);
+    assert!(code_declares_data_definition(&wrapped), "impl-traits keeps the data definition");
+    let quoted = list(vec![symbol("quote"), list(vec![symbol("def"), symbol("Point"), wrapped])]);
+    assert!(code_declares_data_definition(&quoted), "quote and def wrappers are peeled");
+    // Heads alone decide: a field list that would not parse still counts.
+    assert!(code_declares_data_definition(&list(vec![symbol("defstruct"), Calcit::Nil])));
+    assert!(!code_declares_data_definition(&list(vec![symbol("deftrait"), symbol("Show")])));
+    assert!(!code_declares_data_definition(&list(vec![symbol("defn"), symbol("f")])));
+    assert!(
+      !code_declares_data_definition(&symbol("Point")),
+      "aliases are left to the full resolver"
+    );
   }
 }
 
