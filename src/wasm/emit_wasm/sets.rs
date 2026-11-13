@@ -30,6 +30,7 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 pub(super) enum SetOpKind {
   Union,
   Difference,
+  Intersection,
   Include,
 }
 
@@ -71,7 +72,7 @@ pub(super) fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right:
   Ok(())
 }
 
-/// High-level `union`/`difference`/`include(base & xs)` — fold the extra args using the
+/// High-level set operations `(op base & xs)` — fold the extra args using the
 /// corresponding native 2-arg set operation.  Handles 1…N extra args.
 pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: SetOpKind) -> Result<(), String> {
   if args.is_empty() {
@@ -86,6 +87,7 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
     return match kind {
       SetOpKind::Union => emit_set_union(ctx, args),
       SetOpKind::Difference => emit_set_difference(ctx, args),
+      SetOpKind::Intersection => emit_set_intersection(ctx, args),
       SetOpKind::Include => emit_set_include(ctx, args),
     };
   }
@@ -98,12 +100,13 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
     match kind {
       SetOpKind::Union => emit_set_union(ctx, &first_two)?,
       SetOpKind::Difference => emit_set_difference(ctx, &first_two)?,
+      SetOpKind::Intersection => emit_set_intersection(ctx, &first_two)?,
       SetOpKind::Include => emit_set_include(ctx, &first_two)?,
     }
     ctx.emit(Instruction::LocalSet(acc));
   }
   for extra in &args[2..] {
-    if matches!(kind, SetOpKind::Difference) {
+    if matches!(kind, SetOpKind::Difference | SetOpKind::Intersection) {
       check_set_comparison_types(ctx, &args[0], extra)?;
     }
     let extra_val = ctx.alloc_local();
@@ -131,6 +134,13 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         ctx.emit(Instruction::I32TruncF64U);
         ctx.emit(Instruction::LocalSet(extra_ptr));
         emit_set_difference_from_ptrs(ctx, acc_ptr, extra_ptr)?
+      }
+      SetOpKind::Intersection => {
+        let extra_ptr = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(extra_val));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::LocalSet(extra_ptr));
+        emit_set_intersection_from_ptrs(ctx, acc_ptr, extra_ptr)
       }
       SetOpKind::Include => emit_set_include_from_ptrs(ctx, acc_ptr, extra_val)?,
     };
@@ -652,8 +662,14 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   expect_arity(2, args, "&set:intersection expects 2 args")?;
   check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let result = emit_set_intersection_from_ptrs(ctx, a, b);
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+fn emit_set_intersection_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
+  let a_count = emit_load_count_i32(ctx, a);
 
   // Max result size is a_count
   let total_slots = ctx.i32_offset(a_count, 1);
@@ -698,8 +714,10 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
+  let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
-  Ok(())
+  ctx.emit(Instruction::LocalSet(result));
+  result
 }
 
 /// `&set:destruct set` returns SetDestruct with separate member and remainder payloads.
