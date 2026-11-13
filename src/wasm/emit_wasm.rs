@@ -7262,7 +7262,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "do" {
         return emit_body(ctx, &args_list);
       }
-      // High-level set wrappers (union/difference/include) use reduce+lambda which can't be
+      // High-level set wrappers use reduce+lambda which can't be
       // compiled to WASM directly. Intercept and inline native 2+ arg set operations.
       if import.ns.as_ref() == "calcit.core" {
         // Native placeholders may remain imports when WASM consumes a source
@@ -7275,6 +7275,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         match import.def.as_ref() {
           "union" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Union),
           "difference" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Difference),
+          "intersection" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Intersection),
           "include" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Include),
           // Seeded fold aliases lower to the same loop for proc/import callees.
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),

@@ -1196,7 +1196,7 @@ impl CalcitProc {
       }),
       NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T")), set_of(type_var("T"))],
+        arg_types: vec![set_of(type_var("T")), set_of(type_var("U"))],
       }),
       NativeUnion => Some(ProcTypeSignature {
         return_type: some_set(),

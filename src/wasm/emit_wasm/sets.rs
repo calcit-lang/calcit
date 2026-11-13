@@ -30,10 +30,142 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 pub(super) enum SetOpKind {
   Union,
   Difference,
+  Intersection,
   Include,
 }
 
-/// High-level `union`/`difference`/`include(base & xs)` — fold the extra args using the
+fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
+  let element_type = |set| {
+    let annotation = CalcitTypeAnnotation::expand_schema_alias(&infer_wasm_static_type(ctx, set)?);
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::Set(element) => Some(element.clone()),
+      CalcitTypeAnnotation::Never => Some(annotation),
+      _ => None,
+    }
+  };
+  let left = element_type(left).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  let right = element_type(right).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  if set_comparison_can_erase_kind(&left, &right, 0) {
+    return Err(
+      "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+    );
+  }
+  Ok(())
+}
+
+/// The structural comparator uses untagged f64 values, including when it
+/// descends into containers. Compare corresponding slots so a heterogeneous
+/// tuple can still be compared with another tuple of the same shape.
+fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  use CalcitTypeAnnotation as T;
+
+  let left = T::expand_schema_alias(left);
+  let right = T::expand_schema_alias(right);
+  if matches!(left.as_ref(), T::Never) || matches!(right.as_ref(), T::Never) {
+    return false;
+  }
+  // Recursive declarations and unresolved shapes cannot serve as evidence.
+  if depth >= 32 {
+    return true;
+  }
+  let compare = |left: &Arc<T>, right: &Arc<T>| set_comparison_can_erase_kind(left, right, depth + 1);
+  let scalar_kind = proven_scalar_kind;
+  if let (Some(left), Some(right)) = (scalar_kind(&left), scalar_kind(&right)) {
+    // Tags start at 1, while Nil and Unit use 0.
+    return left != right && !matches!((left, right), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
+  }
+  match (left.as_ref(), right.as_ref()) {
+    (T::Nullable(inner, NullableOrigin::Inferred), _) => compare(inner, &right) || compare(&Arc::new(T::Nil), &right),
+    (_, T::Nullable(inner, NullableOrigin::Inferred)) => compare(&left, inner) || compare(&left, &Arc::new(T::Nil)),
+    (T::List(left), T::List(right)) | (T::Set(left), T::Set(right)) => compare(left, right),
+    (T::Tuple(left), T::Tuple(right)) => {
+      left.len() == right.len() && left.iter().zip(right.iter()).any(|(left, right)| compare(left, right))
+    }
+    (T::List(member), T::Tuple(slots)) => slots.iter().any(|slot| compare(member, slot)),
+    (T::Tuple(slots), T::List(member)) => slots.iter().any(|slot| compare(slot, member)),
+    (T::Map(left_key, left_value), T::Map(right_key, right_value)) => compare(left_key, right_key) || compare(left_value, right_value),
+    (T::Struct(..) | T::StructValue(_) | T::TypeRef(..), T::Struct(..) | T::StructValue(_) | T::TypeRef(..))
+      if let (Some(left_def), Some(right_def)) = (left.resolve_to_struct(), right.resolve_to_struct()) =>
+    {
+      left_def.fields == right_def.fields
+        && left_def
+          .field_types
+          .iter()
+          .zip(right_def.field_types.iter())
+          .any(|(left_field, right_field)| {
+            compare(
+              &set_comparison_payload(&left, &left_def.generics, left_field, left_def.definition_ref.as_deref()),
+              &set_comparison_payload(&right, &right_def.generics, right_field, right_def.definition_ref.as_deref()),
+            )
+          })
+    }
+    (T::Enum(..) | T::EnumValue(_) | T::TypeRef(..), T::Enum(..) | T::EnumValue(_) | T::TypeRef(..))
+      if let (Some(left_def), Some(right_def)) = (left.resolve_to_enum(), right.resolve_to_enum()) =>
+    {
+      left_def.variants().iter().any(|left_variant| {
+        right_def
+          .find_variant_by_name(left_variant.tag.ref_str())
+          .is_some_and(|right_variant| {
+            left_variant.arity() == right_variant.arity()
+              && left_variant
+                .payload_types()
+                .iter()
+                .zip(right_variant.payload_types())
+                .any(|(left_payload, right_payload)| {
+                  compare(
+                    &set_comparison_payload(
+                      &left,
+                      left_def.generics(),
+                      left_payload,
+                      left_def.definition_ref().map(AsRef::as_ref),
+                    ),
+                    &set_comparison_payload(
+                      &right,
+                      right_def.generics(),
+                      right_payload,
+                      right_def.definition_ref().map(AsRef::as_ref),
+                    ),
+                  )
+                })
+          })
+      })
+    }
+    (T::String, T::String) => false,
+    // Different known heap layouts do not share an address or recurse.
+    (
+      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+    ) => false,
+    // Number may equal a heap pointer; the other scalar/heap comparisons
+    // have the same representation constraints as elsewhere in codegen.
+    (T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _), T::Bool | T::Nil | T::Unit)
+    | (T::Bool | T::Nil | T::Unit, T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _)) => false,
+    _ => true,
+  }
+}
+
+fn set_comparison_payload(
+  annotation: &CalcitTypeAnnotation,
+  generics: &[Arc<str>],
+  payload: &Arc<CalcitTypeAnnotation>,
+  definition_ref: Option<&str>,
+) -> Arc<CalcitTypeAnnotation> {
+  use CalcitTypeAnnotation as T;
+
+  let payload = match definition_ref.and_then(|reference| reference.rsplit_once('/')) {
+    Some((ns, _)) => crate::wasm::host::calcit::type_refs::qualify_namespace_type_refs(payload.clone(), ns),
+    None => payload.clone(),
+  };
+  match annotation {
+    T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) if !args.is_empty() => {
+      let bindings = generics.iter().cloned().zip(args.iter().cloned()).collect();
+      payload.substitute_type_vars(&bindings)
+    }
+    _ => payload,
+  }
+}
+
+/// High-level set operations `(op base & xs)` — fold the extra args using the
 /// corresponding native 2-arg set operation.  Handles 1…N extra args.
 pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: SetOpKind) -> Result<(), String> {
   if args.is_empty() {
@@ -48,6 +180,7 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
     return match kind {
       SetOpKind::Union => emit_set_union(ctx, args),
       SetOpKind::Difference => emit_set_difference(ctx, args),
+      SetOpKind::Intersection => emit_set_intersection(ctx, args),
       SetOpKind::Include => emit_set_include(ctx, args),
     };
   }
@@ -60,11 +193,15 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
     match kind {
       SetOpKind::Union => emit_set_union(ctx, &first_two)?,
       SetOpKind::Difference => emit_set_difference(ctx, &first_two)?,
+      SetOpKind::Intersection => emit_set_intersection(ctx, &first_two)?,
       SetOpKind::Include => emit_set_include(ctx, &first_two)?,
     }
     ctx.emit(Instruction::LocalSet(acc));
   }
   for extra in &args[2..] {
+    if matches!(kind, SetOpKind::Difference | SetOpKind::Intersection) {
+      check_set_comparison_types(ctx, &args[0], extra)?;
+    }
     let extra_val = ctx.alloc_local();
     emit_expr(ctx, extra)?;
     ctx.emit(Instruction::LocalSet(extra_val));
@@ -90,6 +227,13 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         ctx.emit(Instruction::I32TruncF64U);
         ctx.emit(Instruction::LocalSet(extra_ptr));
         emit_set_difference_from_ptrs(ctx, acc_ptr, extra_ptr)?
+      }
+      SetOpKind::Intersection => {
+        let extra_ptr = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(extra_val));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::LocalSet(extra_ptr));
+        emit_set_intersection_from_ptrs(ctx, acc_ptr, extra_ptr)
       }
       SetOpKind::Include => emit_set_include_from_ptrs(ctx, acc_ptr, extra_val)?,
     };
@@ -443,6 +587,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 /// `&difference a b` — set of elements in `a` not in `b`.
 pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&difference expects 2 args")?;
+  check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
@@ -608,9 +753,16 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 /// `&set:intersection a b` — set of elements common to both a and b.
 pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&set:intersection expects 2 args")?;
+  check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let result = emit_set_intersection_from_ptrs(ctx, a, b);
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+fn emit_set_intersection_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
+  let a_count = emit_load_count_i32(ctx, a);
 
   // Max result size is a_count
   let total_slots = ctx.i32_offset(a_count, 1);
@@ -655,8 +807,10 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
+  let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
-  Ok(())
+  ctx.emit(Instruction::LocalSet(result));
+  result
 }
 
 /// `&set:destruct set` returns SetDestruct with separate member and remainder payloads.
