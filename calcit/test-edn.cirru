@@ -51,7 +51,7 @@
             test-top-level-typed-edn
             test-runtime-map-decode
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -65,7 +65,7 @@
               assert= 1 $ deref a
               assert= "|atom 1" $ trim $ format-cirru-edn a
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn ()
             let

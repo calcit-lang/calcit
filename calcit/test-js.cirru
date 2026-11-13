@@ -92,7 +92,7 @@
             test-nested-external-field
             do true
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'reassign-same-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reassign-same-generic (value replacement) (set! value replacement) value
           :examples $ []

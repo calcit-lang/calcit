@@ -471,7 +471,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :io)
         'nullable-callback-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-callback-choice (present?) (if present? NullableEvent nil)
           :examples $ []
