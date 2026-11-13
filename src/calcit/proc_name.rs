@@ -561,10 +561,6 @@ fn some_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   tag_type(name)
 }
 
-fn some_set() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Set(dynamic_tag()))
-}
-
 fn set_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Set(inner))
 }
@@ -1191,8 +1187,8 @@ impl CalcitProc {
         arg_types: vec![variadic_of(type_var("T"))],
       }),
       NativeInclude => Some(ProcTypeSignature {
-        return_type: some_set(),
-        arg_types: vec![some_set(), dynamic_tag()],
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), type_var("T")],
       }),
       NativeExclude => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
@@ -1203,8 +1199,8 @@ impl CalcitProc {
         arg_types: vec![set_of(type_var("T")), set_of(type_var("U"))],
       }),
       NativeUnion => Some(ProcTypeSignature {
-        return_type: some_set(),
-        arg_types: vec![some_set(), some_set()],
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), set_of(type_var("T"))],
       }),
       NativeSetToList => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
