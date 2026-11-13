@@ -672,6 +672,7 @@ impl GraphBuilder {
       CalcitTypeAnnotation::String => Ok(self.push(DataShapeNode::String)),
       CalcitTypeAnnotation::Symbol => Ok(self.push(DataShapeNode::Symbol)),
       CalcitTypeAnnotation::Tag => Ok(self.push(DataShapeNode::Tag)),
+      CalcitTypeAnnotation::BufList => Err(unsupported_type("BufList is mutable runtime storage")),
       CalcitTypeAnnotation::Buffer => Ok(self.push(DataShapeNode::Buffer)),
       CalcitTypeAnnotation::CirruQuote => Ok(self.push(DataShapeNode::CirruQuote)),
       CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred) => Err(unsupported_type(

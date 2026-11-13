@@ -6,6 +6,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
+import { CalcitBufList } from "./js-buf-list.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 
 /// Shallow runtime check of a value against a struct field type form, matching
@@ -262,6 +263,9 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
       return value === undefined;
     case "Never":
       return false;
+    case "BufList":
+    case "buf-list":
+      return value instanceof CalcitBufList;
     case "Buffer":
     case "buffer":
       return value instanceof Uint8Array;
