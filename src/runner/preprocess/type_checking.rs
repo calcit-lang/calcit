@@ -465,10 +465,10 @@ pub(super) fn specialize_collection_fold_expected_types(
       let pair = callback
         .as_ref()
         .and_then(|signature| signature.arg_types.get(1))
+        .map(CalcitTypeAnnotation::expand_schema_alias)
         .filter(|parameter| {
           matches!(parameter.as_ref(), CalcitTypeAnnotation::List(item) if matches!(item.as_ref(), CalcitTypeAnnotation::Dynamic))
         })
-        .cloned()
         .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![key.clone(), value.clone()]))));
       vec![pair]
     }
@@ -3355,6 +3355,46 @@ mod tests {
                 && matches!(value.as_ref(), CalcitTypeAnnotation::String)))
     ));
     assert_eq!(reducer.return_type, number);
+  }
+
+  #[test]
+  fn map_fold_recognizes_an_open_list_alias_in_the_callback_contract() {
+    use crate::program;
+
+    let _guard = program::lock_program_test_state();
+    crate::calcit::register_program_lookups(
+      program::lookup_runtime_ready,
+      program::lookup_def_code,
+      program::lookup_def_schema,
+      crate::runner::preprocess::infer_static_definition_type,
+    );
+    let ns = "tests.fold-open-pair";
+    let open_list = Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone()));
+    program::PROGRAM_CODE_DATA.write().unwrap().insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("OpenPair"),
+          program::ProgramDefEntry {
+            tags: Default::default(),
+            code: Calcit::Nil,
+            schema: open_list.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+    let alias = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/OpenPair")), Arc::new(vec![])));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let map = Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), number.clone()));
+    let reducer = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![number.clone(), alias], number));
+    let args = CalcitList::from(&[make_local("map", map), Calcit::Number(0.0), make_local("reducer", reducer)]);
+    let expected = &CalcitProc::Foldl.get_type_signature().unwrap().arg_types;
+    let specialized = specialize_collection_fold_expected_types(&args, &ScopeTypes::new(), expected).unwrap();
+    assert_eq!(specialized[2].as_function().unwrap().arg_types[1], open_list);
   }
 
   #[test]
