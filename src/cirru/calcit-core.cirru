@@ -682,7 +682,7 @@
         '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef (-> EnumDef)
+          :schema $ quote $ Fn EnumDef Impl (& Impl) (-> EnumDef)
           :tags $ #{} :builtin :internal
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
@@ -724,7 +724,7 @@
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Enum (-> Enum)
+          :schema $ quote $ Fn Enum Impl (& Impl) (-> Enum)
           :tags $ #{} :builtin :internal
         '&enum:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to an enum value."
@@ -3459,7 +3459,7 @@
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn StructDef (-> StructDef)
+          :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
           :tags $ #{} :builtin :internal
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|Create a StructDef from a name and declared field types."
@@ -3551,7 +3551,7 @@
         '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Struct (-> Struct)
+          :schema $ quote $ Fn Struct Impl (& Impl) (-> Struct)
           :tags $ #{} :builtin :internal
         '&struct:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to a struct value."
