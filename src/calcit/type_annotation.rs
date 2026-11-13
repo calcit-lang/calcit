@@ -8486,6 +8486,22 @@ mod tests {
         .is_proven()
     );
 
+    // A long acyclic chain of slots that ends in a signature still proves.
+    let slot_names: Vec<String> = (0..12).map(|index| format!("chain-slot-{index}")).collect();
+    for (index, name) in slot_names.iter().enumerate() {
+      let target = slot_names
+        .get(index + 1)
+        .map(|next| Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(next.as_str()))))
+        .unwrap_or_else(|| function(Arc::new(CalcitTypeAnnotation::Number)));
+      push_type_slot_override(Arc::from(name.as_str()), target);
+    }
+    let chained = Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_names[0].as_str())));
+    let chained_proof = function(chained).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
+    for name in slot_names.iter().rev() {
+      pop_type_slot_override(name);
+    }
+    assert!(chained_proof.is_proven());
+
     // So is a slot that resolves to it.
     push_type_slot_override(Arc::from("erased-callback"), Arc::new(CalcitTypeAnnotation::DynFn));
     let proof = function(slot).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
@@ -12070,21 +12086,23 @@ impl CalcitFnTypeAnnotation {
 
   fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     /// Follows aliases, bound type variables and type slots to the type the
-    /// proof below would compare. `None` means the walk did not settle.
+    /// proof below would compare. `None` means the walk revisited a name, a
+    /// cycle that cannot settle on any type.
     fn resolve_bound(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
       let mut current = CalcitTypeAnnotation::expand_schema_alias(annotation);
-      // A binding can point at another variable or slot. A chain without a
-      // cycle visits each binding once, so running past that count means a cycle.
-      for _ in 0..=bindings.len() + 8 {
-        let next = match current.as_ref() {
-          CalcitTypeAnnotation::TypeVar(name) => bindings.get(name).cloned(),
-          CalcitTypeAnnotation::TypeSlot(name) => resolve_type_slot(name),
-          _ => None,
+      let mut visited: HashSet<(bool, Arc<str>)> = HashSet::new();
+      loop {
+        let (next, key) = match current.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => (bindings.get(name).cloned(), (false, name.clone())),
+          CalcitTypeAnnotation::TypeSlot(name) => (resolve_type_slot(name), (true, name.clone())),
+          _ => return Some(current),
         };
         let Some(next) = next else { return Some(current) };
+        if !visited.insert(key) {
+          return None;
+        }
         current = CalcitTypeAnnotation::expand_schema_alias(&next);
       }
-      None
     }
 
     if self.is_async_invocation() != other.is_async_invocation() {
