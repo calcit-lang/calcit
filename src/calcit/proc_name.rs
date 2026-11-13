@@ -1473,12 +1473,16 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],
       }),
-      Unreachable | NativeUnreachable => Some(ProcTypeSignature {
-        // `unreachable!` never returns, so its result is the bottom type and
-        // does not take part in branch type merging.
-        return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),
-        arg_types: vec![some_tag("string")],
-      }),
+      Unreachable | NativeUnreachable => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled unreachable function schema");
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("number")],

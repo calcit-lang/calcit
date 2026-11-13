@@ -3603,6 +3603,12 @@
           :examples $ [] $ quote (&union-def:new :CssValue 'String 'Number)
           :schema $ quote $ Fn Tag (-> UnionDef)
           :tags $ #{} :builtin :internal
+        '&unreachable! $ %{} 'CodeEntry (:doc "|编译器内部的不可到达分支入口，接收包含调用位置的错误消息。")
+          :code $ quote $ def &unreachable! &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return :never)
+            :args $ [] 'String
+          :tags $ #{} :builtin :control :internal
         '&wait-ms $ %{} 'CodeEntry
           :doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。"
           :code $ quote &runtime-implementation
@@ -13608,6 +13614,24 @@
               assert= true $ number? timestamp
               assert= true $ &>= timestamp 0
             :tags $ #{} :core :time :unit
+        'unreachable! $ %{} 'CodeEntry
+          :doc "|标记按程序逻辑不可到达的分支。可省略说明，也可传入一个 String。执行到这里会报错，消息包含调用位置。返回类型为 Never。"
+          :code $ quote $ def unreachable! &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return :never)
+            :args $ [] 'String
+          :tags $ #{} :builtin :control
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-live-branch-type)
+            :code $ quote $ let
+                read-number $ fn (ready)
+                  hint-fn $ Fn Bool $ -> Number
+                  if ready 7 $ unreachable! |not-ready
+                check-branch $ fn (ready)
+                  hint-fn $ Fn Bool $ -> Number
+                  if ready 9 $ unreachable!
+              assert= 7 $ read-number true
+              assert= 9 $ check-branch true
+            :tags $ #{} :core :unit
         'unsafe-coerce $ %{} 'CodeEntry
           :doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime."
           :code $ quote $ def unsafe-coerce &runtime-implementation
