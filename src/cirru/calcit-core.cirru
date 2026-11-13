@@ -9843,9 +9843,17 @@
               not $ every? traits $ fn (trait)
                 = :impl $ type-of trait
               raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-            if (struct-def? x) (&struct-def:impl-traits x & traits)
-              if (enum-def? x) (&enum-def:impl-traits x & traits)
-                raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+            let
+                attach $ fn (proc-name)
+                  if (&list:empty? traits)
+                    raise $ str-spaced proc-name "|expected 2+ arguments. Fix: pass at least one implementation created by defimpl."
+              if (struct-def? x)
+                do (attach |&struct-def:impl-traits)
+                  &struct-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                if (enum-def? x)
+                  do (attach |&enum-def:impl-traits)
+                    &enum-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
