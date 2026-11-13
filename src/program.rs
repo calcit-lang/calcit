@@ -1511,6 +1511,70 @@ pub fn clone_compiled_program_snapshot() -> Result<CompiledProgram, String> {
   Ok(compiled)
 }
 
+/// Like [`clone_compiled_program_snapshot`], but only fills namespaces the
+/// already compiled entries can reach: namespaces holding a compiled
+/// definition, the namespaces they import (transitively), and `calcit.core`.
+/// Dependency demo and test namespaces that no entry imports are left out,
+/// so JS codegen neither compiles nor emits them. A reachable namespace is
+/// still filled completely, and a namespace that filling compiles into
+/// joins the scope the same way.
+pub fn clone_reachable_compiled_program_snapshot() -> Result<CompiledProgram, String> {
+  let mut compiled: CompiledProgram = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").to_owned();
+  let mut scope: HashSet<Arc<str>> = HashSet::new();
+  let mut pending: Vec<Arc<str>> = compiled.keys().cloned().collect();
+  pending.push(Arc::from(crate::calcit::CORE_NS));
+  while !pending.is_empty() {
+    extend_with_import_closure(&mut scope, pending);
+    let tasks = collect_snapshot_fill_tasks(&compiled)
+      .into_iter()
+      // A runtime-only definition referenced by compiled code is kept
+      // wherever it lives, as the full snapshot does.
+      .filter(|task| task.referenced_by_compiled || scope.contains(&task.ns));
+    for task in tasks {
+      let ns = task.ns.clone();
+      let def = task.def.clone();
+      if let Some(compiled_def) = build_snapshot_fill_compiled_def(task) {
+        let compiled_file = compiled.entry(ns).or_insert_with(|| CompiledFileData { defs: HashMap::new() });
+        compiled_file.defs.insert(def, compiled_def);
+      }
+    }
+    // Filling can compile further dependencies; keep them, as the full
+    // snapshot does, and fill their namespaces in the next round.
+    for (ns, file) in PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").iter() {
+      let compiled_file = compiled
+        .entry(ns.clone())
+        .or_insert_with(|| CompiledFileData { defs: HashMap::new() });
+      for (name, definition) in &file.defs {
+        compiled_file.defs.insert(name.clone(), definition.clone());
+      }
+    }
+    pending = compiled.keys().filter(|ns| !scope.contains(*ns)).cloned().collect();
+  }
+  Ok(compiled)
+}
+
+/// Add `roots` and every source namespace they import, transitively.
+fn extend_with_import_closure(scope: &mut HashSet<Arc<str>>, roots: Vec<Arc<str>>) {
+  let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
+  let mut stack = roots;
+  while let Some(ns) = stack.pop() {
+    if !scope.insert(ns.clone()) {
+      continue;
+    }
+    let Some(file) = program_code.get(&ns) else {
+      continue;
+    };
+    for rule in file.import_map.values() {
+      let target = match rule.as_ref() {
+        ImportRule::NsAs(target) | ImportRule::NsReferDef(target, _) | ImportRule::NsDefault(target) => target,
+      };
+      if program_code.contains_key(target) && !scope.contains(target) {
+        stack.push(target.clone());
+      }
+    }
+  }
+}
+
 /// Clone only definitions that have already been preprocessed.
 ///
 /// Unlike `clone_compiled_program_snapshot`, this does not materialize every

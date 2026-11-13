@@ -2665,7 +2665,7 @@ pub fn emit_js(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
   let mut written_paths: Vec<PathBuf> = Vec::new();
 
-  let program = program::clone_compiled_program_snapshot()?;
+  let program = program::clone_reachable_compiled_program_snapshot()?;
   validate_js_entries(&program, &[init_fn, reload_fn])?;
   for (ns, file) in program.iter() {
     // println!("\nstart handling: {}\n", ns);
