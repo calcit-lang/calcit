@@ -604,7 +604,7 @@
           :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :decode)
           :tags $ #{} :builtin :internal :meta
         '&dbg-print $ %{} 'CodeEntry
           :doc "|Internal output of the `dbg` macro. Prints one line; it is not an `:io` effect, the entry `:feature-policy` key `:dbg` controls it instead."
@@ -768,7 +768,7 @@
           :doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal :meta
           :tests $ [] $ %{} 'TestEntry (:name |rejects-runtime-only-values)
             :code $ quote $ assert= :failed
