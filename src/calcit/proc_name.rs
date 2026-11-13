@@ -1461,7 +1461,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("enum-def"), some_tag("string"), some_tag("string"), some_tag("string")],
       }),
       Raise => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
+        return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),
         arg_types: vec![variadic_dynamic()],
       }),
       Todo => Some(ProcTypeSignature {
