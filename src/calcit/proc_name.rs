@@ -904,13 +904,36 @@ impl CalcitProc {
       | NativeSetCount
       | NativeSetEmpty
       | NativeSetIncludes
-      | NativeSetDestruct => Some(self.signature_from_core(core)),
+      | NativeSetDestruct
+      | NativeStrConcat
+      | TurnString
+      | Split
+      | SplitLines
+      | StartsWith
+      | EndsWith
+      | GetCharCode
+      | CharFromCode
+      | ParseFloat
+      | IsBlank
+      | NativeStrCompare
+      | NativeStrReplace
+      | NativeStrSlice
+      | NativeStrFindIndex
+      | NativeStrEscape
+      | NativeStrCount
+      | NativeStrUtf8ByteCount
+      | NativeStrEmpty
+      | NativeStrContains
+      | NativeStrIncludes
+      | NativeStrNth
+      | NativeStrFirst
+      | NativeStrRest
+      | NativeStrPadLeft
+      | NativeStrPadRight
+      | NativeLessThan
+      | NativeGreaterThan => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
-      NativeLessThan | NativeGreaterThan => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
       NativeEquals | Identical => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
@@ -921,109 +944,17 @@ impl CalcitProc {
       }),
 
       // === String operations ===
-      NativeStrConcat => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag(), dynamic_tag()],
-      }),
       Trim => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      TurnString => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
       }),
       NativeStr => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![variadic_dynamic()],
       }),
-      Split => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("string")),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      SplitLines => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("string")),
-        arg_types: vec![some_tag("string")],
-      }),
-      StartsWith | EndsWith => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      GetCharCode => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("string")],
-      }),
-      CharFromCode => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("number")],
-      }),
       PrStr => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![dynamic_tag()],
-      }),
-      ParseFloat => Some(ProcTypeSignature {
-        return_type: option_tag("number"),
-        arg_types: vec![some_tag("string")],
-      }),
-      IsBlank => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrCompare => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      NativeStrReplace => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("string"), some_tag("string")],
-      }),
-      NativeStrSlice => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("number")],
-      }),
-      NativeStrFindIndex => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      NativeStrEscape => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrUtf8ByteCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrEmpty => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrContains => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("string"), some_tag("number")],
-      }),
-      NativeStrIncludes => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
-      NativeStrNth => Some(ProcTypeSignature {
-        return_type: option_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("number")],
-      }),
-      NativeStrFirst => Some(ProcTypeSignature {
-        return_type: option_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrRest => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeStrPadLeft | NativeStrPadRight => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("string")],
       }),
 
       // === List operations ===
