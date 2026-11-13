@@ -294,7 +294,7 @@ const scenarios = [
       const flatMap = result.data.methods.find((method) => method.name === ".flat-map");
       assert.equal(flatMap?.status, "proven");
       assert.equal(flatMap?.definition, "calcit.core/mapcat");
-      assert.deepEqual(flatMap?.parameter_types, ["fn(number) -> list<'U>"]);
+      assert.deepEqual(flatMap?.parameter_types, ["fn(number) -> list<'U> (:features :pass)"]);
       assert.equal(flatMap?.return_type, "list<'U>");
       const joinString = result.data.methods.find((method) => method.name === ".join-string");
       assert.equal(joinString?.status, "proven");
@@ -313,7 +313,7 @@ const scenarios = [
       });
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
-      assert.deepEqual(each.parameter_types, ["fn(number) -> dynamic"]);
+      assert.deepEqual(each.parameter_types, ["fn(number) -> dynamic (:features :pass)"]);
       assert.equal(each.return_type, "unit");
       assert.equal(each.rest_type, null);
       assert.equal(each.definition, "calcit.core/each");
