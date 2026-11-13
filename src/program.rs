@@ -224,7 +224,48 @@ static PROGRAM_RUNTIME_DATA_STATE: LazyLock<RwLock<ProgramRuntimeData>> = LazyLo
 /// preprocessed / compiled definitions for codegen and future runtime boundary split
 static PROGRAM_COMPILED_DATA_STATE: LazyLock<RwLock<ProgramCompiledData>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 /// raw code information before program running
-pub static PROGRAM_CODE_DATA: LazyLock<RwLock<ProgramCodeData>> = LazyLock::new(|| RwLock::new(HashMap::new()));
+pub static PROGRAM_CODE_DATA: LazyLock<ProgramCodeLock> = LazyLock::new(ProgramCodeLock::default);
+
+/// The lock around [`ProgramCodeData`]. Every write access bumps a generation
+/// counter, so derived facts about the source (such as whether `calcit.core`
+/// is the bundled one) can be cached until the next write.
+#[derive(Default)]
+pub struct ProgramCodeLock {
+  data: RwLock<ProgramCodeData>,
+  generation: std::sync::atomic::AtomicU64,
+}
+
+impl ProgramCodeLock {
+  pub fn read(&self) -> std::sync::LockResult<std::sync::RwLockReadGuard<'_, ProgramCodeData>> {
+    self.data.read()
+  }
+
+  /// Taking the write lock counts as a change: a writer may mutate the data
+  /// at any point while it holds the guard.
+  pub fn write(&self) -> std::sync::LockResult<std::sync::RwLockWriteGuard<'_, ProgramCodeData>> {
+    let guard = self.data.write();
+    self.bump_generation();
+    guard
+  }
+
+  pub fn try_write(&self) -> std::sync::TryLockResult<std::sync::RwLockWriteGuard<'_, ProgramCodeData>> {
+    let guard = self.data.try_write();
+    if guard.is_ok() {
+      self.bump_generation();
+    }
+    guard
+  }
+
+  fn bump_generation(&self) {
+    self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+  }
+
+  /// The current write generation. Read it while holding a read guard, so no
+  /// writer can change the data between the read and the use of the value.
+  fn generation(&self) -> u64 {
+    self.generation.load(std::sync::atomic::Ordering::SeqCst)
+  }
+}
 static PROGRAM_DEF_ID_INDEX: LazyLock<RwLock<ProgramDefIdIndex>> = LazyLock::new(|| RwLock::new(ProgramDefIdIndex::default()));
 
 /// Serializes Rust tests that temporarily replace process-wide program state.
@@ -1232,10 +1273,21 @@ pub(crate) fn has_bundled_core_source() -> bool {
   static VERIFIED_CODE: LazyLock<std::sync::Mutex<VerifiedCode>> = LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
   // Schema parsing can re-enter PROGRAM_CODE_DATA. Initialize before taking
   // its read lock so a queued writer cannot deadlock a recursive read.
+  // The answer for one write generation of the program source. Preprocessing
+  // asks on every `=` comparison and condition it visits; rescanning every
+  // core definition per call dominated codegen time on real projects.
+  static CACHED_ANSWER: std::sync::Mutex<Option<(u64, bool)>> = std::sync::Mutex::new(None);
   let bundled = LazyLock::force(&BUNDLED_CORE);
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  let generation = PROGRAM_CODE_DATA.generation();
+  let mut cached = CACHED_ANSWER.lock().unwrap_or_else(|error| error.into_inner());
+  if let Some((seen, answer)) = *cached
+    && seen == generation
+  {
+    return answer;
+  }
   let mut verified = VERIFIED_CODE.lock().unwrap_or_else(|error| error.into_inner());
-  bundled.iter().all(|(namespace, bundled)| {
+  let answer = bundled.iter().all(|(namespace, bundled)| {
     source.get(namespace).is_some_and(|file| {
       file.import_map == bundled.import_map
         && bundled.defs.iter().all(|(name, expected)| {
@@ -1259,7 +1311,9 @@ pub(crate) fn has_bundled_core_source() -> bool {
           })
         })
     })
-  })
+  });
+  *cached = Some((generation, answer));
+  answer
 }
 
 pub fn lookup_def_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
