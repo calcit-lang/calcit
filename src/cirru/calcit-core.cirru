@@ -215,10 +215,20 @@
               &buf-list:push buf 1
               &buf-list:push buf 2
               assert= ([] 1 2) (&buf-list:to-list buf)
-          :schema $ quote $ Fn Tag T
-            -> $ List T
-            :generics T
+          :schema $ quote $ Fn Tag
+            -> $ List Dynamic
           :tags $ #{} :builtin :internal :state
+          :tests $ [] $ %{} 'TestEntry (:name |freezes-heterogeneous-members-in-order)
+            :code $ quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 1
+              &buf-list:push buf |x
+              let
+                  frozen $ &buf-list:to-list buf
+                &buf-list:push buf 2
+                assert= ([] 1 |x) frozen
+                assert= ([] 1 |x 2) (&buf-list:to-list buf)
+            :tags $ #{} :core :unit
         '&buffer $ %{} 'CodeEntry
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
