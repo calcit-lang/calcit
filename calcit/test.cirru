@@ -128,7 +128,7 @@
             inside-js: $ test-js/main!
             do true
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :state :io)
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
           :code $ quote $ def query-search-node-kinds
@@ -213,7 +213,7 @@
           :code $ quote $ fn () (log-title |Buffer)
             println "|buffer value:" $ &buffer 0x11 |11
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-cirru-parser $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing Cirru parser")
             assert= (parse-cirru-list "|def f (a b) $ + a b")
@@ -286,11 +286,11 @@
             assert= false $ .ok? $ get-in ([] 1 2 3) ([] :a)
             assert= 1 $ non-nil! 1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-display-stack $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-effect $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing effect")
             println "|Env mode:" $ get-env |mode
@@ -311,6 +311,7 @@
           :examples $ []
           :schema $ quote $ Fn
             -> $ Result Unit String
+            :features :io
         'test-fn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing fn")
             &let
@@ -432,7 +433,7 @@
               assert= 2 $ reset! watched 2
               assert= 1 @notifications
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :state :io)
         'test-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-tag ()
             ; assert "|tag function" $ =
@@ -446,7 +447,7 @@
                 [] $ &{} :a 1
                 , :a
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-try $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-try ()
             assert= false $ try
@@ -459,7 +460,7 @@
               fn (error) (str :a)
             println "|Finished testing try"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
           :require (test-hygienic.main :as test-hygienic) (test-macro.main :as test-macro) (test-recursion.main :as test-recursion) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-struct.main :as test-struct) (test-anonymous-enum.main :as test-anonymous-enum) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-union.main :as test-union) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke) (test-def-meta.main :as test-def-meta)

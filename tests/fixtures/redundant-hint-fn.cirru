@@ -57,7 +57,7 @@
             each ts $ fn (x)
               hint-fn $ Fn Task (-> Unit)
               println $ :title x
-          :schema $ quote $ Fn (List Task) (-> Unit)
+          :schema $ quote $ Fn (List Task) (-> Unit) (:features :io)
         'Patch $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Patch (:mount (Fn Task (-> String))) (:noop)
           :schema $ quote EnumDef
@@ -75,4 +75,4 @@
               h7-each $ [] t
               h8-enum-payload
               , &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)

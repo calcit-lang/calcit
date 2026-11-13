@@ -20,25 +20,25 @@
               (:some f) (f (Click :x 1))
               (:none) (println |none)
             , &unit
-          :schema $ quote $ Fn Props (-> Unit)
+          :schema $ quote $ Fn Props (-> Unit) (:features :io)
         'map-literal $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn map-literal ()
             fire $ {} (:label |a)
               :on-click $ fn (e) (println |map (:x e))
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'map-literal-some $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn map-literal-some ()
             fire $ {} (:label |b)
               :on-click $ Some $ fn (e) (println |map-some (:x e))
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'direct-ctor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct-ctor ()
             Props :label |c :on-click $ fn (e) (println |ctor (:x e))
-          :schema $ quote $ Fn (-> Props)
+          :schema $ quote $ Fn (-> Props) (:features :io)
         'direct-ctor-some $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct-ctor-some ()
             Props :label |d :on-click $ Some $ fn (e) (println |ctor-some (:x e))
-          :schema $ quote $ Fn (-> Props)
+          :schema $ quote $ Fn (-> Props) (:features :io)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             map-literal
@@ -46,4 +46,4 @@
             fire $ direct-ctor
             fire $ direct-ctor-some
             fire $ Props :label |e
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)

@@ -5480,13 +5480,9 @@ fn effect_features_follow_entry_policy() {
       ("calls-inline-io", "IO_FEATURE"),
       ("shadow-ref", "STATE_FEATURE"),
     ];
-    let collect = |policy: snapshot::FeaturePolicy| {
+    let collect_with = |policies: HashMap<String, snapshot::FeaturePolicy>| {
       let entries = load_fixture_entries(path);
-      program::configure_entry_feature_policy(&HashMap::from([
-        ("state".to_owned(), policy),
-        ("io".to_owned(), policy),
-        ("dbg".to_owned(), policy),
-      ]));
+      program::configure_entry_feature_policy(&policies);
       let _ = runner::preprocess::take_advisories();
       let warnings = RefCell::new(vec![]);
       let result =
@@ -5509,6 +5505,13 @@ fn effect_features_follow_entry_policy() {
       found.sort();
       found
     };
+    let collect = |policy: snapshot::FeaturePolicy| {
+      collect_with(HashMap::from([
+        ("state".to_owned(), policy),
+        ("io".to_owned(), policy),
+        ("dbg".to_owned(), policy),
+      ]))
+    };
 
     for (policy, prefix, blocking) in [
       (snapshot::FeaturePolicy::Warn, "W_", false),
@@ -5527,6 +5530,16 @@ fn effect_features_follow_entry_policy() {
     }
 
     assert!(collect(snapshot::FeaturePolicy::Allow).is_empty(), ":allow reports nothing");
+
+    // Without `:feature-policy`, `:state` / `:io` fail the check (#2726) and
+    // `dbg` stays allowed.
+    let mut wanted = expected
+      .iter()
+      .filter(|(_, kind)| *kind != "DBG_IN_ENTRY")
+      .map(|(def, kind)| (format!("{ns}/{def}"), format!("E_{kind}_REQUIRED"), true))
+      .collect::<Vec<_>>();
+    wanted.sort();
+    assert_eq!(collect_with(HashMap::new()), wanted, "effect diagnostics without an entry policy");
   });
 }
 

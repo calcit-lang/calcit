@@ -275,7 +275,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   hint 不会被报告；`let` 绑定后使用多次或直接调用的 lambda 没有单一上下文，hint 保留。该规则只按显式 `--rule` 运行。
 - `effect-features-v1`（0.42.0，#2710）给带 `Fn` schema 的项目函数补齐缺少的 `:state` / `:io`。编译时记录每个函数
   自己造成的效果和它用到的项目定义，再沿调用关系算到不动点，所以一次 `--apply` 就能消除整条调用链上的
-  `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`。建议的 `origin_chain` 标出 `direct-effect` 或 `dependency`。
+  `E_STATE_FEATURE_REQUIRED` / `E_IO_FEATURE_REQUIRED`（entry 设为 `:warn` 时是对应的 `W_` 编码）。建议的 `origin_chain` 标出 `direct-effect` 或 `dependency`。
   `--ns` / `--def` 只筛选输出，传递关系仍按整个项目计算。只添加 feature，不删除已有声明，不改 lambda 的 `hint-fn`；
   依赖模块里的定义按其 schema 已声明的 feature 计算。该规则只按显式 `--rule` 运行。
 - `concrete-return-proof-v1` 复用同一 compiler proof，显式检查函数实现是否证明了声明的具体返回类型。

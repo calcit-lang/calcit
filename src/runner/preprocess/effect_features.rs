@@ -48,8 +48,9 @@ pub const DBG_IN_ENTRY_ERROR: &str = "E_DBG_IN_ENTRY";
 const DBG_PRINT_DEF: &str = "&dbg-print";
 
 /// Policy for `:state` / `:io` when the entry does not mention them.
-/// 0.42.0 reports a non-failing warning; 0.43.0 plans to make it an error.
-const DEFAULT_EFFECT_POLICY: FeaturePolicy = FeaturePolicy::Warn;
+/// Since 0.43.0 a missing declaration fails the check; an entry can still
+/// opt back into `:warn` or `:allow` through `:feature-policy`.
+const DEFAULT_EFFECT_POLICY: FeaturePolicy = FeaturePolicy::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Effect {

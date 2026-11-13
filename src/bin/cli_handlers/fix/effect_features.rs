@@ -12,8 +12,8 @@ use super::*;
 use calcit::runner::preprocess::EffectSummary;
 
 pub(super) const EFFECT_FEATURES_RULE: &str = "effect-features-v1";
-pub(super) const EFFECT_FEATURES_DIAGNOSTIC: &str = "W_STATE_FEATURE_REQUIRED";
-const IO_DIAGNOSTIC: &str = "W_IO_FEATURE_REQUIRED";
+pub(super) const EFFECT_FEATURES_DIAGNOSTIC: &str = "E_STATE_FEATURE_REQUIRED";
+const IO_DIAGNOSTIC: &str = "E_IO_FEATURE_REQUIRED";
 
 type DefKey = (Arc<str>, Arc<str>);
 

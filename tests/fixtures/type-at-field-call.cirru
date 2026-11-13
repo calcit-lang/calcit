@@ -20,7 +20,7 @@
               point-x $ Point :x 1 :y 2
               map-a $ {} $ :a 1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'map-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn map-a (m) (:a m)
           :examples $ []

@@ -13,7 +13,7 @@
         'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 退出码集成测试入口。")
           :code $ quote $ defn main! () (quit! 7) &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () &unit
           :examples $ []

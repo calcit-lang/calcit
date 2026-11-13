@@ -71,7 +71,7 @@
           :code $ quote $ defn main! ()
             do (println "|Testing enum runtime validation...") (test-enum-creation) (test-generic-enum-creation) (test-generic-enum-where-bounds) (test-where-bound-definitions) (test-match-validation) (test-anonymous-enum-to-named) (test-match) (test-unreachable) (println "|All tests passed!")
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'read-caller-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-caller-payload (value)
             :wrong $ unwrap-recursive-envelope value
@@ -153,7 +153,7 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'render-short-recursive $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn render-short-recursive (node)
             match node
@@ -199,7 +199,7 @@
               assert= true $ check-result-type $ :: :ok
               println "|✓ Tuple-to-enum rewrite passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-enum-creation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-enum-creation ()
             do (println "|Testing enum tuple creation...")
@@ -227,7 +227,7 @@
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-generic-enum-creation $ %{} 'CodeEntry
           :doc "|Exercise defenum generic variables in runtime creation and matching"
           :code $ quote $ defn test-generic-enum-creation ()
@@ -249,7 +249,7 @@
                 assert= |hi $ &enum:nth pair-value 2
               println "|✓ Generic enum creation passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-generic-enum-where-bounds $ %{} 'CodeEntry
           :doc "|Exercise where-bounds with generic enum payloads"
           :code $ quote $ defn test-generic-enum-where-bounds ()
@@ -277,7 +277,7 @@
                 render-duo $ %:: Duo :swapped |hi 1
               println "|✓ Generic enum where-bounds passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match ()
             let
@@ -311,7 +311,7 @@
               assert= (Some 2) picked
             println "|✓ match syntax passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-match-validation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match-validation ()
             do (println "|Testing match runtime validation...")
@@ -323,7 +323,7 @@
                 assert= :ok v
               println "|✓ Match validation passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-unreachable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-unreachable ()
             assert= |ok $ result-label $ %:: Result0 :ok
@@ -339,7 +339,7 @@
               fn (error) (str error)
             println "|✓ unreachable! passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-where-bound-definitions $ %{} 'CodeEntry
           :doc "|Exercise defstruct/defenum where-map syntax on generic data types"
           :code $ quote $ defn test-where-bound-definitions ()
@@ -360,7 +360,7 @@
                       (:none) |none
               println "|✓ Data definition where-bounds passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'unwrap-maybe $ %{} 'CodeEntry (:doc "|Convert Maybe1<T> into nominal Option<T>.")
           :code $ quote $ defn unwrap-maybe (v)
             match v

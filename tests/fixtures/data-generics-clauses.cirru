@@ -46,6 +46,6 @@
               first-of (Pair :both 2 |x) 0
             println $ :count $ Shown :value |a
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns demo.main

@@ -33,7 +33,7 @@
             println $ f |a
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'show-it $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn show-it (x) (to-lispy-string x)
           :examples $ []

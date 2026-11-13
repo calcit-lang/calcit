@@ -92,4 +92,4 @@
                   show-filter f
               println $ local :done
             , &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)

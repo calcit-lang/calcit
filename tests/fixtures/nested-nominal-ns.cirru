@@ -23,7 +23,7 @@
             quatrefoil.types/call! $ fn (state) (println state) &unit
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'read-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-field ()
             quatrefoil.types/read-x $ fn (state) (:x state)

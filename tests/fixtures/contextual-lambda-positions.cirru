@@ -37,4 +37,4 @@
           :schema $ quote $ Fn (List Task) Bool (-> (List String))
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail |?) t) ((if-tail false) t) (bound-once ([] t)) (count (bound-in-let ([] t))) ((bound-returned) t) (dup-macro ([] t) false)) &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)

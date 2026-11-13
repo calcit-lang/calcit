@@ -31,7 +31,7 @@
           :code $ quote $ defn main! ()
             println $ fn? find-item
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.min (:require)
     'app.model $ %{} 'FileEntry

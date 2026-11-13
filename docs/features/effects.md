@@ -66,8 +66,8 @@ entry 的 `:feature-policy` 控制检查强度，取值 `:allow`、`:warn`、`:e
 :feature-policy $ {} (:state :error) (:io :error) (:dbg :error)
 ```
 
-- entry 未写 `:state` / `:io` 时按 `:warn`：报告 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过。
-- 设为 `:error` 时报 `E_STATE_FEATURE_REQUIRED` / `E_IO_FEATURE_REQUIRED`，检查失败。
+- entry 未写 `:state` / `:io` 时按 `:error`：报 `E_STATE_FEATURE_REQUIRED` / `E_IO_FEATURE_REQUIRED`，检查失败。
+- 设为 `:warn` 时报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；设为 `:allow` 时不检查。
 - 同一函数的同一 feature 只报第一处。
 
 ```bash

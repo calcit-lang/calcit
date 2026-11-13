@@ -18,12 +18,12 @@
           :code $ quote $ defn bench-rem-direct! ()
             println $ loop-rem-direct 500000 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'bench-rem-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-rem-typed! ()
             println $ loop-rem-typed 500000 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'fibo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fibo (x)
             if (< x 2) 1 $ +
@@ -49,7 +49,7 @@
           :code $ quote $ defn main! () (println "|Loaded program!")
             do (test-rem-methods!) (try-fibo)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -90,11 +90,11 @@
                 n 22
               println "|fibo result:" n $ fibo n
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'try-prime $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-prime ()
             println $ sieve-primes ([] 2 3 5 7 11 13) 17 400
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

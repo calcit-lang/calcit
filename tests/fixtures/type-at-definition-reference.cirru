@@ -27,7 +27,7 @@
           :code $ quote $ defn main! ()
             println (comp-styled 1) (plain-styled 1) (shadowed 1) (opaque-styled) (quoted)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'opaque-styled $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn opaque-styled ()
             &list:first $ [] ui/opaque

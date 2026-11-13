@@ -180,7 +180,7 @@
             assert= 4 $ plus-two 2
             println |js-ffi-ok
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'make-callable-counter-host $ %{} 'CodeEntry
           :doc "|Callable host export carrying CounterHost members, like an SDK default export"
           :code $ quote $ defn make-callable-counter-host (value) (&js-object)
@@ -215,7 +215,7 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'rest-host-output $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn rest-host-output (host items) (.emit host & items)
           :examples $ []

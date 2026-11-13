@@ -932,7 +932,7 @@
               Person :name |Ada :age 3 :address $ Address :city |X
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'make-dynamic-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-dynamic-value () 1
           :examples $ []

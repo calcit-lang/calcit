@@ -42,7 +42,7 @@
             println $ escaped-shadow $ [] 5
             println $ same-binders $ [] 1 2
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'rest-size $ %{} 'CodeEntry (:doc "|Fused: `_` head binder.")
           :code $ quote $ defn rest-size (xs)
             match (destruct-list xs)
