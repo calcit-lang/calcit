@@ -900,8 +900,6 @@ impl CalcitProc {
       | NativeMapKeys
       | NativeMapVals
       | NativeMapDestruct
-      | NativeDifference
-      | NativeSetIntersection
       | NativeSetToList
       | NativeSetCount
       | NativeSetEmpty
@@ -1120,6 +1118,10 @@ impl CalcitProc {
       NativeInclude | NativeExclude => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_set(), dynamic_tag()],
+      }),
+      NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), set_of(type_var("U"))],
       }),
       NativeUnion => Some(ProcTypeSignature {
         return_type: some_set(),
