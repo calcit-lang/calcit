@@ -12261,7 +12261,12 @@ impl CalcitFnTypeAnnotation {
       // An erased callable parameter can be invoked without validating its
       // arguments. It cannot stand in for a parameter with a known signature.
       // An unsettled walk cannot vouch for a signature on either side.
-      let erased = resolve_bound(actual, &staged).is_none_or(|actual| matches!(actual.as_ref(), CalcitTypeAnnotation::DynFn));
+      let erased = resolve_bound(actual, &staged).is_none_or(|mut actual| {
+        while let CalcitTypeAnnotation::Nullable(inner, _) = actual.as_ref() {
+          actual = CalcitTypeAnnotation::expand_schema_alias(inner);
+        }
+        matches!(actual.as_ref(), CalcitTypeAnnotation::DynFn)
+      });
       let requires_signature = resolve_bound(expected, &staged).is_none_or(|expected| expected.resolve_to_nonoptional_fn().is_some());
       if erased && requires_signature {
         return TypeProof::Mismatch;

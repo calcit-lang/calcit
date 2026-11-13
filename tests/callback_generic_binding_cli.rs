@@ -73,11 +73,15 @@ fn callback_parameters_keep_their_callable_signature() {
         , &unit
   take-executor $ fn (deliver)
     hint-fn $ Fn CALLBACK_TYPE (-> Unit)
-    deliver CALLBACK_VALUE
+    CALLBACK_BODY
     , &unit
 "#;
-  for (parameter, value, accepted) in [("(Fn Number (-> Unit))", "42", true), ("AnyFn", "|wrong", false)] {
-    let code = snippet.replace("CALLBACK_TYPE", parameter).replace("CALLBACK_VALUE", value);
+  for (parameter, body, accepted) in [
+    ("(Fn Number (-> Unit))", "deliver 42", true),
+    ("AnyFn", "deliver |wrong", false),
+    ("(JsNullish AnyFn)", ", &unit", false),
+  ] {
+    let code = snippet.replace("CALLBACK_TYPE", parameter).replace("CALLBACK_BODY", body);
     let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
       .env("NO_COLOR", "1")
       .args(["eval", &code])
