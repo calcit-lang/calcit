@@ -8500,6 +8500,24 @@
                     hint-fn $ Fn Number (List Dynamic) (-> Number)
                     &+ acc 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |folds-map-as-key-value-lists)
+              :code $ quote $ let
+                  data $ &{} |one 1 |two 2
+                  total $ foldl data 0 $ fn (acc entry)
+                    assert= 2 $ &list:count entry
+                    let
+                        k $ &list:nth entry 0
+                        v $ &list:nth entry 1
+                      if (number? v)
+                        if (= k |one)
+                          + acc $ * 10 v
+                          + acc v
+                        , acc
+                assert= 12 total
+                assert= 10 $ &list:foldl (&{}) 10 $ fn (acc entry)
+                  + acc $ &list:count entry
+                assert= 3 $ foldl (#{} 1 2) 0 &+
+              :tags $ #{} :core :unit
         'foldl-compare $ %{} 'CodeEntry
           :doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure."
           :code $ quote $ defn foldl-compare (xs acc f)

@@ -140,25 +140,11 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
 }
 
 /// `foldl xs init fn` — iterate xs left-to-right, calling fn(acc, elem) each step.
-/// Only supports list collections. fn must be statically resolvable or an inline lambda.
+/// Lists and sets yield elements. Maps yield two-item lists, as on native and JS.
 pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "foldl")?;
 
-  // A Map reducer receives [key, value] entries, not its internal storage slots.
-  let list_ptr = if infer_wasm_static_type(ctx, &args[0]).is_some_and(|ty| {
-    matches!(
-      CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
-      CalcitTypeAnnotation::Map(..)
-    )
-  }) {
-    emit_map_to_pair_list(ctx, &args[..1], "list")?;
-    let ptr = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(ptr));
-    ptr
-  } else {
-    emit_ptr_to_i32(ctx, &args[0])?
-  };
+  let list_ptr = emit_foldl_collection(ctx, &args[0])?;
   // Load count (number of elements)
   let count = emit_load_count_i32(ctx, list_ptr);
 
@@ -208,6 +194,57 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   // Push acc as result
   ctx.emit(Instruction::LocalGet(acc));
   Ok(())
+}
+
+fn emit_foldl_collection(ctx: &mut WasmGenCtx, source: &Calcit) -> Result<u32, String> {
+  let annotation = infer_wasm_static_type(ctx, source).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  match annotation.as_deref() {
+    Some(CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Set(_)) => emit_ptr_to_i32(ctx, source),
+    Some(CalcitTypeAnnotation::Map(_, _)) => {
+      let map = emit_ptr_to_i32(ctx, source)?;
+      Ok(emit_map_pair_collection(ctx, map, "list"))
+    }
+    _ => {
+      let value = ctx.alloc_local();
+      emit_expr(ctx, source)?;
+      ctx.emit(Instruction::LocalSet(value));
+      let is_heap = emit_is_heap_value(ctx, value);
+      ctx.emit(Instruction::LocalGet(is_heap));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
+
+      let ptr = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalTee(ptr));
+      ctx.emit(Instruction::I32Const(4));
+      ctx.emit(Instruction::I32Sub);
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      let tag = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalTee(tag));
+      ctx.emit(Instruction::I32Const(get_type_tag(ctx, "map") as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.begin_block_if();
+      let pairs = emit_map_pair_collection(ctx, ptr, "list");
+      ctx.emit(Instruction::LocalGet(pairs));
+      ctx.emit(Instruction::LocalSet(ptr));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(tag));
+      ctx.emit(Instruction::I32Const(get_type_tag(ctx, "list") as i32));
+      ctx.emit(Instruction::I32Ne);
+      ctx.emit(Instruction::LocalGet(tag));
+      ctx.emit(Instruction::I32Const(get_type_tag(ctx, "set") as i32));
+      ctx.emit(Instruction::I32Ne);
+      ctx.emit(Instruction::I32And);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      Ok(ptr)
+    }
+  }
 }
 
 /// Helper enum for foldl call strategy.
