@@ -182,7 +182,7 @@
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () &unit
+          :code $ quote $ defn main! () boxes/CoreNominalBox boxes/NilBox boxes/NumBox foreign/Option foreign/Result MapEntry &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -190,4 +190,5 @@
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns app.main (:require)
+        :code $ quote $ ns app.main
+          :require (app.checked-write :as boxes) (app.foreign-nominal :as foreign)

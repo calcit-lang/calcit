@@ -778,14 +778,6 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
-      NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeDataToCode => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
       ListQuestion => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
@@ -863,6 +855,8 @@ impl CalcitProc {
       | NativeNumberFormat
       | NativeNumberDisplayBy
       | NativeNumberFits
+      | NativeExtractCodeIntoEdn
+      | NativeDataToCode
       | NativeListReverse
       | NativeListButlast
       | NativeListRange
