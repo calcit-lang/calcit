@@ -431,6 +431,13 @@ function classify(entry) {
       rationale: "This compiler form consumes or produces code/syntax whose value shape is phase-dependent.",
     };
   }
+  if (name === "&enum-def:new") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "内部构造器按位置解析变体列表、泛型列表和 where 元数据，最终生成 EnumDef。",
+    };
+  }
   if (runtimePolymorphic.has(name)) {
     return {
       owner: "runtime-primitives",

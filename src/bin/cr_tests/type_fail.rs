@@ -3032,6 +3032,24 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn enum_definition_constructor_requires_an_entry() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("&enum-def:new :Empty");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("missing EnumDef entry should be diagnosed during preprocessing");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("E_PROC_ARITY") && warning.message().contains("Proc `&enum-def:new` expects at least 2 args, got 1")
+      }),
+      "expected an arity diagnostic for an EnumDef without entries, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn parse_cirru_list_rejects_non_string_before_runtime() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("parse-cirru-list 1");
