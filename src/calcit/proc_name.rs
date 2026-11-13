@@ -602,6 +602,20 @@ fn type_var(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(name)))
 }
 
+/// A Ref watcher, `Fn T T (-> Unit) (:features :state :io)`. It is stored and
+/// runs later when the Ref changes, so it is not a `:pass` slot; it may read
+/// other Refs or print (#2726).
+fn watcher_slot() -> Arc<CalcitTypeAnnotation> {
+  let CalcitTypeAnnotation::Fn(signature) =
+    CalcitTypeAnnotation::from_function_parts(vec![type_var("T"), type_var("T")], some_tag("unit"))
+  else {
+    unreachable!("function parts produce a function signature")
+  };
+  let mut signature = signature.as_ref().clone();
+  signature.features = Arc::new(["state", "io"].into_iter().map(cirru_edn::EdnTag::from).collect());
+  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+}
+
 fn ref_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Ref(inner))
 }
@@ -1388,14 +1402,7 @@ impl CalcitProc {
       }),
       AddWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
-        arg_types: vec![
-          ref_of(type_var("T")),
-          some_tag("tag"),
-          Arc::new(CalcitTypeAnnotation::from_function_parts(
-            vec![type_var("T"), type_var("T")],
-            some_tag("unit"),
-          )),
-        ],
+        arg_types: vec![ref_of(type_var("T")), some_tag("tag"), watcher_slot()],
       }),
       RemoveWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),

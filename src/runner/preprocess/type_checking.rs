@@ -219,6 +219,16 @@ pub(super) fn specialize_core_callback_expected_types(
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let specialized = specialize_core_callback_expected_types_inner(fn_info, args, scope_types, expected_types)?;
+  Some(carry_callback_slot_features(expected_types, specialized))
+}
+
+fn specialize_core_callback_expected_types_inner(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
   }
@@ -248,6 +258,45 @@ pub(super) fn specialize_proc_callback_expected_types(
 }
 
 pub(super) fn specialize_core_expected_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let specialized = specialize_core_expected_types_inner(fn_info, args, scope_types, expected_types)?;
+  Some(carry_callback_slot_features(expected_types, specialized))
+}
+
+/// Call-site contracts rebuild callback slot types from their parts, which
+/// drops the schema's `:features`; copy them back so a `:pass` slot keeps
+/// accepting effectful callbacks (#2726).
+pub(super) fn carry_callback_slot_features(
+  declared: &[Arc<CalcitTypeAnnotation>],
+  specialized: Vec<Arc<CalcitTypeAnnotation>>,
+) -> Vec<Arc<CalcitTypeAnnotation>> {
+  specialized
+    .into_iter()
+    .enumerate()
+    .map(|(idx, slot)| {
+      let Some(declared_fn) = declared.get(idx).and_then(|item| item.resolve_to_fn()) else {
+        return slot;
+      };
+      if declared_fn.features.is_empty() {
+        return slot;
+      }
+      match slot.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) if signature.features.is_empty() => {
+          let mut signature = signature.as_ref().clone();
+          signature.features = declared_fn.features.clone();
+          Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+        }
+        _ => slot,
+      }
+    })
+    .collect()
+}
+
+fn specialize_core_expected_types_inner(
   fn_info: &CalcitFn,
   args: &CalcitList,
   scope_types: &ScopeTypes,

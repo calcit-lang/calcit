@@ -59,9 +59,26 @@
             calls-inline-io 1
             ref-here
             shadow-ref *store
+            passes-inline-io $ [] 1 2
+            passes-local-io ([] 1 2) log-line
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io :state)
+        'passes-inline-io $ %{} 'CodeEntry
+          :doc "|Passing a lambda that declares :io to a :pass callback slot runs it here."
+          :code $ quote $ defn passes-inline-io (xs)
+            each xs $ fn (y)
+              hint-fn $ Fn Number (-> Unit) (:features :io)
+              println y
+          :examples $ []
+          :schema $ quote $ Fn (List Number) (-> Unit)
+        'passes-local-io $ %{} 'CodeEntry
+          :doc "|Passing a local :io callback to a :pass callback slot runs it here."
+          :code $ quote $ defn passes-local-io (xs f) (each xs f)
+          :examples $ []
+          :schema $ quote $ Fn (List Number)
+            Fn Number (-> Unit) (:features :io)
+            -> Unit
         'passes-log $ %{} 'CodeEntry
           :doc "|Passes an :io function as a value without declaring :io."
           :code $ quote $ defn passes-log (xs)

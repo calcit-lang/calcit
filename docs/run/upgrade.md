@@ -44,6 +44,22 @@ calcit config set feature-policy.io warn
 
 上面的命令改的是默认 entry；named entry 加 `--entry <name>`，例如 `calcit config set --entry test feature-policy.io warn`。
 
+## 0.43.0 `Fn` 类型比较 `:state` / `:io`（#2726）
+
+`Fn` 类型兼容判断开始比较效果 feature。带 `:io` 的函数放进没有 `:io` 的 `Fn` 位置（参数、struct 字段、返回值等）会报类型不匹配，报错里会显示 `(:features :io)`：
+
+```text
+struct `Handler` field `:on-click` expects type `fn(:number) -> :unit`, but got `fn(:number) -> :unit (:features :io)`
+```
+
+按存放位置改：
+
+- 存起来以后调用的回调，例如事件处理函数，在位置的类型上写出允许的效果：`Fn Number (-> Unit) (:features :io)`。
+- 项目自己的高阶函数如果在返回前就调用回调，在回调参数上写 `(:features :pass)`。core 的 `map`、`each`、`foldl` 等已经这样标注。
+- 没有自己 `hint-fn` 的 lambda 不带效果，不受影响。
+
+`:pass` 位置接受任意效果，效果算在调用方上：自带 `hint-fn` 声明了 `:io` 的 lambda，或类型带 `:io` 的局部 `Fn`，传给 `each` 等函数时，外层函数也要声明 `:io`。`calcit fix --rule effect-features-v1` 会一并补上。`add-watch!` 的 watcher 位置声明了 `:state :io`。
+
 ## 0.43.0 trait 方法签名用 `Self`（#2727）
 
 `deftrait` 的方法签名里可以直接写 `Self` 表示接收者类型，不再需要 `(:generics T)`：

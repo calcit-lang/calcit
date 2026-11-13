@@ -16176,7 +16176,22 @@ pub fn preprocess_defn(
               schema.return_type = detected_return_type.clone();
             }
             if strict_generated_by_macro && let Some(parent) = prev_features.as_ref() {
-              schema.features = Arc::new(schema.features.union(parent.as_ref()).cloned().collect());
+              // Only lexical capabilities such as `:js-ffi` are inherited. The
+              // effect features `:state` / `:io` of an unannotated lambda belong
+              // to the enclosing definition; putting them on the lambda's type
+              // would reject it from callback slots that do not run effects (#2726).
+              schema.features = Arc::new(
+                schema
+                  .features
+                  .iter()
+                  .chain(
+                    parent
+                      .iter()
+                      .filter(|feature| !matches!(feature.ref_str(), "state" | "io" | crate::calcit::PASS_EFFECTS_FEATURE)),
+                  )
+                  .cloned()
+                  .collect(),
+              );
             }
             Arc::new(schema)
           })

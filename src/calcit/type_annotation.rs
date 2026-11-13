@@ -1717,6 +1717,11 @@ struct FnSchemaFields<'a> {
 }
 
 pub(crate) const ASYNC_INVOCATION_FEATURE: &str = "$async-invocation";
+/// Marks a callback slot whose callee calls the callback only while it runs;
+/// the slot accepts callables with any effect feature (#2726).
+pub const PASS_EFFECTS_FEATURE: &str = "pass";
+/// Effect features that follow subtyping between `Fn` types (#2726).
+const EFFECT_FEATURES: [&str; 2] = ["state", "io"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CalcitGenericBound {
@@ -7646,6 +7651,38 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn number_to_unit_fn(features: &[&str]) -> CalcitTypeAnnotation {
+    let CalcitTypeAnnotation::Fn(signature) =
+      CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::Unit))
+    else {
+      unreachable!("from_function_parts builds a Fn")
+    };
+    let mut signature = signature.as_ref().clone();
+    signature.features = Arc::new(features.iter().map(|feature| EdnTag::from(*feature)).collect());
+    CalcitTypeAnnotation::Fn(Arc::new(signature))
+  }
+
+  #[test]
+  fn fn_compat_compares_effect_features() {
+    let pure = number_to_unit_fn(&[]);
+    let io = number_to_unit_fn(&["io"]);
+    let state_io = number_to_unit_fn(&["state", "io"]);
+    let pass = number_to_unit_fn(&["pass"]);
+    let js_ffi = number_to_unit_fn(&["js-ffi"]);
+    // An effectful callable does not fit a slot that does not declare the effect.
+    assert!(!io.compatible_with_bindings(&pure, &mut TypeBindings::new()));
+    assert!(!state_io.compatible_with_bindings(&io, &mut TypeBindings::new()));
+    // A slot that declares more effects accepts fewer.
+    assert!(pure.compatible_with_bindings(&io, &mut TypeBindings::new()));
+    assert!(io.compatible_with_bindings(&state_io, &mut TypeBindings::new()));
+    // `:pass` slots accept any effect; other features stay out of compatibility.
+    assert!(state_io.compatible_with_bindings(&pass, &mut TypeBindings::new()));
+    assert!(js_ffi.compatible_with_bindings(&pure, &mut TypeBindings::new()));
+    assert!(!io.prove_with_bindings(&pure, &mut TypeBindings::new()).is_proven());
+    assert!(io.prove_with_bindings(&pass, &mut TypeBindings::new()).is_proven());
+    assert_eq!(io.to_brief_string(), "fn(:number) -> :unit (:features :io)");
+  }
   use crate::calcit::CalcitSymbolInfo;
   use std::collections::BTreeSet;
 
@@ -11738,6 +11775,21 @@ impl CalcitFnTypeAnnotation {
     self.features.iter().any(|feature| feature.ref_str() == ASYNC_INVOCATION_FEATURE)
   }
 
+  /// Effect features a callable may carry into a slot of this type (#2726).
+  /// A slot marked `:pass` accepts any of them: the callee only calls the
+  /// callback while it runs, so the caller that names or creates the callback
+  /// is charged for its effects. Any other slot accepts only the `:state` /
+  /// `:io` it declares itself.
+  pub(crate) fn accepts_effects_of(&self, actual: &CalcitFnTypeAnnotation) -> bool {
+    if self.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE) {
+      return true;
+    }
+    EFFECT_FEATURES.iter().all(|effect| {
+      !actual.features.iter().any(|feature| feature.ref_str() == *effect)
+        || self.features.iter().any(|feature| feature.ref_str() == *effect)
+    })
+  }
+
   pub(crate) fn with_async_invocation(&self) -> Self {
     let mut cloned = self.clone();
     let mut features = cloned.features.as_ref().clone();
@@ -11964,9 +12016,10 @@ impl CalcitFnTypeAnnotation {
     }
     let args = format!("({})", rendered_args.join(", "));
     format!(
-      "{}fn{generics}{where_clause}{args} -> {}",
+      "{}fn{generics}{where_clause}{args} -> {}{}",
       if self.is_async_invocation() { "async " } else { "" },
-      self.return_type.describe_bounded(depth + 1, remaining)
+      self.return_type.describe_bounded(depth + 1, remaining),
+      self.effect_features_suffix()
     )
   }
 
@@ -12022,10 +12075,32 @@ impl CalcitFnTypeAnnotation {
     let args_repr = format!("({})", parts.join(", "));
 
     format!(
-      "{}fn{generics}{where_clause}{args_repr} -> {}",
+      "{}fn{generics}{where_clause}{args_repr} -> {}{}",
       if self.is_async_invocation() { "async " } else { "" },
-      self.return_type.to_brief_string_bounded(depth + 1, remaining)
+      self.return_type.to_brief_string_bounded(depth + 1, remaining),
+      self.effect_features_suffix()
     )
+  }
+
+  /// Render the effect features that take part in `Fn` compatibility, so a
+  /// mismatch that only differs in `:state` / `:io` is visible (#2726).
+  fn effect_features_suffix(&self) -> String {
+    let mut shown = self
+      .features
+      .iter()
+      .map(EdnTag::ref_str)
+      .filter(|feature| *feature == PASS_EFFECTS_FEATURE || EFFECT_FEATURES.contains(feature))
+      .collect::<Vec<_>>();
+    if shown.is_empty() {
+      return String::new();
+    }
+    shown.sort_unstable_by_key(|feature| match *feature {
+      "state" => 0,
+      "io" => 1,
+      _ => 2,
+    });
+    let rendered = shown.iter().map(|feature| format!(":{feature}")).collect::<Vec<_>>().join(" ");
+    format!(" (:features {rendered})")
   }
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
@@ -12038,6 +12113,9 @@ impl CalcitFnTypeAnnotation {
   /// such as the two branches accepted by `option:fold`.
   pub(crate) fn compatible_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     if self.is_async_invocation() != other.is_async_invocation() {
+      return false;
+    }
+    if !other.accepts_effects_of(self) {
       return false;
     }
     if !self.accepts_call_range(other) {
@@ -12106,6 +12184,9 @@ impl CalcitFnTypeAnnotation {
     }
 
     if self.is_async_invocation() != other.is_async_invocation() {
+      return TypeProof::Mismatch;
+    }
+    if !other.accepts_effects_of(self) {
       return TypeProof::Mismatch;
     }
     if !self.accepts_call_range(other) {

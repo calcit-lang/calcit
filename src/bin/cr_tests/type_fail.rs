@@ -5479,6 +5479,8 @@ fn effect_features_follow_entry_policy() {
       ("uses-dbg", "DBG_IN_ENTRY"),
       ("calls-inline-io", "IO_FEATURE"),
       ("shadow-ref", "STATE_FEATURE"),
+      ("passes-inline-io", "IO_FEATURE"),
+      ("passes-local-io", "IO_FEATURE"),
     ];
     let collect_with = |policies: HashMap<String, snapshot::FeaturePolicy>| {
       let entries = load_fixture_entries(path);

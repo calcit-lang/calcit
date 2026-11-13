@@ -1,6 +1,661 @@
 
 {}
   :migrations $ []
+    {} (:family |definitions) (:issue |#2726)
+      :reason "|ref_watchers_are_stored_and_run_when_the_Ref_changes;_the_watcher_slot_now_declares_(:features_:state_:io)_so_watchers_may_read_Refs_or_print"
+      :version |0.43.0
+      :after $ {} (:declaration nil)
+        :failure "|重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit"
+        :name 'calcit.core/add-watch!
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+          :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ [] 'T 'T
+              :features $ #{} :io :state
+          :generics $ [] 'T
+      :before $ {} (:declaration nil)
+        :failure "|重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit"
+        :name 'calcit.core/add-watch!
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+          :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
+            {} (:return 'Unit)
+              :args $ [] 'T 'T
+          :generics $ [] 'T
+    {} (:family |definitions) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:declaration nil)
+        :failure "|从左至右，空_List_返回初值，保持_accumulator_类型"
+        :name 'calcit.core/fold
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+            {} (:return 'U)
+              :args $ [] 'U 'T
+              :features $ #{} :pass
+          :generics $ [] 'T 'U
+      :before $ {} (:declaration nil)
+        :failure "|从左至右，空_List_返回初值，保持_accumulator_类型"
+        :name 'calcit.core/fold
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+            {} (:return 'U)
+              :args $ [] 'U 'T
+          :generics $ [] 'T 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.map)
+        :provenance 'calcit.core/option:map
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+              :features $ #{} :pass
+          :generics $ [] 'T 'U
+          :return $ :: 'Option 'U
+      :before $ {} (:name |.map)
+        :provenance 'calcit.core/option:map
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+          :generics $ [] 'T 'U
+          :return $ :: 'Option 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {}
+        :failure "|保留_accumulator_泛型和左至右的回调顺序"
+        :name |.fold
+        :provenance 'calcit.core/fold
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+            {} (:return 'U)
+              :args $ [] 'U 'T
+              :features $ #{} :pass
+          :generics $ [] 'T 'U
+      :before $ {}
+        :failure "|保留_accumulator_泛型和左至右的回调顺序"
+        :name |.fold
+        :provenance 'calcit.core/fold
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+            {} (:return 'U)
+              :args $ [] 'U 'T
+          :generics $ [] 'T 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {}
+        :failure "|每个元素调用回调一次，按顺序展平一层_List"
+        :name |.flat-map
+        :provenance 'calcit.core/mapcat
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'List 'T)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :features $ #{} :pass
+              :return $ :: 'List 'U
+          :generics $ [] 'T 'U
+          :return $ :: 'List 'U
+      :before $ {}
+        :failure "|每个元素调用回调一次，按顺序展平一层_List"
+        :name |.flat-map
+        :provenance 'calcit.core/mapcat
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'List 'T)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :return $ :: 'List 'U
+          :generics $ [] 'T 'U
+          :return $ :: 'List 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.and-then)
+        :provenance 'calcit.core/option:and-then
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :features $ #{} :pass
+              :return $ :: 'Option 'U
+          :generics $ [] 'T 'U
+          :return $ :: 'Option 'U
+      :before $ {} (:name |.and-then)
+        :provenance 'calcit.core/option:and-then
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :return $ :: 'Option 'U
+          :generics $ [] 'T 'U
+          :return $ :: 'Option 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.fold)
+        :provenance 'calcit.core/option:fold
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {} (:return 'U)
+              :args $ []
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+              :features $ #{} :pass
+          :generics $ [] 'T 'U
+      :before $ {} (:name |.fold)
+        :provenance 'calcit.core/option:fold
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 3) (:min 3)
+        :schema $ quote $ {} (:kind :fn) (:return 'U)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {} (:return 'U)
+              :args $ []
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+          :generics $ [] 'T 'U
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.or-else)
+        :provenance 'calcit.core/option:or-else
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {}
+              :args $ []
+              :features $ #{} :pass
+              :return $ :: 'Option 'T
+          :generics $ [] 'T
+          :return $ :: 'Option 'T
+      :before $ {} (:name |.or-else)
+        :provenance 'calcit.core/option:or-else
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Option 'T)
+            :: 'Fn $ {}
+              :args $ []
+              :return $ :: 'Option 'T
+          :generics $ [] 'T
+          :return $ :: 'Option 'T
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.and-then)
+        :provenance 'calcit.core/result:and-then
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :features $ #{} :pass
+              :return $ :: 'Result 'U 'E
+          :generics $ [] 'T 'U 'E
+          :return $ :: 'Result 'U 'E
+      :before $ {} (:name |.and-then)
+        :provenance 'calcit.core/result:and-then
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {}
+              :args $ [] 'T
+              :return $ :: 'Result 'U 'E
+          :generics $ [] 'T 'U 'E
+          :return $ :: 'Result 'U 'E
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.map)
+        :provenance 'calcit.core/result:map
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+              :features $ #{} :pass
+          :generics $ [] 'T 'U 'E
+          :return $ :: 'Result 'U 'E
+      :before $ {} (:name |.map)
+        :provenance 'calcit.core/result:map
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {} (:return 'U)
+              :args $ [] 'T
+          :generics $ [] 'T 'U 'E
+          :return $ :: 'Result 'U 'E
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.map-err)
+        :provenance 'calcit.core/result:map-err
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {} (:return 'F)
+              :args $ [] 'E
+              :features $ #{} :pass
+          :generics $ [] 'T 'E 'F
+          :return $ :: 'Result 'T 'F
+      :before $ {} (:name |.map-err)
+        :provenance 'calcit.core/result:map-err
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {} (:return 'F)
+              :args $ [] 'E
+          :generics $ [] 'T 'E 'F
+          :return $ :: 'Result 'T 'F
+    {} (:family |methods) (:issue |#2726)
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.or-else)
+        :provenance 'calcit.core/result:or-else
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {}
+              :args $ []
+              :features $ #{} :pass
+              :return $ :: 'Result 'T 'E
+          :generics $ [] 'T 'E
+          :return $ :: 'Result 'T 'E
+      :before $ {} (:name |.or-else)
+        :provenance 'calcit.core/result:or-else
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] (:: 'Result 'T 'E)
+            :: 'Fn $ {}
+              :args $ []
+              :return $ :: 'Result 'T 'E
+          :generics $ [] 'T 'E
+          :return $ :: 'Result 'T 'E
+    {}
+      :family |method-contracts
+      :issue |#2726
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.map)
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {} (:return 'U)
+            :args $ [] 'Number
+            :features $ #{} :pass
+        :returns $ quote $ :: 'calcit.core/Option 'U
+      :before $ {} (:name |.map)
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {} (:return 'U)
+            :args $ [] 'Number
+        :returns $ quote $ :: 'calcit.core/Option 'U
+    {}
+      :family |method-contracts
+      :issue |#2726
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.fold)
+        :receiver "|:: 'List 'Number"
+        :rest nil
+        :parameters $ [] (quote 'U)
+          quote $ :: 'Fn $ {} (:return 'U)
+            :args $ [] 'U 'Number
+            :features $ #{} :pass
+        :returns $ quote 'U
+      :before $ {} (:name |.fold)
+        :receiver "|:: 'List 'Number"
+        :rest nil
+        :parameters $ [] (quote 'U)
+          quote $ :: 'Fn $ {} (:return 'U)
+            :args $ [] 'U 'Number
+        :returns $ quote 'U
+    {}
+      :family |method-contracts
+      :issue |#2726
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.flat-map)
+        :receiver "|:: 'List 'Number"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {}
+            :args $ [] 'Number
+            :features $ #{} :pass
+            :return $ :: 'List 'U
+        :returns $ quote $ :: 'List 'U
+      :before $ {} (:name |.flat-map)
+        :receiver "|:: 'List 'Number"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'List 'U
+        :returns $ quote $ :: 'List 'U
+    {}
+      :family |method-contracts
+      :issue |#2726
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.fold)
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :rest nil
+        :parameters $ []
+          quote $ :: 'Fn $ {}
+            :return 'OptionFoldOutput
+            :args $ []
+          quote $ :: 'Fn $ {}
+            :return 'OptionFoldOutput
+            :args $ [] 'Number
+            :features $ #{} :pass
+        :returns $ quote 'OptionFoldOutput
+      :before $ {} (:name |.fold)
+        :receiver "|:: 'calcit.core/Option 'Number"
+        :rest nil
+        :parameters $ []
+          quote $ :: 'Fn $ {}
+            :return 'OptionFoldOutput
+            :args $ []
+          quote $ :: 'Fn $ {}
+            :return 'OptionFoldOutput
+            :args $ [] 'Number
+        :returns $ quote 'OptionFoldOutput
+    {}
+      :family |method-contracts
+      :issue |#2726
+      :reason "|callback_slots_called_before_the_call_returns_are_marked_(:features_:pass);_they_accept_callbacks_with_:state_/_:io_and_the_caller_is_charged_for_those_effects"
+      :version |0.43.0
+      :after $ {} (:name |.map)
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {} (:return 'ResultMapOutput)
+            :args $ [] 'Number
+            :features $ #{} :pass
+        :returns $ quote $ :: 'calcit.core/Result 'ResultMapOutput 'String
+      :before $ {} (:name |.map)
+        :receiver "|:: 'calcit.core/Result 'Number 'String"
+        :rest nil
+        :parameters $ [] $ quote
+          :: 'Fn $ {} (:return 'ResultMapOutput)
+            :args $ [] 'Number
+        :returns $ quote $ :: 'calcit.core/Result 'ResultMapOutput 'String
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|公开_trait_约束，不能由命名代替实现证据"
+        :name 'calcit.core/ToString
+        :runtime-arity nil
+        :declaration $ quote $ deftrait ToString
+          .to-string $ Fn Self $ -> String
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|公开_trait_约束，不能由命名代替实现证据"
+        :name 'calcit.core/ToString
+        :runtime-arity nil
+        :declaration $ quote $ deftrait ToString
+          .to-string $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return 'String
+        :schema $ quote 'Trait
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|调试显示_trait，不等同值转换或通用序列化，须有实现证据"
+        :name 'calcit.core/Debug
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Debug
+          .debug $ Fn Self $ -> String
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|调试显示_trait，不等同值转换或通用序列化，须有实现证据"
+        :name 'calcit.core/Debug
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Debug
+          .debug $ :: :fn $ {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+        :schema $ quote 'Trait
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|面向人的显示_trait，不等同_Debug_或_ToString，须有实现证据"
+        :name 'calcit.core/Show
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Show
+          .show $ Fn Self $ -> String
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|面向人的显示_trait，不等同_Debug_或_ToString，须有实现证据"
+        :name 'calcit.core/Show
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Show
+          .show $ :: :fn $ {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+        :schema $ quote 'Trait
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|公开_trait_约束，长度单位遵循接收者语义"
+        :name 'calcit.core/Len
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Len
+          .len $ Fn Self $ -> Number
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|公开_trait_约束，长度单位遵循接收者语义"
+        :name 'calcit.core/Len
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Len
+          .len $ :: :fn $ {} (:return :number)
+            :generics $ [] 'T
+            :args $ [] 'T
+        :schema $ quote 'Trait
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|公开同类型加法_trait，Map_不因旧_add_而获得该约束"
+        :name 'calcit.core/Add
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Add
+          .add $ Fn Self Self $ -> Self
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|公开同类型加法_trait，Map_不因旧_add_而获得该约束"
+        :name 'calcit.core/Add
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Add
+          .add $ :: :fn $ {} (:return 'T)
+            :generics $ [] 'T
+            :args $ [] 'T 'T
+        :schema $ quote 'Trait
+    {} (:family |definitions) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {}
+        :failure "|公开同类型相等_trait，仍需要实际实现证据"
+        :name 'calcit.core/Eq
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Eq
+          .eq? $ Fn Self Self $ -> Bool
+        :schema $ quote 'Trait
+      :before $ {}
+        :failure "|公开同类型相等_trait，仍需要实际实现证据"
+        :name 'calcit.core/Eq
+        :runtime-arity nil
+        :declaration $ quote $ deftrait Eq
+          .eq? $ :: :fn $ {} (:return :bool)
+            :generics $ [] 'T
+            :args $ [] 'T 'T
+        :schema $ quote 'Trait
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Number
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Number
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Bool
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Bool
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Tag
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Tag
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Symbol
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Symbol
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
+    {} (:family |methods) (:issue |#2727)
+      :reason |trait_method_signatures_name_the_receiver_as_Self_instead_of_a_method_generic_T;_the_contract_is_unchanged
+      :version |0.43.0
+      :after $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Nil
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ Fn Self (-> String)
+      :before $ {} (:name |.debug)
+        :provenance 'calcit.core/&str
+        :receiver |'Nil
+        :features $ []
+        :runtime-arity $ {} (:max nil) (:min 0)
+        :schema $ quote $ :: :fn
+          {} (:return :string)
+            :generics $ [] 'T
+            :args $ [] 'T
     {} (:family |definitions) (:version |0.41.1) (:issue |#2700)
       :reason "|defenum_generics_now_use_the_(:generics_…)_clause;_Option_keeps_the_same_type_parameters_and_variants"
       :before $ {} (:name 'calcit.core/Option) (:runtime-arity nil) (:schema nil)

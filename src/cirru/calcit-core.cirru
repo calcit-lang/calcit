@@ -1703,7 +1703,9 @@
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ List T
             :generics T
           :tags $ #{} :internal
@@ -1746,7 +1748,9 @@
                 recur xs f $ &+ i 1
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             , Number
               -> $ Option Number
               :generics T
@@ -1759,7 +1763,9 @@
                 :: false None
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ Option T
             :generics T
           :tags $ #{} :internal
@@ -1785,7 +1791,9 @@
               if (< index 0) None $ Some index
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ Option Number
             :generics T
           :tags $ #{} :internal
@@ -1873,7 +1881,9 @@
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U
-            Fn U T $ -> U
+            Fn U T
+              -> U
+              :features :pass
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -2017,7 +2027,9 @@
                 append acc $ f x
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> $ List U
             :generics T U
           :tags $ #{} :internal
@@ -2049,7 +2061,9 @@
                 raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ quote $ Fn (List P)
-            Fn Dynamic Dynamic $ -> R
+            Fn Dynamic Dynamic
+              -> R
+              :features :pass
             -> $ List R
             :generics P R
             :open :reflect
@@ -2267,7 +2281,9 @@
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T T $ -> Number
+            Fn T T
+              -> Number
+              :features :pass
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -2494,7 +2510,7 @@
                   , acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn (Tuple K V) (-> Bool)
+            Fn (Tuple K V) (-> Bool) (:features :pass)
             -> $ Map K V
             :generics K V
           :tags $ #{} :internal
@@ -2542,7 +2558,9 @@
                 if (f key value) (&map:assoc acc key value) acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn K V $ -> Bool
+            Fn K V
+              -> Bool
+              :features :pass
             -> $ Map K V
             :generics K V
           :tags $ #{} :internal
@@ -2578,7 +2596,9 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Map K V) A
-            Fn A K V $ -> A
+            Fn A K V
+              -> A
+              :features :pass
             -> A
             :generics K V A
           :tags $ #{} :builtin :internal
@@ -2635,6 +2655,7 @@
           :schema $ quote $ Fn (Map K V)
             Fn (Tuple K V)
               -> $ Tuple K2 V2
+              :features :pass
             -> $ Map K2 V2
             :generics K V K2 V2
           :tags $ #{} :internal
@@ -2677,7 +2698,7 @@
               raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn (Tuple K V) (-> U)
+            Fn (Tuple K V) (-> U) (:features :pass)
             -> $ List U
             :generics K V U
           :tags $ #{} :internal
@@ -3043,7 +3064,9 @@
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ quote $ Fn (Set T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ Set T
             :generics T
           :tags $ #{} :internal
@@ -3078,7 +3101,9 @@
                 &include acc $ f x
           :examples $ []
           :schema $ quote $ Fn (Set T)
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> $ Set U
             :generics T U
           :tags $ #{} :internal
@@ -4355,7 +4380,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Ref T) Tag
-            Fn T T $ -> Unit
+            Fn T T (-> Unit) (:features :state :io)
             -> Unit
             :generics T
           :tags $ #{} :builtin :internal :state :watch
@@ -5553,7 +5578,9 @@
             raise "|consume-readable-byte-stream is only available inside a scoped async Component export"
           :examples $ []
           :schema $ quote $ Fn ReadableByteStream Number Number
-            Fn Buffer $ -> Bool
+            Fn Buffer
+              -> Bool
+              :features :pass
             -> $ Result Unit StreamConsumeError
           :tags $ #{} :internal
         'contains-field? $ %{} 'CodeEntry
@@ -7530,7 +7557,9 @@
             assert= &unit $ each ([] 1 2 3)
               fn (x) (&+ x 1)
           :schema $ quote $ Fn Dynamic
-            Fn Dynamic $ -> R
+            Fn Dynamic
+              -> R
+              :features :pass
             -> Unit
             :generics R
             :open :intrinsic
@@ -8098,7 +8127,9 @@
                   (:drop) acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn K V $ -> $ MapEntryDecision R S
+            Fn K V
+              -> $ MapEntryDecision R S
+              :features :pass
             -> $ Map R S
             :generics K V R S
           :tests $ []
@@ -8170,7 +8201,9 @@
               not $ f x
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ List T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |filters-matching-list-members)
@@ -8191,7 +8224,9 @@
             quote $ assert= None $ find ([] 1 2 3)
               fn (x) (> x 9)
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ Option T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-matching-list-member)
@@ -8209,7 +8244,9 @@
             quote $ assert= None $ find-index ([] 1 2 3)
               fn (x) (> x 9)
           :schema $ quote $ Fn (List T)
-            Fn T $ -> Bool
+            Fn T
+              -> Bool
+              :features :pass
             -> $ Option Number
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-matching-list-index)
@@ -8357,7 +8394,9 @@
               [] 1 2 3
               , .fold 0 +
           :schema $ quote $ Fn (List T) U
-            Fn U T $ -> U
+            Fn U T
+              -> U
+              :features :pass
             -> U
             :generics T U
           :tests $ []
@@ -8398,7 +8437,9 @@
               if (&>= acc 3) (ControlFlow :break acc)
                 ControlFlow :continue $ + acc x
           :schema $ quote $ Fn (List T) U
-            Fn U T $ -> $ ControlFlow U
+            Fn U T
+              -> $ ControlFlow U
+              :features :pass
             -> U
             :generics T U
           :tests $ []
@@ -8438,7 +8479,9 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U
-            Fn U T $ -> U
+            Fn U T
+              -> U
+              :features :pass
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -8463,7 +8506,9 @@
             quote $ assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
             quote $ assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
           :schema $ quote $ Fn (List T) T
-            Fn T T $ -> Bool
+            Fn T T
+              -> Bool
+              :features :pass
             -> Bool
             :generics T
           :tests $ []
@@ -8495,7 +8540,9 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U U
-            Fn U T $ -> Enum
+            Fn U T
+              -> Enum
+              :features :pass
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -9092,7 +9139,9 @@
                     , xss
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> K
+            Fn T
+              -> K
+              :features :pass
             -> $ Map K $ List T
             :generics T K
           :tests $ [] $ %{} 'TestEntry (:name |groups-list-by-derived-key)
@@ -10557,7 +10606,9 @@
             quote $ assert= ([] |1 |2 |3)
               map ([] 1 2 3) str
           :schema $ quote $ Fn C
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> Dynamic
             :generics C T U
             :where $ C Mappable
@@ -10647,7 +10698,9 @@
               map-indexed ([] |a |b)
                 fn (i x) ([] i x)
           :schema $ quote $ Fn (List T)
-            Fn Number T $ -> U
+            Fn Number T
+              -> U
+              :features :pass
             -> $ List U
             :generics T U
           :tests $ []
@@ -10684,7 +10737,9 @@
                 append acc $ f key value
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn K V $ -> U
+            Fn K V
+              -> U
+              :features :pass
             -> $ List U
             :generics K V U
           :tests $ []
@@ -10742,7 +10797,9 @@
             &list:concat & $ map xs f
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T $ -> $ List U
+            Fn T
+              -> $ List U
+              :features :pass
             -> $ List U
             :generics T U
           :tests $ []
@@ -11396,7 +11453,9 @@
               (Some 2) .and-then $ fn (x)
                 Some $ * x 2
           :schema $ quote $ Fn (Option T)
-            Fn T $ -> $ Option U
+            Fn T
+              -> $ Option U
+              :features :pass
             -> $ Option U
             :generics T U
           :tags $ #{} :internal
@@ -11428,7 +11487,9 @@
               fn (value) (+ value 1)
           :schema $ quote $ Fn (Option T)
             Fn $ -> U
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> U
             :generics T U
           :tags $ #{} :internal
@@ -11464,7 +11525,9 @@
               (:none) (%:: Option :none)
           :examples $ []
           :schema $ quote $ Fn (Option T)
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> $ Option U
             :generics T U
           :tags $ #{} :internal
@@ -11513,7 +11576,9 @@
             assert= (Some 2)
               None .or-else $ fn () $ Some 2
           :schema $ quote $ Fn (Option T)
-            Fn $ -> $ Option T
+            Fn
+              -> $ Option T
+              :features :pass
             -> $ Option T
             :generics T
           :tags $ #{} :internal
@@ -12081,7 +12146,9 @@
           :examples $ [] $ quote
             assert= 6 $ reduce ([] 1 2 3) 0 +
           :schema $ quote $ Fn (List T) U
-            Fn U T $ -> U
+            Fn U T
+              -> U
+              :features :pass
             -> U
             :generics T U
           :tests $ [] $ %{} 'TestEntry (:name |reduces-list-from-initial-value)
@@ -12252,7 +12319,9 @@
               (Result :ok 2) .and-then $ fn (x)
                 Result :ok $ * x 2
           :schema $ quote $ Fn (Result T E)
-            Fn T $ -> $ Result U E
+            Fn T
+              -> $ Result U E
+              :features :pass
             -> $ Result U E
             :generics T U E
           :tags $ #{} :internal
@@ -12292,7 +12361,9 @@
               (:err err) (%:: Result :err err)
           :examples $ []
           :schema $ quote $ Fn (Result T E)
-            Fn T $ -> U
+            Fn T
+              -> U
+              :features :pass
             -> $ Result U E
             :generics T U E
           :tags $ #{} :internal
@@ -12317,7 +12388,9 @@
             assert= (Result :err |failed!)
               (Result :err |failed) .map-err $ fn (e) (str e |!)
           :schema $ quote $ Fn (Result T E)
-            Fn E $ -> F
+            Fn E
+              -> F
+              :features :pass
             -> $ Result T F
             :generics T E F
           :tags $ #{} :internal
@@ -12363,7 +12436,9 @@
             assert= (Result :ok 2)
               (Result :err |missing) .or-else $ fn () $ Result :ok 2
           :schema $ quote $ Fn (Result T E)
-            Fn $ -> $ Result T E
+            Fn
+              -> $ Result T E
+              :features :pass
             -> $ Result T E
             :generics T E
           :tags $ #{} :internal
@@ -12562,7 +12637,9 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T T $ -> Number
+            Fn T T
+              -> Number
+              :features :pass
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -13610,7 +13687,9 @@
                 {} $ :count 1
                 , :missing inc
           :schema $ quote $ Fn Dynamic Dynamic
-            Fn Dynamic $ -> Dynamic
+            Fn Dynamic
+              -> Dynamic
+              :features :pass
             -> Dynamic
             :open :intrinsic
           :tests $ []
@@ -13716,7 +13795,7 @@
                 fn (current)
                   &* (option:unwrap current) 2
           :schema $ quote $ Fn Dynamic (List K)
-            Fn (Option Dynamic) (-> R)
+            Fn (Option Dynamic) (-> R) (:features :pass)
             -> Dynamic
             :generics K R
             :open :intrinsic
@@ -14071,7 +14150,9 @@
               zip-with ([] |a |b |c) ([] 1 2)
                 fn (s n) (str s n)
           :schema $ quote $ Fn (List A) (List B)
-            Fn A B $ -> U
+            Fn A B
+              -> U
+              :features :pass
             -> $ List U
             :generics A B U
           :tests $ []

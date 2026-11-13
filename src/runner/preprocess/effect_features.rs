@@ -366,9 +366,51 @@ impl Checker<'_> {
             );
           }
         }
+        self.charge_pass_slot_callbacks(head, items, scope, near);
         for item in items.iter() {
           self.walk(item, scope, near);
         }
+      }
+    }
+  }
+
+  /// A callback slot marked `:pass` (core `map`, `each`, `foldl`, …) calls
+  /// the callback before the call returns, so the effects of a callback that
+  /// declares them belong to this caller (#2726). Named definitions are
+  /// already charged where they are referenced; this covers inline lambdas
+  /// with their own hint and local `Fn` values whose type carries features.
+  fn charge_pass_slot_callbacks(
+    &mut self,
+    head: Option<&Calcit>,
+    items: &crate::calcit::CalcitList,
+    scope: &Scope,
+    near: Option<&NodeLocation>,
+  ) {
+    let Some(signature) = callee_signature(head) else {
+      return;
+    };
+    for (idx, arg) in items.iter().skip(1).enumerate() {
+      let slot = signature.arg_types.get(idx).or(signature.rest_type.as_ref());
+      if !slot.is_some_and(|slot| is_pass_slot(slot)) {
+        continue;
+      }
+      let (effects, label) = match arg {
+        Calcit::List(lambda) if matches!(lambda.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
+          (lambda_declared_effects(lambda), String::from("an inline lambda"))
+        }
+        Calcit::Local(local) => (schema_effects(local.type_info.as_ref()), format!("`{}`", local.sym)),
+        _ => continue,
+      };
+      for effect in effects {
+        self.require(
+          scope,
+          effect,
+          &format!(
+            "passes {label}, which declares `:{}`, to a callback slot that runs it",
+            effect.feature()
+          ),
+          near,
+        );
       }
     }
   }
@@ -592,6 +634,25 @@ fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut Has
     }
     _ => {}
   }
+}
+
+/// The schema of a core function called at `head`, when it has one.
+fn callee_signature(head: Option<&Calcit>) -> Option<Arc<crate::calcit::CalcitFnTypeAnnotation>> {
+  let def = match head? {
+    Calcit::Import(import) if import.ns.as_ref() == crate::calcit::CORE_NS => import.def.to_string(),
+    Calcit::Proc(proc) => proc.to_string(),
+    _ => return None,
+  };
+  program::lookup_def_schema(crate::calcit::CORE_NS, &def).resolve_to_fn()
+}
+
+fn is_pass_slot(slot: &CalcitTypeAnnotation) -> bool {
+  slot.resolve_to_fn().is_some_and(|signature| {
+    signature
+      .features
+      .iter()
+      .any(|feature| feature.ref_str() == crate::calcit::PASS_EFFECTS_FEATURE)
+  })
 }
 
 /// Effects declared by a nested `defn`'s own `hint-fn`, if any.

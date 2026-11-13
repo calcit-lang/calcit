@@ -68,10 +68,10 @@ pub(crate) use type_annotation::checkpoint_type_slot_declarations;
 pub(crate) use type_annotation::type_alias_declaration;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitNumericRefinement, CalcitTypeAnnotation, DYNAMIC_TYPE, FnOpenReason,
-  FnOpenReasonNote, MacroCapability, MacroExpansionType, MacroSignature, MacroSyntaxType, NullableOrigin, SchemaKind,
-  brief_type_of_value, clear_type_slots, configure_entry_type_slots, declared_type_form, entry_type_slots, install_entry_type_slots,
-  pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot, resolve_type_slot,
-  value_matches_type_annotation, with_type_annotation_warning_context,
+  FnOpenReasonNote, MacroCapability, MacroExpansionType, MacroSignature, MacroSyntaxType, NullableOrigin, PASS_EFFECTS_FEATURE,
+  SchemaKind, brief_type_of_value, clear_type_slots, configure_entry_type_slots, declared_type_form, entry_type_slots,
+  install_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_program_lookups, register_type_slot,
+  resolve_type_slot, value_matches_type_annotation, with_type_annotation_warning_context,
 };
 pub use union_def::CalcitUnionDef;
 
