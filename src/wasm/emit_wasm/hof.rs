@@ -144,8 +144,21 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
 pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "foldl")?;
 
-  // Evaluate collection → i32 pointer
-  let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  // A Map reducer receives [key, value] entries, not its internal storage slots.
+  let list_ptr = if infer_wasm_static_type(ctx, &args[0]).is_some_and(|ty| {
+    matches!(
+      CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+      CalcitTypeAnnotation::Map(..)
+    )
+  }) {
+    emit_map_to_pair_list(ctx, &args[..1], "list")?;
+    let ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(ptr));
+    ptr
+  } else {
+    emit_ptr_to_i32(ctx, &args[0])?
+  };
   // Load count (number of elements)
   let count = emit_load_count_i32(ctx, list_ptr);
 
