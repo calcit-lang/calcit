@@ -1440,13 +1440,17 @@ impl CalcitProc {
         )),
         arg_types: vec![some_tag("enum-def"), some_tag("string")],
       }),
-      NativeFsReadDir => Some(ProcTypeSignature {
-        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
-          Arc::from("Result"),
-          Arc::new(vec![list_of(type_var("T")), some_tag("string")]),
-        )),
-        arg_types: vec![some_tag("enum-def"), some_tag("struct-def"), some_tag("string"), some_tag("string")],
-      }),
+      NativeFsReadDir => {
+        // Concrete result types come from the constructors passed at the call site.
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled directory read function schema");
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
       ReadDir => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
         arg_types: vec![some_tag("string"), some_tag("bool")],

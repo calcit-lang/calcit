@@ -17,7 +17,6 @@
 &exclude | arg 1 | "'Dynamic" => "'T"
 &exclude | return | "'Set" => (:: "'Set" "'T")
 &extract-code-into-edn | missing core function schema
-&fs-read-dir | return | (:: "'calcit.core/Result" (:: "'List" "'T") "'String") => (:: "'calcit.core/Result" (:: "'List" "'calcit.core/FsPath") "'String")
 &impl::new | missing core function schema
 &include | arg 0 | "'Set" => (:: "'Set" "'T")
 &include | arg 1 | "'Dynamic" => "'T"
