@@ -8576,6 +8576,23 @@ mod tests {
           .prove_with_bindings(nullable_required.as_ref(), &mut TypeBindings::new())
           .is_proven()
       );
+      // Two nested layers hide nothing either.
+      let doubly_erased = Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::DynFn), origin)),
+        origin,
+      ));
+      let doubly_required = function(Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::Nullable(
+          function(Arc::new(CalcitTypeAnnotation::Number)),
+          origin,
+        )),
+        origin,
+      )));
+      assert!(
+        !function(doubly_erased)
+          .prove_with_bindings(doubly_required.as_ref(), &mut TypeBindings::new())
+          .is_proven()
+      );
       let nullable_typed = Arc::new(CalcitTypeAnnotation::Nullable(
         function(Arc::new(CalcitTypeAnnotation::Number)),
         origin,
@@ -12257,11 +12274,20 @@ impl CalcitFnTypeAnnotation {
     /// Follows aliases, bound type variables and type slots to the type the
     /// proof below would compare. `None` means the walk revisited a name, a
     /// cycle that cannot settle on any type.
-    fn strip_nullable(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-      match annotation.as_ref() {
-        CalcitTypeAnnotation::Nullable(inner, _) => inner.clone(),
-        _ => annotation.clone(),
+    /// Resolves bindings and removes every nullable layer, however they
+    /// alternate (`JsNullish (JsNullish AnyFn)`, `T?` with `T` bound to a
+    /// nullable type). A walk that keeps finding new layers, such as a
+    /// variable bound to a nullable of itself, is unsettled: `None`.
+    fn resolve_through_nullable(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
+      const MAX_LAYERS: usize = 64;
+      let mut current = resolve_bound(annotation, bindings)?;
+      for _ in 0..MAX_LAYERS {
+        match current.as_ref() {
+          CalcitTypeAnnotation::Nullable(inner, _) => current = resolve_bound(inner, bindings)?,
+          _ => return Some(current),
+        }
       }
+      None
     }
     fn resolve_bound(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
       let mut current = CalcitTypeAnnotation::expand_schema_alias(annotation);
@@ -12299,12 +12325,9 @@ impl CalcitFnTypeAnnotation {
       // A nullable wrapper (`JsNullish AnyFn`, inferred `T?`) does not change
       // that: when the value is present it is still an erased callable, so
       // both sides are compared without their nullable wrappers.
-      let erased = resolve_bound(actual, &staged).is_none_or(|actual| {
-        resolve_bound(&strip_nullable(&actual), &staged).is_none_or(|inner| matches!(inner.as_ref(), CalcitTypeAnnotation::DynFn))
-      });
-      let requires_signature = resolve_bound(expected, &staged).is_none_or(|expected| {
-        resolve_bound(&strip_nullable(&expected), &staged).is_none_or(|inner| inner.resolve_to_nonoptional_fn().is_some())
-      });
+      let erased = resolve_through_nullable(actual, &staged).is_none_or(|inner| matches!(inner.as_ref(), CalcitTypeAnnotation::DynFn));
+      let requires_signature =
+        resolve_through_nullable(expected, &staged).is_none_or(|inner| inner.resolve_to_nonoptional_fn().is_some());
       if erased && requires_signature {
         return TypeProof::Mismatch;
       }
