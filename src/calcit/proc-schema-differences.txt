@@ -60,7 +60,6 @@
 &union | arg 0 | "'Set" => (:: "'Set" "'T")
 &union | arg 1 | "'Set" => (:: "'Set" "'T")
 &union | return | "'Set" => (:: "'Set" "'T")
-&union-def:new | rest | "'Dynamic" => <missing>
 &unreachable! | missing core definition
 &{} | missing core function schema
 :: | missing core function schema

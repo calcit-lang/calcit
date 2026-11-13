@@ -431,6 +431,13 @@ function classify(entry) {
       rationale: "This compiler form consumes or produces code/syntax whose value shape is phase-dependent.",
     };
   }
+  if (name === "&union-def:new") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
+    };
+  }
   if (runtimePolymorphic.has(name)) {
     return {
       owner: "runtime-primitives",
