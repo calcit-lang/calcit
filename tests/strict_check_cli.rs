@@ -2290,6 +2290,27 @@ fn string_type_slot_bindings_are_rejected_until_edit_format() {
 }
 
 #[test]
+fn bare_union_assertion_rejects_a_nonmember() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-union.cirru", &snapshot).expect("union fixture should copy");
+  edit_def_at(
+    &snapshot,
+    "test-union.main/main!",
+    "quote $ defn main! () (assert-type true test-union.main/CssValue) &unit",
+  );
+  edit_schema_at(&snapshot, "test-union.main/main!", "Unit");
+
+  let output = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!output.status.success(), "a String or Number union cannot contain Bool");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("E_ASSERT_TYPE_MISMATCH") && stderr.contains("CssValue") && stderr.contains("bool"),
+    "{stderr}"
+  );
+}
+
+#[test]
 fn quoted_compound_types_are_rejected_until_edit_format() {
   // #2583: 0.37.0 rejects `quote $ <compound type>` in type-only positions at load,
   // tests included; `edit format` writes them bare.
