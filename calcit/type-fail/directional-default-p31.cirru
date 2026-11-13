@@ -14,8 +14,9 @@
           :code $ quote $ defn g (cb) (cb |a)
           :examples $ []
           :schema $ quote $ Fn
-            Fn Dynamic $ -> Unit
+            Fn Dynamic (-> Unit) (:features :io)
             -> Unit
+            :features :io
         'h $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn h (x)
             println $ &+ x 1

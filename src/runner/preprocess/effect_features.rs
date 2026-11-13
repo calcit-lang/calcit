@@ -640,19 +640,29 @@ fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut Has
 fn callee_signature(head: Option<&Calcit>) -> Option<Arc<crate::calcit::CalcitFnTypeAnnotation>> {
   let def = match head? {
     Calcit::Import(import) if import.ns.as_ref() == crate::calcit::CORE_NS => import.def.to_string(),
-    Calcit::Proc(proc) => proc.to_string(),
+    Calcit::Proc(proc) => {
+      if let Some(found) = program::lookup_def_schema(crate::calcit::CORE_NS, proc.as_ref()).resolve_to_fn() {
+        return Some(found);
+      }
+      let contract = proc.get_type_signature()?;
+      return CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
+        .resolve_to_fn();
+    }
     _ => return None,
   };
   program::lookup_def_schema(crate::calcit::CORE_NS, &def).resolve_to_fn()
 }
 
+/// Core callback slots that run the callback before returning: marked
+/// `:pass`, or a bare `Fn` (`any?`, `filter`, `every?`, ...).
 fn is_pass_slot(slot: &CalcitTypeAnnotation) -> bool {
-  slot.resolve_to_fn().is_some_and(|signature| {
-    signature
-      .features
-      .iter()
-      .any(|feature| feature.ref_str() == crate::calcit::PASS_EFFECTS_FEATURE)
-  })
+  matches!(slot, CalcitTypeAnnotation::DynFn)
+    || slot.resolve_to_fn().is_some_and(|signature| {
+      signature
+        .features
+        .iter()
+        .any(|feature| feature.ref_str() == crate::calcit::PASS_EFFECTS_FEATURE)
+    })
 }
 
 /// Effects declared by a nested `defn`'s own `hint-fn`, if any.
