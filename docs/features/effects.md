@@ -56,6 +56,36 @@ defcomp comp-button ()
       println |clicked
 ```
 
+## `Fn` 类型里的 features
+
+从 0.43.0 起，`Fn` 类型兼容判断比较 `:state` / `:io`：带 `:io` 的函数只能放进同样声明了 `:io` 的 `Fn` 位置，参数、struct 字段、返回值等所有 `Fn` 位置都一样。声明更多效果的位置接受效果更少的函数。
+
+```cirru.no-check
+defstruct Handler (:on-click $ Fn Number (-> Unit))
+
+; log! 声明了 :io，放进不带 :io 的字段会报 E_FN_ARG_TYPE_MISMATCH：
+; expects type `fn(:number) -> :unit`, but got `fn(:number) -> :unit (:features :io)`
+Handler :on-click log!
+
+; 字段声明 :io 后可以存放
+defstruct Handler (:on-click $ Fn Number (-> Unit) (:features :io))
+```
+
+`map`、`each`、`foldl`、`filter`、`find`、`sort`、`update` 等在返回前就调用回调的 core 高阶函数，回调位置标了 `(:features :pass)`。这样的位置接受任意效果的回调，效果算在传入回调的调用方上：
+
+```cirru.no-check
+:schema $ quote $ Fn (List T)
+  Fn T (-> U) (:features :pass)
+  -> $ List U
+  :generics T U
+```
+
+- 具名函数在引用处就算（见上文第 3 条）。
+- 自带 `hint-fn` 并声明了效果的 lambda，或类型带 feature 的局部 `Fn`，传进 `:pass` 位置时也算外层函数的使用。
+- 没有自己 `hint-fn` 的 lambda 不带 `:state` / `:io`，它的效果本来就算在外层函数上，因此可以放进任何 `Fn` 位置。
+
+项目自己的高阶函数如果也是在返回前调用回调，可以在回调参数上写 `(:features :pass)`。存起来以后再调用的回调（例如 `add-watch!` 的 watcher、事件处理函数）不要用 `:pass`，应在位置上写出它允许的效果。
+
 `:js-ffi` 仍是词法规则：只约束函数自己的函数体，调用 FFI 包装函数不需要声明。`:state` / `:io` 描述调用方能观察到的行为，所以会向调用方传递。
 
 ## entry 策略
@@ -101,6 +131,9 @@ let
 ## 限制
 
 - 只检查有结构化 `Fn` schema 的定义；没有 schema 的定义（包括 `calcit eval` 片段）不检查。
-- `Fn` 类型兼容判断不比较 `:features`；声明了 `:io` 的 lambda 存进普通 `Fn` 位置后被调用，调用方不需要声明。
+- `Fn` 类型兼容只比较 `:state` / `:io`（以及 `:pass` 位置），`:js-ffi` 等其他 feature 不参与。
+- 类型为 `Dynamic` 或裸 `Fn` 的位置接受任何函数，存进去的效果不再被追踪。
+- 类型带 `:pass` 的回调参数在函数体里不带具体效果；把它再存进别的 `Fn` 位置时，效果不再被追踪。
+- 通过局部别名（`let run map`）调用高阶函数时，传进 `:pass` 位置的 lambda 不会计到外层函数上。
 - 方法调用（`.deref` 等）不参与判定。
 - 只检查项目自己的命名空间，依赖模块的诊断不出现在应用的检查结果里。

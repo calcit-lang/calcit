@@ -3598,14 +3598,18 @@ fn type_fail_update_collection_contract_fixture_reports_warning_codes() {
     );
     assert!(
       matched.iter().any(|warning| {
-        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+        warning
+          .message()
+          .contains("arg 3 expects type `fn(:number) -> :number (:features :pass)`")
           && warning.message().contains("got `fn(:string) -> :string`")
       }),
       "Map update should bind the updater to its value type: {matched:?}"
     );
     assert!(
       matched.iter().any(|warning| {
-        warning.message().contains("arg 3 expects type `fn(:number) -> :number`")
+        warning
+          .message()
+          .contains("arg 3 expects type `fn(:number) -> :number (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :string`")
       }),
       "inline update callbacks should receive the bound member type before validating their return type: {matched:?}"
@@ -3806,7 +3810,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       filter_warnings
         .iter()
         .filter(|warning| {
-          warning.message().contains("arg 2 expects type `fn(:number) -> :bool`")
+          warning
+            .message()
+            .contains("arg 2 expects type `fn(:number) -> :bool (:features :pass)`")
             && warning.message().contains("got `fn(:number) -> :number`")
         })
         .count(),
@@ -3815,7 +3821,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       filter_warnings.iter().any(|warning| {
-        warning.message().contains("arg 2 expects type `fn(tuple<:tag, :number>) -> :bool`")
+        warning
+          .message()
+          .contains("arg 2 expects type `fn(tuple<:tag, :number>) -> :bool (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "Map filters should pass each entry as a `Tuple K V` predicate argument (#2561): {filter_warnings:?}"
@@ -3849,7 +3857,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       iteration_warnings.iter().any(|warning| {
         warning.message().contains("calcit.core/any?")
-          && warning.message().contains("expects type `fn(:number) -> :bool`")
+          && warning.message().contains("expects type `fn(:number) -> :bool (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "any? should require a Bool predicate over the List member type: {iteration_warnings:?}"
@@ -3857,7 +3865,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       iteration_warnings.iter().any(|warning| {
         warning.message().contains("calcit.core/every?")
-          && warning.message().contains("expects type `fn(list<dynamic>) -> :bool`")
+          && warning
+            .message()
+            .contains("expects type `fn(list<dynamic>) -> :bool (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "every? should expose Map entries as heterogeneous List pairs: {iteration_warnings:?}"
@@ -3865,7 +3875,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       iteration_warnings.iter().any(|warning| {
         warning.message().contains("calcit.core/each")
-          && warning.message().contains("expects type `fn(:string) -> dynamic`")
+          && warning
+            .message()
+            .contains("expects type `fn(:string) -> dynamic (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "each should constrain callback input while allowing any return type: {iteration_warnings:?}"
@@ -3883,7 +3895,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       map_warnings
         .iter()
         .filter(|warning| {
-          warning.message().contains("arg 2 expects type `fn(:string) -> :number`")
+          warning
+            .message()
+            .contains("arg 2 expects type `fn(:string) -> :number (:features :pass)`")
             && warning.message().contains("got `fn(:number) -> :number`")
         })
         .count(),
@@ -3894,7 +3908,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       map_warnings.iter().any(|warning| {
         warning
           .message()
-          .contains("arg 2 expects type `fn(tuple<:tag, :number>) -> tuple<'K2, 'V2>`")
+          .contains("arg 2 expects type `fn(tuple<:tag, :number>) -> tuple<'K2, 'V2> (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "Map mappers should consume a `Tuple K V` entry and return a `Tuple K2 V2` pair (#2561): {map_warnings:?}"
@@ -3915,7 +3929,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       fold_warnings
         .iter()
         .filter(|warning| {
-          warning.message().contains("expects type `fn(:number, :string) -> :number`")
+          warning
+            .message()
+            .contains("expects type `fn(:number, :string) -> :number (:features :pass)`")
             && warning.message().contains("got `fn(:number, & :number) -> :number`")
         })
         .count(),
@@ -3925,7 +3941,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       fold_warnings.iter().any(|warning| {
         warning.message().contains("Proc `foldl`")
-          && warning.message().contains("expects type `fn(:number, list<dynamic>) -> :number`")
+          && warning
+            .message()
+            .contains("expects type `fn(:number, list<dynamic>) -> :number (:features :pass)`")
           && warning.message().contains("got `fn(:number, & :number) -> :number`")
       }),
       "Map foldl should expose entries as heterogeneous List pairs: {fold_warnings:?}"
@@ -3943,9 +3961,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       "collection sorts should validate comparator contracts: {warnings:?}"
     );
     assert!(
-      sort_warnings
-        .iter()
-        .all(|warning| warning.message().contains("expects type `fn(:string, :string) -> :number`")),
+      sort_warnings.iter().all(|warning| warning
+        .message()
+        .contains("expects type `fn(:string, :string) -> :number (:features :pass)`")),
       "sort comparators should receive the concrete List member type and return Number: {sort_warnings:?}"
     );
     assert_eq!(
@@ -3972,7 +3990,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       "list sort-by should validate function selectors against the member type: {warnings:?}"
     );
     assert!(
-      sort_by_warnings[0].message().contains("expects type `fn(:string) -> 'SortKey`")
+      sort_by_warnings[0]
+        .message()
+        .contains("expects type `fn(:string) -> 'SortKey (:features :pass)`")
         && sort_by_warnings[0].message().contains("got `fn(:number) -> :number`"),
       "sort-by should preserve the String member type while leaving its key type generic: {sort_by_warnings:?}"
     );
@@ -4106,7 +4126,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       watch_warnings.iter().any(|warning| {
         warning
           .message()
-          .contains("Proc `add-watch!` arg 3 expects type `fn(:string, :string) -> :unit`")
+          .contains("Proc `add-watch!` arg 3 expects type `fn(:string, :string) -> :unit (:features :state :io)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "add-watch! should bind both callback inputs to the Ref payload and require Unit: {watch_warnings:?}"
@@ -5479,6 +5499,10 @@ fn effect_features_follow_entry_policy() {
       ("uses-dbg", "DBG_IN_ENTRY"),
       ("calls-inline-io", "IO_FEATURE"),
       ("shadow-ref", "STATE_FEATURE"),
+      ("passes-inline-io", "IO_FEATURE"),
+      ("passes-local-io", "IO_FEATURE"),
+      ("passes-sort-by-io", "IO_FEATURE"),
+      ("passes-user-pass", "IO_FEATURE"),
     ];
     let collect_with = |policies: HashMap<String, snapshot::FeaturePolicy>| {
       let entries = load_fixture_entries(path);

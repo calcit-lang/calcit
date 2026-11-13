@@ -219,6 +219,16 @@ pub(super) fn specialize_core_callback_expected_types(
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let specialized = specialize_core_callback_expected_types_inner(fn_info, args, scope_types, expected_types)?;
+  Some(carry_callback_slot_features(expected_types, specialized))
+}
+
+fn specialize_core_callback_expected_types_inner(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
   }
@@ -236,6 +246,16 @@ pub(super) fn specialize_proc_callback_expected_types(
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let specialized = specialize_proc_callback_expected_types_inner(proc, args, scope_types, expected_types)?;
+  Some(carry_callback_slot_features(expected_types, specialized))
+}
+
+fn specialize_proc_callback_expected_types_inner(
+  proc: CalcitProc,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   match proc {
     CalcitProc::Foldl
     | CalcitProc::NativeMapFoldKv
@@ -248,6 +268,52 @@ pub(super) fn specialize_proc_callback_expected_types(
 }
 
 pub(super) fn specialize_core_expected_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let specialized = specialize_core_expected_types_inner(fn_info, args, scope_types, expected_types)?;
+  Some(carry_callback_slot_features(expected_types, specialized))
+}
+
+/// Call-site contracts rebuild callback slot types from their parts, which
+/// drops the schema's `:features`; copy them back so a `:pass` slot keeps
+/// accepting effectful callbacks (#2726).
+pub(super) fn carry_callback_slot_features(
+  declared: &[Arc<CalcitTypeAnnotation>],
+  specialized: Vec<Arc<CalcitTypeAnnotation>>,
+) -> Vec<Arc<CalcitTypeAnnotation>> {
+  specialized
+    .into_iter()
+    .enumerate()
+    .map(|(idx, slot)| {
+      // A bare `Fn` or `Dynamic` slot accepts any callable; once a contract
+      // narrows it to a typed callback it keeps accepting any effect, like a
+      // `:pass` slot.
+      let features = match declared.get(idx).map(|item| item.as_ref()) {
+        Some(CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Dynamic) => {
+          Arc::new(HashSet::from([cirru_edn::EdnTag::from(crate::calcit::PASS_EFFECTS_FEATURE)]))
+        }
+        Some(item) => match item.resolve_to_fn() {
+          Some(declared_fn) if !declared_fn.features.is_empty() => declared_fn.features.clone(),
+          _ => return slot,
+        },
+        None => return slot,
+      };
+      match slot.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) if signature.features.is_empty() => {
+          let mut signature = signature.as_ref().clone();
+          signature.features = features;
+          Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+        }
+        _ => slot,
+      }
+    })
+    .collect()
+}
+
+fn specialize_core_expected_types_inner(
   fn_info: &CalcitFn,
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -1077,11 +1143,13 @@ pub(crate) fn check_proc_arg_types(
 
   let expected_types = match proc {
     CalcitProc::Foldl | CalcitProc::NativeMapFoldKv | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut => {
-      specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
+      specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types)
+        .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
+        .unwrap_or_else(|| signature.arg_types.clone())
     }
-    CalcitProc::Sort | CalcitProc::NativeListSort => {
-      specialize_collection_sort_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
-    }
+    CalcitProc::Sort | CalcitProc::NativeListSort => specialize_collection_sort_expected_types(args, scope_types, &signature.arg_types)
+      .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
+      .unwrap_or_else(|| signature.arg_types.clone()),
     _ => signature.arg_types.clone(),
   };
 

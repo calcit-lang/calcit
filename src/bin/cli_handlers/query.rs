@@ -1803,7 +1803,10 @@ mod type_query_tests {
     assert_eq!(nodes.returns, serde_json::json!("'U"));
     let open = runner::preprocess::static_method_contract(receiver.as_ref(), ".each");
     assert_eq!(open.status, "open");
-    assert_eq!(open.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> dynamic");
+    assert_eq!(
+      open.arg_types.as_ref().unwrap()[0].describe(),
+      "fn(number) -> dynamic (:features :pass)"
+    );
     assert_eq!(open.return_type.as_ref().unwrap().describe(), "unit");
     assert!(open.rest_type.is_none());
     assert_eq!(open.definition.as_deref(), Some("calcit.core/each"));
@@ -1946,7 +1949,10 @@ mod type_query_tests {
       option_map.status, "proven",
       "the selected implementation supplies its generic callback relation"
     );
-    assert_eq!(option_map.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> 'U");
+    assert_eq!(
+      option_map.arg_types.as_ref().unwrap()[0].describe(),
+      "fn(number) -> 'U (:features :pass)"
+    );
     assert_eq!(option_map.return_type.as_ref().unwrap().describe(), "type calcit.core/Option<'U>");
     assert_eq!(option_map.generics, vec!["U"]);
     let nodes = method_call_types(&option_map).expect("generic output should retain callable syntax evidence");

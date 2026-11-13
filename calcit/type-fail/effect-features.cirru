@@ -59,9 +59,28 @@
             calls-inline-io 1
             ref-here
             shadow-ref *store
+            passes-inline-io $ [] 1 2
+            passes-local-io ([] 1 2) log-line
+            passes-sort-by-io $ [] 2 1
+            passes-user-pass 1
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io :state)
+        'passes-inline-io $ %{} 'CodeEntry
+          :doc "|Passing a lambda that declares :io to a :pass callback slot runs it here."
+          :code $ quote $ defn passes-inline-io (xs)
+            each xs $ fn (y)
+              hint-fn $ Fn Number (-> Unit) (:features :io)
+              println y
+          :examples $ []
+          :schema $ quote $ Fn (List Number) (-> Unit)
+        'passes-local-io $ %{} 'CodeEntry
+          :doc "|Passing a local :io callback to a :pass callback slot runs it here."
+          :code $ quote $ defn passes-local-io (xs f) (each xs f)
+          :examples $ []
+          :schema $ quote $ Fn (List Number)
+            Fn Number (-> Unit) (:features :io)
+            -> Unit
         'passes-log $ %{} 'CodeEntry
           :doc "|Passes an :io function as a value without declaring :io."
           :code $ quote $ defn passes-log (xs)
@@ -70,6 +89,24 @@
             , &unit
           :examples $ []
           :schema $ quote $ Fn (List Number) (-> Unit)
+        'passes-sort-by-io $ %{} 'CodeEntry
+          :doc "|The &list:sort-by key callback runs before it returns."
+          :code $ quote $ defn passes-sort-by-io (xs)
+            &list:sort-by xs $ fn (y)
+              hint-fn $ Fn Number (-> Number) (:features :io)
+              println y
+              , y
+          :examples $ []
+          :schema $ quote $ Fn (List Number)
+            -> $ List Number
+        'passes-user-pass $ %{} 'CodeEntry
+          :doc "|A project function's own :pass slot charges the caller too."
+          :code $ quote $ defn passes-user-pass (x)
+            run-now $ fn (y)
+              hint-fn $ Fn Number (-> Unit) (:features :io)
+              println y
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Unit)
         'read-store $ %{} 'CodeEntry (:doc "|Reads a global Ref without :state.")
           :code $ quote $ defn read-store (x)
             + x $ deref *store
@@ -85,6 +122,12 @@
             deref $ ref 0
           :examples $ []
           :schema $ quote $ Fn (-> Number)
+        'run-now $ %{} 'CodeEntry (:doc "|Calls its callback before returning.")
+          :code $ quote $ defn run-now (f) (f 1)
+          :examples $ []
+          :schema $ quote $ Fn
+            Fn Number (-> Unit) (:features :pass)
+            -> Unit
         'shadow-ref $ %{} 'CodeEntry
           :doc "|An inner local Ref does not exempt the outer binding of the same name."
           :code $ quote $ defn shadow-ref (cell)

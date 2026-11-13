@@ -602,6 +602,32 @@ fn type_var(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(name)))
 }
 
+/// A callback the proc calls before it returns, marked `(:features :pass)`:
+/// it accepts callbacks with any effect, charged to the caller (#2726).
+fn pass_callback_slot(args: Vec<Arc<CalcitTypeAnnotation>>, ret: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  fn_slot_with_features(args, ret, &[crate::calcit::PASS_EFFECTS_FEATURE])
+}
+
+fn fn_slot_with_features(
+  args: Vec<Arc<CalcitTypeAnnotation>>,
+  ret: Arc<CalcitTypeAnnotation>,
+  features: &[&str],
+) -> Arc<CalcitTypeAnnotation> {
+  let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_function_parts(args, ret) else {
+    unreachable!("function parts produce a function signature")
+  };
+  let mut signature = signature.as_ref().clone();
+  signature.features = Arc::new(features.iter().map(|feature| cirru_edn::EdnTag::from(*feature)).collect());
+  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+}
+
+/// A Ref watcher, `Fn T T (-> Unit) (:features :state :io)`. It is stored and
+/// runs later when the Ref changes, so it is not a `:pass` slot; it may read
+/// other Refs or print (#2726).
+fn watcher_slot() -> Arc<CalcitTypeAnnotation> {
+  fn_slot_with_features(vec![type_var("T"), type_var("T")], some_tag("unit"), &["state", "io"])
+}
+
 fn ref_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Ref(inner))
 }
@@ -967,10 +993,7 @@ impl CalcitProc {
           return_type: list_of(item_type.clone()),
           arg_types: vec![
             list_of(item_type.clone()),
-            Arc::new(CalcitTypeAnnotation::from_function_parts(
-              vec![item_type.clone(), item_type],
-              tag_type("number"),
-            )),
+            pass_callback_slot(vec![item_type.clone(), item_type], tag_type("number")),
           ],
         })
       }
@@ -1098,10 +1121,7 @@ impl CalcitProc {
         arg_types: vec![
           map_of(type_var("K"), type_var("V")),
           type_var("A"),
-          Arc::new(CalcitTypeAnnotation::from_function_parts(
-            vec![type_var("A"), type_var("K"), type_var("V")],
-            type_var("A"),
-          )),
+          pass_callback_slot(vec![type_var("A"), type_var("K"), type_var("V")], type_var("A")),
         ],
       }),
       NativeMapGet => Some(ProcTypeSignature {
@@ -1388,14 +1408,7 @@ impl CalcitProc {
       }),
       AddWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
-        arg_types: vec![
-          ref_of(type_var("T")),
-          some_tag("tag"),
-          Arc::new(CalcitTypeAnnotation::from_function_parts(
-            vec![type_var("T"), type_var("T")],
-            some_tag("unit"),
-          )),
-        ],
+        arg_types: vec![ref_of(type_var("T")), some_tag("tag"), watcher_slot()],
       }),
       RemoveWatch => Some(ProcTypeSignature {
         return_type: some_tag("unit"),

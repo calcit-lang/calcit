@@ -366,9 +366,52 @@ impl Checker<'_> {
             );
           }
         }
+        self.charge_pass_slot_callbacks(head, items, scope, near);
         for item in items.iter() {
           self.walk(item, scope, near);
         }
+      }
+    }
+  }
+
+  /// A callback slot marked `:pass` (core `map`, `each`, `foldl`, …) calls
+  /// the callback before the call returns, so the effects of a callback that
+  /// declares them belong to this caller (#2726). Named definitions are
+  /// already charged where they are referenced; this covers inline lambdas
+  /// with their own hint and local `Fn` values whose type carries features.
+  fn charge_pass_slot_callbacks(
+    &mut self,
+    head: Option<&Calcit>,
+    items: &crate::calcit::CalcitList,
+    scope: &Scope,
+    near: Option<&NodeLocation>,
+  ) {
+    let Some(signature) = callee_signature(head) else {
+      return;
+    };
+    let open_callback_slots = core_open_callback_slots(head);
+    for (idx, arg) in items.iter().skip(1).enumerate() {
+      let slot = signature.arg_types.get(idx).or(signature.rest_type.as_ref());
+      if !slot.is_some_and(|slot| is_pass_slot(slot)) && !open_callback_slots.contains(&idx) {
+        continue;
+      }
+      let (effects, label) = match arg {
+        Calcit::List(lambda) if matches!(lambda.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
+          (lambda_declared_effects(lambda), String::from("an inline lambda"))
+        }
+        Calcit::Local(local) => (schema_effects(local.type_info.as_ref()), format!("`{}`", local.sym)),
+        _ => continue,
+      };
+      for effect in effects {
+        self.require(
+          scope,
+          effect,
+          &format!(
+            "passes {label}, which declares `:{}`, to a callback slot that runs it",
+            effect.feature()
+          ),
+          near,
+        );
       }
     }
   }
@@ -592,6 +635,55 @@ fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut Has
     }
     _ => {}
   }
+}
+
+/// The schema of a core function called at `head`, when it has one.
+/// Core functions whose callback is declared `Dynamic` but called before
+/// they return; type checking narrows these slots to a callback with the
+/// same pass-through treatment (`carry_callback_slot_features`).
+fn core_open_callback_slots(head: Option<&Calcit>) -> &'static [usize] {
+  let name = match head {
+    Some(Calcit::Import(import)) if import.ns.as_ref() == crate::calcit::CORE_NS => import.def.as_ref(),
+    Some(Calcit::Proc(proc)) => proc.as_ref(),
+    _ => return &[],
+  };
+  match name {
+    "&list:sort-by" => &[1],
+    _ => &[],
+  }
+}
+
+/// The declared signature of the function called at `head`: a core
+/// function or proc, or a project definition (its own `:pass` slots count too).
+fn callee_signature(head: Option<&Calcit>) -> Option<Arc<crate::calcit::CalcitFnTypeAnnotation>> {
+  let def = match head? {
+    Calcit::Import(import) if import.ns.as_ref() != crate::calcit::CORE_NS => {
+      return program::lookup_def_schema(&import.ns, &import.def).resolve_to_fn();
+    }
+    Calcit::Import(import) => import.def.to_string(),
+    Calcit::Proc(proc) => {
+      if let Some(found) = program::lookup_def_schema(crate::calcit::CORE_NS, proc.as_ref()).resolve_to_fn() {
+        return Some(found);
+      }
+      let contract = proc.get_type_signature()?;
+      return CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
+        .resolve_to_fn();
+    }
+    _ => return None,
+  };
+  program::lookup_def_schema(crate::calcit::CORE_NS, &def).resolve_to_fn()
+}
+
+/// Core callback slots that run the callback before returning: marked
+/// `:pass`, or a bare `Fn` (`any?`, `filter`, `every?`, ...).
+fn is_pass_slot(slot: &CalcitTypeAnnotation) -> bool {
+  matches!(slot, CalcitTypeAnnotation::DynFn)
+    || slot.resolve_to_fn().is_some_and(|signature| {
+      signature
+        .features
+        .iter()
+        .any(|feature| feature.ref_str() == crate::calcit::PASS_EFFECTS_FEATURE)
+    })
 }
 
 /// Effects declared by a nested `defn`'s own `hint-fn`, if any.

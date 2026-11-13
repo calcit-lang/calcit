@@ -285,6 +285,24 @@ pub(crate) fn resolve_checked_call_contract(
   args: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<CheckedCallContract> {
+  let mut contract = resolve_checked_call_contract_inner(fn_ns, fn_def, args, scope_types)?;
+  // The contract rebuilds callback slots from their parts; keep the declared
+  // `:features` (such as `:pass`) on them (#2726).
+  if contract.expected_types.is_some()
+    && let Some(declared) = crate::program::lookup_def_schema(fn_ns, fn_def).resolve_to_fn()
+    && let Some(expected) = contract.expected_types.take()
+  {
+    contract.expected_types = Some(super::type_checking::carry_callback_slot_features(&declared.arg_types, expected));
+  }
+  Some(contract)
+}
+
+fn resolve_checked_call_contract_inner(
+  fn_ns: &str,
+  fn_def: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<CheckedCallContract> {
   use CalcitTypeAnnotation as T;
 
   let required_arity = checked_call_contract_arity(fn_ns, fn_def)?;

@@ -90,8 +90,9 @@
                 action main-unsupported!
                 invoke $ fn (callback)
                   hint-fn $ Fn
-                    Fn $ -> Unit
+                    Fn (-> Unit) (:features :io)
                     -> Unit
+                    :features :io
                   callback
               invoke action
           :examples $ []
