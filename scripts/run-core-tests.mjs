@@ -189,7 +189,9 @@ try {
 }
 let snapshotCounter = 0;
 
-const unitSchema = ["quote", ["Fn", ["->", "Unit"]]];
+// Replayed tests and the generated main! print markers and may touch Refs,
+// so they declare both effects (missing ones fail the check since 0.43, #2726).
+const unitSchema = ["quote", ["Fn", ["->", "Unit"], [":features", ":state", ":io"]]];
 const namespaceForms = new Map();
 const sourceNamespace = (ns) => {
   if (!namespaceForms.has(ns)) namespaceForms.set(ns, parseCirru(run(corePath, "query", "ns", ns, "--format", "cirru"))[0]);
