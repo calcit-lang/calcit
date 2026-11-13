@@ -294,6 +294,12 @@ pub(super) fn emit_map_vals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 /// Shared implementation: convert a map to a list/set of `[key, value]` pairs.
 pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer_tag: &str) -> Result<(), String> {
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let pairs = emit_map_pair_collection(ctx, map_ptr, outer_tag);
+  ctx.ptr_to_f64(pairs);
+  Ok(())
+}
+
+pub(super) fn emit_map_pair_collection(ctx: &mut WasmGenCtx, map_ptr: u32, outer_tag: &str) -> u32 {
   let count = emit_load_count_i32(ctx, map_ptr);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
@@ -357,8 +363,7 @@ pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  ctx.ptr_to_f64(outer);
-  Ok(())
+  outer
 }
 
 /// `&merge a b` — map merge where keys from `b` override keys from `a`.

@@ -11005,6 +11005,27 @@ fn warn_on_method_name_conflict(
   }
 }
 
+/// Runtime kind established by a successful bundled core predicate.
+fn core_predicate_kind(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "list?" => "list",
+    "map?" => "map",
+    "set?" => "set",
+    "string?" => "string",
+    "number?" => "number",
+    "enum?" => "enum",
+    "struct?" => "struct",
+    "enum-def?" => "enum-def",
+    "struct-def?" => "struct-def",
+    "tag?" => "tag",
+    "bool?" => "bool",
+    "symbol?" => "symbol",
+    "fn?" => "fn",
+    "cirru-quote?" => "cirru-quote",
+    _ => return None,
+  })
+}
+
 /// Try to specialize a polymorphic core function call at compile time.
 /// When the receiver's type is statically known, replaces the generic call
 /// (e.g. `(count x)`) with a direct proc call (e.g. `(&list:count x)`),
@@ -11054,22 +11075,18 @@ fn try_specialize_polymorphic_call(
   // keep the matrix small; negative folding would need to enumerate every
   // other variant of `CalcitTypeAnnotation`, which is fragile as the enum
   // grows. Leaving dynamic / unknown / mismatched cases to runtime is safe.
-  let predicate_true = matches!(
-    (fn_def, receiver_type.as_ref()),
-    ("list?", T::List(_))
-      | ("map?", T::Map(_, _))
-      | ("set?", T::Set(_))
-      | ("string?", T::String)
-      | ("number?", T::Number)
-      | ("bool?", T::Bool)
-      | ("tag?", T::Tag)
-      | ("fn?", T::Fn(_) | T::DynFn)
-      | ("enum?", T::EnumValue(_) | T::AnonymousEnum | T::Enum(_, _))
-      | ("struct?", T::StructValue(_) | T::Struct(_, _))
-      | ("struct-def?", T::StructDef(_))
-      | ("enum-def?", T::EnumDef(_))
-  );
-  if predicate_true {
+  if core_predicate_kind(fn_def).is_some_and(|kind| {
+    let actual_kind = match receiver_type.as_ref() {
+      T::EnumValue(_) | T::Enum(_, _) => Some("enum"),
+      T::StructValue(_) | T::Struct(_, _) => Some("struct"),
+      T::StructDef(_) => Some("struct-def"),
+      T::EnumDef(_) => Some("enum-def"),
+      T::Fn(_) => Some("fn"),
+      ty => ty.builtin_tag_name(),
+    };
+    // Preserve the set of predicates whose runtime calls can be elided.
+    !matches!(kind, "symbol" | "cirru-quote") && !matches!(receiver_type.as_ref(), T::Numeric(_)) && actual_kind == Some(kind)
+  }) {
     // A local already contains an evaluated value. Reading it is inert and
     // must not force a statically specialized closure to escape in WASM.
     if matches!(receiver, Calcit::Local(_)) {
@@ -13755,25 +13772,9 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   };
 
   // Simple type predicates: narrow the true branch to the asserted type
-  if let Some(ann) = match pred_name {
-    "list?" => Some(tag_annotation("list")),
-    "map?" => Some(tag_annotation("map")),
-    "set?" => Some(tag_annotation("set")),
-    "string?" => Some(tag_annotation("string")),
-    "number?" => Some(tag_annotation("number")),
-    "enum?" => Some(tag_annotation("enum")),
-    "struct?" => Some(tag_annotation("struct")),
-    "enum-def?" => Some(tag_annotation("enum-def")),
-    "struct-def?" => Some(tag_annotation("struct-def")),
-    "tag?" => Some(tag_annotation("tag")),
-    "bool?" => Some(tag_annotation("bool")),
-    "symbol?" => Some(tag_annotation("symbol")),
-    "fn?" => Some(tag_annotation("fn")),
-    "cirru-quote?" => Some(tag_annotation("cirru-quote")),
-    _ => None,
-  } {
+  if let Some(kind) = core_predicate_kind(pred_name) {
     return PredicateNarrowing {
-      true_binding: Some((sym, ann)),
+      true_binding: Some((sym, tag_annotation(kind))),
       false_binding: None,
     };
   }
@@ -14125,21 +14126,7 @@ fn data_view_payload_type(tag: &str) -> Arc<CalcitTypeAnnotation> {
 
 /// Head of the predicate that classifies one `Data` variant: a builtin proc where core has one.
 fn data_view_predicate(name: &str, file_ns: &str) -> Calcit {
-  match name {
-    "nil?" => Calcit::Proc(CalcitProc::NilQuestion),
-    "bool?" => Calcit::Proc(CalcitProc::BoolQuestion),
-    "number?" => Calcit::Proc(CalcitProc::NumberQuestion),
-    "string?" => Calcit::Proc(CalcitProc::StringQuestion),
-    "tag?" => Calcit::Proc(CalcitProc::TagQuestion),
-    "symbol?" => Calcit::Proc(CalcitProc::SymbolQuestion),
-    "list?" => Calcit::Proc(CalcitProc::ListQuestion),
-    "map?" => Calcit::Proc(CalcitProc::MapQuestion),
-    "set?" => Calcit::Proc(CalcitProc::SetQuestion),
-    "fn?" => Calcit::Proc(CalcitProc::FnQuestion),
-    "enum?" => Calcit::Proc(CalcitProc::EnumQuestion),
-    "struct?" => Calcit::Proc(CalcitProc::StructQuestion),
-    _ => core_import(name, file_ns),
-  }
+  name.parse::<CalcitProc>().map_or_else(|_| core_import(name, file_ns), Calcit::Proc)
 }
 
 /// Lower `match (data-view x)` into a chain of type predicates on `x`, so no `Data` value is built
