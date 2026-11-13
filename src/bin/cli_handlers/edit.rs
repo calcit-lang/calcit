@@ -1159,6 +1159,26 @@ pub(crate) fn validate_definition_shape(
       ))
     };
   }
+  // A core defimpl names the receiver and trait, while the CodeEntry key
+  // identifies the implementation independently of either declaration.
+  if let Some(Cirru::Leaf(head)) = items.first()
+    && (head.as_ref() == "defimpl" || head.ends_with("/defimpl"))
+    && let Some((_, source)) = definition_head_macro_code(snapshot_file, snapshot, namespace, head)?
+    && matches!(&source.ns.code, Cirru::List(items)
+      if items.get(1).is_some_and(|name| name.eq_leaf(calcit::calcit::CORE_NS)))
+  {
+    let is_symbol = |index| {
+      matches!(items.get(index), Some(node @ Cirru::Leaf(_))
+        if matches!(calcit::data::cirru::code_to_calcit(node, namespace, definition, vec![]), Ok(calcit::Calcit::Symbol { .. })))
+    };
+    return if is_symbol(1) && is_symbol(2) {
+      Ok(())
+    } else {
+      Err(format!(
+        "Definition '{namespace}/{definition}': defimpl requires a receiver type symbol and a trait symbol."
+      ))
+    };
+  }
   let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) else {
     return Err(format!(
       "Definition '{namespace}/{definition}' requires a definition head and a symbol name."
@@ -3524,6 +3544,45 @@ mod tests {
   use std::sync::Arc;
 
   type TestSnapshot = TestProject;
+
+  #[test]
+  fn defimpl_uses_a_separate_storage_key() {
+    let project = TestSnapshot::from_fixture();
+    let path = project.snapshot_string();
+    let mut snapshot = load_snapshot(&path).expect("load fixture");
+    let validate = |snapshot: &calcit::snapshot::Snapshot, source: &str| {
+      let code = parse_input_to_cirru(source).expect("read quoted definition");
+      super::validate_definition_shape(&path, snapshot, "app.main", "PointLabelImpl", &code, false)
+    };
+    validate(&snapshot, "quote $ defimpl model/Point Label (.label label-point)").expect("receiver and storage key can differ");
+    validate(&snapshot, "quote $ calcit.core/defimpl Point Label (.label label-point)").expect("qualified core macro");
+    for source in [
+      "quote $ defimpl Point",
+      "quote $ defimpl :Point Label",
+      "quote $ defimpl Point |Label",
+    ] {
+      let error = validate(&snapshot, source).expect_err("reject malformed implementation");
+      assert!(error.contains("requires a receiver type symbol and a trait symbol"), "{error}");
+    }
+    assert!(
+      validate(&snapshot, "quote $ defn Point () 1")
+        .expect_err("ordinary definitions still declare their key")
+        .contains("Definition name mismatch")
+    );
+    let core = calcit::load_core_snapshot().expect("load bundled core");
+    let local_macro = core.files[calcit::calcit::CORE_NS].defs["defimpl"].clone();
+    snapshot
+      .files
+      .get_mut("app.main")
+      .expect("fixture namespace")
+      .defs
+      .insert("defimpl".into(), local_macro);
+    assert!(
+      validate(&snapshot, "quote $ defimpl Point Label (.label label-point)")
+        .expect_err("a shadowing macro retains ordinary shape validation")
+        .contains("Definition name mismatch")
+    );
+  }
 
   // Snapshot serialization normalizes the format version, so use package as an
   // observable staged mutation when testing transaction change detection.
