@@ -11486,7 +11486,7 @@
               fn () 0
               fn (value) (+ value 1)
           :schema $ quote $ Fn (Option T)
-            Fn $ -> U
+            Fn (-> U) (:features :pass)
             Fn T
               -> U
               :features :pass

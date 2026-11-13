@@ -171,6 +171,7 @@
           :args $ [] (:: 'Option 'T)
             :: 'Fn $ {} (:return 'U)
               :args $ []
+              :features $ #{} :pass
             :: 'Fn $ {} (:return 'U)
               :args $ [] 'T
               :features $ #{} :pass
@@ -397,6 +398,7 @@
           quote $ :: 'Fn $ {}
             :return 'OptionFoldOutput
             :args $ []
+            :features $ #{} :pass
           quote $ :: 'Fn $ {}
             :return 'OptionFoldOutput
             :args $ [] 'Number

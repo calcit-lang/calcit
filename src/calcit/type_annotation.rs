@@ -11781,7 +11781,9 @@ impl CalcitFnTypeAnnotation {
   /// is charged for its effects. Any other slot accepts only the `:state` /
   /// `:io` it declares itself.
   pub(crate) fn accepts_effects_of(&self, actual: &CalcitFnTypeAnnotation) -> bool {
-    if self.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE) {
+    let has_pass =
+      |signature: &CalcitFnTypeAnnotation| signature.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE);
+    if has_pass(self) {
       return true;
     }
     EFFECT_FEATURES.iter().all(|effect| {

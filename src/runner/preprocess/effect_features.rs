@@ -389,9 +389,10 @@ impl Checker<'_> {
     let Some(signature) = callee_signature(head) else {
       return;
     };
+    let open_callback_slots = core_open_callback_slots(head);
     for (idx, arg) in items.iter().skip(1).enumerate() {
       let slot = signature.arg_types.get(idx).or(signature.rest_type.as_ref());
-      if !slot.is_some_and(|slot| is_pass_slot(slot)) {
+      if !slot.is_some_and(|slot| is_pass_slot(slot)) && !open_callback_slots.contains(&idx) {
         continue;
       }
       let (effects, label) = match arg {
@@ -637,9 +638,29 @@ fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut Has
 }
 
 /// The schema of a core function called at `head`, when it has one.
+/// Core functions whose callback is declared `Dynamic` but called before
+/// they return; type checking narrows these slots to a callback with the
+/// same pass-through treatment (`carry_callback_slot_features`).
+fn core_open_callback_slots(head: Option<&Calcit>) -> &'static [usize] {
+  let name = match head {
+    Some(Calcit::Import(import)) if import.ns.as_ref() == crate::calcit::CORE_NS => import.def.as_ref(),
+    Some(Calcit::Proc(proc)) => proc.as_ref(),
+    _ => return &[],
+  };
+  match name {
+    "&list:sort-by" => &[1],
+    _ => &[],
+  }
+}
+
+/// The declared signature of the function called at `head`: a core
+/// function or proc, or a project definition (its own `:pass` slots count too).
 fn callee_signature(head: Option<&Calcit>) -> Option<Arc<crate::calcit::CalcitFnTypeAnnotation>> {
   let def = match head? {
-    Calcit::Import(import) if import.ns.as_ref() == crate::calcit::CORE_NS => import.def.to_string(),
+    Calcit::Import(import) if import.ns.as_ref() != crate::calcit::CORE_NS => {
+      return program::lookup_def_schema(&import.ns, &import.def).resolve_to_fn();
+    }
+    Calcit::Import(import) => import.def.to_string(),
     Calcit::Proc(proc) => {
       if let Some(found) = program::lookup_def_schema(crate::calcit::CORE_NS, proc.as_ref()).resolve_to_fn() {
         return Some(found);
