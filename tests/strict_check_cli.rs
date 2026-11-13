@@ -2177,6 +2177,8 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_number_and_bool() {
     "&set:intersection (#{} false) (#{} 0)",
     "difference (#{} 1) (#{} 2) (#{} true)",
     "intersection (#{} 1) (#{} true)",
+    "&difference (#{} 1) (#{} true |x)",
+    "&set:intersection (#{} false |x) (#{} 0)",
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");

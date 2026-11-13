@@ -34,18 +34,39 @@ pub(super) enum SetOpKind {
 }
 
 pub(super) fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
-  let element_kind = |set| {
-    let annotation = infer_wasm_static_type(ctx, set)?;
-    let CalcitTypeAnnotation::Set(element) = annotation.as_ref() else {
-      return None;
+  // Bool and Number share an f64 representation. An open element type can
+  // contain either, while an empty set contributes no comparison at all.
+  let scalar_kinds = |set| {
+    let Some(annotation) = infer_wasm_static_type(ctx, set) else {
+      return (true, true);
     };
-    proven_scalar_kind(element)
+    let annotation = CalcitTypeAnnotation::expand_schema_alias(&annotation);
+    let CalcitTypeAnnotation::Set(element) = annotation.as_ref() else {
+      return (true, true);
+    };
+    let element = CalcitTypeAnnotation::expand_schema_alias(element);
+    match element.as_ref() {
+      CalcitTypeAnnotation::Bool => (true, false),
+      CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => (false, true),
+      CalcitTypeAnnotation::Never
+      | CalcitTypeAnnotation::String
+      | CalcitTypeAnnotation::Tag
+      | CalcitTypeAnnotation::Symbol
+      | CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
+      | CalcitTypeAnnotation::Set(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Struct(..)
+      | CalcitTypeAnnotation::StructValue(_)
+      | CalcitTypeAnnotation::Enum(..)
+      | CalcitTypeAnnotation::EnumValue(_) => (false, false),
+      _ => (true, true),
+    }
   };
-  if matches!(
-    (element_kind(left), element_kind(right)),
-    (Some("bool"), Some("number")) | (Some("number"), Some("bool"))
-  ) {
-    return Err("E_WASM_SET_ELEMENT_KIND: set difference and intersection cannot compare Bool with Number on WASM".into());
+  let (left_bool, left_number) = scalar_kinds(left);
+  let (right_bool, right_number) = scalar_kinds(right);
+  if (left_bool && right_number) || (left_number && right_bool) {
+    return Err("E_WASM_SET_ELEMENT_KIND: set comparison needs element types that distinguish Bool from Number on WASM".into());
   }
   Ok(())
 }
