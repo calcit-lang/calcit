@@ -37,7 +37,7 @@ fn struct_update_callbacks_take_the_field_type() {
   // The callback result is checked against the field type.
   assert!(
     text.contains(
-      "`calcit.core/update` arg 3 expects type `fn(:string) -> :string`, but got `fn(:string) -> :number` in call at demo.main/c-ret"
+      "`calcit.core/update` arg 3 expects type `fn(:string) -> :string (:features :pass)`, but got `fn(:string) -> :number` in call at demo.main/c-ret"
     ),
     "{text}"
   );
