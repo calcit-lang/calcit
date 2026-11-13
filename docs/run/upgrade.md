@@ -24,6 +24,10 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.43.0 List 插入检查元素类型（#2735）
+
+`append`、`prepend` 及其 List 方法和底层原语会检查已知的元素类型。例如，向 `List<Number>` 插入 String 会在编译时报错。空列表可以从插入项推断元素类型。确实需要存放混合元素时，给列表声明 `List<Dynamic>`；读取后在具体使用处按实际类型检查。
+
 ## 0.43.0 缺少 `:state` / `:io` 声明默认报错（#2726）
 
 entry 没写 `:feature-policy` 的 `:state` / `:io` 时，缺声明的函数从 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED` 提示变为 `E_STATE_FEATURE_REQUIRED` / `E_IO_FEATURE_REQUIRED` 错误，`--check-only` 和运行都会失败。检查只看项目自己的源码，依赖模块里缺声明不会让项目失败。
