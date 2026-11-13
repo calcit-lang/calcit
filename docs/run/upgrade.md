@@ -24,6 +24,26 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.43.0 缺少 `:state` / `:io` 声明默认报错（#2726）
+
+entry 没写 `:feature-policy` 的 `:state` / `:io` 时，缺声明的函数从 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED` 提示变为 `E_STATE_FEATURE_REQUIRED` / `E_IO_FEATURE_REQUIRED` 错误，`--check-only` 和运行都会失败。检查只看项目自己的源码，依赖模块里缺声明不会让项目失败。
+
+升级前先在 0.42.x 上一次补齐，再升级：
+
+```bash
+calcit fix --rule effect-features-v1 --format json
+calcit fix --rule effect-features-v1 --apply --expect-revision <revision>
+```
+
+暂时不能补齐的 entry 可以显式退回提示级别：
+
+```bash
+calcit config set feature-policy.state warn
+calcit config set feature-policy.io warn
+```
+
+上面的命令改的是默认 entry；named entry 加 `--entry <name>`，例如 `calcit config set --entry test feature-policy.io warn`。
+
 ## 0.43.0 trait 方法签名用 `Self`（#2727）
 
 `deftrait` 的方法签名里可以直接写 `Self` 表示接收者类型，不再需要 `(:generics T)`：
@@ -130,7 +150,7 @@ deftype Pair (:generics A B) (Tuple A B)
 
 ## 0.42.0 效果边界 `:features :state` / `:io`（#2710）
 
-函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；计划在 0.43.0 改成默认报错。
+函数体里读写全局 Ref（`deref`、`reset!`、`swap!`、watch）要在 `Fn` schema 里声明 `:state`；打印、文件、环境变量、时钟、`wait-ms`、随机字节、`quit!` 要声明 `:io`。调用或引用声明了这些 feature 的函数，自己也要声明。0.42.0 里 entry 没写 `:feature-policy` 的 `:state` / `:io` 时只报 `W_STATE_FEATURE_REQUIRED` / `W_IO_FEATURE_REQUIRED`，检查仍然通过；0.43.0 起默认报错，见上文。
 
 一次补齐整个项目（会沿调用链算到不动点）：
 

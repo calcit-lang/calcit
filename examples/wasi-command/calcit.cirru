@@ -22,7 +22,7 @@
         'fail! $ %{} 'CodeEntry (:doc "|向 stderr 输出错误并以指定状态码退出。")
           :code $ quote $ defn fail! (code message) (eprintln message) (quit! code)
           :examples $ []
-          :schema $ quote $ Fn Number String (-> Unit)
+          :schema $ quote $ Fn Number String (-> Unit) (:features :io)
         'main! $ %{} 'CodeEntry (:doc "|读取 guest 文件，添加可选前缀并写入目标 guest 文件。")
           :code $ quote $ defn main! ()
             let
@@ -47,7 +47,7 @@
                     (:err message)
                       fail! 66 $ str "|Failed to read " input-path |: message
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'manifest-main! $ %{} 'CodeEntry (:doc "|从预开放目录读取、转换并写回配置清单；失败以稳定退出码报告。")
           :code $ quote $ defn manifest-main! ()
             match
@@ -65,7 +65,7 @@
                         fail! 73 $ str |output: message
                       (:ok _) (println |Manifest-written)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'manifest-stdin-main! $ %{} 'CodeEntry
           :doc "|从 stdin 读取 Cirru EDN 并复用 process-manifest，将结果写到 stdout；读取失败退出 66，业务失败退出 65。"
           :code $ quote $ defn manifest-stdin-main! ()
@@ -76,7 +76,7 @@
                   (:err message) (fail! 65 message)
                   (:ok output) (echo output)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'method-eval-main! $ %{} 'CodeEntry
           :doc "|验收普通 Result.map 的 receiver 与回调实参副作用只各执行一次；不用于正式文件业务。"
           :code $ quote $ defn method-eval-main! ()
@@ -91,7 +91,7 @@
                 (:ok value) (println value)
                 (:err message) (fail! 70 message)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'process-manifest $ %{} 'CodeEntry (:doc "|使用普通 Result 方法串联解码、业务变换和 Cirru EDN 输出。")
           :code $ quote $ defn process-manifest (prefix content)
             (decode-manifest content) .and-then $ fn (manifest)
@@ -134,7 +134,7 @@
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'transform-content $ %{} 'CodeEntry (:doc "|为文本内容添加由环境变量提供的前缀。")
           :code $ quote $ defn transform-content (prefix content) (str prefix content)
           :examples $ []

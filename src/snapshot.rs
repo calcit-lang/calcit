@@ -4788,6 +4788,8 @@ fn extract_def_name(items: &[Cirru]) -> Option<&str> {
 /// argument shape is fixed even though an ad-hoc expression may return any
 /// value. Keeping that distinction explicit lets default strict diagnostics
 /// validate `eval` bodies without rejecting the wrapper itself.
+/// The synthesized `main!` of an eval snippet is the program boundary: it may
+/// print, read files or touch Refs, so it declares `:state` and `:io` (#2726).
 fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
@@ -4799,7 +4801,7 @@ fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
     return_type: DYNAMIC_TYPE.clone(),
     fn_kind: SchemaKind::Fn,
     rest_type: None,
-    features: Arc::new(HashSet::new()),
+    features: Arc::new(HashSet::from([EdnTag::new("state"), EdnTag::new("io")])),
   })));
   entry
 }

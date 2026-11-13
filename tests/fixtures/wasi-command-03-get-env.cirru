@@ -20,7 +20,7 @@
                 if (environment .some?) (quit! 9) (quit! 8)
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |missing-env-is-none)
             :code $ quote $ assert= (Option :none) (get-env |__CALCIT_WASI_03_MISSING_ENV_7A1C__)
         'reload! $ %{} 'CodeEntry (:doc "|开发模式重载占位入口。")

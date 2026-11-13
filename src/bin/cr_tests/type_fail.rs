@@ -652,14 +652,14 @@ fn strict_public_dissoc_keeps_a_known_collection_contract() {
       ("Number", "dissoc (deref state) key", false),
     ] {
       let snippet = format!(
-        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state key)\n      hint-fn $ Fn\n        Ref $ Map String Number\n        , {key_type} (-> Unit)\n      reset! state $ {value}\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state key)\n      hint-fn $ Fn\n        Ref $ Map String Number\n        , {key_type} (-> Unit) (:features :state)\n      reset! state $ {value}\n      , &unit\n  , &unit"
       );
       assert_strict_snippet(&snippet, passes, &format!("key={key_type}, value={value}"));
     }
     // A List receiver keeps List<T> only when its single index is a proven Number.
     for (index_type, passes) in [("Number", true), ("Dynamic", false)] {
       let snippet = format!(
-        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state index)\n      hint-fn $ Fn\n        Ref $ List String\n        , {index_type} (-> Unit)\n      reset! state $ dissoc (deref state) index\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state index)\n      hint-fn $ Fn\n        Ref $ List String\n        , {index_type} (-> Unit) (:features :state)\n      reset! state $ dissoc (deref state) index\n      , &unit\n  , &unit"
       );
       assert_strict_snippet(&snippet, passes, &format!("list index={index_type}"));
     }
@@ -683,21 +683,21 @@ fn reset_rejects_incompatible_inferred_reference_payloads() {
       "let ((state $ ref 1)) (reset! state |wrong)",
       "let ((state $ ref $ {} $ :states $ {} $ :cursor $ [])) (reset! state $ {} $ :states $ {} $ :login $ {} (:data 1))",
       "reset! 1 2",
-      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:generics T)\n  reset! state |wrong\n  , &unit",
-      "fn (state value)\n  hint-fn $ Fn (Ref Number) T (-> Unit) (:generics T)\n  reset! state value\n  , &unit",
-      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List U\n    -> Unit\n    :generics T U\n  reset! state value\n  , &unit",
-      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit)\n  reset! state |wrong\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:features :state) (:generics T)\n  reset! state |wrong\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref Number) T (-> Unit) (:features :state) (:generics T)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List U\n    -> Unit\n    :generics T U\n    :features :state\n  reset! state value\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit) (:features :state)\n  reset! state |wrong\n  , &unit",
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).expect_err("incompatible reset! must fail before typed reads can use stale evidence");
     }
     for snippet in [
       "let ((state $ ref 1)) (reset! state 2) (+ @state 1)",
-      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:generics T)\n  reset! state value\n  , &unit",
-      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List T\n    -> Unit\n    :generics T\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn (Ref T) T (-> Unit) (:features :state) (:generics T)\n  reset! state value\n  , &unit",
+      "fn (state value)\n  hint-fn $ Fn\n    Ref $ List T\n    List T\n    -> Unit\n    :generics T\n    :features :state\n  reset! state value\n  , &unit",
       "let ((state $ ref $ {} (:count 1))) (reset! state $ {} (:count 2)) (get-in @state $ [] :count)",
-      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit)\n  reset! state 2\n  , &unit",
-      "fn (state)\n  hint-fn $ Fn (Ref Dynamic) (-> Unit)\n  reset! state |open-boundary\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Number) (-> Unit) (:features :state)\n  reset! state 2\n  , &unit",
+      "fn (state)\n  hint-fn $ Fn (Ref Dynamic) (-> Unit) (:features :state)\n  reset! state |open-boundary\n  , &unit",
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).expect("compatible reference writes should retain their payload types");
@@ -710,7 +710,7 @@ fn strict_reset_requires_known_outer_payload_or_explicit_open_reference() {
   run_with_large_stack(|| {
     for (payload, passes) in [("Number", false), ("(List Dynamic)", false), ("T", false), ("Dynamic", true)] {
       let snippet = format!(
-        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) Dynamic (-> Unit) (:generics T)\n      reset! state value\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) Dynamic (-> Unit) (:features :state) (:generics T)\n      reset! state value\n      , &unit\n  , &unit"
       );
       let mut entries = load_snippet_entries(&snippet);
       // Both entries use the explicitly hinted function, so a missing schema
@@ -745,7 +745,7 @@ fn strict_reset_checks_nested_unknowns_and_literal_empty_values() {
       ("(List Number)", "Dynamic", "([] value)", false),
     ] {
       let snippet = format!(
-        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) {input} (-> Unit)\n      reset! state {value}\n      , &unit\n  , &unit"
+        "hint-fn $ Fn (-> Unit)\n\nlet\n    write $ fn (state value)\n      hint-fn $ Fn (Ref {payload}) {input} (-> Unit) (:features :state)\n      reset! state {value}\n      , &unit\n  , &unit"
       );
       let mut entries = load_snippet_entries(&snippet);
       entries.reload_fn = entries.init_fn.clone();
@@ -5480,13 +5480,9 @@ fn effect_features_follow_entry_policy() {
       ("calls-inline-io", "IO_FEATURE"),
       ("shadow-ref", "STATE_FEATURE"),
     ];
-    let collect = |policy: snapshot::FeaturePolicy| {
+    let collect_with = |policies: HashMap<String, snapshot::FeaturePolicy>| {
       let entries = load_fixture_entries(path);
-      program::configure_entry_feature_policy(&HashMap::from([
-        ("state".to_owned(), policy),
-        ("io".to_owned(), policy),
-        ("dbg".to_owned(), policy),
-      ]));
+      program::configure_entry_feature_policy(&policies);
       let _ = runner::preprocess::take_advisories();
       let warnings = RefCell::new(vec![]);
       let result =
@@ -5509,6 +5505,13 @@ fn effect_features_follow_entry_policy() {
       found.sort();
       found
     };
+    let collect = |policy: snapshot::FeaturePolicy| {
+      collect_with(HashMap::from([
+        ("state".to_owned(), policy),
+        ("io".to_owned(), policy),
+        ("dbg".to_owned(), policy),
+      ]))
+    };
 
     for (policy, prefix, blocking) in [
       (snapshot::FeaturePolicy::Warn, "W_", false),
@@ -5527,6 +5530,16 @@ fn effect_features_follow_entry_policy() {
     }
 
     assert!(collect(snapshot::FeaturePolicy::Allow).is_empty(), ":allow reports nothing");
+
+    // Without `:feature-policy`, `:state` / `:io` fail the check (#2726) and
+    // `dbg` stays allowed.
+    let mut wanted = expected
+      .iter()
+      .filter(|(_, kind)| *kind != "DBG_IN_ENTRY")
+      .map(|(def, kind)| (format!("{ns}/{def}"), format!("E_{kind}_REQUIRED"), true))
+      .collect::<Vec<_>>();
+    wanted.sort();
+    assert_eq!(collect_with(HashMap::new()), wanted, "effect diagnostics without an entry policy");
   });
 }
 

@@ -361,7 +361,7 @@
             println "|Union tests passed"
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'nullable-css-values $ %{} 'CodeEntry
           :doc "|A union value lifts into JsNullish of the same union, also inside an immutable Map (#2559)."
           :code $ quote $ defn nullable-css-values (xs) xs

@@ -20,7 +20,7 @@
               quit! 8
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |arguments-are-strings)
             :code $ quote $ assert= true
               every? (get-args) string?

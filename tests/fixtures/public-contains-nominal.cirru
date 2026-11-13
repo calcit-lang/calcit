@@ -15,7 +15,7 @@
             println $ nominal-contains-results
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'nominal-contains-results $ %{} 'CodeEntry
           :doc "|Public contains? on nominal Enum receivers in project code, checked by the default proof audit."
           :code $ quote $ defn nominal-contains-results ()

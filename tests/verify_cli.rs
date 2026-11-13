@@ -177,6 +177,15 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
       "--code",
       "quote $ defn main! ()\n  noisy\n  println |public-check-runtime-entry\n  , &unit",
     ],
+    [
+      "edit",
+      "schema",
+      "verify-fixture.main/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ Fn (-> Unit) (:features :io)",
+    ],
   ]));
   for (target, expected) in [
     (

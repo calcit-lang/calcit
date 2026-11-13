@@ -33,7 +33,7 @@
           :code $ quote $ defn main! ()
             do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-recursive-struct) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'pair-right $ %{} 'CodeEntry (:doc "|Return the right value from a generic pair")
           :code $ quote $ defn pair-right (pair) (:right pair)
           :examples $ []
@@ -82,7 +82,7 @@
               assert= 2 $ :value nested
               println "|Recursive struct support passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-struct-generics $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-generics ()
             do (println "|Testing generic struct support...")
@@ -99,7 +99,7 @@
               &inspect-type $ &%{} Holder :box $ &%{} Box :value 2
               println "|Generic struct support passed"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'unbox $ %{} 'CodeEntry (:doc "|Return value from a generic box")
           :code $ quote $ defn unbox (box) (:value box)
           :examples $ []

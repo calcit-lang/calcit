@@ -24,14 +24,14 @@
               &{} :a $ &{} :b 2
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'bench-read-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-read-typed! ()
             println $ loop-read read-typed 100000
               &{} :a $ &{} :b 2
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'bench-write-dynamic! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-dynamic! ()
             println $ .unwrap-or
@@ -40,7 +40,7 @@
                 [] :a :b
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'bench-write-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-typed! ()
             println $ .unwrap-or
@@ -49,7 +49,7 @@
                 [] :a :b
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'loop-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-read (reader n data acc)
             if (&< n 1) acc $ recur reader (&- n 1) data $ &+ acc
@@ -97,7 +97,7 @@
                   write-effectful-typed (&{}) 3
                 assert= 123 @*path-effects
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :state)
         'mark-key! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mark-key! (step key)
             reset! *path-effects $ &+
@@ -105,7 +105,7 @@
               , step
             , key
           :examples $ []
-          :schema $ quote $ Fn Number Tag (-> Tag)
+          :schema $ quote $ Fn Number Tag (-> Tag) (:features :state)
         'mark-value! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mark-value! (step value)
             reset! *path-effects $ &+
@@ -113,7 +113,7 @@
               , step
             , value
           :examples $ []
-          :schema $ quote $ Fn Number Number (-> Number)
+          :schema $ quote $ Fn Number Number (-> Number) (:features :state)
         'read-dynamic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-dynamic (data)
             get-in data $ [] :a :b
@@ -127,6 +127,7 @@
           :schema $ quote $ Fn
             Map Tag $ Map Tag Number
             -> $ Result Number PathError
+            :features :state
         'read-indexed-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-indexed-typed (data)
             get-in data $ [] 0 1
@@ -167,6 +168,7 @@
             Map Tag $ Map Tag Number
             , Number
               -> $ Map Tag $ Map Tag Number
+              :features :state
         'write-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-typed (data value)
             assoc-in data ([] :a :b) value

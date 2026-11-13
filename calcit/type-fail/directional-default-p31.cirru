@@ -20,11 +20,11 @@
           :code $ quote $ defn h (x)
             println $ &+ x 1
           :examples $ []
-          :schema $ quote $ Fn Number (-> Unit)
+          :schema $ quote $ Fn Number (-> Unit) (:features :io)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (g h)
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

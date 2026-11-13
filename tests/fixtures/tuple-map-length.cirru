@@ -12,7 +12,7 @@
           :code $ quote $ defn main! ()
             println (v-scale ([] 1 2 3) 2) (v-scale-method ([] 1 2 3) 2) (v-labels ([] 1 2 3)) (v-weighted ([] 1 2 3)) (v-alias-scale ([] 1 2 3) 2) (v-keep-big ([] 1 2 3)) (v-add ([] 1 2 3) ([] 1 1 1)) (v-alias-add ([] 1 2 3) ([] 1 1 1)) (list-add ([] 1 2) ([] 3 4 5))
             , &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'Vec3 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Vec3 ([] 0 0 0)
           :schema $ quote $ Tuple Number Number Number

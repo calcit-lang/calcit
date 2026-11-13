@@ -200,7 +200,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ assert= true
               string? $ fix-command.import-core/builtin-id
@@ -213,7 +213,7 @@
         %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ assert= true
               string? $ fix-command.import-direct/builtin-id
@@ -233,7 +233,7 @@
         'builtin-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn builtin-id () (generate-id!)
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
             :code $ quote $ do
               assert= true $ string? $ fix-command.import-valid/builtin-id
@@ -242,7 +242,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (builtin-id) &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :state)
         'qualified-id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn qualified-id () (fix-command.import-source/generate-id!)
           :examples $ []

@@ -53,7 +53,7 @@
           :code $ quote $ defn main! ()
             println $ app.schema/decode-story 1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
     'app.refer-caller $ %{} 'FileEntry

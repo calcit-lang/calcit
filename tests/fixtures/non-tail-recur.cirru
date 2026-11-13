@@ -78,7 +78,7 @@
           :code $ quote $ defn main! ()
             println $ ok-loop
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'ok-in-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ok-in-match ()
             loop
@@ -110,6 +110,6 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

@@ -21,6 +21,6 @@
                 rows $ parse-cirru-list "|a b"
               println (count-rows triple) (&list:nth triple 0) (count triple) (count-rows rows)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns narrowed.core

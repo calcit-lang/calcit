@@ -11476,6 +11476,47 @@ fn effect_features_rule_adds_missing_features_through_callers() {
 }
 
 #[test]
+fn effect_features_rule_reports_the_code_the_entry_policy_produces() {
+  // With `:state :allow` and `:io :warn`, a definition missing both is
+  // reported by the checker as W_IO_FEATURE_REQUIRED, so the suggestion
+  // carries that code; the 0.43 default reports E_ codes (#2726).
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/effect-features-fix.cirru", &snapshot).unwrap();
+  let codes = |snapshot: &std::path::Path| -> Vec<(String, String)> {
+    let preview = run_calcit(snapshot, &["fix", "--rule", "effect-features-v1", "--format", "json"]);
+    assert_success(&preview, "preview effect feature fixes");
+    let report = parse_stdout(&preview);
+    let mut codes: Vec<(String, String)> = report["data"]["suggestions"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .map(|suggestion| {
+        (
+          suggestion["definition"].as_str().unwrap().to_owned(),
+          suggestion["diagnostic_code"].as_str().unwrap().to_owned(),
+        )
+      })
+      .collect();
+    codes.sort();
+    codes
+  };
+  let both = |codes: &[(String, String)]| {
+    codes
+      .iter()
+      .find(|(definition, _)| definition == "effect-features-fix.main/both")
+      .map(|(_, code)| code.clone())
+      .unwrap()
+  };
+  assert_eq!(both(&codes(&snapshot)), "E_STATE_FEATURE_REQUIRED");
+
+  for (key, value) in [("feature-policy.state", "allow"), ("feature-policy.io", "warn")] {
+    assert_success(&run_calcit(&snapshot, &["config", "set", key, value]), "set feature policy");
+  }
+  assert_eq!(both(&codes(&snapshot)), "W_IO_FEATURE_REQUIRED");
+}
+
+#[test]
 fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   // Hints on lambdas passed straight to a typed callback slot, returned as a
   // declared `Fn` result, or bound once by `let` (#2637) repeat the signature

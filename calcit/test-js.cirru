@@ -92,7 +92,7 @@
             test-nested-external-field
             do true
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'reassign-same-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reassign-same-generic (value replacement) (set! value replacement) value
           :examples $ []
@@ -131,7 +131,7 @@
                     assert= true a
               f2
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
         'test-async-in-data $ %{} 'CodeEntry
           :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
           :code $ quote $ fn () (hint-fn Async)
@@ -204,7 +204,7 @@
               assert= nil $ .?!2 f
               assert= 2 $ .?!0 e
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
         'test-data-gen $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code gen from Cirru Edn")
             assert=
@@ -296,7 +296,7 @@
               &{} |a 1 :b 2 |c $ [] 3 4
               to-calcit-data $ &js-object |a 1 |:b 2 :c $ [] 3 4
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
         'test-let-example $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code emitting of using let")
             let
@@ -316,7 +316,7 @@
               assert= a $ [] 0 1 2 3 4
               assert= b -1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-method-tag-access $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-method-tag-access ()
             let

@@ -141,7 +141,7 @@
 | `E_INSPECT_TYPE_DYNAMIC` | `src/runner/preprocess/mod.rs` |
 | `E_INVALID_DEFINITION_ID` | `src/bin/strict_check.rs` |
 | `E_INVALID_TRAIT_SCHEMA` | `src/runner/preprocess/mod.rs` |
-| `E_IO_FEATURE_REQUIRED` | `src/runner/preprocess/effect_features.rs` |
+| `E_IO_FEATURE_REQUIRED` | `src/bin/cli_handlers/fix/effect_features.rs`<br>`src/runner/preprocess/effect_features.rs` |
 | `E_JS_CAST_ARITY` | `src/runner/preprocess/js_ffi.rs` |
 | `E_JS_CAST_TARGET` | `src/runner/preprocess/js_ffi.rs` |
 | `E_JS_FFI_FEATURE_REQUIRED` | `src/runner/preprocess/js_ffi.rs` |
@@ -233,7 +233,7 @@
 | `E_SOURCE_PARSE` | `src/runner/preprocess/mod.rs` |
 | `E_SPREAD_TYPE_MISMATCH` | `src/runner/preprocess/mod.rs` |
 | `E_STALE_IMPORT_SHADOWED_BY_CORE` | `src/runner/preprocess/mod.rs` |
-| `E_STATE_FEATURE_REQUIRED` | `src/runner/preprocess/effect_features.rs` |
+| `E_STATE_FEATURE_REQUIRED` | `src/bin/cli_handlers/fix/effect_features.rs`<br>`src/runner/preprocess/effect_features.rs` |
 | `E_STRUCT_CONSTRUCTOR_ARGS` | `src/runner/preprocess/mod.rs`<br>`src/runner/preprocess/type_rewriting.rs` |
 | `E_STRUCT_DUPLICATE_FIELD` | `src/runner/preprocess/mod.rs` |
 | `E_STRUCT_DYNAMIC_RAW_ACCESS` | `src/runner/preprocess/mod.rs` |

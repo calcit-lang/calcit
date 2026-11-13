@@ -162,7 +162,7 @@
             test-numeric-refinements
             ; Currently not supported for runtime Struct literals.
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :io)
         'pair-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn pair-first (p) (nth p 0)
           :examples $ []
@@ -178,7 +178,7 @@
         'show-type-info $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn show-type-info (x) (println "|Type info demo: value is" x) (; "后续引用" x "应该仍然保留类型信息") (&+ x 1)
           :examples $ []
-          :schema $ quote $ Fn Number (-> Number)
+          :schema $ quote $ Fn Number (-> Number) (:features :io)
         'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
           :code $ quote $ defn slice-as-string (text)
             .slice text 1 $ Some 4
@@ -187,7 +187,7 @@
         'test-arg-type-hints $ %{} 'CodeEntry (:doc "|Checks arg hint path without emitting warning")
           :code $ quote $ defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-builtin-proc-types $ %{} 'CodeEntry
           :doc "|Tests that Proc (builtin) functions check argument types during preprocess"
           :code $ quote $ defn test-builtin-proc-types () (; Test math operations with typed arguments)
@@ -204,7 +204,7 @@
                 println |rounded: rounded
                 println |negated: negated
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-complex-threading $ %{} 'CodeEntry
           :doc "|Tests type preservation with multiple typed functions in -> chain"
           :code $ quote $ defn test-complex-threading (a b)
@@ -265,7 +265,7 @@
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :io)
         'test-fn-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-type (f x) (f x)
           :examples $ []
@@ -292,7 +292,7 @@
                 assert= 5 list-len
             , "|List method checks passed"
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :io)
         'test-numeric-refinements $ %{} 'CodeEntry
           :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
           :code $ quote $ defn test-numeric-refinements ()
@@ -339,7 +339,7 @@
                 println "|✓ Map methods validated at preprocess"
             , "|All valid method calls passed preprocess validation"
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :io)
         'test-proc-type $ %{} 'CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote $ defn test-proc-type (p x y) (p x y)
           :examples $ []
@@ -369,7 +369,7 @@
                 assert= true starts
             , "|String method checks passed"
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :io)
         'test-struct-methods $ %{} 'CodeEntry
           :doc "|Tests method calls on Struct instances with impls"
           :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
@@ -420,7 +420,7 @@
                 assert= (Some |t) str-first
             , "|Typed method access checks passed"
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :io)
         'tuple-label $ %{} 'CodeEntry (:doc "|Reads a fixed-length tuple by position")
           :code $ quote $ defn tuple-label (entry)
             let[] (key title) entry $ str key |= title $ nth entry 0

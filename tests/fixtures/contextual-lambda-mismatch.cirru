@@ -34,4 +34,4 @@
           :schema $ quote $ Fn Task (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () $ let ((t (Task :title |abc :done true))) (println ((tail-lambda) t) ((let-tail) t) ((if-tail true) t) (bound-once ([] t)) ((bound-returned) t) ((hint-after) t) (called-once t)) &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)

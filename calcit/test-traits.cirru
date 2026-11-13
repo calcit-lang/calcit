@@ -576,7 +576,7 @@
                 do (println |branch-true-impl) (explicit-trait-true 1)
               do (println |branch-key) 0
           :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
+          :schema $ quote $ Fn Bool (-> Bool) (:features :io)
           :tests $ []
             %{} 'TestEntry (:name |false-impl)
               :code $ quote $ assert= false (branch-open-effects true)
@@ -599,7 +599,7 @@
               and (= result false)
                 = (deref *branch-import-order) 12
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |leading-import-before-impl-join)
             :code $ quote $ assert= true (branch-open-import-order)
             :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
@@ -807,7 +807,7 @@
             assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |builtin-initialization-returns-unit)
             :code $ quote $ let
                 initial-result $ &init-builtin-impls!
@@ -886,7 +886,7 @@
         'open-contains-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
         'open-contains-true-value $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsTrueImpl last.")
           :code $ quote $ defn open-contains-true-value (item)
             let
@@ -977,7 +977,7 @@
         'open-make-contains-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-make-contains-value () (println |open-make-contains-value) (open-contains-false 1)
           :examples $ []
-          :schema $ quote $ Fn (-> OpenContainsBase)
+          :schema $ quote $ Fn (-> OpenContainsBase) (:features :io)
         'open-pass-contains-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-pass-contains-value (value) value
           :examples $ []
@@ -1031,7 +1031,7 @@
                 do (println |recur-index) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
         'recur-swap-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-swap-contains? (left right index)
             if (> index 0)
@@ -1082,7 +1082,7 @@
               assert= 5 $ :value $ add-with-trait a b
             println "|  Add trait: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-assert-trait $ %{} 'CodeEntry (:doc "|Test assert-traits")
           :code $ quote $ defn test-assert-trait () (println "|Testing assert-traits...")
             let
@@ -1127,7 +1127,7 @@
               assert= nothing $ assert-traits nothing calcit.core/Debug calcit.core/Eq
             println "|  assert-traits: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-bit-shifts $ %{} 'CodeEntry
           :doc "|Shift counts use their low five bits on every backend"
           :code $ quote $ defn test-bit-shifts ()
@@ -1194,7 +1194,7 @@
               assert-traits struct_value Countable Contains
             println "|  Collection traits: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ []
             %{} 'TestEntry (:name |empty-receiver-effects-once)
               :code $ quote $ let
@@ -1398,7 +1398,7 @@
               assert-traits |a Compare
             println "|  Compare trait: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-cross-trait-method-conflict $ %{} 'CodeEntry (:doc "|Test method conflict across traits")
           :code $ quote $ defn test-cross-trait-method-conflict () (println "|Testing cross-trait method conflict...")
             let
@@ -1420,7 +1420,7 @@
               assert= |zapA $ &trait-call MyZapA :zap tb
             println "|  cross-trait conflict: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-debug-trait $ %{} 'CodeEntry (:doc "||Test Debug trait for built-in types")
           :code $ quote $ defn test-debug-trait () (println "|Testing Debug trait...") (; All built-in types should be debuggable)
             assert= |true $ str true
@@ -1442,7 +1442,7 @@
               assert= |Person:Alice $ p .show
             println "|  Debug trait: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-deftrait $ %{} 'CodeEntry (:doc "|Test deftrait macro")
           :code $ quote $ defn test-deftrait () (println "|Testing deftrait macro...")
             assert= :trait $ type-of MyFoo
@@ -1452,7 +1452,7 @@
               assert= "|foo Alice" $ p .foo
               println "|  deftrait: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ []
             %{} 'TestEntry (:name |computed-method-metadata-evaluates-once)
               :code $ quote $ let
@@ -1481,7 +1481,7 @@
               assert= |bar2 $ t .bar
             println "|  tuple precedence: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-eq-trait $ %{} 'CodeEntry (:doc "|Test Eq trait")
           :code $ quote $ defn test-eq-trait () (println "|Testing Eq trait...") (; Value equality)
             assert= true $ = 1 1
@@ -1497,7 +1497,7 @@
             assert= false $ = ([] 1 2) ([] 1 2 3)
             println "|  Eq trait: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-explicit-trait-call $ %{} 'CodeEntry (:doc "|Test explicit trait-call for disambiguation")
           :code $ quote $ defn test-explicit-trait-call () (println "|Testing explicit trait-call...")
             let
@@ -1530,7 +1530,7 @@
               assert= |zapB $ &trait-call MyZapB :zap t
             println "|  explicit trait-call: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ []
             %{} 'TestEntry (:name |count-with-proven-list)
               :code $ quote $ assert= 2
@@ -1621,7 +1621,7 @@
               assert= "|foo2 Alice" $ p .foo
             println "|  precedence: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-method-introspection $ %{} 'CodeEntry (:doc "|Test runtime method introspection helpers")
           :code $ quote $ defn test-method-introspection () (println "|Testing method introspection...")
             let
@@ -1651,7 +1651,7 @@
               assert= true $ includes? ms5 .foo
             println "|  method introspection: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-option-result-map $ %{} 'CodeEntry (:doc "|Test Mappable trait for Option/Result")
           :code $ quote $ defn test-option-result-map () (println "|Testing Option/Result Mappable...")
             let
@@ -1730,7 +1730,7 @@
                   map-indexed open-list $ fn (idx value) ([] idx value)
             println "|  Option/Result map: ✓"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-qualified-contains-boundary $ %{} 'CodeEntry (:doc "|验证同名 trait 方法在显式调用与 Contains 泛型约束下保持各自来源。")
           :code $ quote $ defn test-qualified-contains-boundary ()
             let
@@ -1859,7 +1859,7 @@
               assert= 3 $ g/read-gauge total
             println "|defimpl Type Trait attaches through (:impls …)"
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.source-impl
           :require $ test-traits.source-gauge :as g

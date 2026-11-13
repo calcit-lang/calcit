@@ -13,7 +13,7 @@
         'main! $ %{} 'CodeEntry (:doc "|WASI 0.3 command Component 的标准输出与错误输出回归入口。")
           :code $ quote $ defn main! () (println "|你好" 42) (eprintln "|错误") (echo |done) &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
             :code $ quote $ assert= &unit (main!)
         'main-file! $ %{} 'CodeEntry (:doc |)
@@ -31,7 +31,7 @@
               result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-growth-loop! $ %{} 'CodeEntry (:doc "|验证大文件读取后反复构造小型 Result 值不会越界。")
           :code $ quote $ defn main-growth-loop! ()
             let
@@ -42,7 +42,7 @@
                 assert= true $ result:ok? $ Result :ok index
               println |Growth-ok
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-overflow! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-overflow! ()
             assert= 4194305 $ count $ str
@@ -54,7 +54,7 @@
                 , |x
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-read-loop! $ %{} 'CodeEntry (:doc "|验证同一内联循环先读取成功文件、再读取缺失文件时稳定返回 Result 错误。")
           :code $ quote $ defn main-read-loop! ()
             each ([] |workspace/valid.txt |workspace/no-such-file |workspace/no-such-file |workspace/no-such-file)
@@ -66,7 +66,7 @@
                     assert= true $ result:err? result
             println |Read-loop-ok
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-unknown-alias! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unknown-alias! ()
             let
@@ -77,13 +77,13 @@
                     , inc dec
                 println $ action 1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-unsupported! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported! ()
             assert= true $ result:ok? $ .read-dir (fs:path |workspace)
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-unsupported-alias! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported-alias! ()
             let
@@ -95,13 +95,14 @@
                   callback
               invoke action
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'read-workspace-file $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-workspace-file (path)
             .read-text $ fs:path path
           :examples $ []
           :schema $ quote $ Fn String
             -> $ Result String String
+            :features :io
           :tests $ []
             %{} 'TestEntry (:name |reads-project-file)
               :code $ quote $ assert= true
@@ -128,6 +129,7 @@
           :examples $ []
           :schema $ quote $ Fn String String
             -> $ Result Unit String
+            :features :io
           :tests $ [] $ %{} 'TestEntry (:name |denies-missing-root)
             :code $ quote $ assert= true
               result:err? $ write-workspace-file |/calcit-no-such-preopen/file.txt |content

@@ -20,7 +20,7 @@
           :code $ quote $ defn main! () println
             f $ [] |a
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

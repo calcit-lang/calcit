@@ -109,7 +109,7 @@
         'make-fix-person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-fix-person () (swap! *fix-person-calls inc) (FixPerson :name |Ada :age 1)
           :examples $ []
-          :schema $ quote $ Fn (-> fix-command.main/FixPerson)
+          :schema $ quote $ Fn (-> fix-command.main/FixPerson) (:features :state)
         'option-struct-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-struct-field (person) (get person :name)
           :examples $ []
@@ -146,7 +146,7 @@
           :code $ quote $ defn required-struct-complex ()
             :name $ make-fix-person
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |evaluates-complex-receiver-once)
             :code $ quote $ do (reset! *fix-person-calls 0)
               assert= |Ada $ required-struct-complex

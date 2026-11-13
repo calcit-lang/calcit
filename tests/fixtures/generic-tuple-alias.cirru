@@ -12,7 +12,7 @@
           :code $ quote $ defn main! ()
             println (pair 1 |a) (swap 1 |a) (v-add ([] 1 2 3) ([] 1 1 1)) (v-len2 ([] 3 4 0)) (v-count ([] 1 2 3))
             , &unit
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'Vec3 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def Vec3 ([] 0 0 0)
           :schema $ quote $ Tuple Number Number Number

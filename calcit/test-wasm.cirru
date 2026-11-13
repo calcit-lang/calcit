@@ -166,7 +166,7 @@
                   if (= index 1) (raise |recur-key-error) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
         'recur-enum-receiver-failure? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-enum-receiver-failure? (value index)
             if (> index 0)
@@ -176,7 +176,7 @@
                 do (println |recur-key) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
         'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
             if (<= remaining 0)
