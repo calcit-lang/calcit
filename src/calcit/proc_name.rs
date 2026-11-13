@@ -1194,7 +1194,11 @@ impl CalcitProc {
         return_type: some_set(),
         arg_types: vec![some_set(), dynamic_tag()],
       }),
-      NativeDifference | NativeUnion | NativeSetIntersection => Some(ProcTypeSignature {
+      NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), set_of(type_var("T"))],
+      }),
+      NativeUnion => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_set(), some_set()],
       }),

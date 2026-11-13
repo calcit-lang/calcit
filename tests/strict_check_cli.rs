@@ -2135,6 +2135,34 @@ fn later_union_argument_widens_generic_binding() {
 }
 
 #[test]
+fn set_difference_and_intersection_check_the_shared_element_type() {
+  for (proc, expected) in [("&difference", "(#{} 1)"), ("&set:intersection", "(#{} 2)")] {
+    let positive = format!(
+      "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
+       (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
+       (assert= {} ({proc} (#{{}} 1) (#{{}})))",
+      if proc == "&difference" { "(#{} 1)" } else { "(#{})" },
+    );
+    let eval = |code: &str| {
+      Command::new(env!("CARGO_BIN_EXE_calcit"))
+        .args(["--tips-level", "none", "eval", code])
+        .output()
+        .expect("calcit eval should run")
+    };
+    assert_success(&eval(&positive), proc);
+
+    let output = eval(&format!("{proc} (#{{}} 1) (#{{}} |text)"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{proc} accepted different element types");
+    assert!(
+      stderr.contains("E_PROC_ARG_TYPE_MISMATCH")
+        && stderr.contains(&format!("Proc `{proc}` arg 2 expects type `set<number>`, but got `set<string>`")),
+      "{stderr}"
+    );
+  }
+}
+
+#[test]
 fn incremental_check_reports_snapshot_level_diagnostics() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
