@@ -8419,6 +8419,97 @@ mod tests {
   }
 
   #[test]
+  fn erased_callable_parameters_stay_erased_through_bound_variables_and_slots() {
+    let function = |arg: Arc<CalcitTypeAnnotation>| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![arg],
+        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let required = function(function(Arc::new(CalcitTypeAnnotation::Number)));
+    let var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let slot = Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("erased-callback")));
+
+    // A variable bound to `AnyFn` is as erased as `AnyFn` itself.
+    let mut bound = TypeBindings::new();
+    bound.insert(Arc::from("T"), Arc::new(CalcitTypeAnnotation::DynFn));
+    assert!(!function(var.clone()).prove_with_bindings(required.as_ref(), &mut bound).is_proven());
+    assert!(
+      !function(Arc::new(CalcitTypeAnnotation::DynFn))
+        .prove_with_bindings(required.as_ref(), &mut TypeBindings::new())
+        .is_proven()
+    );
+    // A variable bound to a concrete callable keeps proving.
+    let mut concrete = TypeBindings::new();
+    concrete.insert(Arc::from("T"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    assert!(function(var).prove_with_bindings(required.as_ref(), &mut concrete).is_proven());
+
+    // A long chain of bindings ends in the same place, and a cycle is never proof.
+    let mut chain = TypeBindings::new();
+    for index in 0..12 {
+      let next: Arc<CalcitTypeAnnotation> = if index == 11 {
+        Arc::new(CalcitTypeAnnotation::DynFn)
+      } else {
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(format!("T{}", index + 1))))
+      };
+      chain.insert(Arc::from(format!("T{index}")), next);
+    }
+    let head = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T0")));
+    assert!(!function(head).prove_with_bindings(required.as_ref(), &mut chain).is_proven());
+    let mut cycle = TypeBindings::new();
+    cycle.insert(Arc::from("A"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("B"))));
+    cycle.insert(Arc::from("B"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("A"))));
+    let looped = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("A")));
+    assert!(!function(looped).prove_with_bindings(required.as_ref(), &mut cycle).is_proven());
+
+    // An expected parameter bound to a signature still requires one.
+    let mut expected_bound = TypeBindings::new();
+    expected_bound.insert(Arc::from("U"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    let generic_required = function(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U"))));
+    assert!(
+      !function(Arc::new(CalcitTypeAnnotation::DynFn))
+        .prove_with_bindings(generic_required.as_ref(), &mut expected_bound)
+        .is_proven()
+    );
+    let mut expected_concrete = TypeBindings::new();
+    expected_concrete.insert(Arc::from("U"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    assert!(
+      function(function(Arc::new(CalcitTypeAnnotation::Number)))
+        .prove_with_bindings(generic_required.as_ref(), &mut expected_concrete)
+        .is_proven()
+    );
+
+    // A long acyclic chain of slots that ends in a signature still proves.
+    let slot_names: Vec<String> = (0..12).map(|index| format!("chain-slot-{index}")).collect();
+    for (index, name) in slot_names.iter().enumerate() {
+      let target = slot_names
+        .get(index + 1)
+        .map(|next| Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(next.as_str()))))
+        .unwrap_or_else(|| function(Arc::new(CalcitTypeAnnotation::Number)));
+      push_type_slot_override(Arc::from(name.as_str()), target);
+    }
+    let chained = Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_names[0].as_str())));
+    let chained_proof = function(chained).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
+    for name in slot_names.iter().rev() {
+      pop_type_slot_override(name);
+    }
+    assert!(chained_proof.is_proven());
+
+    // So is a slot that resolves to it.
+    push_type_slot_override(Arc::from("erased-callback"), Arc::new(CalcitTypeAnnotation::DynFn));
+    let proof = function(slot).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
+    pop_type_slot_override("erased-callback");
+    assert!(!proof.is_proven());
+  }
+
+  #[test]
   fn caller_capabilities_prove_trait_arguments_without_erasing_identity() {
     let caller_name: Arc<str> = Arc::from("T");
     let caller = CalcitTypeAnnotation::TypeVar(caller_name.clone());
@@ -11994,6 +12085,26 @@ impl CalcitFnTypeAnnotation {
   }
 
   fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    /// Follows aliases, bound type variables and type slots to the type the
+    /// proof below would compare. `None` means the walk revisited a name, a
+    /// cycle that cannot settle on any type.
+    fn resolve_bound(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
+      let mut current = CalcitTypeAnnotation::expand_schema_alias(annotation);
+      let mut visited: HashSet<(bool, Arc<str>)> = HashSet::new();
+      loop {
+        let (next, key) = match current.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => (bindings.get(name).cloned(), (false, name.clone())),
+          CalcitTypeAnnotation::TypeSlot(name) => (resolve_type_slot(name), (true, name.clone())),
+          _ => return Some(current),
+        };
+        let Some(next) = next else { return Some(current) };
+        if !visited.insert(key) {
+          return None;
+        }
+        current = CalcitTypeAnnotation::expand_schema_alias(&next);
+      }
+    }
+
     if self.is_async_invocation() != other.is_async_invocation() {
       return TypeProof::Mismatch;
     }
@@ -12003,6 +12114,17 @@ impl CalcitFnTypeAnnotation {
 
     let mut staged = bindings.clone();
     let mut result = TypeProof::Proven;
+    let mut prove_parameter = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
+      // An erased callable parameter can be invoked without validating its
+      // arguments. It cannot stand in for a parameter with a known signature.
+      // An unsettled walk cannot vouch for a signature on either side.
+      let erased = resolve_bound(actual, &staged).is_none_or(|actual| matches!(actual.as_ref(), CalcitTypeAnnotation::DynFn));
+      let requires_signature = resolve_bound(expected, &staged).is_none_or(|expected| expected.resolve_to_nonoptional_fn().is_some());
+      if erased && requires_signature {
+        return TypeProof::Mismatch;
+      }
+      expected.prove_with_staged_bindings(actual, &mut staged)
+    };
     for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
       let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
         continue;
@@ -12010,11 +12132,11 @@ impl CalcitFnTypeAnnotation {
       let Some(actual) = self.arg_types.get(idx).or(self.rest_type.as_ref()) else {
         return TypeProof::Mismatch;
       };
-      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+      result = result.and(prove_parameter(actual, expected));
     }
     // #2612: a fixed-arity callable had its extra parameters proven against the rest element above.
     if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
-      result = result.and(expected.prove_with_staged_bindings(actual, &mut staged));
+      result = result.and(prove_parameter(actual, expected));
     }
     result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
     if result.is_proven() {
