@@ -17,6 +17,18 @@ const IO_DIAGNOSTIC: &str = "E_IO_FEATURE_REQUIRED";
 const STATE_WARNING_DIAGNOSTIC: &str = "W_STATE_FEATURE_REQUIRED";
 const IO_WARNING_DIAGNOSTIC: &str = "W_IO_FEATURE_REQUIRED";
 
+/// The code of the diagnostic the checker actually reports for this
+/// definition: the first added feature whose policy is not `:allow`, `:state`
+/// before `:io`, as the checker walks them.
+fn suggestion_diagnostic(added: &[&str]) -> &'static str {
+  let reported = ["state", "io"]
+    .into_iter()
+    .filter(|feature| added.contains(feature))
+    .find(|feature| program::configured_feature_policy(feature) != Some(calcit::snapshot::FeaturePolicy::Allow))
+    .unwrap_or(if added.contains(&"state") { "state" } else { "io" });
+  feature_diagnostic(reported)
+}
+
 /// The code the checker reports for a missing feature under the active entry
 /// policy: the `W_` code when the entry relaxes it to `:warn`, otherwise the
 /// `E_` code of the 0.43 default.
@@ -175,7 +187,7 @@ pub(super) fn plan(
       .join(" and ");
     suggestions.push(FixSuggestion {
       rule_id: EFFECT_FEATURES_RULE,
-      diagnostic_code: feature_diagnostic(if added.contains(&"state") { "state" } else { "io" }),
+      diagnostic_code: suggestion_diagnostic(&added),
       semantic_layer: "surface",
       source_file: snapshot_file.to_owned(),
       definition: format!("{ns}/{def}"),
