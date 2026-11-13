@@ -751,14 +751,6 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
-      NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeDataToCode => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
       ListQuestion => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
@@ -836,16 +828,18 @@ impl CalcitProc {
       | NativeNumberFormat
       | NativeNumberDisplayBy
       | NativeNumberFits
+      | NativeExtractCodeIntoEdn
+      | NativeDataToCode
       | NativeListQ => {
         let name = self.as_ref();
         let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
-          panic!("bundled fixed-signature proc {name} requires a function schema");
+          panic!("bundled fixed-arity proc {name} requires a function schema");
         };
-        // These procs have fixed arity. Keep metadata
+        // This group has monomorphic, fixed-arity contracts. Keep metadata
         // which ProcTypeSignature cannot represent out of this conversion.
         assert!(
           schema.generics.is_empty() && schema.where_bounds.is_empty() && schema.rest_type.is_none() && schema.features.is_empty(),
-          "bundled fixed-signature proc {name} requires a fixed scalar schema"
+          "bundled fixed-arity proc {name} requires a monomorphic fixed-arity schema"
         );
         Some(ProcTypeSignature {
           return_type: schema.return_type.clone(),
