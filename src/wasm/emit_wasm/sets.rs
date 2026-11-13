@@ -34,42 +34,135 @@ pub(super) enum SetOpKind {
   Include,
 }
 
-pub(super) fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
-  // Bool and Number share an f64 representation. An open element type can
-  // contain either, while an empty set contributes no comparison at all.
-  let scalar_kinds = |set| {
-    let Some(annotation) = infer_wasm_static_type(ctx, set) else {
-      return (true, true);
-    };
-    let annotation = CalcitTypeAnnotation::expand_schema_alias(&annotation);
-    let CalcitTypeAnnotation::Set(element) = annotation.as_ref() else {
-      return (true, true);
-    };
-    let element = CalcitTypeAnnotation::expand_schema_alias(element);
-    match element.as_ref() {
-      CalcitTypeAnnotation::Bool => (true, false),
-      CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => (false, true),
-      CalcitTypeAnnotation::Never
-      | CalcitTypeAnnotation::String
-      | CalcitTypeAnnotation::Tag
-      | CalcitTypeAnnotation::Symbol
-      | CalcitTypeAnnotation::List(_)
-      | CalcitTypeAnnotation::Tuple(_)
-      | CalcitTypeAnnotation::Set(_)
-      | CalcitTypeAnnotation::Map(_, _)
-      | CalcitTypeAnnotation::Struct(..)
-      | CalcitTypeAnnotation::StructValue(_)
-      | CalcitTypeAnnotation::Enum(..)
-      | CalcitTypeAnnotation::EnumValue(_) => (false, false),
-      _ => (true, true),
+fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
+  let element_type = |set| {
+    let annotation = CalcitTypeAnnotation::expand_schema_alias(&infer_wasm_static_type(ctx, set)?);
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::Set(element) => Some(element.clone()),
+      CalcitTypeAnnotation::Never => Some(annotation),
+      _ => None,
     }
   };
-  let (left_bool, left_number) = scalar_kinds(left);
-  let (right_bool, right_number) = scalar_kinds(right);
-  if (left_bool && right_number) || (left_number && right_bool) {
-    return Err("E_WASM_SET_ELEMENT_KIND: set comparison needs element types that distinguish Bool from Number on WASM".into());
+  let left = element_type(left).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  let right = element_type(right).unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  if set_comparison_can_erase_kind(&left, &right, 0) {
+    return Err(
+      "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+    );
   }
   Ok(())
+}
+
+/// The structural comparator uses untagged f64 values, including when it
+/// descends into containers. Compare corresponding slots so a heterogeneous
+/// tuple can still be compared with another tuple of the same shape.
+fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  use CalcitTypeAnnotation as T;
+
+  let left = T::expand_schema_alias(left);
+  let right = T::expand_schema_alias(right);
+  if matches!(left.as_ref(), T::Never) || matches!(right.as_ref(), T::Never) {
+    return false;
+  }
+  // Recursive declarations and unresolved shapes cannot serve as evidence.
+  if depth >= 32 {
+    return true;
+  }
+  let compare = |left: &Arc<T>, right: &Arc<T>| set_comparison_can_erase_kind(left, right, depth + 1);
+  let scalar_kind = proven_scalar_kind;
+  if let (Some(left), Some(right)) = (scalar_kind(&left), scalar_kind(&right)) {
+    // Tags start at 1, while Nil and Unit use 0.
+    return left != right && !matches!((left, right), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
+  }
+  match (left.as_ref(), right.as_ref()) {
+    (T::Nullable(inner, NullableOrigin::Inferred), _) => compare(inner, &right) || compare(&Arc::new(T::Nil), &right),
+    (_, T::Nullable(inner, NullableOrigin::Inferred)) => compare(&left, inner) || compare(&left, &Arc::new(T::Nil)),
+    (T::List(left), T::List(right)) | (T::Set(left), T::Set(right)) => compare(left, right),
+    (T::Tuple(left), T::Tuple(right)) => {
+      left.len() == right.len() && left.iter().zip(right.iter()).any(|(left, right)| compare(left, right))
+    }
+    (T::List(member), T::Tuple(slots)) => slots.iter().any(|slot| compare(member, slot)),
+    (T::Tuple(slots), T::List(member)) => slots.iter().any(|slot| compare(slot, member)),
+    (T::Map(left_key, left_value), T::Map(right_key, right_value)) => compare(left_key, right_key) || compare(left_value, right_value),
+    (T::Struct(..) | T::StructValue(_) | T::TypeRef(..), T::Struct(..) | T::StructValue(_) | T::TypeRef(..))
+      if let (Some(left_def), Some(right_def)) = (left.resolve_to_struct(), right.resolve_to_struct()) =>
+    {
+      left_def.fields == right_def.fields
+        && left_def
+          .field_types
+          .iter()
+          .zip(right_def.field_types.iter())
+          .any(|(left_field, right_field)| {
+            compare(
+              &set_comparison_payload(&left, &left_def.generics, left_field, left_def.definition_ref.as_deref()),
+              &set_comparison_payload(&right, &right_def.generics, right_field, right_def.definition_ref.as_deref()),
+            )
+          })
+    }
+    (T::Enum(..) | T::EnumValue(_) | T::TypeRef(..), T::Enum(..) | T::EnumValue(_) | T::TypeRef(..))
+      if let (Some(left_def), Some(right_def)) = (left.resolve_to_enum(), right.resolve_to_enum()) =>
+    {
+      left_def.variants().iter().any(|left_variant| {
+        right_def
+          .find_variant_by_name(left_variant.tag.ref_str())
+          .is_some_and(|right_variant| {
+            left_variant.arity() == right_variant.arity()
+              && left_variant
+                .payload_types()
+                .iter()
+                .zip(right_variant.payload_types())
+                .any(|(left_payload, right_payload)| {
+                  compare(
+                    &set_comparison_payload(
+                      &left,
+                      left_def.generics(),
+                      left_payload,
+                      left_def.definition_ref().map(AsRef::as_ref),
+                    ),
+                    &set_comparison_payload(
+                      &right,
+                      right_def.generics(),
+                      right_payload,
+                      right_def.definition_ref().map(AsRef::as_ref),
+                    ),
+                  )
+                })
+          })
+      })
+    }
+    (T::String, T::String) => false,
+    // Different known heap layouts do not share an address or recurse.
+    (
+      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+    ) => false,
+    // Number may equal a heap pointer; the other scalar/heap comparisons
+    // have the same representation constraints as elsewhere in codegen.
+    (T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _), T::Bool | T::Nil | T::Unit)
+    | (T::Bool | T::Nil | T::Unit, T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _)) => false,
+    _ => true,
+  }
+}
+
+fn set_comparison_payload(
+  annotation: &CalcitTypeAnnotation,
+  generics: &[Arc<str>],
+  payload: &Arc<CalcitTypeAnnotation>,
+  definition_ref: Option<&str>,
+) -> Arc<CalcitTypeAnnotation> {
+  use CalcitTypeAnnotation as T;
+
+  let payload = match definition_ref.and_then(|reference| reference.rsplit_once('/')) {
+    Some((ns, _)) => crate::wasm::host::calcit::type_refs::qualify_namespace_type_refs(payload.clone(), ns),
+    None => payload.clone(),
+  };
+  match annotation {
+    T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) if !args.is_empty() => {
+      let bindings = generics.iter().cloned().zip(args.iter().cloned()).collect();
+      payload.substitute_type_vars(&bindings)
+    }
+    _ => payload,
+  }
 }
 
 /// High-level set operations `(op base & xs)` — fold the extra args using the

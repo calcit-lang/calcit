@@ -54,7 +54,7 @@ aliases:
 | `decode-map-as`、`parse-cirru-edn-as` | unsupported | | `calcit.core/decode-map-as#decodes-struct-and-option` 排除项 |
 | `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
-| 差集与交集的 Bool / Number 元素比较 | supported-with-type-evidence | 元素类型必须能排除 Bool 与 Number 相互比较的可能。这两类标量在 WASM 中共用数值表示，可能发生冲突时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
+| 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
 | 默认比较器的 `sort` | unsupported | 需要显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
@@ -118,7 +118,7 @@ write-file
 | `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或特化展开中再次调用自身（尾部 `recur` 不在此列，见上方的特化循环；但回边缺少类型证据、或一个循环参数带来超过 8 个实现身份时也报此错误）；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用；非尾部的递归高阶调用改写为尾部 `recur`；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
-| `E_WASM_SET_ELEMENT_KIND` | 差集或交集的元素类型可能让 Bool 与 Number 相互比较，当前 WASM 数值表示无法区分 | 在比较前收窄元素类型，或使用 native / JS |
+| `E_WASM_SET_ELEMENT_KIND` | 差集或交集缺少类型证据来排除不同标量种类的数值表示冲突 | 在比较前收窄元素类型，或使用 native / JS |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
 | `E_WASM_EDN_TYPE` | `format-cirru-edn` 的输入类型不闭合 | 写出闭合类型 |

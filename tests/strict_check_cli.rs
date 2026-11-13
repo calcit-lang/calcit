@@ -2168,7 +2168,7 @@ fn set_difference_and_intersection_preserve_the_left_element_type() {
 }
 
 #[test]
-fn wasm_and_wasi_reject_set_comparisons_that_erase_number_and_bool() {
+fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
@@ -2179,6 +2179,9 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_number_and_bool() {
     "intersection (#{} 1) (#{} true)",
     "&difference (#{} 1) (#{} true |x)",
     "&set:intersection (#{} false |x) (#{} 0)",
+    "&difference (#{} :alpha) (#{} 78)",
+    "&set:intersection (#{} ([] 1)) (#{} ([] true))",
+    "intersection (#{} ([] 1)) (#{} ([] 1)) (#{} ([] true))",
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");

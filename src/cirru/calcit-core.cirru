@@ -10028,10 +10028,21 @@
             & $ Set Dynamic
             -> $ Set T
             :generics T
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-common-set-members)
-            :code $ quote $ assert= (#{} 3)
-              intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-common-set-members)
+              :code $ quote $ assert= (#{} 3)
+                intersection (#{} 1 2 3) (#{} 2 3 4) (#{} 3 4 5)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-compatible-nested-elements)
+              :code $ quote $ do
+                assert=
+                  #{} $ [] 2
+                  intersection
+                    #{} ([] 1) ([] 2)
+                    #{} ([] 2) ([] 3)
+                assert= (#{} :a)
+                  intersection (#{} :a) (#{} :a :b)
+              :tags $ #{} :core :unit
         'intersperse $ %{} 'CodeEntry
           :doc "|在 List 元素之间插入同类型分隔值；保持原有元素顺序，空 List 和单元素 List 原样返回。"
           :code $ quote $ defn intersperse (xs0 separator)
