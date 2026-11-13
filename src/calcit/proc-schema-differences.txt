@@ -1,0 +1,116 @@
+# Existing Rust proc => core schema differences (#2735).
+# Resolved differences may be removed as signatures converge.
+%:: | arg 0 | "'EnumDef" => "'Dynamic"
+%:: | rest | "'Dynamic" => <missing>
+&%{} | rest | "'Dynamic" => <missing>
+&assert-traits | missing core definition
+&buf-list:to-list | arg 1 | <missing> => "'T"
+&buf-list:to-list | return | "'List" => (:: "'List" "'T")
+&buffer | arg 0 | <missing> => "'Dynamic"
+&buffer | rest | "'Dynamic" => <missing>
+&data-to-code | missing core function schema
+&display-stack | rest | "'Dynamic" => <missing>
+&enum-def:impl-traits | rest | "'Dynamic" => <missing>
+&enum-def:new | rest | "'Dynamic" => <missing>
+&enum:impl-traits | rest | "'Dynamic" => <missing>
+&exclude | arg 0 | "'Set" => (:: "'Set" "'T")
+&exclude | arg 1 | "'Dynamic" => "'T"
+&exclude | return | "'Set" => (:: "'Set" "'T")
+&extract-code-into-edn | missing core function schema
+&fs-read-dir | return | (:: "'calcit.core/Result" (:: "'List" "'T") "'String") => (:: "'calcit.core/Result" (:: "'List" "'calcit.core/FsPath") "'String")
+&impl::new | missing core function schema
+&include | arg 0 | "'Set" => (:: "'Set" "'T")
+&include | arg 1 | "'Dynamic" => "'T"
+&include | return | "'Set" => (:: "'Set" "'T")
+&inspect-methods | missing core definition
+&inspect-type | missing core definition
+&list:append | arg 0 | "'List" => (:: "'List" "'T")
+&list:append | arg 1 | "'Dynamic" => "'T"
+&list:append | return | "'List" => (:: "'List" "'T")
+&list:foldl | arg 0 | "'Dynamic" => (:: "'List" "'T")
+&list:foldl | arg 1 | "'Dynamic" => "'U"
+&list:foldl | arg 2 | "'Fn" => (:: "'Fn" ("{}" (:return "'U") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
+&list:foldl | return | "'Dynamic" => "'U"
+&list:foldl-shortcut | missing core function schema
+&list:prepend | arg 0 | "'List" => (:: "'List" "'T")
+&list:prepend | arg 1 | "'Dynamic" => "'T"
+&list:prepend | return | "'List" => (:: "'List" "'T")
+&list? | missing core definition
+&map:assoc | rest | "'Dynamic" => <missing>
+&map:get | arg 1 | "'Dynamic" => "'K"
+&methods-of | missing core definition
+&read-dir | missing core definition
+&read-file | missing core definition
+&str | missing core function schema
+&struct-def:impl-traits | rest | "'Dynamic" => <missing>
+&struct-def:new | rest | "'Dynamic" => <missing>
+&struct:assoc | missing core function schema
+&struct:assoc-at | missing core definition
+&struct:contains? | missing core function schema
+&struct:extend-as | missing core function schema
+&struct:field-tag | missing core definition
+&struct:from-map | missing core function schema
+&struct:impl-traits | rest | "'Dynamic" => <missing>
+&struct:matches? | missing core function schema
+&struct:nth | missing core definition
+&struct:with | missing core function schema
+&struct:with-at | missing core definition
+&trait-call | missing core definition
+&trait::new | missing core function schema
+&union | arg 0 | "'Set" => (:: "'Set" "'T")
+&union | arg 1 | "'Set" => (:: "'Set" "'T")
+&union | return | "'Set" => (:: "'Set" "'T")
+&union-def:new | rest | "'Dynamic" => <missing>
+&unreachable! | missing core definition
+&{} | missing core function schema
+:: | missing core function schema
+?{} | missing core definition
+append | arg 0 | "'List" => (:: "'List" "'T")
+append | arg 1 | "'Dynamic" => "'T"
+append | return | "'List" => (:: "'List" "'T")
+bool? | arg 0 | "'Dynamic" => "'T"
+enum? | arg 0 | "'Dynamic" => "'T"
+fn? | arg 0 | "'Dynamic" => "'T"
+foldl | arg 0 | "'Dynamic" => (:: "'List" "'T")
+foldl | arg 1 | "'Dynamic" => "'U"
+foldl | arg 2 | "'Fn" => (:: "'Fn" ("{}" (:return "'U") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
+foldl | return | "'Dynamic" => "'U"
+foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
+foldr-shortcut | arg 1 | "'Dynamic" => "'U"
+foldr-shortcut | arg 2 | "'Dynamic" => "'U"
+foldr-shortcut | arg 3 | "'Fn" => (:: "'Fn" ("{}" (:return "'Enum") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
+foldr-shortcut | return | "'Dynamic" => "'U"
+format-cirru-edn | arg 0 | "'Dynamic" => "'T"
+format-to-cirru | arg 0 | "'Dynamic" => "'T"
+format-to-lisp | arg 0 | "'Dynamic" => "'T"
+generate-id! | arg 0 | "'Number" => <missing>
+generate-id! | arg 1 | "'String" => <missing>
+identical? | arg 0 | "'Dynamic" => "'T"
+identical? | arg 1 | "'Dynamic" => "'U"
+is-spreading-mark? | arg 0 | "'Dynamic" => "'T"
+json-pretty | arg 0 | "'Dynamic" => "'T"
+json-stringify | arg 0 | "'Dynamic" => "'T"
+list? | arg 0 | "'Dynamic" => "'T"
+map? | arg 0 | "'Dynamic" => "'T"
+nil? | arg 0 | "'Dynamic" => "'T"
+not | arg 0 | "'Dynamic" => "'T"
+number? | arg 0 | "'Dynamic" => "'T"
+parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
+prepend | arg 0 | "'List" => (:: "'List" "'T")
+prepend | arg 1 | "'Dynamic" => "'T"
+prepend | return | "'List" => (:: "'List" "'T")
+raise | arg 0 | <missing> => "'String"
+raise | rest | "'Dynamic" => <missing>
+raise | return | "'Dynamic" => "'T"
+register-calcit-builtin-impls | missing core definition
+set? | arg 0 | "'Dynamic" => "'T"
+string? | arg 0 | "'Dynamic" => "'T"
+struct? | arg 0 | "'Dynamic" => "'T"
+symbol? | arg 0 | "'Dynamic" => "'T"
+tag? | arg 0 | "'Dynamic" => "'T"
+to-lispy-string | arg 0 | "'Dynamic" => "'T"
+todo! | missing core definition
+trim | arg 1 | "'String" => <missing>
+turn-tag | arg 0 | "'Dynamic" => "'T"
+type-of | arg 0 | "'Dynamic" => "'T"
+unreachable! | missing core definition
