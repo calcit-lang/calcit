@@ -248,6 +248,18 @@ mod core_snapshot_tests {
   }
 
   #[test]
+  fn buffer_list_snapshot_schema_matches_runtime() {
+    let snapshot = load_core_snapshot().expect("load generated core snapshot");
+    let proc = calcit::CalcitProc::NativeBufListToList;
+    let entry = &snapshot.files["calcit.core"].defs[proc.as_ref()];
+    let schema = entry.schema.as_function().expect("buffer-list snapshot is callable");
+    let runtime = proc.get_type_signature().expect("buffer-list runtime signature");
+    assert_eq!(schema.arg_types, runtime.arg_types);
+    assert!(schema.rest_type.is_none());
+    assert_eq!(schema.return_type, runtime.return_type);
+  }
+
+  #[test]
   fn generated_core_snapshot_preserves_strict_macro_schemas() {
     let snapshot = load_core_snapshot().expect("load generated core snapshot");
     let let_entry = snapshot
