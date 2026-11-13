@@ -664,7 +664,7 @@ impl CalcitProc {
     PROC_TYPE_SIGNATURES.get(self)
   }
 
-  fn build_type_signature(&self) -> Option<ProcTypeSignature> {
+  fn build_type_signature(&self, core: &crate::snapshot::FileInSnapShot) -> Option<ProcTypeSignature> {
     use CalcitProc::*;
 
     match self {
@@ -813,42 +813,44 @@ impl CalcitProc {
       }),
 
       // === Math operations ===
-      NativeAdd => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
-      NativeMinus | NativeMultiply | NativeDivide | Pow | NativeNumberRem => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
-      Floor | Ceil | Round | Sin | Cos | Sqrt | NativeNumberFract => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number")],
-      }),
-      IsInteger => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("number")],
-      }),
-      BitShl | BitShr | BitAnd | BitOr | BitXor => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
-      BitNot => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("number")],
-      }),
-      NativeNumberFormat => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
-      NativeNumberDisplayBy => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("number"), some_tag("number")],
-      }),
-      NativeNumberFits => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("number"), some_tag("tag")],
-      }),
+      NativeAdd
+      | NativeMinus
+      | NativeMultiply
+      | NativeDivide
+      | Pow
+      | NativeNumberRem
+      | Floor
+      | Ceil
+      | Round
+      | Sin
+      | Cos
+      | Sqrt
+      | NativeNumberFract
+      | IsInteger
+      | BitShl
+      | BitShr
+      | BitAnd
+      | BitOr
+      | BitXor
+      | BitNot
+      | NativeNumberFormat
+      | NativeNumberDisplayBy
+      | NativeNumberFits => {
+        let name = self.as_ref();
+        let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
+          panic!("bundled numeric proc {name} requires a function schema");
+        };
+        // This group has fixed arity and scalar contracts. Keep metadata
+        // which ProcTypeSignature cannot represent out of this conversion.
+        assert!(
+          schema.generics.is_empty() && schema.where_bounds.is_empty() && schema.rest_type.is_none() && schema.features.is_empty(),
+          "bundled numeric proc {name} requires a fixed scalar schema"
+        );
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
 
       // === Comparison & Logic ===
       NativeLessThan | NativeGreaterThan => Some(ProcTypeSignature {
@@ -1617,8 +1619,10 @@ impl CalcitProc {
 }
 
 static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = LazyLock::new(|| {
+  let snapshot = crate::load_core_snapshot().expect("load bundled core proc signatures");
+  let core = &snapshot.files[super::CORE_NS];
   CalcitProc::iter()
-    .filter_map(|proc| proc.build_type_signature().map(|signature| (proc, signature)))
+    .filter_map(|proc| proc.build_type_signature(core).map(|signature| (proc, signature)))
     .collect()
 });
 
