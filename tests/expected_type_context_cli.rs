@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 const FIXTURE: &str = "tests/fixtures/expected-type-context.cirru";
+const COLLECTION_ALIASES: &str = "tests/fixtures/expected-collection-aliases.cirru";
 
 fn check(source: &str, label: &str) -> (bool, String) {
   let dir = std::env::temp_dir().join(format!("calcit-expected-type-context-{label}-{}", std::process::id()));
@@ -265,4 +266,26 @@ fn a_wrong_tag_is_reported_at_its_position() {
     assert!(!ok, "{label}:\n{text}");
     assert!(text.contains(code) && text.contains(position), "{label}:\n{text}");
   }
+}
+
+#[test]
+fn collection_aliases_offer_member_types_without_weakening_checks() {
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([COLLECTION_ALIASES, "test", "--tag", "unit", "--require-match"])
+    .output()
+    .expect("calcit command should run");
+  assert!(
+    output.status.success() && String::from_utf8_lossy(&output.stdout).contains("2 passed; 0 failed"),
+    "{}{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+
+  let source = fs::read_to_string(COLLECTION_ALIASES).unwrap();
+  assert!(source.contains("([] :red :green)"));
+  let source = source.replacen("([] :red :green)", "([] :red :grene)", 1);
+  let (ok, text) = check(&source, "collection-alias-typo");
+  assert!(!ok, "{text}");
+  assert!(text.contains("E_ENUM_TAG_UNKNOWN") && text.contains("collection member"), "{text}");
 }
