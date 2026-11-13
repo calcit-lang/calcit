@@ -102,6 +102,7 @@ const runtimePolymorphic = new Set([
   "&list:flatten",
   "&list:foldl-shortcut",
   "&list:sort-by",
+  "&list?",
   "&str",
   "&struct:assoc",
   "&struct:contains?",

@@ -2305,6 +2305,18 @@
             :code $ quote $ assert= (#{} 1)
               &list:to-set $ [] 1 1 1 1
             :tags $ #{} :core :unit
+        '&list? $ %{} 'CodeEntry (:doc "|检查值是否为 List，其他值返回 false。")
+          :code $ quote $ def &list? &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool) (:open :reflect)
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |recognizes-list-values)
+            :code $ quote $ do
+              assert= true $ &list? $ []
+              assert= true $ &list? $ [] 1 2
+              assert= false $ &list? $ &{} |key 1
+              assert= false $ &list? 1
+            :tags $ #{} :core :unit
         '&map:assoc $ %{} 'CodeEntry
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation

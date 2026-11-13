@@ -835,16 +835,17 @@ impl CalcitProc {
       | BitNot
       | NativeNumberFormat
       | NativeNumberDisplayBy
-      | NativeNumberFits => {
+      | NativeNumberFits
+      | NativeListQ => {
         let name = self.as_ref();
         let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
-          panic!("bundled numeric proc {name} requires a function schema");
+          panic!("bundled fixed-signature proc {name} requires a function schema");
         };
-        // This group has fixed arity and scalar contracts. Keep metadata
+        // These procs have fixed arity. Keep metadata
         // which ProcTypeSignature cannot represent out of this conversion.
         assert!(
           schema.generics.is_empty() && schema.where_bounds.is_empty() && schema.rest_type.is_none() && schema.features.is_empty(),
-          "bundled numeric proc {name} requires a fixed scalar schema"
+          "bundled fixed-signature proc {name} requires a fixed scalar schema"
         );
         Some(ProcTypeSignature {
           return_type: schema.return_type.clone(),
@@ -1002,10 +1003,6 @@ impl CalcitProc {
       NativeListConcat => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
         arg_types: vec![variadic_of(list_of(type_var("T")))],
-      }),
-      NativeListQ => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
       }),
       NativeListCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
