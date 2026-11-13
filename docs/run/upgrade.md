@@ -485,15 +485,17 @@ deftrait Show $ .show $ Fn T (-> String) (:generics T)
 依赖库同样在加载时检查，所以还在用旧写法的类库要先在类库仓库里运行 `edit format` 并发布新版本，项目才能升级到 0.35.0。
 0.34.4 的 `W_LEGACY_QUOTED_DECLARATION_TYPE` 提示随之删除。
 
-## 0.35.0 `&map:diff-triple` 返回 Tuple，Cirru 列表转换返回 `List CirruNode`（#2549、#2556）
+## 0.35.0 `&map:diff-triple` 的 Tuple 静态类型与 Cirru 列表转换的 `List CirruNode`（#2549、#2556）
 
 两组 core 返回类型收紧：
 
-- `&map:diff-triple` / `.diff-triple` 返回 `Tuple (Set K) (Map K W) (List (Tuple K V W))`，不再是开放的 `List`（#2549）。
+- `&map:diff-triple` / `.diff-triple` 的静态返回类型是 `Tuple (Set K) (Map K W) (List (Tuple K V W))`（#2549）。
 - CirruQuote `.to-list` 返回 `Option (List CirruNode)`，`.parse-cirru-list` 的成功值和 `parse-cirru-list` 的结果是 `List CirruNode`，不再是 `List Dynamic`（#2556）。
   `calcit.core/CirruNode` 是 0.34.4 新增的递归 union：`defunion CirruNode String $ quote $ List CirruNode`，可以用作 `decode-map-as` 的目标或参数类型。
 
-运行时的值不变，变的只是检查器看到的类型。会报错的写法：
+Tuple 在运行时使用 List 表示。`&map:diff-triple` 的外层三项和公共键记录 `[k old new]` 都是 List，因此对它们调用 `type-of` 会得到 `:list`。静态检查分别保留删除键的 `K`、新增值的 `W`，以及公共键记录的 `K`、`V` 和 `W`（#2755）。
+
+以下写法会触发静态检查错误。
 
 ```text
 [W_FN_ARG_TYPE_MISMATCH] [Warn] Function `app.diff/count-rows` arg 1 expects type `list`, but got `tuple<set<string>, map<string, number>, list<tuple<string, number, number>>>` ...
