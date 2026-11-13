@@ -604,7 +604,7 @@
           :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :decode)
           :tags $ #{} :builtin :internal :meta
         '&dbg-print $ %{} 'CodeEntry
           :doc "|Internal output of the `dbg` macro. Prints one line; it is not an `:io` effect, the entry `:feature-policy` key `:dbg` controls it instead."
@@ -773,7 +773,7 @@
           :doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal :meta
           :tests $ [] $ %{} 'TestEntry (:name |rejects-runtime-only-values)
             :code $ quote $ assert= :failed
@@ -8491,6 +8491,24 @@
               :code $ quote $ assert= 3
                 foldl (range 3) 0 $ fn (sum idx) (assert-type idx Number)
                   + sum $ option:unwrap $ nth ([] 0 1 2) idx
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |folds-map-as-key-value-lists)
+              :code $ quote $ let
+                  data $ &{} |one 1 |two 2
+                  total $ foldl data 0 $ fn (acc entry)
+                    assert= 2 $ &list:count entry
+                    let
+                        k $ &list:nth entry 0
+                        v $ &list:nth entry 1
+                      if (number? v)
+                        if (= k |one)
+                          + acc $ * 10 v
+                          + acc v
+                        , acc
+                assert= 12 total
+                assert= 10 $ &list:foldl (&{}) 10 $ fn (acc entry)
+                  + acc $ &list:count entry
+                assert= 3 $ foldl (#{} 1 2) 0 &+
               :tags $ #{} :core :unit
         'foldl-compare $ %{} 'CodeEntry
           :doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure."
