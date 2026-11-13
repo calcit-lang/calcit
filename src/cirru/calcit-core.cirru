@@ -2313,10 +2313,24 @@
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |associates-map-entry-directly)
-            :code $ quote $ assert= (&{} :a 1 :b 2)
-              &map:assoc (&{} :a 1) :b 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |associates-map-entry-directly)
+              :code $ quote $ assert= (&{} :a 1 :b 2)
+                &map:assoc (&{} :a 1) :b 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |associates-all-pairs-in-order)
+              :code $ quote $ let
+                  base $ do (println |base) (&{} :a 0)
+                  updated $ &map:assoc base
+                    do (println |key-one) :a
+                    do (println |value-one) 1
+                    do (println |key-two) :b
+                    do (println |value-two) 2
+                    do (println |key-three) :a
+                    do (println |value-three) 3
+                assert= (&{} :a 0) base
+                assert= (&{} :a 3 :b 2) updated
+              :tags $ #{} :core :unit
         '&map:common-keys $ %{} 'CodeEntry
           :doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps"
           :code $ quote &runtime-implementation
