@@ -25,7 +25,7 @@ try {
   run(snapshot, "edit", "def", "calcit.file-read-names/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "run-tests", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
   run(snapshot, "edit", "schema", "calcit.file-read-names/run-tests", "--input-format", "cirru", "--code",
-    "quote $ Fn (-> Unit)");
+    "quote $ Fn (-> Unit) (:features :io)");
   const entry = [snapshot, "--init-fn", "calcit.file-read-names/run-tests", "--reload-fn", "calcit.file-read-names/run-tests"];
   run(...entry);
   const output = join(fixture, "js-out");

@@ -2937,6 +2937,25 @@
                 assert= None $ &parse-float |x
                 assert= None $ &parse-float |
               :tags $ #{} :core :unit
+        '&read-dir $ %{} 'CodeEntry
+          :doc "|返回排序后的目录条目路径。第二个 Bool 参数控制是否递归，省略时只读取直接子条目。支持 native 和配置了目录注入的 Node 宿主。"
+          :code $ quote $ def &read-dir &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn String Bool
+            -> $ List String
+          :tags $ #{} :builtin :file :internal :io
+          :tests $ [] $ %{} 'TestEntry (:name |lists-sorted-paths-with-optional-recursion)
+            :code $ quote $ do
+              assert= ([] |tests/fixtures/read-dir/child.txt) (&read-dir |tests/fixtures/read-dir)
+              assert= false $ &list:includes? (&read-dir |tests/fixtures false) |tests/fixtures/read-dir/child.txt
+              assert= true $ &list:includes? (&read-dir |tests/fixtures true) |tests/fixtures/read-dir/child.txt
+            :tags $ #{} :core :unit
+        '&read-file $ %{} 'CodeEntry
+          :doc "|读取 UTF-8 文本，宿主读取失败时抛出错误。Native 读取文件系统，Node 使用文件宿主注入，浏览器读取 localStorage。"
+          :code $ quote $ def &read-file &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn String (-> String)
+          :tags $ #{} :builtin :file :internal :io
         '&read-stdin-text $ %{} 'CodeEntry (:doc "|内部有界 stdin 文本边界，显式接收 Result 与错误消息。")
           :code $ quote &runtime-implementation
           :examples $ []

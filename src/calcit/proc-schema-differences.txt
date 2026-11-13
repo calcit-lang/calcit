@@ -39,8 +39,6 @@
 &map:assoc | rest | "'Dynamic" => <missing>
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition
-&read-dir | missing core definition
-&read-file | missing core definition
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct-def:new | rest | "'Dynamic" => <missing>
