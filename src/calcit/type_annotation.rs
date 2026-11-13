@@ -8469,6 +8469,23 @@ mod tests {
     let looped = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("A")));
     assert!(!function(looped).prove_with_bindings(required.as_ref(), &mut cycle).is_proven());
 
+    // An expected parameter bound to a signature still requires one.
+    let mut expected_bound = TypeBindings::new();
+    expected_bound.insert(Arc::from("U"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    let generic_required = function(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U"))));
+    assert!(
+      !function(Arc::new(CalcitTypeAnnotation::DynFn))
+        .prove_with_bindings(generic_required.as_ref(), &mut expected_bound)
+        .is_proven()
+    );
+    let mut expected_concrete = TypeBindings::new();
+    expected_concrete.insert(Arc::from("U"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    assert!(
+      function(function(Arc::new(CalcitTypeAnnotation::Number)))
+        .prove_with_bindings(generic_required.as_ref(), &mut expected_concrete)
+        .is_proven()
+    );
+
     // So is a slot that resolves to it.
     push_type_slot_override(Arc::from("erased-callback"), Arc::new(CalcitTypeAnnotation::DynFn));
     let proof = function(slot).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
@@ -12052,24 +12069,22 @@ impl CalcitFnTypeAnnotation {
   }
 
   fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
-    /// Whether `actual` is an erased callable once aliases, bound type
-    /// variables and type slots are resolved, as the proof below would.
-    fn is_erased_callable(actual: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> bool {
-      let mut current = CalcitTypeAnnotation::expand_schema_alias(actual);
+    /// Follows aliases, bound type variables and type slots to the type the
+    /// proof below would compare. `None` means the walk did not settle.
+    fn resolve_bound(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
+      let mut current = CalcitTypeAnnotation::expand_schema_alias(annotation);
       // A binding can point at another variable or slot. A chain without a
-      // cycle visits each binding once, so running past that count means a
-      // cycle, which cannot vouch for a callable signature either.
+      // cycle visits each binding once, so running past that count means a cycle.
       for _ in 0..=bindings.len() + 8 {
         let next = match current.as_ref() {
-          CalcitTypeAnnotation::DynFn => return true,
           CalcitTypeAnnotation::TypeVar(name) => bindings.get(name).cloned(),
           CalcitTypeAnnotation::TypeSlot(name) => resolve_type_slot(name),
           _ => None,
         };
-        let Some(next) = next else { return false };
+        let Some(next) = next else { return Some(current) };
         current = CalcitTypeAnnotation::expand_schema_alias(&next);
       }
-      true
+      None
     }
 
     if self.is_async_invocation() != other.is_async_invocation() {
@@ -12084,11 +12099,10 @@ impl CalcitFnTypeAnnotation {
     let mut prove_parameter = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
       // An erased callable parameter can be invoked without validating its
       // arguments. It cannot stand in for a parameter with a known signature.
-      if is_erased_callable(actual, &staged)
-        && CalcitTypeAnnotation::expand_schema_alias(expected)
-          .resolve_to_nonoptional_fn()
-          .is_some()
-      {
+      // An unsettled walk cannot vouch for a signature on either side.
+      let erased = resolve_bound(actual, &staged).is_none_or(|actual| matches!(actual.as_ref(), CalcitTypeAnnotation::DynFn));
+      let requires_signature = resolve_bound(expected, &staged).is_none_or(|expected| expected.resolve_to_nonoptional_fn().is_some());
+      if erased && requires_signature {
         return TypeProof::Mismatch;
       }
       expected.prove_with_staged_bindings(actual, &mut staged)
