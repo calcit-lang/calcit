@@ -8558,6 +8558,52 @@ mod tests {
         .is_proven()
     );
 
+    // A nullable wrapper does not hide an erased callable (`JsNullish AnyFn`
+    // against a typed callback parameter, js-ffi#210), on either side.
+    for origin in [NullableOrigin::JsHost, NullableOrigin::Inferred] {
+      let nullable_erased = Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::DynFn), origin));
+      assert!(
+        !function(nullable_erased.clone())
+          .prove_with_bindings(required.as_ref(), &mut TypeBindings::new())
+          .is_proven()
+      );
+      let nullable_required = function(Arc::new(CalcitTypeAnnotation::Nullable(
+        function(Arc::new(CalcitTypeAnnotation::Number)),
+        origin,
+      )));
+      assert!(
+        !function(nullable_erased)
+          .prove_with_bindings(nullable_required.as_ref(), &mut TypeBindings::new())
+          .is_proven()
+      );
+      // Two nested layers hide nothing either.
+      let doubly_erased = Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::DynFn), origin)),
+        origin,
+      ));
+      let doubly_required = function(Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::Nullable(
+          function(Arc::new(CalcitTypeAnnotation::Number)),
+          origin,
+        )),
+        origin,
+      )));
+      assert!(
+        !function(doubly_erased)
+          .prove_with_bindings(doubly_required.as_ref(), &mut TypeBindings::new())
+          .is_proven()
+      );
+      let nullable_typed = Arc::new(CalcitTypeAnnotation::Nullable(
+        function(Arc::new(CalcitTypeAnnotation::Number)),
+        origin,
+      ));
+      assert!(
+        function(nullable_typed)
+          .prove_with_bindings(nullable_required.as_ref(), &mut TypeBindings::new())
+          .is_proven()
+      );
+    }
+
     // A long acyclic chain of slots that ends in a signature still proves.
     let slot_names: Vec<String> = (0..12).map(|index| format!("chain-slot-{index}")).collect();
     for (index, name) in slot_names.iter().enumerate() {
@@ -12228,6 +12274,21 @@ impl CalcitFnTypeAnnotation {
     /// Follows aliases, bound type variables and type slots to the type the
     /// proof below would compare. `None` means the walk revisited a name, a
     /// cycle that cannot settle on any type.
+    /// Resolves bindings and removes every nullable layer, however they
+    /// alternate (`JsNullish (JsNullish AnyFn)`, `T?` with `T` bound to a
+    /// nullable type). A walk that keeps finding new layers, such as a
+    /// variable bound to a nullable of itself, is unsettled: `None`.
+    fn resolve_through_nullable(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
+      const MAX_LAYERS: usize = 64;
+      let mut current = resolve_bound(annotation, bindings)?;
+      for _ in 0..MAX_LAYERS {
+        match current.as_ref() {
+          CalcitTypeAnnotation::Nullable(inner, _) => current = resolve_bound(inner, bindings)?,
+          _ => return Some(current),
+        }
+      }
+      None
+    }
     fn resolve_bound(annotation: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> Option<Arc<CalcitTypeAnnotation>> {
       let mut current = CalcitTypeAnnotation::expand_schema_alias(annotation);
       let mut visited: HashSet<(bool, Arc<str>)> = HashSet::new();
@@ -12261,13 +12322,12 @@ impl CalcitFnTypeAnnotation {
       // An erased callable parameter can be invoked without validating its
       // arguments. It cannot stand in for a parameter with a known signature.
       // An unsettled walk cannot vouch for a signature on either side.
-      let erased = resolve_bound(actual, &staged).is_none_or(|mut actual| {
-        while let CalcitTypeAnnotation::Nullable(inner, _) = actual.as_ref() {
-          actual = CalcitTypeAnnotation::expand_schema_alias(inner);
-        }
-        matches!(actual.as_ref(), CalcitTypeAnnotation::DynFn)
-      });
-      let requires_signature = resolve_bound(expected, &staged).is_none_or(|expected| expected.resolve_to_nonoptional_fn().is_some());
+      // A nullable wrapper (`JsNullish AnyFn`, inferred `T?`) does not change
+      // that: when the value is present it is still an erased callable, so
+      // both sides are compared without their nullable wrappers.
+      let erased = resolve_through_nullable(actual, &staged).is_none_or(|inner| matches!(inner.as_ref(), CalcitTypeAnnotation::DynFn));
+      let requires_signature =
+        resolve_through_nullable(expected, &staged).is_none_or(|inner| inner.resolve_to_nonoptional_fn().is_some());
       if erased && requires_signature {
         return TypeProof::Mismatch;
       }
