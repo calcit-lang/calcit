@@ -3503,12 +3503,12 @@
         '&struct:assoc $ %{} 'CodeEntry (:doc "|Associate a declared field on a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic Dynamic (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:contains? $ %{} 'CodeEntry (:doc "|Test whether a struct value declares a field.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic (-> Bool) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&struct:count $ %{} 'CodeEntry (:doc "|Count fields in a struct value.")
           :code $ quote &runtime-implementation
@@ -3529,13 +3529,13 @@
         '&struct:extend-as $ %{} 'CodeEntry (:doc "|Extend a struct value with a declared field.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Tag Tag Dynamic (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:from-map $ %{} 'CodeEntry
           :doc "|Construct a struct value from a StructDef and map."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn StructDef Map (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:get $ %{} 'CodeEntry
           :doc "|Read a required declared field from a struct value."
@@ -3564,7 +3564,7 @@
           :doc "|Test whether a struct value matches a struct pattern."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic (-> Bool) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&struct:to-map $ %{} 'CodeEntry (:doc "|Convert a struct value to a map.")
           :code $ quote &runtime-implementation
@@ -3575,7 +3575,7 @@
         '&struct:with $ %{} 'CodeEntry (:doc "|Return a struct value with updated fields.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic Dynamic (& Dynamic) (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&trait::new $ %{} 'CodeEntry
           :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"

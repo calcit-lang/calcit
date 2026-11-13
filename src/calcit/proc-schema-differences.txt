@@ -44,16 +44,10 @@
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct-def:new | rest | "'Dynamic" => <missing>
-&struct:assoc | missing core function schema
 &struct:assoc-at | missing core definition
-&struct:contains? | missing core function schema
-&struct:extend-as | missing core function schema
 &struct:field-tag | missing core definition
-&struct:from-map | missing core function schema
 &struct:impl-traits | rest | "'Dynamic" => <missing>
-&struct:matches? | missing core function schema
 &struct:nth | missing core definition
-&struct:with | missing core function schema
 &struct:with-at | missing core definition
 &trait-call | missing core definition
 &trait::new | missing core function schema
