@@ -183,7 +183,13 @@ fn nominal_decoder_and_source_alias_share_one_js_namespace_binding() {
       "value and nominal decoder references",
     ),
     (
-      vec!["edit", "schema", "app.main/probe", "--code", "quote $ Fn (-> app.model/Thing)"],
+      vec![
+        "edit",
+        "schema",
+        "app.main/probe",
+        "--code",
+        "quote $ Fn (-> app.model/Thing) (:features :io)",
+      ],
       "probe schema",
     ),
     (

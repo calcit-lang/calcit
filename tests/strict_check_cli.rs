@@ -1290,7 +1290,7 @@ fn methods_on_a_schema_alias_dispatch_through_the_aliased_type() {
   );
   set_schema("drain", "quote $ Fn app.main/Coord Number (-> Number)");
   edit_definition(&snapshot, "main!", "quote $ defn main! () $ println $ drain ([] 1 2 3) 0", true);
-  edit_schema(&snapshot, "main!", "Unit");
+  set_schema("main!", "quote $ Fn (-> Unit) (:features :io)");
 
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "methods on a schema alias");
   let run = run_calcit(&snapshot, &[]);
@@ -2267,9 +2267,9 @@ fn dynamic_bound_type_slots_fail_the_check() {
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
   edit_definition(&snapshot, "slotted", "quote $ defn slotted (op) (println op)", false);
-  set_schema(&snapshot, "slotted", "quote $ Fn *dispatch-op (-> Unit)");
+  set_schema(&snapshot, "slotted", "quote $ Fn *dispatch-op (-> Unit) (:features :io)");
   edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted 1)", true);
-  set_schema(&snapshot, "main!", "quote $ Fn (-> Unit)");
+  set_schema(&snapshot, "main!", "quote $ Fn (-> Unit) (:features :io)");
   assert_success(
     &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", ":dynamic"]),
     "bind the slot to Dynamic",
