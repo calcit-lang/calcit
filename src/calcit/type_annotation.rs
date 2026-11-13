@@ -4670,8 +4670,12 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    if strict_named_refs && let Some(name) = Self::extract_type_ref_name(form) {
-      return Arc::new(CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![])));
+    if let Some(name) = Self::extract_type_ref_name(form) {
+      let reference = CalcitTypeAnnotation::TypeRef(name, Arc::new(vec![]));
+      // Runtime assertions also read bare union names as type references.
+      if strict_named_refs || reference.resolve_to_union().is_some() {
+        return Arc::new(reference);
+      }
     }
 
     Arc::new(CalcitTypeAnnotation::from_calcit(form))

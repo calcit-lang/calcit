@@ -4728,6 +4728,12 @@
                       assert-type x Dynamic
                   keep-value |value
               :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |proven-bare-union-expression)
+              :code $ quote $ do
+                assert= |leaf $ assert-type |leaf calcit.core/CirruNode
+                assert= ([] |leaf)
+                  assert-type ([] |leaf) (List CirruNode)
+              :tags $ #{} :assert-boundary :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
           :code $ quote $ defmacro assert= (a b)
