@@ -431,6 +431,13 @@ function classify(entry) {
       rationale: "This compiler form consumes or produces code/syntax whose value shape is phase-dependent.",
     };
   }
+  if (name === "&display-stack") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "保留历史调用的尾随参数求值；打印当前调用栈时只使用调用上下文。",
+    };
+  }
   if (runtimePolymorphic.has(name)) {
     return {
       owner: "runtime-primitives",

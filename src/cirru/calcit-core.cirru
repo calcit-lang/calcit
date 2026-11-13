@@ -620,12 +620,18 @@
             -> $ Set T
             :generics T U
           :tags $ #{} :builtin :internal
-        '&display-stack $ %{} 'CodeEntry
-          :doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging"
+        '&display-stack $ %{} 'CodeEntry (:doc "|打印当前调用栈并返回 Unit。可以省略参数。历史调用的参数按从左到右求值，值不进入栈输出。")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (& Dynamic) (-> Unit)
           :tags $ #{} :builtin :internal :io :log
+          :tests $ [] $ %{} 'TestEntry (:name |returns-unit-and-evaluates-legacy-arguments)
+            :code $ quote $ let
+                trace $ &display-stack $ do (println |stack-argument) 42
+              assert-type trace Unit
+              assert= &unit trace
+              assert= &unit $ &display-stack
+            :tags $ #{} :core :unit
         '&doseq $ %{} 'CodeEntry
           :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
           :code $ quote $ defmacro &doseq (pair & body)
