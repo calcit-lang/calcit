@@ -2135,13 +2135,19 @@ fn later_union_argument_widens_generic_binding() {
 }
 
 #[test]
-fn set_difference_and_intersection_check_the_shared_element_type() {
-  for (proc, expected) in [("&difference", "(#{} 1)"), ("&set:intersection", "(#{} 2)")] {
+fn set_difference_and_intersection_preserve_the_left_element_type() {
+  for (proc, expected, disjoint) in [
+    ("&difference", "(#{} 1)", "(#{} 1)"),
+    ("&set:intersection", "(#{} 2)", "(#{})"),
+    ("difference", "(#{} 1)", "(#{} 1)"),
+    ("intersection", "(#{} 2)", "(#{})"),
+  ] {
     let positive = format!(
       "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
        (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
-       (assert= {} ({proc} (#{{}} 1) (#{{}})))",
-      if proc == "&difference" { "(#{} 1)" } else { "(#{})" },
+       (assert= {} ({proc} (#{{}} 1) (#{{}}))) \
+       (assert= {disjoint} (assert-type ({proc} (#{{}} 1) (#{{}} |text)) (Set Number)))",
+      disjoint,
     );
     let eval = |code: &str| {
       Command::new(env!("CARGO_BIN_EXE_calcit"))
@@ -2151,12 +2157,11 @@ fn set_difference_and_intersection_check_the_shared_element_type() {
     };
     assert_success(&eval(&positive), proc);
 
-    let output = eval(&format!("{proc} (#{{}} 1) (#{{}} |text)"));
+    let output = eval(&format!("{proc} (#{{}} 1) |text"));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "{proc} accepted different element types");
+    assert!(!output.status.success(), "{proc} accepted a non-set operand");
     assert!(
-      stderr.contains("E_PROC_ARG_TYPE_MISMATCH")
-        && stderr.contains(&format!("Proc `{proc}` arg 2 expects type `set<number>`, but got `set<string>`")),
+      stderr.contains("MISMATCH") && stderr.contains("string") && stderr.contains("set"),
       "{stderr}"
     );
   }
