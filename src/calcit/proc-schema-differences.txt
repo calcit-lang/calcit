@@ -43,7 +43,6 @@
 &read-file | missing core definition
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
-&struct-def:new | rest | "'Dynamic" => <missing>
 &struct:assoc | missing core function schema
 &struct:assoc-at | missing core definition
 &struct:contains? | missing core function schema
