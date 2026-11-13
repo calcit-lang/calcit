@@ -8,7 +8,6 @@
 &buf-list:to-list | return | "'List" => (:: "'List" "'T")
 &buffer | arg 0 | <missing> => "'Dynamic"
 &buffer | rest | "'Dynamic" => <missing>
-&data-to-code | missing core function schema
 &display-stack | rest | "'Dynamic" => <missing>
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
@@ -16,7 +15,6 @@
 &exclude | arg 0 | "'Set" => (:: "'Set" "'T")
 &exclude | arg 1 | "'Dynamic" => "'T"
 &exclude | return | "'Set" => (:: "'Set" "'T")
-&extract-code-into-edn | missing core function schema
 &impl::new | missing core function schema
 &include | arg 0 | "'Set" => (:: "'Set" "'T")
 &include | arg 1 | "'Dynamic" => "'T"
