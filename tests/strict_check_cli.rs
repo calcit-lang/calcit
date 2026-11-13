@@ -2168,6 +2168,31 @@ fn set_difference_and_intersection_preserve_the_left_element_type() {
 }
 
 #[test]
+fn wasm_and_wasi_reject_set_comparisons_that_erase_number_and_bool() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  for expression in [
+    "&difference (#{} 1) (#{} true)",
+    "&set:intersection (#{} false) (#{} 0)",
+    "difference (#{} 1) (#{} 2) (#{} true)",
+    "intersection (#{} 1) (#{} true)",
+  ] {
+    edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
+    edit_schema(&snapshot, "main!", "Unit");
+    assert_success(&run_calcit(&snapshot, &[]), expression);
+    for target in ["wasm", "wasi"] {
+      let emit = directory.0.join(target);
+      let output = run_calcit(&snapshot, &[target, "--emit-path", emit.to_str().unwrap()]);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(!output.status.success(), "{target} accepted {expression}");
+      assert!(stderr.contains("E_WASM_SET_ELEMENT_KIND"), "{target}: {stderr}");
+      assert!(!emit.join("program.wasm").exists(), "{target} emitted an invalid result");
+    }
+  }
+}
+
+#[test]
 fn incremental_check_reports_snapshot_level_diagnostics() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

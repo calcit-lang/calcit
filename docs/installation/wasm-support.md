@@ -54,6 +54,7 @@ aliases:
 | `decode-map-as`、`parse-cirru-edn-as` | unsupported | | `calcit.core/decode-map-as#decodes-struct-and-option` 排除项 |
 | `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
+| 差集与交集的 Bool / Number 元素比较 | unsupported | 静态识别到一侧为 Bool 集合、另一侧为 Number 集合时报告 `E_WASM_SET_ELEMENT_KIND`。这两类标量在 WASM 中共用数值表示 | WASM / WASI CLI 拒绝用例 |
 | 默认比较器的 `sort` | unsupported | 需要显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |

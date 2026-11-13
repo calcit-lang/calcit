@@ -33,6 +33,23 @@ pub(super) enum SetOpKind {
   Include,
 }
 
+pub(super) fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
+  let element_kind = |set| {
+    let annotation = infer_wasm_static_type(ctx, set)?;
+    let CalcitTypeAnnotation::Set(element) = annotation.as_ref() else {
+      return None;
+    };
+    proven_scalar_kind(element)
+  };
+  if matches!(
+    (element_kind(left), element_kind(right)),
+    (Some("bool"), Some("number")) | (Some("number"), Some("bool"))
+  ) {
+    return Err("E_WASM_SET_ELEMENT_KIND: set difference and intersection cannot compare Bool with Number on WASM".into());
+  }
+  Ok(())
+}
+
 /// High-level `union`/`difference`/`include(base & xs)` — fold the extra args using the
 /// corresponding native 2-arg set operation.  Handles 1…N extra args.
 pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: SetOpKind) -> Result<(), String> {
@@ -65,6 +82,9 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
     ctx.emit(Instruction::LocalSet(acc));
   }
   for extra in &args[2..] {
+    if matches!(kind, SetOpKind::Difference) {
+      check_set_comparison_types(ctx, &args[0], extra)?;
+    }
     let extra_val = ctx.alloc_local();
     emit_expr(ctx, extra)?;
     ctx.emit(Instruction::LocalSet(extra_val));
@@ -443,6 +463,7 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 /// `&difference a b` — set of elements in `a` not in `b`.
 pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&difference expects 2 args")?;
+  check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
@@ -608,6 +629,7 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 /// `&set:intersection a b` — set of elements common to both a and b.
 pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&set:intersection expects 2 args")?;
+  check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;

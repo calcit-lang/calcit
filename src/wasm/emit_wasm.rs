@@ -7275,6 +7275,11 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         match import.def.as_ref() {
           "union" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Union),
           "difference" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Difference),
+          "intersection" if let Some((first, rest)) = args_list.split_first() => {
+            for other in rest {
+              check_set_comparison_types(ctx, first, other)?;
+            }
+          }
           "include" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Include),
           // Seeded fold aliases lower to the same loop for proc/import callees.
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
