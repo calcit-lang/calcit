@@ -1703,9 +1703,7 @@
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ List T
             :generics T
           :tags $ #{} :internal
@@ -1748,9 +1746,7 @@
                 recur xs f $ &+ i 1
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             , Number
               -> $ Option Number
               :generics T
@@ -1763,9 +1759,7 @@
                 :: false None
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ Option T
             :generics T
           :tags $ #{} :internal
@@ -1791,9 +1785,7 @@
               if (< index 0) None $ Some index
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ Option Number
             :generics T
           :tags $ #{} :internal
@@ -1881,9 +1873,7 @@
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U
-            Fn U T
-              -> U
-              :features :pass
+            Fn U T (-> U) (:features :pass)
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -2027,9 +2017,7 @@
                 append acc $ f x
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> $ List U
             :generics T U
           :tags $ #{} :internal
@@ -2061,9 +2049,7 @@
                 raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ quote $ Fn (List P)
-            Fn Dynamic Dynamic
-              -> R
-              :features :pass
+            Fn Dynamic Dynamic (-> R) (:features :pass)
             -> $ List R
             :generics P R
             :open :reflect
@@ -2281,9 +2267,7 @@
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T T
-              -> Number
-              :features :pass
+            Fn T T (-> Number) (:features :pass)
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -2448,26 +2432,50 @@
               List $ Tuple K V W
             :generics K V W
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-diff-sets-and-common-triples)
-            :code $ quote $ do
-              let
-                  triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+          :tests $ []
+            %{} 'TestEntry (:name |returns-diff-sets-and-common-triples)
+              :code $ quote $ do
+                let
+                    triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+                    common $ &list:nth triple 2
+                  assert= (#{} :b) (&list:nth triple 0)
+                  assert= (&{} :c 3) (&list:nth triple 1)
+                  assert= ([] :a 1 2) (&list:nth common 0)
+                  if (list? common)
+                    assert= 1 $ count common
+                    raise |expected-common-list
+                let
+                    same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
+                    common $ &list:nth same 2
+                  assert= (#{}) (&list:nth same 0)
+                  assert= (&{}) (&list:nth same 1)
+                  if (list? common)
+                    assert= 2 $ count common
+                    raise |expected-common-list
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |retains-typed-slots-with-list-representation)
+              :code $ quote $ let
+                  typed-diff $ fn (a b)
+                    hint-fn $ Fn (Map Tag Number) (Map Tag String)
+                      -> $ Tuple (Set Tag) (Map Tag String)
+                        List $ Tuple Tag Number String
+                    &map:diff-triple a b
+                  triple $ typed-diff
+                    {} (:same 1) (:drop 2)
+                    {} (:same |new) (:add |added)
                   common $ &list:nth triple 2
-                assert= (#{} :b) (&list:nth triple 0)
-                assert= (&{} :c 3) (&list:nth triple 1)
-                assert= ([] :a 1 2) (&list:nth common 0)
-                if (list? common)
-                  assert= 1 $ count common
-                  raise |expected-common-list
-              let
-                  same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
-                  common $ &list:nth same 2
-                assert= (#{}) (&list:nth same 0)
-                assert= (&{}) (&list:nth same 1)
-                if (list? common)
-                  assert= 2 $ count common
-                  raise |expected-common-list
-            :tags $ #{} :core :unit
+                  entry $ &list:nth common 0
+                assert= (#{} :drop) (&list:nth triple 0)
+                assert=
+                  {} $ :add |added
+                  &list:nth triple 1
+                assert= 1 $ count common
+                assert= :same $ &list:nth entry 0
+                assert= 1 $ &list:nth entry 1
+                assert= |new $ &list:nth entry 2
+                assert= :list $ type-of triple
+                assert= :list $ type-of entry
+              :tags $ #{} :core :unit
         '&map:dissoc $ %{} 'CodeEntry
           :doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys"
           :code $ quote &runtime-implementation
@@ -2558,9 +2566,7 @@
                 if (f key value) (&map:assoc acc key value) acc
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn K V
-              -> Bool
-              :features :pass
+            Fn K V (-> Bool) (:features :pass)
             -> $ Map K V
             :generics K V
           :tags $ #{} :internal
@@ -2596,9 +2602,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Map K V) A
-            Fn A K V
-              -> A
-              :features :pass
+            Fn A K V (-> A) (:features :pass)
             -> A
             :generics K V A
           :tags $ #{} :builtin :internal
@@ -3064,9 +3068,7 @@
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ quote $ Fn (Set T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ Set T
             :generics T
           :tags $ #{} :internal
@@ -3101,9 +3103,7 @@
                 &include acc $ f x
           :examples $ []
           :schema $ quote $ Fn (Set T)
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> $ Set U
             :generics T U
           :tags $ #{} :internal
@@ -3903,7 +3903,7 @@
           :tags $ #{} :builtin :internal :syntax
         'Add $ %{} 'CodeEntry (:doc "|Core trait: Add")
           :code $ quote $ deftrait Add
-            .add $ Fn Self Self (-> Self)
+            .add $ Fn Self Self $ -> Self
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3922,7 +3922,7 @@
         'Compare $ %{} 'CodeEntry
           :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
           :code $ quote $ deftrait Compare
-            .compare $ Fn Self Self (-> Number)
+            .compare $ Fn Self Self $ -> Number
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3956,7 +3956,7 @@
           :tags $ #{} :data
         'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote $ deftrait Countable
-            .count $ Fn Self (-> Number)
+            .count $ Fn Self $ -> Number
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3977,7 +3977,7 @@
         'Debug $ %{} 'CodeEntry
           :doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation."
           :code $ quote $ deftrait Debug
-            .debug $ Fn Self (-> String)
+            .debug $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -3990,13 +3990,13 @@
         'Emptyable $ %{} 'CodeEntry
           :doc "|产生与接收者保持同一类型的空值。Self 是方法自身声明的接收者泛型，不是新语法；泛型函数通过 Emptyable 约束调用 .empty。内建实现覆盖 Number、String、List、Map、Set。"
           :code $ quote $ deftrait Emptyable
-            .empty $ Fn Self (-> Self)
+            .empty $ Fn Self $ -> Self
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Eq $ %{} 'CodeEntry (:doc "|Core trait: Eq")
           :code $ quote $ deftrait Eq
-            .eq? $ Fn Self Self (-> Bool)
+            .eq? $ Fn Self Self $ -> Bool
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4074,7 +4074,7 @@
           :tags $ #{} :internal :trait-impl
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote $ deftrait Len
-            .len $ Fn Self (-> Number)
+            .len $ Fn Self $ -> Number
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4111,13 +4111,13 @@
           :tags $ #{} :data
         'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote $ deftrait Mappable
-            .map $ Fn Self Fn (-> Self)
+            .map $ Fn Self Fn $ -> Self
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
         'Multiply $ %{} 'CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote $ deftrait Multiply
-            .multiply $ Fn Self Self (-> Self)
+            .multiply $ Fn Self Self $ -> Self
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4297,7 +4297,7 @@
           :tags $ #{} :data :internal
         'Serialize $ %{} 'CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote $ deftrait Serialize
-            .serialize $ Fn Self (-> String)
+            .serialize $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4312,7 +4312,7 @@
         'Show $ %{} 'CodeEntry
           :doc "|Core trait: Show. User-facing presentation is opt-in; implement it explicitly with defimpl."
           :code $ quote $ deftrait Show
-            .show $ Fn Self (-> String)
+            .show $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -4347,7 +4347,7 @@
         'ToString $ %{} 'CodeEntry
           :doc "|标量转文本的类型契约；与 Show 的用户展示、Debug 的诊断表示不同。仅有明确实现的值支持 .to-string。"
           :code $ quote $ deftrait ToString
-            .to-string $ Fn Self (-> String)
+            .to-string $ Fn Self $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
@@ -5578,9 +5578,7 @@
             raise "|consume-readable-byte-stream is only available inside a scoped async Component export"
           :examples $ []
           :schema $ quote $ Fn ReadableByteStream Number Number
-            Fn Buffer
-              -> Bool
-              :features :pass
+            Fn Buffer (-> Bool) (:features :pass)
             -> $ Result Unit StreamConsumeError
           :tags $ #{} :internal
         'contains-field? $ %{} 'CodeEntry
@@ -6705,7 +6703,7 @@
                   :poly $ List Number
                   :tagged T String
                   :none
-                ; 0.41 positional generics stay accepted until 0.43 (#2700)
+                ; 0.41 positional generics stay accepted until 0.43 $ #2700
                 quoted $ defenum Shape ([] T) (:circle Number)
                   :poly $ List Number
                   :tagged T String
@@ -6924,7 +6922,7 @@
                     :count Number 0
                     :items $ List Item
                     :table $ Map String $ List Number
-                  ; 0.41 positional generics and bounds stay accepted until 0.43 (#2700)
+                  ; 0.41 positional generics and bounds stay accepted until 0.43 $ #2700
                   quoted $ defstruct Box ([] T)
                     {} $ T Debug
                     :value T
@@ -7557,9 +7555,7 @@
             assert= &unit $ each ([] 1 2 3)
               fn (x) (&+ x 1)
           :schema $ quote $ Fn Dynamic
-            Fn Dynamic
-              -> R
-              :features :pass
+            Fn Dynamic (-> R) (:features :pass)
             -> Unit
             :generics R
             :open :intrinsic
@@ -8201,9 +8197,7 @@
               not $ f x
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ List T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |filters-matching-list-members)
@@ -8224,9 +8218,7 @@
             quote $ assert= None $ find ([] 1 2 3)
               fn (x) (> x 9)
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ Option T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-matching-list-member)
@@ -8244,9 +8236,7 @@
             quote $ assert= None $ find-index ([] 1 2 3)
               fn (x) (> x 9)
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> Bool
-              :features :pass
+            Fn T (-> Bool) (:features :pass)
             -> $ Option Number
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-matching-list-index)
@@ -8394,9 +8384,7 @@
               [] 1 2 3
               , .fold 0 +
           :schema $ quote $ Fn (List T) U
-            Fn U T
-              -> U
-              :features :pass
+            Fn U T (-> U) (:features :pass)
             -> U
             :generics T U
           :tests $ []
@@ -8479,9 +8467,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U
-            Fn U T
-              -> U
-              :features :pass
+            Fn U T (-> U) (:features :pass)
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -8506,9 +8492,7 @@
             quote $ assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
             quote $ assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
           :schema $ quote $ Fn (List T) T
-            Fn T T
-              -> Bool
-              :features :pass
+            Fn T T (-> Bool) (:features :pass)
             -> Bool
             :generics T
           :tests $ []
@@ -8540,9 +8524,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) U U
-            Fn U T
-              -> Enum
-              :features :pass
+            Fn U T (-> Enum) (:features :pass)
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
@@ -9139,9 +9121,7 @@
                     , xss
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T
-              -> K
-              :features :pass
+            Fn T (-> K) (:features :pass)
             -> $ Map K $ List T
             :generics T K
           :tests $ [] $ %{} 'TestEntry (:name |groups-list-by-derived-key)
@@ -10493,11 +10473,9 @@
           :doc "|Destructures a statically typed Struct by field name: `let{} (id text) task body` binds each name to the required field read `(:name task)`, so every binding keeps the declared field type. A name that is not a field of the Struct is a check-time error (`E_UNKNOWN_STRUCT_FIELD`); a receiver that is not a known Struct is reported like `(:field value)`. The data expression is evaluated once."
           :code $ quote $ defmacro let{} (fields data & body)
             if
-              not $ and (list? fields)
-                every? fields symbol?
+              not $ and (list? fields) (every? fields symbol?)
               raise $ str-spaced "|let{} expects a list of field names, got:" fields
-            if (&list:empty? fields)
-              raise "|let{} expects at least one field name"
+            if (&list:empty? fields) (raise "|let{} expects at least one field name")
             let
                 variable? $ symbol? data
                 v $ if variable? data $ gensym |v
@@ -10507,8 +10485,8 @@
                 quasiquote $ let (~ defs) (~@ body)
                 quasiquote $ &let (~v ~data)
                   let (~ defs) (~@ body)
-          :examples $ []
-            quote $ let
+          :examples $ [] $ quote
+            let
                 Point $ defstruct Point (:x Number) (:y Number)
                 p $ Point :x 1 :y 2
               let{} (x y) p $ + x y
@@ -10520,13 +10498,9 @@
             :code $ quote $ let
                 Task $ defstruct Task (:id Number) (:text String) (:done? Bool)
                 task $ Task :id 1 :text |write :done? false
-              let{} (id text done?) task
-                assert= 1 id
-                assert= |write text
-                assert= false done?
+              let{} (id text done?) task (assert= 1 id) (assert= |write text) (assert= false done?)
               assert= 3 $ let{} (id) (Task :id 3 :text |x :done? true) id
-              let{} (text) task
-                assert= 5 $ .len text
+              let{} (text) task $ assert= 5 $ .len text
             :tags $ #{} :core :unit
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
@@ -10606,9 +10580,7 @@
             quote $ assert= ([] |1 |2 |3)
               map ([] 1 2 3) str
           :schema $ quote $ Fn C
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> Dynamic
             :generics C T U
             :where $ C Mappable
@@ -10698,9 +10670,7 @@
               map-indexed ([] |a |b)
                 fn (i x) ([] i x)
           :schema $ quote $ Fn (List T)
-            Fn Number T
-              -> U
-              :features :pass
+            Fn Number T (-> U) (:features :pass)
             -> $ List U
             :generics T U
           :tests $ []
@@ -10737,9 +10707,7 @@
                 append acc $ f key value
           :examples $ []
           :schema $ quote $ Fn (Map K V)
-            Fn K V
-              -> U
-              :features :pass
+            Fn K V (-> U) (:features :pass)
             -> $ List U
             :generics K V U
           :tests $ []
@@ -11487,9 +11455,7 @@
               fn (value) (+ value 1)
           :schema $ quote $ Fn (Option T)
             Fn (-> U) (:features :pass)
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> U
             :generics T U
           :tags $ #{} :internal
@@ -11525,9 +11491,7 @@
               (:none) (%:: Option :none)
           :examples $ []
           :schema $ quote $ Fn (Option T)
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> $ Option U
             :generics T U
           :tags $ #{} :internal
@@ -12146,9 +12110,7 @@
           :examples $ [] $ quote
             assert= 6 $ reduce ([] 1 2 3) 0 +
           :schema $ quote $ Fn (List T) U
-            Fn U T
-              -> U
-              :features :pass
+            Fn U T (-> U) (:features :pass)
             -> U
             :generics T U
           :tests $ [] $ %{} 'TestEntry (:name |reduces-list-from-initial-value)
@@ -12361,9 +12323,7 @@
               (:err err) (%:: Result :err err)
           :examples $ []
           :schema $ quote $ Fn (Result T E)
-            Fn T
-              -> U
-              :features :pass
+            Fn T (-> U) (:features :pass)
             -> $ Result U E
             :generics T U E
           :tags $ #{} :internal
@@ -12388,9 +12348,7 @@
             assert= (Result :err |failed!)
               (Result :err |failed) .map-err $ fn (e) (str e |!)
           :schema $ quote $ Fn (Result T E)
-            Fn E
-              -> F
-              :features :pass
+            Fn E (-> F) (:features :pass)
             -> $ Result T F
             :generics T E F
           :tags $ #{} :internal
@@ -12637,9 +12595,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T)
-            Fn T T
-              -> Number
-              :features :pass
+            Fn T T (-> Number) (:features :pass)
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
@@ -13687,9 +13643,7 @@
                 {} $ :count 1
                 , :missing inc
           :schema $ quote $ Fn Dynamic Dynamic
-            Fn Dynamic
-              -> Dynamic
-              :features :pass
+            Fn Dynamic (-> Dynamic) (:features :pass)
             -> Dynamic
             :open :intrinsic
           :tests $ []
@@ -14080,6 +14034,56 @@
           :examples $ []
           :schema $ quote $ Fn String String (-> Unit)
           :tags $ #{} :builtin :file :internal :io
+        'zip-with $ %{} 'CodeEntry
+          :doc "|Combine two lists position by position with a callback (A, B) -> U. The result has the shorter input's length. Two homogeneous tuples of the same length, such as two `Tuple Number Number Number` vectors, give a tuple of that length."
+          :code $ quote $ defn zip-with (xs0 ys0 f)
+            loop
+                acc $ []
+                xs xs0
+                ys ys0
+              hint-fn $ Fn (List U) (List A) (List B)
+                -> $ List U
+              if
+                if (&list:empty? xs) true $ &list:empty? ys
+                , acc $ recur
+                  append acc $ f (&list:nth xs 0) (&list:nth ys 0)
+                  rest xs
+                  rest ys
+          :examples $ []
+            quote $ assert= ([] 11 22 33)
+              zip-with ([] 1 2 3) ([] 10 20 30)
+                fn (a b) (&+ a b)
+            quote $ assert= ([] |a1 |b2)
+              zip-with ([] |a |b |c) ([] 1 2)
+                fn (s n) (str s n)
+          :schema $ quote $ Fn (List A) (List B)
+            Fn A B (-> U) (:features :pass)
+            -> $ List U
+            :generics A B U
+          :tests $ []
+            %{} 'TestEntry (:name |combines-equally-sized-lists)
+              :code $ quote $ assert= ([] 11 22 33)
+                zip-with ([] 1 2 3) ([] 10 20 30)
+                  fn (a b) (&+ a b)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |stops-at-the-shorter-list)
+              :code $ quote $ do
+                assert= ([] |a1 |b2)
+                  zip-with ([] |a |b |c) ([] 1 2)
+                    fn (s n) (str s n)
+                assert= ([] |a1)
+                  zip-with ([] |a) ([] 1 2)
+                    fn (s n) (str s n)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-either-input-stays-empty)
+              :code $ quote $ do
+                assert= ([])
+                  zip-with ([]) ([] 1)
+                    fn (a b) (&+ a b)
+                assert= ([])
+                  zip-with ([] 1) ([])
+                    fn (a b) (&+ a b)
+              :tags $ #{} :core :unit
         'zipmap $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn zipmap (xs0 ys0)
             loop
@@ -14128,55 +14132,6 @@
                 assert= (&{})
                   zipmap ([]) ([])
               :tags $ #{} :core :lexical-binder :unit
-        'zip-with $ %{} 'CodeEntry
-          :doc "|Combine two lists position by position with a callback (A, B) -> U. The result has the shorter input's length. Two homogeneous tuples of the same length, such as two `Tuple Number Number Number` vectors, give a tuple of that length."
-          :code $ quote $ defn zip-with (xs0 ys0 f)
-            loop
-                acc $ []
-                xs xs0
-                ys ys0
-              hint-fn $ Fn (List U) (List A) (List B)
-                -> $ List U
-              if
-                if (&list:empty? xs) true $ &list:empty? ys
-                , acc $ recur
-                  append acc $ f (&list:nth xs 0) (&list:nth ys 0)
-                  rest xs
-                  rest ys
-          :examples $ []
-            quote $ assert= ([] 11 22 33)
-              zip-with ([] 1 2 3) ([] 10 20 30) $ fn (a b) (&+ a b)
-            quote $ assert= ([] |a1 |b2)
-              zip-with ([] |a |b |c) ([] 1 2)
-                fn (s n) (str s n)
-          :schema $ quote $ Fn (List A) (List B)
-            Fn A B
-              -> U
-              :features :pass
-            -> $ List U
-            :generics A B U
-          :tests $ []
-            %{} 'TestEntry (:name |combines-equally-sized-lists)
-              :code $ quote $ assert= ([] 11 22 33)
-                zip-with ([] 1 2 3) ([] 10 20 30)
-                  fn (a b) (&+ a b)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |stops-at-the-shorter-list)
-              :code $ quote $ do
-                assert= ([] |a1 |b2)
-                  zip-with ([] |a |b |c) ([] 1 2)
-                    fn (s n) (str s n)
-                assert= ([] |a1)
-                  zip-with ([] |a) ([] 1 2)
-                    fn (s n) (str s n)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |empty-either-input-stays-empty)
-              :code $ quote $ do
-                assert= ([])
-                  zip-with ([]) ([] 1) $ fn (a b) (&+ a b)
-                assert= ([])
-                  zip-with ([] 1) ([]) $ fn (a b) (&+ a b)
-              :tags $ #{} :core :unit
         '{,} $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro {,} (& body)
             &let
