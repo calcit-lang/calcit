@@ -8451,6 +8451,24 @@ mod tests {
     concrete.insert(Arc::from("T"), function(Arc::new(CalcitTypeAnnotation::Number)));
     assert!(function(var).prove_with_bindings(required.as_ref(), &mut concrete).is_proven());
 
+    // A long chain of bindings ends in the same place, and a cycle is never proof.
+    let mut chain = TypeBindings::new();
+    for index in 0..12 {
+      let next: Arc<CalcitTypeAnnotation> = if index == 11 {
+        Arc::new(CalcitTypeAnnotation::DynFn)
+      } else {
+        Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(format!("T{}", index + 1))))
+      };
+      chain.insert(Arc::from(format!("T{index}")), next);
+    }
+    let head = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T0")));
+    assert!(!function(head).prove_with_bindings(required.as_ref(), &mut chain).is_proven());
+    let mut cycle = TypeBindings::new();
+    cycle.insert(Arc::from("A"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("B"))));
+    cycle.insert(Arc::from("B"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("A"))));
+    let looped = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("A")));
+    assert!(!function(looped).prove_with_bindings(required.as_ref(), &mut cycle).is_proven());
+
     // So is a slot that resolves to it.
     push_type_slot_override(Arc::from("erased-callback"), Arc::new(CalcitTypeAnnotation::DynFn));
     let proof = function(slot).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
@@ -12038,8 +12056,10 @@ impl CalcitFnTypeAnnotation {
     /// variables and type slots are resolved, as the proof below would.
     fn is_erased_callable(actual: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> bool {
       let mut current = CalcitTypeAnnotation::expand_schema_alias(actual);
-      // A binding can point at another variable or slot; the bound keeps the walk finite.
-      for _ in 0..8 {
+      // A binding can point at another variable or slot. A chain without a
+      // cycle visits each binding once, so running past that count means a
+      // cycle, which cannot vouch for a callable signature either.
+      for _ in 0..=bindings.len() + 8 {
         let next = match current.as_ref() {
           CalcitTypeAnnotation::DynFn => return true,
           CalcitTypeAnnotation::TypeVar(name) => bindings.get(name).cloned(),
@@ -12049,7 +12069,7 @@ impl CalcitFnTypeAnnotation {
         let Some(next) = next else { return false };
         current = CalcitTypeAnnotation::expand_schema_alias(&next);
       }
-      false
+      true
     }
 
     if self.is_async_invocation() != other.is_async_invocation() {
