@@ -118,6 +118,7 @@ write-file
 | `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或特化展开中再次调用自身（尾部 `recur` 不在此列，见上方的特化循环；但回边缺少类型证据、或一个循环参数带来超过 8 个实现身份时也报此错误）；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用；非尾部的递归高阶调用改写为尾部 `recur`；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
+| `E_WASM_SET_ELEMENT_KIND` | 差集或交集的两侧集合分别包含已知的 Bool 与 Number，当前 WASM 数值表示无法区分 | 在比较前统一元素的语义表示，或使用 native / JS |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
 | `E_WASM_EDN_TYPE` | `format-cirru-edn` 的输入类型不闭合 | 写出闭合类型 |
