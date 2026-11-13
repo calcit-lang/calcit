@@ -8419,6 +8419,46 @@ mod tests {
   }
 
   #[test]
+  fn erased_callable_parameters_stay_erased_through_bound_variables_and_slots() {
+    let function = |arg: Arc<CalcitTypeAnnotation>| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![arg],
+        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let required = function(function(Arc::new(CalcitTypeAnnotation::Number)));
+    let var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let slot = Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("erased-callback")));
+
+    // A variable bound to `AnyFn` is as erased as `AnyFn` itself.
+    let mut bound = TypeBindings::new();
+    bound.insert(Arc::from("T"), Arc::new(CalcitTypeAnnotation::DynFn));
+    assert!(!function(var.clone()).prove_with_bindings(required.as_ref(), &mut bound).is_proven());
+    assert!(
+      !function(Arc::new(CalcitTypeAnnotation::DynFn))
+        .prove_with_bindings(required.as_ref(), &mut TypeBindings::new())
+        .is_proven()
+    );
+    // A variable bound to a concrete callable keeps proving.
+    let mut concrete = TypeBindings::new();
+    concrete.insert(Arc::from("T"), function(Arc::new(CalcitTypeAnnotation::Number)));
+    assert!(function(var).prove_with_bindings(required.as_ref(), &mut concrete).is_proven());
+
+    // So is a slot that resolves to it.
+    push_type_slot_override(Arc::from("erased-callback"), Arc::new(CalcitTypeAnnotation::DynFn));
+    let proof = function(slot).prove_with_bindings(required.as_ref(), &mut TypeBindings::new());
+    pop_type_slot_override("erased-callback");
+    assert!(!proof.is_proven());
+  }
+
+  #[test]
   fn caller_capabilities_prove_trait_arguments_without_erasing_identity() {
     let caller_name: Arc<str> = Arc::from("T");
     let caller = CalcitTypeAnnotation::TypeVar(caller_name.clone());
@@ -11994,6 +12034,24 @@ impl CalcitFnTypeAnnotation {
   }
 
   fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+    /// Whether `actual` is an erased callable once aliases, bound type
+    /// variables and type slots are resolved, as the proof below would.
+    fn is_erased_callable(actual: &Arc<CalcitTypeAnnotation>, bindings: &TypeBindings) -> bool {
+      let mut current = CalcitTypeAnnotation::expand_schema_alias(actual);
+      // A binding can point at another variable or slot; the bound keeps the walk finite.
+      for _ in 0..8 {
+        let next = match current.as_ref() {
+          CalcitTypeAnnotation::DynFn => return true,
+          CalcitTypeAnnotation::TypeVar(name) => bindings.get(name).cloned(),
+          CalcitTypeAnnotation::TypeSlot(name) => resolve_type_slot(name),
+          _ => None,
+        };
+        let Some(next) = next else { return false };
+        current = CalcitTypeAnnotation::expand_schema_alias(&next);
+      }
+      false
+    }
+
     if self.is_async_invocation() != other.is_async_invocation() {
       return TypeProof::Mismatch;
     }
@@ -12006,12 +12064,10 @@ impl CalcitFnTypeAnnotation {
     let mut prove_parameter = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
       // An erased callable parameter can be invoked without validating its
       // arguments. It cannot stand in for a parameter with a known signature.
-      if matches!(
-        CalcitTypeAnnotation::expand_schema_alias(actual).as_ref(),
-        CalcitTypeAnnotation::DynFn
-      ) && CalcitTypeAnnotation::expand_schema_alias(expected)
-        .resolve_to_nonoptional_fn()
-        .is_some()
+      if is_erased_callable(actual, &staged)
+        && CalcitTypeAnnotation::expand_schema_alias(expected)
+          .resolve_to_nonoptional_fn()
+          .is_some()
       {
         return TypeProof::Mismatch;
       }
