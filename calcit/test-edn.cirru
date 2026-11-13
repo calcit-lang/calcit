@@ -128,7 +128,7 @@
               assert= "|do \"|a b\"" $ trim $ format-cirru-edn "|a b"
               assert= "|do |hello" $ trim $ format-cirru-edn |hello
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-edn-comment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn-comment () (log-title "|Testing edn comment")
             assert=
@@ -139,7 +139,7 @@
               parse-cirru-edn "|{} (:a 1) (:b 2)"
             assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-imported-type-names $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-imported-type-names ()
             let
@@ -250,7 +250,7 @@
                 code $ quote $ + 1 2
               assert= code $ eval $ &data-to-code code
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-top-level-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-top-level-typed-edn ()
             assert=

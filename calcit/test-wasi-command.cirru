@@ -805,6 +805,7 @@
           :examples $ []
           :schema $ quote $ Fn
             -> $ List Number
+            :features :io
           :tags $ #{} :time :wasi
           :tests $ [] $ %{} 'TestEntry (:name |returns-numbers)
             :code $ quote $ assert= true

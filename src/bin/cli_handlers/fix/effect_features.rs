@@ -14,6 +14,21 @@ use calcit::runner::preprocess::EffectSummary;
 pub(super) const EFFECT_FEATURES_RULE: &str = "effect-features-v1";
 pub(super) const EFFECT_FEATURES_DIAGNOSTIC: &str = "E_STATE_FEATURE_REQUIRED";
 const IO_DIAGNOSTIC: &str = "E_IO_FEATURE_REQUIRED";
+const STATE_WARNING_DIAGNOSTIC: &str = "W_STATE_FEATURE_REQUIRED";
+const IO_WARNING_DIAGNOSTIC: &str = "W_IO_FEATURE_REQUIRED";
+
+/// The code the checker reports for a missing feature under the active entry
+/// policy: the `W_` code when the entry relaxes it to `:warn`, otherwise the
+/// `E_` code of the 0.43 default.
+fn feature_diagnostic(feature: &str) -> &'static str {
+  let warn = program::configured_feature_policy(feature) == Some(calcit::snapshot::FeaturePolicy::Warn);
+  match (feature, warn) {
+    ("state", false) => EFFECT_FEATURES_DIAGNOSTIC,
+    ("state", true) => STATE_WARNING_DIAGNOSTIC,
+    (_, false) => IO_DIAGNOSTIC,
+    (_, true) => IO_WARNING_DIAGNOSTIC,
+  }
+}
 
 type DefKey = (Arc<str>, Arc<str>);
 
@@ -160,11 +175,7 @@ pub(super) fn plan(
       .join(" and ");
     suggestions.push(FixSuggestion {
       rule_id: EFFECT_FEATURES_RULE,
-      diagnostic_code: if added.contains(&"state") {
-        EFFECT_FEATURES_DIAGNOSTIC
-      } else {
-        IO_DIAGNOSTIC
-      },
+      diagnostic_code: feature_diagnostic(if added.contains(&"state") { "state" } else { "io" }),
       semantic_layer: "surface",
       source_file: snapshot_file.to_owned(),
       definition: format!("{ns}/{def}"),

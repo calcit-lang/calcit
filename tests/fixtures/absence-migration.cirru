@@ -72,7 +72,7 @@
           :code $ quote $ defn env-probe ()
             nil? $ &get-env |CALCIT_ABSENCE_MIGRATION_UNSET_2080
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/env-probe)
             :tags $ #{} :absence-migration

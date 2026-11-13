@@ -405,7 +405,7 @@
                 , 7
               deref received
           :examples $ []
-          :schema $ quote $ Fn (-> Number)
+          :schema $ quote $ Fn (-> Number) (:features :state)
           :tests $ []
             %{} 'TestEntry (:name |infers-reference-callback)
               :code $ quote $ assert= 7 (direct-controller)
@@ -528,6 +528,7 @@
           :schema $ quote $ Fn
             Fn T $ -> Unit
             , T (-> Unit) (:generics T)
+            :features :state
           :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
             :code $ quote $ let
                 received $ ref |before

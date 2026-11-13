@@ -40,7 +40,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (try-hygienic)
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :io)
         'try-hygienic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-hygienic () (println "|Testing hygienic")
             let
@@ -49,7 +49,7 @@
               assert= (add-11-safe 1 2) ([] 1 2 11)
               , true
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :io)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-hygienic.main
           :require $ test-hygienic.lib :refer $ add-11 add-11-safe

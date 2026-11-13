@@ -102,6 +102,7 @@
           :examples $ []
           :schema $ quote $ Fn String
             -> $ Result String String
+            :features :io
           :tests $ []
             %{} 'TestEntry (:name |reads-project-file)
               :code $ quote $ assert= true
@@ -128,6 +129,7 @@
           :examples $ []
           :schema $ quote $ Fn String String
             -> $ Result Unit String
+            :features :io
           :tests $ [] $ %{} 'TestEntry (:name |denies-missing-root)
             :code $ quote $ assert= true
               result:err? $ write-workspace-file |/calcit-no-such-preopen/file.txt |content

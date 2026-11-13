@@ -42,6 +42,8 @@ calcit config set feature-policy.state warn
 calcit config set feature-policy.io warn
 ```
 
+上面的命令改的是默认 entry；named entry 加 `--entry <name>`，例如 `calcit config set --entry test feature-policy.io warn`。
+
 ## 0.43.0 trait 方法签名用 `Self`（#2727）
 
 `deftrait` 的方法签名里可以直接写 `Self` 表示接收者类型，不再需要 `(:generics T)`：

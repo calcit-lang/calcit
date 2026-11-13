@@ -293,11 +293,11 @@
                 assigned value
               reset! receiver assigned
           :examples $ []
-          :schema $ quote $ Fn (Ref T) T (-> T) (:generics T)
+          :schema $ quote $ Fn (Ref T) T (-> T) (:generics T) (:features :state)
         'assign-global $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-global (value) (reset! reset-proof-count value)
           :examples $ []
-          :schema $ quote $ Fn Number (-> Number)
+          :schema $ quote $ Fn Number (-> Number) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |global-number-and-nested-return)
             :code $ quote $ assert= &unit
               do
@@ -309,7 +309,7 @@
         'assign-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-number (source value) (reset! source value)
           :examples $ []
-          :schema $ quote $ Fn (Ref Number) Number (-> Number)
+          :schema $ quote $ Fn (Ref Number) Number (-> Number) (:features :state)
           :tests $ []
             %{} 'TestEntry (:name |assigned-value-retains-scalar-and-alias-types)
               :code $ quote $ let
@@ -380,6 +380,7 @@
             Ref $ Option String
             Option String
             -> $ Option String
+            :features :state
         'check-point-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn check-point-type (p) (struct? p)
           :examples $ []
@@ -685,7 +686,7 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'reset-proof-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref reset-proof-count 0
           :examples $ []
@@ -715,19 +716,19 @@
                   :d 5
               assert= "|%{} 'Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim $ format-cirru-edn data
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-loose-struct-rewrite $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing loose-to-struct rewrite")
             assert= 30 $ sum-point $ ?{} :x 10 :y 20
             assert= true $ check-point-type $ ?{} :x 10 :y 20
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-map-to-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing map-to-struct rewrite")
             assert= 30 $ sum-point $ {} (:x 10) (:y 20)
             assert= true $ check-point-type $ {} (:x 10) (:y 20)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct match")
             let
@@ -747,7 +748,7 @@
                 B bb $ :b bb
                 _ o (println |others) :other
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct methods")
             &let
@@ -792,7 +793,7 @@
                 l2t .show
                 assert= (&struct:impls l1) (&struct:impls a1r)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")
           :code $ quote $ fn () (log-title "|Testing postfix syntax")
             let
@@ -807,7 +808,7 @@
                 assert-type l2 Lagopus
                 assert= |LagopusB $ :name l2
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing struct")
             let
@@ -864,7 +865,7 @@
                   [] (Some 20) (Some |Chen) None None
                   read-open p1
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi)
+          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
         'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-complete-construction ()
             let
@@ -919,7 +920,7 @@
               assert= :shanghai $ :position p2
               assert= |Chen $ :name p2
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'try-bool $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-bool (fail?)
             try

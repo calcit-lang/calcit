@@ -33,7 +33,7 @@
         'log-title $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn log-title (title) (println) (println title) (println)
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Dynamic)
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:features :io)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []

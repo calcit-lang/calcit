@@ -184,7 +184,7 @@
               assert= "|(%:: 'Demo :a 1)" $ str b
             assert= "|(%:: _ :a :b :c)" $ str $ :: :a :b :c
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-arguments $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing arguments")
             let
@@ -197,7 +197,7 @@
                 f2 2 $ Some |ready
                 [] 2 (Some |ready) None
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-atom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
@@ -237,7 +237,7 @@
               tagging-edn $ {} (|a 1)
                 :b $ [] $ {} (|c 3) (4 5)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-detects $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-detects ()
             assert-detect fn? $ fn () 1
@@ -322,7 +322,7 @@
               assert= ([] 1 2 3 4 5)
                 coll-f 1 & ([] 2 3 4) 5
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-fn-eq $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing equality of functions")
             let
@@ -332,7 +332,7 @@
               assert= b b
               assert= false $ &= a b
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-if $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing if with nil")
             assert= (if false 1) (if nil 1)
@@ -341,7 +341,7 @@
             assert= (if false 1 2) (if &unit 1 2)
             assert= true $ not &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-json $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing JSON")
             let
@@ -360,7 +360,7 @@
             assert= "|\"ok\"" $ json-stringify :ok
             assert= "|{\n  \"a\": 1\n}" $ json-pretty $ {} (:a 1)
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing method")
             let
@@ -383,7 +383,7 @@
                   assert= (%:: NumBox :number 2) a2
                   assert= |1 $ .show a1
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-refs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
             assert= &unit $ add-watch! *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
