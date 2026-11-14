@@ -6468,9 +6468,15 @@ fn preprocess_list_call(
                 .arg_types
                 .iter()
                 .any(|argument| argument.resolve_to_nonoptional_fn().is_some()))
-            && let CalcitTypeAnnotation::Fn(signature) =
+            && let CalcitTypeAnnotation::Fn(mut signature) =
               CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
           {
+            if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl)
+              && let Some(specialized) =
+                type_checking::specialize_proc_callback_expected_types(*proc, &processed_args, scope_types, &signature.arg_types)
+            {
+              Arc::make_mut(&mut signature).arg_types = specialized;
+            }
             reject_strict_unproven_generic_relation(
               &Calcit::Proc(*proc),
               &processed_args,
