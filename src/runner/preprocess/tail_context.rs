@@ -108,7 +108,7 @@ pub(super) fn peek_for_current() -> Option<Expected> {
 }
 
 /// Whether the form handled at the current depth has an offer satisfying `test`.
-pub(super) fn current_offer_is(test: impl FnOnce(&CalcitTypeAnnotation) -> bool) -> bool {
+pub(super) fn current_offer_is(test: impl FnOnce(&Arc<CalcitTypeAnnotation>) -> bool) -> bool {
   let depth = current_depth();
   TAIL.with(|cell| {
     cell
