@@ -906,6 +906,11 @@ impl CalcitProc {
       | NativeMapKeys
       | NativeMapVals
       | NativeMapDestruct
+      | NativeInclude
+      | NativeExclude
+      | NativeDifference
+      | NativeSetIntersection
+      | NativeUnion
       | NativeSetToList
       | NativeSetCount
       | NativeSetEmpty
@@ -1034,22 +1039,6 @@ impl CalcitProc {
       Set => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
         arg_types: vec![variadic_of(type_var("T"))],
-      }),
-      NativeInclude => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T")), type_var("T")],
-      }),
-      NativeExclude => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T")), type_var("U")],
-      }),
-      NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T")), set_of(type_var("U"))],
-      }),
-      NativeUnion => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T")), set_of(type_var("T"))],
       }),
 
       // === Enum value operations ===
