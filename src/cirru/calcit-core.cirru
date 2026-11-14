@@ -223,7 +223,8 @@
                 buf $ &buf-list:new
               assert-type buf BufList
               assert= :buf-list $ type-of buf
-              &buf-list:push buf 1
+              assert= 1 $ if buf 1 0
+              assert= 1 $ if (&buf-list:push buf 1) 1 0
               &buf-list:concat buf $ [] |x
               let
                   frozen $ &buf-list:to-list buf
