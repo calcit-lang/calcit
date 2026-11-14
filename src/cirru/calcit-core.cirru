@@ -1487,13 +1487,28 @@
             -> $ Option Trait
           :tags $ #{} :builtin :internal
         '&include $ %{} 'CodeEntry
-          :doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included"
+          :doc "|向集合加入一个元素，返回同类型的新集合。元素类型与集合一致；空集合从新元素推断类型。需要混合元素时，使用显式开放的 Set Dynamic。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Set T) T
             -> $ Set T
             :generics T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |infers-member-type-from-empty-set)
+              :code $ quote $ assert= (#{} 1)
+                assert-type
+                  &include (#{}) 1
+                  Set Number
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |allows-explicitly-open-members)
+              :code $ quote $ assert= (#{} 1 |x)
+                assert-type
+                  &include
+                    assert-type (#{} 1) (Set Dynamic)
+                    , |x
+                  Set Dynamic
+              :tags $ #{} :core :unit
         '&init-builtin-impls! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &init-builtin-impls! ()
             ; "this function to make sure builtin impls are loaded"
@@ -3659,13 +3674,34 @@
           :schema $ quote $ Fn Dynamic (-> String)
           :tags $ #{} :builtin :internal
         '&union $ %{} 'CodeEntry
-          :doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets"
+          :doc "|合并两个集合，返回去重后的新集合。两侧使用同一元素类型；空集合可从另一侧推断类型。需要合并多个集合时使用 union，需要混合元素时使用显式开放的 Set Dynamic。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Set T) (Set T)
             -> $ Set T
             :generics T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |allows-explicitly-open-operand)
+              :code $ quote $ let
+                  numbers $ #{} 1
+                  strings $ assert-type (#{} |x) (Set Dynamic)
+                assert= (#{} 1 |x)
+                  assert-type (&union numbers strings) (Set Dynamic)
+                assert= (#{} 1 |x)
+                  assert-type (&union strings numbers) (Set Dynamic)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |infers-member-type-with-empty-operand)
+              :code $ quote $ do
+                assert= (#{} 1)
+                  assert-type
+                    &union (#{}) (#{} 1)
+                    Set Number
+                assert= (#{} 1)
+                  assert-type
+                    &union (#{} 1) (#{})
+                    Set Number
+              :tags $ #{} :core :unit
         '&union-def:new $ %{} 'CodeEntry
           :doc "|Create the runtime value of a defunion from its name and member type forms."
           :code $ quote &runtime-implementation
