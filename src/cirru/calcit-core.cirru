@@ -764,10 +764,23 @@
           :doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Set T) T
+          :schema $ quote $ Fn (Set T) U
             -> $ Set T
-            :generics T
+            :generics T U
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |retains-receiver-member-type)
+            :code $ quote $ do
+              assert= (#{} 2)
+                assert-type
+                  &exclude (#{} 1 2) 1
+                  Set Number
+              assert= (#{} 1 2)
+                assert-type
+                  &exclude (#{} 1 2) |absent
+                  Set Number
+              assert= (#{})
+                &exclude (#{}) |absent
+            :tags $ #{} :core :unit
         '&extract-code-into-edn $ %{} 'CodeEntry
           :doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization"
           :code $ quote &runtime-implementation

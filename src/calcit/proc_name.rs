@@ -1186,9 +1186,13 @@ impl CalcitProc {
         return_type: set_of(type_var("T")),
         arg_types: vec![variadic_of(type_var("T"))],
       }),
-      NativeInclude | NativeExclude => Some(ProcTypeSignature {
+      NativeInclude => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_set(), dynamic_tag()],
+      }),
+      NativeExclude => Some(ProcTypeSignature {
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), type_var("U")],
       }),
       NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
