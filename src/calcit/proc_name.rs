@@ -863,6 +863,10 @@ impl CalcitProc {
       | NativeDataToCode
       | NativeListQ
       | NativeListReverse
+      | Append
+      | Prepend
+      | NativeListAppend
+      | NativeListPrepend
       | NativeListButlast
       | NativeListRange
       | NativeListSort
@@ -960,10 +964,6 @@ impl CalcitProc {
       List => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
         arg_types: vec![variadic_of(type_var("T"))],
-      }),
-      Append | Prepend | NativeListAppend | NativeListPrepend => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T")), type_var("T")],
       }),
       Butlast => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
