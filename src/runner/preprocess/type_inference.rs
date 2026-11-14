@@ -4357,6 +4357,24 @@ mod tests {
     }
   }
 
+  #[test]
+  fn directory_read_with_opaque_definitions_does_not_invent_a_result_type() {
+    let call = proc_call(
+      CalcitProc::NativeFsReadDir,
+      vec![
+        typed_local("result", Arc::new(CalcitTypeAnnotation::from_tag_name("enum-def"))),
+        typed_local("child", Arc::new(CalcitTypeAnnotation::from_tag_name("struct-def"))),
+        Calcit::Str(Arc::from("directory")),
+        Calcit::Str(Arc::from("read failed")),
+      ],
+    );
+    let Calcit::List(items) = call else {
+      panic!("expected a proc call")
+    };
+    let inferred = infer_proc_call_return_type(&CalcitProc::NativeFsReadDir, &items, &ScopeTypes::new());
+    assert_eq!(inferred.as_deref(), Some(&CalcitTypeAnnotation::Dynamic));
+  }
+
   fn option_import(ns: &str) -> Calcit {
     Calcit::Import(CalcitImport {
       ns: Arc::from(ns),

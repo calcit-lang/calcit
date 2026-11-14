@@ -1282,11 +1282,10 @@
                     fn (message) message
               :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
-          :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
+          :doc "|内部目录枚举原语。根据传入的 enum 定义包装结果，用传入的 struct 定义构造每个子路径。已知构造器时，检查器从定义推断返回类型；否则结果保持开放。公开的 FsPath .read-dir 返回 Result<List<FsPath>, String>。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef StructDef String String
-            -> $ Result (List FsPath) String
+          :schema $ quote $ Fn EnumDef StructDef String String (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :file :internal :io
         '&fs-read-text $ %{} 'CodeEntry
           :doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
