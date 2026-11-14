@@ -1307,15 +1307,15 @@ try {
         ["edit", "def", "app.main/log-unit", "--input-format", "cirru", "--code",
           "quote $ defn log-unit (value) (println value)"],
         ["edit", "schema", "app.main/log-unit", "--input-format", "cirru", "--code",
-          "quote $ Fn String (-> Unit)"],
+          "quote $ Fn String (-> Unit) (:features :io)"],
         ["edit", "def", "app.main/failing-log", "--input-format", "cirru", "--code",
           "quote $ defn failing-log () (println |must-not-print $ raise |log-argument-failed)"],
         ["edit", "schema", "app.main/failing-log", "--input-format", "cirru", "--code",
-          "quote $ Fn (-> Unit)"],
+          "quote $ Fn (-> Unit) (:features :io)"],
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (assert= &unit $ log-unit |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ Fn (-> Unit)"],
+          "quote $ Fn (-> Unit) (:features :io)"],
         ["config", "set", "reload-fn", "app.main/main!"],
       ];
       const loggingPreview = JSON.parse(run("edit", "transaction", "--code", JSON.stringify(loggingOps), "--dry-run", "--format", "json"));
