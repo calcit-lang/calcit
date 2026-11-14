@@ -1249,10 +1249,16 @@ impl CalcitProc {
       }),
 
       // === I/O operations ===
-      ReadFile => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
+      ReadFile | ReadDir => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled file read function schema");
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
       NativeFsReadText => Some(ProcTypeSignature {
         return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
           Arc::from("Result"),
@@ -1273,10 +1279,6 @@ impl CalcitProc {
           Arc::new(vec![list_of(type_var("T")), some_tag("string")]),
         )),
         arg_types: vec![some_tag("enum-def"), some_tag("struct-def"), some_tag("string"), some_tag("string")],
-      }),
-      ReadDir => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("string")),
-        arg_types: vec![some_tag("string"), some_tag("bool")],
       }),
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
@@ -1300,12 +1302,16 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],
       }),
-      Unreachable | NativeUnreachable => Some(ProcTypeSignature {
-        // `unreachable!` never returns, so its result is the bottom type and
-        // does not take part in branch type merging.
-        return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),
-        arg_types: vec![some_tag("string")],
-      }),
+      Unreachable | NativeUnreachable => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled unreachable function schema");
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("number")],

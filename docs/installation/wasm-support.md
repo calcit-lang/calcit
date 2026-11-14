@@ -58,6 +58,7 @@ aliases:
 | 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
 | `&exclude` 排除不同种类的标量 | supported-with-type-evidence | 如果集合成员与待排除值已证明属于不同标量种类，按原顺序求值后返回原集合。适用于 Number 与 Bool 等共享 WASM 数值表示的种类 | `calcit.core/exclude#distinguishes-disjoint-scalar-kinds` |
 | 默认比较器的 `sort` | unsupported | 需要显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator` 排除项 |
+| `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
 | `defwasm-import` / `defwasm-export` | supported | 显式 host ABI，Number / String | `scripts/wasm-validation.md` |
@@ -83,6 +84,7 @@ aliases:
 &inspect-methods
 &methods-of
 &number:format
+&read-dir
 &read-file
 &reset-gensym-index!
 &struct-def:new
