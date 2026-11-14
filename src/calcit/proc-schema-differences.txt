@@ -33,8 +33,6 @@
 &map:assoc | rest | "'Dynamic" => <missing>
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition
-&read-dir | missing core definition
-&read-file | missing core definition
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct-def:new | rest | "'Dynamic" => <missing>
@@ -49,7 +47,6 @@
 &union | arg 1 | "'Set" => (:: "'Set" "'T")
 &union | return | "'Set" => (:: "'Set" "'T")
 &union-def:new | rest | "'Dynamic" => <missing>
-&unreachable! | missing core definition
 &{} | missing core function schema
 :: | missing core function schema
 ?{} | missing core definition
@@ -101,4 +98,3 @@ todo! | missing core definition
 trim | arg 1 | "'String" => <missing>
 turn-tag | arg 0 | "'Dynamic" => "'T"
 type-of | arg 0 | "'Dynamic" => "'T"
-unreachable! | missing core definition
