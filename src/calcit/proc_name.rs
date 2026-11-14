@@ -612,17 +612,6 @@ fn fn_slot_with_features(
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
 }
 
-/// A Ref watcher, `Fn T T (-> Unit) (:features :state :io)`. It is stored and
-/// runs later when the Ref changes, so it is not a `:pass` slot; it may read
-/// other Refs or print (#2726).
-fn watcher_slot() -> Arc<CalcitTypeAnnotation> {
-  fn_slot_with_features(vec![type_var("T"), type_var("T")], some_tag("unit"), &["state", "io"])
-}
-
-fn ref_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Ref(inner))
-}
-
 fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(inner))
 }
@@ -956,6 +945,10 @@ impl CalcitProc {
       | NativeStrRest
       | NativeStrPadLeft
       | NativeStrPadRight
+      | Ref
+      | AtomDeref
+      | AddWatch
+      | RemoveWatch
       | NativeLessThan
       | NativeGreaterThan => Some(self.signature_from_core(core)),
 
@@ -1181,24 +1174,6 @@ impl CalcitProc {
       NativeStructImpls => Some(ProcTypeSignature {
         return_type: list_of(some_tag("impl")),
         arg_types: vec![some_tag("struct")],
-      }),
-
-      // === Refs/Atoms ===
-      Ref => Some(ProcTypeSignature {
-        return_type: ref_of(type_var("T")),
-        arg_types: vec![type_var("T")],
-      }),
-      AtomDeref => Some(ProcTypeSignature {
-        return_type: type_var("T"),
-        arg_types: vec![ref_of(type_var("T"))],
-      }),
-      AddWatch => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![ref_of(type_var("T")), some_tag("tag"), watcher_slot()],
-      }),
-      RemoveWatch => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![ref_of(type_var("T")), some_tag("tag")],
       }),
 
       // === I/O operations ===
