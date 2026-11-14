@@ -72,6 +72,10 @@ pub fn intrinsic_rule_summary(def: &str) -> Option<&'static [&'static str]> {
     "pairs-map" => &["List (List T) -> Map T T"],
     "apply" => &["(Fn A... (-> R)), a List literal or List of matching arguments -> R"],
     "&list:sort-by" => &["List T, (Fn T (-> K)) -> List T", "List T, field tag -> List T"],
+    "&fs-read-dir" => &[
+      "由已知 enum 定义和单 String 字段的路径 struct 推断结果，成功分支包含该 struct 的 List",
+      "构造器不透明或形状无法证明时，返回 Dynamic",
+    ],
     "impl-traits" => &["struct or enum definition, & Impl -> the same definition with the impls attached"],
     "with-type-slot" => &["compile-time form: the slot override is erased; the body's type is the result"],
     "defn" | "defmacro" => &["definition syntax: the compiler builds the function from its parameters and body"],

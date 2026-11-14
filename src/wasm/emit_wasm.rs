@@ -5965,6 +5965,7 @@ fn scalar_truthiness_constant(annotation: &CalcitTypeAnnotation) -> Result<Optio
     | CalcitTypeAnnotation::Map(_, _)
     | CalcitTypeAnnotation::Set(_)
     | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::BufList
     | CalcitTypeAnnotation::Ref(_)
     | CalcitTypeAnnotation::StructValue(_)
     | CalcitTypeAnnotation::EnumValue(_)
