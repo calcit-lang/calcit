@@ -927,6 +927,10 @@ impl CalcitProc {
       | NativeSetEmpty
       | NativeSetIncludes
       | NativeSetDestruct
+      | JsonParse
+      | JsonStringify
+      | JsonPretty
+      | FormatCirruEdn
       | NativeStrConcat
       | TurnString
       | Split
@@ -1280,21 +1284,9 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string"), dynamic_tag()],
       }),
-      JsonParse => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string")],
-      }),
-      JsonStringify | JsonPretty => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
-      }),
       FormatCirru => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("list"), some_tag("bool")],
-      }),
-      FormatCirruEdn => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag(), some_tag("bool")],
       }),
       FormatCirruOneLiner => Some(ProcTypeSignature {
         return_type: some_tag("string"),
