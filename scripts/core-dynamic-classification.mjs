@@ -457,6 +457,13 @@ function classify(entry) {
       rationale: "保留历史调用的尾随参数求值；打印当前调用栈时只使用调用上下文。",
     };
   }
+  if (name === "&union-def:new") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
+    };
+  }
   if (name === "&struct-def:new") {
     return {
       owner: "runtime-internals",

@@ -749,17 +749,6 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![],
       }),
-      NativeDisplayStack => {
-        let schema = core.defs[self.as_ref()].schema.as_function().expect("bundled stack display schema");
-        let mut arg_types = schema.arg_types.clone();
-        if let Some(rest_type) = &schema.rest_type {
-          arg_types.push(variadic_of(rest_type.clone()));
-        }
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types,
-        })
-      }
       // Method values are callable (native `Calcit::Method`, JS invoke
       // closures), so the honest element type is a function (#2534).
       NativeMethodsOf => Some(ProcTypeSignature {
@@ -867,6 +856,9 @@ impl CalcitProc {
       | NativeNumberFormat
       | NativeNumberDisplayBy
       | NativeNumberFits
+      | NativeBuffer
+      | NativeDisplayStack
+      | NativeMapAssoc
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeListQ
@@ -1034,15 +1026,6 @@ impl CalcitProc {
         return_type: option_of(type_var("V")),
         arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
       }),
-      NativeMapAssoc => Some(ProcTypeSignature {
-        return_type: map_of(type_var("K"), type_var("V")),
-        arg_types: vec![
-          map_of(type_var("K"), type_var("V")),
-          type_var("K"),
-          type_var("V"),
-          variadic_dynamic(),
-        ],
-      }),
 
       // === Set operations ===
       Set => Some(ProcTypeSignature {
@@ -1123,10 +1106,18 @@ impl CalcitProc {
           arg_types,
         })
       }
-      NativeUnionNew => Some(ProcTypeSignature {
-        return_type: some_tag("union-def"),
-        arg_types: vec![some_tag("tag"), variadic_dynamic()],
-      }),
+      NativeUnionNew => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled UnionDef constructor schema");
+        let mut arg_types = schema.arg_types.clone();
+        arg_types.push(variadic_of(schema.rest_type.clone().expect("UnionDef constructor rest parameter")));
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types,
+        })
+      }
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
         arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
@@ -1415,11 +1406,6 @@ impl CalcitProc {
         arg_types: vec![some_tag("cirru-quote"), some_tag("number")],
       }),
 
-      // === Buffer ===
-      NativeBuffer => Some(ProcTypeSignature {
-        return_type: some_tag("buffer"),
-        arg_types: vec![variadic_dynamic()],
-      }),
       RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![dynamic_tag()],
