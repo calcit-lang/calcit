@@ -1718,6 +1718,63 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
+fn check_defimpl_destination(
+  snapshot_file: &str,
+  snapshot: &Snapshot,
+  source_ns: &str,
+  target_ns: &str,
+  code: &Cirru,
+) -> Result<(), String> {
+  if source_ns == target_ns {
+    return Ok(());
+  }
+  let Cirru::List(items) = code else { return Ok(()) };
+  let Some(Cirru::Leaf(head)) = items.first() else { return Ok(()) };
+  if !is_core_defimpl(snapshot_file, snapshot, source_ns, head)? {
+    return Ok(());
+  }
+  let (Some(Cirru::Leaf(receiver)), Some(Cirru::Leaf(trait_name))) = (items.get(1), items.get(2)) else {
+    return Err("A core defimpl must name its receiver and trait before it can be moved.".to_owned());
+  };
+
+  let resolve = |namespace: &str, symbol: &str| -> Result<(String, String), String> {
+    use calcit::program::ImportRule;
+    let file = &snapshot.files[namespace];
+    let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
+    if let Some((prefix, name)) = symbol.split_once('/') {
+      let owner = match imports.get(prefix).map(AsRef::as_ref) {
+        Some(ImportRule::NsAs(target)) => target.as_ref(),
+        _ => prefix,
+      };
+      return Ok((owner.to_owned(), name.to_owned()));
+    }
+    if file.defs.contains_key(symbol) {
+      return Ok((namespace.to_owned(), symbol.to_owned()));
+    }
+    if let Some(ImportRule::NsReferDef(owner, name)) = imports.get(symbol).map(AsRef::as_ref) {
+      return Ok((owner.to_string(), name.to_string()));
+    }
+    Ok((calcit::calcit::CORE_NS.to_owned(), symbol.to_owned()))
+  };
+  let receiver_key = resolve(source_ns, receiver)?;
+  let trait_key = resolve(source_ns, trait_name)?;
+  if target_ns != receiver_key.0 && target_ns != trait_key.0 {
+    return Err(format!(
+      "Cannot move this defimpl to '{target_ns}': its receiver and trait are declared in '{}' and '{}'.",
+      receiver_key.0, trait_key.0
+    ));
+  }
+  if !is_core_defimpl(snapshot_file, snapshot, target_ns, head)?
+    || resolve(target_ns, receiver)? != receiver_key
+    || resolve(target_ns, trait_name)? != trait_key
+  {
+    return Err(format!(
+      "Cannot move this defimpl to '{target_ns}': its head, receiver, and trait must resolve to the same definitions there."
+    ));
+  }
+  Ok(())
+}
+
 fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (source_ns, source_def) = parse_target(&opts.source)?;
   let (target_ns, target_def) = parse_target(&opts.target)?;
@@ -1744,14 +1801,9 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
     return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
   }
 
-  let (renamed_code, _) = rename_definition_declaration(
-    snapshot_file,
-    &snapshot,
-    source_ns,
-    &source_file.defs[resolved_source_def.as_str()].code,
-    &resolved_source_def,
-    target_def,
-  )?;
+  let code = &source_file.defs[resolved_source_def.as_str()].code;
+  check_defimpl_destination(snapshot_file, &snapshot, source_ns, target_ns, code)?;
+  let (renamed_code, _) = rename_definition_declaration(snapshot_file, &snapshot, source_ns, code, &resolved_source_def, target_def)?;
   let mut entry = snapshot
     .files
     .get_mut(source_ns)
@@ -3741,6 +3793,26 @@ mod tests {
     assert!(error.contains("import rule 1"), "error: {error}");
     assert!(error.contains("exactly 3 items"), "error: {error}");
     assert_eq!(fs::read(&fixture.path).expect("fixture should remain"), original);
+  }
+
+  #[test]
+  fn defimpl_move_stays_in_an_owner_namespace() {
+    let project = TestSnapshot::from_fixture();
+    let path = project.snapshot_string();
+    let mut snapshot = load_snapshot(&path).expect("load fixture");
+    for namespace in ["app.model", "app.traits", "app.other"] {
+      let mut file = snapshot.files["app.main"].clone();
+      file.ns.code = list(vec![leaf("ns"), leaf(namespace)]);
+      file.defs.clear();
+      snapshot.files.insert(namespace.to_owned(), file);
+    }
+    let code = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label").expect("read definition");
+    for target in ["app.model", "app.traits"] {
+      super::check_defimpl_destination(&path, &snapshot, "app.main", target, &code).expect("allow an owner namespace");
+    }
+    let error = super::check_defimpl_destination(&path, &snapshot, "app.main", "app.other", &code)
+      .expect_err("implementation discovery cannot find a third namespace");
+    assert!(error.contains("receiver and trait are declared"), "{error}");
   }
 
   fn rename_fixture_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {

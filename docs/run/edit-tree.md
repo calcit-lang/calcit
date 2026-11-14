@@ -60,7 +60,7 @@ calcit edit def app.util/double --input-format cirru --code 'quote $ defn double
 
 `deftype-slot` 独立声明一个 tag/string slot 名，不把 slot 名当作 definition key。
 
-核心 `defimpl Type Trait` 的第二个元素是接收者类型。编辑时用目标路径指定实现的 definition key，源码中继续写接收者和 trait，例如 `calcit edit def app.model/PointLabelImpl --overwrite --code 'quote $ defimpl Point Label (.label (fn (self) |point))'`。 `edit rename`、`edit mv-def` 和语义重命名同样只处理实现的定义键，保留接收者和 trait。跨命名空间移动时，接收者、trait 和方法引用仍须在目标命名空间可解析。
+核心 `defimpl Type Trait` 的第二个元素是接收者类型。编辑时用目标路径指定实现的 definition key，源码中继续写接收者和 trait，例如 `calcit edit def app.model/PointLabelImpl --overwrite --code 'quote $ defimpl Point Label (.label (fn (self) |point))'`。 `edit rename`、`edit mv-def` 和语义重命名同样只处理实现的定义键，保留接收者和 trait。跨命名空间移动时，目标必须是接收者或 trait 的声明命名空间，且源码引用在目标中仍须指向原定义。
 
 此检查不展开宏，也不替代类型检查；宏返回的表达式仍需后续检查验证。编辑后运行 `calcit --check-only` 与项目测试。不要把带标题或围栏的 Markdown 查询输出直接交给 `edit def`。
 
