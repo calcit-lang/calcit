@@ -8729,7 +8729,7 @@
           :examples $ []
           :schema $ quote $ Fn (List T) U U
             Fn U T (-> Enum) (:features :pass)
-            -> U
+            -> Dynamic
             :generics T U
           :tags $ #{} :builtin :internal
           :tests $ []

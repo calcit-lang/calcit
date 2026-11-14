@@ -860,6 +860,7 @@ impl CalcitProc {
       | FormatCirruOneLiner
       | NativeListQ
       | Foldl
+      | FoldrShortcut
       | NativeListFoldl
       | NativeBufListNew
       | NativeBufListPush
@@ -1007,7 +1008,7 @@ impl CalcitProc {
           ],
         })
       }
-      FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
+      NativeListFoldlShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
       }),
