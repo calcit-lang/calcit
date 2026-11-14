@@ -450,6 +450,13 @@ function classify(entry) {
       rationale: "内部构造器按位置解析变体列表、泛型列表和 where 元数据，最终生成 EnumDef。",
     };
   }
+  if (name === "&display-stack") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "保留历史调用的尾随参数求值；打印当前调用栈时只使用调用上下文。",
+    };
+  }
   if (name === "&union-def:new") {
     return {
       owner: "runtime-internals",
