@@ -2068,7 +2068,13 @@ fn plan_definition_rename(
   )?);
 
   let target_entry = target_file.defs.get(old_name).expect("checked semantic rename source");
-  let (renamed_code, _) = super::edit::rename_definition_declaration(&target_entry.code, old_name, new_name)?;
+  let (renamed_code, declaration_changed) =
+    super::edit::rename_definition_declaration(snapshot_file, snapshot, target_ns, &target_entry.code, old_name, new_name)?;
+  let message = if declaration_changed {
+    format!("Rename the definition and declaration to `{target_ns}/{new_name}`.")
+  } else {
+    format!("Rename the definition key to `{target_ns}/{new_name}`.")
+  };
   suggestions.push(FixSuggestion {
     rule_id: RENAME_DEFINITION_RULE,
     diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
@@ -2081,7 +2087,7 @@ fn plan_definition_rename(
     original: quoted_json(&target_entry.code),
     replacement: Some(quoted_json(&renamed_code)),
     applicability: "machine-applicable",
-    message: format!("Rename the definition and declaration to `{target_ns}/{new_name}`."),
+    message,
     target_path: vec![],
     operation: Some(FixOperation::RenameDefinition {
       new_name: new_name.to_owned(),
