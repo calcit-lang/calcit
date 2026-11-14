@@ -1484,6 +1484,11 @@ fn aggregate_status(children: &[DiffNode]) -> DiffStatus {
 }
 
 fn should_show_as_whole_cirru_change(old_items: &[Cirru], new_items: &[Cirru], edits: &[SeqEdit]) -> bool {
+  // Keep the common prefix and suffix from sequence alignment visible as context.
+  if matches!(edits.first(), Some(SeqEdit::Match(..))) || matches!(edits.last(), Some(SeqEdit::Match(..))) {
+    return false;
+  }
+
   let changed_edits = edits
     .iter()
     .filter(|edit| !matches!(edit, SeqEdit::Match(_, _)))
@@ -2202,6 +2207,42 @@ mod tests {
     let edits = align_sequence(&old, &new);
     let matched = edits.iter().filter(|edit| matches!(edit, SeqEdit::Match(_, _))).count();
     assert!(matched >= 6);
+  }
+
+  #[test]
+  fn renders_shared_expression_edges_as_context_after_major_rewrites() {
+    colored::control::set_override(false);
+    let cases = [
+      (
+        "do shared-prefix a b c d e shared-tail done",
+        "do shared-prefix v w x y z extra shared-tail done",
+        "    do\n      , shared-prefix\n",
+        "      , shared-tail done",
+      ),
+      ("do a b c d e", "do v w x y z", "    do\n", ""),
+      ("first a b c d e done", "second v w x y z extra done", "", "      , done"),
+    ];
+
+    for (before, after, prefix, suffix) in cases {
+      let wrap = |source: &str| list(vec![leaf("outer"), list(source.split_whitespace().map(leaf).collect())]);
+      let rendered = render_cirru_diff(&wrap(before), &wrap(after), "0", 0, true);
+      assert!(
+        !rendered.lines().any(|line| matches!(line.trim(), "OLD@0.1" | "NEW@0.1")),
+        "{rendered}"
+      );
+      assert!(rendered.contains("OLD@0.1.") && rendered.contains("NEW@0.1."), "{rendered}");
+      assert!(rendered.contains(prefix) && rendered.ends_with(suffix), "{rendered}");
+    }
+  }
+
+  #[test]
+  fn still_renders_unrelated_expressions_as_whole_changes() {
+    colored::control::set_override(false);
+    let old = list("do a b c d".split_whitespace().map(leaf).collect());
+    let new = list("let v w x y".split_whitespace().map(leaf).collect());
+    let rendered = render_cirru_diff(&old, &new, "0", 0, true);
+    assert!(rendered.starts_with("OLD@0\n"), "{rendered}");
+    assert!(rendered.contains("\nNEW@0\n"), "{rendered}");
   }
 
   #[test]
