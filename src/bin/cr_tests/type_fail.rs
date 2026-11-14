@@ -3943,10 +3943,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         warning.message().contains("Proc `foldl`")
           && warning
             .message()
-            .contains("expects type `fn(:number, list<dynamic>) -> :number (:features :pass)`")
+            .contains("expects type `fn(:number, tuple<:tag, :number>) -> :number (:features :pass)`")
           && warning.message().contains("got `fn(:number, & :number) -> :number`")
       }),
-      "Map foldl should expose entries as heterogeneous List pairs: {fold_warnings:?}"
+      "Map foldl should expose the key and value types of each entry: {fold_warnings:?}"
     );
     let sort_warnings = warnings
       .iter()
