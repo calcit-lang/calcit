@@ -3061,6 +3061,24 @@ fn buffer_list_procs_reject_tag_receivers() {
 }
 
 #[test]
+fn enum_definition_constructor_requires_an_entry() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("&enum-def:new :Empty");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("missing EnumDef entry should be diagnosed during preprocessing");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("E_PROC_ARITY") && warning.message().contains("Proc `&enum-def:new` expects at least 2 args, got 1")
+      }),
+      "expected an arity diagnostic for an EnumDef without entries, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn union_definition_requires_two_member_forms_with_a_local_name() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("let ((name :CssValue)) (&union-def:new name (quote Number))");

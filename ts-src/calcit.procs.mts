@@ -480,6 +480,9 @@ export let _$n_struct_def_$o_new = (name: CalcitValue, ...entries: CalcitValue[]
 };
 
 export let _$n_enum_def_$o_new = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {
+  if (variants.length === 0) {
+    throw new Error("&enum-def:new expects a name and definition entries");
+  }
   return defenum(name, ...variants);
 };
 

@@ -443,6 +443,13 @@ function classify(entry) {
       rationale: "可变缓冲列表允许逐次追加不同类型的值；冻结后仍保留各元素，调用方读取时需检查实际类型。",
     };
   }
+  if (name === "&enum-def:new") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "内部构造器按位置解析变体列表、泛型列表和 where 元数据，最终生成 EnumDef。",
+    };
+  }
   if (name === "&union-def:new") {
     return {
       owner: "runtime-internals",
