@@ -3729,10 +3729,10 @@
                     Set Number
               :tags $ #{} :core :unit
         '&union-def:new $ %{} 'CodeEntry
-          :doc "|Create the runtime value of a defunion from its name and member type forms."
+          :doc "|内部联合类型构造器。名称后至少跟两个类型形式，成员由联合类型预处理校验。用户代码使用 defunion。"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote (&union-def:new :CssValue 'String 'Number)
-          :schema $ quote $ Fn Tag (-> UnionDef)
+          :schema $ quote $ Fn Tag Dynamic Dynamic (& Dynamic) (-> UnionDef)
           :tags $ #{} :builtin :internal
         '&unreachable! $ %{} 'CodeEntry (:doc "|编译器内部的不可到达分支入口，接收包含调用位置的错误消息。")
           :code $ quote $ def &unreachable! &runtime-implementation

@@ -38,7 +38,6 @@
 &struct:with-at | missing core definition
 &trait-call | missing core definition
 &trait::new | missing core function schema
-&union-def:new | rest | "'Dynamic" => <missing>
 &{} | missing core function schema
 :: | missing core function schema
 ?{} | missing core definition

@@ -3079,6 +3079,23 @@ fn enum_definition_constructor_requires_an_entry() {
 }
 
 #[test]
+fn union_definition_requires_two_member_forms_with_a_local_name() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("let ((name :CssValue)) (&union-def:new name (quote Number))");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("the primitive arity check should diagnose the missing member without resolving the name");
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("E_PROC_ARITY") && warning.message().contains("Proc `&union-def:new` expects at least 3 args, got 2")
+      }),
+      "expected a UnionDef arity diagnostic, got: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn parse_cirru_list_rejects_non_string_before_runtime() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("parse-cirru-list 1");
