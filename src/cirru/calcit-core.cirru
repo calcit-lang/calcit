@@ -19,10 +19,10 @@
             :generics T
           :tags $ #{} :builtin :internal
         '%:: $ %{} 'CodeEntry
-          :doc "|Construct an enum value. Use an EnumDef for nominal values or `_` for an anonymous/open enum."
+          :doc "|Construct a nominal enum from an EnumDef. In source, %:: _ lowers to the anonymous enum constructor."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic Tag (-> Enum)
+          :schema $ quote $ Fn EnumDef Tag (& Dynamic) (-> Enum)
           :tags $ #{} :builtin :internal
         '%{} $ %{} 'CodeEntry
           :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."

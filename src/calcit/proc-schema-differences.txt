@@ -1,7 +1,5 @@
 # Existing Rust proc => core schema differences (#2735).
 # Resolved differences may be removed as signatures converge.
-%:: | arg 0 | "'EnumDef" => "'Dynamic"
-%:: | rest | "'Dynamic" => <missing>
 &%{} | rest | "'Dynamic" => <missing>
 &assert-traits | missing core definition
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
