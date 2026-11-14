@@ -1900,6 +1900,13 @@
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-map-key-and-value-types)
+            :code $ quote $ assert= 5
+              &list:foldl
+                {} (:a 2) (:b 3)
+                , 0 $ fn (acc entry)
+                  let[] (k v) entry (assert-type k Tag) (assert-type v Number) (&+ acc v)
+            :tags $ #{} :core :unit
         '&list:foldl-shortcut $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -2720,13 +2727,9 @@
               :tags $ #{} :core :lexical-binder :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map-list (xs f)
-            if (map? xs)
-              foldl xs ([])
-                defn %&map:map-list (acc pair)
-                  hint-fn $ Fn (List U) (List Dynamic)
-                    -> $ List U
-                  append acc $ f pair
-              raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
+            map-list-kv xs $ fn (key value)
+              hint-fn $ Fn K V $ -> U
+              f $ [] key value
           :examples $ []
           :schema $ quote $ Fn (Map K V)
             Fn (Tuple K V) (-> U) (:features :pass)
@@ -8524,6 +8527,22 @@
               :code $ quote $ assert= 3
                 foldl (range 3) 0 $ fn (sum idx) (assert-type idx Number)
                   + sum $ option:unwrap $ nth ([] 0 1 2) idx
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-map-key-and-value-types)
+              :code $ quote $ let
+                  items $ {} (:a 2) (:b 3)
+                  total $ foldl items 0 $ fn (acc entry)
+                    let[] (k v) entry (assert-type k Tag) (assert-type v Number) (&+ acc v)
+                assert-type total Number
+                assert= 5 total
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |accepts-explicitly-open-map-pair-callback)
+              :code $ quote $ assert= 2
+                foldl
+                  {} (:a 2) (:b 3)
+                  , 0 $ fn (acc entry)
+                    hint-fn $ Fn Number (List Dynamic) (-> Number)
+                    &+ acc 1
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |folds-map-as-key-value-lists)
               :code $ quote $ let
