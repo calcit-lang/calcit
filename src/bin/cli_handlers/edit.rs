@@ -1531,7 +1531,10 @@ pub(crate) fn rename_definition_declaration(
   let Some(Cirru::Leaf(head)) = items.first() else {
     return Ok((code.clone(), false));
   };
-  if !head.starts_with("def") || is_core_defimpl(snapshot_file, snapshot, namespace, head)? {
+  if is_core_defimpl(snapshot_file, snapshot, namespace, head)? {
+    return Ok((code.clone(), false));
+  }
+  if !head.starts_with("def") {
     return Ok((code.clone(), false));
   }
 
@@ -1580,6 +1583,12 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     &resolved_definition,
     &opts.new_name,
   )?;
+  let before = defimpl_edit_baseline(
+    snapshot_file,
+    &snapshot,
+    namespace,
+    &file_data.defs[resolved_definition.as_str()].code,
+  )?;
   let file_data = snapshot.files.get_mut(namespace).expect("resolved namespace exists");
   let mut entry = file_data
     .defs
@@ -1588,6 +1597,16 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
   entry.code = renamed_code;
   file_data.defs.insert(opts.new_name.clone(), entry);
 
+  if let Some(before) = before {
+    check_defimpl_destination(
+      snapshot_file,
+      &before,
+      &snapshot,
+      namespace,
+      namespace,
+      &snapshot.files[namespace].defs[&opts.new_name].code,
+    )?;
+  }
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
@@ -1720,59 +1739,92 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
 
 fn check_defimpl_destination(
   snapshot_file: &str,
-  snapshot: &Snapshot,
+  before: &Snapshot,
+  staged: &Snapshot,
   source_ns: &str,
   target_ns: &str,
   code: &Cirru,
 ) -> Result<(), String> {
-  if source_ns == target_ns {
-    return Ok(());
-  }
   let Cirru::List(items) = code else { return Ok(()) };
   let Some(Cirru::Leaf(head)) = items.first() else { return Ok(()) };
-  if !is_core_defimpl(snapshot_file, snapshot, source_ns, head)? {
+  if !is_core_defimpl(snapshot_file, before, source_ns, head)? {
     return Ok(());
   }
   let (Some(Cirru::Leaf(receiver)), Some(Cirru::Leaf(trait_name))) = (items.get(1), items.get(2)) else {
     return Err("A core defimpl must name its receiver and trait before it can be moved.".to_owned());
   };
 
-  let resolve = |namespace: &str, symbol: &str| -> Result<(String, String), String> {
-    use calcit::program::ImportRule;
-    let file = &snapshot.files[namespace];
-    let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
-    if let Some((prefix, name)) = symbol.split_once('/') {
-      let owner = match imports.get(prefix).map(AsRef::as_ref) {
-        Some(ImportRule::NsAs(target)) => target.as_ref(),
-        _ => prefix,
-      };
-      return Ok((owner.to_owned(), name.to_owned()));
-    }
-    if file.defs.contains_key(symbol) {
-      return Ok((namespace.to_owned(), symbol.to_owned()));
-    }
-    if let Some(ImportRule::NsReferDef(owner, name)) = imports.get(symbol).map(AsRef::as_ref) {
-      return Ok((owner.to_string(), name.to_string()));
-    }
-    Ok((calcit::calcit::CORE_NS.to_owned(), symbol.to_owned()))
-  };
-  let receiver_key = resolve(source_ns, receiver)?;
-  let trait_key = resolve(source_ns, trait_name)?;
-  if target_ns != receiver_key.0 && target_ns != trait_key.0 {
+  let source_file = &before.files[source_ns];
+  let target_file = &staged.files[target_ns];
+  let source_imports = calcit::program::extract_import_map(&source_file.ns.code, source_ns)?;
+  let target_imports = calcit::program::extract_import_map(&target_file.ns.code, target_ns)?;
+  let resolve =
+    |file: &FileInSnapShot, imports: &_, namespace: &str, symbol: &str| resolve_defimpl_symbol(file, imports, namespace, symbol);
+  let receiver_key = resolve(source_file, &source_imports, source_ns, receiver);
+  let trait_key = resolve(source_file, &source_imports, source_ns, trait_name);
+  if source_ns != target_ns && target_ns != receiver_key.0 && target_ns != trait_key.0 {
     return Err(format!(
       "Cannot move this defimpl to '{target_ns}': its receiver and trait are declared in '{}' and '{}'.",
       receiver_key.0, trait_key.0
     ));
   }
-  if !is_core_defimpl(snapshot_file, snapshot, target_ns, head)?
-    || resolve(target_ns, receiver)? != receiver_key
-    || resolve(target_ns, trait_name)? != trait_key
-  {
+  if !is_core_defimpl(snapshot_file, staged, target_ns, head)? {
     return Err(format!(
-      "Cannot move this defimpl to '{target_ns}': its head, receiver, and trait must resolve to the same definitions there."
+      "Cannot change the definition key: '{head}' would no longer resolve to the core defimpl in '{target_ns}'."
     ));
   }
+
+  // Compare source symbols conservatively. A symbol under a local binding or a
+  // macro may need qualification before the move if its global binding changes.
+  let mut pending: Vec<&Cirru> = items.iter().skip(1).collect();
+  while let Some(node) = pending.pop() {
+    match node {
+      Cirru::List(children) => pending.extend(children.iter()),
+      Cirru::Leaf(_) => {
+        if let Ok(calcit::Calcit::Symbol { sym, .. }) = calcit::data::cirru::code_to_calcit(node, source_ns, "", vec![])
+          && resolve(source_file, &source_imports, source_ns, &sym) != resolve(target_file, &target_imports, target_ns, &sym)
+        {
+          return Err(format!(
+            "Cannot move or rename this defimpl in '{target_ns}': symbol '{sym}' would resolve differently. Qualify the reference before editing."
+          ));
+        }
+      }
+    }
+  }
   Ok(())
+}
+
+fn resolve_defimpl_symbol(
+  file: &FileInSnapShot,
+  imports: &std::collections::HashMap<Arc<str>, Arc<calcit::program::ImportRule>>,
+  namespace: &str,
+  symbol: &str,
+) -> (String, String) {
+  use calcit::program::ImportRule;
+  if let Some((prefix, name)) = symbol.split_once('/') {
+    let owner = match imports.get(prefix).map(AsRef::as_ref) {
+      Some(ImportRule::NsAs(target)) => target.as_ref(),
+      _ => prefix,
+    };
+    return (owner.to_owned(), name.to_owned());
+  }
+  if file.defs.contains_key(symbol) {
+    return (namespace.to_owned(), symbol.to_owned());
+  }
+  if let Some(ImportRule::NsReferDef(owner, name)) = imports.get(symbol).map(AsRef::as_ref) {
+    return (owner.to_string(), name.to_string());
+  }
+  (calcit::calcit::CORE_NS.to_owned(), symbol.to_owned())
+}
+
+fn defimpl_edit_baseline(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, code: &Cirru) -> Result<Option<Snapshot>, String> {
+  if let Cirru::List(items) = code
+    && let Some(Cirru::Leaf(head)) = items.first()
+    && is_core_defimpl(snapshot_file, snapshot, namespace, head)?
+  {
+    return Ok(Some(snapshot.clone()));
+  }
+  Ok(None)
 }
 
 fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), String> {
@@ -1802,7 +1854,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   }
 
   let code = &source_file.defs[resolved_source_def.as_str()].code;
-  check_defimpl_destination(snapshot_file, &snapshot, source_ns, target_ns, code)?;
+  let before = defimpl_edit_baseline(snapshot_file, &snapshot, source_ns, code)?;
   let (renamed_code, _) = rename_definition_declaration(snapshot_file, &snapshot, source_ns, code, &resolved_source_def, target_def)?;
   let mut entry = snapshot
     .files
@@ -1819,6 +1871,16 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
     .defs
     .insert(target_def.to_string(), entry);
 
+  if let Some(before) = before {
+    check_defimpl_destination(
+      snapshot_file,
+      &before,
+      &snapshot,
+      source_ns,
+      target_ns,
+      &snapshot.files[target_ns].defs[target_def].code,
+    )?;
+  }
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
@@ -3808,11 +3870,38 @@ mod tests {
     }
     let code = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label").expect("read definition");
     for target in ["app.model", "app.traits"] {
-      super::check_defimpl_destination(&path, &snapshot, "app.main", target, &code).expect("allow an owner namespace");
+      super::check_defimpl_destination(&path, &snapshot, &snapshot, "app.main", target, &code).expect("allow an owner namespace");
     }
-    let error = super::check_defimpl_destination(&path, &snapshot, "app.main", "app.other", &code)
+    let error = super::check_defimpl_destination(&path, &snapshot, &snapshot, "app.main", "app.other", &code)
       .expect_err("implementation discovery cannot find a third namespace");
     assert!(error.contains("receiver and trait are declared"), "{error}");
+
+    let entry = |code: &Cirru| {
+      let mut entry = snapshot.files["app.main"].defs.values().next().expect("fixture definition").clone();
+      entry.code = code.clone();
+      entry
+    };
+    let mut staged = snapshot.clone();
+    staged
+      .files
+      .get_mut("app.model")
+      .unwrap()
+      .defs
+      .insert("defimpl".to_owned(), entry(&code));
+    let error = super::check_defimpl_destination(&path, &snapshot, &staged, "app.main", "app.model", &code)
+      .expect_err("inserting the destination key shadows the core macro");
+    assert!(error.contains("no longer resolve to the core defimpl"), "{error}");
+
+    let code = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label helper)").unwrap();
+    let helper = entry(&parse_input_to_cirru("quote $ defn helper (self) |label").unwrap());
+    let mut original = snapshot.clone();
+    original.files.get_mut("app.main").unwrap().defs.insert("helper".to_owned(), helper);
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &code)
+      .expect_err("unqualified method function would change resolution");
+    assert!(error.contains("symbol 'helper' would resolve differently"), "{error}");
+    let qualified = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label app.main/helper)").unwrap();
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &qualified)
+      .expect("qualified method function keeps its resolution");
   }
 
   fn rename_fixture_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
