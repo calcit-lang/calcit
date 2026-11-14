@@ -12,9 +12,6 @@
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
-&exclude | arg 0 | "'Set" => (:: "'Set" "'T")
-&exclude | arg 1 | "'Dynamic" => "'T"
-&exclude | return | "'Set" => (:: "'Set" "'T")
 &fs-read-dir | return | (:: "'calcit.core/Result" (:: "'List" "'T") "'String") => (:: "'calcit.core/Result" (:: "'List" "'calcit.core/FsPath") "'String")
 &impl::new | missing core function schema
 &include | arg 0 | "'Set" => (:: "'Set" "'T")
@@ -41,16 +38,10 @@
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct-def:new | rest | "'Dynamic" => <missing>
-&struct:assoc | missing core function schema
 &struct:assoc-at | missing core definition
-&struct:contains? | missing core function schema
-&struct:extend-as | missing core function schema
 &struct:field-tag | missing core definition
-&struct:from-map | missing core function schema
 &struct:impl-traits | rest | "'Dynamic" => <missing>
-&struct:matches? | missing core function schema
 &struct:nth | missing core definition
-&struct:with | missing core function schema
 &struct:with-at | missing core definition
 &trait-call | missing core definition
 &trait::new | missing core function schema
