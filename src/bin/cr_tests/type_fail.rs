@@ -3032,6 +3032,35 @@ fn option_migration_source_calls_fail_during_preprocessing() {
 }
 
 #[test]
+fn buffer_list_procs_reject_tag_receivers() {
+  run_with_large_stack(|| {
+    for (operation, source) in [
+      ("&buf-list:push", "&buf-list:push :buf-list 1"),
+      ("&buf-list:concat", "&buf-list:concat :buf-list ([] 1)"),
+      ("&buf-list:count", "&buf-list:count :buf-list"),
+      ("&buf-list:to-list", "&buf-list:to-list :buf-list"),
+    ] {
+      let entries = load_snippet_entries(source);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("invalid buffer-list input should produce a type diagnostic before runtime");
+
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| {
+          warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
+            && warning
+              .message()
+              .contains(&format!("Proc `{operation}` arg 1 expects type `:buf-list`"))
+            && warning.message().contains("got `:tag`")
+        }),
+        "{operation} should reject a Tag receiver during preprocessing, got: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn parse_cirru_list_rejects_non_string_before_runtime() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("parse-cirru-list 1");

@@ -51,6 +51,7 @@ export * from "./js-buf-list.mjs";
 export { _$n_compare } from "./js-primes.mjs";
 
 import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
+import { CalcitBufList } from "./js-buf-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
@@ -117,6 +118,9 @@ export let type_of = (x: any): CalcitTag => {
   }
   if (x instanceof Uint8Array) {
     return newTag("buffer");
+  }
+  if (x instanceof CalcitBufList) {
+    return newTag("buf-list");
   }
   if (x === true || x === false) {
     return newTag("bool");

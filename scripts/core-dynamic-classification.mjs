@@ -435,6 +435,13 @@ function classify(entry) {
       rationale: "This compiler form consumes or produces code/syntax whose value shape is phase-dependent.",
     };
   }
+  if (name === "&buf-list:to-list") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "可变缓冲列表允许逐次追加不同类型的值；冻结后仍保留各元素，调用方读取时需检查实际类型。",
+    };
+  }
   if (runtimePolymorphic.has(name)) {
     return {
       owner: "runtime-primitives",

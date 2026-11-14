@@ -3,7 +3,7 @@
 
 清单包含 **309** 个 schema-Dynamic 位置，分布于 **205** 个定义。
 
-当前待迁移位置：**12** 个。
+当前待迁移位置：**11** 个。
 
 每个位置都标明所属子系统与迁移决策。`retain-reviewed` 表示已审阅的开放边界，不代表类型正确性豁免；清单用于审阅，不按位置数量判定类型正确性。`migrate` 标记需要优先收敛的调用方可见契约。
 
@@ -11,7 +11,7 @@
 
 | 决策 / 所属子系统 | 位置数 |
 | --- | ---: |
-| migrate/public-core-api | 12 |
+| migrate/public-core-api | 11 |
 | retain-reviewed/compiler-forms | 30 |
 | retain-reviewed/compiler-specialized-contracts | 42 |
 | retain-reviewed/legacy-compatibility-boundaries | 1 |
@@ -19,7 +19,7 @@
 | retain-reviewed/open-data-boundaries | 22 |
 | retain-reviewed/public-open-boundaries | 12 |
 | retain-reviewed/runtime-internals | 54 |
-| retain-reviewed/runtime-primitives | 48 |
+| retain-reviewed/runtime-primitives | 49 |
 | retain-reviewed/test-library | 1 |
 
 ## 完整清单
@@ -35,7 +35,7 @@
 | `calcit.core/&assert-then` | `schema.inputs.1.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/&assert-then` | `schema.inputs.2.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/&assert-then` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
-| `calcit.core/&buf-list:to-list` | `schema.return.item` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and is assigned to calcit#701 for an honest generic, trait-associated, recursive nominal, or reviewed-boundary decision. |
+| `calcit.core/&buf-list:to-list` | `schema.return.item` | unresolved | runtime-primitives | retain-reviewed | 可变缓冲列表允许逐次追加不同类型的值；冻结后仍保留各元素，调用方读取时需检查实际类型。 |
 | `calcit.core/&buffer` | `schema.rest` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
 | `calcit.core/&call-spread` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/&case` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
