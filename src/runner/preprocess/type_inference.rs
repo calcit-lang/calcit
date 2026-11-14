@@ -1964,6 +1964,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Impl(impl_def) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Impl(impl_def.to_owned()))))),
     Calcit::Ref(..) => Some(Arc::new(CalcitTypeAnnotation::Ref(calcit::DYNAMIC_TYPE.clone()))),
     Calcit::Buffer(_) => Some(Arc::new(CalcitTypeAnnotation::Buffer)),
+    Calcit::BufList(_) => Some(Arc::new(CalcitTypeAnnotation::BufList)),
     Calcit::CirruQuote(_) => Some(Arc::new(CalcitTypeAnnotation::CirruQuote)),
     Calcit::Fn { info, .. } => Some(resolve_namespace_type_refs_for_body(
       Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
@@ -4355,6 +4356,24 @@ mod tests {
       }
       assert_eq!(with_callable_return_inference("tests.return-guard", "root", || Some(5)), Some(5));
     }
+  }
+
+  #[test]
+  fn directory_read_with_opaque_definitions_does_not_invent_a_result_type() {
+    let call = proc_call(
+      CalcitProc::NativeFsReadDir,
+      vec![
+        typed_local("result", Arc::new(CalcitTypeAnnotation::from_tag_name("enum-def"))),
+        typed_local("child", Arc::new(CalcitTypeAnnotation::from_tag_name("struct-def"))),
+        Calcit::Str(Arc::from("directory")),
+        Calcit::Str(Arc::from("read failed")),
+      ],
+    );
+    let Calcit::List(items) = call else {
+      panic!("expected a proc call")
+    };
+    let inferred = infer_proc_call_return_type(&CalcitProc::NativeFsReadDir, &items, &ScopeTypes::new());
+    assert_eq!(inferred.as_deref(), Some(&CalcitTypeAnnotation::Dynamic));
   }
 
   fn option_import(ns: &str) -> Calcit {

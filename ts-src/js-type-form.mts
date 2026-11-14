@@ -6,6 +6,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
+import { CalcitBufList } from "./js-buf-list.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 
 /// Shallow runtime check of a value against a struct field type form, matching
@@ -62,10 +63,10 @@ for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbo
   typeNameAliases.set(name, name);
   typeNameAliases.set(name.toLowerCase(), name);
 }
-for (const name of ["CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
+for (const name of ["BufList", "CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
 for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
   ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"],
-  ["struct-def", "StructDef"], ["enum-def", "EnumDef"],
+  ["struct-def", "StructDef"], ["enum-def", "EnumDef"], ["buf-list", "BufList"],
   // Intentionally open family spellings (#2594) are the bare family types.
   ["AnyFn", "Fn"], ["AnyStruct", "Struct"], ["AnyEnum", "Enum"]]) typeNameAliases.set(alias, name);
 
@@ -262,6 +263,9 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
       return value === undefined;
     case "Never":
       return false;
+    case "BufList":
+    case "buf-list":
+      return value instanceof CalcitBufList;
     case "Buffer":
     case "buffer":
       return value instanceof Uint8Array;
