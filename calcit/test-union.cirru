@@ -41,6 +41,11 @@
           :code $ quote $ defunion CssValue String Number
           :examples $ []
           :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |bare-assertion-accepts-members)
+            :code $ quote $ do
+              assert= |auto $ assert-type |auto test-union.main/CssValue
+              assert= 12 $ assert-type 12 CssValue
+            :tags $ #{} :union :unit
         'Geo $ %{} 'CodeEntry (:doc "|Members told apart by their definitions.")
           :code $ quote $ defunion Geo Point Shape String
           :examples $ []

@@ -131,6 +131,27 @@ mod core_snapshot_tests {
   use super::*;
 
   #[test]
+  fn optional_proc_schemas_preserve_argument_types_and_arity() {
+    let snapshot = load_core_snapshot().expect("load generated core snapshot");
+    let core = &snapshot.files["calcit.core"];
+    for (proc, required) in [(CalcitProc::Trim, 1), (CalcitProc::ParseCirruEdn, 1), (CalcitProc::GenerateId, 0)] {
+      let schema = core.defs[proc.as_ref()].schema.as_function().expect("callable core schema");
+      let runtime = proc.get_type_signature().expect("runtime signature");
+      assert_eq!(schema.arg_types, runtime.arg_types, "{proc}");
+      assert_eq!(schema.return_type, runtime.return_type, "{proc}");
+      assert!(schema.rest_type.is_none(), "{proc}");
+      assert_eq!(
+        proc.arity(),
+        Some(calcit::ProcArity {
+          min: required,
+          max: Some(2)
+        }),
+        "{proc}"
+      );
+    }
+  }
+
+  #[test]
   fn generated_struct_name_schema_matches_runtime_signature() {
     let snapshot = load_core_snapshot().expect("load generated core snapshot");
     let entry = &snapshot.files["calcit.core"].defs["&struct:get-name"];
@@ -245,6 +266,18 @@ mod core_snapshot_tests {
       mismatches.is_empty(),
       "core :schema must not contradict the checked proc signature: {mismatches:?}"
     );
+  }
+
+  #[test]
+  fn buffer_list_snapshot_schema_matches_runtime() {
+    let snapshot = load_core_snapshot().expect("load generated core snapshot");
+    let proc = calcit::CalcitProc::NativeBufListToList;
+    let entry = &snapshot.files["calcit.core"].defs[proc.as_ref()];
+    let schema = entry.schema.as_function().expect("buffer-list snapshot is callable");
+    let runtime = proc.get_type_signature().expect("buffer-list runtime signature");
+    assert_eq!(schema.arg_types, runtime.arg_types);
+    assert!(schema.rest_type.is_none());
+    assert_eq!(schema.return_type, runtime.return_type);
   }
 
   #[test]
