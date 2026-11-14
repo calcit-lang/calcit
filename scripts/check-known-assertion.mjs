@@ -1377,7 +1377,7 @@ try {
           ["edit", "schema", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ Ref Dynamic"],
           ["edit", "def", "app.open-ref-proof/consume", "--input-format", "cirru", "--code",
             `quote $ defn consume () (add-watch! *wire :changes $ ${callback}) &unit`],
-          ["edit", "schema", "app.open-ref-proof/consume", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"],
+          ["edit", "schema", "app.open-ref-proof/consume", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :state)"],
         ]);
         const preview = JSON.parse(run("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
         run("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "json");
