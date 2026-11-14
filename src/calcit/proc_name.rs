@@ -701,14 +701,6 @@ impl CalcitProc {
 
     match self {
       // === Meta operations ===
-      TypeOf => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      FormatToLisp | FormatToCirru => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
-      }),
       TurnSymbol => Some(ProcTypeSignature {
         return_type: some_tag("symbol"),
         arg_types: vec![some_tag("string")],
@@ -827,10 +819,6 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
       }),
-      IsSpreadingMark => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
 
       // Runtime intrinsics whose argument and return types come from core.
       NativeAdd
@@ -943,6 +931,14 @@ impl CalcitProc {
       | JsonStringify
       | JsonPretty
       | FormatCirruEdn
+      | FormatToLisp
+      | FormatToCirru
+      | PrStr
+      | IsSpreadingMark
+      | TypeOf
+      | Not
+      | Identical
+      | Trim
       | NativeStrConcat
       | TurnString
       | Split
@@ -972,27 +968,15 @@ impl CalcitProc {
       | NativeGreaterThan => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
-      NativeEquals | Identical => Some(ProcTypeSignature {
+      NativeEquals => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
       }),
-      Not => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
 
       // === String operations ===
-      Trim => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
       NativeStr => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      PrStr => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
       }),
 
       // === List operations ===
