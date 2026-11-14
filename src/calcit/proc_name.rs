@@ -749,10 +749,17 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![],
       }),
-      NativeDisplayStack => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![variadic_dynamic()],
-      }),
+      NativeDisplayStack => {
+        let schema = core.defs[self.as_ref()].schema.as_function().expect("bundled stack display schema");
+        let mut arg_types = schema.arg_types.clone();
+        if let Some(rest_type) = &schema.rest_type {
+          arg_types.push(variadic_of(rest_type.clone()));
+        }
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types,
+        })
+      }
       // Method values are callable (native `Calcit::Method`, JS invoke
       // closures), so the honest element type is a function (#2534).
       NativeMethodsOf => Some(ProcTypeSignature {

@@ -3,7 +3,7 @@
 
 清单包含 **312** 个 schema-Dynamic 位置，分布于 **207** 个定义。
 
-当前待迁移位置：**11** 个。
+当前待迁移位置：**10** 个。
 
 每个位置都标明所属子系统与迁移决策。`retain-reviewed` 表示已审阅的开放边界，不代表类型正确性豁免；清单用于审阅，不按位置数量判定类型正确性。`migrate` 标记需要优先收敛的调用方可见契约。
 
@@ -11,14 +11,14 @@
 
 | 决策 / 所属子系统 | 位置数 |
 | --- | ---: |
-| migrate/public-core-api | 11 |
+| migrate/public-core-api | 10 |
 | retain-reviewed/compiler-forms | 30 |
 | retain-reviewed/compiler-specialized-contracts | 42 |
 | retain-reviewed/legacy-compatibility-boundaries | 1 |
 | retain-reviewed/macro-system | 87 |
 | retain-reviewed/open-data-boundaries | 22 |
 | retain-reviewed/public-open-boundaries | 12 |
-| retain-reviewed/runtime-internals | 56 |
+| retain-reviewed/runtime-internals | 57 |
 | retain-reviewed/runtime-primitives | 50 |
 | retain-reviewed/test-library | 1 |
 
@@ -65,7 +65,7 @@
 | `calcit.core/&core-text-scalar-impls` | `schema` | unresolved | runtime-internals | retain-reviewed | This definition transports compiler/runtime nominal metadata rather than ordinary application data. |
 | `calcit.core/&data-to-code` | `schema.args.0` | intentional-open | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/&data-to-code` | `schema.return` | intentional-open | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
-| `calcit.core/&display-stack` | `schema.rest` | unresolved | public-core-api | migrate | This caller-visible contract still loses type evidence and is assigned to calcit#701 for an honest generic, trait-associated, recursive nominal, or reviewed-boundary decision. |
+| `calcit.core/&display-stack` | `schema.rest` | unresolved | runtime-internals | retain-reviewed | 保留历史调用的尾随参数求值；打印当前调用栈时只使用调用上下文。 |
 | `calcit.core/&doseq` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/&enum-def:new` | `schema.args.1` | unresolved | runtime-internals | retain-reviewed | 内部构造器按位置解析变体列表、泛型列表和 where 元数据，最终生成 EnumDef。 |
 | `calcit.core/&enum-def:new` | `schema.rest` | unresolved | runtime-internals | retain-reviewed | 内部构造器按位置解析变体列表、泛型列表和 where 元数据，最终生成 EnumDef。 |
