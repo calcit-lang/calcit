@@ -126,11 +126,7 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeInspectType, &[]),
   (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
-  (CalcitProc::Unreachable, &["control"]),
-  (CalcitProc::NativeUnreachable, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
-  (CalcitProc::ReadFile, &["file", "io"]),
-  (CalcitProc::ReadDir, &["file", "io"]),
   (CalcitProc::NativeLooseStruct, &[]),
   (CalcitProc::NativeStructNth, &[]),
   (CalcitProc::NativeStructFieldTag, &[]),
@@ -2761,8 +2757,8 @@ mod tests {
   fn core_effects_come_from_declared_tags() {
     let index = TagIndex::load().expect("load core tags");
     assert_eq!(core_kinds(&index, "read-file"), strings(&["io/file"]));
-    // `&read-file` has no Snapshot entry; its tags come from the hidden proc table.
     assert_eq!(core_kinds(&index, "&read-file"), strings(&["io/file"]));
+    assert_eq!(core_kinds(&index, "&read-dir"), strings(&["io/file"]));
     for name in ["add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
       assert_eq!(core_kinds(&index, name), strings(&["state/watch"]), "{name}");
@@ -2773,6 +2769,9 @@ mod tests {
     assert_eq!(core_kinds(&index, "get-env"), strings(&["env"]));
     assert_eq!(core_kinds(&index, "quit!"), strings(&["control"]));
     assert_eq!(core_kinds(&index, "non-nil!"), strings(&["control"]));
+    for name in ["unreachable!", "&unreachable!"] {
+      assert_eq!(core_kinds(&index, name), strings(&["control"]), "{name}");
+    }
     assert_eq!(core_kinds(&index, "try-read-dir"), strings(&["io/file"]));
     assert_eq!(core_kinds(&index, "&init-builtin-impls!"), strings(&["effect"]));
     assert_eq!(core_kinds(&index, "&reset-gensym-index!"), strings(&["effect"]));
