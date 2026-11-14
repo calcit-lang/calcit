@@ -569,11 +569,6 @@ fn set_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Set(inner))
 }
 
-/// A map entry as a two-slot tuple, `Tuple K V`.
-fn map_entry_tuple() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![type_var("K"), type_var("V")])))
-}
-
 fn list_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::List(inner))
 }
@@ -671,6 +666,38 @@ impl CalcitProc {
   /// Returns None for procs without type annotations
   pub fn get_type_signature(&self) -> Option<&'static ProcTypeSignature> {
     PROC_TYPE_SIGNATURES.get(self)
+  }
+
+  fn signature_from_core(&self, core: &crate::snapshot::FileInSnapShot) -> ProcTypeSignature {
+    let name = self.as_ref();
+    let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
+      panic!("bundled proc {name} requires a function schema");
+    };
+    // Type variables and nested callback effects are carried by the argument
+    // and return types. ProcTypeSignature cannot carry outer bounds or effects.
+    assert!(
+      schema.fn_kind == super::type_annotation::SchemaKind::Fn && schema.where_bounds.is_empty() && schema.features.is_empty(),
+      "bundled proc {name} requires a function schema without outer bounds or effects"
+    );
+
+    let qualify = |annotation: &Arc<CalcitTypeAnnotation>| {
+      super::type_refs::map_type_references(annotation.clone(), &|name, args| {
+        let name = if core.defs.contains_key(name.as_ref()) {
+          Arc::from(format!("{}/{name}", super::CORE_NS))
+        } else {
+          name.clone()
+        };
+        Arc::new(CalcitTypeAnnotation::TypeRef(name, args))
+      })
+    };
+    let mut arg_types: Vec<_> = schema.arg_types.iter().map(&qualify).collect();
+    if let Some(rest) = &schema.rest_type {
+      arg_types.push(variadic_of(qualify(rest)));
+    }
+    ProcTypeSignature {
+      arg_types,
+      return_type: qualify(&schema.return_type),
+    }
   }
 
   fn build_type_signature(&self, core: &crate::snapshot::FileInSnapShot) -> Option<ProcTypeSignature> {
@@ -813,7 +840,7 @@ impl CalcitProc {
         arg_types: vec![dynamic_tag()],
       }),
 
-      // === Math operations ===
+      // Runtime intrinsics whose argument and return types come from core.
       NativeAdd
       | NativeMinus
       | NativeMultiply
@@ -838,22 +865,49 @@ impl CalcitProc {
       | NativeNumberDisplayBy
       | NativeNumberFits
       | NativeExtractCodeIntoEdn
-      | NativeDataToCode => {
-        let name = self.as_ref();
-        let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
-          panic!("bundled fixed-arity proc {name} requires a function schema");
-        };
-        // This group has monomorphic, fixed-arity contracts. Keep metadata
-        // which ProcTypeSignature cannot represent out of this conversion.
-        assert!(
-          schema.generics.is_empty() && schema.where_bounds.is_empty() && schema.rest_type.is_none() && schema.features.is_empty(),
-          "bundled fixed-arity proc {name} requires a monomorphic fixed-arity schema"
-        );
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types: schema.arg_types.clone(),
-        })
-      }
+      | NativeDataToCode
+      | NativeListReverse
+      | NativeListButlast
+      | NativeListRange
+      | NativeListSort
+      | NativeListConcat
+      | NativeListCount
+      | NativeListEmpty
+      | NativeListContains
+      | NativeListIncludes
+      | NativeListSlice
+      | NativeListNth
+      | NativeListFirst
+      | NativeListRest
+      | NativeListAssoc
+      | NativeListAssocBefore
+      | NativeListAssocAfter
+      | NativeListDissoc
+      | NativeListToSet
+      | NativeListDistinct
+      | NativeListLast
+      | NativeMerge
+      | NativeMergeNonNil
+      | ToPairs
+      | NativeMapToList
+      | NativeMapFoldKv
+      | NativeMapDissoc
+      | NativeMapCount
+      | NativeMapEmpty
+      | NativeMapContains
+      | NativeMapIncludes
+      | NativeMapDiffNew
+      | NativeMapDiffKeys
+      | NativeMapCommonKeys
+      | NativeMapDiffTriple
+      | NativeMapKeys
+      | NativeMapVals
+      | NativeMapDestruct
+      | NativeSetToList
+      | NativeSetCount
+      | NativeSetEmpty
+      | NativeSetIncludes
+      | NativeSetDestruct => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
       NativeLessThan | NativeGreaterThan => Some(ProcTypeSignature {
@@ -984,15 +1038,15 @@ impl CalcitProc {
         return_type: list_of(type_var("T")),
         arg_types: vec![list_of(type_var("T")), type_var("T")],
       }),
-      Butlast | NativeListReverse | NativeListButlast => Some(ProcTypeSignature {
+      Butlast => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
         arg_types: vec![list_of(type_var("T"))],
       }),
-      Range | NativeListRange => Some(ProcTypeSignature {
+      Range => Some(ProcTypeSignature {
         return_type: list_of(some_tag("number")),
         arg_types: vec![some_tag("number"), some_tag("number"), some_tag("number")],
       }),
-      Sort | NativeListSort => {
+      Sort => {
         let item_type = type_var("T");
         Some(ProcTypeSignature {
           return_type: list_of(item_type.clone()),
@@ -1002,65 +1056,9 @@ impl CalcitProc {
           ],
         })
       }
-      NativeListConcat => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![variadic_of(list_of(type_var("T")))],
-      }),
       NativeListQ => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
-      }),
-      NativeListCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListEmpty => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListContains => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![list_of(type_var("T")), some_tag("number")],
-      }),
-      NativeListIncludes => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![list_of(type_var("T")), type_var("T")],
-      }),
-      NativeListSlice => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T")), some_tag("number"), some_tag("number")],
-      }),
-      NativeListNth => Some(ProcTypeSignature {
-        return_type: type_var("T"),
-        arg_types: vec![list_of(type_var("T")), some_tag("number")],
-      }),
-      NativeListFirst => Some(ProcTypeSignature {
-        return_type: option_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListRest => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListAssoc | NativeListAssocBefore | NativeListAssocAfter => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T")), some_tag("number"), type_var("T")],
-      }),
-      NativeListDissoc => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T")), some_tag("number")],
-      }),
-      NativeListToSet => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListDistinct => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      NativeListLast => Some(ProcTypeSignature {
-        return_type: option_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
       }),
       // === BufList operations ===
       NativeBufListNew => Some(ProcTypeSignature {
@@ -1101,57 +1099,9 @@ impl CalcitProc {
         return_type: some_tag("map"),
         arg_types: vec![variadic_dynamic()],
       }),
-      NativeMerge => Some(ProcTypeSignature {
-        return_type: map_of(type_var("K"), type_var("V")),
-        arg_types: vec![
-          map_of(type_var("K"), type_var("V")),
-          map_of(type_var("K"), type_var("V")),
-          variadic_of(map_of(type_var("K"), type_var("V"))),
-        ],
-      }),
-      NativeMergeNonNil => Some(ProcTypeSignature {
-        return_type: map_of(type_var("K"), type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("V"))],
-      }),
-      ToPairs => Some(ProcTypeSignature {
-        return_type: set_of(map_entry_tuple()),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapToList => Some(ProcTypeSignature {
-        return_type: list_of(map_entry_tuple()),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapFoldKv => Some(ProcTypeSignature {
-        return_type: type_var("A"),
-        arg_types: vec![
-          map_of(type_var("K"), type_var("V")),
-          type_var("A"),
-          pass_callback_slot(vec![type_var("A"), type_var("K"), type_var("V")], type_var("A")),
-        ],
-      }),
       NativeMapGet => Some(ProcTypeSignature {
         return_type: option_of(type_var("V")),
         arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
-      }),
-      NativeMapDissoc => Some(ProcTypeSignature {
-        return_type: map_of(type_var("K"), type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K"), variadic_of(type_var("K"))],
-      }),
-      NativeMapCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapEmpty => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapContains => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
-      }),
-      NativeMapIncludes => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("V")],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("V")),
@@ -1161,33 +1111,6 @@ impl CalcitProc {
           type_var("V"),
           variadic_dynamic(),
         ],
-      }),
-      NativeMapDiffNew => Some(ProcTypeSignature {
-        return_type: map_of(type_var("K"), type_var("W")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("W"))],
-      }),
-      NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
-        return_type: set_of(type_var("K")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("W"))],
-      }),
-      NativeMapDiffTriple => Some(ProcTypeSignature {
-        return_type: map_diff_triple_tuple(),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("W"))],
-      }),
-      NativeMapKeys => Some(ProcTypeSignature {
-        return_type: set_of(type_var("K")),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapVals => Some(ProcTypeSignature {
-        return_type: list_of(type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
-      }),
-      NativeMapDestruct => Some(ProcTypeSignature {
-        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
-          Arc::from("calcit.core/MapDestruct"),
-          Arc::new(vec![type_var("K"), type_var("V")]),
-        )),
-        arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
 
       // === Set operations ===
@@ -1210,29 +1133,6 @@ impl CalcitProc {
       NativeUnion => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_set(), some_set()],
-      }),
-      NativeSetToList => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![set_of(type_var("T"))],
-      }),
-      NativeSetCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![set_of(type_var("T"))],
-      }),
-      NativeSetEmpty => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![set_of(type_var("T"))],
-      }),
-      NativeSetIncludes => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![set_of(type_var("T")), type_var("T")],
-      }),
-      NativeSetDestruct => Some(ProcTypeSignature {
-        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
-          Arc::from("calcit.core/SetDestruct"),
-          Arc::new(vec![type_var("T")]),
-        )),
-        arg_types: vec![set_of(type_var("T"))],
       }),
 
       // === Enum value operations ===
@@ -1636,20 +1536,6 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
 /// `calcit.core/CirruNode`, the recursive `String | List CirruNode` union.
 pub(crate) fn cirru_node() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/CirruNode"), Arc::new(vec![])))
-}
-
-/// `Tuple (Set K) (Map K W) (List (Tuple K V W))`: dropped keys, added
-/// entries and the entries both maps share.
-pub(crate) fn map_diff_triple_tuple() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
-    set_of(type_var("K")),
-    map_of(type_var("K"), type_var("W")),
-    list_of(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
-      type_var("K"),
-      type_var("V"),
-      type_var("W"),
-    ])))),
-  ])))
 }
 
 #[cfg(test)]
