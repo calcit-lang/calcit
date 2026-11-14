@@ -2204,6 +2204,22 @@ fn set_difference_and_intersection_preserve_the_left_element_type() {
 }
 
 #[test]
+fn set_growth_procs_reject_mismatched_concrete_members() {
+  for expression in ["&include (#{} 1) |x", "&union (#{} 1) (#{} |x)", "&union (#{} |x) (#{} 1)"] {
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", expression])
+      .output()
+      .expect("calcit eval should run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{expression} must fail");
+    assert!(
+      stderr.contains("E_PROC_ARG_TYPE_MISMATCH") && stderr.contains("number") && stderr.contains("string"),
+      "{expression}: {stderr}"
+    );
+  }
+}
+
+#[test]
 fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
