@@ -102,6 +102,7 @@ const runtimePolymorphic = new Set([
   "&list:flatten",
   "&list:foldl-shortcut",
   "&list:sort-by",
+  "&list?",
   "&str",
   "&struct:assoc",
   "&struct:contains?",
@@ -137,6 +138,10 @@ const openDataBoundaries = new Set([
   "try-parse-json",
 ]);
 const compilerSpecializedPositions = new Map([
+  [
+    "&fs-read-dir|schema.return",
+    "检查器从已知的 enum 和路径 struct 定义推断目录结果。构造器不透明时保留开放结果，公开 FsPath 方法仍返回具体的 Result。",
+  ],
   [
     "any?|schema.args.0",
     "The public facade accepts several runtime collection families; known List, Set, and Map receivers specialize the predicate input, with focused callback mismatch regressions preserving member or heterogeneous pair evidence.",
@@ -429,6 +434,13 @@ function classify(entry) {
       owner: "compiler-forms",
       decision: "retain-reviewed",
       rationale: "This compiler form consumes or produces code/syntax whose value shape is phase-dependent.",
+    };
+  }
+  if (name === "&buf-list:to-list") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "可变缓冲列表允许逐次追加不同类型的值；冻结后仍保留各元素，调用方读取时需检查实际类型。",
     };
   }
   if (name === "&enum-def:new") {
