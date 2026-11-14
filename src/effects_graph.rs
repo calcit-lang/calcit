@@ -127,8 +127,6 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
-  (CalcitProc::ReadFile, &["file", "io"]),
-  (CalcitProc::ReadDir, &["file", "io"]),
   (CalcitProc::NativeListQ, &[]),
   (CalcitProc::NativeLooseStruct, &[]),
   (CalcitProc::NativeStructNth, &[]),
@@ -2760,8 +2758,8 @@ mod tests {
   fn core_effects_come_from_declared_tags() {
     let index = TagIndex::load().expect("load core tags");
     assert_eq!(core_kinds(&index, "read-file"), strings(&["io/file"]));
-    // `&read-file` has no Snapshot entry; its tags come from the hidden proc table.
     assert_eq!(core_kinds(&index, "&read-file"), strings(&["io/file"]));
+    assert_eq!(core_kinds(&index, "&read-dir"), strings(&["io/file"]));
     for name in ["add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
       assert_eq!(core_kinds(&index, name), strings(&["state/watch"]), "{name}");

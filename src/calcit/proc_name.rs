@@ -1318,10 +1318,16 @@ impl CalcitProc {
       }),
 
       // === I/O operations ===
-      ReadFile => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
+      ReadFile | ReadDir => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled file read function schema");
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types: schema.arg_types.clone(),
+        })
+      }
       NativeFsReadText => Some(ProcTypeSignature {
         return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
           Arc::from("Result"),
@@ -1342,10 +1348,6 @@ impl CalcitProc {
           Arc::new(vec![list_of(type_var("T")), some_tag("string")]),
         )),
         arg_types: vec![some_tag("enum-def"), some_tag("struct-def"), some_tag("string"), some_tag("string")],
-      }),
-      ReadDir => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("string")),
-        arg_types: vec![some_tag("string"), some_tag("bool")],
       }),
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
