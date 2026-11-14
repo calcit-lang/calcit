@@ -859,6 +859,9 @@ impl CalcitProc {
       | NativeBuffer
       | NativeDisplayStack
       | NativeMapAssoc
+      | NativeStructNew
+      | NativeEnumNew
+      | NativeUnionNew
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeListQ
@@ -1082,42 +1085,6 @@ impl CalcitProc {
         return_type: option_tag("enum-def"),
         arg_types: vec![some_tag("enum")],
       }),
-      NativeStructNew => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled StructDef constructor schema");
-        let mut arg_types = schema.arg_types.clone();
-        arg_types.push(variadic_of(schema.rest_type.clone().expect("StructDef constructor rest parameter")));
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types,
-        })
-      }
-      NativeEnumNew => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled EnumDef constructor schema");
-        let mut arg_types = schema.arg_types.clone();
-        arg_types.push(variadic_of(schema.rest_type.clone().expect("EnumDef constructor rest parameter")));
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types,
-        })
-      }
-      NativeUnionNew => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled UnionDef constructor schema");
-        let mut arg_types = schema.arg_types.clone();
-        arg_types.push(variadic_of(schema.rest_type.clone().expect("UnionDef constructor rest parameter")));
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types,
-        })
-      }
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
         arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
@@ -1480,7 +1447,14 @@ mod tests {
   fn variadic_proc_schemas_match_runtime_signatures() {
     let snapshot = crate::load_core_snapshot().expect("bundled core snapshot");
     let definitions = &snapshot.files[crate::calcit::CORE_NS].defs;
-    for proc in [CalcitProc::NativeBuffer, CalcitProc::NativeDisplayStack, CalcitProc::NativeMapAssoc] {
+    for proc in [
+      CalcitProc::NativeBuffer,
+      CalcitProc::NativeDisplayStack,
+      CalcitProc::NativeMapAssoc,
+      CalcitProc::NativeStructNew,
+      CalcitProc::NativeEnumNew,
+      CalcitProc::NativeUnionNew,
+    ] {
       let core = definitions[proc.as_ref()].schema.as_function().expect("core function schema");
       let runtime = proc.get_type_signature().expect("runtime function signature");
       let mut args = core.arg_types.clone();
