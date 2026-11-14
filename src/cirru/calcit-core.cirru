@@ -12087,11 +12087,19 @@
                 assert= 5 $ deref hits
               :tags $ #{} :core :quote-return-boundary :unit
         'raise $ %{} 'CodeEntry
-          :doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message"
+          :doc "|抛出异常，控制流不会从该调用返回。通常传入一个错误消息字符串。Native 会把实参拼成错误消息，JS 将第二个实参放入错误的 data 字段，WASM/WASI 在求值后触发 trap。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> T) (:generics T)
+          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return :never)
+            :args $ []
           :tags $ #{} :builtin :control :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-live-branch-type)
+            :code $ quote $ let
+                read-number $ fn (ready)
+                  hint-fn $ Fn Bool $ -> Number
+                  if ready 7 $ raise |missing
+              assert= 7 $ read-number true
+            :tags $ #{} :core :unit
         'range $ %{} 'CodeEntry
           :doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)"
           :code $ quote &runtime-implementation
