@@ -6,8 +6,6 @@
 &assert-traits | missing core definition
 &buf-list:to-list | arg 1 | <missing> => "'T"
 &buf-list:to-list | return | "'List" => (:: "'List" "'T")
-&buffer | arg 0 | <missing> => "'Dynamic"
-&buffer | rest | "'Dynamic" => <missing>
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
@@ -25,7 +23,6 @@
 &list:prepend | arg 0 | "'List" => (:: "'List" "'T")
 &list:prepend | arg 1 | "'Dynamic" => "'T"
 &list:prepend | return | "'List" => (:: "'List" "'T")
-&map:assoc | rest | "'Dynamic" => <missing>
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition
 &str | missing core function schema
