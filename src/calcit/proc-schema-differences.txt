@@ -7,7 +7,6 @@
 &buf-list:to-list | arg 1 | <missing> => "'T"
 &buf-list:to-list | return | "'List" => (:: "'List" "'T")
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
-&enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
