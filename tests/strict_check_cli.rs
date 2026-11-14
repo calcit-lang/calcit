@@ -1770,6 +1770,20 @@ fn all_defs_requires_direct_check_only_and_rejects_incremental() {
 /// #2449: `.each` relates the receiver's elements to the callback exactly like `each`,
 /// while a mismatched callback or an open receiver stays rejected.
 #[test]
+fn map_get_primitive_rejects_an_incompatible_known_key() {
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--tips-level", "none", "eval", "&map:get ({} (:one 1)) |one"])
+    .output()
+    .expect("calcit eval should run");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(!output.status.success(), "accepted a String key for a Map<Tag, Number>");
+  assert!(
+    stderr.contains("E_PROC_ARG_TYPE_MISMATCH") && stderr.contains("Proc `&map:get` arg 2 expects type `:tag`, but got `:string`"),
+    "{stderr}"
+  );
+}
+
+#[test]
 fn each_method_keeps_the_element_callback_relation() {
   let fixture = fs::read_to_string("tests/fixtures/method-each-contract.cirru").expect("each fixture should read");
   let directory = TestDirectory::create();

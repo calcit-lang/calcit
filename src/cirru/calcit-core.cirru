@@ -2630,6 +2630,10 @@
                 assert= (Some false)
                   &map:get (&{} :a false) :a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-map-accepts-unconstrained-key)
+              :code $ quote $ assert= None
+                &map:get ({}) |missing
+              :tags $ #{} :core :unit
         '&map:includes? $ %{} 'CodeEntry
           :doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value."
           :code $ quote &runtime-implementation

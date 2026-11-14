@@ -1122,7 +1122,7 @@ impl CalcitProc {
       }),
       NativeMapGet => Some(ProcTypeSignature {
         return_type: option_of(type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), dynamic_tag()],
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("V")),
