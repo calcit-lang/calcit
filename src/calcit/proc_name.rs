@@ -865,6 +865,8 @@ impl CalcitProc {
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeListQ
+      | Foldl
+      | NativeListFoldl
       | NativeBufListNew
       | NativeBufListPush
       | NativeBufListConcat
@@ -996,17 +998,9 @@ impl CalcitProc {
           ],
         })
       }
-      Foldl => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
       FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
-      NativeListFoldl => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
 
       // === Map operations ===

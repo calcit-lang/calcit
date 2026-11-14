@@ -9,10 +9,6 @@
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
-&list:foldl | arg 0 | "'Dynamic" => (:: "'List" "'T")
-&list:foldl | arg 1 | "'Dynamic" => "'U"
-&list:foldl | arg 2 | "'Fn" => (:: "'Fn" ("{}" (:return "'U") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
-&list:foldl | return | "'Dynamic" => "'U"
 &list:foldl-shortcut | missing core function schema
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition
@@ -31,10 +27,6 @@
 bool? | arg 0 | "'Dynamic" => "'T"
 enum? | arg 0 | "'Dynamic" => "'T"
 fn? | arg 0 | "'Dynamic" => "'T"
-foldl | arg 0 | "'Dynamic" => (:: "'List" "'T")
-foldl | arg 1 | "'Dynamic" => "'U"
-foldl | arg 2 | "'Fn" => (:: "'Fn" ("{}" (:return "'U") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
-foldl | return | "'Dynamic" => "'U"
 foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
 foldr-shortcut | arg 1 | "'Dynamic" => "'U"
 foldr-shortcut | arg 2 | "'Dynamic" => "'U"

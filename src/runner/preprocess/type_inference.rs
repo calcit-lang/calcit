@@ -3185,19 +3185,22 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(return_type);
   }
-  if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl | CalcitProc::NativeMapFoldKv)
-    && let Some(reducer) = xs.get(3)
-    && let Some(reducer_type) = resolve_type_value(reducer, scope_types)
-  {
+  if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl | CalcitProc::NativeMapFoldKv) {
     // Return proof and callback preprocessing share the same input contract.
-    if let Some(expected) = super::type_checking::specialize_collection_fold_expected_types(
-      &xs.drop_left(),
-      scope_types,
-      &proc.get_type_signature()?.arg_types,
-    ) && matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_))
+    if let Some(reducer_type) = xs.get(3).and_then(|reducer| resolve_type_value(reducer, scope_types))
+      && matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_))
+      && let Some(expected) = super::type_checking::specialize_collection_fold_expected_types(
+        &xs.drop_left(),
+        scope_types,
+        &proc.get_type_signature()?.arg_types,
+      )
       && reducer_type.as_ref().is_proven_for(&expected[2])
     {
       return Some(expected[1].clone());
+    }
+    if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl) {
+      // The seed alone cannot prove the result of an opaque reducer.
+      return Some(crate::calcit::DYNAMIC_TYPE.clone());
     }
   }
   // A literal tuple index reads that slot's type, as `let[]` does after expansion.
