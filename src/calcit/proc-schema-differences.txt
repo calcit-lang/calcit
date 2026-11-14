@@ -2,11 +2,9 @@
 # Resolved differences may be removed as signatures converge.
 %:: | arg 0 | "'EnumDef" => "'Dynamic"
 %:: | rest | "'Dynamic" => <missing>
-&%{} | rest | "'Dynamic" => <missing>
 &assert-traits | missing core definition
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
-&impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
 &list:foldl-shortcut | missing core function schema
@@ -19,9 +17,6 @@
 &struct:nth | missing core definition
 &struct:with-at | missing core definition
 &trait-call | missing core definition
-&trait::new | missing core function schema
-&{} | missing core function schema
-:: | missing core function schema
 ?{} | missing core definition
 bool? | arg 0 | "'Dynamic" => "'T"
 enum? | arg 0 | "'Dynamic" => "'T"

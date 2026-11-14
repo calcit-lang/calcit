@@ -53,7 +53,7 @@
           :doc "|Internal native constructor for a struct value from a StructDef and field/value pairs."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn StructDef (-> Struct)
+          :schema $ quote $ Fn StructDef (& Dynamic) (-> Struct)
           :tags $ #{} :builtin :internal
         '&* $ %{} 'CodeEntry
           :doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats"
@@ -1474,7 +1474,7 @@
               &impl::new DemoTrait $ :: .show $ fn (x) x
             quote $ &impl::new :DemoImpl $ [] :show
               fn (x) x
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Impl)
           :tags $ #{} :builtin :internal
         '&impl:get $ %{} 'CodeEntry
           :doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name"
@@ -3691,7 +3691,7 @@
           :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic List List (-> Trait)
           :tags $ #{} :builtin :internal
         '&turn-string $ %{} 'CodeEntry
           :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
@@ -3751,7 +3751,7 @@
           :doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn (& Dynamic) (-> Map)
           :tags $ #{} :builtin :internal
         '' $ %{} 'CodeEntry (:doc "|alias for []")
           :code $ quote $ def ' []
@@ -3902,7 +3902,7 @@
           :doc "|Construct an anonymous enum value. The implicit enum definition is `_`."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Enum)
           :tags $ #{} :builtin :internal
         ';nil $ %{} 'CodeEntry
           :doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs."

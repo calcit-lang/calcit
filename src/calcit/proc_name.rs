@@ -847,6 +847,11 @@ impl CalcitProc {
       | NativeEnumValidate
       | NativeImplOrigin
       | NativeUnionNew
+      | NativeStruct
+      | NativeMap
+      | NativeImplNew
+      | NativeTraitNew
+      | NativeEnum
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeCirruType
@@ -1012,12 +1017,6 @@ impl CalcitProc {
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
       }),
 
-      // === Map operations ===
-      NativeMap => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![variadic_dynamic()],
-      }),
-
       // === Set operations ===
       Set => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
@@ -1025,21 +1024,9 @@ impl CalcitProc {
       }),
 
       // === Enum value operations ===
-      NativeEnum => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
       NativeNamedEnumNew => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag"), variadic_dynamic()],
-      }),
-      NativeTraitNew => Some(ProcTypeSignature {
-        return_type: some_tag("trait"),
-        arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
-      }),
-      NativeImplNew => Some(ProcTypeSignature {
-        return_type: some_tag("impl"),
-        arg_types: vec![dynamic_tag(), variadic_dynamic()],
       }),
       NativeImplGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -1070,10 +1057,6 @@ impl CalcitProc {
       NativeLooseStruct => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      NativeStruct => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
       NativeStructWith | NativeStructAssoc | NativeStructContains | NativeStructMatches | NativeStructFromMap
       | NativeStructExtendAs => {
