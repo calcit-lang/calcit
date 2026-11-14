@@ -2105,11 +2105,11 @@ try {
           JSON.stringify(["defn", "truthiness-number-once", ["value"],
             ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],
         ["edit", "schema", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "cirru", "--code",
-          "quote $ Fn Number (-> Number)"],
+          "quote $ Fn Number (-> Number) (:features :state)"],
         ["edit", "def", "calcit.core-truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", "run-tests", [], effectsTest, "&unit"])],
         ["edit", "schema", "calcit.core-truthiness-effects/run-tests", "--input-format", "cirru", "--code",
-          "quote $ Fn (-> Unit)"],
+          "quote $ Fn (-> Unit) (:features :state)"],
       ];
       const effectsRevision = JSON.parse(effectsRun("query", "config", "--format", "json")).revision;
       const effectsTransaction = ["edit", "transaction", "--code", JSON.stringify(effectsOperations),
