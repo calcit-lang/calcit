@@ -713,10 +713,6 @@ impl CalcitProc {
         return_type: some_tag("symbol"),
         arg_types: vec![some_tag("string")],
       }),
-      TurnTag => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![dynamic_tag()],
-      }),
       NativeCompare => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
@@ -957,7 +953,8 @@ impl CalcitProc {
       | NativeStrPadLeft
       | NativeStrPadRight
       | NativeLessThan
-      | NativeGreaterThan => Some(self.signature_from_core(core)),
+      | NativeGreaterThan
+      | TurnTag => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
       NativeEquals | Identical => Some(ProcTypeSignature {

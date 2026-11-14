@@ -64,5 +64,4 @@ tag? | arg 0 | "'Dynamic" => "'T"
 to-lispy-string | arg 0 | "'Dynamic" => "'T"
 todo! | missing core definition
 trim | arg 1 | "'String" => <missing>
-turn-tag | arg 0 | "'Dynamic" => "'T"
 type-of | arg 0 | "'Dynamic" => "'T"
