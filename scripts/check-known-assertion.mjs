@@ -961,7 +961,7 @@ try {
         const operations = [
           ...(label === "imported-alias" ? [["edit", "add-ns", traitNamespace]] : []),
           ["edit", "def", `${traitNamespace}/Greeting`, "--input-format", "cirru", "--code",
-            `quote $ deftrait Greeting $ .greeting $ :: 'Fn $ {} (:args $ [] '${traitNamespace}/Greeting) (:return 'String)`],
+            `quote $ deftrait Greeting $ .greeting $ :: 'Fn $ {} (:args $ [] 'Self) (:return 'String)`],
           ["edit", "schema", `${traitNamespace}/Greeting`, "--input-format", "cirru", "--code", "quote 'Trait"],
           ["edit", "def", "app.main/describe", "--input-format", "cirru", "--code", "quote $ defn describe (value)\n  value .greeting"],
           ["edit", "schema", "app.main/describe", "--input-format", "cirru", "--code",
@@ -1138,7 +1138,7 @@ try {
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
           "quote $ defn main! () (.read-dir $ fs:path |unused)"],
         ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-          "quote $ Fn (-> $ Result (List FsPath) String)"],
+          "quote $ Fn (-> (Result (List FsPath) String)) (:features :io)"],
         ["edit", "def", "app.main/NumberPath", "--input-format", "cirru", "--code",
           "quote $ def NumberPath $ defstruct NumberPath (:value Number)"],
         ["edit", "schema", "app.main/NumberPath", "--input-format", "cirru", "--code", "quote 'StructDef"],
@@ -1164,7 +1164,7 @@ try {
         operations.push(
           ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${args}) (${body})`],
           ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
-            `quote $ :: 'Fn $ {} (:args $ [] ${types}) (:return $ :: 'Result ${returned})`],
+            `quote $ :: 'Fn $ {} (:args $ [] ${types}) (:return (:: 'Result ${returned})) (:features $ #{} :io)`],
         );
       }
       const directoryPreview = JSON.parse(runDirectory("edit", "transaction", "--code", JSON.stringify(directoryOps), "--dry-run", "--format", "json"));
@@ -2356,6 +2356,8 @@ try {
       resetOperations.push(
         ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "main!", [], ...[...resetTests, ...resetCoreTests].map(test => test.code), "&unit"])],
+        ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+          "quote $ Fn (-> Unit) (:features :state)"],
         ["edit", "def", "app.main/reload!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn reload! () &unit"],
       );
       const resetRevision = JSON.parse(resetRun("query", "config", "--format", "json")).revision;
@@ -2991,7 +2993,7 @@ try {
       const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
       assert.deepEqual(response.diagnostics, []);
       const tests = response.data.tests.filter(test => test.tags.includes("assert-boundary"));
-      assert.equal(tests.length, 9);
+      assert.equal(tests.length, 10);
       run("test", "calcit.core/hint-fn", "--tag", "return-boundary", "--require-match");
       const returnResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
       assert.deepEqual(returnResponse.diagnostics, []);
@@ -4781,7 +4783,7 @@ try {
           ...define("invoke", ["defn", "invoke", ["callback"], expression], fnType([callbackType])),
           ...define("main!", ["defn", "main!", [], ["println", "|arity-side-effect-must-not-run"],
             ["assert=", "8", ["invoke", callee]], "&unit"],
-          ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]]),
+          ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"], [":features", ["#{}", ":io"]]]]),
         ]);
         const original = await readFile(snapshot);
         const checked = spawnSync(binary, [snapshot, "--check-only", "--all-defs", "--format", "json"], checkedOptions);
