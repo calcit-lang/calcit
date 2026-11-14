@@ -14,6 +14,14 @@ try {
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
+  const buffer = runtimeA._$n_buffer;
+  assert.deepEqual([...buffer(0, 255, "0a", "Ff", 256, -1, 1.5, NaN, Infinity, -Infinity)],
+    [0, 255, 10, 255, 255, 0, 2, 0, 255, 0]);
+  assert.throws(() => buffer(), /&buffer expected hex values, but received none/);
+  for (const hex of ["zz", "f", "0x", "+1", " 1", "af\n", "０ａ"]) {
+    assert.throws(() => buffer(hex), /&buffer expected a length 2 hex string/, hex);
+  }
+  assert.throws(() => buffer(true), /&buffer expected a number or hex string/);
   const colonText = [":keyword", { ":field": [":nested", new Set([":member"])] }];
   for (const [label, convert] of [
     ["omitted", value => runtimeA.to_calcit_data(value)],

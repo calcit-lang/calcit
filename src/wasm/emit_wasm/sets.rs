@@ -513,6 +513,23 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 /// `&exclude set value` — new set without the element.
 pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&exclude expects 2 args")?;
+  // A statically different scalar kind cannot be present. Avoid comparing
+  // their shared f64 representation, but still evaluate both arguments.
+  let set_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  let target_type = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  if let (Some(CalcitTypeAnnotation::Set(item_type)), Some(target_type)) = (set_type.as_deref(), target_type.as_deref())
+    && let (Some(item_kind), Some(target_kind)) = (
+      proven_scalar_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)),
+      proven_scalar_kind(target_type),
+    )
+    && item_kind != target_kind
+  {
+    emit_expr(ctx, &args[0])?;
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::Drop);
+    return Ok(());
+  }
+
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let target = ctx.alloc_local();
