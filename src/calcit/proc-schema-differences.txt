@@ -4,8 +4,6 @@
 %:: | rest | "'Dynamic" => <missing>
 &%{} | rest | "'Dynamic" => <missing>
 &assert-traits | missing core definition
-&buf-list:to-list | arg 1 | <missing> => "'T"
-&buf-list:to-list | return | "'List" => (:: "'List" "'T")
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
 &impl::new | missing core function schema

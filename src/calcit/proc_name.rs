@@ -865,6 +865,11 @@ impl CalcitProc {
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeListQ
+      | NativeBufListNew
+      | NativeBufListPush
+      | NativeBufListConcat
+      | NativeBufListToList
+      | NativeBufListCount
       | NativeListReverse
       | Append
       | Prepend
@@ -986,27 +991,6 @@ impl CalcitProc {
           ],
         })
       }
-      // === BufList operations ===
-      NativeBufListNew => Some(ProcTypeSignature {
-        return_type: some_tag("buf-list"),
-        arg_types: vec![],
-      }),
-      NativeBufListPush => Some(ProcTypeSignature {
-        return_type: some_tag("buf-list"),
-        arg_types: vec![some_tag("buf-list"), type_var("T")],
-      }),
-      NativeBufListConcat => Some(ProcTypeSignature {
-        return_type: some_tag("buf-list"),
-        arg_types: vec![some_tag("buf-list"), list_of(type_var("T"))],
-      }),
-      NativeBufListToList => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("buf-list")],
-      }),
-      NativeBufListCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("buf-list")],
-      }),
       Foldl => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
