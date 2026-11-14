@@ -4,18 +4,14 @@
 %:: | rest | "'Dynamic" => <missing>
 &%{} | rest | "'Dynamic" => <missing>
 &assert-traits | missing core definition
-&enum-def:impl-traits | rest | "'Dynamic" => <missing>
-&enum:impl-traits | rest | "'Dynamic" => <missing>
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
 &list:foldl-shortcut | missing core function schema
 &methods-of | missing core definition
 &str | missing core function schema
-&struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct:assoc-at | missing core definition
 &struct:field-tag | missing core definition
-&struct:impl-traits | rest | "'Dynamic" => <missing>
 &struct:nth | missing core definition
 &struct:with-at | missing core definition
 &trait-call | missing core definition
