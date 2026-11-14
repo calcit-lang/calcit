@@ -8,17 +8,12 @@
 &buf-list:to-list | return | "'List" => (:: "'List" "'T")
 &buffer | arg 0 | <missing> => "'Dynamic"
 &buffer | rest | "'Dynamic" => <missing>
-&data-to-code | missing core function schema
 &display-stack | rest | "'Dynamic" => <missing>
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
-&extract-code-into-edn | missing core function schema
 &fs-read-dir | return | (:: "'calcit.core/Result" (:: "'List" "'T") "'String") => (:: "'calcit.core/Result" (:: "'List" "'calcit.core/FsPath") "'String")
 &impl::new | missing core function schema
-&include | arg 0 | "'Set" => (:: "'Set" "'T")
-&include | arg 1 | "'Dynamic" => "'T"
-&include | return | "'Set" => (:: "'Set" "'T")
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
 &list:append | arg 0 | "'List" => (:: "'List" "'T")
@@ -41,22 +36,13 @@
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct-def:new | rest | "'Dynamic" => <missing>
-&struct:assoc | missing core function schema
 &struct:assoc-at | missing core definition
-&struct:contains? | missing core function schema
-&struct:extend-as | missing core function schema
 &struct:field-tag | missing core definition
-&struct:from-map | missing core function schema
 &struct:impl-traits | rest | "'Dynamic" => <missing>
-&struct:matches? | missing core function schema
 &struct:nth | missing core definition
-&struct:with | missing core function schema
 &struct:with-at | missing core definition
 &trait-call | missing core definition
 &trait::new | missing core function schema
-&union | arg 0 | "'Set" => (:: "'Set" "'T")
-&union | arg 1 | "'Set" => (:: "'Set" "'T")
-&union | return | "'Set" => (:: "'Set" "'T")
 &union-def:new | rest | "'Dynamic" => <missing>
 &unreachable! | missing core definition
 &{} | missing core function schema
