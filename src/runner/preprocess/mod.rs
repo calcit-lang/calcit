@@ -234,17 +234,10 @@ fn preprocess_argument_with_offered_return(
   let expected = context.map(|(annotation, _, _)| annotation);
   let member_inputs = context.is_some_and(|(_, member_inputs, _)| member_inputs);
   let callee_owned_generics = context.map(|(_, _, binders)| binders).unwrap_or_default();
-  let literal_candidate = expected.is_some_and(|annotation| literal_takes_member_context(expr, annotation));
-  if let Some(CalcitTypeAnnotation::Map(key, value)) = expected.map(AsRef::as_ref)
+  let literal_type = expected.and_then(|annotation| contextual_literal_type(expr, annotation));
+  if let Some(CalcitTypeAnnotation::Map(key, value)) = literal_type.as_deref()
     && let Calcit::List(items) = expr
-    && items.len() % 2 == 1
     && let Some(head) = items.first()
-    && (matches!(head, Calcit::Proc(CalcitProc::NativeMap))
-      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&{}")
-      || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "&{}"))
-    && !items.iter().skip(1).any(|item| {
-      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
-    })
   {
     let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     if matches!(processed_head, Calcit::Proc(CalcitProc::NativeMap)) {
@@ -265,8 +258,7 @@ fn preprocess_argument_with_offered_return(
     }
   }
   // A `[]` literal with one item per slot takes each Tuple slot type by position.
-  if let Some(CalcitTypeAnnotation::Tuple(slots)) = expected.map(AsRef::as_ref)
-    && literal_candidate
+  if let Some(CalcitTypeAnnotation::Tuple(slots)) = literal_type.as_deref()
     && let Calcit::List(items) = expr
     && let Some(head) = items.first()
   {
@@ -288,7 +280,7 @@ fn preprocess_argument_with_offered_return(
       return Ok(Calcit::from(processed));
     }
   }
-  let member = match expected.map(AsRef::as_ref) {
+  let member = match literal_type.as_deref() {
     Some(CalcitTypeAnnotation::List(member)) => Some((CalcitProc::List, member)),
     Some(CalcitTypeAnnotation::Set(member)) => Some((CalcitProc::Set, member)),
     _ => None,
@@ -296,12 +288,6 @@ fn preprocess_argument_with_offered_return(
   if let Some((constructor, member)) = member
     && let Calcit::List(items) = expr
     && let Some(head) = items.first()
-    && (matches!(head, Calcit::Proc(proc) if *proc == constructor)
-      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == constructor.as_ref())
-      || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == constructor.as_ref()))
-    && !items.iter().skip(1).any(|item| {
-      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
-    })
   {
     let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     if matches!(processed_head, Calcit::Proc(proc) if proc == constructor) {
@@ -344,7 +330,7 @@ fn preprocess_argument_with_offered_return(
   // members) see the expected type too. A direct tag is left to the caller,
   // which names the position; a literal that was not handled above must not
   // re-enter this function.
-  let _expected = tail_context::TailScope::offer(expected.filter(|_| !literal_candidate && !matches!(expr, Calcit::Tag(_))).map(
+  let _expected = tail_context::TailScope::offer(expected.filter(|_| literal_type.is_none() && !matches!(expr, Calcit::Tag(_))).map(
     |annotation| tail_context::Expected {
       annotation: annotation.clone(),
       position: "value in a typed position",
@@ -389,7 +375,7 @@ fn preprocess_expected_form(
     }
   }
   // A collection literal hands the expected member type to its items (#2733).
-  if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && literal_takes_member_context(expr, annotation))
+  if tail_context::current_offer_is(|annotation| !annotation.contains_type_var() && contextual_literal_type(expr, annotation).is_some())
     && let Some(expected) = tail_context::take_for_current()
   {
     let processed = preprocess_argument_with_context(
@@ -496,24 +482,32 @@ fn preprocess_literal_member(
   Ok(form)
 }
 
-/// Whether `expr` is a `[]` / `#{}` / `&{}` literal written where a List, Set
-/// or Map is expected, so its members take the expected member types.
-fn literal_takes_member_context(expr: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
-  let Calcit::List(items) = expr else { return false };
-  let Some(head) = items.first() else { return false };
-  let constructor = match expected {
-    CalcitTypeAnnotation::Map(_, _) if items.len() % 2 == 1 => CalcitProc::NativeMap,
-    CalcitTypeAnnotation::List(_) => CalcitProc::List,
-    CalcitTypeAnnotation::Tuple(slots) if items.len() == slots.len() + 1 => CalcitProc::List,
-    CalcitTypeAnnotation::Set(_) => CalcitProc::Set,
-    _ => return false,
+/// The expected List, Tuple, Set or Map shape for a collection literal.
+fn contextual_literal_type(expr: &Calcit, expected: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitTypeAnnotation>> {
+  let Calcit::List(items) = expr else { return None };
+  let head = items.first()?;
+  let constructor = match head {
+    Calcit::Proc(proc) => *proc,
+    Calcit::Symbol { sym, .. } => sym.parse::<CalcitProc>().ok()?,
+    Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS => import.def.parse::<CalcitProc>().ok()?,
+    _ => return None,
   };
-  (matches!(head, Calcit::Proc(proc) if *proc == constructor)
-    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == constructor.as_ref())
-    || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == constructor.as_ref()))
+  if !matches!(constructor, CalcitProc::NativeMap | CalcitProc::List | CalcitProc::Set) {
+    return None;
+  }
+
+  let expected = CalcitTypeAnnotation::expand_schema_alias(expected);
+  let matches_shape = match (constructor, expected.as_ref()) {
+    (CalcitProc::NativeMap, CalcitTypeAnnotation::Map(..)) => items.len() % 2 == 1,
+    (CalcitProc::List, CalcitTypeAnnotation::Tuple(slots)) => items.len() == slots.len() + 1,
+    (CalcitProc::List, CalcitTypeAnnotation::List(_)) | (CalcitProc::Set, CalcitTypeAnnotation::Set(_)) => true,
+    _ => false,
+  };
+  (matches_shape
     && !items.iter().skip(1).any(|item| {
       matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
-    })
+    }))
+  .then_some(expected)
 }
 
 #[cfg(not(test))]
@@ -6939,7 +6933,7 @@ fn preprocess_known_function_call(
       staged.extend(args.iter().skip(arg_idx).cloned());
       type_checking::specialize_core_expected_types(&info, &CalcitList::from(staged.as_slice()), scope_types, &info.arg_types)
         .and_then(|specialized| specialized.get(arg_idx).cloned())
-        .filter(|expected| !expected.contains_type_var() && literal_takes_member_context(a, expected))
+        .filter(|expected| !expected.contains_type_var() && contextual_literal_type(a, expected).is_some())
     } else {
       None
     };
@@ -6960,7 +6954,7 @@ fn preprocess_known_function_call(
     };
     let offered_slot = offered_value_slot(offered_bindings.as_ref(), expected_type.as_ref());
     let offered_return = offered_callback_return(offered_bindings.as_ref(), expected_type.as_ref());
-    let receiver_fixed = receiver_fixed.or_else(|| offered_slot.clone().filter(|slot| literal_takes_member_context(a, slot)));
+    let receiver_fixed = receiver_fixed.or_else(|| offered_slot.clone().filter(|slot| contextual_literal_type(a, slot).is_some()));
     let result = preprocess_argument_with_offered_return(
       a,
       receiver_fixed
