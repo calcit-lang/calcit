@@ -1082,10 +1082,18 @@ impl CalcitProc {
         return_type: option_tag("enum-def"),
         arg_types: vec![some_tag("enum")],
       }),
-      NativeStructNew => Some(ProcTypeSignature {
-        return_type: some_tag("struct-def"),
-        arg_types: vec![some_tag("tag"), variadic_dynamic()],
-      }),
+      NativeStructNew => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled StructDef constructor schema");
+        let mut arg_types = schema.arg_types.clone();
+        arg_types.push(variadic_of(schema.rest_type.clone().expect("StructDef constructor rest parameter")));
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types,
+        })
+      }
       NativeEnumNew => {
         let schema = core.defs[self.as_ref()]
           .schema

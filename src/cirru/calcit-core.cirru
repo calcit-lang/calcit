@@ -3572,11 +3572,11 @@
           :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
           :tags $ #{} :builtin :internal
         '&struct-def:new $ %{} 'CodeEntry
-          :doc "|Create a StructDef from a name and declared field types."
+          :doc "|内部结构体定义构造器。名称后可以跟字段类型及可选默认值、泛型和 where 元数据。用户代码使用 defstruct。"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             &struct-def:new :Person ([] :name :string) ([] :age :number)
-          :schema $ quote $ Fn Tag (-> StructDef)
+          :schema $ quote $ Fn Tag (& Dynamic) (-> StructDef)
           :tags $ #{} :builtin :internal
         '&struct-match-internal $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro &struct-match-internal (value & body)

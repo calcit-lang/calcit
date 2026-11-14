@@ -27,7 +27,6 @@
 &methods-of | missing core definition
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
-&struct-def:new | rest | "'Dynamic" => <missing>
 &struct:assoc-at | missing core definition
 &struct:field-tag | missing core definition
 &struct:impl-traits | rest | "'Dynamic" => <missing>

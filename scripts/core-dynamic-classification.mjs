@@ -464,6 +464,13 @@ function classify(entry) {
       rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
     };
   }
+  if (name === "&struct-def:new") {
+    return {
+      owner: "runtime-internals",
+      decision: "retain-reviewed",
+      rationale: "内部构造器按位置解析字段列表、泛型列表和 where 元数据，最终生成 StructDef。",
+    };
+  }
   if (runtimePolymorphic.has(name)) {
     return {
       owner: "runtime-primitives",
