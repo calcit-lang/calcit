@@ -50,7 +50,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
 };
@@ -9122,30 +9122,88 @@ fn check_struct_method_args(
   };
   check_struct_update_fields(method_entry, args, scope_types, file_ns, def_name, check_warnings);
 
-  // Enum implementation references use the same call proof as declared trait
-  // methods, including instantiation of first-class generic callbacks.
+  // Get function info from method entry
   let declared_schema = match method_entry {
-    Calcit::Import(import) => Some(program::lookup_def_schema(&import.ns, &import.def)),
-    Calcit::Fn { info, .. } if info.def_ref.is_some() => Some(program::lookup_def_schema(&info.def_ns, &info.name)),
+    Calcit::Import(import) => Some((
+      program::lookup_def_schema(&import.ns, &import.def),
+      format!("{} / {}", import.ns, import.def),
+    )),
+    Calcit::Fn { info, .. } if info.def_ref.is_some() => Some((
+      program::lookup_def_schema(&info.def_ns, &info.name),
+      format!("{} / {}", info.def_ns, info.name),
+    )),
     _ => None,
   };
-  if let Some(schema) = declared_schema
+  if let Some((schema, implementation_name)) = declared_schema
     && schema.contains_type_var()
     && type_value.as_ref().resolve_to_enum().is_some()
-    && let Some(signature) = schema.as_function()
   {
-    type_checking::check_method_call_arg_types(
-      head,
-      signature,
-      args,
-      scope_types,
-      &CallTypeCheckInfo {
+    let Some(signature) = schema.as_function() else {
+      return;
+    };
+    let Ok(method_args) = args.skip(1) else {
+      return;
+    };
+    let expected_count = signature.arg_types.len();
+    let actual_with_receiver = method_args.len() + 1;
+    let trailing_options = if signature.rest_type.is_none() {
+      calcit::trailing_option_arg_count(&signature.arg_types, expected_count)
+    } else {
+      0
+    };
+    let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
+    if expected_count != 0 && expected_count != actual_with_receiver && !accepts_omission {
+      gen_check_warning_code(
+        format!(
+          "[Error] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+        ),
+        "E_METHOD_ARITY",
         file_ns,
-        def_name,
-        call_location,
-      },
-      check_warnings,
-    );
+        check_warnings,
+      );
+      return;
+    }
+
+    let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    if let Some(expected_receiver) = signature.arg_types.first() {
+      type_value
+        .as_ref()
+        .compatible_with_bindings(expected_receiver.as_ref(), &mut bindings);
+    }
+    for (idx, (arg, expected_type)) in method_args.iter().zip(signature.arg_types.iter().skip(1)).enumerate() {
+      if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+      if let Some(actual_type) = resolve_type_value(arg, scope_types)
+        && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+        // Instantiate a first-class generic callback using the receiver-bound
+        // contract. Keep the sibling return bindings from ordinary checks.
+        && !(matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty())
+          && expected_type.resolve_to_nonoptional_fn().is_some()
+          && {
+            let expected = expected_type.substitute_type_vars(&bindings);
+            let mut proof = CallTypeProof::new(
+              &signature.generics,
+              std::slice::from_ref(&expected),
+              std::slice::from_ref(&actual_type),
+            );
+            proof.prove(&actual_type, &expected).is_proven()
+          })
+      {
+        let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning_code_at(
+          format!(
+            "[Error] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name} (implementation {implementation_name})",
+            idx + 2,
+          ),
+          "E_METHOD_ARG_TYPE_MISMATCH",
+          file_ns,
+          call_location.clone(),
+          check_warnings,
+        );
+      }
+    }
     return;
   }
 
