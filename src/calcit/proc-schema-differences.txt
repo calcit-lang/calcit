@@ -26,7 +26,6 @@
 &list:prepend | arg 0 | "'List" => (:: "'List" "'T")
 &list:prepend | arg 1 | "'Dynamic" => "'T"
 &list:prepend | return | "'List" => (:: "'List" "'T")
-&list? | missing core definition
 &map:assoc | rest | "'Dynamic" => <missing>
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition

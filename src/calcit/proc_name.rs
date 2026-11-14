@@ -862,6 +862,7 @@ impl CalcitProc {
       | NativeNumberFits
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
+      | NativeListQ
       | NativeListReverse
       | NativeListButlast
       | NativeListRange
@@ -983,10 +984,6 @@ impl CalcitProc {
           ],
         })
       }
-      NativeListQ => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
       // === BufList operations ===
       NativeBufListNew => Some(ProcTypeSignature {
         return_type: some_tag("buf-list"),
