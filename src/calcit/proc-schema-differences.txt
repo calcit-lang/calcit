@@ -28,12 +28,7 @@ foldr-shortcut | arg 1 | "'Dynamic" => "'U"
 foldr-shortcut | arg 2 | "'Dynamic" => "'U"
 foldr-shortcut | arg 3 | "'Fn" => (:: "'Fn" ("{}" (:return "'Enum") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
 foldr-shortcut | return | "'Dynamic" => "'U"
-generate-id! | arg 0 | "'Number" => <missing>
-generate-id! | arg 1 | "'String" => <missing>
 parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
-raise | arg 0 | <missing> => "'String"
-raise | rest | "'Dynamic" => <missing>
-raise | return | "'Dynamic" => "'T"
 register-calcit-builtin-impls | missing core definition
 todo! | missing core definition
 turn-tag | arg 0 | "'Dynamic" => "'T"
