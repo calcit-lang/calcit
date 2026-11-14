@@ -709,8 +709,19 @@
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             &enum-def:new :Result ([] :ok :number) ([] :err :string)
-          :schema $ quote $ Fn Tag (-> EnumDef)
+          :schema $ quote $ Fn Tag Dynamic (& Dynamic) (-> EnumDef)
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |reads-variants-with-and-without-metadata)
+            :code $ quote $ let
+                plain $ &enum-def:new :Plain ([] :empty)
+                  [] :value $ quote Number
+                generic $ &enum-def:new :Generic
+                  [] $ quote T
+                  [] :value $ quote T
+              assert= true $ &enum-def:has-variant? plain :empty
+              assert= 1 $ &enum-def:variant-arity plain :value
+              assert= 1 $ &enum-def:variant-arity generic :value
+            :tags $ #{} :core :enum-definition-equality :unit
         '&enum-def:variant-arity $ %{} 'CodeEntry (:doc "|Read the payload arity of an EnumDef variant.")
           :code $ quote &runtime-implementation
           :examples $ []
