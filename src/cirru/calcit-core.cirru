@@ -7953,10 +7953,26 @@
           :schema $ quote $ Fn (Set T) (& T)
             -> $ Set T
             :generics T
-          :tests $ [] $ %{} 'TestEntry (:name |removes-set-members)
-            :code $ quote $ assert= (#{} 3)
-              exclude (#{} 1 2 3) 1 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |removes-set-members)
+              :code $ quote $ assert= (#{} 3)
+                exclude (#{} 1 2 3) 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-disjoint-scalar-kinds)
+              :code $ quote $ do
+                assert= (#{} 2)
+                  &exclude (#{} 1 2) 1
+                assert= (#{} 1)
+                  &exclude
+                    do (println |receiver) (#{} 1)
+                    do (println |target) true
+                assert= (#{} false)
+                  &exclude (#{} false) 0
+                assert= (#{} :alpha)
+                  &exclude (#{} :alpha) 78
+                assert= (#{})
+                  &exclude (#{}) false
+              :tags $ #{} :core :unit
         'ffi-response:reject $ %{} 'CodeEntry
           :doc "|Reject a wrapped native async response exactly once."
           :code $ quote $ defn ffi-response:reject (self value)
