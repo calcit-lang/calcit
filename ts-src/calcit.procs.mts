@@ -3592,20 +3592,26 @@ export let _$n_get_os = (): CalcitTag => {
   return newTag("js-engine");
 };
 
-export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
-  let buf = new Uint8Array(xs.length);
+const hexBytePattern = /^[0-9a-fA-F]{2}$/;
 
+export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
+  if (xs.length === 0) {
+    throw new Error("&buffer expected hex values, but received none");
+  }
+  const buf = new Uint8Array(xs.length);
   for (let idx = 0; idx < xs.length; idx++) {
-    let x = xs[idx];
+    const x = xs[idx];
     if (typeof x === "number") {
-      buf[idx] = x;
+      buf[idx] = Math.min(255, Math.max(0, Math.round(x)));
     } else if (typeof x === "string") {
+      if (x.length !== 2 || !hexBytePattern.test(x)) {
+        throw new Error(`&buffer expected a length 2 hex string, but received: ${x}`);
+      }
       buf[idx] = parseInt(x, 16);
     } else {
-      throw new Error("invalid value for buffer");
+      throw new Error(`&buffer expected a number or hex string, but received: ${x}`);
     }
   }
-
   return buf;
 };
 
