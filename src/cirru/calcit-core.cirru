@@ -692,7 +692,7 @@
         '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef (-> EnumDef)
+          :schema $ quote $ Fn EnumDef Impl (& Impl) (-> EnumDef)
           :tags $ #{} :builtin :internal
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
@@ -734,7 +734,7 @@
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Enum (-> Enum)
+          :schema $ quote $ Fn Enum Impl (& Impl) (-> Enum)
           :tags $ #{} :builtin :internal
         '&enum:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to an enum value."
@@ -3486,7 +3486,7 @@
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn StructDef (-> StructDef)
+          :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
           :tags $ #{} :builtin :internal
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|Create a StructDef from a name and declared field types."
@@ -3578,7 +3578,7 @@
         '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Struct (-> Struct)
+          :schema $ quote $ Fn Struct Impl (& Impl) (-> Struct)
           :tags $ #{} :builtin :internal
         '&struct:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to a struct value."
@@ -9905,9 +9905,17 @@
               not $ every? traits $ fn (trait)
                 = :impl $ type-of trait
               raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-            if (struct-def? x) (&struct-def:impl-traits x & traits)
-              if (enum-def? x) (&enum-def:impl-traits x & traits)
-                raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+            let
+                attach $ fn (proc-name)
+                  if (&list:empty? traits)
+                    raise $ str-spaced proc-name "|expected 2+ arguments. Fix: pass at least one implementation created by defimpl."
+              if (struct-def? x)
+                do (attach |&struct-def:impl-traits)
+                  &struct-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                if (enum-def? x)
+                  do (attach |&enum-def:impl-traits)
+                    &enum-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")

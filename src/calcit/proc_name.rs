@@ -648,7 +648,16 @@ impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
   pub(crate) fn checks_variadic_arg_types(&self) -> bool {
-    matches!(self, Self::NativeListConcat | Self::NativeMerge | Self::NativeMapDissoc)
+    matches!(
+      self,
+      Self::NativeListConcat
+        | Self::NativeMerge
+        | Self::NativeMapDissoc
+        | Self::NativeStructValueImplTraits
+        | Self::NativeEnumValueImplTraits
+        | Self::NativeStructImplTraits
+        | Self::NativeEnumImplTraits
+    )
   }
 
   /// Get the namespace and definition name for this proc.
@@ -1293,19 +1302,19 @@ impl CalcitProc {
       }),
       NativeStructValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), variadic_dynamic()],
+        arg_types: vec![some_tag("struct"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), variadic_dynamic()],
+        arg_types: vec![some_tag("enum"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeStructImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct-def"),
-        arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
+        arg_types: vec![some_tag("struct-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum-def"),
-        arg_types: vec![some_tag("enum-def"), variadic_dynamic()],
+        arg_types: vec![some_tag("enum-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumDefHasVariant => Some(ProcTypeSignature {
         return_type: some_tag("bool"),

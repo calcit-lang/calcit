@@ -2234,6 +2234,37 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
 }
 
 #[test]
+fn trait_attachment_procs_require_an_impl_and_check_every_rest_argument() {
+  let eval = |expression: &str| {
+    let code = format!(
+      "let ((S (defstruct S (:value Number))) (E (defenum E (:item))) (Marker (deftrait Marker)) (implementation (defimpl S Marker))) {expression}"
+    );
+    Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", &code])
+      .output()
+      .expect("calcit eval should run")
+  };
+  for (proc, receiver) in [
+    ("&struct-def:impl-traits", "S"),
+    ("&enum-def:impl-traits", "E"),
+    ("&struct:impl-traits", "(S :value 1)"),
+    ("&enum:impl-traits", "(E :item)"),
+  ] {
+    for (arguments, code, detail) in [
+      ("", "E_PROC_ARITY", "expects at least 2 args"),
+      (" 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 2 expects type `:impl`"),
+      (" implementation 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 3 expects type `:impl`"),
+    ] {
+      let expression = format!("({proc} {receiver}{arguments})");
+      let output = eval(&expression);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(!output.status.success(), "{expression} must fail");
+      assert!(stderr.contains(code) && stderr.contains(detail), "{expression}: {stderr}");
+    }
+  }
+}
+
+#[test]
 fn incremental_check_reports_snapshot_level_diagnostics() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
