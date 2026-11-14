@@ -1124,6 +1124,18 @@ fn replace_definition_code(entry: &mut CodeEntry, code: Cirru, derived_macro_sch
   }
 }
 
+fn is_core_defimpl(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
+  if head != "defimpl" && !head.ends_with("/defimpl") {
+    return Ok(false);
+  }
+  Ok(
+    definition_head_macro_code(snapshot_file, snapshot, namespace, head)?.is_some_and(|(_, source)| {
+      matches!(&source.ns.code, Cirru::List(items)
+      if items.get(1).is_some_and(|name| name.eq_leaf(calcit::calcit::CORE_NS)))
+    }),
+  )
+}
+
 pub(crate) fn validate_definition_shape(
   snapshot_file: &str,
   snapshot: &Snapshot,
@@ -1156,6 +1168,23 @@ pub(crate) fn validate_definition_shape(
     } else {
       Err(format!(
         "Definition '{namespace}/{definition}': deftype-slot requires exactly one tag or string slot name."
+      ))
+    };
+  }
+  // A core defimpl names the receiver and trait, while the CodeEntry key
+  // identifies the implementation independently of either declaration.
+  if let Some(Cirru::Leaf(head)) = items.first()
+    && is_core_defimpl(snapshot_file, snapshot, namespace, head)?
+  {
+    let is_symbol = |index| {
+      matches!(items.get(index), Some(node @ Cirru::Leaf(_))
+        if matches!(calcit::data::cirru::code_to_calcit(node, namespace, definition, vec![]), Ok(calcit::Calcit::Symbol { .. })))
+    };
+    return if is_symbol(1) && is_symbol(2) {
+      Ok(())
+    } else {
+      Err(format!(
+        "Definition '{namespace}/{definition}': defimpl requires a receiver type symbol and a trait symbol."
       ))
     };
   }
@@ -1488,13 +1517,23 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   Ok(())
 }
 
-pub(crate) fn rename_definition_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
+pub(crate) fn rename_definition_declaration(
+  snapshot_file: &str,
+  snapshot: &Snapshot,
+  namespace: &str,
+  code: &Cirru,
+  old_name: &str,
+  new_name: &str,
+) -> Result<(Cirru, bool), String> {
   let Cirru::List(items) = code else {
     return Ok((code.clone(), false));
   };
   let Some(Cirru::Leaf(head)) = items.first() else {
     return Ok((code.clone(), false));
   };
+  if is_core_defimpl(snapshot_file, snapshot, namespace, head)? {
+    return Ok((code.clone(), false));
+  }
   if !head.starts_with("def") {
     return Ok((code.clone(), false));
   }
@@ -1524,7 +1563,7 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
 
   let file_data = snapshot
     .files
-    .get_mut(namespace)
+    .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   let resolved_definition =
@@ -1536,13 +1575,38 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
     ));
   }
 
+  let (renamed_code, _) = rename_definition_declaration(
+    snapshot_file,
+    &snapshot,
+    namespace,
+    &file_data.defs[resolved_definition.as_str()].code,
+    &resolved_definition,
+    &opts.new_name,
+  )?;
+  let before = defimpl_edit_baseline(
+    snapshot_file,
+    &snapshot,
+    namespace,
+    &file_data.defs[resolved_definition.as_str()].code,
+  )?;
+  let file_data = snapshot.files.get_mut(namespace).expect("resolved namespace exists");
   let mut entry = file_data
     .defs
     .remove(resolved_definition.as_str())
     .expect("resolved definition exists");
-  (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_definition, &opts.new_name)?;
+  entry.code = renamed_code;
   file_data.defs.insert(opts.new_name.clone(), entry);
 
+  if let Some(before) = before {
+    check_defimpl_destination(
+      snapshot_file,
+      &before,
+      &snapshot,
+      namespace,
+      namespace,
+      &snapshot.files[namespace].defs[&opts.new_name].code,
+    )?;
+  }
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
@@ -1673,73 +1737,155 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
+fn check_defimpl_destination(
+  snapshot_file: &str,
+  before: &Snapshot,
+  staged: &Snapshot,
+  source_ns: &str,
+  target_ns: &str,
+  code: &Cirru,
+) -> Result<(), String> {
+  let Cirru::List(items) = code else { return Ok(()) };
+  let Some(Cirru::Leaf(head)) = items.first() else { return Ok(()) };
+  if !is_core_defimpl(snapshot_file, before, source_ns, head)? {
+    return Ok(());
+  }
+  let (Some(Cirru::Leaf(receiver)), Some(Cirru::Leaf(trait_name))) = (items.get(1), items.get(2)) else {
+    return Err("A core defimpl must name its receiver and trait before it can be moved.".to_owned());
+  };
+
+  let source_file = &before.files[source_ns];
+  let target_file = &staged.files[target_ns];
+  let source_imports = calcit::program::extract_import_map(&source_file.ns.code, source_ns)?;
+  let target_imports = calcit::program::extract_import_map(&target_file.ns.code, target_ns)?;
+  let resolve =
+    |file: &FileInSnapShot, imports: &_, namespace: &str, symbol: &str| resolve_defimpl_symbol(file, imports, namespace, symbol);
+  let receiver_key = resolve(source_file, &source_imports, source_ns, receiver);
+  let trait_key = resolve(source_file, &source_imports, source_ns, trait_name);
+  if source_ns != target_ns && target_ns != receiver_key.0 && target_ns != trait_key.0 {
+    return Err(format!(
+      "Cannot move this defimpl to '{target_ns}': its receiver and trait are declared in '{}' and '{}'.",
+      receiver_key.0, trait_key.0
+    ));
+  }
+  if !is_core_defimpl(snapshot_file, staged, target_ns, head)? {
+    return Err(format!(
+      "Cannot change the definition key: '{head}' would no longer resolve to the core defimpl in '{target_ns}'."
+    ));
+  }
+
+  // Compare source symbols conservatively. A symbol under a local binding or a
+  // macro may need qualification before the move if its global binding changes.
+  for node in items.iter().skip(1) {
+    let expression = calcit::data::cirru::code_to_calcit(node, source_ns, "", vec![])?;
+    check_defimpl_references(&expression, &|sym| {
+      if resolve(source_file, &source_imports, source_ns, sym) != resolve(target_file, &target_imports, target_ns, sym) {
+        return Err(format!(
+          "Cannot move or rename this defimpl in '{target_ns}': symbol '{sym}' would resolve differently. Qualify the reference before editing."
+        ));
+      }
+      Ok(())
+    })?;
+  }
+  Ok(())
+}
+
+fn check_defimpl_references(expression: &calcit::Calcit, check: &impl Fn(&str) -> Result<(), String>) -> Result<(), String> {
+  match expression {
+    calcit::Calcit::Symbol { sym, .. } => check(sym),
+    calcit::Calcit::List(items) => items.traverse_result(&mut |item| check_defimpl_references(item, check)),
+    _ => Ok(()),
+  }
+}
+
+fn resolve_defimpl_symbol(
+  file: &FileInSnapShot,
+  imports: &std::collections::HashMap<Arc<str>, Arc<calcit::program::ImportRule>>,
+  namespace: &str,
+  symbol: &str,
+) -> (String, String) {
+  use calcit::program::ImportRule;
+  if let Some((prefix, name)) = symbol.split_once('/') {
+    let owner = match imports.get(prefix).map(AsRef::as_ref) {
+      Some(ImportRule::NsAs(target)) => target.as_ref(),
+      _ => prefix,
+    };
+    return (owner.to_owned(), name.to_owned());
+  }
+  if file.defs.contains_key(symbol) {
+    return (namespace.to_owned(), symbol.to_owned());
+  }
+  match imports.get(symbol).map(AsRef::as_ref) {
+    Some(ImportRule::NsReferDef(owner, name)) => (owner.to_string(), name.to_string()),
+    Some(ImportRule::NsDefault(module)) => (module.to_string(), "default".to_owned()),
+    _ => (calcit::calcit::CORE_NS.to_owned(), symbol.to_owned()),
+  }
+}
+
+fn defimpl_edit_baseline(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, code: &Cirru) -> Result<Option<Snapshot>, String> {
+  if let Cirru::List(items) = code
+    && let Some(Cirru::Leaf(head)) = items.first()
+    && is_core_defimpl(snapshot_file, snapshot, namespace, head)?
+  {
+    return Ok(Some(snapshot.clone()));
+  }
+  Ok(None)
+}
+
 fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (source_ns, source_def) = parse_target(&opts.source)?;
   let (target_ns, target_def) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
-
   check_ns_editable(&snapshot, source_ns)?;
   check_ns_editable(&snapshot, target_ns)?;
 
-  let resolved_source_def = {
-    let source_file = snapshot
-      .files
-      .get(source_ns)
-      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
-    resolve_definition_lookup(source_ns, source_def, source_file.defs.keys().map(|name| name.as_str()), false)?.resolved
-  };
-
+  let source_file = snapshot
+    .files
+    .get(source_ns)
+    .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+  let resolved_source_def =
+    resolve_definition_lookup(source_ns, source_def, source_file.defs.keys().map(|name| name.as_str()), false)?.resolved;
   if source_ns == target_ns && resolved_source_def == target_def {
     return Err("Source and target are identical; nothing to move.".to_string());
   }
 
-  if source_ns == target_ns {
-    let file_data = snapshot
-      .files
-      .get_mut(source_ns)
-      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
-
-    if file_data.defs.contains_key(target_def) {
-      return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
-    }
-
-    let mut entry = file_data
-      .defs
-      .remove(resolved_source_def.as_str())
-      .expect("resolved definition exists");
-    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
-    file_data.defs.insert(target_def.to_string(), entry);
-  } else {
-    let target_exists = snapshot
-      .files
-      .get(target_ns)
-      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?
-      .defs
-      .contains_key(target_def);
-    if target_exists {
-      return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
-    }
-
-    let mut entry = {
-      let source_file = snapshot
-        .files
-        .get_mut(source_ns)
-        .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
-      source_file
-        .defs
-        .remove(resolved_source_def.as_str())
-        .expect("resolved definition exists")
-    };
-    (entry.code, _) = rename_definition_declaration(&entry.code, &resolved_source_def, target_def)?;
-
-    let target_file = snapshot
-      .files
-      .get_mut(target_ns)
-      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
-    target_file.defs.insert(target_def.to_string(), entry);
+  let target_file = snapshot
+    .files
+    .get(target_ns)
+    .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
+  if target_file.defs.contains_key(target_def) {
+    return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
   }
 
+  let code = &source_file.defs[resolved_source_def.as_str()].code;
+  let before = defimpl_edit_baseline(snapshot_file, &snapshot, source_ns, code)?;
+  let (renamed_code, _) = rename_definition_declaration(snapshot_file, &snapshot, source_ns, code, &resolved_source_def, target_def)?;
+  let mut entry = snapshot
+    .files
+    .get_mut(source_ns)
+    .expect("resolved namespace exists")
+    .defs
+    .remove(resolved_source_def.as_str())
+    .expect("resolved definition exists");
+  entry.code = renamed_code;
+  snapshot
+    .files
+    .get_mut(target_ns)
+    .expect("resolved namespace exists")
+    .defs
+    .insert(target_def.to_string(), entry);
+
+  if let Some(before) = before {
+    check_defimpl_destination(
+      snapshot_file,
+      &before,
+      &snapshot,
+      source_ns,
+      target_ns,
+      &snapshot.files[target_ns].defs[target_def].code,
+    )?;
+  }
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
@@ -3525,6 +3671,49 @@ mod tests {
 
   type TestSnapshot = TestProject;
 
+  #[test]
+  fn defimpl_uses_a_separate_storage_key() {
+    let project = TestSnapshot::from_fixture();
+    let path = project.snapshot_string();
+    let mut snapshot = load_snapshot(&path).expect("load fixture");
+    let validate = |snapshot: &calcit::snapshot::Snapshot, source: &str| {
+      let code = parse_input_to_cirru(source).expect("read quoted definition");
+      super::validate_definition_shape(&path, snapshot, "app.main", "PointLabelImpl", &code, false)
+    };
+    validate(&snapshot, "quote $ defimpl model/Point Label (.label label-point)").expect("receiver and storage key can differ");
+    validate(&snapshot, "quote $ calcit.core/defimpl Point Label (.label label-point)").expect("qualified core macro");
+    for source in [
+      "quote $ defimpl Point",
+      "quote $ defimpl :Point Label",
+      "quote $ defimpl Point |Label",
+    ] {
+      let error = validate(&snapshot, source).expect_err("reject malformed implementation");
+      assert!(error.contains("requires a receiver type symbol and a trait symbol"), "{error}");
+    }
+    assert!(
+      validate(&snapshot, "quote $ defn Point () 1")
+        .expect_err("ordinary definitions still declare their key")
+        .contains("Definition name mismatch")
+    );
+    let core = calcit::load_core_snapshot().expect("load bundled core");
+    let local_macro = core.files[calcit::calcit::CORE_NS].defs["defimpl"].clone();
+    snapshot
+      .files
+      .get_mut("app.main")
+      .expect("fixture namespace")
+      .defs
+      .insert("defimpl".into(), local_macro);
+    assert!(
+      validate(&snapshot, "quote $ defimpl Point Label (.label label-point)")
+        .expect_err("a shadowing macro retains ordinary shape validation")
+        .contains("Definition name mismatch")
+    );
+    let code = parse_input_to_cirru("quote $ defimpl Point Label (.label label-point)").expect("read shadowed macro call");
+    let error = rename_definition_declaration(&path, &snapshot, "app.main", &code, "PointLabelImpl", "RenamedImpl")
+      .expect_err("a shadowing macro retains declaration-name validation");
+    assert!(error.contains("does not match declaration name"), "{error}");
+  }
+
   // Snapshot serialization normalizes the format version, so use package as an
   // observable staged mutation when testing transaction change detection.
   fn fake_package_operation(stage_path: &Path, index: usize, args: &[String]) -> Result<TransactionOperationReport, String> {
@@ -3674,9 +3863,115 @@ mod tests {
   }
 
   #[test]
+  fn defimpl_move_stays_in_an_owner_namespace() {
+    let project = TestSnapshot::from_fixture();
+    let path = project.snapshot_string();
+    let mut snapshot = load_snapshot(&path).expect("load fixture");
+    for namespace in ["app.model", "app.traits", "app.other"] {
+      let mut file = snapshot.files["app.main"].clone();
+      file.ns.code = list(vec![leaf("ns"), leaf(namespace)]);
+      file.defs.clear();
+      snapshot.files.insert(namespace.to_owned(), file);
+    }
+    let code = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label").expect("read definition");
+    for target in ["app.model", "app.traits"] {
+      super::check_defimpl_destination(&path, &snapshot, &snapshot, "app.main", target, &code).expect("allow an owner namespace");
+    }
+    let error = super::check_defimpl_destination(&path, &snapshot, &snapshot, "app.main", "app.other", &code)
+      .expect_err("implementation discovery cannot find a third namespace");
+    assert!(error.contains("receiver and trait are declared"), "{error}");
+
+    let entry = |code: &Cirru| {
+      let mut entry = snapshot.files["app.main"].defs.values().next().expect("fixture definition").clone();
+      entry.code = code.clone();
+      entry
+    };
+    let mut staged = snapshot.clone();
+    staged
+      .files
+      .get_mut("app.model")
+      .unwrap()
+      .defs
+      .insert("defimpl".to_owned(), entry(&code));
+    let error = super::check_defimpl_destination(&path, &snapshot, &staged, "app.main", "app.model", &code)
+      .expect_err("inserting the destination key shadows the core macro");
+    assert!(error.contains("no longer resolve to the core defimpl"), "{error}");
+
+    let code = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label helper)").unwrap();
+    let helper = entry(&parse_input_to_cirru("quote $ defn helper (self) |label").unwrap());
+    let mut original = snapshot.clone();
+    original.files.get_mut("app.main").unwrap().defs.insert("helper".to_owned(), helper);
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &code)
+      .expect_err("unqualified method function would change resolution");
+    assert!(error.contains("symbol 'helper' would resolve differently"), "{error}");
+    let qualified = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label app.main/helper)").unwrap();
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &qualified)
+      .expect("qualified method function keeps its resolution");
+
+    let reference = entry(&parse_input_to_cirru("quote $ defref *label |label").unwrap());
+    for namespace in ["app.main", "app.model"] {
+      original
+        .files
+        .get_mut(namespace)
+        .unwrap()
+        .defs
+        .insert("*label".to_owned(), reference.clone());
+    }
+    let deref = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) , @*label)").unwrap();
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &deref)
+      .expect_err("a dereferenced symbol would bind to the destination state");
+    assert!(error.contains("symbol '*label' would resolve differently"), "{error}");
+    let qualified =
+      parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) , @app.main/*label)").unwrap();
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &qualified)
+      .expect("qualified dereference keeps its resolution");
+
+    let ns_with_default = |namespace, module| {
+      list(vec![
+        leaf("ns"),
+        leaf(namespace),
+        list(vec![
+          leaf(":require"),
+          list(vec![leaf(module), leaf(":default"), leaf("formatter")]),
+        ]),
+      ])
+    };
+    original.files.get_mut("app.main").unwrap().ns.code = ns_with_default("app.main", "|module-a");
+    original.files.get_mut("app.model").unwrap().ns.code = ns_with_default("app.model", "|module-b");
+    let default_import =
+      parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) formatter self)").unwrap();
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &default_import)
+      .expect_err("a default import from another module changes the binding");
+    assert!(error.contains("symbol 'formatter' would resolve differently"), "{error}");
+    original.files.get_mut("app.model").unwrap().ns.code = ns_with_default("app.model", "|module-a");
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &default_import)
+      .expect("the same module's default export keeps its resolution");
+  }
+
+  fn rename_fixture_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
+    let project = TestSnapshot::from_fixture();
+    let path = project.snapshot_string();
+    let snapshot = load_snapshot(&path).expect("load fixture");
+    rename_definition_declaration(&path, &snapshot, "app.main", code, old_name, new_name)
+  }
+
+  #[test]
+  fn rename_preserves_core_defimpl_receiver_and_trait() {
+    for source in [
+      "quote $ defimpl model/Point Label (.label label-point)",
+      "quote $ calcit.core/defimpl model/Point Label (.label label-point)",
+    ] {
+      let code = parse_input_to_cirru(source).expect("read quoted definition");
+      let (renamed, changed) = rename_fixture_declaration(&code, "PointLabelImpl", "RenamedImpl").expect("rename storage key");
+      assert_eq!(renamed, code);
+      assert!(!changed);
+    }
+  }
+
+  #[test]
   fn rename_updates_definition_declaration_name() {
     let code = list(vec![leaf("defref"), leaf("*old"), list(vec![leaf("{}")])]);
-    let (renamed, changed) = rename_definition_declaration(&code, "*old", "*next").expect("rename should work");
+    let (renamed, changed) = rename_fixture_declaration(&code, "*old", "*next").expect("rename should work");
 
     assert!(changed);
     assert_eq!(renamed, list(vec![leaf("defref"), leaf("*next"), list(vec![leaf("{}")])]));
@@ -3890,7 +4185,7 @@ mod tests {
   #[test]
   fn rename_rejects_mismatched_definition_key_and_declaration() {
     let code = list(vec![leaf("defn"), leaf("actual"), list(vec![]), leaf("nil")]);
-    let error = rename_definition_declaration(&code, "stored-key", "next").expect_err("mismatch should fail");
+    let error = rename_fixture_declaration(&code, "stored-key", "next").expect_err("mismatch should fail");
 
     assert!(error.contains("does not match declaration name"), "error: {error}");
   }
@@ -3898,7 +4193,7 @@ mod tests {
   #[test]
   fn rename_keeps_anonymous_payloads_unchanged() {
     let code = list(vec![leaf("fn"), list(vec![]), leaf("nil")]);
-    let (renamed, changed) = rename_definition_declaration(&code, "old", "next").expect("anonymous value should be movable");
+    let (renamed, changed) = rename_fixture_declaration(&code, "old", "next").expect("anonymous value should be movable");
 
     assert!(!changed);
     assert_eq!(renamed, code);
