@@ -96,20 +96,26 @@ pub(super) fn emit_map_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   Ok(())
 }
 
-/// `&map:assoc map key value` — new map with key-value added or updated.
+/// `&map:assoc map key value ...` — associate pairs in argument order.
 pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(3, args, "&map:assoc")?;
-  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  if args.len() < 3 || args.len().is_multiple_of(2) {
+    return Err("&map:assoc expects a map followed by one or more key/value pairs".into());
+  }
+  let accumulator = emit_ptr_to_i32(ctx, &args[0])?;
   let key = ctx.alloc_local();
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::LocalSet(key));
   let val = ctx.alloc_local();
-  emit_expr(ctx, &args[2])?;
-  ctx.emit(Instruction::LocalSet(val));
-  ctx.emit(Instruction::LocalGet(src));
-  ctx.emit(Instruction::LocalGet(key));
-  ctx.emit(Instruction::LocalGet(val));
-  ctx.call_rt("__rt_map_assoc");
+  for [key_expr, value_expr] in args[1..].as_chunks::<2>().0 {
+    emit_expr(ctx, key_expr)?;
+    ctx.emit(Instruction::LocalSet(key));
+    emit_expr(ctx, value_expr)?;
+    ctx.emit(Instruction::LocalSet(val));
+    ctx.emit(Instruction::LocalGet(accumulator));
+    ctx.emit(Instruction::LocalGet(key));
+    ctx.emit(Instruction::LocalGet(val));
+    ctx.call_rt("__rt_map_assoc");
+    ctx.emit(Instruction::LocalSet(accumulator));
+  }
+  ctx.emit(Instruction::LocalGet(accumulator));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
@@ -294,6 +300,12 @@ pub(super) fn emit_map_vals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 /// Shared implementation: convert a map to a list/set of `[key, value]` pairs.
 pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer_tag: &str) -> Result<(), String> {
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let pairs = emit_map_pair_collection(ctx, map_ptr, outer_tag);
+  ctx.ptr_to_f64(pairs);
+  Ok(())
+}
+
+pub(super) fn emit_map_pair_collection(ctx: &mut WasmGenCtx, map_ptr: u32, outer_tag: &str) -> u32 {
   let count = emit_load_count_i32(ctx, map_ptr);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
@@ -357,8 +369,7 @@ pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
 
-  ctx.ptr_to_f64(outer);
-  Ok(())
+  outer
 }
 
 /// `&merge a b` — map merge where keys from `b` override keys from `a`.

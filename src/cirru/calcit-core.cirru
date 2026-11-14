@@ -215,15 +215,25 @@
               &buf-list:push buf 1
               &buf-list:push buf 2
               assert= ([] 1 2) (&buf-list:to-list buf)
-          :schema $ quote $ Fn Tag T
-            -> $ List T
-            :generics T
+          :schema $ quote $ Fn Tag
+            -> $ List Dynamic
           :tags $ #{} :builtin :internal :state
+          :tests $ [] $ %{} 'TestEntry (:name |freezes-heterogeneous-members-in-order)
+            :code $ quote $ let
+                buf $ &buf-list:new
+              &buf-list:push buf 1
+              &buf-list:push buf |x
+              let
+                  frozen $ &buf-list:to-list buf
+                &buf-list:push buf 2
+                assert= ([] 1 |x) frozen
+                assert= ([] 1 |x 2) (&buf-list:to-list buf)
+            :tags $ #{} :core :unit
         '&buffer $ %{} 'CodeEntry
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Buffer)
+          :schema $ quote $ Fn (& Dynamic) (-> Buffer)
           :tags $ #{} :builtin :internal :state
         '&call-spread $ %{} 'CodeEntry
           :doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls"
@@ -604,7 +614,7 @@
           :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :decode)
           :tags $ #{} :builtin :internal :meta
         '&dbg-print $ %{} 'CodeEntry
           :doc "|Internal output of the `dbg` macro. Prints one line; it is not an `:io` effect, the entry `:feature-policy` key `:dbg` controls it instead."
@@ -624,7 +634,7 @@
           :doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (& Dynamic) (-> Unit)
           :tags $ #{} :builtin :internal :io :log
         '&doseq $ %{} 'CodeEntry
           :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
@@ -682,7 +692,7 @@
         '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef (-> EnumDef)
+          :schema $ quote $ Fn EnumDef Impl (& Impl) (-> EnumDef)
           :tags $ #{} :builtin :internal
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
@@ -724,7 +734,7 @@
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Enum (-> Enum)
+          :schema $ quote $ Fn Enum Impl (& Impl) (-> Enum)
           :tags $ #{} :builtin :internal
         '&enum:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to an enum value."
@@ -754,15 +764,28 @@
           :doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Set T) T
+          :schema $ quote $ Fn (Set T) U
             -> $ Set T
-            :generics T
+            :generics T U
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |retains-receiver-member-type)
+            :code $ quote $ do
+              assert= (#{} 2)
+                assert-type
+                  &exclude (#{} 1 2) 1
+                  Set Number
+              assert= (#{} 1 2)
+                assert-type
+                  &exclude (#{} 1 2) |absent
+                  Set Number
+              assert= (#{})
+                &exclude (#{}) |absent
+            :tags $ #{} :core :unit
         '&extract-code-into-edn $ %{} 'CodeEntry
           :doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal :meta
           :tests $ [] $ %{} 'TestEntry (:name |rejects-runtime-only-values)
             :code $ quote $ assert= :failed
@@ -1877,6 +1900,13 @@
             -> U
             :generics T U
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-map-key-and-value-types)
+            :code $ quote $ assert= 5
+              &list:foldl
+                {} (:a 2) (:b 3)
+                , 0 $ fn (acc entry)
+                  let[] (k v) entry (assert-type k Tag) (assert-type v Number) (&+ acc v)
+            :tags $ #{} :core :unit
         '&list:foldl-shortcut $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -2309,14 +2339,28 @@
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Map K V) K V
+          :schema $ quote $ Fn (Map K V) K V (& Dynamic)
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |associates-map-entry-directly)
-            :code $ quote $ assert= (&{} :a 1 :b 2)
-              &map:assoc (&{} :a 1) :b 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |associates-map-entry-directly)
+              :code $ quote $ assert= (&{} :a 1 :b 2)
+                &map:assoc (&{} :a 1) :b 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |associates-all-pairs-in-order)
+              :code $ quote $ let
+                  base $ do (println |base) (&{} :a 0)
+                  updated $ &map:assoc base
+                    do (println |key-one) :a
+                    do (println |value-one) 1
+                    do (println |key-two) :b
+                    do (println |value-two) 2
+                    do (println |key-three) :a
+                    do (println |value-three) 3
+                assert= (&{} :a 0) base
+                assert= (&{} :a 3 :b 2) updated
+              :tags $ #{} :core :unit
         '&map:common-keys $ %{} 'CodeEntry
           :doc "|internal function for map common keys\nSyntax: (&map:common-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys common to both maps"
           :code $ quote &runtime-implementation
@@ -2630,6 +2674,10 @@
                 assert= (Some false)
                   &map:get (&{} :a false) :a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-map-accepts-unconstrained-key)
+              :code $ quote $ assert= None
+                &map:get ({}) |missing
+              :tags $ #{} :core :unit
         '&map:includes? $ %{} 'CodeEntry
           :doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value."
           :code $ quote &runtime-implementation
@@ -2693,13 +2741,9 @@
               :tags $ #{} :core :lexical-binder :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map-list (xs f)
-            if (map? xs)
-              foldl xs ([])
-                defn %&map:map-list (acc pair)
-                  hint-fn $ Fn (List U) (List Dynamic)
-                    -> $ List U
-                  append acc $ f pair
-              raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
+            map-list-kv xs $ fn (key value)
+              hint-fn $ Fn K V $ -> U
+              f $ [] key value
           :examples $ []
           :schema $ quote $ Fn (Map K V)
             Fn (Tuple K V) (-> U) (:features :pass)
@@ -3459,7 +3503,7 @@
         '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn StructDef (-> StructDef)
+          :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
           :tags $ #{} :builtin :internal
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|Create a StructDef from a name and declared field types."
@@ -3503,12 +3547,12 @@
         '&struct:assoc $ %{} 'CodeEntry (:doc "|Associate a declared field on a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic Dynamic (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:contains? $ %{} 'CodeEntry (:doc "|Test whether a struct value declares a field.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic (-> Bool) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&struct:count $ %{} 'CodeEntry (:doc "|Count fields in a struct value.")
           :code $ quote &runtime-implementation
@@ -3529,13 +3573,13 @@
         '&struct:extend-as $ %{} 'CodeEntry (:doc "|Extend a struct value with a declared field.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Tag Tag Dynamic (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:from-map $ %{} 'CodeEntry
           :doc "|Construct a struct value from a StructDef and map."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn StructDef Map (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&struct:get $ %{} 'CodeEntry
           :doc "|Read a required declared field from a struct value."
@@ -3551,7 +3595,7 @@
         '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Struct (-> Struct)
+          :schema $ quote $ Fn Struct Impl (& Impl) (-> Struct)
           :tags $ #{} :builtin :internal
         '&struct:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to a struct value."
@@ -3564,7 +3608,7 @@
           :doc "|Test whether a struct value matches a struct pattern."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic (-> Bool) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&struct:to-map $ %{} 'CodeEntry (:doc "|Convert a struct value to a map.")
           :code $ quote &runtime-implementation
@@ -3575,7 +3619,7 @@
         '&struct:with $ %{} 'CodeEntry (:doc "|Return a struct value with updated fields.")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Struct Dynamic Dynamic (& Dynamic) (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
         '&trait::new $ %{} 'CodeEntry
           :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"
@@ -4561,6 +4605,17 @@
                   , .len
                 assert= 3 $ "|a😀b" .len
               :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |infers-item-type-from-empty-list)
+              :code $ quote $ do
+                assert= ([] 1)
+                  assert-type
+                    append ([]) 1
+                    List Number
+                assert= ([] 1)
+                  assert-type
+                    &list:append ([]) 1
+                    List Number
+              :tags $ #{} :core :unit
         'apply $ %{} 'CodeEntry
           :doc "|用列表实参调用函数。不含 spread 的列表字面量保留各位置的类型，canonical apply 可按原求值顺序 lowering 为直接调用；立即调用的固定参数函数由这些输入推断参数，显式 hint-fn 合同仍优先。非字面量列表需要同一非 Dynamic 成员类型满足全部固定/rest 参数，并由已知长度证明参数数量；纯 rest 函数无需已知长度。不能证明时返回类型保持 Dynamic，调用前应收窄或使用明确的函数合同。"
           :code $ quote $ defn apply (f args) (f & args)
@@ -4727,6 +4782,12 @@
                       hint-fn $ Fn Dynamic $ -> Dynamic
                       assert-type x Dynamic
                   keep-value |value
+              :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |proven-bare-union-expression)
+              :code $ quote $ do
+                assert= |leaf $ assert-type |leaf calcit.core/CirruNode
+                assert= ([] |leaf)
+                  assert-type ([] |leaf) (List CirruNode)
               :tags $ #{} :assert-boundary :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
@@ -7892,10 +7953,26 @@
           :schema $ quote $ Fn (Set T) (& T)
             -> $ Set T
             :generics T
-          :tests $ [] $ %{} 'TestEntry (:name |removes-set-members)
-            :code $ quote $ assert= (#{} 3)
-              exclude (#{} 1 2 3) 1 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |removes-set-members)
+              :code $ quote $ assert= (#{} 3)
+                exclude (#{} 1 2 3) 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-disjoint-scalar-kinds)
+              :code $ quote $ do
+                assert= (#{} 2)
+                  &exclude (#{} 1 2) 1
+                assert= (#{} 1)
+                  &exclude
+                    do (println |receiver) (#{} 1)
+                    do (println |target) true
+                assert= (#{} false)
+                  &exclude (#{} false) 0
+                assert= (#{} :alpha)
+                  &exclude (#{} :alpha) 78
+                assert= (#{})
+                  &exclude (#{}) false
+              :tags $ #{} :core :unit
         'ffi-response:reject $ %{} 'CodeEntry
           :doc "|Reject a wrapped native async response exactly once."
           :code $ quote $ defn ffi-response:reject (self value)
@@ -8481,6 +8558,40 @@
                 foldl (range 3) 0 $ fn (sum idx) (assert-type idx Number)
                   + sum $ option:unwrap $ nth ([] 0 1 2) idx
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-map-key-and-value-types)
+              :code $ quote $ let
+                  items $ {} (:a 2) (:b 3)
+                  total $ foldl items 0 $ fn (acc entry)
+                    let[] (k v) entry (assert-type k Tag) (assert-type v Number) (&+ acc v)
+                assert-type total Number
+                assert= 5 total
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |accepts-explicitly-open-map-pair-callback)
+              :code $ quote $ assert= 2
+                foldl
+                  {} (:a 2) (:b 3)
+                  , 0 $ fn (acc entry)
+                    hint-fn $ Fn Number (List Dynamic) (-> Number)
+                    &+ acc 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |folds-map-as-key-value-lists)
+              :code $ quote $ let
+                  data $ &{} |one 1 |two 2
+                  total $ foldl data 0 $ fn (acc entry)
+                    assert= 2 $ &list:count entry
+                    let
+                        k $ &list:nth entry 0
+                        v $ &list:nth entry 1
+                      if (number? v)
+                        if (= k |one)
+                          + acc $ * 10 v
+                          + acc v
+                        , acc
+                assert= 12 total
+                assert= 10 $ &list:foldl (&{}) 10 $ fn (acc entry)
+                  + acc $ &list:count entry
+                assert= 3 $ foldl (#{} 1 2) 0 &+
+              :tags $ #{} :core :unit
         'foldl-compare $ %{} 'CodeEntry
           :doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure."
           :code $ quote $ defn foldl-compare (xs acc f)
@@ -8831,7 +8942,7 @@
           :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn Number String (-> String)
           :tags $ #{} :builtin :internal :io
         'gensym $ %{} 'CodeEntry
           :doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene"
@@ -9843,9 +9954,17 @@
               not $ every? traits $ fn (trait)
                 = :impl $ type-of trait
               raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-            if (struct-def? x) (&struct-def:impl-traits x & traits)
-              if (enum-def? x) (&enum-def:impl-traits x & traits)
-                raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+            let
+                attach $ fn (proc-name)
+                  if (&list:empty? traits)
+                    raise $ str-spaced proc-name "|expected 2+ arguments. Fix: pass at least one implementation created by defimpl."
+              if (struct-def? x)
+                do (attach |&struct-def:impl-traits)
+                  &struct-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                if (enum-def? x)
+                  do (attach |&enum-def:impl-traits)
+                    &enum-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
+                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
@@ -11812,7 +11931,7 @@
           :doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> Dynamic)
+          :schema $ quote $ Fn String Dynamic (-> Dynamic)
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |parses-enums-comments-and-quoted-code)
             :code $ quote $ do
@@ -11911,10 +12030,17 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |adds-list-item-at-front)
-            :code $ quote $ assert= ([] 4 1 2 3)
-              prepend ([] 1 2 3) 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |adds-list-item-at-front)
+              :code $ quote $ assert= ([] 4 1 2 3)
+                prepend ([] 1 2 3) 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-explicit-open-list-items)
+              :code $ quote $ let
+                  items $ assert-type ([] 1) (List Dynamic)
+                assert= ([] |x 1) (prepend items |x)
+                assert= ([] |x 1) (&list:prepend items |x)
+              :tags $ #{} :core :unit
         'quasiquote $ %{} 'CodeEntry
           :doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@"
           :code $ quote &runtime-implementation
@@ -11991,11 +12117,19 @@
                 assert= 5 $ deref hits
               :tags $ #{} :core :quote-return-boundary :unit
         'raise $ %{} 'CodeEntry
-          :doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message"
+          :doc "|抛出异常，控制流不会从该调用返回。通常传入一个错误消息字符串。Native 会把实参拼成错误消息，JS 将第二个实参放入错误的 data 字段，WASM/WASI 在求值后触发 trap。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> T) (:generics T)
+          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return :never)
+            :args $ []
           :tags $ #{} :builtin :control :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-live-branch-type)
+            :code $ quote $ let
+                read-number $ fn (ready)
+                  hint-fn $ Fn Bool $ -> Number
+                  if ready 7 $ raise |missing
+              assert= 7 $ read-number true
+            :tags $ #{} :core :unit
         'range $ %{} 'CodeEntry
           :doc "|internal function for creating number ranges\nSyntax: (range start end) or (range end)\nParams: start (number, optional), end (number)\nReturns: list\nCreates list of numbers from start to end (exclusive)"
           :code $ quote &runtime-implementation
@@ -13218,7 +13352,7 @@
           :doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> String)
+          :schema $ quote $ Fn String String (-> String)
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |trims-whitespace-or-custom-chars)

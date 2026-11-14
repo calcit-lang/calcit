@@ -643,7 +643,16 @@ impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
   pub(crate) fn checks_variadic_arg_types(&self) -> bool {
-    matches!(self, Self::NativeListConcat | Self::NativeMerge | Self::NativeMapDissoc)
+    matches!(
+      self,
+      Self::NativeListConcat
+        | Self::NativeMerge
+        | Self::NativeMapDissoc
+        | Self::NativeStructValueImplTraits
+        | Self::NativeEnumValueImplTraits
+        | Self::NativeStructImplTraits
+        | Self::NativeEnumImplTraits
+    )
   }
 
   /// Get the namespace and definition name for this proc.
@@ -778,14 +787,6 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
-      NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeDataToCode => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
       ListQuestion => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
@@ -863,6 +864,8 @@ impl CalcitProc {
       | NativeNumberFormat
       | NativeNumberDisplayBy
       | NativeNumberFits
+      | NativeExtractCodeIntoEdn
+      | NativeDataToCode
       | NativeListReverse
       | NativeListButlast
       | NativeListRange
@@ -963,8 +966,8 @@ impl CalcitProc {
         arg_types: vec![variadic_of(type_var("T"))],
       }),
       Append | Prepend | NativeListAppend | NativeListPrepend => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), dynamic_tag()],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T")), type_var("T")],
       }),
       Butlast => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
@@ -1029,7 +1032,7 @@ impl CalcitProc {
       }),
       NativeMapGet => Some(ProcTypeSignature {
         return_type: option_of(type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), dynamic_tag()],
+        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("V")),
@@ -1046,9 +1049,13 @@ impl CalcitProc {
         return_type: set_of(type_var("T")),
         arg_types: vec![variadic_of(type_var("T"))],
       }),
-      NativeInclude | NativeExclude => Some(ProcTypeSignature {
+      NativeInclude => Some(ProcTypeSignature {
         return_type: some_set(),
         arg_types: vec![some_set(), dynamic_tag()],
+      }),
+      NativeExclude => Some(ProcTypeSignature {
+        return_type: set_of(type_var("T")),
+        arg_types: vec![set_of(type_var("T")), type_var("U")],
       }),
       NativeDifference | NativeSetIntersection => Some(ProcTypeSignature {
         return_type: set_of(type_var("T")),
@@ -1126,19 +1133,19 @@ impl CalcitProc {
       }),
       NativeStructValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), variadic_dynamic()],
+        arg_types: vec![some_tag("struct"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumValueImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), variadic_dynamic()],
+        arg_types: vec![some_tag("enum"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeStructImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct-def"),
-        arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
+        arg_types: vec![some_tag("struct-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum-def"),
-        arg_types: vec![some_tag("enum-def"), variadic_dynamic()],
+        arg_types: vec![some_tag("enum-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
       }),
       NativeEnumDefHasVariant => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
@@ -1162,14 +1169,19 @@ impl CalcitProc {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
-      NativeStructWith => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeStructAssoc => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), dynamic_tag(), dynamic_tag()],
-      }),
+      NativeStructWith | NativeStructAssoc | NativeStructContains | NativeStructMatches | NativeStructFromMap
+      | NativeStructExtendAs => {
+        let schema = core.defs[self.as_ref()]
+          .schema
+          .as_function()
+          .expect("bundled Struct primitive schema");
+        let mut arg_types = schema.arg_types.clone();
+        arg_types.extend(schema.rest_type.iter().cloned().map(variadic_of));
+        Some(ProcTypeSignature {
+          return_type: schema.return_type.clone(),
+          arg_types,
+        })
+      }
       NativeStructAssocAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag"), dynamic_tag()],
@@ -1201,21 +1213,9 @@ impl CalcitProc {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("struct")],
       }),
-      NativeStructContains => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("struct"), dynamic_tag()],
-      }),
-      NativeStructMatches => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("struct"), dynamic_tag()],
-      }),
       NativeStructToMap => Some(ProcTypeSignature {
         return_type: map_of(some_tag("tag"), dynamic_tag()),
         arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructFromMap => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct-def"), some_tag("map")],
       }),
       NativeStructGetName => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -1228,10 +1228,6 @@ impl CalcitProc {
       NativeStructImpls => Some(ProcTypeSignature {
         return_type: list_of(some_tag("impl")),
         arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructExtendAs => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), some_tag("tag"), some_tag("tag"), dynamic_tag()],
       }),
 
       // === Refs/Atoms ===
@@ -1294,7 +1290,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("enum-def"), some_tag("string"), some_tag("string"), some_tag("string")],
       }),
       Raise => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
+        return_type: crate::calcit::type_annotation::NEVER_TYPE.clone(),
         arg_types: vec![variadic_dynamic()],
       }),
       Todo => Some(ProcTypeSignature {
@@ -1467,6 +1463,21 @@ mod tests {
   use std::str::FromStr;
 
   use super::*;
+
+  #[test]
+  fn variadic_proc_schemas_match_runtime_signatures() {
+    let snapshot = crate::load_core_snapshot().expect("bundled core snapshot");
+    let definitions = &snapshot.files[crate::calcit::CORE_NS].defs;
+    for proc in [CalcitProc::NativeBuffer, CalcitProc::NativeDisplayStack, CalcitProc::NativeMapAssoc] {
+      let core = definitions[proc.as_ref()].schema.as_function().expect("core function schema");
+      let runtime = proc.get_type_signature().expect("runtime function signature");
+      let mut args = core.arg_types.clone();
+      let rest = core.rest_type.as_ref().expect("variadic schema has a rest parameter");
+      args.push(variadic_of(rest.clone()));
+      assert_eq!(args, runtime.arg_types, "{proc} argument types");
+      assert_eq!(core.return_type, runtime.return_type, "{proc} return type");
+    }
+  }
 
   #[test]
   fn optional_proc_parameters_do_not_make_values_nullable() {
