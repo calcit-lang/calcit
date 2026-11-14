@@ -1130,7 +1130,7 @@ fn gen_call_code(
     }
     // &struct:with-at: direct indexed batch update with tag checks.
     Calcit::Proc(CalcitProc::NativeStructWithAt) => {
-      if body.len() >= 3 && (body.len() - 1).is_multiple_of(3) {
+      if !body.is_empty() && (body.len() - 1).is_multiple_of(3) {
         let record_code = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
         let triple_count = (body.len() - 1) / 3;
         let mut all_args = vec![];

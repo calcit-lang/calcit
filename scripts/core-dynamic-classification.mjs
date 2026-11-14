@@ -112,6 +112,7 @@ const runtimePolymorphic = new Set([
   "&struct:matches?",
   "&struct:to-map",
   "&struct:with",
+  "&struct:with-at",
   "&{}",
   "::",
   "?",

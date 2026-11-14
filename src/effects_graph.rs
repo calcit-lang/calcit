@@ -131,7 +131,6 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeStructNth, &[]),
   (CalcitProc::NativeStructFieldTag, &[]),
   (CalcitProc::NativeStructAssocAt, &[]),
-  (CalcitProc::NativeStructWithAt, &[]),
 ];
 
 /// Effect tags for core syntax forms that have no `calcit.core` Snapshot entry; checked by the

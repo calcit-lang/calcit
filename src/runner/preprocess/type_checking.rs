@@ -1091,6 +1091,15 @@ pub(crate) fn check_proc_arg_types(
       .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(super::GENERATED_DEF), Arc::from(vec![])))
   };
 
+  if *proc == CalcitProc::NativeStructWithAt && actual_count > 0 && !(actual_count - 1).is_multiple_of(3) {
+    super::gen_check_warning_with_location_code(
+      format!("[Error] Proc `{proc}` expects a Struct followed by index/tag/value triples, got {actual_count} args"),
+      "E_PROC_ARITY",
+      arity_location(),
+      check_warnings,
+    );
+    return;
+  }
   if !has_variadic {
     if actual_count < min_count || actual_count > max_count {
       let expected_str = if min_count == max_count {
@@ -1163,6 +1172,18 @@ pub(crate) fn check_proc_arg_types(
     | CalcitProc::NativeListFoldlShortcut => specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types)
       .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
       .unwrap_or_else(|| signature.arg_types.clone()),
+    CalcitProc::NativeStructWithAt => {
+      let mut expected = vec![signature.arg_types[0].clone()];
+      let triple = [
+        Arc::new(CalcitTypeAnnotation::Number),
+        Arc::new(CalcitTypeAnnotation::Tag),
+        crate::calcit::DYNAMIC_TYPE.clone(),
+      ];
+      for _ in 0..actual_count.saturating_sub(1) / 3 {
+        expected.extend(triple.iter().cloned());
+      }
+      expected
+    }
     CalcitProc::Sort | CalcitProc::NativeListSort => specialize_collection_sort_expected_types(args, scope_types, &signature.arg_types)
       .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
       .unwrap_or_else(|| signature.arg_types.clone()),

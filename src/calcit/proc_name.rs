@@ -847,6 +847,7 @@ impl CalcitProc {
       | NativeEnumValidate
       | NativeImplOrigin
       | NativeUnionNew
+      | NativeStructWithAt
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeCirruType
@@ -1091,17 +1092,6 @@ impl CalcitProc {
       NativeStructAssocAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag"), dynamic_tag()],
-      }),
-      NativeStructWithAt => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        // (struct, idx, tag, value, ...) — variadic triples after first arg
-        arg_types: vec![
-          some_tag("struct"),
-          some_tag("number"),
-          some_tag("tag"),
-          dynamic_tag(),
-          variadic_dynamic(),
-        ],
       }),
       NativeStructGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
