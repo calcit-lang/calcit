@@ -3615,6 +3615,11 @@
           :examples $ []
           :schema $ quote $ Fn Struct Dynamic Dynamic (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
+        '&struct:assoc-at $ %{} 'CodeEntry (:doc "|更新指定索引的结构体字段。字段标签必须与索引匹配，字段值仍按已声明的字段类型检查。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Struct Number Tag Dynamic (-> Struct)
+          :tags $ #{} :builtin :internal
         '&struct:contains? $ %{} 'CodeEntry (:doc "|Test whether a struct value declares a field.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3640,6 +3645,11 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Struct Tag Tag Dynamic (-> Struct) (:open :decode)
+          :tags $ #{} :builtin :internal
+        '&struct:field-tag $ %{} 'CodeEntry (:doc "|读取指定索引的结构体字段标签。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Struct Number (-> Tag)
           :tags $ #{} :builtin :internal
         '&struct:from-map $ %{} 'CodeEntry
           :doc "|Construct a struct value from a StructDef and map."
@@ -3675,6 +3685,11 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Struct Dynamic (-> Bool) (:open :reflect)
+          :tags $ #{} :builtin :internal
+        '&struct:nth $ %{} 'CodeEntry (:doc "|读取指定索引的结构体字段。可选标签用于验证索引仍指向编译时选定的字段。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Struct Number Tag (-> Dynamic)
           :tags $ #{} :builtin :internal
         '&struct:to-map $ %{} 'CodeEntry (:doc "|Convert a struct value to a map.")
           :code $ quote &runtime-implementation
