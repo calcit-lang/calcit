@@ -357,6 +357,15 @@ try {
   }
   assert.equal(runtimeA.hashFunction(definition), runtimeA.hashFunction(equalDefinition));
   assert.equal(runtimeA._$n_compare(definition, equalDefinition), 0);
+  const bufferDefinition = structDefinition(new runtimeA.CalcitSymbol("BufList"));
+  const taggedBufferDefinition = structDefinition(runtimeA.newTag("buf-list"));
+  const bufferValue = new runtimeA.CalcitStructValue(bufferDefinition.name, bufferDefinition.fields,
+    [runtimeA._$n_buf_list_$o_new()], bufferDefinition);
+  assert.equal(runtimeA._$n_struct_$o_matches_$q_(bufferValue, taggedBufferDefinition), true,
+    "BufList and :buf-list must preserve the same nominal field contract");
+  assert.equal(runtimeA._$n__$e_(bufferDefinition, taggedBufferDefinition), true);
+  assert.equal(runtimeA.hashFunction(bufferDefinition), runtimeA.hashFunction(taggedBufferDefinition));
+  assert.equal(runtimeA._$n_compare(bufferDefinition, taggedBufferDefinition), 0);
   const sourceSymbol = new runtimeA.CalcitSymbol("Point", "app.left/Point");
   const otherSourceSymbol = new runtimeA.CalcitSymbol("Point", "app.right/Point");
   assert.equal(runtimeA._$n__$e_(sourceSymbol, otherSourceSymbol), true, "Quoted data equality still ignores source locations");

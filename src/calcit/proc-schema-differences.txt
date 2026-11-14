@@ -11,7 +11,6 @@
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
-&fs-read-dir | return | (:: "'calcit.core/Result" (:: "'List" "'T") "'String") => (:: "'calcit.core/Result" (:: "'List" "'calcit.core/FsPath") "'String")
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
@@ -26,7 +25,6 @@
 &list:prepend | arg 0 | "'List" => (:: "'List" "'T")
 &list:prepend | arg 1 | "'Dynamic" => "'T"
 &list:prepend | return | "'List" => (:: "'List" "'T")
-&list? | missing core definition
 &map:assoc | rest | "'Dynamic" => <missing>
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition

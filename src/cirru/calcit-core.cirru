@@ -176,7 +176,7 @@
                 buf $ &buf-list:new
               &buf-list:concat buf $ [] 1 2 3
               assert= 3 $ &buf-list:count buf
-          :schema $ quote $ Fn Tag (List T) (-> Tag) (:generics T)
+          :schema $ quote $ Fn BufList (List T) (-> BufList) (:generics T)
           :tags $ #{} :builtin :internal :state
         '&buf-list:count $ %{} 'CodeEntry
           :doc "|internal function for getting the element count of a mutable buffer list\\nSyntax: (&buf-list:count buf)\\nParams: buf (buf-list)\\nReturns: number\\nReturns the number of elements currently in the buffer"
@@ -186,14 +186,14 @@
                 buf $ &buf-list:new
               &buf-list:push buf 42
               assert= 1 $ &buf-list:count buf
-          :schema $ quote $ Fn Tag (-> Number)
+          :schema $ quote $ Fn BufList (-> Number)
           :tags $ #{} :builtin :internal :state
         '&buf-list:new $ %{} 'CodeEntry
           :doc "|internal function for creating a new mutable buffer list\\nSyntax: (&buf-list:new)\\nParams: none\\nReturns: buf-list\\nCreates a new empty mutable append-only buffer list, used for efficient incremental accumulation before converting to an immutable list"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             assert= 0 $ &buf-list:count $ &buf-list:new
-          :schema $ quote $ Fn (-> Tag)
+          :schema $ quote $ Fn (-> BufList)
           :tags $ #{} :builtin :internal :state
         '&buf-list:push $ %{} 'CodeEntry
           :doc "|internal function for pushing an item onto a mutable buffer list\\nSyntax: (&buf-list:push buf item)\\nParams: buf (buf-list), item (any)\\nReturns: buf-list\\nMutates buf by appending item to end; returns the same buf"
@@ -204,7 +204,7 @@
               &buf-list:push buf 10
               &buf-list:push buf 20
               assert= 2 $ &buf-list:count buf
-          :schema $ quote $ Fn Tag T (-> Tag) (:generics T)
+          :schema $ quote $ Fn BufList T (-> BufList) (:generics T)
           :tags $ #{} :builtin :internal :state
         '&buf-list:to-list $ %{} 'CodeEntry
           :doc "|internal function for converting a mutable buffer list to an immutable list\\nSyntax: (&buf-list:to-list buf)\\nParams: buf (buf-list)\\nReturns: list\\nFreezes the mutable buffer into a regular immutable list"
@@ -215,17 +215,21 @@
               &buf-list:push buf 1
               &buf-list:push buf 2
               assert= ([] 1 2) (&buf-list:to-list buf)
-          :schema $ quote $ Fn Tag
+          :schema $ quote $ Fn BufList
             -> $ List Dynamic
           :tags $ #{} :builtin :internal :state
           :tests $ [] $ %{} 'TestEntry (:name |freezes-heterogeneous-members-in-order)
             :code $ quote $ let
                 buf $ &buf-list:new
-              &buf-list:push buf 1
-              &buf-list:push buf |x
+              assert-type buf BufList
+              assert= :buf-list $ type-of buf
+              assert= 1 $ if buf 1 0
+              assert= 1 $ if (&buf-list:push buf 1) 1 0
+              &buf-list:concat buf $ [] |x
               let
                   frozen $ &buf-list:to-list buf
                 &buf-list:push buf 2
+                assert= 3 $ &buf-list:count buf
                 assert= ([] 1 |x) frozen
                 assert= ([] 1 |x 2) (&buf-list:to-list buf)
             :tags $ #{} :core :unit
@@ -1288,11 +1292,10 @@
                     fn (message) message
               :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
-          :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
+          :doc "|内部目录枚举原语。根据传入的 enum 定义包装结果，用传入的 struct 定义构造每个子路径。已知构造器时，检查器从定义推断返回类型；否则结果保持开放。公开的 FsPath .read-dir 返回 Result<List<FsPath>, String>。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef StructDef String String
-            -> $ Result (List FsPath) String
+          :schema $ quote $ Fn EnumDef StructDef String String (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :file :internal :io
         '&fs-read-text $ %{} 'CodeEntry
           :doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
@@ -2355,6 +2358,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |deduplicates-list-members)
             :code $ quote $ assert= (#{} 1)
               &list:to-set $ [] 1 1 1 1
+            :tags $ #{} :core :unit
+        '&list? $ %{} 'CodeEntry (:doc "|检查值是否为 List，其他值返回 false。")
+          :code $ quote $ def &list? &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool) (:open :reflect)
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |recognizes-list-values)
+            :code $ quote $ do
+              assert= true $ &list? $ []
+              assert= true $ &list? $ [] 1 2
+              assert= false $ &list? $ &{} |key 1
+              assert= false $ &list? 1
             :tags $ #{} :core :unit
         '&map:assoc $ %{} 'CodeEntry
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
