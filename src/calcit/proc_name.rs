@@ -612,17 +612,6 @@ fn fn_slot_with_features(
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
 }
 
-/// A Ref watcher, `Fn T T (-> Unit) (:features :state :io)`. It is stored and
-/// runs later when the Ref changes, so it is not a `:pass` slot; it may read
-/// other Refs or print (#2726).
-fn watcher_slot() -> Arc<CalcitTypeAnnotation> {
-  fn_slot_with_features(vec![type_var("T"), type_var("T")], some_tag("unit"), &["state", "io"])
-}
-
-fn ref_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Ref(inner))
-}
-
 fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(inner))
 }
@@ -701,14 +690,6 @@ impl CalcitProc {
 
     match self {
       // === Meta operations ===
-      TypeOf => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      FormatToLisp | FormatToCirru => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
-      }),
       TurnSymbol => Some(ProcTypeSignature {
         return_type: some_tag("symbol"),
         arg_types: vec![some_tag("string")],
@@ -762,10 +743,6 @@ impl CalcitProc {
       NativeAssertTraits => Some(ProcTypeSignature {
         return_type: type_var("T"),
         arg_types: vec![type_var("T"), some_tag("trait")],
-      }),
-      NativeCirruType => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![some_tag("cirru-quote")],
       }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
@@ -823,10 +800,6 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag()],
       }),
-      IsSpreadingMark => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
 
       // Runtime intrinsics whose argument and return types come from core.
       NativeAdd
@@ -863,10 +836,31 @@ impl CalcitProc {
       | NativeMapGet
       | NativeStructNew
       | NativeEnumNew
+      | NativeEnumNth
+      | NativeEnumAssoc
+      | NativeEnumCount
+      | NativeEnumImpls
+      | NativeEnumParams
+      | NativeEnumDefinition
+      | NativeEnumDefHasVariant
+      | NativeEnumDefVariantArity
+      | NativeEnumValidate
+      | NativeImplOrigin
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
+      | NativeCirruType
+      | NativeCirruNth
+      | NativeCirruQuoteLeafText
+      | NativeCirruQuoteToList
+      | ParseCirru
+      | ParseCirruEdn
+      | ParseCirruList
+      | FormatCirru
+      | FormatCirruOneLiner
       | NativeListQ
+      | Foldl
+      | NativeListFoldl
       | NativeBufListNew
       | NativeBufListPush
       | NativeBufListConcat
@@ -927,6 +921,14 @@ impl CalcitProc {
       | JsonStringify
       | JsonPretty
       | FormatCirruEdn
+      | FormatToLisp
+      | FormatToCirru
+      | PrStr
+      | IsSpreadingMark
+      | TypeOf
+      | Not
+      | Identical
+      | Trim
       | NativeStrConcat
       | TurnString
       | Split
@@ -952,32 +954,24 @@ impl CalcitProc {
       | NativeStrRest
       | NativeStrPadLeft
       | NativeStrPadRight
+      | Ref
+      | AtomDeref
+      | AddWatch
+      | RemoveWatch
       | NativeLessThan
       | NativeGreaterThan
       | TurnTag => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
-      NativeEquals | Identical => Some(ProcTypeSignature {
+      NativeEquals => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
       }),
-      Not => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
 
       // === String operations ===
-      Trim => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("string")],
-      }),
       NativeStr => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      PrStr => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
       }),
 
       // === List operations ===
@@ -1003,17 +997,9 @@ impl CalcitProc {
           ],
         })
       }
-      Foldl => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
       FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
-      NativeListFoldl => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
 
       // === Map operations ===
@@ -1037,30 +1023,6 @@ impl CalcitProc {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag"), variadic_dynamic()],
       }),
-      NativeEnumNth => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("enum"), some_tag("number")],
-      }),
-      NativeEnumAssoc => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), some_tag("number"), dynamic_tag()],
-      }),
-      NativeEnumCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumImpls => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("impl")),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumParams => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumDefinition => Some(ProcTypeSignature {
-        return_type: option_tag("enum-def"),
-        arg_types: vec![some_tag("enum")],
-      }),
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
         arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
@@ -1068,10 +1030,6 @@ impl CalcitProc {
       NativeImplNew => Some(ProcTypeSignature {
         return_type: some_tag("impl"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeImplOrigin => Some(ProcTypeSignature {
-        return_type: option_tag("trait"),
-        arg_types: vec![some_tag("impl")],
       }),
       NativeImplGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -1096,18 +1054,6 @@ impl CalcitProc {
       NativeEnumImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum-def"),
         arg_types: vec![some_tag("enum-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
-      NativeEnumDefHasVariant => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("enum-def"), some_tag("tag")],
-      }),
-      NativeEnumDefVariantArity => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("enum-def"), some_tag("tag")],
-      }),
-      NativeEnumValidate => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
 
       // === Struct value operations ===
@@ -1178,24 +1124,6 @@ impl CalcitProc {
       NativeStructImpls => Some(ProcTypeSignature {
         return_type: list_of(some_tag("impl")),
         arg_types: vec![some_tag("struct")],
-      }),
-
-      // === Refs/Atoms ===
-      Ref => Some(ProcTypeSignature {
-        return_type: ref_of(type_var("T")),
-        arg_types: vec![type_var("T")],
-      }),
-      AtomDeref => Some(ProcTypeSignature {
-        return_type: type_var("T"),
-        arg_types: vec![ref_of(type_var("T"))],
-      }),
-      AddWatch => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![ref_of(type_var("T")), some_tag("tag"), watcher_slot()],
-      }),
-      RemoveWatch => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![ref_of(type_var("T")), some_tag("tag")],
       }),
 
       // === I/O operations ===
@@ -1272,40 +1200,6 @@ impl CalcitProc {
         arg_types: vec![],
       }),
 
-      // === Cirru format ===
-      ParseCirru => Some(ProcTypeSignature {
-        return_type: some_tag("cirru-quote"),
-        arg_types: vec![some_tag("string")],
-      }),
-      ParseCirruEdn => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string"), dynamic_tag()],
-      }),
-      FormatCirru => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("list"), some_tag("bool")],
-      }),
-      FormatCirruOneLiner => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("list")],
-      }),
-      ParseCirruList => Some(ProcTypeSignature {
-        return_type: list_of(cirru_node()),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeCirruQuoteToList => Some(ProcTypeSignature {
-        return_type: list_of(cirru_node()),
-        arg_types: vec![some_tag("cirru-quote")],
-      }),
-      NativeCirruQuoteLeafText => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("cirru-quote")],
-      }),
-      NativeCirruNth => Some(ProcTypeSignature {
-        return_type: some_tag("cirru-quote"),
-        arg_types: vec![some_tag("cirru-quote"), some_tag("number")],
-      }),
-
       RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![dynamic_tag()],
@@ -1364,11 +1258,6 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
     .filter_map(|proc| proc.build_type_signature(core).map(|signature| (proc, signature)))
     .collect()
 });
-
-/// `calcit.core/CirruNode`, the recursive `String | List CirruNode` union.
-pub(crate) fn cirru_node() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/CirruNode"), Arc::new(vec![])))
-}
 
 #[cfg(test)]
 mod tests {
