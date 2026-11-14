@@ -1589,6 +1589,18 @@
                 assert= ([] 6) tail
                 &+ head $ &list:nth tail 0
             :tags $ #{} :core :unit
+        '&inspect-methods $ %{} 'CodeEntry
+          :doc "|将运行时方法及其实现来源打印到 stderr，返回传入的值。可选字符串用于标记诊断位置。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic String (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal :io :log
+        '&inspect-type $ %{} 'CodeEntry
+          :doc "|预处理阶段打印表达式的推断类型。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&list:append $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -3686,6 +3698,12 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Struct Dynamic Dynamic (& Dynamic) (-> Struct) (:open :decode)
+          :tags $ #{} :builtin :internal
+        '&trait-call $ %{} 'CodeEntry
+          :doc "|按指定 trait 和方法名分派调用。已知的名义实现和方法由编译器独立检查。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Trait Dynamic Dynamic (& Dynamic) (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&trait::new $ %{} 'CodeEntry
           :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"

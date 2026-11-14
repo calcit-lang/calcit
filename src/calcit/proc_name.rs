@@ -732,14 +732,6 @@ impl CalcitProc {
         return_type: list_of(Arc::new(CalcitTypeAnnotation::DynFn)),
         arg_types: vec![dynamic_tag()],
       }),
-      NativeInspectMethods => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("string")],
-      }),
-      NativeTraitCall => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
-      }),
       NativeAssertTraits => Some(ProcTypeSignature {
         return_type: type_var("T"),
         arg_types: vec![type_var("T"), some_tag("trait")],
@@ -747,10 +739,6 @@ impl CalcitProc {
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![],
-      }),
-      NativeInspectType => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
       ListQuestion => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
@@ -845,6 +833,9 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeInspectMethods
+      | NativeInspectType
+      | NativeTraitCall
       | NativeImplOrigin
       | NativeUnionNew
       | NativeExtractCodeIntoEdn

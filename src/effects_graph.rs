@@ -121,9 +121,6 @@ pub const UNKNOWN_EFFECT_KIND: &str = "unknown";
 /// silently treated as pure.
 const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeMethodsOf, &[]),
-  (CalcitProc::NativeInspectMethods, &["log", "io"]),
-  (CalcitProc::NativeTraitCall, &[]),
-  (CalcitProc::NativeInspectType, &[]),
   (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
