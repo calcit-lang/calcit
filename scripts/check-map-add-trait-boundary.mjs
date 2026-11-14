@@ -43,7 +43,7 @@ export function traitRejectionCases() {
       deftrait FreshShow $ .render AnyFn
     old-trait $ make-trait
     next-trait $ make-trait
-    old-impl $ defimpl OldImpl old-trait $ .render
+    old-impl $ defimpl Person0 old-trait $ .render
       fn (self) |old
     Person $ impl-traits Person0 old-impl
     p $ %{} Person $ :name |Alice
