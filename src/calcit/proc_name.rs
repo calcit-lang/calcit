@@ -867,6 +867,16 @@ impl CalcitProc {
       | NativeMapGet
       | NativeStructNew
       | NativeEnumNew
+      | NativeEnumNth
+      | NativeEnumAssoc
+      | NativeEnumCount
+      | NativeEnumImpls
+      | NativeEnumParams
+      | NativeEnumDefinition
+      | NativeEnumDefHasVariant
+      | NativeEnumDefVariantArity
+      | NativeEnumValidate
+      | NativeImplOrigin
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
@@ -1036,30 +1046,6 @@ impl CalcitProc {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum-def"), some_tag("tag"), variadic_dynamic()],
       }),
-      NativeEnumNth => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("enum"), some_tag("number")],
-      }),
-      NativeEnumAssoc => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), some_tag("number"), dynamic_tag()],
-      }),
-      NativeEnumCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumImpls => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("impl")),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumParams => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("enum")],
-      }),
-      NativeEnumDefinition => Some(ProcTypeSignature {
-        return_type: option_tag("enum-def"),
-        arg_types: vec![some_tag("enum")],
-      }),
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
         arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
@@ -1067,10 +1053,6 @@ impl CalcitProc {
       NativeImplNew => Some(ProcTypeSignature {
         return_type: some_tag("impl"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeImplOrigin => Some(ProcTypeSignature {
-        return_type: option_tag("trait"),
-        arg_types: vec![some_tag("impl")],
       }),
       NativeImplGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -1095,18 +1077,6 @@ impl CalcitProc {
       NativeEnumImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum-def"),
         arg_types: vec![some_tag("enum-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
-      NativeEnumDefHasVariant => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![some_tag("enum-def"), some_tag("tag")],
-      }),
-      NativeEnumDefVariantArity => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("enum-def"), some_tag("tag")],
-      }),
-      NativeEnumValidate => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
 
       // === Struct value operations ===
