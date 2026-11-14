@@ -44,7 +44,7 @@ try {
   run(snapshot, "edit", "add-ns", "calcit.unicode");
   run(snapshot, "edit", "def", "calcit.unicode/main!", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "main!", [], ...tests.map((test) => test.code.__edn_quote), "&unit"]));
-  run(snapshot, "edit", "schema", "calcit.unicode/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit)");
+  run(snapshot, "edit", "schema", "calcit.unicode/main!", "--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :io)");
   const entry = [snapshot, "--init-fn", "calcit.unicode/main!", "--reload-fn", "calcit.unicode/main!"];
   const nativeOutput = run(...entry);
   assert.deepEqual(nativeOutput.split(/\r?\n/).filter((line) => line.startsWith("unicode-")), expectedTrace);

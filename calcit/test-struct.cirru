@@ -56,6 +56,10 @@
             :count $ Option Number
           :examples $ []
           :schema $ quote StructDef
+        'CssValue $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion CssValue String Number Tag
+          :examples $ []
+          :schema $ quote UnionDef
         'DefaultFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct DefaultFields (:host String) (:port Number 8080) (:label String |guest) (:mode Tag :read) (:secure? Bool false)
             :tags (List String) ([])
@@ -265,6 +269,10 @@
           :code $ quote $ defstruct Point2D (:x Number) (:y Number)
           :examples $ []
           :schema $ quote StructDef
+        'StyleKey $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion StyleKey Tag String
+          :examples $ []
+          :schema $ quote UnionDef
         'TagShorthandEvent $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct TagShorthandEvent (:type Tag) (:path String)
           :examples $ []
@@ -286,6 +294,19 @@
                   ev $ TagShorthandEvent :type :create :path |p
                   read-type $ fn (x) x.:type
                 assert= :create $ read-type ev
+        'TypedStyle $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct TypedStyle
+            :style $ Option $ Map StyleKey CssValue
+          :examples $ []
+          :schema $ quote StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |proves-mixed-option-map-members)
+            :code $ quote $ let
+                actual $ TypedStyle :style $ Some
+                  {} (:padding-left 12) (:display :block) (|width |20px)
+              assert=
+                Some $ {} (:padding-left 12) (:display :block) (|width |20px)
+                :style actual
+            :tags $ #{} :collection-proof :unit
         'assign-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-alias (source value)
             let
