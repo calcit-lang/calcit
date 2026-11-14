@@ -1776,22 +1776,26 @@ fn check_defimpl_destination(
 
   // Compare source symbols conservatively. A symbol under a local binding or a
   // macro may need qualification before the move if its global binding changes.
-  let mut pending: Vec<&Cirru> = items.iter().skip(1).collect();
-  while let Some(node) = pending.pop() {
-    match node {
-      Cirru::List(children) => pending.extend(children.iter()),
-      Cirru::Leaf(_) => {
-        if let Ok(calcit::Calcit::Symbol { sym, .. }) = calcit::data::cirru::code_to_calcit(node, source_ns, "", vec![])
-          && resolve(source_file, &source_imports, source_ns, &sym) != resolve(target_file, &target_imports, target_ns, &sym)
-        {
-          return Err(format!(
-            "Cannot move or rename this defimpl in '{target_ns}': symbol '{sym}' would resolve differently. Qualify the reference before editing."
-          ));
-        }
+  for node in items.iter().skip(1) {
+    let expression = calcit::data::cirru::code_to_calcit(node, source_ns, "", vec![])?;
+    check_defimpl_references(&expression, &|sym| {
+      if resolve(source_file, &source_imports, source_ns, sym) != resolve(target_file, &target_imports, target_ns, sym) {
+        return Err(format!(
+          "Cannot move or rename this defimpl in '{target_ns}': symbol '{sym}' would resolve differently. Qualify the reference before editing."
+        ));
       }
-    }
+      Ok(())
+    })?;
   }
   Ok(())
+}
+
+fn check_defimpl_references(expression: &calcit::Calcit, check: &impl Fn(&str) -> Result<(), String>) -> Result<(), String> {
+  match expression {
+    calcit::Calcit::Symbol { sym, .. } => check(sym),
+    calcit::Calcit::List(items) => items.traverse_result(&mut |item| check_defimpl_references(item, check)),
+    _ => Ok(()),
+  }
 }
 
 fn resolve_defimpl_symbol(
@@ -1811,10 +1815,11 @@ fn resolve_defimpl_symbol(
   if file.defs.contains_key(symbol) {
     return (namespace.to_owned(), symbol.to_owned());
   }
-  if let Some(ImportRule::NsReferDef(owner, name)) = imports.get(symbol).map(AsRef::as_ref) {
-    return (owner.to_string(), name.to_string());
+  match imports.get(symbol).map(AsRef::as_ref) {
+    Some(ImportRule::NsReferDef(owner, name)) => (owner.to_string(), name.to_string()),
+    Some(ImportRule::NsDefault(module)) => (module.to_string(), "default".to_owned()),
+    _ => (calcit::calcit::CORE_NS.to_owned(), symbol.to_owned()),
   }
-  (calcit::calcit::CORE_NS.to_owned(), symbol.to_owned())
 }
 
 fn defimpl_edit_baseline(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, code: &Cirru) -> Result<Option<Snapshot>, String> {
@@ -3902,6 +3907,45 @@ mod tests {
     let qualified = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label app.main/helper)").unwrap();
     super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &qualified)
       .expect("qualified method function keeps its resolution");
+
+    let reference = entry(&parse_input_to_cirru("quote $ defref *label |label").unwrap());
+    for namespace in ["app.main", "app.model"] {
+      original
+        .files
+        .get_mut(namespace)
+        .unwrap()
+        .defs
+        .insert("*label".to_owned(), reference.clone());
+    }
+    let deref = parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) , @*label)").unwrap();
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &deref)
+      .expect_err("a dereferenced symbol would bind to the destination state");
+    assert!(error.contains("symbol '*label' would resolve differently"), "{error}");
+    let qualified =
+      parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) , @app.main/*label)").unwrap();
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &qualified)
+      .expect("qualified dereference keeps its resolution");
+
+    let ns_with_default = |namespace, module| {
+      list(vec![
+        leaf("ns"),
+        leaf(namespace),
+        list(vec![
+          leaf(":require"),
+          list(vec![leaf(module), leaf(":default"), leaf("formatter")]),
+        ]),
+      ])
+    };
+    original.files.get_mut("app.main").unwrap().ns.code = ns_with_default("app.main", "|module-a");
+    original.files.get_mut("app.model").unwrap().ns.code = ns_with_default("app.model", "|module-b");
+    let default_import =
+      parse_input_to_cirru("quote $ defimpl app.model/Point app.traits/Label (.label $ fn (self) formatter self)").unwrap();
+    let error = super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &default_import)
+      .expect_err("a default import from another module changes the binding");
+    assert!(error.contains("symbol 'formatter' would resolve differently"), "{error}");
+    original.files.get_mut("app.model").unwrap().ns.code = ns_with_default("app.model", "|module-a");
+    super::check_defimpl_destination(&path, &original, &original, "app.main", "app.model", &default_import)
+      .expect("the same module's default export keeps its resolution");
   }
 
   fn rename_fixture_declaration(code: &Cirru, old_name: &str, new_name: &str) -> Result<(Cirru, bool), String> {
