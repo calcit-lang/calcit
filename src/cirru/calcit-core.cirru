@@ -4496,6 +4496,12 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
+        '?{} $ %{} 'CodeEntry
+          :doc "|内部匿名 Struct 构造器。交替接收字段标签和值，并检查重复字段。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn (& Dynamic) (-> Struct)
+          :tags $ #{} :builtin :internal
         '\ $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro \ (& xs)
             if (&list:empty? xs) (raise "|\\ expects function body")
@@ -12394,6 +12400,12 @@
           :examples $ []
           :schema $ quote $ Fn T (-> Bool) (:generics T)
           :tags $ #{} :builtin :internal :state
+        'register-calcit-builtin-impls $ %{} 'CodeEntry
+          :doc "|注册 JavaScript 后端内建方法实现。Native 入口返回 Unit。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Unit)
+          :tags $ #{} :builtin :internal :effect
         'remove-watch! $ %{} 'CodeEntry
           :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态。"
           :code $ quote &runtime-implementation
@@ -13316,6 +13328,13 @@
                 assert= 2 $ .len $ .unwrap
                   .first $ .to-list ps
               :tags $ #{} :core :unit
+        'todo! $ %{} 'CodeEntry
+          :doc "|标记尚未实现的代码。可省略说明或提供字符串，执行时总是失败，预处理会报告 E_TODO。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return :never)
+            :args $ [] 'String
+          :tags $ #{} :builtin :internal :control
         'to-string $ %{} 'CodeEntry
           :doc "|将实现 ToString 的值转换为文本。标量转换不等同于 Show 的用户展示或 Debug 的诊断表示；没有实现的集合、名义值与开放 Dynamic 不能直接调用。"
           :code $ quote $ defn to-string (value) (.to-string value)

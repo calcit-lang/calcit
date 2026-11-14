@@ -845,6 +845,9 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeLooseStruct
+      | Todo
+      | RegisterCalcitBuiltinImpls
       | NativeImplOrigin
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
@@ -1067,10 +1070,6 @@ impl CalcitProc {
       }),
 
       // === Struct value operations ===
-      NativeLooseStruct => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![variadic_dynamic()],
-      }),
       NativeStruct => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
@@ -1137,13 +1136,6 @@ impl CalcitProc {
       }),
 
       // === I/O operations ===
-      Todo => Some(ProcTypeSignature {
-        // `todo!` is a diverging compiler-known placeholder. Dynamic keeps it
-        // assignable to any declared return type while the static E_TODO
-        // diagnostic prevents it from being silently forgotten.
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string")],
-      }),
       GetEnv => Some(ProcTypeSignature {
         return_type: option_tag("string"),
         arg_types: vec![some_tag("string")],
@@ -1151,11 +1143,6 @@ impl CalcitProc {
       GetArgs => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
         arg_types: vec![],
-      }),
-
-      RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![dynamic_tag()],
       }),
 
       // === Special forms and control flow ===
