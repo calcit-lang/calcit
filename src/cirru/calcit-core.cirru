@@ -8880,7 +8880,7 @@
           :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn Number String (-> String)
           :tags $ #{} :builtin :internal :io
         'gensym $ %{} 'CodeEntry
           :doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene"
@@ -11861,7 +11861,7 @@
           :doc "|internal function for parsing Cirru EDN\nSyntax: (parse-cirru-edn text)\nParams: text (string)\nReturns: any\nParses Cirru EDN format text into Calcit data structures"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> Dynamic)
+          :schema $ quote $ Fn String Dynamic (-> Dynamic)
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |parses-enums-comments-and-quoted-code)
             :code $ quote $ do
@@ -13274,7 +13274,7 @@
           :doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn String (-> String)
+          :schema $ quote $ Fn String String (-> String)
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |trims-whitespace-or-custom-chars)
