@@ -2029,6 +2029,20 @@ pub(super) fn expression_is_proven_for(
               self.check(body, expected, &branch_scope, &branch_aliases, async_invocation, depth + 1)
             });
           }
+          Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))
+            if !async_invocation
+              && !expected.contains_type_var()
+              && expected.is_option_type()
+              && items.len() == 4
+              && matches!(items.get(1), Some(Calcit::Import(import))
+                if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option")
+              && matches!(items.get(2), Some(Calcit::Tag(tag)) if tag.ref_str() == "some")
+              && let Some(payload) = expected.option_payload() =>
+          {
+            // Keep the expected contract through Some before a heterogeneous
+            // payload literal is synthesized as an open collection.
+            return self.check(&items[3], &payload, scope, aliases, false, depth + 1);
+          }
           _ => {}
         }
       }
