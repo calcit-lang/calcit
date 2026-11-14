@@ -859,6 +859,7 @@ impl CalcitProc {
       | NativeBuffer
       | NativeDisplayStack
       | NativeMapAssoc
+      | NativeMapGet
       | NativeStructNew
       | NativeEnumNew
       | NativeUnionNew
@@ -1029,10 +1030,6 @@ impl CalcitProc {
       NativeMap => Some(ProcTypeSignature {
         return_type: some_tag("map"),
         arg_types: vec![variadic_dynamic()],
-      }),
-      NativeMapGet => Some(ProcTypeSignature {
-        return_type: option_of(type_var("V")),
-        arg_types: vec![map_of(type_var("K"), type_var("V")), type_var("K")],
       }),
 
       // === Set operations ===
