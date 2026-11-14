@@ -2072,6 +2072,28 @@ fn recursive_union_relation_terminates() {
 }
 
 #[test]
+fn list_insertions_reject_a_known_incompatible_item() {
+  for expression in [
+    "append ([] 1) |text",
+    "prepend ([] 1) |text",
+    "&list:append ([] 1) |text",
+    "&list:prepend ([] 1) |text",
+    "([] 1) .append |text",
+  ] {
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", expression])
+      .output()
+      .expect("calcit eval should run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "accepted {expression}");
+    assert!(
+      stderr.contains("E_PROC_ARG_TYPE_MISMATCH") && stderr.contains("arg 2 expects type `:number`, but got `:string`"),
+      "{expression}: {stderr}"
+    );
+  }
+}
+
+#[test]
 fn later_union_argument_widens_generic_binding() {
   // #2608: a later `Map Tag Scalar` sets the shared variable to the union,
   // so a narrower first literal is accepted in either argument order.

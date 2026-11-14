@@ -4561,6 +4561,17 @@
                   , .len
                 assert= 3 $ "|a😀b" .len
               :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |infers-item-type-from-empty-list)
+              :code $ quote $ do
+                assert= ([] 1)
+                  assert-type
+                    append ([]) 1
+                    List Number
+                assert= ([] 1)
+                  assert-type
+                    &list:append ([]) 1
+                    List Number
+              :tags $ #{} :core :unit
         'apply $ %{} 'CodeEntry
           :doc "|用列表实参调用函数。不含 spread 的列表字面量保留各位置的类型，canonical apply 可按原求值顺序 lowering 为直接调用；立即调用的固定参数函数由这些输入推断参数，显式 hint-fn 合同仍优先。非字面量列表需要同一非 Dynamic 成员类型满足全部固定/rest 参数，并由已知长度证明参数数量；纯 rest 函数无需已知长度。不能证明时返回类型保持 Dynamic，调用前应收窄或使用明确的函数合同。"
           :code $ quote $ defn apply (f args) (f & args)
@@ -11935,10 +11946,17 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |adds-list-item-at-front)
-            :code $ quote $ assert= ([] 4 1 2 3)
-              prepend ([] 1 2 3) 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |adds-list-item-at-front)
+              :code $ quote $ assert= ([] 4 1 2 3)
+                prepend ([] 1 2 3) 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-explicit-open-list-items)
+              :code $ quote $ let
+                  items $ assert-type ([] 1) (List Dynamic)
+                assert= ([] |x 1) (prepend items |x)
+                assert= ([] |x 1) (&list:prepend items |x)
+              :tags $ #{} :core :unit
         'quasiquote $ %{} 'CodeEntry
           :doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@"
           :code $ quote &runtime-implementation

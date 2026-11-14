@@ -972,8 +972,8 @@ impl CalcitProc {
         arg_types: vec![variadic_of(type_var("T"))],
       }),
       Append | Prepend | NativeListAppend | NativeListPrepend => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), dynamic_tag()],
+        return_type: list_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T")), type_var("T")],
       }),
       Butlast | NativeListReverse | NativeListButlast => Some(ProcTypeSignature {
         return_type: list_of(type_var("T")),
