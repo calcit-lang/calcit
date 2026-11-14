@@ -113,7 +113,7 @@ defn describe (g)
 规则：
 
 - 只有被匹配值的静态类型是 union 时才能写类型模式。Dynamic 或未知类型上写类型模式报 `E_UNION_MATCH_PATTERN`；union 上写 Tag 模式也报这个错，两类模式不混用。
-- 成员名是内置类型名（`String`、`Number`、`List`、`Map`、`Fn`、`Tuple` 等），或 struct / enum / 嵌套 union 成员的定义名。不在 union 里的名字报 `E_UNION_MATCH_PATTERN`。
+- 成员名是内置类型名（`String`、`Number`、`List`、`Map`、`Fn`、`Tuple` 等），或具名 struct / enum 成员的定义名。嵌套 union 会展平，模式使用展平后的具体成员名。例如 `defunion Text String Number` 和 `defunion Node Text Point` 中，`Node` 的分支使用 `String`、`Number` 和 `Point`。写 `(Text text)` 会报 `E_UNION_MATCH_PATTERN`。
 - struct / enum 的构造器别名及导入名也可以作为模式，按已有名义定义身份解析。别名与原定义覆盖同一成员，不能各写一个分支；同字段的其他定义不会因此成为成员。
 - 分支要覆盖全部成员，否则报 `E_UNION_MATCH_NOT_EXHAUSTIVE`；`_` 可以兜住剩下的成员，所有成员都已覆盖时 `_` 会得到一条不可达警告。
 - 分支里的绑定带着成员的具体类型，后续方法调用和字段访问照常检查。
