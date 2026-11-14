@@ -767,10 +767,6 @@ impl CalcitProc {
         return_type: type_var("T"),
         arg_types: vec![type_var("T"), some_tag("trait")],
       }),
-      NativeCirruType => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![some_tag("cirru-quote")],
-      }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![],
@@ -870,6 +866,15 @@ impl CalcitProc {
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
+      | NativeCirruType
+      | NativeCirruNth
+      | NativeCirruQuoteLeafText
+      | NativeCirruQuoteToList
+      | ParseCirru
+      | ParseCirruEdn
+      | ParseCirruList
+      | FormatCirru
+      | FormatCirruOneLiner
       | NativeListQ
       | NativeBufListNew
       | NativeBufListPush
@@ -1275,40 +1280,6 @@ impl CalcitProc {
         arg_types: vec![],
       }),
 
-      // === Cirru format ===
-      ParseCirru => Some(ProcTypeSignature {
-        return_type: some_tag("cirru-quote"),
-        arg_types: vec![some_tag("string")],
-      }),
-      ParseCirruEdn => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string"), dynamic_tag()],
-      }),
-      FormatCirru => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("list"), some_tag("bool")],
-      }),
-      FormatCirruOneLiner => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("list")],
-      }),
-      ParseCirruList => Some(ProcTypeSignature {
-        return_type: list_of(cirru_node()),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeCirruQuoteToList => Some(ProcTypeSignature {
-        return_type: list_of(cirru_node()),
-        arg_types: vec![some_tag("cirru-quote")],
-      }),
-      NativeCirruQuoteLeafText => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![some_tag("cirru-quote")],
-      }),
-      NativeCirruNth => Some(ProcTypeSignature {
-        return_type: some_tag("cirru-quote"),
-        arg_types: vec![some_tag("cirru-quote"), some_tag("number")],
-      }),
-
       RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![dynamic_tag()],
@@ -1367,11 +1338,6 @@ static PROC_TYPE_SIGNATURES: LazyLock<HashMap<CalcitProc, ProcTypeSignature>> = 
     .filter_map(|proc| proc.build_type_signature(core).map(|signature| (proc, signature)))
     .collect()
 });
-
-/// `calcit.core/CirruNode`, the recursive `String | List CirruNode` union.
-pub(crate) fn cirru_node() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/CirruNode"), Arc::new(vec![])))
-}
 
 #[cfg(test)]
 mod tests {
