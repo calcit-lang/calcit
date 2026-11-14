@@ -12,6 +12,8 @@ mod list;
 mod local;
 mod proc_failure;
 mod proc_name;
+#[cfg(test)]
+mod proc_schema_tests;
 mod struct_value;
 mod sum_type;
 mod symbol;

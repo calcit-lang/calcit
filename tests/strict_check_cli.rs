@@ -1770,6 +1770,20 @@ fn all_defs_requires_direct_check_only_and_rejects_incremental() {
 /// #2449: `.each` relates the receiver's elements to the callback exactly like `each`,
 /// while a mismatched callback or an open receiver stays rejected.
 #[test]
+fn map_get_primitive_rejects_an_incompatible_known_key() {
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--tips-level", "none", "eval", "&map:get ({} (:one 1)) |one"])
+    .output()
+    .expect("calcit eval should run");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(!output.status.success(), "accepted a String key for a Map<Tag, Number>");
+  assert!(
+    stderr.contains("E_PROC_ARG_TYPE_MISMATCH") && stderr.contains("Proc `&map:get` arg 2 expects type `:tag`, but got `:string`"),
+    "{stderr}"
+  );
+}
+
+#[test]
 fn each_method_keeps_the_element_callback_relation() {
   let fixture = fs::read_to_string("tests/fixtures/method-each-contract.cirru").expect("each fixture should read");
   let directory = TestDirectory::create();
@@ -2072,6 +2086,28 @@ fn recursive_union_relation_terminates() {
 }
 
 #[test]
+fn list_insertions_reject_a_known_incompatible_item() {
+  for expression in [
+    "append ([] 1) |text",
+    "prepend ([] 1) |text",
+    "&list:append ([] 1) |text",
+    "&list:prepend ([] 1) |text",
+    "([] 1) .append |text",
+  ] {
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", expression])
+      .output()
+      .expect("calcit eval should run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "accepted {expression}");
+    assert!(
+      stderr.contains("E_PROC_ARG_TYPE_MISMATCH") && stderr.contains("arg 2 expects type `:number`, but got `:string`"),
+      "{expression}: {stderr}"
+    );
+  }
+}
+
+#[test]
 fn later_union_argument_widens_generic_binding() {
   // #2608: a later `Map Tag Scalar` sets the shared variable to the union,
   // so a narrower first literal is accepted in either argument order.
@@ -2198,6 +2234,37 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
 }
 
 #[test]
+fn trait_attachment_procs_require_an_impl_and_check_every_rest_argument() {
+  let eval = |expression: &str| {
+    let code = format!(
+      "let ((S (defstruct S (:value Number))) (E (defenum E (:item))) (Marker (deftrait Marker)) (implementation (defimpl S Marker))) {expression}"
+    );
+    Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", &code])
+      .output()
+      .expect("calcit eval should run")
+  };
+  for (proc, receiver) in [
+    ("&struct-def:impl-traits", "S"),
+    ("&enum-def:impl-traits", "E"),
+    ("&struct:impl-traits", "(S :value 1)"),
+    ("&enum:impl-traits", "(E :item)"),
+  ] {
+    for (arguments, code, detail) in [
+      ("", "E_PROC_ARITY", "expects at least 2 args"),
+      (" 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 2 expects type `:impl`"),
+      (" implementation 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 3 expects type `:impl`"),
+    ] {
+      let expression = format!("({proc} {receiver}{arguments})");
+      let output = eval(&expression);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(!output.status.success(), "{expression} must fail");
+      assert!(stderr.contains(code) && stderr.contains(detail), "{expression}: {stderr}");
+    }
+  }
+}
+
+#[test]
 fn incremental_check_reports_snapshot_level_diagnostics() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
@@ -2286,6 +2353,27 @@ fn string_type_slot_bindings_are_rejected_until_edit_format() {
   assert!(
     content.contains(":payload 'app.main/main!"),
     "edit format should write a symbol:\n{content}"
+  );
+}
+
+#[test]
+fn bare_union_assertion_rejects_a_nonmember() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-union.cirru", &snapshot).expect("union fixture should copy");
+  edit_def_at(
+    &snapshot,
+    "test-union.main/main!",
+    "quote $ defn main! () (assert-type true test-union.main/CssValue) &unit",
+  );
+  edit_schema_at(&snapshot, "test-union.main/main!", "Unit");
+
+  let output = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!output.status.success(), "a String or Number union cannot contain Bool");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("E_ASSERT_TYPE_MISMATCH") && stderr.contains("CssValue") && stderr.contains("bool"),
+    "{stderr}"
   );
 }
 

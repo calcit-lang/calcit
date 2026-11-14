@@ -32,6 +32,7 @@ aliases:
 | `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-collection-and-missing-paths` 等开放遍历排除项；静态 Map 与字面量空路径用例已通过 |
 | 数值排序比较 `&<`、`&>` 及其表层调用 | supported-with-type-evidence | 操作数需要 Number 证据；已知非 Number 保留实参求值后 trap，开放类型在 scalar 擦除前报告 `E_WASM_NIL_TYPE_EVIDENCE`。具体 Number 的泛型调用复用调用点特化；`identical?` 不受数值限制 | `calcit.core/contains?` 的 `:enum-numeric-evidence` 测试与 WASM 宿主失败路径回归 |
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
+| `foldl` / `&list:foldl` | supported | List 和 Set 逐项传给回调。Map 逐项传入二元 List `[key, value]`，静态已知的 Map 为回调保留 `Tuple K V` 类型，可用 `let[]` 分别取得键和值，也可显式接收 `List Dynamic`。空集合返回初始值；开放接收者按实际容器分派，其他值会 trap | `calcit.core/foldl#folds-map-as-key-value-lists`、`calcit.core/foldl#keeps-map-key-and-value-types`、`calcit.core/&list:foldl#keeps-map-key-and-value-types` |
 | `update` 作用于 List / Map / Enum | supported | 按运行时类型分派：List 下标越界或 Map key 不存在时原样返回且不调用回调；Enum 下标越界时 trap，对应 native 的 range error | `calcit.core/update#updates-list-by-index-and-skips-missing-slots` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 普通方法复用接收者的实际实现：List、Map、Set 等内建类型使用固定方法表，成员类型仍可为泛型；名义值还需证明实际附带的实现身份。显式 trait 调用仍需具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `test-types-inference.main/find-last-positive-index#typed-number-receiver`、`find-last-matching-index#keeps-number-and-string-element-types`；名义实现由 `:impl-origin-portable` 测试覆盖 |
 | `slice`、`.slice` 与自定义 `Sliceable` | supported-with-type-evidence | 终点为 `Option<Number>`：`Option :some end` 指定终点，省略或 `Option :none` 取到末尾；接收者和实现需要可静态解析，保留 String 的 Unicode 标量单位与 List 成员类型 | `calcit.core/slice#option-endpoints-through-function-method-and-trait`、`test-types-inference.main/slice-with-contract` 的四项共享测试 |
@@ -55,6 +56,7 @@ aliases:
 | `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
 | 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
+| `&exclude` 排除不同种类的标量 | supported-with-type-evidence | 如果集合成员与待排除值已证明属于不同标量种类，按原顺序求值后返回原集合。适用于 Number 与 Bool 等共享 WASM 数值表示的种类 | `calcit.core/exclude#distinguishes-disjoint-scalar-kinds` |
 | 默认比较器的 `sort` | unsupported | 需要显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
