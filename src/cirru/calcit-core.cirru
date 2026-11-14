@@ -233,6 +233,12 @@
                 assert= ([] 1 |x) frozen
                 assert= ([] 1 |x 2) (&buf-list:to-list buf)
             :tags $ #{} :core :unit
+        '&assert-traits $ %{} 'CodeEntry
+          :doc "|运行时检查值是否具有所需的名义 trait 实现，成功时返回原值。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn T Trait (-> T) (:generics T)
+          :tags $ #{} :builtin :internal :control
         '&buffer $ %{} 'CodeEntry
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
@@ -2871,6 +2877,12 @@
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
           :tags $ #{} :internal
+        '&methods-of $ %{} 'CodeEntry
+          :doc "|返回值上可用的可调用方法。传入 trait 描述符时列出其声明的方法。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> (List Fn)) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&number:display-by $ %{} 'CodeEntry
           :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (non-negative safe integer), base (2, 8 or 16)\nReturns: string\nDisplays n exactly with a 0b, 0o or 0x prefix; other inputs raise an error"
           :code $ quote &runtime-implementation

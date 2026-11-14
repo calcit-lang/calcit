@@ -726,12 +726,6 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![],
       }),
-      // Method values are callable (native `Calcit::Method`, JS invoke
-      // closures), so the honest element type is a function (#2534).
-      NativeMethodsOf => Some(ProcTypeSignature {
-        return_type: list_of(Arc::new(CalcitTypeAnnotation::DynFn)),
-        arg_types: vec![dynamic_tag()],
-      }),
       NativeInspectMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), some_tag("string")],
@@ -739,10 +733,6 @@ impl CalcitProc {
       NativeTraitCall => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeAssertTraits => Some(ProcTypeSignature {
-        return_type: type_var("T"),
-        arg_types: vec![type_var("T"), some_tag("trait")],
       }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
@@ -845,6 +835,8 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeMethodsOf
+      | NativeAssertTraits
       | NativeImplOrigin
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
