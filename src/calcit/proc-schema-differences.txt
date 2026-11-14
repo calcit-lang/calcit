@@ -12,17 +12,11 @@
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
-&list:append | arg 0 | "'List" => (:: "'List" "'T")
-&list:append | arg 1 | "'Dynamic" => "'T"
-&list:append | return | "'List" => (:: "'List" "'T")
 &list:foldl | arg 0 | "'Dynamic" => (:: "'List" "'T")
 &list:foldl | arg 1 | "'Dynamic" => "'U"
 &list:foldl | arg 2 | "'Fn" => (:: "'Fn" ("{}" (:return "'U") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
 &list:foldl | return | "'Dynamic" => "'U"
 &list:foldl-shortcut | missing core function schema
-&list:prepend | arg 0 | "'List" => (:: "'List" "'T")
-&list:prepend | arg 1 | "'Dynamic" => "'T"
-&list:prepend | return | "'List" => (:: "'List" "'T")
 &map:get | arg 1 | "'Dynamic" => "'K"
 &methods-of | missing core definition
 &str | missing core function schema
@@ -37,9 +31,6 @@
 &{} | missing core function schema
 :: | missing core function schema
 ?{} | missing core definition
-append | arg 0 | "'List" => (:: "'List" "'T")
-append | arg 1 | "'Dynamic" => "'T"
-append | return | "'List" => (:: "'List" "'T")
 bool? | arg 0 | "'Dynamic" => "'T"
 enum? | arg 0 | "'Dynamic" => "'T"
 fn? | arg 0 | "'Dynamic" => "'T"
@@ -68,9 +59,6 @@ nil? | arg 0 | "'Dynamic" => "'T"
 not | arg 0 | "'Dynamic" => "'T"
 number? | arg 0 | "'Dynamic" => "'T"
 parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
-prepend | arg 0 | "'List" => (:: "'List" "'T")
-prepend | arg 1 | "'Dynamic" => "'T"
-prepend | return | "'List" => (:: "'List" "'T")
 raise | arg 0 | <missing> => "'String"
 raise | rest | "'Dynamic" => <missing>
 raise | return | "'Dynamic" => "'T"
