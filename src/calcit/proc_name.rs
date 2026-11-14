@@ -858,6 +858,11 @@ impl CalcitProc {
       | NativeNumberFits
       | NativeBuffer
       | NativeDisplayStack
+      | ReadFile
+      | ReadDir
+      | NativeFsReadDir
+      | Unreachable
+      | NativeUnreachable
       | NativeMapAssoc
       | NativeStructNew
       | NativeEnumNew
@@ -1196,16 +1201,6 @@ impl CalcitProc {
       }),
 
       // === I/O operations ===
-      ReadFile | ReadDir => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled file read function schema");
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types: schema.arg_types.clone(),
-        })
-      }
       NativeFsReadText => Some(ProcTypeSignature {
         return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
           Arc::from("Result"),
@@ -1220,17 +1215,6 @@ impl CalcitProc {
         )),
         arg_types: vec![some_tag("enum-def"), some_tag("string")],
       }),
-      NativeFsReadDir => {
-        // Concrete result types come from the constructors passed at the call site.
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled directory read function schema");
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types: schema.arg_types.clone(),
-        })
-      }
       WriteFile => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("string"), some_tag("string")],
@@ -1253,16 +1237,6 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("string")],
       }),
-      Unreachable | NativeUnreachable => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled unreachable function schema");
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types: schema.arg_types.clone(),
-        })
-      }
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![some_tag("number")],
