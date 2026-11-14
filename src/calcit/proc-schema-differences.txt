@@ -8,7 +8,6 @@
 &buf-list:to-list | return | "'List" => (:: "'List" "'T")
 &buffer | arg 0 | <missing> => "'Dynamic"
 &buffer | rest | "'Dynamic" => <missing>
-&display-stack | rest | "'Dynamic" => <missing>
 &enum-def:impl-traits | rest | "'Dynamic" => <missing>
 &enum-def:new | rest | "'Dynamic" => <missing>
 &enum:impl-traits | rest | "'Dynamic" => <missing>
