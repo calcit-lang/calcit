@@ -126,8 +126,6 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::NativeInspectType, &[]),
   (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
-  (CalcitProc::Unreachable, &["control"]),
-  (CalcitProc::NativeUnreachable, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
   (CalcitProc::ReadFile, &["file", "io"]),
   (CalcitProc::ReadDir, &["file", "io"]),
@@ -2774,6 +2772,9 @@ mod tests {
     assert_eq!(core_kinds(&index, "get-env"), strings(&["env"]));
     assert_eq!(core_kinds(&index, "quit!"), strings(&["control"]));
     assert_eq!(core_kinds(&index, "non-nil!"), strings(&["control"]));
+    for name in ["unreachable!", "&unreachable!"] {
+      assert_eq!(core_kinds(&index, name), strings(&["control"]), "{name}");
+    }
     assert_eq!(core_kinds(&index, "try-read-dir"), strings(&["io/file"]));
     assert_eq!(core_kinds(&index, "&init-builtin-impls!"), strings(&["effect"]));
     assert_eq!(core_kinds(&index, "&reset-gensym-index!"), strings(&["effect"]));
