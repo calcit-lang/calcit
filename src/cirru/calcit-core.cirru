@@ -223,7 +223,7 @@
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Buffer)
+          :schema $ quote $ Fn (& Dynamic) (-> Buffer)
           :tags $ #{} :builtin :internal :state
         '&call-spread $ %{} 'CodeEntry
           :doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls"
@@ -624,7 +624,7 @@
           :doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: &unit\nPrints the current call stack for debugging"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (-> Unit)
+          :schema $ quote $ Fn (& Dynamic) (-> Unit)
           :tags $ #{} :builtin :internal :io :log
         '&doseq $ %{} 'CodeEntry
           :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
@@ -2309,7 +2309,7 @@
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (Map K V) K V
+          :schema $ quote $ Fn (Map K V) K V (& Dynamic)
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal

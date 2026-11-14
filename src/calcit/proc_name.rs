@@ -1646,6 +1646,21 @@ mod tests {
   use super::*;
 
   #[test]
+  fn variadic_proc_schemas_match_runtime_signatures() {
+    let snapshot = crate::load_core_snapshot().expect("bundled core snapshot");
+    let definitions = &snapshot.files[crate::calcit::CORE_NS].defs;
+    for proc in [CalcitProc::NativeBuffer, CalcitProc::NativeDisplayStack, CalcitProc::NativeMapAssoc] {
+      let core = definitions[proc.as_ref()].schema.as_function().expect("core function schema");
+      let runtime = proc.get_type_signature().expect("runtime function signature");
+      let mut args = core.arg_types.clone();
+      let rest = core.rest_type.as_ref().expect("variadic schema has a rest parameter");
+      args.push(variadic_of(rest.clone()));
+      assert_eq!(args, runtime.arg_types, "{proc} argument types");
+      assert_eq!(core.return_type, runtime.return_type, "{proc} return type");
+    }
+  }
+
+  #[test]
   fn optional_proc_parameters_do_not_make_values_nullable() {
     let trim = CalcitProc::Trim.get_type_signature().expect("trim signature");
     assert_eq!(CalcitProc::Trim.arity(), Some(ProcArity { min: 1, max: Some(2) }));
