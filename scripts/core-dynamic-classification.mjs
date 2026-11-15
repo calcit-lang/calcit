@@ -471,6 +471,13 @@ function classify(entry) {
       rationale: "内部构造器接收字段与值的交替参数。具名 Struct 的字段类型由构造检查逐项验证。",
     };
   }
+  if (name === "&struct:assoc-at" || name === "&struct:nth") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "索引读取的返回类型随字段而变。写入时原语按实际结构体字段定义校验值。",
+    };
+  }
   if (name === "&struct-def:new") {
     return {
       owner: "runtime-internals",
