@@ -612,10 +612,6 @@ fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(inner))
 }
 
-fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
-}
-
 impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
