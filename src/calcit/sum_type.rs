@@ -93,6 +93,12 @@ impl CalcitEnumDef {
                 .all(|(actual, expected)| same_data_schema_annotation(actual, expected))
           })
       }
+      (None, None) => {
+        self.name == other.name
+          && Arc::ptr_eq(&self.generics, &other.generics)
+          && Arc::ptr_eq(&self.where_bounds, &other.where_bounds)
+          && Arc::ptr_eq(&self.variants, &other.variants)
+      }
       _ => false,
     }
   }

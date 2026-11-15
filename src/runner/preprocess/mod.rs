@@ -2585,6 +2585,13 @@ fn resolve_trait_def_from_source_code(code: &Calcit, file_ns: &str) -> Option<Ca
   {
     return parse_deftrait_source(items.as_ref(), file_ns);
   }
+  if (matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "def")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "def"))
+    && items.len() == 3
+    && let Some(inner) = items.get(2)
+  {
+    return resolve_trait_def_from_source_code(inner, file_ns);
+  }
 
   None
 }
@@ -2687,7 +2694,8 @@ pub(crate) fn resolve_trait_reference_target(form: &Calcit, file_ns: &str) -> Op
     Calcit::Symbol { sym, .. } => {
       let raw_name = sym.as_ref();
       if let Some((ns, name)) = raw_name.rsplit_once('/') {
-        Some((Arc::from(ns), Arc::from(name)))
+        let target_ns = program::lookup_ns_target_in_import(file_ns, ns).unwrap_or_else(|| Arc::from(ns));
+        Some((target_ns, Arc::from(name)))
       } else if program::has_def_code(file_ns, raw_name) {
         Some((Arc::from(file_ns), sym.clone()))
       } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, raw_name) {
@@ -2771,7 +2779,8 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
 
     let raw_name = trait_ref.name.ref_str();
     let (trait_ns, trait_name) = if let Some((ns, name)) = raw_name.rsplit_once('/') {
-      (Arc::from(ns), Arc::from(name))
+      let target_ns = program::lookup_ns_target_in_import(file_ns, ns).unwrap_or_else(|| Arc::from(ns));
+      (target_ns, Arc::from(name))
     } else if program::has_def_code(file_ns, raw_name) {
       (Arc::from(file_ns), Arc::from(raw_name))
     } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, raw_name) {
@@ -9455,7 +9464,7 @@ fn expected_method_argument_types(
         rest_type: info.rest_type.clone(),
         features: Arc::new(HashSet::new()),
       }))),
-      _ => return None,
+      _ => type_inference::infer_type_from_expr(method_entry, scope_types)?,
     }
   };
   let fn_annotation = signature.as_function()?;
@@ -10927,7 +10936,7 @@ fn resolve_defimpl_self_type(
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &ScopeTypes,
   file_ns: &str,
-) -> Option<Arc<CalcitTypeAnnotation>> {
+) -> Option<(Arc<CalcitTypeAnnotation>, Vec<Arc<str>>, Vec<crate::calcit::CalcitGenericBound>)> {
   let generic_vars = |generics: &[Arc<str>]| -> Arc<Vec<Arc<CalcitTypeAnnotation>>> {
     Arc::new(
       generics
@@ -10940,8 +10949,16 @@ fn resolve_defimpl_self_type(
     && scope_defs.contains(sym)
   {
     return match scope_types.get(sym).map(AsRef::as_ref) {
-      Some(CalcitTypeAnnotation::StructDef(sd)) => Some(Arc::new(CalcitTypeAnnotation::Struct(sd.clone(), generic_vars(&sd.generics)))),
-      Some(CalcitTypeAnnotation::EnumDef(ed)) => Some(Arc::new(CalcitTypeAnnotation::Enum(ed.clone(), generic_vars(ed.generics())))),
+      Some(CalcitTypeAnnotation::StructDef(sd)) => Some((
+        Arc::new(CalcitTypeAnnotation::Struct(sd.clone(), generic_vars(&sd.generics))),
+        sd.generics.as_ref().clone(),
+        sd.where_bounds.as_ref().clone(),
+      )),
+      Some(CalcitTypeAnnotation::EnumDef(ed)) => Some((
+        Arc::new(CalcitTypeAnnotation::Enum(ed.clone(), generic_vars(ed.generics()))),
+        ed.generics().to_vec(),
+        ed.where_bounds().to_vec(),
+      )),
       _ => None,
     };
   }
@@ -10953,16 +10970,32 @@ fn resolve_defimpl_self_type(
   let ref_name: Arc<str> = Arc::from(format!("{target_ns}/{target_def}"));
   let base_ref = CalcitTypeAnnotation::TypeRef(ref_name.clone(), Arc::new(vec![]));
   if let Some(sd) = base_ref.resolve_to_struct() {
-    return Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))));
+    return Some((
+      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
+      sd.generics.as_ref().clone(),
+      sd.where_bounds.as_ref().clone(),
+    ));
   }
   if let Some(ed) = base_ref.resolve_to_enum() {
-    return Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))));
+    return Some((
+      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
+      ed.generics().to_vec(),
+      ed.where_bounds().to_vec(),
+    ));
   }
   match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
-    Some(Calcit::StructDef(sd)) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics)))),
-    Some(Calcit::EnumDef(ed)) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics())))),
+    Some(Calcit::StructDef(sd)) => Some((
+      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
+      sd.generics.as_ref().clone(),
+      sd.where_bounds.as_ref().clone(),
+    )),
+    Some(Calcit::EnumDef(ed)) => Some((
+      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
+      ed.generics().to_vec(),
+      ed.where_bounds().to_vec(),
+    )),
     _ if program::names_nominal_type_definition(&target_ns, &target_def) => {
-      Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))))
+      Some((Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))), vec![], vec![]))
     }
     _ => None,
   }
@@ -10974,15 +11007,13 @@ fn resolve_defimpl_method_context(
   scope_types: &ScopeTypes,
   file_ns: &str,
 ) -> Option<Arc<DefimplMethodContext>> {
-  let implementing_type = resolve_defimpl_self_type(args.first()?, scope_defs, scope_types, file_ns)?;
+  let (implementing_type, impl_generics, impl_where_bounds) =
+    resolve_defimpl_self_type(args.first()?, scope_defs, scope_types, file_ns)?;
   let trait_expr = args.get(1)?;
   let trait_def = if let Calcit::Symbol { sym, .. } = trait_expr
     && scope_defs.contains(sym)
   {
-    match scope_types.get(sym).map(AsRef::as_ref) {
-      Some(CalcitTypeAnnotation::Trait(trait_def)) => Some(trait_def.clone()),
-      _ => None,
-    }
+    scope_types.get(sym).and_then(|t| t.as_trait_definition()).cloned().map(Arc::new)
   } else {
     let (trait_ns, trait_def_name) = resolve_trait_reference_target(trait_expr, file_ns)?;
     lookup_source_backed_trait_def(&trait_ns, &trait_def_name).map(|t| Arc::new(t.with_definition_ref(&trait_ns, &trait_def_name)))
@@ -10998,9 +11029,31 @@ fn resolve_defimpl_method_context(
     let qualified = resolve_trait_method_type(&trait_def, method_type.clone());
     let substituted = qualified.substitute_type_vars(&bindings);
     let final_type = match substituted.as_ref() {
-      CalcitTypeAnnotation::Fn(sig) if sig.generics.iter().any(|g| g.as_ref() == "Self") => {
+      CalcitTypeAnnotation::Fn(sig)
+        if sig.generics.iter().any(|g| g.as_ref() == "Self") || !impl_generics.is_empty() || !impl_where_bounds.is_empty() =>
+      {
         let mut updated = sig.as_ref().clone();
-        updated.generics = Arc::new(sig.generics.iter().filter(|g| g.as_ref() != "Self").cloned().collect());
+        let mut merged_generics = Vec::new();
+        for g in &impl_generics {
+          if g.as_ref() != "Self" && !merged_generics.contains(g) {
+            merged_generics.push(g.clone());
+          }
+        }
+        for g in sig.generics.iter() {
+          if g.as_ref() != "Self" && !merged_generics.contains(g) {
+            merged_generics.push(g.clone());
+          }
+        }
+        updated.generics = Arc::new(merged_generics);
+        if !impl_where_bounds.is_empty() {
+          let mut merged_bounds = impl_where_bounds.clone();
+          for b in sig.where_bounds.iter() {
+            if !merged_bounds.contains(b) {
+              merged_bounds.push(b.clone());
+            }
+          }
+          updated.where_bounds = Arc::new(merged_bounds);
+        }
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(updated)))
       }
       _ => substituted,
@@ -13492,7 +13545,12 @@ fn static_method_contract_with_impls(
           Some(format!("{namespace}/{definition}")),
         )
       }
-      _ => (None, None),
+      _ => (
+        scope
+          .and_then(|scope_types| type_inference::infer_type_from_expr(entry, scope_types))
+          .or_else(|| type_inference::infer_static_type_from_expr(entry)),
+        None,
+      ),
     };
     let Some(schema) = refined_impl_method_schema(receiver, trait_schema, entry_schema) else {
       return StaticMethodContract::open("selected method has no callable schema");
@@ -16333,6 +16391,7 @@ pub fn preprocess_defn(
                 expected.arg_types.is_empty() && expected.rest_type.is_none() && schema.return_type.contains_type_var()
               });
             if !return_is_output_only
+              && !check_contextual_return
               && (!matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || schema.return_type.contains_type_var())
             {
               schema.return_type = detected_return_type.clone();
@@ -16393,7 +16452,9 @@ pub fn preprocess_defn(
         open_return
       } else if check_contextual_return && !has_body_fn_hint {
         contextual_return_constraint
-          .filter(|expected| !expected.contains_type_var() && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic))
+          .filter(|expected| {
+            !type_inference::has_inferred_empty_slot(expected) && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+          })
           .unwrap_or_else(|| return_type_hint.clone())
       } else {
         contextual_return_constraint

@@ -5691,7 +5691,88 @@ fn strict_type_fail_defimpl_infers_self_and_rejects_mismatch() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_fixture_entries("calcit/type-fail/defimpl-self-mismatch.cirru");
-    let err = run_check_only(&entries).expect_err("defimpl inline lambda must infer Self signature and reject return type mismatch");
-    assert!(err.contains("Found 1 error") || err.contains("E_FN_RETURN_TYPE_MISMATCH"), "{err}");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("defimpl return mismatch should report a warning diagnostic");
+    assert!(
+      warnings.borrow().iter().any(|warning| {
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "expected E_FN_RETURN_TYPE_MISMATCH for defimpl inline lambda return mismatch, got: {:?}",
+      warnings.borrow()
+    );
+    run_check_only(&entries).expect_err("defimpl inline lambda must infer Self signature and reject return type mismatch");
+  });
+}
+
+#[test]
+fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+
+    // 1. #2838: `defimpl` referencing a trait through an `:as` namespace alias must infer Self and reject return mismatch.
+    let alias_entries = load_snippet_entries_with_library(
+      "lib.gauge",
+      "def Gauge $ deftrait Gauge\n  .reading $ Fn Self $ -> Number",
+      "ns app.main $ :require $ lib.gauge :as g\n\ndefstruct Meter $ :v Number\n\ndef MeterImpl $ defimpl Meter g/Gauge\n  .reading $ fn (self) |bad-reading\n\ndefn main! () &unit",
+    );
+    let alias_warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&alias_entries.init_ns, "MeterImpl", &alias_warnings, &CallStackList::default())
+      .expect("aliased defimpl return mismatch should report a warning diagnostic");
+    assert!(
+      alias_warnings.borrow().iter().any(|warning| {
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "expected E_FN_RETURN_TYPE_MISMATCH for :as aliased trait in defimpl, got: {:?}",
+      alias_warnings.borrow()
+    );
+
+    // 2. #2840: Generic `defimpl` with `Self` return must reject an unhinted lambda returning a non-Self value.
+    let generic_entries = load_snippet_entries(
+      "def BoxOps $ deftrait BoxOps\n  .clone-box $ Fn Self $ -> Self\n\ndefstruct GenericBox (:generics T) (:value T)\n\ndef GenericBoxImpl $ defimpl GenericBox BoxOps\n  .clone-box $ fn (self) true\n\ndefn main! () &unit",
+    );
+    let generic_warnings = RefCell::new(vec![]);
+    let generic_res = runner::preprocess::ensure_ns_def_compiled(
+      &generic_entries.init_ns,
+      "GenericBoxImpl",
+      &generic_warnings,
+      &CallStackList::default(),
+    );
+    assert!(
+      generic_res.is_err()
+        || generic_warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")),
+      "expected generic defimpl Self return mismatch to fail, got res={generic_res:?}, warnings={:?}",
+      generic_warnings.borrow()
+    );
+
+    // 3. #2839: Local `let` nominal Struct decorated with `impl-traits` must enforce method argument types and return types.
+    let local_arg_entries = load_snippet_entries(
+      "def StepOps $ deftrait StepOps\n  .step $ Fn Self Number $ -> Number\n\ndefn main! ()\n  let\n      LocalCounter $ defstruct LocalCounter $ :v Number\n      counter-impl $ defimpl LocalCounter StepOps\n        .step $ fn (self delta) (+ (:v self) delta)\n      CounterWithImpl $ impl-traits LocalCounter counter-impl\n      c $ CounterWithImpl :v 1\n    .step c |wrong-arg\n    &unit",
+    );
+    let local_arg_warnings = RefCell::new(vec![]);
+    let local_arg_res = runner::preprocess::ensure_ns_def_compiled(
+      &local_arg_entries.init_ns,
+      &local_arg_entries.init_def,
+      &local_arg_warnings,
+      &CallStackList::default(),
+    );
+    assert!(
+      local_arg_res.is_err()
+        || local_arg_warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("E_CALL_ARG_TYPE_MISMATCH")),
+      "expected local impl-traits method call with wrong argument type to fail, got res={local_arg_res:?}, warnings={:?}",
+      local_arg_warnings.borrow()
+    );
   });
 }

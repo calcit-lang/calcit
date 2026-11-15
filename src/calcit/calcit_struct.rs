@@ -97,6 +97,13 @@ impl CalcitStructDef {
           && self.generics == other.generics
           && self.where_bounds == other.where_bounds
       }
+      (None, None) => {
+        self.name == other.name
+          && Arc::ptr_eq(&self.fields, &other.fields)
+          && Arc::ptr_eq(&self.field_types, &other.field_types)
+          && Arc::ptr_eq(&self.generics, &other.generics)
+          && Arc::ptr_eq(&self.where_bounds, &other.where_bounds)
+      }
       _ => false,
     }
   }

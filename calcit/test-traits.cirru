@@ -134,41 +134,6 @@
             .read-value $ Fn Self $ -> Number
           :examples $ []
           :schema $ quote Trait
-        'SelfInferredPoint $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct SelfInferredPoint (:x Number) (:y Number)
-          :examples $ []
-          :schema $ quote StructDef
-          :tests $ [] $ %{} 'TestEntry (:name |infers-self-in-defimpl-inline-lambda)
-            :code $ quote $ let
-                Point $ impl-traits SelfInferredPoint SelfInferredPointImpl
-                p $ Point :x 3 :y 4
-              assert= 7 $ .sum-xy p
-              assert= (SelfInferredPoint :x 13 :y 14) (.shift-xy p 10)
-              let
-                  LocalBox $ defstruct LocalBox (:v Number)
-                  local-impl $ defimpl LocalBox SelfInferredOps
-                    .sum-xy $ fn (self) (:v self)
-                    .shift-xy $ fn (self delta)
-                      LocalBox :v $ + (:v self) delta
-                  LocalBoxWithImpl $ impl-traits LocalBox local-impl
-                  boxed $ LocalBoxWithImpl :v 5
-                assert= 5 $ .sum-xy boxed
-                assert= (LocalBox :v 8) (.shift-xy boxed 3)
-            :tags $ #{} :trait :unit
-        'SelfInferredOps $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait SelfInferredOps
-            .sum-xy $ Fn Self $ -> Number
-            .shift-xy $ Fn Self Number $ -> Self
-          :examples $ []
-          :schema $ quote Trait
-        'SelfInferredPointImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl SelfInferredPoint SelfInferredOps
-            .sum-xy $ fn (self)
-              + (:x self) (:y self)
-            .shift-xy $ fn (self delta)
-              SelfInferredPoint :x (+ (:x self) delta) :y (+ (:y self) delta)
-          :examples $ []
-          :schema $ quote Impl
         'AliasGeneric $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum AliasGeneric (:item Number) (:impls AliasGenericOps)
           :examples $ []
@@ -533,6 +498,62 @@
             .find $ Fn test-traits.main/ResultBox String $ -> (Option Number)
           :examples $ []
           :schema $ quote Trait
+        'SelfInferredOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait SelfInferredOps
+            .sum-xy $ Fn Self $ -> Number
+            .shift-xy $ Fn Self Number $ -> Self
+          :examples $ []
+          :schema $ quote Trait
+        'SelfInferredPoint $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SelfInferredPoint (:x Number) (:y Number)
+          :examples $ []
+          :schema $ quote StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |infers-self-in-defimpl-inline-lambda)
+            :code $ quote $ let
+                Point $ impl-traits SelfInferredPoint SelfInferredPointImpl
+                p $ Point :x 3 :y 4
+              assert= 7 $ .sum-xy p
+              assert= (SelfInferredPoint :x 13 :y 14) (.shift-xy p 10)
+              let
+                  LocalBox $ defstruct LocalBox $ :v Number
+                  local-impl $ defimpl LocalBox SelfInferredOps
+                    .sum-xy $ fn (self) (:v self)
+                    .shift-xy $ fn (self delta)
+                      LocalBox :v $ + (:v self) delta
+                  LocalBoxWithImpl $ impl-traits LocalBox local-impl
+                  boxed $ LocalBoxWithImpl :v 5
+                  shifted $ .shift-xy boxed 3
+                assert= 5 $ .sum-xy boxed
+                assert= 6 $ + 1 $ .sum-xy boxed
+                assert= 8 $ :v shifted
+                assert= (LocalBox :v 8) shifted
+              let
+                  LocalChoice $ defenum LocalChoice $ :num Number
+                  choice-impl $ defimpl LocalChoice SelfInferredOps
+                    .sum-xy $ fn (self)
+                      match self $
+                        :num n
+                        , n
+                    .shift-xy $ fn (self delta)
+                      match self $
+                        :num n
+                        LocalChoice :num $ + n delta
+                  LocalChoiceWithImpl $ impl-traits LocalChoice choice-impl
+                  picked $ LocalChoiceWithImpl :num 10
+                  shifted-choice $ .shift-xy picked 5
+                assert= 15 $ + 5 $ .sum-xy picked
+                assert= (LocalChoice :num 15) shifted-choice
+            :tags $ #{} :trait :unit
+        'SelfInferredPointImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SelfInferredPoint SelfInferredOps
+            .sum-xy $ fn (self)
+              + (:x self) (:y self)
+            .shift-xy $ fn (self delta)
+              SelfInferredPoint :x
+                + (:x self) delta
+                , :y $ + (:y self) delta
+          :examples $ []
+          :schema $ quote Impl
         'add-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn add-with-trait (a b) (a .add b)
           :examples $ []
@@ -776,14 +797,16 @@
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []
           :schema $ quote $ Fn RestBox (List Number) (-> Number)
-        'explicit-trait-false $ %{} 'CodeEntry (:doc "|Builds an OpenContainsBase value carrying ExplicitContainsFalseImpl; same nominal type as explicit-trait-true.")
+        'explicit-trait-false $ %{} 'CodeEntry
+          :doc "|Builds an OpenContainsBase value carrying ExplicitContainsFalseImpl; same nominal type as explicit-trait-true."
           :code $ quote $ defn explicit-trait-false (item)
             let
                 T $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
               T :item item
           :examples $ []
           :schema $ quote $ Fn Number (-> OpenContainsBase)
-        'explicit-trait-true $ %{} 'CodeEntry (:doc "|Builds an OpenContainsBase value carrying ExplicitContainsTrueImpl; same nominal type as explicit-trait-false.")
+        'explicit-trait-true $ %{} 'CodeEntry
+          :doc "|Builds an OpenContainsBase value carrying ExplicitContainsTrueImpl; same nominal type as explicit-trait-false."
           :code $ quote $ defn explicit-trait-true (item)
             let
                 T $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
@@ -911,7 +934,8 @@
               assert= |zapB actual
               assert= :string $ type-of actual
             :tags $ #{} :result-contract-2386 :trait
-        'open-contains-false $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsFalseImpl last.")
+        'open-contains-false $ %{} 'CodeEntry
+          :doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsFalseImpl last."
           :code $ quote $ defn open-contains-false (item)
             let
                 T $ impl-traits OpenContainsBase OpenContainsTrueImpl OpenContainsFalseImpl
@@ -921,8 +945,9 @@
         'open-contains-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
-        'open-contains-true-value $ %{} 'CodeEntry (:doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsTrueImpl last.")
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
+        'open-contains-true-value $ %{} 'CodeEntry
+          :doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsTrueImpl last."
           :code $ quote $ defn open-contains-true-value (item)
             let
                 T $ impl-traits OpenContainsBase OpenContainsFalseImpl OpenContainsTrueImpl
@@ -1066,7 +1091,7 @@
                 do (println |recur-index) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
         'recur-swap-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-swap-contains? (left right index)
             if (> index 0)
@@ -1668,8 +1693,11 @@
               assert= true $ includes? ms .includes?
               assert-type ms $ List Method
               assert= true $ any? ms $ fn (m)
-                hint-fn $ Fn Method (-> Bool)
-                and (= :method $ type-of m) (not $ fn? m) (= (str m) |.add)
+                hint-fn $ Fn Method $ -> Bool
+                and
+                  = :method $ type-of m
+                  not $ fn? m
+                  = (str m) |.add
               ; "`&inspect-methods`" returns the original value unchanged
               assert= xs $ &inspect-methods xs |list
             let

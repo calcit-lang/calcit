@@ -4784,6 +4784,9 @@ const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "defref",
   "defstruct",
   "defenum",
+  "deftrait",
+  "defimpl",
+  "deftype",
   "defmacro",
   "defrecord",
 ];

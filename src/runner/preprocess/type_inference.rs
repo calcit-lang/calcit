@@ -2553,12 +2553,15 @@ fn resolve_impl_origin(value: &Calcit, scope_types: &ScopeTypes) -> Option<(EdnT
   let resolved_trait = match value {
     Calcit::Trait(trait_def) => Some(Arc::new(trait_def.to_owned())),
     Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
-      Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def)),
-      _ => None,
+      Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
+      _ => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
     },
     Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
       Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def)),
-      _ => None,
+      _ => super::resolve_trait_reference_target(value, &info.at_ns).and_then(|(ns, def)| {
+        lookup_source_backed_trait_def(&ns, &def).map(|trait_def| Arc::new(trait_def.with_definition_ref(&ns, &def)))
+      }),
     },
     Calcit::Local(_) => resolve_type_value(value, scope_types)
       .and_then(|annotation| annotation.as_trait_definition().cloned())
