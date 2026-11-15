@@ -134,6 +134,41 @@
             .read-value $ Fn Self $ -> Number
           :examples $ []
           :schema $ quote Trait
+        'SelfInferredPoint $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SelfInferredPoint (:x Number) (:y Number)
+          :examples $ []
+          :schema $ quote StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |infers-self-in-defimpl-inline-lambda)
+            :code $ quote $ let
+                Point $ impl-traits SelfInferredPoint SelfInferredPointImpl
+                p $ Point :x 3 :y 4
+              assert= 7 $ .sum-xy p
+              assert= (SelfInferredPoint :x 13 :y 14) (.shift-xy p 10)
+              let
+                  LocalBox $ defstruct LocalBox (:v Number)
+                  local-impl $ defimpl LocalBox SelfInferredOps
+                    .sum-xy $ fn (self) (:v self)
+                    .shift-xy $ fn (self delta)
+                      LocalBox :v $ + (:v self) delta
+                  LocalBoxWithImpl $ impl-traits LocalBox local-impl
+                  boxed $ LocalBoxWithImpl :v 5
+                assert= 5 $ .sum-xy boxed
+                assert= (LocalBox :v 8) (.shift-xy boxed 3)
+            :tags $ #{} :trait :unit
+        'SelfInferredOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait SelfInferredOps
+            .sum-xy $ Fn Self $ -> Number
+            .shift-xy $ Fn Self Number $ -> Self
+          :examples $ []
+          :schema $ quote Trait
+        'SelfInferredPointImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SelfInferredPoint SelfInferredOps
+            .sum-xy $ fn (self)
+              + (:x self) (:y self)
+            .shift-xy $ fn (self delta)
+              SelfInferredPoint :x (+ (:x self) delta) :y (+ (:y self) delta)
+          :examples $ []
+          :schema $ quote Impl
         'AliasGeneric $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum AliasGeneric (:item Number) (:impls AliasGenericOps)
           :examples $ []

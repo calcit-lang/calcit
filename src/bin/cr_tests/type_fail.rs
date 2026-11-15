@@ -5685,3 +5685,13 @@ fn strict_type_fail_deftrait_self_receiver_and_self_reference() {
     assert!(err.contains("write `Self`"), "{err}");
   });
 }
+
+#[test]
+fn strict_type_fail_defimpl_infers_self_and_rejects_mismatch() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/defimpl-self-mismatch.cirru");
+    let err = run_check_only(&entries).expect_err("defimpl inline lambda must infer Self signature and reject return type mismatch");
+    assert!(err.contains("Found 1 error") || err.contains("E_FN_RETURN_TYPE_MISMATCH"), "{err}");
+  });
+}
