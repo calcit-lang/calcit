@@ -629,6 +629,9 @@ fn collect_type_variable_names(types: &[Arc<CalcitTypeAnnotation>], free_only: b
         }
         pending.extend(signature.arg_types.iter().map(|ty| (ty.as_ref(), bound.clone())));
         pending.push((&signature.return_type, bound.clone()));
+        if let Some(guard) = &signature.guard {
+          pending.push((guard, bound.clone()));
+        }
         if let Some(rest) = &signature.rest_type {
           pending.push((rest, bound));
         }
@@ -4990,6 +4993,7 @@ impl CalcitTypeAnnotation {
         Self::Fn(signature) => {
           pending.extend(signature.arg_types.iter().map(Arc::as_ref));
           pending.push(&signature.return_type);
+          pending.extend(signature.guard.iter().map(Arc::as_ref));
           if let Some(rest) = &signature.rest_type {
             pending.push(rest);
           }
@@ -5023,6 +5027,9 @@ impl CalcitTypeAnnotation {
           rest.walk_components(visit);
         }
         signature.return_type.walk_components(visit);
+        if let Some(guard) = &signature.guard {
+          guard.walk_components(visit);
+        }
       }
       _ => {}
     }
@@ -5099,6 +5106,7 @@ impl CalcitTypeAnnotation {
         CalcitTypeAnnotation::Fn(signature) => {
           signature.arg_types.iter().any(|arg| walk(arg, name, bindings, visiting))
             || walk(&signature.return_type, name, bindings, visiting)
+            || signature.guard.as_ref().is_some_and(|guard| walk(guard, name, bindings, visiting))
             || signature
               .rest_type
               .as_ref()
@@ -6836,6 +6844,7 @@ impl CalcitTypeAnnotation {
         let mut signature = signature.as_ref().clone();
         signature.arg_types = signature.arg_types.iter().map(mapped).collect();
         signature.return_type = mapped(&signature.return_type);
+        signature.guard = signature.guard.as_ref().map(mapped);
         signature.rest_type = signature.rest_type.as_ref().map(mapped);
         Self::Fn(Arc::new(signature))
       }
@@ -7979,6 +7988,34 @@ mod tests {
       panic!("the alias must expand to a function: {annotation:?}");
     };
     assert_eq!(signature.guard.as_deref(), Some(&CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn guard_target_participates_in_type_variable_queries_and_binder_renaming() {
+    let name: Arc<str> = Arc::from("T");
+    let CalcitTypeAnnotation::Fn(signature) =
+      CalcitTypeAnnotation::from_function_parts(vec![DYNAMIC_TYPE.clone()], Arc::new(CalcitTypeAnnotation::Bool))
+    else {
+      unreachable!()
+    };
+    let mut signature = signature.as_ref().clone();
+    signature.guard = Some(Arc::new(CalcitTypeAnnotation::TypeVar(name.clone())));
+    let unbound = CalcitTypeAnnotation::Fn(Arc::new(signature.clone()));
+    assert!(unbound.contains_type_var());
+    assert!(unbound.contains_type_var_named(&name));
+    assert!(free_type_variable_names(&[Arc::new(unbound)]).contains(&name));
+
+    signature.generics = Arc::new(vec![name.clone()]);
+    let renamed = signature.with_lexical_binders();
+    let binder = &renamed.generics[0];
+    assert_ne!(binder, &name);
+    assert_eq!(renamed.guard.as_deref(), Some(&CalcitTypeAnnotation::TypeVar(binder.clone())));
+    let bindings = HashMap::from([(binder.clone(), Arc::new(CalcitTypeAnnotation::Number))]);
+    let specialized = CalcitTypeAnnotation::Fn(Arc::new(renamed)).substitute_type_vars(&bindings);
+    let CalcitTypeAnnotation::Fn(specialized) = specialized.as_ref() else {
+      panic!("specialization must preserve the function schema");
+    };
+    assert_eq!(specialized.guard.as_deref(), Some(&CalcitTypeAnnotation::Number));
   }
 
   #[test]
@@ -11933,6 +11970,7 @@ impl CalcitFnTypeAnnotation {
     );
     signature.arg_types = self.arg_types.iter().map(|ty| ty.substitute_free_type_vars(renaming)).collect();
     signature.return_type = self.return_type.substitute_free_type_vars(renaming);
+    signature.guard = self.guard.as_ref().map(|ty| ty.substitute_free_type_vars(renaming));
     signature.rest_type = self.rest_type.as_ref().map(|ty| ty.substitute_free_type_vars(renaming));
     signature
   }
