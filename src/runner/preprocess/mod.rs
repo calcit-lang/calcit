@@ -2001,7 +2001,8 @@ fn validate_predicate_guard(
     return Ok(None);
   };
   let Some(target) = &signature.guard else { return Ok(None) };
-  if ns == calcit::CORE_NS && bundled_predicate_guards().get(def) == Some(target) && program::has_bundled_core_source() {
+  let bundled_guard = ns == calcit::CORE_NS && bundled_predicate_guards().get(def) == Some(target);
+  if bundled_guard && program::has_bundled_core_source() {
     return Ok(Some(target.clone()));
   }
   let fail = |message: &str| {
@@ -2033,6 +2034,15 @@ fn validate_predicate_guard(
   let Some(Calcit::Local(parameter)) = params.first() else {
     return Err(fail("a predicate guard requires a first parameter"));
   };
+  // A copied core can override an unrelated definition. Its intrinsic-only
+  // guard remains valid if the resolved body still proves the bundled kind.
+  let mut body = forms
+    .iter()
+    .skip(3)
+    .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form));
+  if bundled_guard && proves_core_type_of_guard(body.next(), parameter, target) && body.next().is_none() {
+    return Ok(Some(target.clone()));
+  }
   let target = resolve_namespace_type_refs_for_body(target.clone(), ns);
   if target.contains_type_var() || !condition_evidence::proves_guard(forms.iter().skip(3), parameter, &target) {
     return Err(fail(
@@ -2040,6 +2050,21 @@ fn validate_predicate_guard(
     ));
   }
   Ok(Some(target))
+}
+
+fn proves_core_type_of_guard(body: Option<&Calcit>, parameter: &calcit::CalcitLocal, target: &CalcitTypeAnnotation) -> bool {
+  let Some(Calcit::List(equality)) = body else { return false };
+  if equality.len() != 3 || !matches!(equality.first(), Some(Calcit::Proc(CalcitProc::NativeEquals))) {
+    return false;
+  }
+  let (Some(Calcit::List(type_of)), Some(Calcit::Tag(kind))) = (equality.get(1), equality.get(2)) else {
+    return false;
+  };
+  matches!(kind.ref_str(), "cirru-quote" | "enum-def" | "ref" | "struct-def")
+    && type_of.len() == 2
+    && matches!(type_of.first(), Some(Calcit::Proc(CalcitProc::TypeOf)))
+    && matches!(type_of.get(1), Some(Calcit::Local(local)) if local.idx == parameter.idx)
+    && tag_annotation(kind.ref_str()).as_ref() == target
 }
 
 /// Prepare only the slot evidence used by this annotation, in its lexical scope.
