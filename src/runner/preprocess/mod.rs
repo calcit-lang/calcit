@@ -235,7 +235,7 @@ fn preprocess_argument_with_offered_return(
   expr: &Calcit,
   context: Option<ExpectedArgumentContext<'_>>,
   offered_return: Option<Arc<CalcitTypeAnnotation>>,
-  direct_tag_position: Option<&'static str>,
+  direct_tag_position: Option<(&'static str, Option<NodeLocation>)>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
@@ -339,13 +339,15 @@ fn preprocess_argument_with_offered_return(
     });
   // Nested forms inherit the offer. Some call sites choose the exact tag slot
   // only after preprocessing, while literal members already know their slot.
+  let offers_direct_tag = direct_tag_position.is_some();
+  let (position, location) = direct_tag_position.unwrap_or(("value in a typed position", None));
   let _expected = tail_context::TailScope::offer(
     expected
-      .filter(|_| literal_type.is_none() && (direct_tag_position.is_some() || !matches!(expr, Calcit::Tag(_))))
+      .filter(|_| literal_type.is_none() && (offers_direct_tag || !matches!(expr, Calcit::Tag(_))))
       .map(|annotation| tail_context::Expected {
         annotation: annotation.clone(),
-        position: direct_tag_position.unwrap_or("value in a typed position"),
-        location: None,
+        position,
+        location,
         callback,
       }),
   );
@@ -474,7 +476,7 @@ fn preprocess_literal_member(
     expr,
     context,
     None,
-    Some("collection member"),
+    Some(("collection member", None)),
     scope_defs,
     scope_types,
     file_ns,
@@ -5883,6 +5885,12 @@ fn preprocess_list_call(
                 }),
             );
             let warnings_before = check_warnings.borrow().len();
+            let direct_tag_position = match &head_form {
+              Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some("variant payload"),
+              Calcit::Proc(CalcitProc::Recur) => Some("recur argument"),
+              _ if callable_contract.is_some() => Some("argument of a local function"),
+              _ => None,
+            };
             let result = if has_callback_contract {
               let callee_generics = method_generics
                 .as_deref()
@@ -5899,7 +5907,7 @@ fn preprocess_list_call(
                   .as_ref()
                   .map(|annotation| (annotation, member_inputs, callee_generics)),
                 offered_callback_return(offered_bindings.as_ref(), expected_type.as_ref()),
-                None,
+                direct_tag_position.map(|position| (position, call_location.clone())),
                 scope_defs,
                 scope_types,
                 file_ns,
@@ -5934,34 +5942,21 @@ fn preprocess_list_call(
               }
               None => form,
             };
-            // A bare tag names a zero-payload variant of the enum this slot
-            // declares: a variant payload (`(Some :red)` for `Option Color`), a
-            // method argument, or an argument of a local function (#2733).
-            let tag_position = match &head_form {
-              _ if !matches!(form, Calcit::Tag(_)) => None,
-              Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some("variant payload"),
-              Calcit::Method(_, calcit::MethodKind::Invoke(_)) => Some("method argument"),
-              Calcit::Proc(CalcitProc::Recur) => Some("recur argument"),
-              _ if callable_contract.is_some() => Some("argument of a local function"),
-              _ => None,
-            };
-            // The tag itself is no evidence for a method's type variables:
-            // read the slot from the receiver and the preceding arguments.
-            let tag_slot = match (&head_form, tag_position, ys.get(1)) {
-              (Calcit::Method(name, _), Some(_), Some(receiver)) if !has_spread => resolve_type_value(receiver, scope_types)
-                .and_then(|receiver_type| {
-                  let preceding = ys.iter().skip(1).cloned().collect::<Vec<_>>();
-                  expected_method_argument_types(receiver_type.as_ref(), name, &CalcitList::from(preceding.as_slice()), scope_types)
-                })
-                .and_then(|context| context.argument_types.get(ys.len() - 2).cloned()),
-              _ => expected_type.clone(),
-            };
-            let form = if let Some(position) = tag_position
-              && let Some(expected) = tag_slot.as_ref().filter(|expected| !expected.contains_type_var())
+            // A method's tag must not seed its own expected slot. Read the
+            // slot from the receiver and the already checked arguments.
+            let form = if !has_spread
+              && matches!(form, Calcit::Tag(_))
+              && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
+              && let Some(receiver_type) = ys.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+              && let Some(context) = {
+                let preceding = ys.iter().skip(1).cloned().collect::<Vec<_>>();
+                expected_method_argument_types(receiver_type.as_ref(), name, &CalcitList::from(preceding.as_slice()), scope_types)
+              }
+              && let Some(expected) = context.argument_types.get(ys.len() - 2).filter(|ty| !ty.contains_type_var())
               && let Some(rewritten) = coerce_tag_literal(
                 &form,
                 expected,
-                position,
+                "method argument",
                 (
                   file_ns,
                   call_stack.0.first().map(|frame| frame.def.as_ref()).unwrap_or(def_name.as_ref()),
