@@ -2062,7 +2062,21 @@ pub(super) fn expression_is_proven_for(
         CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
       ) && super::empty_container_has_no_type_evidence(expr, expected);
       if expected.contains_type_var() && !empty_family {
-        return false;
+        // A host-nullable return accepts nil or a payload that proves the
+        // same lexical contract, without binding its generic parameters.
+        let CalcitTypeAnnotation::Nullable(payload, NullableOrigin::JsHost) = expected else {
+          return false;
+        };
+        return resolve_type_value(expr, scope).is_some_and(|actual| {
+          let actual = if async_invocation {
+            async_invocation_result(actual.as_ref()).unwrap_or(actual)
+          } else {
+            actual
+          };
+          matches!(actual.as_ref(), CalcitTypeAnnotation::Nil)
+            || rigid_proof(&actual, expected, scope)
+            || rigid_proof(&actual, payload, scope)
+        });
       }
       if let Some(proven) = collection_literal_matches(expr, expected, |value, contract| {
         self.check(value, contract, scope, aliases, false, depth + 1)
@@ -2790,6 +2804,18 @@ mod tests {
       arg_types,
       rest_type: None,
     }
+  }
+
+  #[test]
+  fn js_nullish_exit_proof_keeps_generic_payload_rigid() {
+    let payload = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let other = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected = CalcitTypeAnnotation::Nullable(payload.clone(), NullableOrigin::JsHost);
+    let scope = ScopeTypes::new();
+    assert!(expression_is_proven_for(&Calcit::Nil, &expected, &scope, false));
+    assert!(expression_is_proven_for(&make_local("payload", payload), &expected, &scope, false));
+    assert!(!expression_is_proven_for(&make_local("other", other), &expected, &scope, false));
+    assert!(!expression_is_proven_for(&Calcit::Number(42.0), &expected, &scope, false));
   }
 
   #[test]
