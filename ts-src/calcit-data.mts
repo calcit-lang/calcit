@@ -211,6 +211,10 @@ export let newTag = (content: string) => {
   }
 };
 
+export function isMethodValue(value: unknown): boolean {
+  return typeof value === "function" && typeof (value as { __calcitMethodName?: unknown }).__calcitMethodName === "string";
+}
+
 export let castTag = (x: CalcitValue): CalcitTag => {
   if (x instanceof CalcitTag) {
     return x;

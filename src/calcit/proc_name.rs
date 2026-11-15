@@ -616,10 +616,6 @@ fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
 }
 
-fn some_fn() -> Arc<CalcitTypeAnnotation> {
-  tag_type("fn")
-}
-
 impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
@@ -718,31 +714,9 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![],
       }),
-      // Method values are callable (native `Calcit::Method`, JS invoke
-      // closures), so the honest element type is a function (#2534).
-      NativeMethodsOf => Some(ProcTypeSignature {
-        return_type: list_of(Arc::new(CalcitTypeAnnotation::DynFn)),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeInspectMethods => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("string")],
-      }),
-      NativeTraitCall => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeAssertTraits => Some(ProcTypeSignature {
-        return_type: type_var("T"),
-        arg_types: vec![type_var("T"), some_tag("trait")],
-      }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![],
-      }),
-      NativeInspectType => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
 
       // Runtime intrinsics whose argument and return types come from core.
@@ -801,6 +775,14 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeLooseStruct
+      | Todo
+      | RegisterCalcitBuiltinImpls
+      | NativeInspectMethods
+      | NativeInspectType
+      | NativeTraitCall
+      | NativeMethodsOf
+      | NativeAssertTraits
       | NativeNamedEnumNew
       | NativeImplOrigin
       | NativeImplGet
@@ -823,6 +805,11 @@ impl CalcitProc {
       | NativeStructExtendAs
       | NativeUnionNew
       | NativeStructWithAt
+      | NativeStruct
+      | NativeMap
+      | NativeImplNew
+      | NativeTraitNew
+      | NativeEnum
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeCirruType
@@ -836,6 +823,7 @@ impl CalcitProc {
       | FormatCirruOneLiner
       | NativeListQ
       | Foldl
+      | FoldrShortcut
       | NativeListFoldlShortcut
       | NativeListFoldl
       | NativeBufListNew
@@ -988,16 +976,6 @@ impl CalcitProc {
           ],
         })
       }
-      FoldrShortcut => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
-
-      // === Map operations ===
-      NativeMap => Some(ProcTypeSignature {
-        return_type: some_tag("map"),
-        arg_types: vec![variadic_dynamic()],
-      }),
 
       // === Set operations ===
       Set => Some(ProcTypeSignature {
@@ -1005,38 +983,9 @@ impl CalcitProc {
         arg_types: vec![variadic_of(type_var("T"))],
       }),
 
-      // === Enum value operations ===
-      NativeEnum => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeTraitNew => Some(ProcTypeSignature {
-        return_type: some_tag("trait"),
-        arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
-      }),
-      NativeImplNew => Some(ProcTypeSignature {
-        return_type: some_tag("impl"),
-        arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-
       // === Struct value operations ===
-      NativeLooseStruct => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![variadic_dynamic()],
-      }),
-      NativeStruct => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
-      }),
 
       // === I/O operations ===
-      Todo => Some(ProcTypeSignature {
-        // `todo!` is a diverging compiler-known placeholder. Dynamic keeps it
-        // assignable to any declared return type while the static E_TODO
-        // diagnostic prevents it from being silently forgotten.
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string")],
-      }),
       GetEnv => Some(ProcTypeSignature {
         return_type: option_tag("string"),
         arg_types: vec![some_tag("string")],
@@ -1044,11 +993,6 @@ impl CalcitProc {
       GetArgs => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
         arg_types: vec![],
-      }),
-
-      RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![dynamic_tag()],
       }),
 
       // === Special forms and control flow ===

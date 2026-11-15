@@ -53,7 +53,7 @@
           :doc "|Internal native constructor for a struct value from a StructDef and field/value pairs."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn StructDef (-> Struct)
+          :schema $ quote $ Fn StructDef (& Dynamic) (-> Struct)
           :tags $ #{} :builtin :internal
         '&* $ %{} 'CodeEntry
           :doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats"
@@ -233,6 +233,12 @@
                 assert= ([] 1 |x) frozen
                 assert= ([] 1 |x 2) (&buf-list:to-list buf)
             :tags $ #{} :core :unit
+        '&assert-traits $ %{} 'CodeEntry
+          :doc "|运行时检查值是否具有所需的名义 trait 实现，成功时返回原值。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn T Trait (-> T) (:generics T)
+          :tags $ #{} :builtin :internal :control
         '&buffer $ %{} 'CodeEntry
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
@@ -362,6 +368,9 @@
               :code $ quote $ let
                   methods $ &methods-of $ cirru-quote x
                 do
+                  assert-type methods $ List Method
+                  assert= :method $ type-of .list?
+                  assert= false $ fn? .list?
                   assert= true $ includes? methods .list?
                   assert= true $ includes? methods .leaf?
                   assert= true $ includes? methods .to-list
@@ -1474,7 +1483,7 @@
               &impl::new DemoTrait $ :: .show $ fn (x) x
             quote $ &impl::new :DemoImpl $ [] :show
               fn (x) x
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Impl)
           :tags $ #{} :builtin :internal
         '&impl:get $ %{} 'CodeEntry
           :doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name"
@@ -1589,6 +1598,18 @@
                 assert= ([] 6) tail
                 &+ head $ &list:nth tail 0
             :tags $ #{} :core :unit
+        '&inspect-methods $ %{} 'CodeEntry
+          :doc "|将运行时方法及其实现来源打印到 stderr，返回传入的值。可选字符串用于标记诊断位置。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic String (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal :io :log
+        '&inspect-type $ %{} 'CodeEntry
+          :doc "|预处理阶段打印表达式的推断类型。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&list:append $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -2872,6 +2893,12 @@
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
           :tags $ #{} :internal
+        '&methods-of $ %{} 'CodeEntry
+          :doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> (List Method)) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&number:display-by $ %{} 'CodeEntry
           :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (non-negative safe integer), base (2, 8 or 16)\nReturns: string\nDisplays n exactly with a 0b, 0o or 0x prefix; other inputs raise an error"
           :code $ quote &runtime-implementation
@@ -3716,11 +3743,17 @@
               assert= 3 $ :key $ &struct:with-at pair 0 :key 3 1 :value 4
               assert= 4 $ :value $ &struct:with-at pair 0 :key 3 1 :value 4
             :tags $ #{} :core :indexed-struct-update :unit
+        '&trait-call $ %{} 'CodeEntry
+          :doc "|按指定 trait 和方法名分派调用。已知的名义实现和方法由编译器独立检查。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Trait Dynamic Dynamic (& Dynamic) (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&trait::new $ %{} 'CodeEntry
           :doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic List List (-> Trait)
           :tags $ #{} :builtin :internal
         '&turn-string $ %{} 'CodeEntry
           :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
@@ -3780,7 +3813,7 @@
           :doc "|internal function for creating maps\nSyntax: (&{} & key-value-pairs)\nParams: key-value-pairs (any, variadic)\nReturns: map\nCreates new map from key-value pairs"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn (& Dynamic) (-> Map)
           :tags $ #{} :builtin :internal
         '' $ %{} 'CodeEntry (:doc "|alias for []")
           :code $ quote $ def ' []
@@ -3931,7 +3964,7 @@
           :doc "|Construct an anonymous enum value. The implicit enum definition is `_`."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> Enum)
           :tags $ #{} :builtin :internal
         ';nil $ %{} 'CodeEntry
           :doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs."
@@ -4524,6 +4557,12 @@
           :schema $ quote $ Fn (& T)
             -> $ List T
             :generics T
+          :tags $ #{} :builtin :internal
+        '?{} $ %{} 'CodeEntry
+          :doc "|内部匿名 Struct 构造器。交替接收字段标签和值，并检查重复字段。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn (& Dynamic) (-> Struct)
           :tags $ #{} :builtin :internal
         '\ $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro \ (& xs)
@@ -8758,7 +8797,7 @@
           :examples $ []
           :schema $ quote $ Fn (List T) U U
             Fn U T (-> Enum) (:features :pass)
-            -> U
+            -> Dynamic
             :generics T U
           :tags $ #{} :builtin :internal
           :tests $ []
@@ -12423,6 +12462,12 @@
           :examples $ []
           :schema $ quote $ Fn T (-> Bool) (:generics T)
           :tags $ #{} :builtin :internal :state
+        'register-calcit-builtin-impls $ %{} 'CodeEntry
+          :doc "|注册 JavaScript 后端内建方法实现。Native 入口返回 Unit。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Unit)
+          :tags $ #{} :builtin :internal :effect
         'remove-watch! $ %{} 'CodeEntry
           :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态。"
           :code $ quote &runtime-implementation
@@ -13345,6 +13390,13 @@
                 assert= 2 $ .len $ .unwrap
                   .first $ .to-list ps
               :tags $ #{} :core :unit
+        'todo! $ %{} 'CodeEntry
+          :doc "|标记尚未实现的代码。可省略说明或提供字符串，执行时总是失败，预处理会报告 E_TODO。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return :never)
+            :args $ [] 'String
+          :tags $ #{} :builtin :internal :control
         'to-string $ %{} 'CodeEntry
           :doc "|将实现 ToString 的值转换为文本。标量转换不等同于 Show 的用户展示或 Debug 的诊断表示；没有实现的集合、名义值与开放 Dynamic 不能直接调用。"
           :code $ quote $ defn to-string (value) (.to-string value)
