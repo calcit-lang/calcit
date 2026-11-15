@@ -8,7 +8,6 @@
 &impl::new | missing core function schema
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
-&list:foldl-shortcut | missing core function schema
 &str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct:assoc-at | missing core definition
