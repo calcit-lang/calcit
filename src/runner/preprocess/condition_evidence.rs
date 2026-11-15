@@ -294,23 +294,39 @@ fn visit<const EFFECTS_ONLY: bool>(
       let Some(branches) = type_inference::preprocessed_match_branches(items) else {
         return Outcomes::unknown(false);
       };
-      Outcomes::unknown(branches.into_iter().all(|(pattern, body)| {
+      if branches.is_empty() {
+        return Outcomes::unknown(false);
+      }
+      let mut result = Outcomes {
+        truthy: None,
+        falsey: None,
+        preserves_locals: true,
+      };
+      for (pattern, body) in branches {
         let mut bindings = ScopeTypes::new();
         type_inference::bind_pattern_scope(pattern, &mut bindings);
         let mut branch_scope = scope.clone();
         let mut branch_aliases = aliases.clone();
-        for (name, annotation) in bindings {
-          branch_scope.insert(name.clone(), annotation);
-          branch_aliases.remove(&name);
+        for (name, annotation) in &bindings {
+          branch_scope.insert(name.clone(), annotation.clone());
+          branch_aliases.remove(name);
           for evidence in branch_aliases.values_mut() {
-            evidence.forget(&name);
+            evidence.forget(name);
           }
           if EFFECTS_ONLY {
-            branch_aliases.insert(name, Outcomes::unknown(true));
+            branch_aliases.insert(name.clone(), Outcomes::unknown(true));
           }
         }
-        visit::<EFFECTS_ONLY>(body, &branch_scope, &branch_aliases, remaining, depth + 1).preserves_locals
-      }))
+        let mut branch = visit::<EFFECTS_ONLY>(body, &branch_scope, &branch_aliases, remaining, depth + 1);
+        // Pattern-local evidence cannot justify narrowing an outer binding.
+        for (name, _) in bindings {
+          branch.forget(&name);
+        }
+        result.truthy = common(result.truthy, branch.truthy);
+        result.falsey = common(result.falsey, branch.falsey);
+        result.preserves_locals &= branch.preserves_locals;
+      }
+      result
     }
     Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => {
       let inner = visit::<EFFECTS_ONLY>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);

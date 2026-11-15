@@ -2831,6 +2831,22 @@
               assert= 2 $ lexical-guard 1
               assert= 0 $ lexical-guard |bad
             :tags $ #{} :short-circuit-proof :unit
+        'match-guard $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn match-guard (k flag)
+            if
+              match (if flag (Some 3) None)
+                (:some ignored) (number? k)
+                (:none) false
+              &+ k 1
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Bool (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |match-true-path-proof)
+            :code $ quote $ do
+              assert= 2 $ match-guard 1 true
+              assert= 0 $ match-guard |bad true
+              assert= 0 $ match-guard 1 false
+            :tags $ #{} :short-circuit-proof :unit
         'nested $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested (k)
             if (number? k)
