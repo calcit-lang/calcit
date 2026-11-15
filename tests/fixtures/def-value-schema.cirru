@@ -798,6 +798,25 @@
         :code $ quote $ ns app.collection-shadow
     'app.collection-value $ %{} 'FileEntry
       :defs $ {}
+        'DecisionField $ %{} 'CodeEntry
+          :code $ quote $ defunion DecisionField String $ Option Scalar
+          :examples $ []
+          :schema $ quote UnionDef
+        'keep-fields $ %{} 'CodeEntry
+          :code $ quote $ defn keep-fields (text date time)
+            MapEntryDecision :keep |id $ {} (:text text) (:date date) (:time time)
+          :examples $ []
+          :schema $ quote $ Fn String (Option String) (Option Number)
+            -> $ MapEntryDecision String $ Map Tag DecisionField
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-heterogeneous-field-map)
+              :code $ quote $ match (keep-fields |hello (Some |2026) (Some 123))
+                (:keep key fields)
+                  do
+                    assert= |id key
+                    assert= 3 $ count fields
+                (:drop) (raise |unexpected-drop)
+              :tags $ #{} :collection-value-contract
         'Pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Pair String (Tuple Number String)
           :examples $ []

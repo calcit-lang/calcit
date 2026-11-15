@@ -2029,19 +2029,10 @@ pub(super) fn expression_is_proven_for(
               self.check(body, expected, &branch_scope, &branch_aliases, async_invocation, depth + 1)
             });
           }
-          Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))
-            if !async_invocation
-              && !expected.contains_type_var()
-              && expected.is_option_type()
-              && items.len() == 4
-              && matches!(items.get(1), Some(Calcit::Import(import))
-                if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option")
-              && matches!(items.get(2), Some(Calcit::Tag(tag)) if tag.ref_str() == "some")
-              && let Some(payload) = expected.option_payload() =>
-          {
-            // Keep the expected contract through Some before a heterogeneous
-            // payload literal is synthesized as an open collection.
-            return self.check(&items[3], &payload, scope, aliases, false, depth + 1);
+          Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)) if !async_invocation => {
+            if let Some(proven) = self.check_enum_literal(items, expected, scope, aliases, depth) {
+              return proven;
+            }
           }
           _ => {}
         }
@@ -2169,6 +2160,39 @@ pub(super) fn expression_is_proven_for(
     }
 
     /// `None` leaves non-literals and non-generic expectations to the general proof.
+    fn check_enum_literal<'a>(
+      &mut self,
+      items: &CalcitList,
+      expected: &'a CalcitTypeAnnotation,
+      scope: &ScopeTypes,
+      aliases: &HashMap<Arc<str>, &'a CalcitTypeAnnotation>,
+      depth: usize,
+    ) -> Option<bool> {
+      let args = match expected {
+        CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) if !args.is_empty() => args,
+        _ => return None,
+      };
+      let definition = super::type_inference::resolve_enum_value(items.get(1)?, scope)?;
+      if definition.generics().len() != args.len() || !definition.where_bounds().is_empty() {
+        return None;
+      }
+      let Calcit::Tag(tag) = items.get(2)? else { return None };
+      let variant = definition.find_variant(tag)?;
+      if variant.arity() != items.len() - 3 {
+        return Some(false);
+      }
+      let candidate = CalcitTypeAnnotation::Enum(Arc::new(definition.clone()), args.clone());
+      if !rigid_proof(&candidate, expected, scope) {
+        return None;
+      }
+      let bindings = definition.generics().iter().cloned().zip(args.iter().cloned()).collect();
+      Some(items.iter().skip(3).zip(variant.payload_types()).all(|(value, payload)| {
+        let contract = super::type_inference::resolve_enum_payload_type(&definition, payload.clone()).substitute_type_vars(&bindings);
+        self.check(value, &contract, scope, aliases, false, depth + 1)
+          || resolve_type_value(value, scope).is_some_and(|actual| rigid_proof(&actual, &contract, scope))
+      }))
+    }
+
     fn check_struct_literal<'a>(
       &mut self,
       expr: &Calcit,
