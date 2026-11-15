@@ -26,7 +26,7 @@
 
 | 定义 | Schema 路径 | 分析意图 | 所属子系统 | 决策 | 原因 |
 | --- | --- | --- | --- | --- | --- |
-| `calcit.core/%::` | `schema.args.0` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
+| `calcit.core/%::` | `schema.rest` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
 | `calcit.core/%{}` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/&` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/&=` | `schema.args.0` | unresolved | runtime-primitives | retain-reviewed | The low-level runtime operation is deliberately representation-polymorphic; typed project APIs must not use it as an escape hatch. |
