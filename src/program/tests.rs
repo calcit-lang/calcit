@@ -1038,6 +1038,50 @@ fn entry_slot_inference_rechecks_consumers_after_transitive_source_changes() {
 }
 
 #[test]
+fn predicate_guard_proof_is_invalidated_when_body_changes() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let path = "tests/fixtures/def-value-schema.cirru";
+  let data = cirru_edn::parse(&std::fs::read_to_string(path).expect("shared Calcit fixture")).expect("parse shared fixture");
+  let mut snapshot = snapshot::load_snapshot_data(&data, path).expect("load shared fixture");
+  snapshot.files.extend(crate::load_core_snapshot().expect("core source").files);
+  let ns = "app.short-circuit";
+  let predicate = "guarded-number?";
+  let caller = "add-with-user-guard";
+  *PROGRAM_CODE_DATA.write().expect("install source") = extract_program_data(&snapshot).expect("program source");
+
+  let warnings = RefCell::new(vec![]);
+  let stack = CallStackList::default();
+  runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect("compile guarded caller");
+  assert!(warnings.borrow().is_empty(), "{:?}", warnings.borrow());
+  assert_eq!(lookup_proven_guard(ns, predicate).as_deref(), Some(&CalcitTypeAnnotation::Number));
+  assert!(lookup_compiled_def(ns, caller).is_some());
+
+  let replacement = cirru_parser::parse("defn guarded-number? (x) true")
+    .expect("parse replacement body")
+    .remove(0);
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from(ns),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::new(),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([(String::from(predicate), replacement.into())]),
+    },
+  );
+  apply_code_changes(&changes).expect("apply predicate body change");
+  clear_runtime_caches_for_changes(&changes, false).expect("invalidate predicate and dependent");
+  assert!(lookup_proven_guard(ns, predicate).is_none());
+  assert!(lookup_compiled_def(ns, caller).is_none());
+
+  let error = runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect_err("reject unproven guard");
+  assert!(error.to_string().contains("the true result does not prove"), "{error:?}");
+  assert!(lookup_proven_guard(ns, predicate).is_none());
+}
+
+#[test]
 fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
