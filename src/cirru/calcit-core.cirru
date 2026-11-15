@@ -3730,6 +3730,19 @@
           :examples $ []
           :schema $ quote $ Fn Struct Dynamic Dynamic (& Dynamic) (-> Struct) (:open :decode)
           :tags $ #{} :builtin :internal
+        '&struct:with-at $ %{} 'CodeEntry (:doc "|按索引批量更新结构体。接收零组或多组索引、字段标签和值，空更新返回等值结构体。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Struct (& Dynamic) (-> Struct) (:open :decode)
+          :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |zero-and-multiple-updates)
+            :code $ quote $ let
+                pair $ MapEntry :key 1 :value 2
+              assert= 1 $ :key $ &struct:with-at pair
+              assert= 2 $ :value $ &struct:with-at pair
+              assert= 3 $ :key $ &struct:with-at pair 0 :key 3 1 :value 4
+              assert= 4 $ :value $ &struct:with-at pair 0 :key 3 1 :value 4
+            :tags $ #{} :core :indexed-struct-update :unit
         '&trait-call $ %{} 'CodeEntry
           :doc "|按指定 trait 和方法名分派调用。已知的名义实现和方法由编译器独立检查。"
           :code $ quote &runtime-implementation
