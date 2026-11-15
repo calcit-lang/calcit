@@ -1152,9 +1152,6 @@ pub(crate) fn same_data_schema_annotation<'a>(actual: &'a CalcitTypeAnnotation, 
   }
 
   fn push_struct<'a>(worklist: &mut Vec<(&'a Type, &'a Type)>, actual: &'a CalcitStructDef, expected: &'a CalcitStructDef) -> bool {
-    if actual.definition_ref.is_none() && expected.definition_ref.is_none() {
-      return actual.same_nominal_definition(expected);
-    }
     if actual.definition_ref.is_none()
       || actual.definition_ref != expected.definition_ref
       || actual.name != expected.name
@@ -1168,9 +1165,6 @@ pub(crate) fn same_data_schema_annotation<'a>(actual: &'a CalcitTypeAnnotation, 
   }
 
   fn push_enum<'a>(worklist: &mut Vec<(&'a Type, &'a Type)>, actual: &'a CalcitEnumDef, expected: &'a CalcitEnumDef) -> bool {
-    if actual.definition_ref().is_none() && expected.definition_ref().is_none() {
-      return actual.same_nominal_definition(expected);
-    }
     if actual.definition_ref().is_none()
       || actual.definition_ref() != expected.definition_ref()
       || actual.name() != expected.name()
@@ -2695,7 +2689,7 @@ impl CalcitTypeAnnotation {
     }
     if actual.definition_ref.is_some() && expected.definition_ref.is_some() {
       Some(actual.same_nominal_definition(expected))
-    } else if actual.definition_ref.is_none() && expected.definition_ref.is_none() && actual.same_nominal_definition(expected) {
+    } else if actual.shares_local_definition_storage(expected) {
       Some(true)
     } else {
       None
@@ -2708,7 +2702,7 @@ impl CalcitTypeAnnotation {
     }
     if actual.definition_ref().is_some() && expected.definition_ref().is_some() {
       Some(actual.same_nominal_definition(expected))
-    } else if actual.definition_ref().is_none() && expected.definition_ref().is_none() && actual.same_nominal_definition(expected) {
+    } else if actual.shares_local_definition_storage(expected) {
       Some(true)
     } else {
       None

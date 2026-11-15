@@ -10931,12 +10931,18 @@ impl Drop for DefimplContextScope {
   }
 }
 
+struct DefimplSelfTarget {
+  self_type: Arc<CalcitTypeAnnotation>,
+  generics: Vec<Arc<str>>,
+  where_bounds: Vec<crate::calcit::CalcitGenericBound>,
+}
+
 fn resolve_defimpl_self_type(
   type_expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &ScopeTypes,
   file_ns: &str,
-) -> Option<(Arc<CalcitTypeAnnotation>, Vec<Arc<str>>, Vec<crate::calcit::CalcitGenericBound>)> {
+) -> Option<DefimplSelfTarget> {
   let generic_vars = |generics: &[Arc<str>]| -> Arc<Vec<Arc<CalcitTypeAnnotation>>> {
     Arc::new(
       generics
@@ -10949,16 +10955,16 @@ fn resolve_defimpl_self_type(
     && scope_defs.contains(sym)
   {
     return match scope_types.get(sym).map(AsRef::as_ref) {
-      Some(CalcitTypeAnnotation::StructDef(sd)) => Some((
-        Arc::new(CalcitTypeAnnotation::Struct(sd.clone(), generic_vars(&sd.generics))),
-        sd.generics.as_ref().clone(),
-        sd.where_bounds.as_ref().clone(),
-      )),
-      Some(CalcitTypeAnnotation::EnumDef(ed)) => Some((
-        Arc::new(CalcitTypeAnnotation::Enum(ed.clone(), generic_vars(ed.generics()))),
-        ed.generics().to_vec(),
-        ed.where_bounds().to_vec(),
-      )),
+      Some(CalcitTypeAnnotation::StructDef(sd)) => Some(DefimplSelfTarget {
+        self_type: Arc::new(CalcitTypeAnnotation::Struct(sd.clone(), generic_vars(&sd.generics))),
+        generics: sd.generics.as_ref().clone(),
+        where_bounds: sd.where_bounds.as_ref().clone(),
+      }),
+      Some(CalcitTypeAnnotation::EnumDef(ed)) => Some(DefimplSelfTarget {
+        self_type: Arc::new(CalcitTypeAnnotation::Enum(ed.clone(), generic_vars(ed.generics()))),
+        generics: ed.generics().to_vec(),
+        where_bounds: ed.where_bounds().to_vec(),
+      }),
       _ => None,
     };
   }
@@ -10970,33 +10976,35 @@ fn resolve_defimpl_self_type(
   let ref_name: Arc<str> = Arc::from(format!("{target_ns}/{target_def}"));
   let base_ref = CalcitTypeAnnotation::TypeRef(ref_name.clone(), Arc::new(vec![]));
   if let Some(sd) = base_ref.resolve_to_struct() {
-    return Some((
-      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
-      sd.generics.as_ref().clone(),
-      sd.where_bounds.as_ref().clone(),
-    ));
+    return Some(DefimplSelfTarget {
+      self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
+      generics: sd.generics.as_ref().clone(),
+      where_bounds: sd.where_bounds.as_ref().clone(),
+    });
   }
   if let Some(ed) = base_ref.resolve_to_enum() {
-    return Some((
-      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
-      ed.generics().to_vec(),
-      ed.where_bounds().to_vec(),
-    ));
+    return Some(DefimplSelfTarget {
+      self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
+      generics: ed.generics().to_vec(),
+      where_bounds: ed.where_bounds().to_vec(),
+    });
   }
   match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
-    Some(Calcit::StructDef(sd)) => Some((
-      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
-      sd.generics.as_ref().clone(),
-      sd.where_bounds.as_ref().clone(),
-    )),
-    Some(Calcit::EnumDef(ed)) => Some((
-      Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
-      ed.generics().to_vec(),
-      ed.where_bounds().to_vec(),
-    )),
-    _ if program::names_nominal_type_definition(&target_ns, &target_def) => {
-      Some((Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))), vec![], vec![]))
-    }
+    Some(Calcit::StructDef(sd)) => Some(DefimplSelfTarget {
+      self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
+      generics: sd.generics.as_ref().clone(),
+      where_bounds: sd.where_bounds.as_ref().clone(),
+    }),
+    Some(Calcit::EnumDef(ed)) => Some(DefimplSelfTarget {
+      self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
+      generics: ed.generics().to_vec(),
+      where_bounds: ed.where_bounds().to_vec(),
+    }),
+    _ if program::names_nominal_type_definition(&target_ns, &target_def) => Some(DefimplSelfTarget {
+      self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))),
+      generics: vec![],
+      where_bounds: vec![],
+    }),
     _ => None,
   }
 }
@@ -11007,8 +11015,11 @@ fn resolve_defimpl_method_context(
   scope_types: &ScopeTypes,
   file_ns: &str,
 ) -> Option<Arc<DefimplMethodContext>> {
-  let (implementing_type, impl_generics, impl_where_bounds) =
-    resolve_defimpl_self_type(args.first()?, scope_defs, scope_types, file_ns)?;
+  let DefimplSelfTarget {
+    self_type: implementing_type,
+    generics: impl_generics,
+    where_bounds: impl_where_bounds,
+  } = resolve_defimpl_self_type(args.first()?, scope_defs, scope_types, file_ns)?;
   let trait_expr = args.get(1)?;
   let trait_def = if let Calcit::Symbol { sym, .. } = trait_expr
     && scope_defs.contains(sym)

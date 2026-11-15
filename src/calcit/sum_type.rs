@@ -93,14 +93,19 @@ impl CalcitEnumDef {
                 .all(|(actual, expected)| same_data_schema_annotation(actual, expected))
           })
       }
-      (None, None) => {
-        self.name == other.name
-          && Arc::ptr_eq(&self.generics, &other.generics)
-          && Arc::ptr_eq(&self.where_bounds, &other.where_bounds)
-          && Arc::ptr_eq(&self.variants, &other.variants)
-      }
       _ => false,
     }
+  }
+
+  /// Whether two local (`definition_ref == None`) enum descriptors share the
+  /// exact underlying definition allocations across `impl-traits` decoration.
+  pub(crate) fn shares_local_definition_storage(&self, other: &Self) -> bool {
+    self.definition_ref.is_none()
+      && other.definition_ref.is_none()
+      && self.name == other.name
+      && Arc::ptr_eq(&self.generics, &other.generics)
+      && Arc::ptr_eq(&self.where_bounds, &other.where_bounds)
+      && Arc::ptr_eq(&self.variants, &other.variants)
   }
 
   pub fn generics(&self) -> &[Arc<str>] {
