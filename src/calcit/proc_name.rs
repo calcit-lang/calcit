@@ -569,10 +569,6 @@ fn list_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::List(inner))
 }
 
-fn map_of(key: Arc<CalcitTypeAnnotation>, value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Map(key, value))
-}
-
 /// Nominal `calcit.core/Option<T>` (#1554): absence-returning primitives return `Option :none`, never nil.
 fn option_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeRef(
@@ -806,6 +802,24 @@ impl CalcitProc {
       | NativeEnumDefVariantArity
       | NativeEnumValidate
       | NativeImplOrigin
+      | NativeImplGet
+      | NativeImplNth
+      | NativeStructValueImplTraits
+      | NativeEnumValueImplTraits
+      | NativeStructImplTraits
+      | NativeEnumImplTraits
+      | NativeStructGet
+      | NativeStructCount
+      | NativeStructToMap
+      | NativeStructGetName
+      | NativeStructDefinition
+      | NativeStructImpls
+      | NativeStructWith
+      | NativeStructAssoc
+      | NativeStructContains
+      | NativeStructMatches
+      | NativeStructFromMap
+      | NativeStructExtendAs
       | NativeUnionNew
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
@@ -1003,30 +1017,6 @@ impl CalcitProc {
         return_type: some_tag("impl"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
       }),
-      NativeImplGet => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("impl"), dynamic_tag()],
-      }),
-      NativeImplNth => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("impl"), some_tag("number")],
-      }),
-      NativeStructValueImplTraits => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
-      NativeEnumValueImplTraits => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
-      NativeStructImplTraits => Some(ProcTypeSignature {
-        return_type: some_tag("struct-def"),
-        arg_types: vec![some_tag("struct-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
-      NativeEnumImplTraits => Some(ProcTypeSignature {
-        return_type: some_tag("enum-def"),
-        arg_types: vec![some_tag("enum-def"), some_tag("impl"), variadic_of(some_tag("impl"))],
-      }),
 
       // === Struct value operations ===
       NativeLooseStruct => Some(ProcTypeSignature {
@@ -1037,19 +1027,6 @@ impl CalcitProc {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
-      NativeStructWith | NativeStructAssoc | NativeStructContains | NativeStructMatches | NativeStructFromMap
-      | NativeStructExtendAs => {
-        let schema = core.defs[self.as_ref()]
-          .schema
-          .as_function()
-          .expect("bundled Struct primitive schema");
-        let mut arg_types = schema.arg_types.clone();
-        arg_types.extend(schema.rest_type.iter().cloned().map(variadic_of));
-        Some(ProcTypeSignature {
-          return_type: schema.return_type.clone(),
-          arg_types,
-        })
-      }
       NativeStructAssocAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag"), dynamic_tag()],
@@ -1065,10 +1042,6 @@ impl CalcitProc {
           variadic_dynamic(),
         ],
       }),
-      NativeStructGet => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("struct"), some_tag("tag")],
-      }),
       NativeStructNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag")],
@@ -1076,26 +1049,6 @@ impl CalcitProc {
       NativeStructFieldTag => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![some_tag("struct"), some_tag("number")],
-      }),
-      NativeStructCount => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructToMap => Some(ProcTypeSignature {
-        return_type: map_of(some_tag("tag"), dynamic_tag()),
-        arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructGetName => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructDefinition => Some(ProcTypeSignature {
-        return_type: option_tag("struct-def"),
-        arg_types: vec![some_tag("struct")],
-      }),
-      NativeStructImpls => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("impl")),
-        arg_types: vec![some_tag("struct")],
       }),
 
       // === I/O operations ===
