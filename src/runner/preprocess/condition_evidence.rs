@@ -87,6 +87,20 @@ pub(super) fn infer(expr: &Calcit, scope: &ScopeTypes) -> ConditionEvidence {
   }
 }
 
+/// Only evidence about the incoming parameter establishes a declared guard.
+pub(super) fn proves_guard<'a>(
+  body: impl Iterator<Item = &'a Calcit>,
+  parameter: &calcit::CalcitLocal,
+  target: &CalcitTypeAnnotation,
+) -> bool {
+  let mut scope = ScopeTypes::new();
+  scope.insert(parameter.sym.clone(), parameter.type_info.clone());
+  let outcomes = visit_sequence::<false>(body, &scope, &HashMap::new(), &mut 4096, 0);
+  outcomes
+    .truthy
+    .is_none_or(|path| path.preserves_locals && path.facts.get(&parameter.sym).unwrap_or(&parameter.type_info).is_proven_for(target))
+}
+
 /// A sequence continues only through normal exits, regardless of their truthiness.
 pub(super) fn establish_normal_exit(expr: &Calcit, scope: &mut ScopeTypes) {
   let outcomes = visit::<false>(expr, scope, &HashMap::new(), &mut 4096, 0);
@@ -283,6 +297,26 @@ fn visit<const EFFECTS_ONLY: bool>(
     ));
   };
   match items.first() {
+    Some(Calcit::Import(import))
+      if !EFFECTS_ONLY
+        && let Some(Calcit::Local(local)) = items.get(1)
+        && let Some(target) = program::lookup_proven_guard(&import.ns, &import.def)
+        && items
+          .iter()
+          .skip(2)
+          .all(|item| visit::<true>(item, scope, aliases, remaining, depth + 1).preserves_locals()) =>
+    {
+      let current = scope.get(&local.sym).unwrap_or(&local.type_info);
+      let narrowed = if current.is_proven_for(&target) { current.clone() } else { target };
+      Outcomes {
+        truthy: Some(Path {
+          facts: [(local.sym.clone(), narrowed)].into_iter().collect(),
+          preserves_locals: true,
+        }),
+        // The proof says nothing about writes on a false return.
+        falsey: Some(Path::empty(false)),
+      }
+    }
     Some(Calcit::Syntax(CalcitSyntax::HintFn | CalcitSyntax::Quote, _)) => Outcomes::unknown(true),
     Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)) => items
       .get(1)

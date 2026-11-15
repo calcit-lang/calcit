@@ -105,6 +105,14 @@ where
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: if strip_open { Default::default() } else { signature.open_reason },
+      guard: if strip_open {
+        None
+      } else {
+        signature
+          .guard
+          .as_ref()
+          .map(|target| map_type_and_trait_references(target.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+      },
       runtime_arity: signature.runtime_arity,
       generics: signature.generics.clone(),
       where_bounds: map_bounds(&signature.where_bounds),

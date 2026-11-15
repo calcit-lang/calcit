@@ -1946,7 +1946,15 @@ impl<'a> PreprocessContext<'a> {
   }
 }
 
-fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit, resolved_code: &Calcit) {
+fn store_preprocessed_compiled_output(
+  ns: &str,
+  def: &str,
+  source_code: &Calcit,
+  resolved_code: &Calcit,
+  stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let schema = program::lookup_def_schema(ns, def);
+  let proven_guard = validate_predicate_guard(ns, def, resolved_code, &schema, stack)?;
   let preprocessed_code = resolved_code.to_owned();
   let codegen_form = resolved_code.to_owned();
   let deps = program::collect_compiled_deps(&codegen_form);
@@ -1961,11 +1969,60 @@ fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit,
       deps,
       type_summary,
       source_code: Some(source_code.to_owned()),
-      schema: program::lookup_def_schema(ns, def),
+      schema,
+      proven_guard,
       doc: program::lookup_def_doc(ns, def).map(Arc::from).unwrap_or_else(|| Arc::from("")),
       examples: program::lookup_def_examples(ns, def).unwrap_or_default(),
     },
   );
+  Ok(())
+}
+
+fn validate_predicate_guard(
+  ns: &str,
+  def: &str,
+  resolved: &Calcit,
+  schema: &CalcitTypeAnnotation,
+  stack: &CallStackList,
+) -> Result<Option<Arc<CalcitTypeAnnotation>>, CalcitErr> {
+  let CalcitTypeAnnotation::Fn(signature) = schema else {
+    return Ok(None);
+  };
+  let Some(target) = &signature.guard else { return Ok(None) };
+  let fail = |message: &str| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("{ns}/{def}: {message}"),
+      stack,
+      Some(NodeLocation::new(ns.into(), def.into(), Arc::new(vec![]))),
+    )
+    .with_code("E_PREDICATE_GUARD_UNPROVEN")
+  };
+  if signature.is_async_invocation()
+    || !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Bool)
+    || program::lookup_def_ffi(ns, def).is_some()
+  {
+    return Err(fail("a predicate guard requires a synchronous Calcit function returning Bool"));
+  }
+  let Calcit::List(forms) = resolved else {
+    return Err(fail("a predicate guard requires a defn body"));
+  };
+  if !matches!(forms.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return Err(fail("a predicate guard requires a defn body"));
+  }
+  let Some(Calcit::List(params)) = forms.get(2) else {
+    return Err(fail("a predicate guard requires a first parameter"));
+  };
+  let Some(Calcit::Local(parameter)) = params.first() else {
+    return Err(fail("a predicate guard requires a first parameter"));
+  };
+  let target = resolve_namespace_type_refs_for_body(target.clone(), ns);
+  if target.contains_type_var() || !condition_evidence::proves_guard(forms.iter().skip(3), parameter, &target) {
+    return Err(fail(
+      "the true result does not prove the declared type of the incoming first parameter",
+    ));
+  }
+  Ok(Some(target))
 }
 
 /// Prepare only the slot evidence used by this annotation, in its lexical scope.
@@ -2100,7 +2157,7 @@ fn ensure_ns_def_preprocessed(
           push_advisory(advisory);
         }
       }
-      store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+      store_preprocessed_compiled_output(ns, def, &code, &resolved_code, &next_stack)?;
       mark_audit_proven(ns, def);
 
       Ok(())
@@ -2819,7 +2876,7 @@ pub fn compile_source_def_for_snapshot(
   })?;
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
-  store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+  store_preprocessed_compiled_output(ns, def, &code, &resolved_code, call_stack)?;
   mark_audit_proven(ns, def);
 
   Ok(())
@@ -4402,6 +4459,7 @@ fn preprocess_immediate_call_context(
       }
       let signature = Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         arg_types: input_types,
         runtime_arity: None,
         return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -9407,6 +9465,7 @@ fn expected_method_argument_types(
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: info.generics.clone(),
         where_bounds: info.where_bounds.clone(),
@@ -11734,6 +11793,7 @@ fn synthesize_nominal_impl_callable(
       type_summary: Some(Arc::from(schema.to_brief_string())),
       source_code: None,
       schema,
+      proven_guard: None,
       doc: Arc::from(format!(
         "Compiler-generated direct callable for nominal method `.{method_name}` from impl `{}`.",
         impl_value.name()
@@ -11984,6 +12044,7 @@ fn validate_method_call(
         arg_types.insert(0, type_value.clone());
         let signature = CalcitFnTypeAnnotation {
           open_reason: Default::default(),
+          guard: None,
           arg_types,
           runtime_arity: None,
           return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
@@ -16552,6 +16613,7 @@ fn recheck_let_lambda_call(
   let _leave = Leave;
   let signature = Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    guard: None,
     arg_types,
     runtime_arity: None,
     return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -19449,6 +19511,7 @@ mod tests {
     let _restore = DefinitionContextScope::enter("tests.context", "restore", &Calcit::Nil);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -19532,6 +19595,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
@@ -19558,6 +19622,7 @@ mod tests {
 
     let variadic = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
@@ -19585,6 +19650,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -20303,6 +20369,7 @@ mod tests {
     )]);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -20383,6 +20450,7 @@ mod tests {
     // directly, independently of strict mode and program-owned definitions.
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -24184,6 +24252,7 @@ mod tests {
       ns,
       def,
       program::CompiledDef {
+        proven_guard: None,
         def_id,
         version_id: 0,
         kind: program::CompiledDefKind::Fn,
@@ -27214,6 +27283,7 @@ mod tests {
       location: None,
       type_info: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
@@ -27831,6 +27901,7 @@ mod tests {
     }
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -27943,6 +28014,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -27988,6 +28060,7 @@ mod tests {
 
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28009,6 +28082,7 @@ mod tests {
     let _slots = TypeSlotsGuard::cleared();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28127,6 +28201,7 @@ mod tests {
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28209,6 +28284,7 @@ mod tests {
   ) -> CalcitFnTypeAnnotation {
     CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -28632,6 +28708,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28673,6 +28750,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28734,6 +28812,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_argument() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28775,6 +28854,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_receiver() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

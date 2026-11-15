@@ -2442,6 +2442,7 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
   mark_async_callable(
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: fn_annotation.open_reason,
+      guard: None,
       runtime_arity,
       generics: fn_annotation.generics.clone(),
       where_bounds: fn_annotation.where_bounds.clone(),
@@ -2505,6 +2506,7 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
     .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))?;
   Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    guard: None,
     runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
@@ -2998,6 +3000,7 @@ pub(super) fn checked_method_signature(
   }
   Some(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    guard: None,
     runtime_arity: None,
     generics: info.generics.clone(),
     where_bounds: Arc::new(vec![]),
@@ -3771,6 +3774,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       let return_type = returned.and_then(|body| resolve_type_value(body, &parameter_scope))?;
       let mut signature = CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -4441,6 +4445,7 @@ mod tests {
     let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -4492,6 +4497,7 @@ mod tests {
     let receiver = typed_local("items", Arc::new(CalcitTypeAnnotation::List(caller.clone())));
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T"), Arc::from("U")]),
       where_bounds: Arc::new(vec![]),
@@ -4521,6 +4527,7 @@ mod tests {
   fn async_callable_alias_requires_await_for_its_logical_value() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -5231,6 +5238,7 @@ mod tests {
   fn apply_preserves_an_async_callable_pending_result() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -5256,6 +5264,7 @@ mod tests {
       "identity",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![]),
@@ -5332,6 +5341,7 @@ mod tests {
       "collect",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![]),
@@ -6107,6 +6117,7 @@ mod tests {
     let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![generic.clone()],
@@ -6191,6 +6202,7 @@ mod tests {
     let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let caller = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![variable.clone()],

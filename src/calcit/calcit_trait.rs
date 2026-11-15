@@ -634,6 +634,7 @@ mod tests {
   fn default_method_schema_must_prove_the_declared_contract() {
     let method_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

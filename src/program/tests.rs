@@ -558,6 +558,7 @@ fn program_test_state_guard_restores_registry_after_panic() {
 
 fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
   CompiledDef {
+    proven_guard: None,
     def_id,
     version_id: 0,
     kind: CompiledDefKind::Value,
@@ -1067,6 +1068,7 @@ fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
     "app.reload",
     "demo",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(1.0),
       codegen_form: Calcit::Number(1.0),
@@ -1406,6 +1408,7 @@ fn lookup_codegen_type_hint_prefers_compiled_schema_over_runtime_value() {
     "app.codegen",
     "typed",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Nil,
       codegen_form: Calcit::Nil,
@@ -1448,6 +1451,7 @@ fn lenient_compiled_fallback_backfills_runtime_cache() {
     "app.compiled",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(7.0),
       codegen_form: Calcit::Nil,
@@ -1507,6 +1511,7 @@ fn preprocess_ns_def_materializes_compiled_function_with_runtime_backfill() {
     "app.preprocess",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: fn_code,
       codegen_form: Calcit::Nil,
@@ -1544,6 +1549,7 @@ fn lazy_runtime_resolution_seeds_from_compiled_when_runtime_slot_is_missing() {
     "app.preprocess",
     "lazy-value",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(7.0),
       codegen_form: Calcit::Number(7.0),
@@ -1670,6 +1676,7 @@ fn compiled_executable_code_only_exposes_executable_kinds() {
     "app.compiled",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(1.0),
       codegen_form: Calcit::Nil,

@@ -1718,6 +1718,7 @@ struct FnSchemaFields<'a> {
   features: Option<&'a Calcit>,
   async_invocation: Option<&'a Calcit>,
   open: Option<&'a Calcit>,
+  guard: Option<&'a Calcit>,
 }
 
 pub(crate) const ASYNC_INVOCATION_FEATURE: &str = "$async-invocation";
@@ -2184,6 +2185,7 @@ impl MacroSignature {
     }
     if let Some(where_bounds) = (CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: self.generics.clone(),
       where_bounds: self.where_bounds.clone(),
@@ -2948,6 +2950,12 @@ impl CalcitTypeAnnotation {
             fields.open = Some(value);
           }
         }
+        "guard" => {
+          fields.has_any = true;
+          if fields.guard.is_none() {
+            fields.guard = Some(value);
+          }
+        }
         _ => {}
       }
     };
@@ -3425,6 +3433,9 @@ impl CalcitTypeAnnotation {
 
     Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason,
+      guard: fields
+        .guard
+        .map(|value| Self::parse_type_annotation_form_inner(value, scope.as_slice(), strict_named_refs)),
       runtime_arity: None,
       generics: Arc::new(local_generics),
       where_bounds: Arc::new(where_bounds),
@@ -3872,6 +3883,9 @@ impl CalcitTypeAnnotation {
     });
     Some(CalcitFnTypeAnnotation {
       open_reason,
+      guard: map
+        .tag_get("guard")
+        .map(|value| Self::parse_type_annotation_form_with_generics(&Self::edn_type_to_calcit(value), generics.as_slice())),
       runtime_arity: None,
       generics: Arc::new(generics),
       where_bounds: Arc::new(where_bounds),
@@ -4015,6 +4029,7 @@ impl CalcitTypeAnnotation {
 
       let signature = CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(generics),
         where_bounds: Arc::new(vec![]),
@@ -4934,6 +4949,7 @@ impl CalcitTypeAnnotation {
           let rest_type = has_rest.then(|| children.remove(0));
           values.push(Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
             open_reason: signature.open_reason,
+            guard: signature.guard.clone(),
             runtime_arity: signature.runtime_arity,
             generics: signature.generics.clone(),
             where_bounds: signature.where_bounds.clone(),
@@ -6577,6 +6593,7 @@ impl CalcitTypeAnnotation {
     }
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -6626,6 +6643,7 @@ impl CalcitTypeAnnotation {
     };
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: Some(super::ProcArity {
         min: required,
         max: (!shape.has_rest()).then_some(shape.param_len()),
@@ -7759,6 +7777,7 @@ mod tests {
     let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let identity = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![variable.clone()],
@@ -8062,6 +8081,7 @@ mod tests {
 
     let signature = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -8089,6 +8109,7 @@ mod tests {
     let signature = |arg_types| {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -8497,6 +8518,7 @@ mod tests {
     let callback = |arg: Arc<CalcitTypeAnnotation>| {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -8528,6 +8550,7 @@ mod tests {
     let function = |arg: Arc<CalcitTypeAnnotation>| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -10084,6 +10107,7 @@ mod tests {
   fn fn_annotation_serializes_to_hashmap_payload() {
     let annotation = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -10184,6 +10208,7 @@ mod tests {
   fn nested_macro_fn_annotation_keeps_kind() {
     let annotation = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -10330,6 +10355,7 @@ mod tests {
   fn wrapped_top_level_fn_schema_emits_where_bounds_in_edn_shape() {
     let schema = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
@@ -10364,6 +10390,7 @@ mod tests {
   fn wrapped_top_level_fn_schema_emits_multi_trait_where_bounds() {
     let schema = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
@@ -10440,6 +10467,7 @@ mod tests {
   fn wrapped_top_level_fn_schema_omits_default_kind_but_keeps_rest() {
     let schema = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -11217,6 +11245,7 @@ mod tests {
     );
     let expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("U"), Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -11241,6 +11270,7 @@ mod tests {
     let binary_expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone(), number.clone()], number.clone());
     let variadic_expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -11751,6 +11781,8 @@ pub struct CalcitFnTypeAnnotation {
   /// Reviewed reason why this signature keeps open types (`(:open :reflect)`).
   /// It documents intent for open-type accounting; type relations ignore it.
   pub open_reason: FnOpenReasonNote,
+  /// Declared type of the first argument on a true result; proof belongs to the definition.
+  pub guard: Option<Arc<CalcitTypeAnnotation>>,
 }
 
 /// Why a function signature deliberately keeps `AnyEnum` / `AnyFn` /
@@ -11826,6 +11858,7 @@ impl Ord for CalcitFnTypeAnnotation {
         left.cmp(&right)
       })
       .then_with(|| self.open_reason.cmp(&other.open_reason))
+      .then_with(|| self.guard.cmp(&other.guard))
   }
 }
 
@@ -12027,6 +12060,9 @@ impl CalcitFnTypeAnnotation {
     if let Some(reason) = self.open_reason.0 {
       map.insert_key("open", Edn::tag(reason.as_str()));
     }
+    if let Some(guard) = &self.guard {
+      map.insert_key("guard", guard.to_type_edn());
+    }
     Edn::Map(map)
   }
 
@@ -12037,6 +12073,7 @@ impl CalcitFnTypeAnnotation {
     source.arg_types = source.arg_types.iter().map(CalcitTypeAnnotation::for_source_schema).collect();
     source.return_type = CalcitTypeAnnotation::for_source_schema(&source.return_type);
     source.rest_type = source.rest_type.as_ref().map(CalcitTypeAnnotation::for_source_schema);
+    source.guard = source.guard.as_ref().map(CalcitTypeAnnotation::for_source_schema);
     CalcitTypeAnnotation::edn_type_to_calcit(&source.to_schema_edn())
   }
 
@@ -12075,6 +12112,9 @@ impl CalcitFnTypeAnnotation {
     if let Some(reason) = self.open_reason.0 {
       map.insert_key("open", Edn::tag(reason.as_str()));
     }
+    if let Some(guard) = &self.guard {
+      map.insert_key("guard", guard.to_type_edn());
+    }
     Edn::Map(map)
   }
 
@@ -12105,6 +12145,9 @@ impl CalcitFnTypeAnnotation {
     }
     if let Some(reason) = self.open_reason.0 {
       map.insert_key("open", Edn::tag(reason.as_str()));
+    }
+    if let Some(guard) = &self.guard {
+      map.insert_key("guard", guard.to_type_edn());
     }
 
     Edn::enum_value("Fn", vec![Edn::Map(map)])
