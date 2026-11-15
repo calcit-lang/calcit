@@ -9,6 +9,7 @@
 //! preprocessing depth, so a form bound or passed elsewhere inside the offered
 //! one (always deeper) never receives it.
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ use crate::calcit::CalcitTypeAnnotation;
 #[derive(Clone)]
 pub(super) struct Expected {
   pub(super) annotation: Arc<CalcitTypeAnnotation>,
-  pub(super) position: &'static str,
+  pub(super) position: Cow<'static, str>,
   /// Where to report a form rejected for this position, when it has no
   /// location of its own (a tag literal).
   pub(super) location: Option<crate::calcit::NodeLocation>,
