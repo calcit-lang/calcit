@@ -1,14 +1,7 @@
 # Existing Rust proc => core schema differences (#2735).
 # Resolved differences may be removed as signatures converge.
-&%{} | rest | "'Dynamic" => <missing>
-&assert-traits | missing core definition
-&impl::new | missing core function schema
-&methods-of | missing core definition
 &str | missing core function schema
 &struct:with-at | missing core definition
-&trait::new | missing core function schema
-&{} | missing core function schema
-:: | missing core function schema
 ?{} | missing core definition
 foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
 foldr-shortcut | arg 1 | "'Dynamic" => "'U"

@@ -120,8 +120,6 @@ pub const UNKNOWN_EFFECT_KIND: &str = "unknown";
 /// `hidden_core_procs_declare_effect_tags` test enforces, so a new hidden proc cannot be
 /// silently treated as pure.
 const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
-  (CalcitProc::NativeMethodsOf, &[]),
-  (CalcitProc::NativeAssertTraits, &["control"]),
   (CalcitProc::Todo, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
   (CalcitProc::NativeLooseStruct, &[]),
