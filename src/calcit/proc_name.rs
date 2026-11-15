@@ -801,6 +801,7 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeNamedEnumNew
       | NativeImplOrigin
       | NativeImplGet
       | NativeImplNth
@@ -1004,10 +1005,6 @@ impl CalcitProc {
       NativeEnum => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeNamedEnumNew => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum-def"), some_tag("tag"), variadic_dynamic()],
       }),
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
