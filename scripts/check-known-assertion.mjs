@@ -1924,6 +1924,8 @@ try {
         ["shadowed-alias", ["let", [["valid", ["number?", "k"]]], ["let", [["k", "1"]], "valid"]]],
         ["bool-is-not-proof", ["and", ["pretend", "k"], "true"]],
         ["unknown-call-after-proof", ["and", ["number?", "k"], ["effect", "k"]]],
+        ["effect-on-true-outcome", ["if", ["number?", "k"],
+          ["if", ["bool?", "k"], "true", ["do", ["effect", "k"], "true"]], "false"]],
         ["lazy-initializer-after-proof", ["and", ["number?", "k"], "lazy-flag"]],
         ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["effect", "k"], "valid"]],
         ["rebound-after-proof", ["and", ["number?", "k"], ["&let", ["ignored", ["set!", "k", "|changed"]], "true"]], false, true],
