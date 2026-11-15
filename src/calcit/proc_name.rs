@@ -718,21 +718,9 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![],
       }),
-      NativeInspectMethods => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("string")],
-      }),
-      NativeTraitCall => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
-      }),
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("unit"),
         arg_types: vec![],
-      }),
-      NativeInspectType => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
 
       // Runtime intrinsics whose argument and return types come from core.
@@ -791,6 +779,9 @@ impl CalcitProc {
       | NativeEnumDefHasVariant
       | NativeEnumDefVariantArity
       | NativeEnumValidate
+      | NativeInspectMethods
+      | NativeInspectType
+      | NativeTraitCall
       | NativeMethodsOf
       | NativeAssertTraits
       | NativeNamedEnumNew
