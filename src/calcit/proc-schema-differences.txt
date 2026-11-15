@@ -2,12 +2,9 @@
 # Resolved differences may be removed as signatures converge.
 &str | missing core function schema
 &struct:with-at | missing core definition
-?{} | missing core definition
 foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
 foldr-shortcut | arg 1 | "'Dynamic" => "'U"
 foldr-shortcut | arg 2 | "'Dynamic" => "'U"
 foldr-shortcut | arg 3 | "'Fn" => (:: "'Fn" ("{}" (:return "'Enum") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
 foldr-shortcut | return | "'Dynamic" => "'U"
 parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
-register-calcit-builtin-impls | missing core definition
-todo! | missing core definition
