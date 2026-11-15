@@ -114,15 +114,7 @@ pub struct EffectsGraphStats {
 /// Effect kind reported when a call target carries no effect declaration that the analyzer can read.
 pub const UNKNOWN_EFFECT_KIND: &str = "unknown";
 
-/// Effect tags for builtin procs that have no `calcit.core` Snapshot entry.
-///
-/// Every such proc must be listed (an empty list declares it effect-free), which the
-/// `hidden_core_procs_declare_effect_tags` test enforces, so a new hidden proc cannot be
-/// silently treated as pure.
-const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[];
-
-/// Effect tags for core syntax forms that have no `calcit.core` Snapshot entry; checked by the
-/// same test as [`HIDDEN_CORE_PROC_TAGS`].
+/// Effect tags for core syntax forms without a Snapshot entry.
 const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
   (CalcitSyntax::DefWasmExport, &[]),
   (CalcitSyntax::DefWasmImport, &[]),
@@ -132,8 +124,7 @@ const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
   (CalcitSyntax::Match, &[]),
 ];
 
-/// Effect declarations readable by the analyzer: `calcit.core` definition tags, hidden proc
-/// tags and the methods implemented by core impl tables.
+/// Effect declarations for core definitions, syntax forms and methods.
 struct TagIndex {
   core: HashMap<String, HashSet<EdnTag>>,
   /// Method name (without the leading `.`) to the union of effect kinds of every core
@@ -152,11 +143,8 @@ impl TagIndex {
         collect_core_method_impls(&entry.code, def, &mut method_impls);
       }
     }
-    let hidden = HIDDEN_CORE_PROC_TAGS
-      .iter()
-      .map(|(proc, tags)| (proc.to_string(), *tags))
-      .chain(HIDDEN_CORE_SYNTAX_TAGS.iter().map(|(syntax, tags)| (syntax.to_string(), *tags)));
-    for (name, tags) in hidden {
+    for (syntax, tags) in HIDDEN_CORE_SYNTAX_TAGS {
+      let name = syntax.to_string();
       core
         .entry(name)
         .or_insert_with(|| tags.iter().map(|tag| EdnTag::new(*tag)).collect());
@@ -2813,18 +2801,12 @@ mod tests {
   }
 
   #[test]
-  fn hidden_core_procs_declare_effect_tags() {
+  fn core_procs_and_syntax_declare_effect_tags() {
     use strum::IntoEnumIterator;
     let snapshot = crate::load_core_snapshot().expect("load core");
     let core = snapshot.files.get("calcit.core").expect("calcit.core");
-    let hidden_procs: HashSet<String> = HIDDEN_CORE_PROC_TAGS.iter().map(|(proc, _)| proc.to_string()).collect();
     for proc in CalcitProc::iter() {
-      let name = proc.to_string();
-      assert_eq!(
-        core.defs.contains_key(&name),
-        !hidden_procs.contains(&name),
-        "proc `{name}` needs exactly one effect declaration: a calcit.core entry or HIDDEN_CORE_PROC_TAGS"
-      );
+      assert!(core.defs.contains_key(proc.as_ref()), "proc `{proc}` needs a calcit.core entry");
     }
     let hidden_syntax: HashSet<String> = HIDDEN_CORE_SYNTAX_TAGS.iter().map(|(syntax, _)| syntax.to_string()).collect();
     for syntax in CalcitSyntax::iter() {

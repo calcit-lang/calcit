@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use super::{CalcitProc, CalcitTypeAnnotation, type_refs::map_type_references};
 
 #[test]
-fn proc_schema_differences_do_not_grow() {
+fn proc_signatures_match_bundled_core_schemas() {
   let snapshot = crate::load_core_snapshot().expect("load generated core snapshot");
   let core = &snapshot.files["calcit.core"];
 
@@ -23,6 +23,10 @@ fn proc_schema_differences_do_not_grow() {
   let mut differences = BTreeSet::new();
   for proc in CalcitProc::iter() {
     let Some(signature) = proc.get_type_signature() else {
+      assert!(
+        matches!(proc, CalcitProc::Recur | CalcitProc::WithTypeSlot),
+        "{proc} has no runtime signature"
+      );
       continue;
     };
     let Some(entry) = core.defs.get(proc.as_ref()) else {
@@ -54,14 +58,9 @@ fn proc_schema_differences_do_not_grow() {
     compare("return", Some(&rust.return_type), Some(&schema.return_type));
   }
 
-  let baseline = include_str!("proc-schema-differences.txt")
-    .lines()
-    .filter(|line| !line.is_empty() && !line.starts_with('#'))
-    .collect::<BTreeSet<_>>();
-  let added = differences
-    .iter()
-    .filter(|line| !baseline.contains(line.as_str()))
-    .map(String::as_str)
-    .collect::<Vec<_>>();
-  assert!(added.is_empty(), "new Rust proc / core schema differences:\n{}", added.join("\n"));
+  assert!(
+    differences.is_empty(),
+    "Rust proc / core schema differences:\n{}",
+    differences.into_iter().collect::<Vec<_>>().join("\n")
+  );
 }

@@ -553,23 +553,13 @@ impl ProcTypeSignature {
   }
 }
 
+#[cfg(test)]
 fn tag_type(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
 
-fn some_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
-  tag_type(name)
-}
-
-fn set_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Set(inner))
-}
-
-fn list_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::List(inner))
-}
-
 /// Nominal `calcit.core/Option<T>` (#1554): absence-returning primitives return `Option :none`, never nil.
+#[cfg(test)]
 fn option_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeRef(
     Arc::from("calcit.core/Option"),
@@ -577,35 +567,14 @@ fn option_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   ))
 }
 
+#[cfg(test)]
 fn option_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   option_of(tag_type(name))
 }
 
-fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
-  crate::calcit::type_annotation::DYNAMIC_TYPE.clone()
-}
-
+#[cfg(test)]
 fn type_var(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(name)))
-}
-
-/// A callback the proc calls before it returns, marked `(:features :pass)`:
-/// it accepts callbacks with any effect, charged to the caller (#2726).
-fn pass_callback_slot(args: Vec<Arc<CalcitTypeAnnotation>>, ret: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  fn_slot_with_features(args, ret, &[crate::calcit::PASS_EFFECTS_FEATURE])
-}
-
-fn fn_slot_with_features(
-  args: Vec<Arc<CalcitTypeAnnotation>>,
-  ret: Arc<CalcitTypeAnnotation>,
-  features: &[&str],
-) -> Arc<CalcitTypeAnnotation> {
-  let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_function_parts(args, ret) else {
-    unreachable!("function parts produce a function signature")
-  };
-  let mut signature = signature.as_ref().clone();
-  signature.features = Arc::new(features.iter().map(|feature| cirru_edn::EdnTag::from(*feature)).collect());
-  Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
 }
 
 fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
@@ -646,11 +615,11 @@ impl CalcitProc {
     let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
       panic!("bundled proc {name} requires a function schema");
     };
-    // Type variables and nested callback effects are carried by the argument
-    // and return types. ProcTypeSignature cannot carry outer bounds or effects.
+    // Call-site effect checking reads the proc effect contract separately.
+    // This projection cannot represent outer generic bounds.
     assert!(
-      schema.fn_kind == super::type_annotation::SchemaKind::Fn && schema.where_bounds.is_empty() && schema.features.is_empty(),
-      "bundled proc {name} requires a function schema without outer bounds or effects"
+      schema.fn_kind == super::type_annotation::SchemaKind::Fn && schema.where_bounds.is_empty(),
+      "bundled proc {name} requires a function schema without outer bounds"
     );
 
     let qualify = |annotation: &Arc<CalcitTypeAnnotation>| {
@@ -674,331 +643,10 @@ impl CalcitProc {
   }
 
   fn build_type_signature(&self, core: &crate::snapshot::FileInSnapShot) -> Option<ProcTypeSignature> {
-    use CalcitProc::*;
-
     match self {
-      // === Meta operations ===
-      TurnSymbol => Some(ProcTypeSignature {
-        return_type: some_tag("symbol"),
-        arg_types: vec![some_tag("string")],
-      }),
-      NativeCompare => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![dynamic_tag(), dynamic_tag()],
-      }),
-      NativeGetOs => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![],
-      }),
-      NativeGetDefDoc => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeGetDefSchema => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeHash => Some(ProcTypeSignature {
-        return_type: some_tag("number"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NativeGetCalcitRunningMode => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![],
-      }),
-      NativeGetCalcitBackend => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![],
-      }),
-      NativeResetGenSymIndex => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![],
-      }),
-
-      // Runtime intrinsics whose argument and return types come from core.
-      NativeAdd
-      | NativeMinus
-      | NativeMultiply
-      | NativeDivide
-      | Pow
-      | NativeNumberRem
-      | Floor
-      | Ceil
-      | Round
-      | Sin
-      | Cos
-      | Sqrt
-      | NativeNumberFract
-      | IsInteger
-      | ListQuestion
-      | TagQuestion
-      | SymbolQuestion
-      | NilQuestion
-      | StringQuestion
-      | MapQuestion
-      | NumberQuestion
-      | BoolQuestion
-      | SetQuestion
-      | EnumQuestion
-      | StructQuestion
-      | FnQuestion
-      | BitShl
-      | BitShr
-      | BitAnd
-      | BitOr
-      | BitXor
-      | BitNot
-      | NativeNumberFormat
-      | NativeNumberDisplayBy
-      | NativeNumberFits
-      | NativeBuffer
-      | NativeDisplayStack
-      | ReadFile
-      | ReadDir
-      | NativeFsReadDir
-      | Unreachable
-      | NativeUnreachable
-      | NativeMapAssoc
-      | NativeMapGet
-      | NativeStructNew
-      | NativeEnumNew
-      | NativeEnumNth
-      | NativeEnumAssoc
-      | NativeEnumCount
-      | NativeEnumImpls
-      | NativeEnumParams
-      | NativeEnumDefinition
-      | NativeEnumDefHasVariant
-      | NativeEnumDefVariantArity
-      | NativeEnumValidate
-      | NativeLooseStruct
-      | Todo
-      | RegisterCalcitBuiltinImpls
-      | NativeInspectMethods
-      | NativeInspectType
-      | NativeTraitCall
-      | NativeMethodsOf
-      | NativeAssertTraits
-      | NativeNamedEnumNew
-      | NativeImplOrigin
-      | NativeImplGet
-      | NativeImplNth
-      | NativeStructValueImplTraits
-      | NativeEnumValueImplTraits
-      | NativeStructImplTraits
-      | NativeEnumImplTraits
-      | NativeStructGet
-      | NativeStructCount
-      | NativeStructToMap
-      | NativeStructGetName
-      | NativeStructDefinition
-      | NativeStructImpls
-      | NativeStructWith
-      | NativeStructAssoc
-      | NativeStructContains
-      | NativeStructMatches
-      | NativeStructFromMap
-      | NativeStructExtendAs
-      | NativeUnionNew
-      | NativeStr
-      | NativeStructWithAt
-      | NativeStruct
-      | NativeMap
-      | NativeImplNew
-      | NativeTraitNew
-      | NativeEnum
-      | NativeExtractCodeIntoEdn
-      | NativeDataToCode
-      | NativeCirruType
-      | NativeCirruNth
-      | NativeCirruQuoteLeafText
-      | NativeCirruQuoteToList
-      | ParseCirru
-      | ParseCirruEdn
-      | ParseCirruList
-      | FormatCirru
-      | FormatCirruOneLiner
-      | NativeListQ
-      | Foldl
-      | FoldrShortcut
-      | NativeListFoldlShortcut
-      | NativeListFoldl
-      | NativeBufListNew
-      | NativeBufListPush
-      | NativeBufListConcat
-      | NativeBufListToList
-      | NativeBufListCount
-      | NativeListReverse
-      | Append
-      | Prepend
-      | NativeListAppend
-      | NativeListPrepend
-      | NativeListButlast
-      | NativeListRange
-      | NativeListSort
-      | NativeListConcat
-      | NativeListCount
-      | NativeListEmpty
-      | NativeListContains
-      | NativeListIncludes
-      | NativeListSlice
-      | NativeListNth
-      | NativeListFirst
-      | NativeListRest
-      | NativeListAssoc
-      | NativeListAssocBefore
-      | NativeListAssocAfter
-      | NativeListDissoc
-      | NativeListToSet
-      | NativeListDistinct
-      | NativeListLast
-      | NativeMerge
-      | NativeMergeNonNil
-      | ToPairs
-      | NativeMapToList
-      | NativeMapFoldKv
-      | NativeMapDissoc
-      | NativeMapCount
-      | NativeMapEmpty
-      | NativeMapContains
-      | NativeMapIncludes
-      | NativeMapDiffNew
-      | NativeMapDiffKeys
-      | NativeMapCommonKeys
-      | NativeMapDiffTriple
-      | NativeMapKeys
-      | NativeMapVals
-      | NativeMapDestruct
-      | NativeInclude
-      | NativeExclude
-      | NativeDifference
-      | NativeSetIntersection
-      | NativeUnion
-      | NativeSetToList
-      | NativeSetCount
-      | NativeSetEmpty
-      | NativeSetIncludes
-      | NativeSetDestruct
-      | JsonParse
-      | JsonStringify
-      | JsonPretty
-      | FormatCirruEdn
-      | FormatToLisp
-      | FormatToCirru
-      | PrStr
-      | IsSpreadingMark
-      | TypeOf
-      | Not
-      | Identical
-      | Trim
-      | NativeStrConcat
-      | TurnString
-      | Split
-      | SplitLines
-      | StartsWith
-      | EndsWith
-      | GetCharCode
-      | CharFromCode
-      | ParseFloat
-      | IsBlank
-      | NativeStrCompare
-      | NativeStrReplace
-      | NativeStrSlice
-      | NativeStrFindIndex
-      | NativeStrEscape
-      | NativeStrCount
-      | NativeStrUtf8ByteCount
-      | NativeStrEmpty
-      | NativeStrContains
-      | NativeStrIncludes
-      | NativeStrNth
-      | NativeStrFirst
-      | NativeStrRest
-      | NativeStrPadLeft
-      | NativeStrPadRight
-      | Ref
-      | AtomDeref
-      | AddWatch
-      | RemoveWatch
-      | NativeFsReadText
-      | NativeReadStdinText
-      | WriteFile
-      | NativeFsWriteText
-      | Quit
-      | UnixTimeMs
-      | NativeWaitMs
-      | NativeSecureRandomBytes
-      | MonotonicTimeMs
-      | GenerateId
-      | Raise
-      | NativeStructAssocAt
-      | NativeStructFieldTag
-      | NativeStructNth
-      | NativeLessThan
-      | NativeGreaterThan
-      | TurnTag => Some(self.signature_from_core(core)),
-
-      // === Comparison & Logic ===
-      NativeEquals => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag(), dynamic_tag()],
-      }),
-
-      // === String operations ===
-
-      // === List operations ===
-      List => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![variadic_of(type_var("T"))],
-      }),
-      Butlast => Some(ProcTypeSignature {
-        return_type: list_of(type_var("T")),
-        arg_types: vec![list_of(type_var("T"))],
-      }),
-      Range => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("number")),
-        arg_types: vec![some_tag("number"), some_tag("number"), some_tag("number")],
-      }),
-      Sort => {
-        let item_type = type_var("T");
-        Some(ProcTypeSignature {
-          return_type: list_of(item_type.clone()),
-          arg_types: vec![
-            list_of(item_type.clone()),
-            pass_callback_slot(vec![item_type.clone(), item_type], tag_type("number")),
-          ],
-        })
-      }
-
-      // === Set operations ===
-      Set => Some(ProcTypeSignature {
-        return_type: set_of(type_var("T")),
-        arg_types: vec![variadic_of(type_var("T"))],
-      }),
-
-      // === Struct value operations ===
-
-      // === I/O operations ===
-      GetEnv => Some(ProcTypeSignature {
-        return_type: option_tag("string"),
-        arg_types: vec![some_tag("string")],
-      }),
-      GetArgs => Some(ProcTypeSignature {
-        return_type: list_of(some_tag("string")),
-        arg_types: vec![],
-      }),
-
-      // === Special forms and control flow ===
-      // These typically don't have simple type signatures or are handled specially
-      Recur => None,
-
-      // === Type slot operations ===
-      DeftypeSlot => Some(ProcTypeSignature {
-        return_type: some_tag("unit"),
-        arg_types: vec![some_tag("tag")],
-      }),
-      // with-type-slot has a variadic body; type-checking is handled at preprocess time
-      WithTypeSlot => None,
+      // These forms are checked during preprocessing.
+      Self::Recur | Self::WithTypeSlot => None,
+      _ => Some(self.signature_from_core(core)),
     }
   }
 
@@ -1108,7 +756,7 @@ mod tests {
     }
 
     let explicitly_nullable = ProcTypeSignature {
-      return_type: dynamic_tag(),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Nullable(
         tag_type("string"),
         crate::calcit::NullableOrigin::Inferred,
