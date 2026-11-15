@@ -145,6 +145,10 @@ const openDataBoundaries = new Set([
 ]);
 const compilerSpecializedPositions = new Map([
   [
+    "foldr-shortcut|schema.return",
+    "仅当编译器从回调主体证明短路载荷的类型时，调用结果才继承累加器类型。",
+  ],
+  [
     "&fs-read-dir|schema.return",
     "检查器从已知的 enum 和路径 struct 定义推断目录结果。构造器不透明时保留开放结果，公开 FsPath 方法仍返回具体的 Result。",
   ],

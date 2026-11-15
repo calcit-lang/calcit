@@ -446,6 +446,12 @@ pub(super) fn specialize_collection_fold_expected_types(
   }
   let receiver_type = resolve_type_value(args.first()?, scope_types)?;
   let shortcut = expected_types.len() == 4;
+  if shortcut
+    && matches!(expected_types[0].as_ref(), CalcitTypeAnnotation::List(_))
+    && matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Map(..) | CalcitTypeAnnotation::Set(_))
+  {
+    return None;
+  }
   let separate_key_value = !shortcut
     && expected_types[2]
       .resolve_to_nonoptional_fn()
