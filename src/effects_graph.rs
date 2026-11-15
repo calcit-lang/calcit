@@ -119,17 +119,7 @@ pub const UNKNOWN_EFFECT_KIND: &str = "unknown";
 /// Every such proc must be listed (an empty list declares it effect-free), which the
 /// `hidden_core_procs_declare_effect_tags` test enforces, so a new hidden proc cannot be
 /// silently treated as pure.
-const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
-  (CalcitProc::NativeMethodsOf, &[]),
-  (CalcitProc::NativeInspectMethods, &["log", "io"]),
-  (CalcitProc::NativeTraitCall, &[]),
-  (CalcitProc::NativeInspectType, &[]),
-  (CalcitProc::NativeAssertTraits, &["control"]),
-  (CalcitProc::Todo, &["control"]),
-  (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
-  (CalcitProc::NativeLooseStruct, &[]),
-  (CalcitProc::NativeStructWithAt, &[]),
-];
+const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[];
 
 /// Effect tags for core syntax forms that have no `calcit.core` Snapshot entry; checked by the
 /// same test as [`HIDDEN_CORE_PROC_TAGS`].

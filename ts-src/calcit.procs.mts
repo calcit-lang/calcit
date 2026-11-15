@@ -21,6 +21,7 @@ import {
   compareTagNames,
   _$n__$e_,
   hashFunction,
+  isMethodValue,
 } from "./calcit-data.mjs";
 import { typeBoundsIdentity } from "./js-type-form.mjs";
 
@@ -126,6 +127,7 @@ export let type_of = (x: any): CalcitTag => {
     return newTag("bool");
   }
   if (typeof x === "function") {
+    if (isMethodValue(x)) return newTag("method");
     if (x.isMacro) {
       // this is faked...
       return newTag("macro");
@@ -2001,7 +2003,7 @@ export let set_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSet;
 };
 export let fn_$q_ = (x: CalcitValue): boolean => {
-  return typeof x === "function";
+  return typeof x === "function" && !isMethodValue(x);
 };
 export let ref_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitRef;

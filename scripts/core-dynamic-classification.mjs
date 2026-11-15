@@ -78,6 +78,7 @@ const runtimeMetadata = new Set([
   "&core-struct-methods",
   "&impl::new",
   "&trait::new",
+  "register-calcit-builtin-impls",
   "ControlFlow",
   "MapEntryDecision",
   "PathError",
@@ -99,10 +100,13 @@ const runtimePolymorphic = new Set([
   "&hash",
   "&impl:get",
   "&impl:nth",
+  "&inspect-methods",
+  "&inspect-type",
   "&list:flatten",
   "&list:foldl-shortcut",
   "&list:sort-by",
   "&list?",
+  "&methods-of",
   "&str",
   "&struct:assoc",
   "&struct:contains?",
@@ -112,9 +116,12 @@ const runtimePolymorphic = new Set([
   "&struct:matches?",
   "&struct:to-map",
   "&struct:with",
+  "&struct:with-at",
+  "&trait-call",
   "&{}",
   "::",
   "?",
+  "?{}",
   "ffi:response",
   "ffi:task",
   "impl-traits",
@@ -138,6 +145,10 @@ const openDataBoundaries = new Set([
   "try-parse-json",
 ]);
 const compilerSpecializedPositions = new Map([
+  [
+    "foldr-shortcut|schema.return",
+    "仅当编译器从回调主体证明短路载荷的类型时，调用结果才继承累加器类型。",
+  ],
   [
     "&fs-read-dir|schema.return",
     "检查器从已知的 enum 和路径 struct 定义推断目录结果。构造器不透明时保留开放结果，公开 FsPath 方法仍返回具体的 Result。",
@@ -462,6 +473,13 @@ function classify(entry) {
       owner: "runtime-internals",
       decision: "retain-reviewed",
       rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
+    };
+  }
+  if (name === "&%{}") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "内部构造器接收字段与值的交替参数。具名 Struct 的字段类型由构造检查逐项验证。",
     };
   }
   if (name === "&struct:assoc-at" || name === "&struct:nth") {

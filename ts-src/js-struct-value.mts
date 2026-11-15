@@ -93,7 +93,7 @@ export class CalcitStructValue {
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
   }
   withAt(...triples: CalcitValue[]): CalcitStructValue {
-    if (triples.length === 0 || triples.length % 3 !== 0) {
+    if (triples.length % 3 !== 0) {
       throw new Error("&struct:with-at expected index/tag/value triples");
     }
     const values = this.values.slice();

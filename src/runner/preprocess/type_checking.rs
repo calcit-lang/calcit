@@ -446,6 +446,12 @@ pub(super) fn specialize_collection_fold_expected_types(
   }
   let receiver_type = resolve_type_value(args.first()?, scope_types)?;
   let shortcut = expected_types.len() == 4;
+  if shortcut
+    && matches!(expected_types[0].as_ref(), CalcitTypeAnnotation::List(_))
+    && matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Map(..) | CalcitTypeAnnotation::Set(_))
+  {
+    return None;
+  }
   let separate_key_value = !shortcut
     && expected_types[2]
       .resolve_to_nonoptional_fn()
@@ -1091,6 +1097,15 @@ pub(crate) fn check_proc_arg_types(
       .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(super::GENERATED_DEF), Arc::from(vec![])))
   };
 
+  if *proc == CalcitProc::NativeStructWithAt && actual_count > 0 && !(actual_count - 1).is_multiple_of(3) {
+    super::gen_check_warning_with_location_code(
+      format!("[Error] Proc `{proc}` expects a Struct followed by index/tag/value triples, got {actual_count} args"),
+      "E_PROC_ARITY",
+      arity_location(),
+      check_warnings,
+    );
+    return;
+  }
   if !has_variadic {
     if actual_count < min_count || actual_count > max_count {
       let expected_str = if min_count == max_count {
@@ -1163,6 +1178,18 @@ pub(crate) fn check_proc_arg_types(
     | CalcitProc::NativeListFoldlShortcut => specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types)
       .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
       .unwrap_or_else(|| signature.arg_types.clone()),
+    CalcitProc::NativeStructWithAt => {
+      let mut expected = vec![signature.arg_types[0].clone()];
+      let triple = [
+        Arc::new(CalcitTypeAnnotation::Number),
+        Arc::new(CalcitTypeAnnotation::Tag),
+        crate::calcit::DYNAMIC_TYPE.clone(),
+      ];
+      for _ in 0..actual_count.saturating_sub(1) / 3 {
+        expected.extend(triple.iter().cloned());
+      }
+      expected
+    }
     CalcitProc::Sort | CalcitProc::NativeListSort => specialize_collection_sort_expected_types(args, scope_types, &signature.arg_types)
       .map(|specialized| carry_callback_slot_features(&signature.arg_types, specialized))
       .unwrap_or_else(|| signature.arg_types.clone()),
@@ -2029,19 +2056,10 @@ pub(super) fn expression_is_proven_for(
               self.check(body, expected, &branch_scope, &branch_aliases, async_invocation, depth + 1)
             });
           }
-          Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))
-            if !async_invocation
-              && !expected.contains_type_var()
-              && expected.is_option_type()
-              && items.len() == 4
-              && matches!(items.get(1), Some(Calcit::Import(import))
-                if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "Option")
-              && matches!(items.get(2), Some(Calcit::Tag(tag)) if tag.ref_str() == "some")
-              && let Some(payload) = expected.option_payload() =>
-          {
-            // Keep the expected contract through Some before a heterogeneous
-            // payload literal is synthesized as an open collection.
-            return self.check(&items[3], &payload, scope, aliases, false, depth + 1);
+          Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)) if !async_invocation => {
+            if let Some(proven) = self.check_enum_literal(items, expected, scope, aliases, depth) {
+              return proven;
+            }
           }
           _ => {}
         }
@@ -2062,7 +2080,21 @@ pub(super) fn expression_is_proven_for(
         CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
       ) && super::empty_container_has_no_type_evidence(expr, expected);
       if expected.contains_type_var() && !empty_family {
-        return false;
+        // A host-nullable return accepts nil or a payload that proves the
+        // same lexical contract, without binding its generic parameters.
+        let CalcitTypeAnnotation::Nullable(payload, NullableOrigin::JsHost) = expected else {
+          return false;
+        };
+        return resolve_type_value(expr, scope).is_some_and(|actual| {
+          let actual = if async_invocation {
+            async_invocation_result(actual.as_ref()).unwrap_or(actual)
+          } else {
+            actual
+          };
+          matches!(actual.as_ref(), CalcitTypeAnnotation::Nil)
+            || rigid_proof(&actual, expected, scope)
+            || rigid_proof(&actual, payload, scope)
+        });
       }
       if let Some(proven) = collection_literal_matches(expr, expected, |value, contract| {
         self.check(value, contract, scope, aliases, false, depth + 1)
@@ -2155,6 +2187,39 @@ pub(super) fn expression_is_proven_for(
     }
 
     /// `None` leaves non-literals and non-generic expectations to the general proof.
+    fn check_enum_literal<'a>(
+      &mut self,
+      items: &CalcitList,
+      expected: &'a CalcitTypeAnnotation,
+      scope: &ScopeTypes,
+      aliases: &HashMap<Arc<str>, &'a CalcitTypeAnnotation>,
+      depth: usize,
+    ) -> Option<bool> {
+      let args = match expected {
+        CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) if !args.is_empty() => args,
+        _ => return None,
+      };
+      let definition = super::type_inference::resolve_enum_value(items.get(1)?, scope)?;
+      if definition.generics().len() != args.len() || !definition.where_bounds().is_empty() {
+        return None;
+      }
+      let Calcit::Tag(tag) = items.get(2)? else { return None };
+      let variant = definition.find_variant(tag)?;
+      if variant.arity() != items.len() - 3 {
+        return Some(false);
+      }
+      let candidate = CalcitTypeAnnotation::Enum(Arc::new(definition.clone()), args.clone());
+      if !rigid_proof(&candidate, expected, scope) {
+        return None;
+      }
+      let bindings = definition.generics().iter().cloned().zip(args.iter().cloned()).collect();
+      Some(items.iter().skip(3).zip(variant.payload_types()).all(|(value, payload)| {
+        let contract = super::type_inference::resolve_enum_payload_type(&definition, payload.clone()).substitute_type_vars(&bindings);
+        self.check(value, &contract, scope, aliases, false, depth + 1)
+          || resolve_type_value(value, scope).is_some_and(|actual| rigid_proof(&actual, &contract, scope))
+      }))
+    }
+
     fn check_struct_literal<'a>(
       &mut self,
       expr: &Calcit,
@@ -2790,6 +2855,18 @@ mod tests {
       arg_types,
       rest_type: None,
     }
+  }
+
+  #[test]
+  fn js_nullish_exit_proof_keeps_generic_payload_rigid() {
+    let payload = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let other = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let expected = CalcitTypeAnnotation::Nullable(payload.clone(), NullableOrigin::JsHost);
+    let scope = ScopeTypes::new();
+    assert!(expression_is_proven_for(&Calcit::Nil, &expected, &scope, false));
+    assert!(expression_is_proven_for(&make_local("payload", payload), &expected, &scope, false));
+    assert!(!expression_is_proven_for(&make_local("other", other), &expected, &scope, false));
+    assert!(!expression_is_proven_for(&Calcit::Number(42.0), &expected, &scope, false));
   }
 
   #[test]
