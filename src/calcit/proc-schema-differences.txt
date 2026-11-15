@@ -1,9 +1,7 @@
 # Existing Rust proc => core schema differences (#2735).
 # Resolved differences may be removed as signatures converge.
-&assert-traits | missing core definition
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
-&methods-of | missing core definition
 &str | missing core function schema
 &struct:with-at | missing core definition
 &trait-call | missing core definition

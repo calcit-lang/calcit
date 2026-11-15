@@ -171,7 +171,7 @@ echo 'range 10' | calcit eval --stdin
 
 在运行时调试 trait 分派时，可使用以下内置函数（低频场景，需运行期有值后调用）：
 
-- `&methods-of value` — 列出某值的可用方法名（返回字符串列表 `[] |.foo |.bar ...`）
+- `&methods-of value` 返回某值的可用方法选择器（`List Method`，如 `[] .foo .bar`），可用 `str` 读取显示名称。
 - `&inspect-methods value` — 打印方法与 impl 来源（调试 trait override 链，可临时插入 pipeline）
 - `impl-origin impl` — 以 `Option<Trait>` 读取 nominal impl 的 trait 来源
 - `&trait-call Trait :method receiver & args` — 显式消歧：只调用属于指定 trait 的方法实现
