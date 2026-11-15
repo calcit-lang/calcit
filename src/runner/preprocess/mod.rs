@@ -5778,14 +5778,17 @@ fn preprocess_list_call(
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
             {
               let mut contextual_args = ys.iter().skip(1).cloned().collect::<Vec<_>>();
-              contextual_args.push(resolve_callback_constructor(
-                a,
-                scope_defs,
-                scope_types,
-                file_ns,
-                check_warnings,
-                call_stack,
-              )?);
+              // The method argument cannot establish its own enum type from a bare tag.
+              if !matches!(a, Calcit::Tag(_)) {
+                contextual_args.push(resolve_callback_constructor(
+                  a,
+                  scope_defs,
+                  scope_types,
+                  file_ns,
+                  check_warnings,
+                  call_stack,
+                )?);
+              }
               expected_method_argument_types(
                 receiver_type.as_ref(),
                 name,
@@ -5901,6 +5904,7 @@ fn preprocess_list_call(
                 .as_ref()
                 .map(|(_, owner, field)| format!("field `:{field}` of struct `{owner}`").into()),
               Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some(Cow::Borrowed("variant payload")),
+              Calcit::Method(_, calcit::MethodKind::Invoke(_)) => Some(Cow::Borrowed("method argument")),
               Calcit::Proc(CalcitProc::Recur) => Some(Cow::Borrowed("recur argument")),
               _ if callable_contract.is_some() => Some(Cow::Borrowed("argument of a local function")),
               _ => None,
@@ -5955,32 +5959,6 @@ fn preprocess_list_call(
                 )?
               }
               None => form,
-            };
-            // A method's tag must not seed its own expected slot. Read the
-            // slot from the receiver and the already checked arguments.
-            let form = if !has_spread
-              && matches!(form, Calcit::Tag(_))
-              && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
-              && let Some(receiver_type) = ys.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
-              && let Some(context) = {
-                let preceding = ys.iter().skip(1).cloned().collect::<Vec<_>>();
-                expected_method_argument_types(receiver_type.as_ref(), name, &CalcitList::from(preceding.as_slice()), scope_types)
-              }
-              && let Some(expected) = context.argument_types.get(ys.len() - 2).filter(|ty| !ty.contains_type_var())
-              && let Some(rewritten) = coerce_tag_literal(
-                &form,
-                expected,
-                "method argument",
-                (
-                  file_ns,
-                  call_stack.0.first().map(|frame| frame.def.as_ref()).unwrap_or(def_name.as_ref()),
-                ),
-                call_stack,
-                call_location.clone(),
-              )? {
-              rewritten
-            } else {
-              form
             };
             // Specialize callback context using proven preceding inputs.
             // Nested Dynamic preserves known container shape, not concrete members.
@@ -6937,14 +6915,54 @@ fn preprocess_known_function_call(
     let offered_slot = offered_value_slot(offered_bindings.as_ref(), expected_type.as_ref());
     let offered_return = offered_callback_return(offered_bindings.as_ref(), expected_type.as_ref());
     let receiver_fixed = receiver_fixed.or_else(|| offered_slot.clone().filter(|slot| contextual_literal_type(a, slot).is_some()));
+    // A bare tag at a definite enum parameter names its zero-payload variant (#2701).
+    // A generic or untyped core parameter counts once the receiver fixes it, as
+    // `assoc` on a struct fixes the value to the field type (#2722).
+    let tag_expected = if !matches!(a, Calcit::Tag(_)) {
+      None
+    } else if let Some(expected) = expected_type
+      .as_ref()
+      .map(|expected| match expected.as_ref() {
+        CalcitTypeAnnotation::Variadic(item) => item.clone(),
+        _ => expected.clone(),
+      })
+      .or_else(|| {
+        // Later rest arguments have no slot of their own in the expected list.
+        (!has_spread && arg_idx >= info.arg_types.len() && contextual_generic_typing_enabled())
+          .then(|| info.rest_type.as_ref())
+          .flatten()
+          .map(|rest| resolve_namespace_type_refs_for_body(rest.substitute_type_vars(&preprocessing_type_bindings), &info.def_ns))
+      })
+      && !expected.contains_type_var()
+      && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+    {
+      // Type variables bound by earlier arguments are already substituted,
+      // so `(= color :red)` reads the tag as the enum of `color` (#2733).
+      Some(expected)
+    } else if let Some(slot) = offered_slot {
+      Some(slot)
+    } else if info.def_ns.as_ref() == calcit::CORE_NS && !has_spread {
+      let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
+      staged.push(a.to_owned());
+      staged.extend(args.iter().skip(arg_idx + 1).cloned());
+      type_checking::specialize_core_expected_types(&info, &CalcitList::from(staged.as_slice()), scope_types, &info.arg_types)
+        .and_then(|specialized| specialized.get(arg_idx).cloned())
+        .filter(|expected| !expected.contains_type_var())
+    } else {
+      None
+    };
+    let tag_position = tag_expected
+      .as_ref()
+      .map(|_| (format!("arg {} of `{}`", arg_idx + 1, info.name).into(), call_location.clone()));
     let result = preprocess_argument_with_offered_return(
       a,
-      receiver_fixed
+      tag_expected
         .as_ref()
+        .or(receiver_fixed.as_ref())
         .or(expected_type.as_ref())
         .map(|annotation| (annotation, member_inputs, callback_output_binders.as_slice())),
       offered_return,
-      None,
+      tag_position,
       scope_defs,
       scope_types,
       file_ns,
@@ -6973,55 +6991,6 @@ fn preprocess_known_function_call(
         result?
       }
       None => form,
-    };
-    // A bare tag at a definite enum parameter names its zero-payload variant (#2701).
-    // A generic or untyped core parameter counts once the receiver fixes it, as
-    // `assoc` on a struct fixes the value to the field type (#2722).
-    let tag_expected = if !matches!(form, Calcit::Tag(_)) {
-      None
-    } else if let Some(expected) = expected_type
-      .as_ref()
-      .map(|expected| match expected.as_ref() {
-        CalcitTypeAnnotation::Variadic(item) => item.clone(),
-        _ => expected.clone(),
-      })
-      .or_else(|| {
-        // Later rest arguments have no slot of their own in the expected list.
-        (!has_spread && arg_idx >= info.arg_types.len() && contextual_generic_typing_enabled())
-          .then(|| info.rest_type.as_ref())
-          .flatten()
-          .map(|rest| resolve_namespace_type_refs_for_body(rest.substitute_type_vars(&preprocessing_type_bindings), &info.def_ns))
-      })
-      && !expected.contains_type_var()
-      && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
-    {
-      // Type variables bound by earlier arguments are already substituted,
-      // so `(= color :red)` reads the tag as the enum of `color` (#2733).
-      Some(expected)
-    } else if let Some(slot) = offered_slot {
-      Some(slot)
-    } else if info.def_ns.as_ref() == calcit::CORE_NS && !has_spread {
-      let mut staged = ys.drop_left().iter().cloned().collect::<Vec<_>>();
-      staged.push(form.clone());
-      staged.extend(args.iter().skip(arg_idx + 1).cloned());
-      type_checking::specialize_core_expected_types(&info, &CalcitList::from(staged.as_slice()), scope_types, &info.arg_types)
-        .and_then(|specialized| specialized.get(arg_idx).cloned())
-        .filter(|expected| !expected.contains_type_var())
-    } else {
-      None
-    };
-    let form = if let Some(expected) = tag_expected.as_ref()
-      && let Some(rewritten) = coerce_tag_literal(
-        &form,
-        expected,
-        &format!("arg {} of `{}`", arg_idx + 1, info.name),
-        (file_ns, def_name),
-        call_stack,
-        call_location.clone(),
-      )? {
-      rewritten
-    } else {
-      form
     };
     // A parameter that declares nullability already admits the nil exit.
     if !is_nil_bridge_head(&head_form)
