@@ -1954,10 +1954,11 @@
                 , 0 $ fn (acc entry)
                   let[] (k v) entry (assert-type k Tag) (assert-type v Number) (&+ acc v)
             :tags $ #{} :core :unit
-        '&list:foldl-shortcut $ %{} 'CodeEntry (:doc |)
+        '&list:foldl-shortcut $ %{} 'CodeEntry
+          :doc "|Short-circuit left fold over a List, Set, or Map. Map reducers receive a two-item List. The reducer returns :: Bool payload; true returns the payload and false continues. Exhaustion returns the supplied default."
           :code $ quote $ &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic Dynamic Dynamic Fn (-> Dynamic)
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |proven-shortcut-bool)
