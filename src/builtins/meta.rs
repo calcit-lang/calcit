@@ -2010,7 +2010,7 @@ fn trait_dot_method_names(trait_def: &CalcitTrait) -> Vec<String> {
   trait_def.methods.iter().map(|m| format!(".{}", m.ref_str())).collect()
 }
 
-/// Returns a list of method names (with leading dot) that can be invoked on a value at runtime.
+/// Returns method selectors for a value, or the declared selectors of a trait.
 /// Usage: (&methods-of value)
 pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {

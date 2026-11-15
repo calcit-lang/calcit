@@ -78,6 +78,7 @@ const runtimeMetadata = new Set([
   "&core-struct-methods",
   "&impl::new",
   "&trait::new",
+  "register-calcit-builtin-impls",
   "ControlFlow",
   "MapEntryDecision",
   "PathError",
@@ -99,10 +100,13 @@ const runtimePolymorphic = new Set([
   "&hash",
   "&impl:get",
   "&impl:nth",
+  "&inspect-methods",
+  "&inspect-type",
   "&list:flatten",
   "&list:foldl-shortcut",
   "&list:sort-by",
   "&list?",
+  "&methods-of",
   "&str",
   "&struct:assoc",
   "&struct:contains?",
@@ -112,9 +116,11 @@ const runtimePolymorphic = new Set([
   "&struct:matches?",
   "&struct:to-map",
   "&struct:with",
+  "&trait-call",
   "&{}",
   "::",
   "?",
+  "?{}",
   "ffi:response",
   "ffi:task",
   "impl-traits",
@@ -466,6 +472,13 @@ function classify(entry) {
       owner: "runtime-internals",
       decision: "retain-reviewed",
       rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
+    };
+  }
+  if (name === "&%{}") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "内部构造器接收字段与值的交替参数。具名 Struct 的字段类型由构造检查逐项验证。",
     };
   }
   if (name === "&struct:assoc-at" || name === "&struct:nth") {
