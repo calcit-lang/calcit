@@ -67,6 +67,7 @@ try {
   });
   const entry = ["defn", "main!", [], ...trees, "&unit"];
   run("edit", "def", "fix-command.reader/main!", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(entry));
+  run("edit", "schema", "fix-command.reader/main!", "--add-feature", "state");
   // The alias fixtures keep loose proc wrappers on purpose; the run checks behavior, not the proof audit.
   run("--no-proof-audit");
   const output = join(project, "js-out");
@@ -76,7 +77,7 @@ try {
 
   // Invalid programs cannot be attached tests: they must fail before execution.
   // Only mutate this private Snapshot, leaving the shared semantic fixture valid.
-  const schema = ["--input-format", "cirru", "--code", "quote $ Fn (-> Unit)"];
+  const schema = ["--input-format", "cirru", "--code", "quote $ Fn (-> Unit) (:features :state)"];
   apply([
     ["config", "set", "target", "node"],
     ["edit", "add-ns", "fix-command.import-partial"],
