@@ -42,4 +42,3 @@ struct? | arg 0 | "'Dynamic" => "'T"
 symbol? | arg 0 | "'Dynamic" => "'T"
 tag? | arg 0 | "'Dynamic" => "'T"
 todo! | missing core definition
-turn-tag | arg 0 | "'Dynamic" => "'T"
