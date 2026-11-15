@@ -62,7 +62,7 @@ try {
       ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
         `quote $ defn main! ()\n${source.split("\n").map(line => `  ${line}`).join("\n")}\n  , &unit`],
       ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+        "quote $ Fn (-> Unit) (:features :io)"],
     ]);
     const preview = JSON.parse(elementRun("edit", "transaction", "--code", transaction, "--dry-run", "--format", "json"));
     elementRun("edit", "transaction", "--code", transaction, "--expect-revision", preview.scoped_revision);
