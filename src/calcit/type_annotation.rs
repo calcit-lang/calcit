@@ -1434,6 +1434,7 @@ fn bounded_plain_type_relation<'a>(
         | CalcitTypeAnnotation::Buffer
         | CalcitTypeAnnotation::BufList
         | CalcitTypeAnnotation::CirruQuote
+        | CalcitTypeAnnotation::Method
         | CalcitTypeAnnotation::JsObject
         | CalcitTypeAnnotation::Nil
         | CalcitTypeAnnotation::Unit
@@ -1609,6 +1610,7 @@ fn bounded_plain_type_relation<'a>(
       | (Type::Buffer, Type::Buffer)
       | (Type::BufList, Type::BufList)
       | (Type::CirruQuote, Type::CirruQuote)
+      | (Type::Method, Type::Method)
       | (Type::JsObject, Type::JsObject)
       | (Type::AnonymousEnum, Type::AnonymousEnum)
       | (Type::Nil, Type::Nil)
@@ -1882,6 +1884,8 @@ pub enum CalcitTypeAnnotation {
   AnonymousEnum,
   /// function type without a known signature
   DynFn,
+  /// A receiver-dependent method selector, without a standalone function signature.
+  Method,
   Fn(Arc<CalcitFnTypeAnnotation>),
   /// Compile-time macro contract. Unlike `Fn`, its inputs describe raw syntax
   /// and its output describes the semantic value produced after expansion.
@@ -2385,6 +2389,7 @@ impl CalcitTypeAnnotation {
       | Self::Buffer
       | Self::BufList
       | Self::CirruQuote
+      | Self::Method
       | Self::Dynamic
       | Self::TypeVar(_)
       | Self::Nil
@@ -2419,6 +2424,7 @@ impl CalcitTypeAnnotation {
       "set" => Some(Self::Set(DYNAMIC_TYPE.clone())),
       "tuple" | "enum" => Some(Self::AnonymousEnum),
       "fn" => Some(Self::DynFn),
+      "method" => Some(Self::Method),
       "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "buf-list" => Some(Self::BufList),
@@ -2443,6 +2449,7 @@ impl CalcitTypeAnnotation {
       Self::List(_) => Some("list"),
       Self::Map(_, _) => Some("map"),
       Self::DynFn => Some("fn"),
+      Self::Method => Some("method"),
       Self::Set(_) => Some("set"),
       Self::AnonymousEnum => Some("enum"),
       Self::Ref(_) => Some("ref"),
@@ -2490,6 +2497,7 @@ impl CalcitTypeAnnotation {
       "buffer" | "Buffer" => Some("Buffer"),
       "buf-list" | "BufList" => Some("BufList"),
       "cirru-quote" | "CirruQuote" => Some("CirruQuote"),
+      "method" | "Method" => Some("Method"),
       "js-object" | "JsObject" => Some("JsObject"),
       "js-nullish" | "JsNullish" => Some("JsNullish"),
       "&" | "variadic" | "Variadic" => Some("Variadic"),
@@ -2554,6 +2562,7 @@ impl CalcitTypeAnnotation {
       "Buffer" => Some(Self::Buffer),
       "BufList" => Some(Self::BufList),
       "CirruQuote" => Some(Self::CirruQuote),
+      "Method" => Some(Self::Method),
       "JsObject" => Some(Self::JsObject),
       "Struct" => Some(Self::Custom(Arc::new(Calcit::tag("struct")))),
       "StructDef" => Some(Self::Custom(Arc::new(Calcit::tag("struct-def")))),
@@ -4365,6 +4374,7 @@ impl CalcitTypeAnnotation {
               | "Buffer"
               | "BufList"
               | "CirruQuote"
+              | "Method"
               | "JsObject"
               | "Record"
               | "Struct"
@@ -4581,6 +4591,7 @@ impl CalcitTypeAnnotation {
                   | "Buffer"
                   | "BufList"
                   | "CirruQuote"
+                  | "Method"
                   | "JsObject"
                   | "Record"
                   | "Struct"
@@ -5821,6 +5832,7 @@ impl CalcitTypeAnnotation {
       | (Self::Buffer, Self::Buffer)
       | (Self::BufList, Self::BufList)
       | (Self::CirruQuote, Self::CirruQuote)
+      | (Self::Method, Self::Method)
       | (Self::JsObject, Self::JsObject)
       | (Self::Nil, Self::Nil)
       | (Self::Unit, Self::Unit) => true,
@@ -6537,6 +6549,7 @@ impl CalcitTypeAnnotation {
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::BufList(_) => Self::BufList,
       Calcit::CirruQuote(_) => Self::CirruQuote,
+      Calcit::Method(_, crate::calcit::MethodKind::Invoke(_)) => Self::Method,
       Calcit::Trait(trait_def) => Self::Trait(Arc::new(trait_def.to_owned())),
       other => Self::Custom(Arc::new(other.to_owned())),
     }
@@ -6832,6 +6845,7 @@ impl CalcitTypeAnnotation {
       Self::Symbol => Edn::Symbol(Arc::from("Symbol")),
       Self::Tag => Edn::Symbol(Arc::from("Tag")),
       Self::DynFn => Edn::Symbol(Arc::from("Fn")),
+      Self::Method => Edn::Symbol(Arc::from("Method")),
       Self::AnonymousEnum => Edn::Symbol(Arc::from("Enum")),
       Self::Buffer => Edn::Symbol(Arc::from("Buffer")),
       Self::BufList => Edn::Symbol(Arc::from("BufList")),
@@ -7101,6 +7115,7 @@ impl CalcitTypeAnnotation {
       Self::Ref(_) => 10,
       Self::Buffer => 11,
       Self::BufList => 39,
+      Self::Method => 40,
       Self::CirruQuote => 12,
       Self::StructValue(_) => 13,
       Self::EnumValue(_) => 14,
@@ -11557,6 +11572,7 @@ impl Hash for CalcitTypeAnnotation {
       }
       Self::AnonymousEnum => "dyntuple".hash(state),
       Self::DynFn => "dynfn".hash(state),
+      Self::Method => "method".hash(state),
       Self::Fn(signature) => {
         "function".hash(state);
         signature.generics.hash(state);
@@ -11675,7 +11691,8 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::DynFn, Self::DynFn)
       | (Self::Buffer, Self::Buffer)
       | (Self::BufList, Self::BufList)
-      | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
+      | (Self::CirruQuote, Self::CirruQuote)
+      | (Self::Method, Self::Method) => Ordering::Equal,
       (Self::Numeric(a), Self::Numeric(b)) => a.cmp(b),
       (Self::List(a), Self::List(b)) => a.cmp(b),
       (Self::Tuple(a), Self::Tuple(b)) => a.cmp(b),
@@ -12444,6 +12461,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::Buffer => matches!(value, Calcit::Buffer(_)),
     CalcitTypeAnnotation::BufList => matches!(value, Calcit::BufList(_)),
     CalcitTypeAnnotation::CirruQuote => matches!(value, Calcit::CirruQuote(_)),
+    CalcitTypeAnnotation::Method => matches!(value, Calcit::Method(_, crate::calcit::MethodKind::Invoke(_))),
     CalcitTypeAnnotation::AnonymousEnum => matches!(value, Calcit::Enum(_)),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => matches!(value, Calcit::Fn { .. } | Calcit::Proc(_)),
     CalcitTypeAnnotation::Macro(_) => matches!(value, Calcit::Macro { .. }),
@@ -12669,6 +12687,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     Calcit::Buffer(_) => Arc::new(CalcitTypeAnnotation::Buffer),
     Calcit::BufList(_) => Arc::new(CalcitTypeAnnotation::BufList),
     Calcit::CirruQuote(_) => Arc::new(CalcitTypeAnnotation::CirruQuote),
+    Calcit::Method(_, crate::calcit::MethodKind::Invoke(_)) => Arc::new(CalcitTypeAnnotation::Method),
     Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
     Calcit::Proc(proc) => proc
       .get_type_signature()

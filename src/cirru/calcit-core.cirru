@@ -368,6 +368,9 @@
               :code $ quote $ let
                   methods $ &methods-of $ cirru-quote x
                 do
+                  assert-type methods $ List Method
+                  assert= :method $ type-of .list?
+                  assert= false $ fn? .list?
                   assert= true $ includes? methods .list?
                   assert= true $ includes? methods .leaf?
                   assert= true $ includes? methods .to-list
@@ -2879,10 +2882,10 @@
           :schema $ quote $ Fn Number Number (-> Number)
           :tags $ #{} :internal
         '&methods-of $ %{} 'CodeEntry
-          :doc "|返回值上可用的可调用方法。传入 trait 描述符时列出其声明的方法。"
+          :doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> (List Fn)) (:open :reflect)
+          :schema $ quote $ Fn Dynamic (-> (List Method)) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&number:display-by $ %{} 'CodeEntry
           :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (non-negative safe integer), base (2, 8 or 16)\nReturns: string\nDisplays n exactly with a 0b, 0o or 0x prefix; other inputs raise an error"

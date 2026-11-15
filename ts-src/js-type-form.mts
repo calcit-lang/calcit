@@ -1,5 +1,5 @@
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitSymbol, CalcitTag, newTag, compareUnicodeStrings } from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag, newTag, compareUnicodeStrings, isMethodValue } from "./calcit-data.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
@@ -58,7 +58,7 @@ let typeFormName = (form: CalcitValue): string | null => {
 // Keep the original field form for diagnostics and runtime validation.
 const typeNameAliases = new Map<string, string>();
 for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbol", "Tag", "List", "Map", "Set", "Ref",
-  "Fn", "Buffer", "Struct", "Enum", "Trait", "Impl",
+  "Fn", "Method", "Buffer", "Struct", "Enum", "Trait", "Impl",
   "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float32", "Float64"]) {
   typeNameAliases.set(name, name);
   typeNameAliases.set(name.toLowerCase(), name);
@@ -284,10 +284,13 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
     case "Ref":
     case "ref":
       return requireEvidence ? null : value instanceof CalcitRef;
+    case "Method":
+    case "method":
+      return isMethodValue(value);
     case "Fn":
     case "fn":
     case "AnyFn":
-      return typeof value === "function";
+      return typeof value === "function" && !isMethodValue(value);
     case "Struct":
     case "struct":
     case "AnyStruct":
