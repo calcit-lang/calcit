@@ -195,7 +195,7 @@
 | `E_PARSE_CIRRU_EDN_AS_ARITY` | `src/runner/preprocess/mod.rs` |
 | `E_PARTIAL_STRUCT_NIL_FILL` | `src/runner/preprocess/mod.rs` |
 | `E_POST_LOWERING_INVARIANT` | `src/runner/preprocess/post_lowering.rs` |
-| `E_PREDICATE_GUARD_UNPROVEN` | `src/runner/preprocess/mod.rs` |
+| `E_PREDICATE_GUARD_UNPROVEN` | `src/program/tests.rs`<br>`src/runner/preprocess/mod.rs` |
 | `E_PREFLIGHT_CALCIT_VERSION` | `src/bin/verification.rs` |
 | `E_PREFLIGHT_HOST_MISSING` | `src/bin/verification.rs` |
 | `E_PREFLIGHT_HOST_VERSION` | `src/bin/verification.rs` |
