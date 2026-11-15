@@ -620,10 +620,6 @@ fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
 }
 
-fn some_fn() -> Arc<CalcitTypeAnnotation> {
-  tag_type("fn")
-}
-
 impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
@@ -861,6 +857,7 @@ impl CalcitProc {
       | NativeListQ
       | Foldl
       | FoldrShortcut
+      | NativeListFoldlShortcut
       | NativeListFoldl
       | NativeBufListNew
       | NativeBufListPush
@@ -1008,10 +1005,6 @@ impl CalcitProc {
           ],
         })
       }
-      NativeListFoldlShortcut => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
-      }),
 
       // === Map operations ===
       NativeMap => Some(ProcTypeSignature {
