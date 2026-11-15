@@ -1329,7 +1329,7 @@ defn numeric? (x)
   number? x
 ```
 
-编译器在定义处检查所有返回真的路径能否证明第一个参数进入函数时的值符合声明。证据不足会报告 `E_PREDICATE_GUARD_UNPROVEN`。仅返回 `Bool` 或复用内建谓词的名字无法提供这项证明。
+编译器在定义处检查所有返回真的路径能否证明第一个参数进入函数时的值符合声明。证据不足会报告 `E_PREDICATE_GUARD_UNPROVEN`。仅返回 `Bool` 或复用内建谓词的名字无法提供这项证明。 检查开放值的类型时请使用 `number?` 等类别谓词。WASM 上部分开放标量共享数值表示，所以与字面量相等不能单独证明该值的类型。
 
 项目提供自己的 `calcit.core` 时，namespace 名称不等于 bundled-core 来源；修改后的源代码谓词不自动继承 bundled-core 的收窄合同。
 

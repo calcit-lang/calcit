@@ -13750,8 +13750,8 @@ fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) ->
   Some((sym, Arc::new(nominal)))
 }
 
-/// `(= x :a)` holds only when `x` has the literal's kind on every backend, so the
-/// true branch narrows `x` to Tag, String, Number or Bool. The false branch
+/// Equality with a literal supplies local evidence for Tag, String, Number or
+/// Bool. Declared guards need portable evidence for open values. The false branch
 /// learns nothing, and only core equality counts, in either operand order.
 fn literal_equality_binding(
   head: Option<&Calcit>,
@@ -13805,6 +13805,14 @@ fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Op
 }
 
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
+  extract_predicate_bindings_with_literal_equality(cond_form, scope_types, true)
+}
+
+fn extract_predicate_bindings_with_literal_equality(
+  cond_form: &Calcit,
+  scope_types: &ScopeTypes,
+  allow_literal_equality: bool,
+) -> PredicateNarrowing {
   let empty = PredicateNarrowing {
     true_binding: None,
     false_binding: None,
@@ -13821,7 +13829,8 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
       false_binding: None,
     };
   }
-  if items.len() == 3
+  if allow_literal_equality
+    && items.len() == 3
     && let Some(binding) = literal_equality_binding(items.first(), items.get(1), items.get(2), scope_types)
   {
     return PredicateNarrowing {

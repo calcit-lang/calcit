@@ -1058,27 +1058,35 @@ fn predicate_guard_proof_is_invalidated_when_body_changes() {
   assert_eq!(lookup_proven_guard(ns, predicate).as_deref(), Some(&CalcitTypeAnnotation::Number));
   assert!(lookup_compiled_def(ns, caller).is_some());
 
-  let replacement = cirru_parser::parse("defn guarded-number? (x) true")
-    .expect("parse replacement body")
-    .remove(0);
-  let mut changes = snapshot::ChangesDict::default();
-  changes.changed.insert(
-    Arc::from(ns),
-    snapshot::FileChangeInfo {
-      ns: None,
-      added_defs: HashMap::new(),
-      removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from(predicate), replacement.into())]),
-    },
-  );
-  apply_code_changes(&changes).expect("apply predicate body change");
-  clear_runtime_caches_for_changes(&changes, false).expect("invalidate predicate and dependent");
-  assert!(lookup_proven_guard(ns, predicate).is_none());
-  assert!(lookup_compiled_def(ns, caller).is_none());
+  for replacement in [
+    "defn guarded-number? (x) true",
+    "defn guarded-number? (x) (&= x 1)",
+    "defn guarded-number? (x) (if (number? x) true (string? x))",
+    "defn guarded-number? (x) (&let (x 7) (number? x))",
+  ] {
+    let body = cirru_parser::parse(replacement).expect("parse replacement body").remove(0);
+    let mut changes = snapshot::ChangesDict::default();
+    changes.changed.insert(
+      Arc::from(ns),
+      snapshot::FileChangeInfo {
+        ns: None,
+        added_defs: HashMap::new(),
+        removed_defs: HashSet::new(),
+        changed_defs: HashMap::from([(String::from(predicate), body.into())]),
+      },
+    );
+    apply_code_changes(&changes).expect("apply predicate body change");
+    clear_runtime_caches_for_changes(&changes, false).expect("invalidate predicate and dependent");
+    assert!(lookup_proven_guard(ns, predicate).is_none());
+    assert!(lookup_compiled_def(ns, caller).is_none());
 
-  let error = runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect_err("reject unproven guard");
-  assert!(error.to_string().contains("the true result does not prove"), "{error:?}");
-  assert!(lookup_proven_guard(ns, predicate).is_none());
+    let error = runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect_err("reject unproven guard");
+    assert!(
+      error.to_string().contains("the true result does not prove"),
+      "{replacement}: {error:?}"
+    );
+    assert!(lookup_proven_guard(ns, predicate).is_none());
+  }
 }
 
 #[test]

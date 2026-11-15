@@ -80,7 +80,7 @@ fn following(prefix: &Path, suffix: Option<Path>) -> Option<Path> {
 }
 
 pub(super) fn infer(expr: &Calcit, scope: &ScopeTypes) -> ConditionEvidence {
-  let outcomes = visit::<false>(expr, scope, &HashMap::new(), &mut 4096, 0);
+  let outcomes = visit::<false, false>(expr, scope, &HashMap::new(), &mut 4096, 0);
   ConditionEvidence {
     when_true: outcomes.truthy.map(|path| path.facts).unwrap_or_default(),
     when_false: outcomes.falsey.map(|path| path.facts).unwrap_or_default(),
@@ -95,7 +95,7 @@ pub(super) fn proves_guard<'a>(
 ) -> bool {
   let mut scope = ScopeTypes::new();
   scope.insert(parameter.sym.clone(), parameter.type_info.clone());
-  let outcomes = visit_sequence::<false>(body, &scope, &HashMap::new(), &mut 4096, 0);
+  let outcomes = visit_sequence::<false, true>(body, &scope, &HashMap::new(), &mut 4096, 0);
   outcomes
     .truthy
     .is_none_or(|path| path.preserves_locals && path.facts.get(&parameter.sym).unwrap_or(&parameter.type_info).is_proven_for(target))
@@ -103,7 +103,7 @@ pub(super) fn proves_guard<'a>(
 
 /// A sequence continues only through normal exits, regardless of their truthiness.
 pub(super) fn establish_normal_exit(expr: &Calcit, scope: &mut ScopeTypes) {
-  let outcomes = visit::<false>(expr, scope, &HashMap::new(), &mut 4096, 0);
+  let outcomes = visit::<false, false>(expr, scope, &HashMap::new(), &mut 4096, 0);
   if let Some(path) = common(outcomes.truthy, outcomes.falsey) {
     for (name, annotation) in path.facts {
       scope.refine(name, annotation);
@@ -112,10 +112,10 @@ pub(super) fn establish_normal_exit(expr: &Calcit, scope: &mut ScopeTypes) {
 }
 
 pub(super) fn preserves_locals(expr: &Calcit, scope: &ScopeTypes) -> bool {
-  visit::<true>(expr, scope, &HashMap::new(), &mut 4096, 0).preserves_locals()
+  visit::<true, false>(expr, scope, &HashMap::new(), &mut 4096, 0).preserves_locals()
 }
 
-fn visit_sequence<'a, const EFFECTS_ONLY: bool>(
+fn visit_sequence<'a, const EFFECTS_ONLY: bool, const PORTABLE: bool>(
   forms: impl Iterator<Item = &'a Calcit>,
   scope: &ScopeTypes,
   aliases: &HashMap<Arc<str>, Outcomes>,
@@ -130,7 +130,7 @@ fn visit_sequence<'a, const EFFECTS_ONLY: bool>(
     };
     let mut body_scope = scope.clone();
     body_scope.extend(prefix.facts.clone());
-    let current = visit::<EFFECTS_ONLY>(form, &body_scope, &body_aliases, remaining, depth + 1);
+    let current = visit::<EFFECTS_ONLY, PORTABLE>(form, &body_scope, &body_aliases, remaining, depth + 1);
     if !current.preserves_locals() {
       body_aliases.clear();
     }
@@ -173,10 +173,10 @@ fn known_call_preserves_locals(head: &Calcit, remaining: &mut usize, depth: usiz
           .def_ref
           .as_ref()
           .is_none_or(|owner| !has_js_implementation(&owner.def_ns, &owner.def_name))
-        && visit_sequence::<true>(info.body.iter(), &scope, &aliases, remaining, depth).preserves_locals()
+        && visit_sequence::<true, false>(info.body.iter(), &scope, &aliases, remaining, depth).preserves_locals()
     }
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
-      visit_sequence::<true>(items.iter().skip(3), &scope, &aliases, remaining, depth).preserves_locals()
+      visit_sequence::<true, false>(items.iter().skip(3), &scope, &aliases, remaining, depth).preserves_locals()
     }
     Calcit::EnumDef(_) | Calcit::Struct(_) => true,
     Calcit::Proc(proc) => non_invoking_value_proc(*proc),
@@ -206,14 +206,14 @@ fn quoted_preserves_locals(
   ) {
     return items
       .get(1)
-      .is_some_and(|value| visit::<true>(value, scope, aliases, remaining, depth + 1).preserves_locals());
+      .is_some_and(|value| visit::<true, false>(value, scope, aliases, remaining, depth + 1).preserves_locals());
   }
   items
     .iter()
     .all(|item| quoted_preserves_locals(item, scope, aliases, remaining, depth + 1))
 }
 
-fn visit<const EFFECTS_ONLY: bool>(
+fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
   expr: &Calcit,
   scope: &ScopeTypes,
   aliases: &HashMap<Arc<str>, Outcomes>,
@@ -259,7 +259,7 @@ fn visit<const EFFECTS_ONLY: bool>(
       // A value read can force a lazy initializer. Prove its actual code in
       // its own lexical scope, including reads nested in constructor inputs.
       return Outcomes::unknown(if let Some(compiled) = program::lookup_compiled_def(&import.ns, &import.def) {
-        visit::<true>(
+        visit::<true, false>(
           &compiled.preprocessed_code,
           &ScopeTypes::new(),
           &HashMap::new(),
@@ -274,7 +274,9 @@ fn visit<const EFFECTS_ONLY: bool>(
     _ => {}
   }
 
-  let direct = extract_predicate_bindings(expr, scope);
+  // Open WASM scalars can share their numeric representation. Equality
+  // with a literal cannot establish portable kind evidence for callers.
+  let direct = extract_predicate_bindings_with_literal_equality(expr, scope, !PORTABLE);
   if !EFFECTS_ONLY && (direct.true_binding.is_some() || direct.false_binding.is_some()) {
     return Outcomes {
       truthy: Some(Path {
@@ -304,7 +306,7 @@ fn visit<const EFFECTS_ONLY: bool>(
         && items
           .iter()
           .skip(2)
-          .all(|item| visit::<true>(item, scope, aliases, remaining, depth + 1).preserves_locals()) =>
+          .all(|item| visit::<true, false>(item, scope, aliases, remaining, depth + 1).preserves_locals()) =>
     {
       let current = scope.get(&local.sym).unwrap_or(&local.type_info);
       let narrowed = if current.is_proven_for(&target) { current.clone() } else { target };
@@ -320,7 +322,7 @@ fn visit<const EFFECTS_ONLY: bool>(
     Some(Calcit::Syntax(CalcitSyntax::HintFn | CalcitSyntax::Quote, _)) => Outcomes::unknown(true),
     Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)) => items
       .get(1)
-      .map(|value| visit::<EFFECTS_ONLY>(value, scope, aliases, remaining, depth + 1))
+      .map(|value| visit::<EFFECTS_ONLY, PORTABLE>(value, scope, aliases, remaining, depth + 1))
       .unwrap_or_else(|| Outcomes::unknown(false)),
     Some(Calcit::Syntax(CalcitSyntax::Quasiquote, _)) => Outcomes::unknown(
       items
@@ -331,24 +333,24 @@ fn visit<const EFFECTS_ONLY: bool>(
     Some(Calcit::Syntax(CalcitSyntax::DecodeMapAs | CalcitSyntax::EncodeMapAs, _)) => Outcomes::unknown(
       items
         .get(1)
-        .is_some_and(|input| visit::<EFFECTS_ONLY>(input, scope, aliases, remaining, depth + 1).preserves_locals()),
+        .is_some_and(|input| visit::<EFFECTS_ONLY, PORTABLE>(input, scope, aliases, remaining, depth + 1).preserves_locals()),
     ),
     Some(Calcit::Syntax(CalcitSyntax::Defref, _)) => Outcomes::unknown(
       items
         .get(2)
-        .is_some_and(|initial| visit::<EFFECTS_ONLY>(initial, scope, aliases, remaining, depth + 1).preserves_locals()),
+        .is_some_and(|initial| visit::<EFFECTS_ONLY, PORTABLE>(initial, scope, aliases, remaining, depth + 1).preserves_locals()),
     ),
     Some(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, _)) => Outcomes::unknown(
       // The decoder builds both Result outcomes directly; only its input can run code.
       items
         .get(1)
-        .is_some_and(|input| visit::<EFFECTS_ONLY>(input, scope, aliases, remaining, depth + 1).preserves_locals()),
+        .is_some_and(|input| visit::<EFFECTS_ONLY, PORTABLE>(input, scope, aliases, remaining, depth + 1).preserves_locals()),
     ),
     Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
       let Some(subject) = items.get(1) else {
         return Outcomes::unknown(false);
       };
-      if !visit::<EFFECTS_ONLY>(subject, scope, aliases, remaining, depth + 1).preserves_locals() {
+      if !visit::<EFFECTS_ONLY, PORTABLE>(subject, scope, aliases, remaining, depth + 1).preserves_locals() {
         return Outcomes::unknown(false);
       }
       let Some(branches) = type_inference::preprocessed_match_branches(items) else {
@@ -373,7 +375,7 @@ fn visit<const EFFECTS_ONLY: bool>(
             branch_aliases.insert(name.clone(), Outcomes::unknown(true));
           }
         }
-        let mut branch = visit::<EFFECTS_ONLY>(body, &branch_scope, &branch_aliases, remaining, depth + 1);
+        let mut branch = visit::<EFFECTS_ONLY, PORTABLE>(body, &branch_scope, &branch_aliases, remaining, depth + 1);
         // Pattern-local evidence cannot justify narrowing an outer binding.
         for (name, _) in bindings {
           branch.forget(&name);
@@ -384,14 +386,14 @@ fn visit<const EFFECTS_ONLY: bool>(
       result
     }
     Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => {
-      let inner = visit::<EFFECTS_ONLY>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
+      let inner = visit::<EFFECTS_ONLY, PORTABLE>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
       Outcomes {
         truthy: inner.falsey,
         falsey: inner.truthy,
       }
     }
     Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
-      let condition = visit::<EFFECTS_ONLY>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
+      let condition = visit::<EFFECTS_ONLY, PORTABLE>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
       let mut result = Outcomes::default();
       for (path, branch) in [
         (condition.truthy, items.get(2).unwrap()),
@@ -402,7 +404,7 @@ fn visit<const EFFECTS_ONLY: bool>(
           branch_scope.extend(path.facts.clone());
           let empty_aliases = HashMap::new();
           let branch_aliases = if path.preserves_locals { aliases } else { &empty_aliases };
-          let branch = visit::<EFFECTS_ONLY>(branch, &branch_scope, branch_aliases, remaining, depth + 1);
+          let branch = visit::<EFFECTS_ONLY, PORTABLE>(branch, &branch_scope, branch_aliases, remaining, depth + 1);
           result.truthy = common(result.truthy, following(&path, branch.truthy));
           result.falsey = common(result.falsey, following(&path, branch.falsey));
         }
@@ -414,12 +416,12 @@ fn visit<const EFFECTS_ONLY: bool>(
         return Outcomes::unknown(false);
       };
       if pair.is_empty() {
-        return visit_sequence::<EFFECTS_ONLY>(items.iter().skip(2), scope, aliases, remaining, depth);
+        return visit_sequence::<EFFECTS_ONLY, PORTABLE>(items.iter().skip(2), scope, aliases, remaining, depth);
       }
       let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1)) else {
         return Outcomes::unknown(false);
       };
-      let mut bound = visit::<EFFECTS_ONLY>(value, scope, aliases, remaining, depth + 1);
+      let mut bound = visit::<EFFECTS_ONLY, PORTABLE>(value, scope, aliases, remaining, depth + 1);
       let mut body_aliases = aliases.clone();
       if !bound.preserves_locals() {
         body_aliases.clear();
@@ -437,7 +439,7 @@ fn visit<const EFFECTS_ONLY: bool>(
       body_aliases.insert(local.sym.clone(), bound);
       let mut body_scope = scope.clone();
       body_scope.insert(local.sym.clone(), local.type_info.clone());
-      let mut body = visit_sequence::<EFFECTS_ONLY>(items.iter().skip(2), &body_scope, &body_aliases, remaining, depth);
+      let mut body = visit_sequence::<EFFECTS_ONLY, PORTABLE>(items.iter().skip(2), &body_scope, &body_aliases, remaining, depth);
       body.forget(&local.sym);
       if !preserves_initializer {
         body.mark_local_effect();
@@ -455,7 +457,7 @@ fn visit<const EFFECTS_ONLY: bool>(
         items
           .iter()
           .skip(2)
-          .all(|item| visit::<true>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
+          .all(|item| visit::<true, false>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
       )
     }
     // These value operations never invoke user callbacks. Merely declaring
@@ -464,7 +466,7 @@ fn visit<const EFFECTS_ONLY: bool>(
       items
         .iter()
         .skip(1)
-        .all(|item| visit::<EFFECTS_ONLY>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
+        .all(|item| visit::<EFFECTS_ONLY, PORTABLE>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
     ),
     Some(Calcit::Import(import))
       if import.ns.as_ref() == calcit::CORE_NS
@@ -481,14 +483,14 @@ fn visit<const EFFECTS_ONLY: bool>(
         items
           .iter()
           .skip(1)
-          .all(|item| visit::<EFFECTS_ONLY>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
+          .all(|item| visit::<EFFECTS_ONLY, PORTABLE>(item, scope, aliases, remaining, depth + 1).preserves_locals()),
       )
     }
     Some(head) => Outcomes::unknown(
       items
         .iter()
         .skip(1)
-        .all(|item| visit::<EFFECTS_ONLY>(item, scope, aliases, remaining, depth + 1).preserves_locals())
+        .all(|item| visit::<EFFECTS_ONLY, PORTABLE>(item, scope, aliases, remaining, depth + 1).preserves_locals())
         && known_call_preserves_locals(head, remaining, depth + 1),
     ),
     None => Outcomes::unknown(true),
