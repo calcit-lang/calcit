@@ -50,7 +50,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
 };
@@ -9182,6 +9182,19 @@ fn check_struct_method_args(
       }
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
         && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+        // Instantiate a first-class generic callback using the receiver-bound
+        // contract. Keep the sibling return bindings from ordinary checks.
+        && !(matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty())
+          && expected_type.resolve_to_nonoptional_fn().is_some()
+          && {
+            let expected = expected_type.substitute_type_vars(&bindings);
+            let mut proof = CallTypeProof::new(
+              &signature.generics,
+              std::slice::from_ref(&expected),
+              std::slice::from_ref(&actual_type),
+            );
+            proof.prove(&actual_type, &expected).is_proven()
+          })
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
