@@ -20,24 +20,11 @@
 &{} | missing core function schema
 :: | missing core function schema
 ?{} | missing core definition
-bool? | arg 0 | "'Dynamic" => "'T"
-enum? | arg 0 | "'Dynamic" => "'T"
-fn? | arg 0 | "'Dynamic" => "'T"
 foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
 foldr-shortcut | arg 1 | "'Dynamic" => "'U"
 foldr-shortcut | arg 2 | "'Dynamic" => "'U"
 foldr-shortcut | arg 3 | "'Fn" => (:: "'Fn" ("{}" (:return "'Enum") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
 foldr-shortcut | return | "'Dynamic" => "'U"
-list? | arg 0 | "'Dynamic" => "'T"
-map? | arg 0 | "'Dynamic" => "'T"
-nil? | arg 0 | "'Dynamic" => "'T"
-number? | arg 0 | "'Dynamic" => "'T"
 parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
 register-calcit-builtin-impls | missing core definition
-set? | arg 0 | "'Dynamic" => "'T"
-string? | arg 0 | "'Dynamic" => "'T"
-struct? | arg 0 | "'Dynamic" => "'T"
-symbol? | arg 0 | "'Dynamic" => "'T"
-tag? | arg 0 | "'Dynamic" => "'T"
 todo! | missing core definition
-turn-tag | arg 0 | "'Dynamic" => "'T"

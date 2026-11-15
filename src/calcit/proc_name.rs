@@ -694,10 +694,6 @@ impl CalcitProc {
         return_type: some_tag("symbol"),
         arg_types: vec![some_tag("string")],
       }),
-      TurnTag => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![dynamic_tag()],
-      }),
       NativeCompare => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
@@ -742,54 +738,6 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), some_tag("tag")],
       }),
-      ListQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      TagQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      SymbolQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NilQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      StringQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      MapQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      NumberQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      BoolQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      SetQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      EnumQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      StructQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
-      FnQuestion => Some(ProcTypeSignature {
-        return_type: some_tag("bool"),
-        arg_types: vec![dynamic_tag()],
-      }),
 
       // Runtime intrinsics whose argument and return types come from core.
       NativeAdd
@@ -806,6 +754,18 @@ impl CalcitProc {
       | Sqrt
       | NativeNumberFract
       | IsInteger
+      | ListQuestion
+      | TagQuestion
+      | SymbolQuestion
+      | NilQuestion
+      | StringQuestion
+      | MapQuestion
+      | NumberQuestion
+      | BoolQuestion
+      | SetQuestion
+      | EnumQuestion
+      | StructQuestion
+      | FnQuestion
       | BitShl
       | BitShr
       | BitAnd
@@ -963,7 +923,8 @@ impl CalcitProc {
       | GenerateId
       | Raise
       | NativeLessThan
-      | NativeGreaterThan => Some(self.signature_from_core(core)),
+      | NativeGreaterThan
+      | TurnTag => Some(self.signature_from_core(core)),
 
       // === Comparison & Logic ===
       NativeEquals => Some(ProcTypeSignature {
