@@ -1060,6 +1060,7 @@ fn predicate_guard_proof_is_invalidated_when_body_changes() {
 
   for replacement in [
     "defn guarded-number? (x) true",
+    "defn guarded-number? (x) (hint-fn ({} (:async true))) (number? x)",
     "defn guarded-number? (x) (&= x 1)",
     "defn guarded-number? (x) (if (number? x) true (string? x))",
     "defn guarded-number? (x) (&let (x 7) (number? x))",
@@ -1081,8 +1082,9 @@ fn predicate_guard_proof_is_invalidated_when_body_changes() {
     assert!(lookup_compiled_def(ns, caller).is_none());
 
     let error = runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect_err("reject unproven guard");
-    assert!(
-      error.to_string().contains("the true result does not prove"),
+    assert_eq!(
+      error.code.as_deref(),
+      Some("E_PREDICATE_GUARD_UNPROVEN"),
       "{replacement}: {error:?}"
     );
     assert!(lookup_proven_guard(ns, predicate).is_none());

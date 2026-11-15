@@ -1954,7 +1954,7 @@ fn store_preprocessed_compiled_output(
   stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   let schema = program::lookup_def_schema(ns, def);
-  let proven_guard = validate_predicate_guard(ns, def, resolved_code, &schema, stack)?;
+  let proven_guard = validate_predicate_guard(ns, def, source_code, resolved_code, &schema, stack)?;
   let preprocessed_code = resolved_code.to_owned();
   let codegen_form = resolved_code.to_owned();
   let deps = program::collect_compiled_deps(&codegen_form);
@@ -1981,6 +1981,7 @@ fn store_preprocessed_compiled_output(
 fn validate_predicate_guard(
   ns: &str,
   def: &str,
+  source: &Calcit,
   resolved: &Calcit,
   schema: &CalcitTypeAnnotation,
   stack: &CallStackList,
@@ -2002,6 +2003,8 @@ fn validate_predicate_guard(
     .with_code("E_PREDICATE_GUARD_UNPROVEN")
   };
   if signature.is_async_invocation()
+    || CalcitTypeAnnotation::function_form_marks_async(source)
+    || CalcitTypeAnnotation::function_form_marks_async(resolved)
     || !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Bool)
     || program::lookup_def_ffi(ns, def).is_some()
   {

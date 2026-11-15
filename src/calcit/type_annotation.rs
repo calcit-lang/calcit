@@ -4898,6 +4898,9 @@ impl CalcitTypeAnnotation {
                 signature.arg_types.len(),
                 signature.rest_type.is_some(),
               ));
+              if let Some(guard) = &signature.guard {
+                tasks.push(Task::Visit(guard, scope));
+              }
               if let Some(rest) = &signature.rest_type {
                 tasks.push(Task::Visit(rest, scope));
               }
@@ -4942,6 +4945,7 @@ impl CalcitTypeAnnotation {
           values.push(Arc::new(Self::Enum(base, Arc::new(args))));
         }
         Task::BuildFn(signature, arg_count, has_rest) => {
+          let guard = signature.guard.is_some().then(|| values.pop().expect("substituted guard target"));
           let child_count = arg_count + 1 + usize::from(has_rest);
           let mut children = values.split_off(values.len() - child_count);
           let args = children.drain(..arg_count).collect();
@@ -4949,7 +4953,7 @@ impl CalcitTypeAnnotation {
           let rest_type = has_rest.then(|| children.remove(0));
           values.push(Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
             open_reason: signature.open_reason,
-            guard: signature.guard.clone(),
+            guard,
             runtime_arity: signature.runtime_arity,
             generics: signature.generics.clone(),
             where_bounds: signature.where_bounds.clone(),
@@ -7958,6 +7962,23 @@ mod tests {
       panic!("map key must preserve its nominal reference")
     };
     assert_eq!(args.as_slice(), &[Arc::new(CalcitTypeAnnotation::String)]);
+  }
+
+  #[test]
+  fn applied_type_alias_substitutes_its_predicate_guard() {
+    let source = cirru_parser::parse("Fn Dynamic (-> Bool) (:guard T)")
+      .expect("predicate alias schema")
+      .remove(0);
+    let body = crate::data::cirru::code_to_calcit(&source, "tests.guard", "Predicate", vec![]).expect("parse alias body");
+    let alias = TypeAliasDecl {
+      generics: vec![Arc::from("T")],
+      body,
+    };
+    let annotation = alias.expand("tests.guard", &[Arc::new(CalcitTypeAnnotation::Number)]);
+    let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
+      panic!("the alias must expand to a function: {annotation:?}");
+    };
+    assert_eq!(signature.guard.as_deref(), Some(&CalcitTypeAnnotation::Number));
   }
 
   #[test]

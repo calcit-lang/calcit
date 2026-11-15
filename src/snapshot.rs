@@ -115,6 +115,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "features" => Some("features"),
     "async" => Some("async"),
     "open" => Some("open"),
+    "guard" => Some("guard"),
     "capabilities" => Some("capabilities"),
     _ => None,
   }
@@ -8835,6 +8836,24 @@ mod tests {
     assert!(matches!(map.tag_get("async"), Some(Edn::Bool(true))));
     let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&Edn::Map(map)).expect("normalized async fn schema");
     assert!(parsed.is_async_invocation());
+  }
+
+  #[test]
+  fn normalize_schema_keeps_guard_with_string_or_symbol_key() {
+    for key in [Edn::Str(Arc::from(":guard")), Edn::Symbol(Arc::from("guard"))] {
+      let schema = Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::tag("kind"), Edn::tag("fn")),
+        (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("dynamic")]))),
+        (Edn::tag("return"), Edn::tag("bool")),
+        (key, Edn::tag("number")),
+      ])));
+      let normalized = normalize_schema_edn(&schema).expect("canonical guard schema");
+      let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized).expect("normalized predicate");
+      assert_eq!(parsed.guard.as_deref(), Some(&CalcitTypeAnnotation::Number));
+      let serialized = parsed.to_schema_edn();
+      let round_trip = CalcitTypeAnnotation::parse_fn_schema_from_edn(&serialized).expect("serialized predicate");
+      assert_eq!(round_trip.guard, parsed.guard);
+    }
   }
 
   #[test]
