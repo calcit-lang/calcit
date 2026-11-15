@@ -144,6 +144,7 @@ pub struct CompiledDef {
   pub type_summary: Option<Arc<str>>,
   pub source_code: Option<Calcit>,
   pub schema: Arc<CalcitTypeAnnotation>,
+  pub proven_guard: Option<Arc<CalcitTypeAnnotation>>,
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
 }
@@ -156,6 +157,7 @@ pub struct CompiledDefPayload {
   pub type_summary: Option<Arc<str>>,
   pub source_code: Option<Calcit>,
   pub schema: Arc<CalcitTypeAnnotation>,
+  pub proven_guard: Option<Arc<CalcitTypeAnnotation>>,
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
 }
@@ -564,6 +566,7 @@ fn build_compiled_def(ns: &str, def: &str, payload: CompiledDefPayload) -> Compi
     type_summary: payload.type_summary,
     source_code: payload.source_code,
     schema: payload.schema,
+    proven_guard: payload.proven_guard,
     doc: payload.doc,
     examples: payload.examples,
   }
@@ -584,6 +587,7 @@ fn build_runtime_only_snapshot_fallback_compiled_def(ns: &str, def: &str, runtim
     type_summary: None,
     source_code: None,
     schema: DYNAMIC_TYPE.clone(),
+    proven_guard: None,
     doc: Arc::from(""),
     examples: vec![],
   })
@@ -623,6 +627,11 @@ pub fn lookup_compiled_def(ns: &str, def: &str) -> Option<CompiledDef> {
   let program = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
   let file = program.get(ns)?;
   file.defs.get(def).cloned()
+}
+
+pub(crate) fn lookup_proven_guard(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  let program = PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data");
+  program.get(ns)?.defs.get(def)?.proven_guard.clone()
 }
 
 /// Metadata probes must not execute an initializer through an unfinished compile dependency.

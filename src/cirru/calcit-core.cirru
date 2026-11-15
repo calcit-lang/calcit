@@ -5365,7 +5365,7 @@
         'bool? $ %{} 'CodeEntry (:doc |)
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Bool)
           :tags $ #{} :builtin :internal
         'buffer? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn buffer? (x)
@@ -5693,7 +5693,7 @@
           :code $ quote $ defn cirru-quote? (x)
             &= (type-of x) :cirru-quote
           :examples $ []
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard CirruQuote)
           :tests $ [] $ %{} 'TestEntry (:name |narrows-checked-quote-constructor)
             :code $ quote $ let
                 QuoteBox $ defstruct QuoteBox $ :code CirruQuote
@@ -7989,7 +7989,7 @@
             quote $ assert= true $ enum-def?
               defenum Result (:ok) (:err String)
             quote $ assert= false $ enum-def? (%:: _ :ok 1)
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard EnumDef)
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
           :code $ quote $ defn enum-definition (tuple) (&enum:definition tuple)
           :examples $ []
@@ -8044,7 +8044,7 @@
             quote $ assert= true $ enum? (%:: _ :ok 1)
             quote $ assert= false $ enum?
               {} $ :ok 1
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Enum)
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |keeps-generic-input-open-after-branch-join)
             :code $ quote $ let
@@ -8620,7 +8620,7 @@
             quote $ assert= true $ fn? inc
             quote $ assert= false $ fn? 123
             quote $ assert= false $ fn? |text
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Fn)
           :tags $ #{} :builtin :internal
         'fold $ %{} 'CodeEntry
           :doc "|Seeded left fold over a List<T>. Calls reducer once per element from left to right and returns the initial accumulator for an empty list; U may differ from T."
@@ -10807,7 +10807,7 @@
           :examples $ []
             quote $ list? $ [] 1 2 3
             quote $ list? $ {}
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard List)
           :tags $ #{} :builtin :internal
         'loop $ %{} 'CodeEntry
           :doc "|Named-let style looping macro. Binds initial values once and uses `recur` to update bindings in a tail-recursive way without stack growth."
@@ -11056,7 +11056,7 @@
             quote $ assert= true $ map?
               {} $ :a 1
             quote $ assert= false $ map? ([] 1 2)
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Map)
           :tags $ #{} :builtin :internal
         'mapcat $ %{} 'CodeEntry
           :doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 暂保留兼容，旧 List 方法 `.bind` 已在 0.29.0 删除。"
@@ -11610,7 +11610,7 @@
             quote $ assert= true $ number? 123
             quote $ assert= true $ number? 3.14
             quote $ assert= false $ number? |text
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Number)
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |proven-bools-are-not-numbers)
@@ -12468,7 +12468,7 @@
           :code $ quote $ defn ref? (x)
             &= (type-of x) :ref
           :examples $ []
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Ref)
           :tags $ #{} :builtin :internal :state
         'register-calcit-builtin-impls $ %{} 'CodeEntry
           :doc "|注册 JavaScript 后端内建方法实现。Native 入口返回 Unit。"
@@ -12829,7 +12829,7 @@
             quote $ assert= false $ set? ([] 1 2 3)
             quote $ assert= false $ set?
               {} $ :a 1
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Set)
           :tags $ #{} :builtin :internal
         'sin $ %{} 'CodeEntry
           :doc "|公开的正弦函数。sin n 接收以弧度表示的 Number，返回 Number；保留原有非有限数语义。"
@@ -13111,7 +13111,7 @@
             quote $ assert= true $ string? |hello
             quote $ assert= false $ string? 123
             quote $ assert= false $ string? :keyword
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard String)
           :tags $ #{} :builtin :internal
         'strip-prefix $ %{} 'CodeEntry
           :doc "|removes prefix from string if it starts with that prefix, returns original string otherwise"
@@ -13154,7 +13154,7 @@
               defstruct Person $ :name String
             quote $ assert= false $ struct-def?
               %{} _ $ :x 1
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard StructDef)
         'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
           :code $ quote $ defn struct-definition (value) (&struct:definition value)
           :examples $ [] $ quote
@@ -13256,7 +13256,7 @@
               %{} _ $ :x 1
             quote $ assert= false $ struct?
               {} $ :x 1
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Struct)
           :tags $ #{} :builtin :internal
         'swap! $ %{} 'CodeEntry
           :doc "|Atomically updates a reference by applying a function to its current value and storing the result."
@@ -13285,7 +13285,7 @@
           :examples $ []
             quote $ assert= true $ symbol? (quote item)
             quote $ assert= false $ symbol? |text
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Symbol)
           :tags $ #{} :builtin :internal
         'syntax? $ %{} 'CodeEntry (:doc "|detecting syntax element")
           :code $ quote $ defn syntax? (x)
@@ -13298,7 +13298,7 @@
             quote $ assert= true $ tag? :keyword
             quote $ assert= false $ tag? |string
             quote $ assert= false $ tag? 123
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Tag)
           :tags $ #{} :builtin :internal
         'tagging-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tagging-edn (data)

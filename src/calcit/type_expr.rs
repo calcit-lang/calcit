@@ -361,6 +361,7 @@ struct FnParts {
   is_async: bool,
   features: Option<Vec<Cirru>>,
   open: Option<Cirru>,
+  guard: Option<Cirru>,
 }
 
 /// Clause heads come either from `->` or from a tag. Anything else is a parameter.
@@ -481,6 +482,15 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
         }
         parts.features = Some(tags);
       }
+      ":guard" if kind == Kind::Fn => {
+        if parts.guard.is_some() {
+          return Err(String::from("duplicate `:guard` clause in `Fn`"));
+        }
+        let [target] = body else {
+          return Err(String::from("`:guard` takes exactly one type"));
+        };
+        parts.guard = Some(target.clone());
+      }
       ":open" if kind == Kind::Fn => {
         if parts.open.is_some() {
           return Err(String::from("duplicate `:open` clause in `Fn`"));
@@ -523,7 +533,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
       _ => {
         return Err(match kind {
           Kind::Fn => {
-            format!("unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async`, `:features` or `:open`")
+            format!(
+              "unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async`, `:features`, `:open` or `:guard`"
+            )
           }
           Kind::Macro => format!(
             "unknown `Macro` clause `{head}`; expected `(-> T)`, `:optional`, `:capabilities`, `:generics`, `:where` or `:features`"
@@ -627,6 +639,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
     });
   };
 
+  if parts.guard.is_some() && parts.args.is_empty() {
+    return Err(String::from("`:guard` needs a first parameter"));
+  }
   let mut args = vec![Cirru::leaf("[]")];
   args.extend(parts.args);
   let mut map = vec![Cirru::leaf("{}")];
@@ -682,6 +697,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
   }
   if let Some(reason) = parts.open {
     map.push(Cirru::List(vec![Cirru::leaf(":open"), reason]));
+  }
+  if let Some(target) = parts.guard {
+    map.push(Cirru::List(vec![Cirru::leaf(":guard"), desugar_type(&target, &scope)?]));
   }
   Ok(Cirru::List(vec![Cirru::leaf("::"), quoted(kind_name), Cirru::List(map)]))
 }
@@ -782,6 +800,9 @@ fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
       Cirru::leaf(":open"),
       Cirru::Leaf(format!(":{}", reason.ref_str()).into()),
     ]));
+  }
+  if let Some(target) = get("guard") {
+    out.push(Cirru::List(vec![Cirru::leaf(":guard"), print_type_compact(target)?]));
   }
   Ok(Cirru::List(out))
 }

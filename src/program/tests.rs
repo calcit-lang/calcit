@@ -558,6 +558,7 @@ fn program_test_state_guard_restores_registry_after_panic() {
 
 fn compiled_def_for_test(def_id: DefId, deps: Vec<DefId>) -> CompiledDef {
   CompiledDef {
+    proven_guard: None,
     def_id,
     version_id: 0,
     kind: CompiledDefKind::Value,
@@ -1037,6 +1038,60 @@ fn entry_slot_inference_rechecks_consumers_after_transitive_source_changes() {
 }
 
 #[test]
+fn predicate_guard_proof_is_invalidated_when_body_changes() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let path = "tests/fixtures/def-value-schema.cirru";
+  let data = cirru_edn::parse(&std::fs::read_to_string(path).expect("shared Calcit fixture")).expect("parse shared fixture");
+  let mut snapshot = snapshot::load_snapshot_data(&data, path).expect("load shared fixture");
+  snapshot.files.extend(crate::load_core_snapshot().expect("core source").files);
+  let ns = "app.short-circuit";
+  let predicate = "guarded-number?";
+  let caller = "add-with-user-guard";
+  *PROGRAM_CODE_DATA.write().expect("install source") = extract_program_data(&snapshot).expect("program source");
+
+  let warnings = RefCell::new(vec![]);
+  let stack = CallStackList::default();
+  runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect("compile guarded caller");
+  assert!(warnings.borrow().is_empty(), "{:?}", warnings.borrow());
+  assert_eq!(lookup_proven_guard(ns, predicate).as_deref(), Some(&CalcitTypeAnnotation::Number));
+  assert!(lookup_compiled_def(ns, caller).is_some());
+
+  for replacement in [
+    "defn guarded-number? (x) true",
+    "defn guarded-number? (x) (hint-fn ({} (:async true))) (number? x)",
+    "defn guarded-number? (x) (&= x 1)",
+    "defn guarded-number? (x) (if (number? x) true (string? x))",
+    "defn guarded-number? (x) (&let (x 7) (number? x))",
+  ] {
+    let body = cirru_parser::parse(replacement).expect("parse replacement body").remove(0);
+    let mut changes = snapshot::ChangesDict::default();
+    changes.changed.insert(
+      Arc::from(ns),
+      snapshot::FileChangeInfo {
+        ns: None,
+        added_defs: HashMap::new(),
+        removed_defs: HashSet::new(),
+        changed_defs: HashMap::from([(String::from(predicate), body.into())]),
+      },
+    );
+    apply_code_changes(&changes).expect("apply predicate body change");
+    clear_runtime_caches_for_changes(&changes, false).expect("invalidate predicate and dependent");
+    assert!(lookup_proven_guard(ns, predicate).is_none());
+    assert!(lookup_compiled_def(ns, caller).is_none());
+
+    let error = runner::preprocess::ensure_ns_def_compiled(ns, caller, &warnings, &stack).expect_err("reject unproven guard");
+    assert_eq!(
+      error.code.as_deref(),
+      Some("E_PREDICATE_GUARD_UNPROVEN"),
+      "{replacement}: {error:?}"
+    );
+    assert!(lookup_proven_guard(ns, predicate).is_none());
+  }
+}
+
+#[test]
 fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
@@ -1067,6 +1122,7 @@ fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
     "app.reload",
     "demo",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(1.0),
       codegen_form: Calcit::Number(1.0),
@@ -1406,6 +1462,7 @@ fn lookup_codegen_type_hint_prefers_compiled_schema_over_runtime_value() {
     "app.codegen",
     "typed",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Nil,
       codegen_form: Calcit::Nil,
@@ -1448,6 +1505,7 @@ fn lenient_compiled_fallback_backfills_runtime_cache() {
     "app.compiled",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(7.0),
       codegen_form: Calcit::Nil,
@@ -1507,6 +1565,7 @@ fn preprocess_ns_def_materializes_compiled_function_with_runtime_backfill() {
     "app.preprocess",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: fn_code,
       codegen_form: Calcit::Nil,
@@ -1544,6 +1603,7 @@ fn lazy_runtime_resolution_seeds_from_compiled_when_runtime_slot_is_missing() {
     "app.preprocess",
     "lazy-value",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(7.0),
       codegen_form: Calcit::Number(7.0),
@@ -1670,6 +1730,7 @@ fn compiled_executable_code_only_exposes_executable_kinds() {
     "app.compiled",
     "callable",
     CompiledDefPayload {
+      proven_guard: None,
       version_id: 0,
       preprocessed_code: Calcit::Number(1.0),
       codegen_form: Calcit::Nil,

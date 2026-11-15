@@ -2831,6 +2831,21 @@
               assert= 2 $ lexical-guard 1
               assert= 0 $ lexical-guard |bad
             :tags $ #{} :short-circuit-proof :unit
+        'guarded-number? $ %{} 'CodeEntry (:doc "|Checks whether the incoming argument is numeric.")
+          :code $ quote $ defn guarded-number? (k)
+            if (number? k) true false
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool) (:guard Number)
+        'add-with-user-guard $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn add-with-user-guard (k)
+            if (guarded-number? k) (&+ k 1) 0
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |uses-proven-definition-guard)
+            :code $ quote $ do
+              assert= 2 $ add-with-user-guard 1
+              assert= 0 $ add-with-user-guard |text
+            :tags $ #{} :short-circuit-proof :unit
         'match-guard $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn match-guard (k flag)
             if

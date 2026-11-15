@@ -197,6 +197,7 @@ mod tests {
 
   fn lazy_value(def_id: DefId, codegen_form: Calcit, deps: Vec<DefId>) -> CompiledDef {
     CompiledDef {
+      proven_guard: None,
       def_id,
       version_id: 0,
       kind: CompiledDefKind::LazyValue,

@@ -1946,7 +1946,15 @@ impl<'a> PreprocessContext<'a> {
   }
 }
 
-fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit, resolved_code: &Calcit) {
+fn store_preprocessed_compiled_output(
+  ns: &str,
+  def: &str,
+  source_code: &Calcit,
+  resolved_code: &Calcit,
+  stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let schema = program::lookup_def_schema(ns, def);
+  let proven_guard = validate_predicate_guard(ns, def, source_code, resolved_code, &schema, stack)?;
   let preprocessed_code = resolved_code.to_owned();
   let codegen_form = resolved_code.to_owned();
   let deps = program::collect_compiled_deps(&codegen_form);
@@ -1961,11 +1969,66 @@ fn store_preprocessed_compiled_output(ns: &str, def: &str, source_code: &Calcit,
       deps,
       type_summary,
       source_code: Some(source_code.to_owned()),
-      schema: program::lookup_def_schema(ns, def),
+      schema,
+      proven_guard,
       doc: program::lookup_def_doc(ns, def).map(Arc::from).unwrap_or_else(|| Arc::from("")),
       examples: program::lookup_def_examples(ns, def).unwrap_or_default(),
     },
   );
+  Ok(())
+}
+
+fn validate_predicate_guard(
+  ns: &str,
+  def: &str,
+  source: &Calcit,
+  resolved: &Calcit,
+  schema: &CalcitTypeAnnotation,
+  stack: &CallStackList,
+) -> Result<Option<Arc<CalcitTypeAnnotation>>, CalcitErr> {
+  let CalcitTypeAnnotation::Fn(signature) = schema else {
+    return Ok(None);
+  };
+  let Some(target) = &signature.guard else { return Ok(None) };
+  if ns == calcit::CORE_NS && bundled_predicate_guards().get(def) == Some(target) && program::has_bundled_core_source() {
+    return Ok(Some(target.clone()));
+  }
+  let fail = |message: &str| {
+    CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("{ns}/{def}: {message}"),
+      stack,
+      Some(NodeLocation::new(ns.into(), def.into(), Arc::new(vec![]))),
+    )
+    .with_code("E_PREDICATE_GUARD_UNPROVEN")
+  };
+  if signature.is_async_invocation()
+    || CalcitTypeAnnotation::function_form_marks_async(source)
+    || CalcitTypeAnnotation::function_form_marks_async(resolved)
+    || !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Bool)
+    || program::lookup_def_ffi(ns, def).is_some()
+  {
+    return Err(fail("a predicate guard requires a synchronous Calcit function returning Bool"));
+  }
+  let Calcit::List(forms) = resolved else {
+    return Err(fail("a predicate guard requires a defn body"));
+  };
+  if !matches!(forms.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return Err(fail("a predicate guard requires a defn body"));
+  }
+  let Some(Calcit::List(params)) = forms.get(2) else {
+    return Err(fail("a predicate guard requires a first parameter"));
+  };
+  let Some(Calcit::Local(parameter)) = params.first() else {
+    return Err(fail("a predicate guard requires a first parameter"));
+  };
+  let target = resolve_namespace_type_refs_for_body(target.clone(), ns);
+  if target.contains_type_var() || !condition_evidence::proves_guard(forms.iter().skip(3), parameter, &target) {
+    return Err(fail(
+      "the true result does not prove the declared type of the incoming first parameter",
+    ));
+  }
+  Ok(Some(target))
 }
 
 /// Prepare only the slot evidence used by this annotation, in its lexical scope.
@@ -2100,7 +2163,7 @@ fn ensure_ns_def_preprocessed(
           push_advisory(advisory);
         }
       }
-      store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+      store_preprocessed_compiled_output(ns, def, &code, &resolved_code, &next_stack)?;
       mark_audit_proven(ns, def);
 
       Ok(())
@@ -2819,7 +2882,7 @@ pub fn compile_source_def_for_snapshot(
   })?;
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
-  store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+  store_preprocessed_compiled_output(ns, def, &code, &resolved_code, call_stack)?;
   mark_audit_proven(ns, def);
 
   Ok(())
@@ -4402,6 +4465,7 @@ fn preprocess_immediate_call_context(
       }
       let signature = Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         arg_types: input_types,
         runtime_arity: None,
         return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -7332,7 +7396,10 @@ fn preprocess_known_function_call(
           call_stack,
         );
       }
-      if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
+      if ns.as_ref() == calcit::CORE_NS
+        && (!bundled_predicate_guards().contains_key(def.as_ref()) || program::has_bundled_core_source())
+        && let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns)
+      {
         let specialized = check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack)?;
         if call_has_type_warnings {
           // Keep a rejected call's checked source head, while still running
@@ -9407,6 +9474,7 @@ fn expected_method_argument_types(
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: info.generics.clone(),
         where_bounds: info.where_bounds.clone(),
@@ -11018,25 +11086,23 @@ fn warn_on_method_name_conflict(
   }
 }
 
-/// Runtime kind established by a successful bundled core predicate.
-fn core_predicate_kind(name: &str) -> Option<&'static str> {
-  Some(match name {
-    "list?" => "list",
-    "map?" => "map",
-    "set?" => "set",
-    "string?" => "string",
-    "number?" => "number",
-    "enum?" => "enum",
-    "struct?" => "struct",
-    "enum-def?" => "enum-def",
-    "struct-def?" => "struct-def",
-    "tag?" => "tag",
-    "bool?" => "bool",
-    "symbol?" => "symbol",
-    "fn?" => "fn",
-    "cirru-quote?" => "cirru-quote",
-    _ => return None,
-  })
+/// Guard declarations owned by the embedded core. User schemas are checked
+/// against their bodies and published separately with the compiled definition.
+fn bundled_predicate_guards() -> &'static HashMap<String, Arc<CalcitTypeAnnotation>> {
+  static GUARDS: LazyLock<HashMap<String, Arc<CalcitTypeAnnotation>>> = LazyLock::new(|| {
+    let core = crate::load_core_snapshot().expect("embedded core snapshot");
+    core.files[calcit::CORE_NS]
+      .defs
+      .iter()
+      .filter_map(|(name, entry)| {
+        let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
+          return None;
+        };
+        Some((name.clone(), signature.guard.clone()?))
+      })
+      .collect()
+  });
+  &GUARDS
 }
 
 /// Try to specialize a polymorphic core function call at compile time.
@@ -11088,7 +11154,11 @@ fn try_specialize_polymorphic_call(
   // keep the matrix small; negative folding would need to enumerate every
   // other variant of `CalcitTypeAnnotation`, which is fragile as the enum
   // grows. Leaving dynamic / unknown / mismatched cases to runtime is safe.
-  if core_predicate_kind(fn_def).is_some_and(|kind| {
+  if bundled_predicate_guards().get(fn_def).is_some_and(|guard| {
+    let Calcit::Tag(kind) = guard.to_calcit() else {
+      return false;
+    };
+    let kind = kind.ref_str();
     let actual_kind = match receiver_type.as_ref() {
       T::EnumValue(_) | T::Enum(_, _) => Some("enum"),
       T::StructValue(_) | T::Struct(_, _) => Some("struct"),
@@ -11098,7 +11168,7 @@ fn try_specialize_polymorphic_call(
       ty => ty.builtin_tag_name(),
     };
     // Preserve the set of predicates whose runtime calls can be elided.
-    !matches!(kind, "symbol" | "cirru-quote") && !matches!(receiver_type.as_ref(), T::Numeric(_)) && actual_kind == Some(kind)
+    !matches!(kind, "symbol" | "cirru-quote" | "ref") && !matches!(receiver_type.as_ref(), T::Numeric(_)) && actual_kind == Some(kind)
   }) {
     // A local already contains an evaluated value. Reading it is inert and
     // must not force a statically specialized closure to escape in WASM.
@@ -11734,6 +11804,7 @@ fn synthesize_nominal_impl_callable(
       type_summary: Some(Arc::from(schema.to_brief_string())),
       source_code: None,
       schema,
+      proven_guard: None,
       doc: Arc::from(format!(
         "Compiler-generated direct callable for nominal method `.{method_name}` from impl `{}`.",
         impl_value.name()
@@ -11984,6 +12055,7 @@ fn validate_method_call(
         arg_types.insert(0, type_value.clone());
         let signature = CalcitFnTypeAnnotation {
           open_reason: Default::default(),
+          guard: None,
           arg_types,
           runtime_arity: None,
           return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
@@ -13681,8 +13753,8 @@ fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) ->
   Some((sym, Arc::new(nominal)))
 }
 
-/// `(= x :a)` holds only when `x` has the literal's kind on every backend, so the
-/// true branch narrows `x` to Tag, String, Number or Bool. The false branch
+/// Equality with a literal supplies local evidence for Tag, String, Number or
+/// Bool. Declared guards need portable evidence for open values. The false branch
 /// learns nothing, and only core equality counts, in either operand order.
 fn literal_equality_binding(
   head: Option<&Calcit>,
@@ -13736,6 +13808,14 @@ fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Op
 }
 
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
+  extract_predicate_bindings_with_literal_equality(cond_form, scope_types, true)
+}
+
+fn extract_predicate_bindings_with_literal_equality(
+  cond_form: &Calcit,
+  scope_types: &ScopeTypes,
+  allow_literal_equality: bool,
+) -> PredicateNarrowing {
   let empty = PredicateNarrowing {
     true_binding: None,
     false_binding: None,
@@ -13752,7 +13832,8 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
       false_binding: None,
     };
   }
-  if items.len() == 3
+  if allow_literal_equality
+    && items.len() == 3
     && let Some(binding) = literal_equality_binding(items.first(), items.get(1), items.get(2), scope_types)
   {
     return PredicateNarrowing {
@@ -13785,9 +13866,9 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   };
 
   // Simple type predicates: narrow the true branch to the asserted type
-  if let Some(kind) = core_predicate_kind(pred_name) {
+  if let Some(guard) = bundled_predicate_guards().get(pred_name) {
     return PredicateNarrowing {
-      true_binding: Some((sym, tag_annotation(kind))),
+      true_binding: Some((sym, guard.clone())),
       false_binding: None,
     };
   }
@@ -14103,20 +14184,8 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
 
 /// Variants of core `Data` that `data-view` classifies with a type predicate, in declaration order.
 /// `:other` is the complement of all of them and has no predicate.
-const DATA_VIEW_PREDICATES: [(&str, &str, usize); 13] = [
-  ("nil", "nil?", 0),
-  ("bool", "bool?", 1),
-  ("number", "number?", 1),
-  ("string", "string?", 1),
-  ("tag", "tag?", 1),
-  ("symbol", "symbol?", 1),
-  ("list", "list?", 1),
-  ("map", "map?", 1),
-  ("set", "set?", 1),
-  ("fn", "fn?", 1),
-  ("enum", "enum?", 1),
-  ("struct", "struct?", 1),
-  ("ref", "ref?", 1),
+const DATA_VIEW_VARIANTS: [&str; 13] = [
+  "nil", "bool", "number", "string", "tag", "symbol", "list", "map", "set", "fn", "enum", "struct", "ref",
 ];
 
 /// Payload type of a `Data` variant, mirroring the `defenum Data` declaration in core. Binding the
@@ -14138,8 +14207,14 @@ fn data_view_payload_type(tag: &str) -> Arc<CalcitTypeAnnotation> {
 }
 
 /// Head of the predicate that classifies one `Data` variant: a builtin proc where core has one.
-fn data_view_predicate(name: &str, file_ns: &str) -> Calcit {
-  name.parse::<CalcitProc>().map_or_else(|_| core_import(name, file_ns), Calcit::Proc)
+fn data_view_predicate(tag: &str, file_ns: &str) -> Option<Calcit> {
+  if tag == "nil" {
+    return Some(Calcit::Proc(CalcitProc::NilQuestion));
+  }
+  let (name, _) = bundled_predicate_guards()
+    .iter()
+    .find(|(_, guard)| matches!(guard.to_calcit(), Calcit::Tag(kind) if kind.ref_str() == tag))?;
+  Some(name.parse::<CalcitProc>().map_or_else(|_| core_import(name, file_ns), Calcit::Proc))
 }
 
 /// Lower `match (data-view x)` into a chain of type predicates on `x`, so no `Data` value is built
@@ -14164,7 +14239,9 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
     ctx.check_warnings,
     ctx.call_stack,
   )?;
-  if !matches!(&head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "data-view") {
+  if !matches!(&head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "data-view")
+    || !program::has_bundled_core_source()
+  {
     return Ok(None);
   }
 
@@ -14190,10 +14267,8 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
           return Ok(None);
         };
         let tag = tag.ref_str();
-        let arity = if tag == "other" {
-          1
-        } else if let Some((_, _, arity)) = DATA_VIEW_PREDICATES.iter().find(|(name, _, _)| *name == tag) {
-          *arity
+        let arity = if tag == "other" || DATA_VIEW_VARIANTS.contains(&tag) {
+          usize::from(tag != "nil")
         } else {
           return Ok(None);
         };
@@ -14221,9 +14296,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
     }
   }
   let has_other = arms.iter().any(|(tag, _, _)| *tag == "other");
-  let names_every_variant = DATA_VIEW_PREDICATES
-    .iter()
-    .all(|(name, _, _)| arms.iter().any(|(tag, _, _)| tag == name));
+  let names_every_variant = DATA_VIEW_VARIANTS.iter().all(|name| arms.iter().any(|(tag, _, _)| tag == name));
   if arms.is_empty() || (has_other && (wildcard.is_some() || !names_every_variant)) {
     return Ok(None);
   }
@@ -14244,9 +14317,9 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
     (None, Some(body)) => body.to_owned(),
     (None, None) => {
       // Alphabetical, like the enum path's exhaustiveness report.
-      let missing: BTreeSet<&str> = DATA_VIEW_PREDICATES
+      let missing: BTreeSet<&str> = DATA_VIEW_VARIANTS
         .iter()
-        .map(|(name, _, _)| *name)
+        .copied()
         .chain(["other"])
         .filter(|name| !arms.iter().any(|(tag, _, _)| tag == name))
         .collect();
@@ -14268,11 +14341,14 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
       ])
     }
   };
-  for (tag, predicate, _) in DATA_VIEW_PREDICATES.iter().rev() {
+  for tag in DATA_VIEW_VARIANTS.iter().rev() {
     let Some((_, binding, body)) = arms.iter().find(|(arm_tag, _, _)| arm_tag == tag) else {
       continue;
     };
-    let mut test = generated_call(vec![data_view_predicate(predicate, file_ns), value_sym.to_owned()]);
+    let Some(predicate) = data_view_predicate(tag, file_ns) else {
+      return Ok(None);
+    };
+    let mut test = generated_call(vec![predicate, value_sym.to_owned()]);
     if matches!(*tag, "enum" | "struct") {
       // `data-view` screens definitions into `:other` first, and `enum?` rejects an EnumDef.
       test = generated_if(
@@ -16552,6 +16628,7 @@ fn recheck_let_lambda_call(
   let _leave = Leave;
   let signature = Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    guard: None,
     arg_types,
     runtime_arity: None,
     return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -19449,6 +19526,7 @@ mod tests {
     let _restore = DefinitionContextScope::enter("tests.context", "restore", &Calcit::Nil);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -19532,6 +19610,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
@@ -19558,6 +19637,7 @@ mod tests {
 
     let variadic = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
@@ -19585,6 +19665,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -20303,6 +20384,7 @@ mod tests {
     )]);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -20383,6 +20465,7 @@ mod tests {
     // directly, independently of strict mode and program-owned definitions.
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -24184,6 +24267,7 @@ mod tests {
       ns,
       def,
       program::CompiledDef {
+        proven_guard: None,
         def_id,
         version_id: 0,
         kind: program::CompiledDefKind::Fn,
@@ -27214,6 +27298,7 @@ mod tests {
       location: None,
       type_info: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
@@ -27831,6 +27916,7 @@ mod tests {
     }
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -27943,6 +28029,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -27988,6 +28075,7 @@ mod tests {
 
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28009,6 +28097,7 @@ mod tests {
     let _slots = TypeSlotsGuard::cleared();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28127,6 +28216,7 @@ mod tests {
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28209,6 +28299,7 @@ mod tests {
   ) -> CalcitFnTypeAnnotation {
     CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -28632,6 +28723,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28673,6 +28765,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28734,6 +28827,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_argument() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -28775,6 +28869,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_receiver() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),

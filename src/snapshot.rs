@@ -115,6 +115,7 @@ fn canonical_schema_field_name(text: &str) -> Option<&'static str> {
     "features" => Some("features"),
     "async" => Some("async"),
     "open" => Some("open"),
+    "guard" => Some("guard"),
     "capabilities" => Some("capabilities"),
     _ => None,
   }
@@ -1603,6 +1604,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":features",
   ":async",
   ":open",
+  ":guard",
   ":legacy-origin",
 ];
 
@@ -2034,6 +2036,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut features_node: Option<&Cirru> = None;
   let mut async_node: Option<&Cirru> = None;
   let mut open_node: Option<&Cirru> = None;
+  let mut guard_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair
@@ -2052,6 +2055,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
         ":where" => where_node = Some(val),
         ":features" => features_node = Some(val),
         ":async" => async_node = Some(val),
+        ":guard" => {
+          if guard_node.is_some() || xs.len() != 2 {
+            return Err("`:guard` requires exactly one target type in a `Fn` schema".to_owned());
+          }
+          guard_node = Some(val);
+        }
         ":open" => {
           if open_node.is_some() {
             return Err("`:open` may appear at most once in a `Fn` schema".to_owned());
@@ -2150,6 +2159,10 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
     && !matches!(legacy_origin, Cirru::Leaf(value) if matches!(value.as_ref(), ":fn" | ":dynamic"))
   {
     return Err("`:legacy-origin` must be `:fn` or `:dynamic`".to_owned());
+  }
+
+  if guard_node.is_some() && is_macro_schema {
+    return Err("`:guard` is only allowed on `Fn` schemas".to_owned());
   }
 
   if open_node.is_some() && is_macro_schema {
@@ -4794,6 +4807,7 @@ fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    guard: None,
     runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
@@ -6893,6 +6907,7 @@ mod tests {
   fn code_entry_json_round_trip_preserves_nested_function_schema() {
     let fn_schema = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
@@ -8824,6 +8839,24 @@ mod tests {
   }
 
   #[test]
+  fn normalize_schema_keeps_guard_with_string_or_symbol_key() {
+    for key in [Edn::Str(Arc::from(":guard")), Edn::Symbol(Arc::from("guard"))] {
+      let schema = Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::tag("kind"), Edn::tag("fn")),
+        (Edn::tag("args"), Edn::List(EdnListView(vec![Edn::tag("dynamic")]))),
+        (Edn::tag("return"), Edn::tag("bool")),
+        (key, Edn::tag("number")),
+      ])));
+      let normalized = normalize_schema_edn(&schema).expect("canonical guard schema");
+      let parsed = CalcitTypeAnnotation::parse_fn_schema_from_edn(&normalized).expect("normalized predicate");
+      assert_eq!(parsed.guard.as_deref(), Some(&CalcitTypeAnnotation::Number));
+      let serialized = parsed.to_schema_edn();
+      let round_trip = CalcitTypeAnnotation::parse_fn_schema_from_edn(&serialized).expect("serialized predicate");
+      assert_eq!(round_trip.guard, parsed.guard);
+    }
+  }
+
+  #[test]
   fn data_definition_schema_uses_definition_kind_marker() {
     for (head, marker) in [
       ("defstruct", "struct-def"),
@@ -8895,6 +8928,7 @@ mod tests {
       DYNAMIC_TYPE.clone(),
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -8943,6 +8977,7 @@ mod tests {
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        guard: None,
         runtime_arity: None,
         generics: std::sync::Arc::new(vec![]),
         where_bounds: std::sync::Arc::new(vec![]),

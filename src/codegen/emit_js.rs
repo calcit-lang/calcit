@@ -3186,6 +3186,7 @@ mod tests {
 
   fn compiled_def_for_codegen_test(kind: program::CompiledDefKind, source_code: Option<Calcit>) -> program::CompiledDef {
     program::CompiledDef {
+      proven_guard: None,
       def_id: program::DefId(0),
       version_id: 0,
       kind,
