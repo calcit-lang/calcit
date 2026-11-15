@@ -4308,7 +4308,7 @@ impl CalcitTypeAnnotation {
           return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
         }
       }
-      if strict_named_refs && Self::generics_contains(generics, sym) {
+      if Self::generics_contains(generics, sym) {
         return Arc::new(CalcitTypeAnnotation::TypeVar(
           Self::generic_in_scope(generics, sym).expect("generic in scope"),
         ));

@@ -435,7 +435,7 @@ Define a trait with `deftrait` and implement it with `defimpl Type Trait`. A top
 ```cirru
 let
     BirdTrait $ deftrait BirdTrait
-      .show $ Fn T (-> Nil)
+      .show $ Fn Self (-> Unit)
     BirdShape $ defstruct BirdShape (:name :string)
     BirdImpl $ defimpl BirdShape BirdTrait
       .show $ fn (self)

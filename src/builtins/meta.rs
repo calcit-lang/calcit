@@ -811,6 +811,7 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
   }
   fn quoted_self_like(form: &Calcit) -> Option<Calcit> {
     match form {
+      Calcit::Symbol { .. } if names_self(form) => Some(form.to_owned()),
       Calcit::List(list) if names_self(form) => Some(Calcit::List(list.to_owned())),
       Calcit::List(list) => list.iter().find_map(quoted_self_like),
       _ => None,
