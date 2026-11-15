@@ -1966,6 +1966,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Buffer(_) => Some(Arc::new(CalcitTypeAnnotation::Buffer)),
     Calcit::BufList(_) => Some(Arc::new(CalcitTypeAnnotation::BufList)),
     Calcit::CirruQuote(_) => Some(Arc::new(CalcitTypeAnnotation::CirruQuote)),
+    Calcit::Method(_, calcit::MethodKind::Invoke(_)) => Some(Arc::new(CalcitTypeAnnotation::Method)),
     Calcit::Fn { info, .. } => Some(resolve_namespace_type_refs_for_body(
       Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
       &info.def_ns,
