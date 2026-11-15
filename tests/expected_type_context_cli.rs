@@ -70,6 +70,7 @@ fn lambdas_and_tags_take_the_expected_type_of_their_position() {
     "tag-data-view-match",
     "match-scrutinee-keeps-tag",
     "tag-method-arg",
+    "tag-struct-field",
     "tag-local-fn-arg",
     "tag-tuple-return",
     "tag-tuple-list",
@@ -141,6 +142,13 @@ fn a_wrong_tag_is_reported_at_its_position() {
     ("(|a :red)", "(|a :rde)", "map-typo", "E_ENUM_TAG_UNKNOWN", "collection member"),
     ("(= c :red)", "(= c :rde)", "eq-typo", "E_ENUM_TAG_UNKNOWN", "arg 2 of `=`"),
     ("(Some :red)", "(Some :rde)", "some-typo", "E_ENUM_TAG_UNKNOWN", "variant payload"),
+    (
+      "(Swatch :color :green)",
+      "(Swatch :color :grene)",
+      "struct-field-typo",
+      "E_ENUM_TAG_UNKNOWN",
+      "field `:color` of struct `Swatch`",
+    ),
     (
       "(Wrap :one :green)",
       "(Wrap :one :rgb)",

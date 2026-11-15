@@ -75,6 +75,7 @@ use type_rewriting::{
 };
 
 use cirru_parser::Cirru;
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -116,7 +117,7 @@ type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Ar
 fn offer_callback(context: Option<ExpectedFunctionContext>) -> tail_context::TailScope {
   tail_context::TailScope::offer(context.map(|context| tail_context::Expected {
     annotation: Arc::new(CalcitTypeAnnotation::Fn(context.signature.clone())),
-    position: "function in a typed position",
+    position: "function in a typed position".into(),
     location: None,
     callback: Some(Arc::new(context)),
   }))
@@ -235,7 +236,7 @@ fn preprocess_argument_with_offered_return(
   expr: &Calcit,
   context: Option<ExpectedArgumentContext<'_>>,
   offered_return: Option<Arc<CalcitTypeAnnotation>>,
-  direct_tag_position: Option<(&'static str, Option<NodeLocation>)>,
+  direct_tag_position: Option<(Cow<'static, str>, Option<NodeLocation>)>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
@@ -340,7 +341,7 @@ fn preprocess_argument_with_offered_return(
   // Nested forms inherit the offer. Some call sites choose the exact tag slot
   // only after preprocessing, while literal members already know their slot.
   let offers_direct_tag = direct_tag_position.is_some();
-  let (position, location) = direct_tag_position.unwrap_or(("value in a typed position", None));
+  let (position, location) = direct_tag_position.unwrap_or((Cow::Borrowed("value in a typed position"), None));
   let _expected = tail_context::TailScope::offer(
     expected
       .filter(|_| literal_type.is_none() && (offers_direct_tag || !matches!(expr, Calcit::Tag(_))))
@@ -379,7 +380,7 @@ fn preprocess_expected_form(
     if let Some(rewritten) = coerce_tag_literal(
       expr,
       &expected.annotation,
-      expected.position,
+      &expected.position,
       (file_ns, &def_name),
       call_stack,
       expected.location,
@@ -476,7 +477,7 @@ fn preprocess_literal_member(
     expr,
     context,
     None,
-    Some(("collection member", None)),
+    Some(("collection member".into(), None)),
     scope_defs,
     scope_types,
     file_ns,
@@ -5686,6 +5687,9 @@ fn preprocess_list_call(
               }
             }
           }
+          let complete_struct_literal = matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
+            && args.len() % 2 == 1
+            && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
           args.traverse_result::<CalcitErr>(&mut |a| {
             if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
               has_spread = true;
@@ -5706,24 +5710,31 @@ fn preprocess_list_call(
             let mut method_generics = None;
             // The callee's result in terms of the variables its parameters use.
             let mut result_pattern = None;
-            let expected_type = if !has_spread
+            let struct_field = if !has_spread
               && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
               && ys.len() >= 3
               && ys.len() % 2 == 1
-              && let (Some(prototype), Some(Calcit::Tag(field))) = (ys.get(1), ys.get(ys.len() - 1))
+              && let Some(prototype) = ys.get(1)
+              && let Some(field) = ys.get(ys.len() - 1).and_then(struct_constructor_field_name)
             {
               resolve_struct_value(prototype, scope_types).and_then(|value| {
-                let index = value.struct_ref.fields.iter().position(|candidate| candidate == field)?;
+                let index = value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field)?;
                 let expected = struct_hint
                   .as_ref()
                   .filter(|(definition, _)| value.struct_ref.same_nominal_definition(definition))
                   .and_then(|(_, annotation)| resolve_struct_field_type_by_index(annotation, index))
                   .or_else(|| value.struct_ref.field_types.get(index).cloned())?;
-                Some(match expected.as_ref() {
+                let expected = match expected.as_ref() {
                   CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => inner.clone(),
-                  _ => expected.clone(),
-                })
+                  _ => expected,
+                };
+                Some((expected, value.struct_ref.name.clone(), field))
               })
+            } else {
+              None
+            };
+            let expected_type = if let Some((annotation, _, _)) = &struct_field {
+              Some(annotation.clone())
             } else if !has_spread
               && matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew))
               && ys.len() >= 3
@@ -5886,9 +5897,12 @@ fn preprocess_list_call(
             );
             let warnings_before = check_warnings.borrow().len();
             let direct_tag_position = match &head_form {
-              Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some("variant payload"),
-              Calcit::Proc(CalcitProc::Recur) => Some("recur argument"),
-              _ if callable_contract.is_some() => Some("argument of a local function"),
+              Calcit::Proc(CalcitProc::NativeStruct) if complete_struct_literal && matches!(a, Calcit::Tag(_)) => struct_field
+                .as_ref()
+                .map(|(_, owner, field)| format!("field `:{field}` of struct `{owner}`").into()),
+              Calcit::Proc(CalcitProc::NativeNamedEnumNew) => Some(Cow::Borrowed("variant payload")),
+              Calcit::Proc(CalcitProc::Recur) => Some(Cow::Borrowed("recur argument")),
+              _ if callable_contract.is_some() => Some(Cow::Borrowed("argument of a local function")),
               _ => None,
             };
             let result = if has_callback_contract {
@@ -6007,22 +6021,6 @@ fn preprocess_list_call(
         let mut processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         // Struct literal construction (`%{}`, or a direct constructor call that
         // lowers to it) wraps plain payloads of Option fields (#2652).
-        // Bare tags for enum-typed fields name zero-payload variants (#2701).
-        if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
-          && let Some(coerced) = coerce_struct_literal_tags(
-            &processed_args,
-            scope_types,
-            (file_ns, &def_name),
-            call_stack,
-            call_location.clone(),
-          )?
-        {
-          processed_args = coerced;
-          ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
-          for item in processed_args.iter() {
-            ys = ys.push(item.to_owned());
-          }
-        }
         if matches!(head_form, Calcit::Proc(CalcitProc::NativeStruct))
           && let Some(lifted) = lift_struct_literal_options(&processed_args, scope_types, file_ns)
         {
@@ -8478,55 +8476,6 @@ fn lift_struct_literal_options(args: &CalcitList, scope_types: &ScopeTypes, file
     next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
   }
   lifted.then(|| CalcitList::from(next.as_slice()))
-}
-
-/// Rewrites bare tag values of enum-typed fields in a struct literal
-/// (`[NativeStruct, prototype, :field value ...]`) to zero-payload variants (#2701).
-fn coerce_struct_literal_tags(
-  args: &CalcitList,
-  scope_types: &ScopeTypes,
-  (file_ns, def_name): (&str, &str),
-  call_stack: &CallStackList,
-  location: Option<NodeLocation>,
-) -> Result<Option<CalcitList>, CalcitErr> {
-  let Some(prototype) = args.first() else { return Ok(None) };
-  let items = args.iter().skip(1).collect::<Vec<_>>();
-  if !items.iter().any(|item| matches!(item, Calcit::Tag(_)))
-    || !items.len().is_multiple_of(2)
-    || items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
-  {
-    return Ok(None);
-  }
-  let Some(value) = resolve_struct_value(prototype, scope_types) else {
-    return Ok(None);
-  };
-  let struct_type = CalcitTypeAnnotation::StructValue(value.struct_ref.clone());
-  let mut coerced = false;
-  let mut next = vec![prototype.to_owned()];
-  for pair in items.as_chunks::<2>().0 {
-    next.push(pair[0].to_owned());
-    let replacement = match struct_constructor_field_name(pair[0])
-      .and_then(|field| value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field))
-      .and_then(|index| type_inference::resolve_struct_field_type_by_index(&struct_type, index))
-    {
-      Some(field_type) => coerce_tag_literal(
-        pair[1],
-        &field_type,
-        &format!(
-          "field `:{}` of struct `{}`",
-          struct_constructor_field_name(pair[0]).unwrap_or_default(),
-          value.struct_ref.name
-        ),
-        (file_ns, def_name),
-        call_stack,
-        location.clone(),
-      )?,
-      None => None,
-    };
-    coerced |= replacement.is_some();
-    next.push(replacement.unwrap_or_else(|| pair[1].to_owned()));
-  }
-  Ok(coerced.then(|| CalcitList::from(next.as_slice())))
 }
 
 /// Check resolved constructor shapes and payloads after lowering. Both public
@@ -15926,7 +15875,7 @@ pub fn preprocess_defn(
           let local = resolve_local_type_refs_for_body(signature.return_type.clone(), &body_types);
           tail_context::Expected {
             annotation: resolve_namespace_type_refs_for_body(local, ctx.file_ns),
-            position: "return value",
+            position: "return value".into(),
             location: ctx.call_location.clone().or(Some(definition_location.clone())),
             callback: None,
           }
@@ -15937,7 +15886,7 @@ pub fn preprocess_defn(
         (Some(expected), Some(offered)) if infer_contextual_callback && expected.annotation.contains_type_var() => {
           Some(tail_context::Expected {
             annotation: offered,
-            position: "callback result",
+            position: "callback result".into(),
             ..expected
           })
         }

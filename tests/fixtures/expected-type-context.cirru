@@ -123,6 +123,12 @@
         'Task $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Task (:title String) (:tags (List Color))
           :schema $ quote StructDef
+        'Swatch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Swatch (:color Color)
+          :schema $ quote StructDef
+        'tag-struct-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-struct-field () (Swatch :color :green)
+          :schema $ quote $ Fn (-> Swatch)
         'tag-method-arg $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tag-method-arg (o) (.unwrap-or o :red)
           :schema $ quote $ Fn (Option Color) (-> Color)
@@ -212,6 +218,7 @@
             println (show-color (tag-method-arg (Option :none))) (tag-local-fn-arg) (show-color (nth (tag-tuple-return) 0)) (count (tag-tuple-list))
             println $ show-colors (:tags (tag-assoc-field (Task :title |t :tags ([]))))
             println (show-colors (tag-map-callback ([] 1 2))) (show-colors (tag-map-callback-if ([] 1 2))) (show-colors (tag-method-callback ([] 1))) (show-colors (tag-user-hof ([] 1))) (show-color (tag-generic-slot)) (count (plain-callback-tags ([] 1 2 3)))
+            assert= |green $ show-color $ :color $ tag-struct-field
             println $ show-colors (tag-generic-literal)
             println (show-color (tag-recur-arg 2 (Color :red))) (show-color (tag-recur-if 2 (Color :green))) (show-colors (tag-recur-list 1 ([]))) (lambda-recur-arg 1 (fn (x) x)) (show-color (tag-type-slot-tail 1)) (show-colors (tag-callback-branches ([] 1 2) false))
           :schema $ quote $ Fn (-> Unit) (:features :io)
