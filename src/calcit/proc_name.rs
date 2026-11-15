@@ -847,6 +847,7 @@ impl CalcitProc {
       | NativeEnumValidate
       | NativeImplOrigin
       | NativeUnionNew
+      | NativeStr
       | NativeExtractCodeIntoEdn
       | NativeDataToCode
       | NativeCirruType
@@ -979,10 +980,6 @@ impl CalcitProc {
       }),
 
       // === String operations ===
-      NativeStr => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![variadic_dynamic()],
-      }),
 
       // === List operations ===
       List => Some(ProcTypeSignature {

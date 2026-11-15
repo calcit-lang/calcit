@@ -11,7 +11,6 @@
 &inspect-type | missing core definition
 &list:foldl-shortcut | missing core function schema
 &methods-of | missing core definition
-&str | missing core function schema
 &struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct:assoc-at | missing core definition
 &struct:field-tag | missing core definition

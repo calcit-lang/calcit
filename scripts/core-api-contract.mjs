@@ -217,6 +217,11 @@ function canonicalTypeSyntax(node, inType = false) {
   if (!Array.isArray(node)) return inType && legacyTypeTags.has(node) ? legacyTypeTags.get(node) : node;
   if (node[0] === "quote" && node.length === 2 && Array.isArray(node[1]) && /^[A-Z]/.test(node[1][0])) return desugarCompact(node[1]);
   if (node[0] === "::") return node.map(item => canonicalTypeSyntax(item, true));
+  const declaredKind = node[0] === "{}" ? node.find(item => Array.isArray(item) && item[0] === ":kind")?.[1] : null;
+  const kind = legacyTypeTags.get(declaredKind) ?? declaredKind;
+  if (kind === "'Fn" || kind === "'Macro") {
+    return ["::", kind, canonicalTypeSyntax(node.filter(item => !Array.isArray(item) || item[0] !== ":kind"), true)];
+  }
   if (node[0] === "{}" && inType) {
     const entries = node.slice(1).map(([key, value]) => [key, canonicalTypeSyntax(value, true)]);
     if (!entries.some(([key]) => key === ":args" || key === ":required")) entries.push([":args", ["[]"]]);

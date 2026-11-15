@@ -330,6 +330,20 @@ test("function implementation bodies and argument variable names are not frozen"
   assertPreserved(before, after);
 });
 
+test("tagged and map function schemas preserve the same contract", () => {
+  const scope = { definitions: [{ name: { symbol: "calcit.core/example" } }], methods: [] };
+  const args = [":args", ["[]", "'Number"]];
+  const collectWithSchema = schema => collect(scope, () => ({
+    code: ["defn", "example", ["x"], [",", "x"]],
+    schema,
+  }));
+  const previous = collectWithSchema(["::", ":fn", ["{}", args, [":return", ":number"]]]);
+  const current = collectWithSchema(["{}", [":kind", ":fn"], args, [":return", "'Number"]]);
+  assertPreserved(previous, current);
+  const changed = collectWithSchema(["{}", [":kind", ":fn"], args, [":return", "'String"]]);
+  assert.throws(() => assertPreserved(previous, changed), /changed frozen definitions/);
+});
+
 test("unproven dispatch or missing call syntax cannot be promoted into the baseline", () => {
   const scope = { definitions: [], methods: [{ receiver: "'Number", name: ".example" }] };
   for (const status of ["open", "ambiguous"]) {

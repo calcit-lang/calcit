@@ -3255,17 +3255,25 @@
             :code $ quote $ assert= 3
               count $ &set:to-list $ #{} 1 2 3
             :tags $ #{} :core :unit
-        '&str $ %{} 'CodeEntry
-          :doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation"
+        '&str $ %{} 'CodeEntry (:doc "|将首个实参格式化为字符串。额外实参仍按顺序求值，但不参与格式化。")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote $ Fn Dynamic (& Dynamic) (-> String) (:open :reflect)
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |converts-values-to-strings)
-            :code $ quote $ do
-              assert= :string $ type-of $ &str 1
-              assert= |1 $ &str 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |converts-values-to-strings)
+              :code $ quote $ do
+                assert= :string $ type-of $ &str 1
+                assert= |1 $ &str 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-trailing-arguments)
+              :code $ quote $ do
+                assert= |7 $ &str
+                  do (println |str-first) 7
+                  do (println |str-trailing-one) 8
+                  do (println |str-trailing-two) 9
+                assert= |7 $ .debug 7
+              :tags $ #{} :core :str-arity :unit
         '&str-spaced $ %{} 'CodeEntry
           :doc "|内部 String 拼接函数；仅供 str-spaced 在过滤 nil、完成文本转换后调用。head? 表示首项是否免于前置空格。"
           :code $ quote $ defn &str-spaced (head? x0 & xs)
@@ -14514,9 +14522,13 @@
           :schema $ quote Dynamic
         '&core-debug-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Debug")
           :code $ quote $ def &core-debug-impl
-            &impl::new :&core-debug-impl $ :: :debug &str
+            &impl::new :&core-debug-impl $ :: :debug &core-debug-value
           :examples $ []
           :schema $ quote Dynamic
+        '&core-debug-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &core-debug-value (value) (&str value)
+          :examples $ []
+          :schema $ quote $ Fn T (-> String) (:generics T)
         '&core-eq-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Eq")
           :code $ quote $ def &core-eq-impl
             &impl::new :&core-eq-impl $ :: :eq? &=
