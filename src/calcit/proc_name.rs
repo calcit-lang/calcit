@@ -612,10 +612,6 @@ fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Variadic(inner))
 }
 
-fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
-}
-
 impl CalcitProc {
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
@@ -804,6 +800,7 @@ impl CalcitProc {
       | NativeStructFromMap
       | NativeStructExtendAs
       | NativeUnionNew
+      | NativeStr
       | NativeStructWithAt
       | NativeStruct
       | NativeMap
@@ -948,10 +945,6 @@ impl CalcitProc {
       }),
 
       // === String operations ===
-      NativeStr => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
-        arg_types: vec![variadic_dynamic()],
-      }),
 
       // === List operations ===
       List => Some(ProcTypeSignature {

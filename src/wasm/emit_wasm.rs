@@ -8416,7 +8416,18 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeStrPadRight => emit_str_pad_right(ctx, args),
     CalcitProc::StartsWith => emit_str_starts_with(ctx, args),
     CalcitProc::EndsWith => emit_str_ends_with(ctx, args),
-    CalcitProc::TurnString | CalcitProc::NativeStr => emit_turn_string(ctx, args),
+    CalcitProc::TurnString => emit_turn_string(ctx, args),
+    CalcitProc::NativeStr => {
+      let Some((value, trailing)) = args.split_first() else {
+        return Err("&str requires at least one argument".into());
+      };
+      emit_turn_string(ctx, std::slice::from_ref(value))?;
+      for arg in trailing {
+        emit_expr(ctx, arg)?;
+        ctx.emit(Instruction::Drop);
+      }
+      Ok(())
+    }
     CalcitProc::Trim => emit_trim(ctx, args),
     CalcitProc::IsBlank => emit_blank(ctx, args),
     CalcitProc::GetCharCode => emit_get_char_code(ctx, args),

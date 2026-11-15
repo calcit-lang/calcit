@@ -1,3 +1,2 @@
 # Existing Rust proc => core schema differences (#2735).
 # Resolved differences may be removed as signatures converge.
-&str | missing core function schema
