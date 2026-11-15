@@ -4743,6 +4743,15 @@ try {
           await assertRejectedArtifacts(output, name, /E_FN_ARG_TYPE_MISMATCH/);
         }
       }
+      // A core predicate with the original schema still needs to prove its guard.
+      run("edit", "def", "calcit.core/struct-def?", "--overwrite", "--input-format", "cirru", "--code",
+        "quote $ defn struct-def? (value) true");
+      run("edit", "def", "calcit.predicate-origin/main!", "--overwrite", "--input-format", "cirru", "--code",
+        "quote $ defn main! () (struct-def? 1) &unit");
+      const falseGuard = spawnSync(binary, [snapshot, "--check-only"], options);
+      if (falseGuard.error) throw falseGuard.error;
+      assert.equal(falseGuard.status, 1);
+      assert.match(falseGuard.stderr, /struct-def\?: the true result does not prove the declared type/);
     },
     async () => {
       // #2430: a known callback's parameter count is part of its call contract.

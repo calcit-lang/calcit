@@ -2036,7 +2036,11 @@ fn validate_predicate_guard(
   };
   // A copied core can override an unrelated definition. Its intrinsic-only
   // guard remains valid if the resolved body still proves the bundled kind.
-  if bundled_guard && forms.len() == 4 && proves_core_type_of_guard(forms.get(3), parameter, target) {
+  let mut body = forms
+    .iter()
+    .skip(3)
+    .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form));
+  if bundled_guard && proves_core_type_of_guard(body.next(), parameter, target) && body.next().is_none() {
     return Ok(Some(target.clone()));
   }
   let target = resolve_namespace_type_refs_for_body(target.clone(), ns);
