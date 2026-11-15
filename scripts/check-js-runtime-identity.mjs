@@ -734,7 +734,8 @@ try {
   assert.throws(() => layoutValue.nthAt(0.5, earlyField), /non-negative integer index/);
   assert.throws(() => layoutValue.assocAt(0, lateField, "bad"), /expects field :aa-layout-field/);
   assert.throws(() => layoutValue.withAt(0, lateField, "bad"), /expects field :aa-layout-field/);
-  assert.throws(() => layoutValue.withAt(), /index\/tag\/value triples/);
+  assert.equal(runtimeA._$n__$e_(layoutValue.withAt(), layoutValue), true, "zero updates preserve the Struct value");
+  assert.throws(() => layoutValue.withAt(0, earlyField), /index\/tag\/value triples/);
   const parsedReverseLayout = runtimeA.parse_cirru_edn(
     "%{} 'LayoutProbe\n  :zz-layout-field |late\n  :aa-layout-field |early",
     null
