@@ -7486,7 +7486,7 @@
             quote $ assert= (#{} 1 2)
               difference (#{} 1 2 3 4) (#{} 3 4 5)
           :schema $ quote $ Fn (Set T)
-            & $ Set Dynamic
+            & $ Set T
             -> $ Set T
             :generics T
           :tests $ [] $ %{} 'TestEntry (:name |subtracts-all-sets)
@@ -10337,7 +10337,7 @@
             reduce xs base $ fn (acc item) (&set:intersection acc item)
           :examples $ []
           :schema $ quote $ Fn (Set T)
-            & $ Set Dynamic
+            & $ Set T
             -> $ Set T
             :generics T
           :tests $ []

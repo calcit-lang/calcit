@@ -108,6 +108,7 @@ struct ExpectedFunctionContext {
   /// forms written in the callback's return position and is never a
   /// constraint or evidence for the callee's variables.
   offered_return: Option<Arc<CalcitTypeAnnotation>>,
+  check_return: bool,
 }
 
 type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Arc<str>]);
@@ -143,6 +144,7 @@ impl DefinitionContextScope {
         immediate: false,
         callee_owned_generics: Arc::new(vec![]),
         offered_return: None,
+        check_return: false,
       })
     } else {
       None
@@ -177,6 +179,7 @@ fn callback_parameter_context(
     immediate: false,
     callee_owned_generics: Arc::new(callee_owned_generics.to_vec()),
     offered_return: None,
+    check_return: false,
   }
 }
 
@@ -4517,6 +4520,7 @@ fn preprocess_immediate_call_context(
         immediate: true,
         callee_owned_generics: Arc::new(vec![]),
         offered_return: None,
+        check_return: false,
       }));
       let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
@@ -4817,6 +4821,16 @@ fn process_macro_source(
   );
   let _post_preprocess_timer =
     runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+  let defimpl_context = if matches!(phase, MacroSourcePhase::Check)
+    && info.def_ns.as_ref() == calcit::CORE_NS
+    && info.name.as_ref() == "defimpl"
+    && !calcit::is_bundled_core_ns(ctx.file_ns)
+  {
+    resolve_defimpl_method_context(args, ctx.scope_defs, ctx.scope_types, ctx.file_ns)
+  } else {
+    None
+  };
+  let _defimpl_scope = defimpl_context.map(|context| DefimplContextScope::enter(Some(context)));
   let processed = phase.process(
     &expansion.code,
     PreprocessContext {
@@ -5783,6 +5797,41 @@ fn preprocess_list_call(
             if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
               has_spread = true;
               ys = ys.push(a.to_owned());
+              return Ok(());
+            }
+            if !has_spread
+              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeImplNew))
+              && ys.len() >= 2
+              && let Calcit::List(pair_items) = a
+              && pair_items.len() == 3
+              && let Some(Calcit::Tag(method_tag)) = pair_items.get(1)
+              && let Some(expected_fn) = DEFIMPL_METHOD_CONTEXT.with(|cell| {
+                cell
+                  .borrow()
+                  .as_ref()
+                  .and_then(|ctx| ctx.methods.get(method_tag.ref_str()).cloned())
+              })
+            {
+              let _nested_defimpl = DefimplContextScope::enter(None);
+              let p0 = preprocess_expr(&pair_items[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+              let p1 = preprocess_expr(&pair_items[1], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+              let p2 = if let Some(signature) = expected_fn.resolve_to_fn() {
+                let mut context = callback_parameter_context(signature, false, &[]);
+                context.check_return = true;
+                let _tail = offer_callback(Some(context));
+                preprocess_expr(&pair_items[2], scope_defs, scope_types, file_ns, check_warnings, call_stack)?
+              } else {
+                preprocess_argument_with_context(
+                  &pair_items[2],
+                  Some((&expected_fn, false, &[])),
+                  scope_defs,
+                  scope_types,
+                  file_ns,
+                  check_warnings,
+                  call_stack,
+                )?
+              };
+              ys = ys.push(Calcit::from(vec![p0, p1, p2]));
               return Ok(());
             }
             // A retired method reports its migration before the callback is
@@ -10847,6 +10896,120 @@ fn reject_legacy_defimpl_name(
   ))
 }
 
+struct DefimplMethodContext {
+  methods: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+}
+
+thread_local! {
+  static DEFIMPL_METHOD_CONTEXT: RefCell<Option<Arc<DefimplMethodContext>>> = const { RefCell::new(None) };
+}
+
+struct DefimplContextScope {
+  previous: Option<Arc<DefimplMethodContext>>,
+}
+
+impl DefimplContextScope {
+  fn enter(context: Option<Arc<DefimplMethodContext>>) -> Self {
+    Self {
+      previous: DEFIMPL_METHOD_CONTEXT.with(|cell| cell.replace(context)),
+    }
+  }
+}
+
+impl Drop for DefimplContextScope {
+  fn drop(&mut self) {
+    DEFIMPL_METHOD_CONTEXT.with(|cell| *cell.borrow_mut() = self.previous.take());
+  }
+}
+
+fn resolve_defimpl_self_type(
+  type_expr: &Calcit,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let generic_vars = |generics: &[Arc<str>]| -> Arc<Vec<Arc<CalcitTypeAnnotation>>> {
+    Arc::new(
+      generics
+        .iter()
+        .map(|g| Arc::new(CalcitTypeAnnotation::TypeVar(g.clone())))
+        .collect(),
+    )
+  };
+  if let Calcit::Symbol { sym, .. } = type_expr
+    && scope_defs.contains(sym)
+  {
+    return match scope_types.get(sym).map(AsRef::as_ref) {
+      Some(CalcitTypeAnnotation::StructDef(sd)) => Some(Arc::new(CalcitTypeAnnotation::Struct(sd.clone(), generic_vars(&sd.generics)))),
+      Some(CalcitTypeAnnotation::EnumDef(ed)) => Some(Arc::new(CalcitTypeAnnotation::Enum(ed.clone(), generic_vars(ed.generics())))),
+      _ => None,
+    };
+  }
+  let (target_ns, target_def) = match type_expr {
+    Calcit::Import(import) => (import.ns.clone(), import.def.clone()),
+    Calcit::Symbol { sym, .. } => program::resolve_type_name_in_ns(file_ns, sym)?,
+    _ => return None,
+  };
+  let ref_name: Arc<str> = Arc::from(format!("{target_ns}/{target_def}"));
+  let base_ref = CalcitTypeAnnotation::TypeRef(ref_name.clone(), Arc::new(vec![]));
+  if let Some(sd) = base_ref.resolve_to_struct() {
+    return Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))));
+  }
+  if let Some(ed) = base_ref.resolve_to_enum() {
+    return Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))));
+  }
+  match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
+    Some(Calcit::StructDef(sd)) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics)))),
+    Some(Calcit::EnumDef(ed)) => Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics())))),
+    _ if program::names_nominal_type_definition(&target_ns, &target_def) => {
+      Some(Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))))
+    }
+    _ => None,
+  }
+}
+
+fn resolve_defimpl_method_context(
+  args: &CalcitList,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+) -> Option<Arc<DefimplMethodContext>> {
+  let implementing_type = resolve_defimpl_self_type(args.first()?, scope_defs, scope_types, file_ns)?;
+  let trait_expr = args.get(1)?;
+  let trait_def = if let Calcit::Symbol { sym, .. } = trait_expr
+    && scope_defs.contains(sym)
+  {
+    match scope_types.get(sym).map(AsRef::as_ref) {
+      Some(CalcitTypeAnnotation::Trait(trait_def)) => Some(trait_def.clone()),
+      _ => None,
+    }
+  } else {
+    let (trait_ns, trait_def_name) = resolve_trait_reference_target(trait_expr, file_ns)?;
+    lookup_source_backed_trait_def(&trait_ns, &trait_def_name).map(|t| Arc::new(t.with_definition_ref(&trait_ns, &trait_def_name)))
+  }?;
+
+  let mut bindings = HashMap::new();
+  bindings.insert(Arc::from("Self"), implementing_type);
+  let mut methods = HashMap::new();
+  for (idx, method_tag) in trait_def.methods.iter().enumerate() {
+    let Some(method_type) = trait_def.method_types.get(idx) else {
+      continue;
+    };
+    let qualified = resolve_trait_method_type(&trait_def, method_type.clone());
+    let substituted = qualified.substitute_type_vars(&bindings);
+    let final_type = match substituted.as_ref() {
+      CalcitTypeAnnotation::Fn(sig) if sig.generics.iter().any(|g| g.as_ref() == "Self") => {
+        let mut updated = sig.as_ref().clone();
+        updated.generics = Arc::new(sig.generics.iter().filter(|g| g.as_ref() != "Self").cloned().collect());
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(updated)))
+      }
+      _ => substituted,
+    };
+    methods.insert(Arc::from(method_tag.ref_str()), final_type);
+  }
+  (!methods.is_empty()).then(|| Arc::new(DefimplMethodContext { methods }))
+}
+
 fn reject_legacy_trait_method_tag_syntax(
   macro_info: &crate::calcit::CalcitMacro,
   args: &CalcitList,
@@ -15624,6 +15787,7 @@ pub fn preprocess_defn(
         invalidate_assignable_refinements(&mut body_types);
       }
       let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
+      let check_contextual_return = expected_context.as_ref().is_some_and(|context| context.check_return);
       let offered_return = expected_context.as_ref().and_then(|context| context.offered_return.clone());
       let expected_fn_schema = expected_context.map(|context| {
         let signature = context.signature;
@@ -16227,6 +16391,10 @@ pub fn preprocess_defn(
         // Keep the callback contract's known structure and captured variables,
         // opening only output binders owned by the callee.
         open_return
+      } else if check_contextual_return && !has_body_fn_hint {
+        contextual_return_constraint
+          .filter(|expected| !expected.contains_type_var() && !matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic))
+          .unwrap_or_else(|| return_type_hint.clone())
       } else {
         contextual_return_constraint
           .filter(|expected| {
@@ -16566,6 +16734,7 @@ fn recheck_let_lambda_call(
     immediate: true,
     callee_owned_generics: Arc::new(vec![]),
     offered_return: None,
+    check_return: false,
   }));
   let called_at = call_location
     .cloned()
@@ -19464,6 +19633,7 @@ mod tests {
       immediate: true,
       callee_owned_generics: Arc::new(vec![]),
       offered_return: None,
+      check_return: false,
     }));
     // The offer addresses the form one level below the caller.
     let offered_callback = || {
@@ -20322,6 +20492,7 @@ mod tests {
       immediate: true,
       callee_owned_generics: Arc::new(vec![]),
       offered_return: None,
+      check_return: false,
     }));
     let mut scope = ScopeTypes::new();
     scope.insert(Arc::from("captured"), calcit::DYNAMIC_TYPE.clone());
