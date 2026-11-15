@@ -1,40 +1,21 @@
 # Existing Rust proc => core schema differences (#2735).
 # Resolved differences may be removed as signatures converge.
-%:: | arg 0 | "'EnumDef" => "'Dynamic"
-%:: | rest | "'Dynamic" => <missing>
 &assert-traits | missing core definition
-&enum-def:impl-traits | rest | "'Dynamic" => <missing>
-&enum:impl-traits | rest | "'Dynamic" => <missing>
 &inspect-methods | missing core definition
 &inspect-type | missing core definition
 &methods-of | missing core definition
 &str | missing core function schema
-&struct-def:impl-traits | rest | "'Dynamic" => <missing>
 &struct:assoc-at | missing core definition
 &struct:field-tag | missing core definition
-&struct:impl-traits | rest | "'Dynamic" => <missing>
 &struct:nth | missing core definition
 &struct:with-at | missing core definition
 &trait-call | missing core definition
 ?{} | missing core definition
-bool? | arg 0 | "'Dynamic" => "'T"
-enum? | arg 0 | "'Dynamic" => "'T"
-fn? | arg 0 | "'Dynamic" => "'T"
 foldr-shortcut | arg 0 | "'Dynamic" => (:: "'List" "'T")
 foldr-shortcut | arg 1 | "'Dynamic" => "'U"
 foldr-shortcut | arg 2 | "'Dynamic" => "'U"
 foldr-shortcut | arg 3 | "'Fn" => (:: "'Fn" ("{}" (:return "'Enum") (:args ("[]" "'U" "'T")) (:features ("#{}" :pass))))
 foldr-shortcut | return | "'Dynamic" => "'U"
-list? | arg 0 | "'Dynamic" => "'T"
-map? | arg 0 | "'Dynamic" => "'T"
-nil? | arg 0 | "'Dynamic" => "'T"
-number? | arg 0 | "'Dynamic" => "'T"
 parse-cirru-edn | arg 1 | "'Dynamic" => <missing>
 register-calcit-builtin-impls | missing core definition
-set? | arg 0 | "'Dynamic" => "'T"
-string? | arg 0 | "'Dynamic" => "'T"
-struct? | arg 0 | "'Dynamic" => "'T"
-symbol? | arg 0 | "'Dynamic" => "'T"
-tag? | arg 0 | "'Dynamic" => "'T"
 todo! | missing core definition
-turn-tag | arg 0 | "'Dynamic" => "'T"

@@ -678,6 +678,16 @@ if (!resultMethod.stdout.split("\n").some((line) => line.trim().endsWith(": (%::
   throw new Error(`strict core Result receiver method returned an unexpected value:\n${resultMethod.stdout}`);
 }
 
+const genericEnumCallback = run(["eval", `let
+    error $ assert-type (Result :err |oops) (Result Number String)
+  assert-type (error .map-err turn-tag) $ Result Number Tag`]);
+expectStatus(genericEnumCallback, 0, "first-class generic callback in an enum method");
+assert.match(genericEnumCallback.stdout, /:err :oops/);
+
+const incompatibleEnumCallback = run(["eval", ".map-err (Result :err |oops) inc"]);
+expectStatus(incompatibleEnumCallback, 1, "enum callback input mismatch");
+assert.match(incompatibleEnumCallback.stdout + incompatibleEnumCallback.stderr, /E_METHOD_ARG_TYPE_MISMATCH/);
+
 const openMerge = run([
   "eval",
   "count $ merge (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b 2)) (:: 'Map 'Tag 'Dynamic))",
