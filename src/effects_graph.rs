@@ -125,9 +125,6 @@ const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
   (CalcitProc::Todo, &["control"]),
   (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
   (CalcitProc::NativeLooseStruct, &[]),
-  (CalcitProc::NativeStructNth, &[]),
-  (CalcitProc::NativeStructFieldTag, &[]),
-  (CalcitProc::NativeStructAssocAt, &[]),
   (CalcitProc::NativeStructWithAt, &[]),
 ];
 

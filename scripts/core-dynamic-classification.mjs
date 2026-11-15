@@ -467,6 +467,13 @@ function classify(entry) {
       rationale: "联合类型成员以类型语法传入，复用预处理的联合类型成员校验。",
     };
   }
+  if (name === "&struct:assoc-at" || name === "&struct:nth") {
+    return {
+      owner: "runtime-primitives",
+      decision: "retain-reviewed",
+      rationale: "索引读取的返回类型随字段而变。写入时原语按实际结构体字段定义校验值。",
+    };
+  }
   if (name === "&struct-def:new") {
     return {
       owner: "runtime-internals",

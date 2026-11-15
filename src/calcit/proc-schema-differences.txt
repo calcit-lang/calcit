@@ -5,9 +5,6 @@
 &impl::new | missing core function schema
 &methods-of | missing core definition
 &str | missing core function schema
-&struct:assoc-at | missing core definition
-&struct:field-tag | missing core definition
-&struct:nth | missing core definition
 &struct:with-at | missing core definition
 &trait::new | missing core function schema
 &{} | missing core function schema
