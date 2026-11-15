@@ -2854,7 +2854,11 @@ fn generated_zero_arg_fn_schema(return_type: Arc<CalcitTypeAnnotation>, features
 }
 
 fn check_examples_schema() -> Arc<CalcitTypeAnnotation> {
-  generated_zero_arg_fn_schema(Arc::new(CalcitTypeAnnotation::Unit), HashSet::from([EdnTag::from("js-ffi")]))
+  // The generated runner prints a heading before each definition's examples.
+  generated_zero_arg_fn_schema(
+    Arc::new(CalcitTypeAnnotation::Unit),
+    HashSet::from([EdnTag::from("io"), EdnTag::from("js-ffi")]),
+  )
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
@@ -3080,7 +3084,7 @@ mod tests {
   }
 
   #[test]
-  fn examples_schema_is_strict_and_allows_js_ffi() {
+  fn examples_schema_declares_runner_output_and_js_ffi() {
     let generated_schema = check_examples_schema();
     let CalcitTypeAnnotation::Fn(schema) = generated_schema.as_ref() else {
       panic!("generated examples should use a function schema");
@@ -3088,6 +3092,7 @@ mod tests {
 
     assert_eq!(schema.arg_types, Vec::<Arc<CalcitTypeAnnotation>>::new());
     assert!(matches!(schema.return_type.as_ref(), CalcitTypeAnnotation::Unit));
+    assert!(schema.features.contains(&EdnTag::from("io")));
     assert!(schema.features.contains(&EdnTag::from("js-ffi")));
   }
 
