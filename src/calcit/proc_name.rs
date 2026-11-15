@@ -937,6 +937,9 @@ impl CalcitProc {
       | MonotonicTimeMs
       | GenerateId
       | Raise
+      | NativeStructAssocAt
+      | NativeStructFieldTag
+      | NativeStructNth
       | NativeLessThan
       | NativeGreaterThan
       | TurnTag => Some(self.signature_from_core(core)),
@@ -1016,10 +1019,6 @@ impl CalcitProc {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct-def"), variadic_dynamic()],
       }),
-      NativeStructAssocAt => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag"), dynamic_tag()],
-      }),
       NativeStructWithAt => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         // (struct, idx, tag, value, ...) — variadic triples after first arg
@@ -1030,14 +1029,6 @@ impl CalcitProc {
           dynamic_tag(),
           variadic_dynamic(),
         ],
-      }),
-      NativeStructNth => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("struct"), some_tag("number"), some_tag("tag")],
-      }),
-      NativeStructFieldTag => Some(ProcTypeSignature {
-        return_type: some_tag("tag"),
-        arg_types: vec![some_tag("struct"), some_tag("number")],
       }),
 
       // === I/O operations ===
