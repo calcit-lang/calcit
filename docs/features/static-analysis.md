@@ -1322,7 +1322,14 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
 
 集合辅助函数需要完整的元素类型合同，`assert-type` 只检查已有证明，不能把开放的 `Dynamic` 转换为可用于 `map` 的集合。
 
-普通函数返回 `Bool` 或与内建谓词同名，不会赋予它类型收窄能力；开放输入仍需真实的内建判别、受检 decoder 或具名数据契约。
+同步函数可在 schema 声明 `Fn Dynamic (-> Bool) (:guard Number)`，让调用者在谓词返回真的分支把第一个实参收窄到 `Number`。例如下面的 `numeric?` 可以使用该 schema。
+
+```cirru
+defn numeric? (x)
+  number? x
+```
+
+编译器在定义处检查所有返回真的路径能否证明第一个参数进入函数时的值符合声明。证据不足会报告 `E_PREDICATE_GUARD_UNPROVEN`。仅返回 `Bool` 或复用内建谓词的名字无法提供这项证明。
 
 项目提供自己的 `calcit.core` 时，namespace 名称不等于 bundled-core 来源；修改后的源代码谓词不自动继承 bundled-core 的收窄合同。
 
