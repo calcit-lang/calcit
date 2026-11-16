@@ -106,24 +106,36 @@ mod module_manifest_version_tests {
   }
 }
 
+pub fn core_snapshot() -> Result<&'static snapshot::Snapshot, String> {
+  static CORE_SNAPSHOT: std::sync::LazyLock<Result<snapshot::Snapshot, String>> = std::sync::LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
+    let mut snapshot = snapshot::decode_binary_snapshot(bytes).map_err(|e| {
+      eprintln!("\n{e}");
+      "Failed to deserialize core snapshot".to_string()
+    })?;
+    let path = "calcit-internal://calcit-core.cirru";
+    let meta_ns = format!("{}.$meta", snapshot.package);
+    let meta_file = snapshot::gen_meta_ns(&meta_ns, path);
+    snapshot.files.insert(meta_ns, meta_file);
+    Ok(snapshot)
+  });
+
+  CORE_SNAPSHOT.as_ref().map_err(Clone::clone)
+}
+
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
-  // load core libs
-  let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
-  let mut snapshot = snapshot::decode_binary_snapshot(bytes).map_err(|e| {
-    eprintln!("\n{e}");
-    "Failed to deserialize core snapshot".to_string()
-  })?;
-  let path = "calcit-internal://calcit-core.cirru";
-  let meta_ns = format!("{}.$meta", snapshot.package);
-  snapshot.files.insert(meta_ns.to_owned(), snapshot::gen_meta_ns(&meta_ns, path));
-  Ok(snapshot)
+  core_snapshot().cloned()
 }
 
 pub fn core_snapshot_revision() -> String {
-  let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
-  let mut hasher = Md5::new();
-  hasher.update(bytes);
-  format!("md5:{}", hex::encode(hasher.finalize()))
+  static CORE_REVISION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
+    let mut hasher = Md5::new();
+    hasher.update(bytes);
+    format!("md5:{}", hex::encode(hasher.finalize()))
+  });
+
+  CORE_REVISION.clone()
 }
 
 #[cfg(test)]
@@ -567,8 +579,7 @@ fn load_module_recursive(
             && previous != source
           {
             return Err(format!(
-              "namespace `{namespace}` has multiple JS resource owners: {:?} and {:?}",
-              previous, source
+              "namespace `{namespace}` has multiple JS resource owners: {previous:?} and {source:?}"
             ));
           }
         }

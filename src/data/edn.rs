@@ -63,7 +63,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       match &**tag {
         Symbol { sym, .. } => {
           if &**sym == "quote" {
-            let data = extra.first().ok_or(format!("quote expected 1 argument, got: {extra:?}"))?; // TODO more types to handle
+            let data = extra.first().ok_or_else(|| format!("quote expected 1 argument, got: {extra:?}"))?; // TODO more types to handle
             match cirru::calcit_data_to_cirru(data) {
               Ok(v) => Ok(Edn::Quote(v)),
               Err(e) => Err(format!("failed to create quote: {e}")), // TODO more types to handle
@@ -78,7 +78,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = struct_ref.name.arc_str();
-          Ok(match type_name.clone() {
+          Ok(match type_name {
             Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
             None => Edn::enum_value(variant, extra_values),
           })
@@ -89,7 +89,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = name.arc_str();
-          Ok(match type_name.clone() {
+          Ok(match type_name {
             Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
             None => Edn::enum_value(variant, extra_values),
           })
@@ -100,7 +100,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             extra_values.push(calcit_to_edn(item)?);
           }
           let variant = tag.arc_str();
-          Ok(match type_name.clone() {
+          Ok(match type_name {
             Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
             None => Edn::enum_value(variant, extra_values),
           })

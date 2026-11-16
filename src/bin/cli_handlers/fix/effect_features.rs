@@ -25,7 +25,7 @@ fn suggestion_diagnostic(added: &[&str]) -> &'static str {
     .into_iter()
     .filter(|feature| added.contains(feature))
     .find(|feature| program::configured_feature_policy(feature) != Some(calcit::snapshot::FeaturePolicy::Allow))
-    .unwrap_or(if added.contains(&"state") { "state" } else { "io" });
+    .unwrap_or_else(|| if added.contains(&"state") { "state" } else { "io" });
   feature_diagnostic(reported)
 }
 

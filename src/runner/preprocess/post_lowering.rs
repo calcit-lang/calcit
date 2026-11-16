@@ -31,7 +31,6 @@
 //! documented but not enforced yet: it needs per-node type slots.
 use super::*;
 use crate::calcit::CalcitErrProvenance;
-use std::sync::OnceLock;
 
 /// The rewrite point that produced a lowered node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,8 +74,8 @@ thread_local! {
 
 /// Whether the validation pass is switched on.
 pub(super) fn enabled() -> bool {
-  static ON: OnceLock<bool> = OnceLock::new();
-  *ON.get_or_init(|| std::env::var("CALCIT_LINT_CORE").is_ok_and(|value| value == "1"))
+  static ON: LazyLock<bool> = LazyLock::new(|| std::env::var("CALCIT_LINT_CORE").is_ok_and(|value| value == "1"));
+  *ON
 }
 
 /// Evidence frame of one definition; nested definitions compiled on demand get

@@ -78,7 +78,7 @@ fn canonical_destination(path: &Path) -> Result<PathBuf, String> {
   let parent = path
     .parent()
     .filter(|parent| !parent.as_os_str().is_empty())
-    .unwrap_or(Path::new("."));
+    .unwrap_or_else(|| Path::new("."));
   let parent =
     fs::canonicalize(parent).map_err(|error| format!("Failed to resolve Snapshot directory '{}': {error}", parent.display()))?;
   let name = path
@@ -119,9 +119,12 @@ impl SnapshotWriteGuard {
     if fs::symlink_metadata(&destination).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
       return Err("Cannot mutate Snapshot: symbolic-link destinations are not supported.".to_owned());
     }
-    let directory = destination.parent().unwrap().join(".calcit");
+    let directory = destination.parent().unwrap_or_else(|| Path::new(".")).join(".calcit");
     fs::create_dir_all(&directory).map_err(|error| format!("Failed to create Snapshot lock directory: {error}"))?;
-    let mut name = destination.file_name().unwrap().to_os_string();
+    let mut name = destination
+      .file_name()
+      .ok_or_else(|| format!("Cannot lock Snapshot path without file name: '{}'", destination.display()))?
+      .to_os_string();
     name.push(".lock");
     let lock = WriterLock::acquire(&directory.join(name), Duration::from_secs(5))?;
     let initial = revision(&destination)?;
@@ -147,10 +150,10 @@ impl Drop for SnapshotWriteState {
 
 fn verify_revision(destination: &Path) -> Result<(), String> {
   let path = canonical_destination(destination)?;
-  let matches = match active_writer(&path) {
-    Some(state) => revision(&path)? == *state.revision.borrow(),
-    None => true,
-  };
+  let matches = active_writer(&path)
+    .map(|state| Ok::<bool, String>(revision(&path)? == *state.revision.borrow()))
+    .transpose()?
+    .unwrap_or(true);
   if !matches {
     return Err(format!(
       "Snapshot revision mismatch for '{}': source changed during this operation. No changes were committed; re-read the Snapshot and retry.",
@@ -247,7 +250,7 @@ pub fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Res
       ));
     }
   };
-  let parent = destination.parent().unwrap_or(Path::new("."));
+  let parent = destination.parent().unwrap_or_else(|| Path::new("."));
   fs::create_dir_all(parent)
     .map_err(|error| format!("Failed to create directory '{}' for staged {label}: {error}", parent.display()))?;
   let nonce = SystemTime::now()
@@ -259,7 +262,9 @@ pub fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Res
   fs::create_dir_all(&lock_directory).map_err(|error| format!("Failed to create atomic writer lock directory: {error}"))?;
   let canonical = canonical_destination(destination)?;
   // Native names preserve the filesystem's case-folding identity for aliases.
-  let mut lock_name = destination.file_name().unwrap().to_os_string();
+  let mut lock_name = destination
+    .file_name()
+    .map_or_else(|| std::ffi::OsString::from("calcit-state"), |value| value.to_os_string());
   lock_name.push(".lock");
   let lock = lock_directory.join(lock_name);
   let lock = WriterLock::acquire(&lock, Duration::ZERO)?;
@@ -481,9 +486,8 @@ mod tests {
     let link = fixture.path().join("snapshot-link.cirru");
     std::os::unix::fs::symlink(&path, &link).expect("symbolic link should create");
 
-    let error = match stage_atomic_file(&link, b"replacement", "test state") {
-      Ok(_) => panic!("symbolic link destination should be rejected"),
-      Err(error) => error,
+    let Err(error) = stage_atomic_file(&link, b"replacement", "test state") else {
+      panic!("symbolic link destination should be rejected")
     };
     assert!(error.contains("symbolic-link destinations are not supported"), "error: {error}");
   }

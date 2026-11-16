@@ -3462,10 +3462,12 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
         let inferred = xs.get(2).and_then(infer_data_type);
         let explicit = explicit_data_schema(entry.schema.as_ref());
         let data_type = inferred.or_else(|| explicit.as_ref().map(|(data_type, _)| data_type.clone()));
-        let level = explicit.map(|(_, level)| level).unwrap_or(if data_type.is_some() {
-          CoverageLevel::Full
-        } else {
-          CoverageLevel::None
+        let level = explicit.map(|(_, level)| level).unwrap_or_else(|| {
+          if data_type.is_some() {
+            CoverageLevel::Full
+          } else {
+            CoverageLevel::None
+          }
         });
         (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), data_type, level)
       }

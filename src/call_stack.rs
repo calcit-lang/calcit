@@ -182,7 +182,7 @@ pub fn display_stack_with_docs(
     .unwrap_or_else(|| String::from(crate::calcit::CORE_NS));
 
   stack_rows.sort_by_key(|(idx, s, loc)| {
-    let ns_for_priority = loc.as_ref().map(|l| l.ns.as_ref()).unwrap_or(s.ns.as_ref());
+    let ns_for_priority = loc.as_ref().map(|l| l.ns.as_ref()).unwrap_or_else(|| s.ns.as_ref());
     let priority = if root_ns(ns_for_priority) == current_package {
       0
     } else if is_calcit_ns(ns_for_priority) {
@@ -368,7 +368,7 @@ fn find_stack_examples(stack: &CallStackList) -> Option<(String, String, Vec<Str
       let mut rendered = vec![];
       for example in examples.iter().take(2) {
         rendered.push(match cirru_parser::format_expr_one_liner(example) {
-          Ok(v) => v.to_string(),
+          Ok(v) => v,
           Err(_) => example.to_string(),
         });
       }
@@ -386,7 +386,7 @@ fn lookup_macro_examples_target(item: &CalcitStack) -> Option<(String, String, V
     let mut rendered = vec![];
     for example in examples.iter().take(2) {
       rendered.push(match cirru_parser::format_expr_one_liner(example) {
-        Ok(v) => v.to_string(),
+        Ok(v) => v,
         Err(_) => example.to_string(),
       });
     }

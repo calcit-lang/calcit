@@ -534,13 +534,13 @@ impl TryFrom<Edn> for DetailedSnapshot {
               }
             }
             "entries" => {
-              entries = value.to_owned();
+              value.clone_into(&mut entries);
             }
             "files" => {
               files = parse_detailed_files(value, "DetailedSnapshot/:files")?;
             }
             "users" => {
-              users = value.to_owned();
+              value.clone_into(&mut users);
             }
             _ => {}
           }

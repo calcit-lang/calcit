@@ -154,18 +154,29 @@ fn desugar_definition_member(head: &str, items: &mut [Cirru], quote_bare: &impl 
   Ok(changed)
 }
 
-pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
-  code_to_calcit_in(xs, ns, def, coord, false)
+#[inline]
+fn is_cirru_leaf(node: &Cirru, expected: &str) -> bool {
+  matches!(node, Cirru::Leaf(s) if &**s == expected)
+}
+
+pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, mut coord: Vec<u16>) -> Result<Calcit, String> {
+  let at_ns: Arc<str> = Arc::from(ns);
+  let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
+    at_ns: Arc::clone(&at_ns),
+    at_def: Arc::from(def),
+  });
+  code_to_calcit_in(xs, &at_ns, &symbol_info, &mut coord, false)
 }
 
 /// `in_quote` marks a subtree under `quote`: it is data, so a `hint-fn` list
 /// there keeps its written shape.
-fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote: bool) -> Result<Calcit, String> {
-  let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
-    at_ns: Arc::from(ns),
-    at_def: Arc::from(def),
-  });
-  let coord = Arc::from(coord);
+fn code_to_calcit_in(
+  xs: &Cirru,
+  ns: &Arc<str>,
+  symbol_info: &Arc<crate::calcit::CalcitSymbolInfo>,
+  coord: &mut Vec<u16>,
+  in_quote: bool,
+) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -177,28 +188,28 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
       "&newline" => Ok(Calcit::new_str("\n")),
       "&tab" => Ok(Calcit::new_str("\t")),
       "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
-      "&" => Ok(Calcit::Syntax(CalcitSyntax::ArgSpread, ns.into())),
-      "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, ns.into())),
-      "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
-      "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
-      "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
-      "defwasm-export" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmExport, ns.into())),
-      "defwasm-import" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmImport, ns.into())),
-      "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
-      "js-cast" => Ok(Calcit::Syntax(CalcitSyntax::JsCast, ns.into())),
-      "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, ns.into())),
-      "try-parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, ns.into())),
-      "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, ns.into())),
-      "try-decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, ns.into())),
-      "encode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::EncodeMapAs, ns.into())),
-      "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, ns.into())),
+      "&" => Ok(Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::clone(ns))),
+      "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, Arc::clone(ns))),
+      "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, Arc::clone(ns))),
+      "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, Arc::clone(ns))),
+      "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, Arc::clone(ns))),
+      "defwasm-export" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmExport, Arc::clone(ns))),
+      "defwasm-import" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmImport, Arc::clone(ns))),
+      "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, Arc::clone(ns))),
+      "js-cast" => Ok(Calcit::Syntax(CalcitSyntax::JsCast, Arc::clone(ns))),
+      "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, Arc::clone(ns))),
+      "try-parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, Arc::clone(ns))),
+      "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, Arc::clone(ns))),
+      "try-decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, Arc::clone(ns))),
+      "encode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::EncodeMapAs, Arc::clone(ns))),
+      "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, Arc::clone(ns))),
       "" => Err(String::from("Empty string is invalid")),
       // anonymous enum constructor syntax
       "::" => Ok(Calcit::Proc(CalcitProc::NativeEnum)),
       // loose struct syntax (struct without a declared name)
       "?{}" => Ok(Calcit::Proc(CalcitProc::NativeLooseStruct)),
       _ => match s.chars().next().expect("load first char") {
-        ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
+        ':' if s.len() > 1 && s.as_bytes()[1] != b':' => Ok(Calcit::tag(&s[1..])),
         '.' => {
           if let Some(stripped) = s.strip_prefix(".-") {
             Ok(Calcit::Method(stripped.into(), MethodKind::Access))
@@ -210,7 +221,7 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
             Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNativeOptional))
           } else {
             Ok(Calcit::Method(
-              s[1..].to_owned().into(),
+              Arc::from(&s[1..]),
               MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone()),
             ))
           }
@@ -221,42 +232,45 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
           Err(e) => Err(format!("failed to parse hex: {s} => {e:?}")),
         },
         '\'' if s.len() > 1 => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Syntax(CalcitSyntax::Quote, ns.into()),
+          Calcit::Syntax(CalcitSyntax::Quote, Arc::clone(ns)),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: Arc::clone(&symbol_info),
-            location: Some(Arc::clone(&coord)),
+            info: Arc::clone(symbol_info),
+            location: Some(Arc::new(coord.clone())),
           },
         ]))),
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
+        '~' if s.starts_with("~@") && s.len() > 2 => Ok(Calcit::from(CalcitList::from(&[
+          Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, Arc::clone(ns)),
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: Arc::clone(&symbol_info),
-            location: Some(Arc::clone(&coord)),
+            info: Arc::clone(symbol_info),
+            location: Some(Arc::new(coord.clone())),
           },
         ]))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into()),
+        '~' if s.len() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
+          Calcit::Syntax(CalcitSyntax::MacroInterpolate, Arc::clone(ns)),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: Arc::clone(&symbol_info),
-            location: Some(Arc::clone(&coord)),
+            info: Arc::clone(symbol_info),
+            location: Some(Arc::new(coord.clone())),
           },
         ]))),
-        '@' => Ok(Calcit::from(CalcitList::from(&[
-          // `deref` expands to `.deref` or `&atom:deref`
-          Calcit::Symbol {
-            sym: Arc::from("deref"),
-            info: Arc::clone(&symbol_info),
-            location: Some(Arc::clone(&coord)),
-          },
-          Calcit::Symbol {
-            sym: Arc::from(&s[1..]),
-            info: Arc::clone(&symbol_info),
-            location: Some(Arc::clone(&coord)),
-          },
-        ]))),
+        '@' => {
+          let loc = Arc::new(coord.clone());
+          Ok(Calcit::from(CalcitList::from(&[
+            // `deref` expands to `.deref` or `&atom:deref`
+            Calcit::Symbol {
+              sym: Arc::from("deref"),
+              info: Arc::clone(symbol_info),
+              location: Some(Arc::clone(&loc)),
+            },
+            Calcit::Symbol {
+              sym: Arc::from(&s[1..]),
+              info: Arc::clone(symbol_info),
+              location: Some(loc),
+            },
+          ])))
+        }
         // TODO future work of reader literal expanding
         _ => {
           if let Ok(p) = s.parse::<CalcitProc>() {
@@ -266,8 +280,8 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: Arc::clone(&symbol_info),
-              location: Some(Arc::clone(&coord)),
+              info: Arc::clone(symbol_info),
+              location: Some(Arc::new(coord.clone())),
             })
           }
         }
@@ -276,16 +290,16 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
     Cirru::List(ys) => {
       if !in_quote && let Some(schema) = desugar_compact_hint_fn(ys) {
         let schema = schema?;
-        let mut rewritten = ys.to_owned();
+        let mut rewritten = ys.clone();
         let last = rewritten.len() - 1;
         rewritten[last] = schema;
-        return code_to_calcit_in(&Cirru::List(rewritten), ns, def, coord.to_vec(), in_quote);
+        return code_to_calcit_in(&Cirru::List(rewritten), ns, symbol_info, coord, in_quote);
       }
       if !in_quote && let Some(rewritten) = desugar_compact_definition_types(ys) {
-        return code_to_calcit_in(&Cirru::List(rewritten?), ns, def, coord.to_vec(), in_quote);
+        return code_to_calcit_in(&Cirru::List(rewritten?), ns, symbol_info, coord, in_quote);
       }
-      let child_in_quote = in_quote || ys.first() == Some(&Cirru::leaf("quote"));
-      let mut zs: Vec<Calcit> = vec![];
+      let child_in_quote = in_quote || ys.first().is_some_and(|head| is_cirru_leaf(head, "quote"));
+      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for (idx, y) in ys.iter().enumerate() {
         if idx > 65535 {
           return Err(format!("Cirru code too large, index: {idx}"));
@@ -294,31 +308,32 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
         if let Cirru::List(ys) = y
           && ys.len() > 1
         {
-          if ys[0] == Cirru::leaf(";") {
+          if is_cirru_leaf(&ys[0], ";") {
             continue;
           }
-          if ys[0] == Cirru::leaf("cirru-quote") {
+          if is_cirru_leaf(&ys[0], "cirru-quote") {
             // special rule for Cirru code
             if ys.len() == 2 {
-              zs.push(Calcit::CirruQuote(ys[1].to_owned()));
+              zs.push(Calcit::CirruQuote(ys[1].clone()));
               continue;
             }
             return Err(format!("expected 1 argument, got: {ys:?}"));
           }
         }
-        let mut next_coord: Vec<u16> = (*coord).to_owned();
-        next_coord.push(idx as u16); // clamp to prevent overflow, code not supposed to be larger than 65536 children
+        coord.push(idx as u16); // clamp to prevent overflow, code not supposed to be larger than 65536 children
 
         if let Cirru::Leaf(s) = y {
           // dirty hack to support shorthand of method calling,
           // this feature is EXPERIMENTAL and might change in future
           if let Some((obj, method)) = split_leaf_to_method_call(s) {
+            let loc = Some(Arc::new(coord.clone()));
+            coord.pop();
             if idx == 0 {
               zs.push(method);
               zs.push(Calcit::Symbol {
                 sym: Arc::from(obj),
-                info: Arc::clone(&symbol_info),
-                location: Some(next_coord.to_owned().into()),
+                info: Arc::clone(symbol_info),
+                location: loc,
               });
               continue;
             } else {
@@ -327,8 +342,8 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
                 method,
                 Calcit::Symbol {
                   sym: Arc::from(obj),
-                  info: Arc::clone(&symbol_info),
-                  location: Some(next_coord.to_owned().into()),
+                  info: Arc::clone(symbol_info),
+                  location: loc,
                 },
               ])));
               continue;
@@ -336,7 +351,9 @@ fn code_to_calcit_in(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>, in_quote:
           }
         }
 
-        zs.push(code_to_calcit_in(y, ns, def, next_coord, child_in_quote)?);
+        let res = code_to_calcit_in(y, ns, symbol_info, coord, child_in_quote);
+        coord.pop();
+        zs.push(res?);
       }
       Ok(Calcit::from(CalcitList::Vector(zs)))
     }
@@ -352,7 +369,7 @@ pub fn reader_child_source_indexes(ys: &[Cirru]) -> Vec<usize> {
   for (idx, y) in ys.iter().enumerate() {
     if let Cirru::List(zs) = y
       && zs.len() > 1
-      && zs[0] == Cirru::leaf(";")
+      && is_cirru_leaf(&zs[0], ";")
     {
       continue;
     }
@@ -400,25 +417,22 @@ pub fn source_path_to_reader_path(code: &Cirru, path: &[usize]) -> Option<Vec<us
 
 /// split `a.b` into `.b` and `a`, `a.-b` into `.-b` and `a`, `a.!b` into `.!b` and `a`, etc.
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
-fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
-  let prefixes = [
-    (".:", MethodKind::TagAccess),
-    (".-", MethodKind::Access),
-    (".!", MethodKind::InvokeNative),
-    (".", MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone())),
-  ];
-
-  for (prefix, kind) in prefixes.iter() {
+fn split_leaf_to_method_call(s: &str) -> Option<(&str, Calcit)> {
+  if s.len() < 3 || !s.as_bytes()[1..].contains(&b'.') {
+    return None;
+  }
+  for (prefix, kind) in [
+    (".:", Some(MethodKind::TagAccess)),
+    (".-", Some(MethodKind::Access)),
+    (".!", Some(MethodKind::InvokeNative)),
+    (".", None),
+  ] {
     if let Some((obj, method)) = s.split_once(prefix)
       && is_valid_symbol(obj)
       && is_valid_symbol(method)
     {
-      let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
-        MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone())
-      } else {
-        kind.to_owned()
-      };
-      return Some((obj.to_owned(), Calcit::Method(method.into(), method_kind)));
+      let method_kind = kind.unwrap_or_else(|| MethodKind::Invoke(crate::calcit::DYNAMIC_TYPE.clone()));
+      return Some((obj, Calcit::Method(method.into(), method_kind)));
     }
   }
 

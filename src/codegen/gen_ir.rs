@@ -134,7 +134,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str, options: IrEmitO
 
   let js_file_path = code_emit_path.join("program-ir.cirru");
   fs::write(&js_file_path, content).map_err(|e| format!("failed to write IR artifact {}: {e}", js_file_path.display()))?;
-  println!("wrote to: {}", js_file_path.to_str().expect("extract path"));
+  println!("wrote to: {}", js_file_path.display());
 
   Ok(())
 }

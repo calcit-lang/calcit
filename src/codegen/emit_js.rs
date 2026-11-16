@@ -819,8 +819,7 @@ fn gen_call_code(
             let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
             gen_stack::pop_call_stack();
             Ok(format!(
-              "\n({}peekDefatom({}) ?? {}defatom({}, {value_code}))\n",
-              var_prefix, ref_path, var_prefix, ref_path
+              "\n({var_prefix}peekDefatom({ref_path}) ?? {var_prefix}defatom({ref_path}, {value_code}))\n"
             ))
           }
           (_, _) => Err(format!("defref expected name and value, got: {body}")),
@@ -1784,10 +1783,10 @@ fn gen_let_code(
               break;
             }
           }
-          _ => return Err(format!("Expected symbol in &let binding, got: {}", pair)),
+          _ => return Err(format!("Expected symbol in &let binding, got: {pair}")),
         }
       }
-      Calcit::List(_xs) => return Err(format!("expected pair of length 2, got: {}", pair)),
+      Calcit::List(_xs) => return Err(format!("expected pair of length 2, got: {pair}")),
       _ => return Err(format!("expected pair of a list of length 2, got: {pair}")),
     }
   }
@@ -3599,7 +3598,7 @@ mod tests {
     let idx = CalcitLocal::track_sym(&sym);
     let args = CalcitFnArgs::MarkedArgs(vec![CalcitArgLabel::RestMark, CalcitArgLabel::Idx(idx)]);
     let raw_body = vec![Calcit::Symbol {
-      sym: sym.clone(),
+      sym,
       info: Arc::new(CalcitSymbolInfo {
         at_ns: Arc::from("tests.emit-js"),
         at_def: Arc::from("demo"),

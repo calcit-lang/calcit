@@ -3520,7 +3520,7 @@ impl CalcitTypeAnnotation {
       None => hinted.clone(),
     };
     if !present("args") {
-      merged.arg_types = declared.arg_types.clone();
+      merged.arg_types.clone_from(&declared.arg_types);
     }
     if !present("return") {
       merged.return_type = declared.return_type.clone();
@@ -3532,7 +3532,7 @@ impl CalcitTypeAnnotation {
       merged.where_bounds = declared.where_bounds.clone();
     }
     if !present("rest") {
-      merged.rest_type = declared.rest_type.clone();
+      merged.rest_type.clone_from(&declared.rest_type);
     }
     if !present("kind") {
       merged.fn_kind = declared.fn_kind;
@@ -4120,10 +4120,7 @@ impl CalcitTypeAnnotation {
       !is_dynamic_annotation(ann) && !is_trait_annotation(ann)
     }
 
-    let list = match form {
-      Calcit::List(xs) => xs,
-      _ => return,
-    };
+    let Calcit::List(list) = form else { return };
 
     if let Some((target, trait_forms)) = Self::extract_assert_traits_args(list) {
       let sym = match target {
@@ -6138,13 +6135,12 @@ impl CalcitTypeAnnotation {
       }
       // Expand a shared binding on both sides before entering the recursion
       // guard, so an acyclic slot is not mistaken for its own recursive alias.
-      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
-        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => resolve_type_slot(actual).is_none_or(|resolved| {
+        with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
           resolved.compatible_with_bindings(resolved.as_ref(), bindings)
         })
-        .unwrap_or(false),
-        None => true,
-      },
+        .unwrap_or(false)
+      }),
       // TypeSlot: resolve the bound type from the global registry and delegate,
       // keeping the slot on its own side of the relation.
       (Self::TypeSlot(name), other) => {
@@ -7815,7 +7811,7 @@ mod tests {
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![variable.clone()],
-      return_type: variable.clone(),
+      return_type: variable,
       fn_kind: SchemaKind::Fn,
       rest_type: None,
       features: Arc::new(HashSet::new()),
@@ -8085,7 +8081,7 @@ mod tests {
     ));
     assert!(same_data_schema_annotation(
       &CalcitTypeAnnotation::Struct(Arc::new(node.clone()), Arc::new(vec![type_var.clone()])),
-      &CalcitTypeAnnotation::Struct(Arc::new(node), Arc::new(vec![type_var.clone()]))
+      &CalcitTypeAnnotation::Struct(Arc::new(node), Arc::new(vec![type_var]))
     ));
 
     let substituted = tree_ref.substitute_type_vars(&HashMap::from([(Arc::from("T"), Arc::new(CalcitTypeAnnotation::Number))]));
@@ -8443,7 +8439,7 @@ mod tests {
       (CalcitTypeAnnotation::List(dynamic.clone()), "&core-list-impls"),
       (CalcitTypeAnnotation::Map(dynamic.clone(), dynamic.clone()), "&core-map-impls"),
       (CalcitTypeAnnotation::Set(dynamic.clone()), "&core-set-impls"),
-      (CalcitTypeAnnotation::Ref(dynamic.clone()), "&core-ref-impls"),
+      (CalcitTypeAnnotation::Ref(dynamic), "&core-ref-impls"),
       (CalcitTypeAnnotation::String, "&core-string-impls"),
       (CalcitTypeAnnotation::Number, "&core-number-impls"),
       (CalcitTypeAnnotation::DynFn, "&core-fn-impls"),
@@ -8774,7 +8770,7 @@ mod tests {
 
     for capability in [
       CalcitTypeAnnotation::Trait(greeting.clone()),
-      CalcitTypeAnnotation::TraitSet(Arc::new(vec![greeting.clone(), unrelated.clone()])),
+      CalcitTypeAnnotation::TraitSet(Arc::new(vec![greeting.clone(), unrelated])),
     ] {
       let capabilities = Arc::new(HashMap::from([(caller_name.clone(), Arc::new(capability))]));
       let mut proof = CallTypeProof::default().with_caller_capabilities(Some(capabilities.clone()));
@@ -9203,7 +9199,7 @@ mod tests {
     let enum_type = CalcitTypeAnnotation::from_tag_name("Enum");
     assert!(result_value.prove_with_bindings(&enum_type, &mut TypeBindings::new()).is_proven());
     assert!(!result_def.prove_with_bindings(&enum_type, &mut TypeBindings::new()).is_proven());
-    let named_result_value = CalcitTypeAnnotation::Enum(result.clone(), Arc::new(vec![]));
+    let named_result_value = CalcitTypeAnnotation::Enum(result, Arc::new(vec![]));
     assert!(
       named_result_value
         .prove_with_bindings(&enum_type, &mut TypeBindings::new())
@@ -9215,7 +9211,7 @@ mod tests {
 
     let person_definition = Calcit::StructDef(person.as_ref().clone());
     let person_instance = Calcit::Struct(CalcitStructValue {
-      struct_ref: person.clone(),
+      struct_ref: person,
       values: Arc::new(vec![Calcit::Str(Arc::from("Ada"))]),
     });
     assert!(value_matches_type_annotation(&person_definition, &person_def));
@@ -9355,7 +9351,7 @@ mod tests {
     let key = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("K")));
     let value = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("V")));
     let number = Arc::new(CalcitTypeAnnotation::Number);
-    let returned_map = CalcitTypeAnnotation::Map(key.clone(), value.clone());
+    let returned_map = CalcitTypeAnnotation::Map(key.clone(), value);
     let mut proof = CallTypeProof::new(
       &[Arc::from("K"), Arc::from("V")],
       std::slice::from_ref(&key),
@@ -9461,7 +9457,7 @@ mod tests {
     }
 
     let caller = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Caller")));
-    for actual in [[caller.clone(), number.clone()], [number.clone(), caller.clone()]] {
+    for actual in [[caller.clone(), number.clone()], [number.clone(), caller]] {
       let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &actual);
       proof.prepare_inputs(actual.iter().map(|actual| (actual.as_ref(), t.as_ref())));
       assert!(actual.iter().any(|actual| !proof.prove(actual, &t).is_proven()));
@@ -9840,7 +9836,7 @@ mod tests {
   fn extracts_return_type_from_schema_first_hint() {
     let ns: Arc<str> = Arc::from("tests");
     let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::HintFn, ns.clone()),
+      Calcit::Syntax(CalcitSyntax::HintFn, ns),
       Calcit::List(Arc::new(CalcitList::from(&[
         symbol("{}"),
         Calcit::List(Arc::new(CalcitList::from(&[
@@ -9908,7 +9904,7 @@ mod tests {
       symbol("defn"),
       symbol("sample"),
       Calcit::from(vec![]),
-      definition_hint.clone(),
+      definition_hint,
       Calcit::Number(7.0),
     ]);
     assert!(CalcitTypeAnnotation::function_form_marks_async(&named));
@@ -9988,7 +9984,7 @@ mod tests {
   fn extracts_generics_from_schema_first_hint() {
     let ns: Arc<str> = Arc::from("tests");
     let hint_form = Calcit::List(Arc::new(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::HintFn, ns.clone()),
+      Calcit::Syntax(CalcitSyntax::HintFn, ns),
       Calcit::List(Arc::new(CalcitList::from(&[
         symbol("{}"),
         Calcit::List(Arc::new(CalcitList::from(&[
@@ -10225,8 +10221,8 @@ mod tests {
       vec![
         symbol("::"),
         Calcit::Tag(EdnTag::from("fn")),
-        Calcit::List(Arc::new(CalcitList::from(vec![symbol("[]"), type_var_a.clone()].as_slice()))),
-        type_var_b.clone(),
+        Calcit::List(Arc::new(CalcitList::from(vec![symbol("[]"), type_var_a].as_slice()))),
+        type_var_b,
       ]
       .as_slice(),
     )));
@@ -10373,7 +10369,7 @@ mod tests {
     let generics = Calcit::List(Arc::new(CalcitList::from(&[symbol("[]"), symbol("T")])));
     let where_map = Calcit::List(Arc::new(CalcitList::from(&[
       symbol("{}"),
-      Calcit::List(Arc::new(CalcitList::from(&[symbol("T"), Calcit::Trait(show_trait.clone())]))),
+      Calcit::List(Arc::new(CalcitList::from(&[symbol("T"), Calcit::Trait(show_trait)]))),
     ])));
     let schema_map = Calcit::List(Arc::new(CalcitList::from(&[
       symbol("{}"),
@@ -10705,7 +10701,7 @@ mod tests {
       impls: vec![],
     });
     let actual = CalcitTypeAnnotation::Struct(
-      pair.clone(),
+      pair,
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
     );
     let expected = CalcitTypeAnnotation::TypeRef(Arc::from("Pair"), Arc::new(vec![]));
@@ -10744,7 +10740,7 @@ mod tests {
   fn matching_named_enum_ref_binds_generic_args_from_enum_annotation() {
     let result = generic_result_enum();
     let actual = CalcitTypeAnnotation::Enum(
-      result.clone(),
+      result,
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
     );
     let expected = CalcitTypeAnnotation::TypeRef(Arc::from("Result"), Arc::new(vec![]));
@@ -10871,7 +10867,7 @@ mod tests {
       Arc::new(CalcitTypeAnnotation::Number),
       NullableOrigin::JsHost,
     ));
-    push_type_slot_override(slot_name.clone(), js_nullish_number.clone());
+    push_type_slot_override(slot_name.clone(), js_nullish_number);
     let slot = CalcitTypeAnnotation::TypeSlot(slot_name.clone());
     let mut bindings = TypeBindings::new();
     // `Number` fits a slot bound to `JsNullish<Number>`, not the other way round.
@@ -10918,7 +10914,7 @@ mod tests {
     let callee: Arc<str> = Arc::from("Op");
     let caller = CalcitTypeAnnotation::TypeVar(Arc::from("P"));
     let expected = callback(CalcitTypeAnnotation::TypeVar(callee.clone()));
-    let actual = callback(caller.clone());
+    let actual = callback(caller);
 
     let mut proof = CallTypeProof::new(
       std::slice::from_ref(&callee),
@@ -10938,7 +10934,7 @@ mod tests {
 
     // An open value transported through Op must not erase the relation to P,
     // so a later concrete argument for Op is still rejected.
-    let op = CalcitTypeAnnotation::TypeVar(callee.clone());
+    let op = CalcitTypeAnnotation::TypeVar(callee);
     assert!(proof.prove(&CalcitTypeAnnotation::Dynamic, &op).is_proven());
     assert!(!proof.prove(&CalcitTypeAnnotation::Number, &op).is_proven());
     assert_eq!(proof.result(&expected).as_deref(), Some(actual.as_ref()));
@@ -11320,7 +11316,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let actual = CalcitTypeAnnotation::from_function_parts(
       vec![number.clone(), Arc::new(CalcitTypeAnnotation::Variadic(number.clone()))],
-      number.clone(),
+      number,
     );
     let expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
@@ -11532,12 +11528,9 @@ mod tests {
     // Open element types accept any content.
     assert!(value_matches_type_annotation(&mixed, &T::List(Arc::new(T::Dynamic))));
     // Nested containers are checked to the leaves.
-    let nested = T::List(Arc::new(numbers.clone()));
+    let nested = T::List(Arc::new(numbers));
     assert!(value_matches_type_annotation(&Calcit::from(vec![good.clone()]), &nested));
-    assert!(!value_matches_type_annotation(
-      &Calcit::from(vec![good.clone(), mixed.clone()]),
-      &nested
-    ));
+    assert!(!value_matches_type_annotation(&Calcit::from(vec![good, mixed]), &nested));
 
     let tag_numbers = T::Map(Arc::new(T::Tag), Arc::new(T::Number));
     let entries = |value: Calcit| Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::tag("a"), value));
@@ -11565,7 +11558,7 @@ mod tests {
     let callables = Calcit::from(vec![Calcit::tag("name")]);
     assert!(value_matches_type_annotation(&callables, &T::List(Arc::new(T::DynFn))));
     assert!(value_matches_type_annotation(
-      &Calcit::from(vec![callables.clone()]),
+      &Calcit::from(vec![callables]),
       &T::List(Arc::new(T::List(Arc::new(T::DynFn))))
     ));
     // The nested container still has to be a list, and map keys are still checked.
@@ -11636,7 +11629,7 @@ mod tests {
     assert!(code_declares_data_definition(&defstruct));
     assert!(code_declares_data_definition(&list(vec![symbol("defenum"), symbol("Shape")])));
     assert!(code_declares_data_definition(&list(vec![symbol("defunion"), symbol("Value")])));
-    let wrapped = list(vec![symbol("impl-traits"), defstruct.clone(), symbol("ShowPoint")]);
+    let wrapped = list(vec![symbol("impl-traits"), defstruct, symbol("ShowPoint")]);
     assert!(code_declares_data_definition(&wrapped), "impl-traits keeps the data definition");
     let quoted = list(vec![symbol("quote"), list(vec![symbol("def"), symbol("Point"), wrapped])]);
     assert!(code_declares_data_definition(&quoted), "quote and def wrappers are peeled");

@@ -19,12 +19,12 @@ where
   D: serde::Deserializer<'de>,
 {
   let value = Edn::deserialize(deserializer)?;
-  let mode = match value {
-    Edn::Tag(tag) => tag.ref_str().to_owned(),
-    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':').to_owned(),
+  let mode = match &value {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
     other => return Err(serde::de::Error::custom(format!("expected :native or :js, got {other:?}"))),
   };
-  match mode.as_str() {
+  match mode {
     "native" => Ok(SnapshotRunMode::Native),
     "js" => Ok(SnapshotRunMode::Js),
     _ => Err(serde::de::Error::custom(format!("expected :native or :js, got {mode}"))),
@@ -75,6 +75,8 @@ pub struct CodeEntry {
   pub code: Cirru,
   #[serde(default)]
   pub schema: Option<Edn>,
+  #[serde(default)]
+  pub ffi: Option<Edn>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,15 +145,20 @@ fn parse_snapshot_identifier_key(value: &Edn, owner: &str) -> Result<String, Str
 }
 
 fn insert_snapshot_identifier<T>(target: &mut HashMap<String, T>, name: String, value: T, owner: &str) -> Result<(), String> {
-  if target.insert(name.clone(), value).is_some() {
-    return Err(format!(
-      "{owner}: duplicate snapshot identifier `{name}` after normalizing String/Symbol keys"
-    ));
+  use std::collections::hash_map::Entry;
+  match target.entry(name) {
+    Entry::Occupied(entry) => Err(format!(
+      "{owner}: duplicate snapshot identifier `{}` after normalizing String/Symbol keys",
+      entry.key()
+    )),
+    Entry::Vacant(entry) => {
+      entry.insert(value);
+      Ok(())
+    }
   }
-  Ok(())
 }
 
-fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
+fn parse_snapshot_entry(data: &Edn) -> Result<SnapshotEntry, String> {
   let map = data.view_map().map_err(|e| format!("entry must be a map: {e}"))?;
   let ns_def = |key: &str| match map.get_or_nil(key) {
     Edn::Str(text) | Edn::Symbol(text) => Ok(text.to_string()),
@@ -175,7 +182,7 @@ fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
     type_slots: from_edn(map.get_or_nil("type-slots")).map_err(|e| format!("entry `:type-slots`: {e}"))?,
     feature_policy: match map.get_or_nil("feature-policy") {
       Edn::Nil => HashMap::new(),
-      value => parse_feature_policy(value)?,
+      value => parse_feature_policy(&value)?,
     },
     target: match map.get_or_nil("target") {
       Edn::Nil => None,
@@ -184,43 +191,35 @@ fn parse_snapshot_entry(data: Edn) -> Result<SnapshotEntry, String> {
   })
 }
 
-fn parse_feature_policy(data: Edn) -> Result<HashMap<String, String>, String> {
+fn parse_feature_policy(data: &Edn) -> Result<HashMap<String, String>, String> {
   let map = data.view_map().map_err(|e| format!("entry `:feature-policy` must be a map: {e}"))?;
   let text = |value: &Edn| match value {
     Edn::Tag(tag) => Ok(tag.ref_str().to_owned()),
-    Edn::Str(value) | Edn::Symbol(value) => Ok(value.to_string().trim_start_matches(':').to_owned()),
+    Edn::Str(value) | Edn::Symbol(value) => Ok(value.trim_start_matches(':').to_owned()),
     other => Err(format!("entry `:feature-policy` expects tag/string/symbol values, got {other:?}")),
   };
   map.0.iter().map(|(key, value)| Ok((text(key)?, text(value)?))).collect()
 }
 
-fn parse_entries(data: Edn) -> Result<HashMap<String, SnapshotEntry>, String> {
+fn parse_entries(data: &Edn) -> Result<HashMap<String, SnapshotEntry>, String> {
   let map = data.view_map().map_err(|e| format!("entries must be a map: {e}"))?;
   let mut entries = HashMap::with_capacity(map.0.len());
   for (name, value) in map.0 {
     let name: String = from_edn(name).map_err(|e| format!("invalid entry name: {e}"))?;
-    entries.insert(name, parse_snapshot_entry(value)?);
+    entries.insert(name, parse_snapshot_entry(&value)?);
   }
   Ok(entries)
 }
 
 fn format_edn_preview(value: &Edn) -> String {
   let raw = cirru_edn::format(value, true).unwrap_or_else(|_| format!("{value:?}"));
-  const LIMIT: usize = 220;
-  if raw.chars().count() > LIMIT {
-    let truncated = raw.chars().take(LIMIT).collect::<String>();
-    format!("{truncated}…")
-  } else {
-    raw
-  }
+  truncate_preview(&raw, 220)
 }
 
 fn truncate_preview(raw: &str, limit: usize) -> String {
-  if raw.chars().count() > limit {
-    let truncated = raw.chars().take(limit).collect::<String>();
-    format!("{truncated}…")
-  } else {
-    raw.to_owned()
+  match raw.char_indices().nth(limit) {
+    Some((byte_idx, _)) => format!("{}…", &raw[..byte_idx]),
+    None => raw.to_owned(),
   }
 }
 
@@ -324,9 +323,8 @@ fn parse_schema_from_edn(value: &Edn, owner: &str) -> Result<Edn, String> {
       let Some(Edn::Map(map)) = view.extra.first() else {
         unreachable!();
       };
-      let mut normalized = match normalize_schema_map(map) {
-        Edn::Map(map) => map,
-        _ => unreachable!(),
+      let Edn::Map(mut normalized) = normalize_schema_map(map) else {
+        unreachable!();
       };
       if normalized.tag_get("kind").is_none() && view.variant.as_ref() == "macro" {
         normalized.insert_key("kind", Edn::tag("macro"));
@@ -462,6 +460,7 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
   let mut tags: Vec<String> = Vec::new();
   let mut code: Option<Cirru> = None;
   let mut schema: Option<Edn> = None;
+  let mut ffi: Option<Edn> = None;
   for (key, value) in &struct_value.pairs {
     match key.arc_str().as_ref() {
       "doc" => doc = from_edn(value.clone()).map_err(|e| format!("{owner}: invalid `:doc`: {e}"))?,
@@ -488,6 +487,9 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
       "schema" if !matches!(value, Edn::Nil) => {
         schema = Some(parse_schema_from_edn(value, owner).map_err(|e| format!("{owner}: invalid `:schema`: {e}"))?);
       }
+      "ffi" if !matches!(value, Edn::Nil) => {
+        ffi = Some(value.clone());
+      }
       _ => {}
     }
   }
@@ -498,6 +500,7 @@ fn parse_code_entry(edn: Edn, owner: &str) -> Result<CodeEntry, String> {
     tags,
     code: code.ok_or_else(|| format!("{owner}: missing `:code` field in CodeEntry"))?,
     schema,
+    ffi,
   })
 }
 
@@ -605,13 +608,13 @@ fn parse_files(edn: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
 }
 
 fn main() {
-  println!("cargo:rerun-if-changed=src/cirru/calcit-core.cirru");
+  println!("cargo::rerun-if-changed=src/cirru/calcit-core.cirru");
 
   let target = env::var("TARGET").expect("Cargo must provide TARGET to build scripts");
   if target.ends_with("apple-darwin") {
     // Calcit executes directly on the process main thread on macOS so native
     // AppKit event loops can own it. Match the worker stack used elsewhere.
-    println!("cargo:rustc-link-arg-bin=calcit=-Wl,-stack_size,0x2000000");
+    println!("cargo::rustc-link-arg-bin=calcit=-Wl,-stack_size,0x2000000");
   }
   if target.starts_with("wasm32-wasi") {
     // The internal regression harness recursively preprocesses the bundled core
@@ -620,7 +623,7 @@ fn main() {
     // underflows the shadow stack and traps as an out-of-bounds memory access.
     // 4 MiB stopped being enough once expected-type context (#2738) deepened
     // argument preprocessing; native workers already run with 32 MiB.
-    println!("cargo:rustc-link-arg-bin=calcit-wasi-preprocess-harness=-zstack-size=8388608");
+    println!("cargo::rustc-link-arg-bin=calcit-wasi-preprocess-harness=-zstack-size=8388608");
   }
 
   let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -646,7 +649,7 @@ fn main() {
   if data.contains_key("configs") {
     panic!("calcit-core uses retired top-level `:configs`; migrate it with Calcit 0.13.50 before building")
   }
-  let entries = parse_entries(data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
+  let entries = parse_entries(&data.get_or_nil("entries")).unwrap_or_else(|e| panic!("failed to parse calcit-core `:entries`: {e}"));
   if !entries.contains_key("default") {
     panic!("calcit-core `:entries` must contain `:default`");
   }
@@ -664,9 +667,6 @@ fn main() {
     verification: VerificationConfig::default(),
   };
 
-  let mut buf = Vec::new();
-  snapshot
-    .serialize(&mut rmp_serde::Serializer::new(&mut buf))
-    .unwrap_or_else(|e| panic!("failed to serialize embedded calcit-core snapshot: {e}"));
+  let buf = rmp_serde::to_vec_named(&snapshot).unwrap_or_else(|e| panic!("failed to serialize embedded calcit-core snapshot: {e}"));
   fs::write(dest_path, buf).unwrap_or_else(|e| panic!("failed to write embedded calcit-core snapshot: {e}"));
 }

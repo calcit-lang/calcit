@@ -110,7 +110,7 @@ fn plan_source_with_legacy_evidence(
   }
   let mut locals = HashSet::new();
   collect_potential_local_bindings(source, &mut locals);
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let parsed = code_to_calcit(source, namespace, definition, vec![])?;
   let expressions = runner::preprocess::trace_snapshot_source_expressions(
     source,
     namespace,
@@ -132,7 +132,7 @@ fn plan_source_with_legacy_evidence(
     let api = entry(name).expect("collected primitive");
     let call_path = leaf_path.strip_suffix(&[0]);
     let owner = call_path.map_or_else(|| leaf_path.clone(), <[usize]>::to_vec);
-    let mut target = owner.clone();
+    let mut target = owner;
     let mut consumer = None;
     if let Some(call_path) = call_path
       && let Some((&1, parent)) = call_path.split_last()
@@ -206,8 +206,8 @@ fn plan_source_with_legacy_evidence(
       .as_ref()
       .map(|replacement| {
         Ok::<_, String>(FixOperation::ReplaceNode {
-          original: original.format_one_liner().map_err(|error| error.to_string())?,
-          replacement: replacement.format_one_liner().map_err(|error| error.to_string())?,
+          original: original.format_one_liner()?,
+          replacement: replacement.format_one_liner()?,
         })
       })
       .transpose()?;
@@ -478,7 +478,7 @@ fn rewrite(node: &Cirru, path: &mut Vec<usize>, proven: &BTreeMap<Vec<usize>, (E
   let mut pattern = vec![leaf(some_tag), value.clone()];
   let payload = match api.family {
     Family::Map | Family::Set => {
-      let mut fields = vec![value.clone()];
+      let mut fields = vec![value];
       let count = if matches!(api.family, Family::Map) { 3 } else { 2 };
       for _ in 1..count {
         let field = fresh(used);

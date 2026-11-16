@@ -312,7 +312,7 @@ fn handle_merge(opts: &EditMergeCommand, snapshot_file: &str) -> Result<(), Stri
 /// does not shorten a type name to an alias that a dependency namespace
 /// shadows. `None` when a module cannot be loaded.
 fn load_dependency_namespaces(snapshot: &snapshot::Snapshot, snapshot_file: &str) -> Option<HashSet<String>> {
-  let base_dir = Path::new(snapshot_file).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(snapshot_file).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let mut namespaces = HashSet::new();
   let mut seen = HashSet::new();
@@ -1079,7 +1079,7 @@ pub(crate) fn definition_head_macro_code(
   }
   // Read source only, across all configured entries; do not expand macros or
   // activate unrelated definitions while validating a mutation.
-  let base_dir = Path::new(snapshot_file).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(snapshot_file).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let modules = snapshot
     .entries
@@ -1419,7 +1419,7 @@ fn handle_cp_node(opts: &EditCpCommand, snapshot_file: &str) -> Result<(), Strin
     .get_mut(resolved_definition.as_str())
     .expect("resolved definition exists");
 
-  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+  let source_node = navigate_to_path(&code_entry.code, &from_path)?;
   let new_code = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
   code_entry.code = new_code;
 
@@ -1474,7 +1474,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
     .expect("resolved definition exists");
 
   // Step 1: read source node
-  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+  let source_node = navigate_to_path(&code_entry.code, &from_path)?;
   let append_index = if operation == TreeOperation::AppendChild {
     match navigate_to_path(&code_entry.code, &to_path)? {
       Cirru::List(children) => children.len(),
@@ -1652,7 +1652,7 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
   }
 
   // Extract the sub-expression at path
-  let extracted = navigate_to_path(&file_data.defs[resolved_definition.as_str()].code, &path)?.clone();
+  let extracted = navigate_to_path(&file_data.defs[resolved_definition.as_str()].code, &path)?;
 
   // Replace the path in the original definition with the new name (a leaf)
   let new_ref = Cirru::Leaf(Arc::from(new_name));
@@ -1921,7 +1921,7 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
     .get_mut(resolved_definition.as_str())
     .expect("resolved definition exists");
 
-  code_entry.doc = opts.doc.clone();
+  code_entry.doc.clone_from(&opts.doc);
 
   save_snapshot(&snapshot, snapshot_file)?;
   if opts.doc.starts_with('|') {
@@ -2153,7 +2153,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
     if !calcit::calcit::is_bundled_core_ns(namespace) && snapshot::schema_uses_intrinsic_reason(&schema) {
       let hit = snapshot::OpenWithoutReasonHit {
         ns: namespace.to_owned(),
-        def: resolved_definition.clone(),
+        def: resolved_definition,
         families: vec![],
         reserved_intrinsic: true,
       };
@@ -3044,13 +3044,8 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       println!("    {import}");
       // Extract namespace from import (first token before :refer or :as)
       if let Some(first_token) = import.split_whitespace().next() {
-        if first_token.starts_with('(') {
-          if let Some(ns) = import.split_whitespace().next().and_then(|s| s.strip_prefix('(')) {
-            added_namespaces.push(ns.to_string());
-          }
-        } else {
-          added_namespaces.push(first_token.to_string());
-        }
+        let ns = first_token.strip_prefix('(').unwrap_or(first_token);
+        added_namespaces.push(ns.to_owned());
       }
     }
   }

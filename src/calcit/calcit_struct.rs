@@ -294,7 +294,7 @@ mod tests {
       assert_eq!(definition.index_of(&format!("field-{:04}", width - 1)), Some(0));
       let warm_elapsed = warm_started.elapsed();
       assert_eq!(definition.fields.as_ref(), &fields, "cache must preserve declaration layout");
-      let reloaded = CalcitStructDef::from_fields(EdnTag::new("Wide"), fields.clone());
+      let reloaded = CalcitStructDef::from_fields(EdnTag::new("Wide"), fields);
       assert!(
         !reloaded.has_cached_field_index(),
         "a new entry allocation must not inherit the old cache"

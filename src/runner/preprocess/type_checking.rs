@@ -2613,7 +2613,7 @@ fn branch_type_mismatch(
     .and_then(|exit| exit.location.clone())
     .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() == def_name)
     .or_else(|| last_expr.get_location())
-    .or(info.call_location.clone());
+    .or_else(|| info.call_location.clone());
   let mut error = CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!("Function `{file_ns}/{def_name}` returns `{expected}`, but its branches have no common type: {branches}"),
@@ -2683,7 +2683,7 @@ pub(crate) fn check_function_return_type(
         program::lookup_def_code(file_ns, def_name)
           .map(|_| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])))
       })
-      .or(info.call_location.clone());
+      .or_else(|| info.call_location.clone());
     super::proof_provenance::attach(
       CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
@@ -3379,7 +3379,7 @@ mod tests {
     let specialized = specialize_collection_fold_expected_types(&args(empty_list), &ScopeTypes::new(), &expected).unwrap();
     assert_eq!(specialized[1], typed_list);
     for initial in [
-      make_local("open", open_list.clone()),
+      make_local("open", open_list),
       Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Str(Arc::from("existing"))]),
       Calcit::from(vec![Calcit::Proc(CalcitProc::Set)]),
       Calcit::Number(0.0),
@@ -3532,7 +3532,7 @@ mod tests {
     ]);
     let specialized = specialize_list_sort_by_expected_types(&function_args, &ScopeTypes::new(), &expected)
       .expect("typed list sort-by should specialize a function selector");
-    assert_eq!(specialized[0], receiver.clone());
+    assert_eq!(specialized[0], receiver);
     let CalcitTypeAnnotation::Fn(selector) = specialized[1].as_ref() else {
       panic!("sort-by selector should be a function");
     };

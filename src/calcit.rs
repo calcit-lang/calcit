@@ -174,145 +174,131 @@ impl fmt::Display for Calcit {
     match self {
       Nil => f.write_str("nil"),
       Unit => f.write_str("&unit"),
-      Bool(v) => f.write_str(&format!("{v}")),
-      Number(n) => f.write_str(&format!("{n}")),
-      Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
-      Local(CalcitLocal { sym, .. }) => f.write_str(&format!("'{sym}")),
-      Import(CalcitImport { ns, def, .. }) => f.write_str(&format!("{ns}/{def}")),
-      Registered(alias) => f.write_str(&format!("{alias}")),
-      Tag(s) => f.write_str(&format!(":{s}")),
+      Bool(v) => write!(f, "{v}"),
+      Number(n) => write!(f, "{n}"),
+      Symbol { sym, .. } => write!(f, "'{sym}"),
+      Local(CalcitLocal { sym, .. }) => write!(f, "'{sym}"),
+      Import(CalcitImport { ns, def, .. }) => write!(f, "{ns}/{def}"),
+      Registered(alias) => write!(f, "{alias}"),
+      Tag(s) => write!(f, ":{s}"),
       Str(s) => {
         if is_simple_str(s) {
           write!(f, "|{s}")
         } else {
-          // write!(f, "\"|{}\"", s.escape_default())
-          write!(f, "\"|")?;
+          f.write_str("\"|")?;
           for c in s.chars() {
             if cirru_edn::is_simple_char(c) {
-              write!(f, "{c}")?;
+              f.write_char(c)?;
             } else {
               write!(f, "{}", c.escape_default())?;
             }
           }
-          write!(f, "\"")
+          f.write_char('"')
         }
-      } // TODO, escaping choices
+      }
       Thunk(thunk) => match thunk {
-        CalcitThunk::Code { code, .. } => f.write_str(&format!("(&thunk _ {code})")),
+        CalcitThunk::Code { code, .. } => write!(f, "(&thunk _ {code})"),
       },
-      CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
-      Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
+      CirruQuote(code) => write!(f, "(&cirru-quote {code})"),
+      Ref(name, _locked_pair) => write!(f, "(&ref {name} ...)"),
       Enum(value) => {
         f.write_str("(%:: ")?;
         match &value.sum_type {
-          Some(enum_def) => f.write_str(&format!("'{}", enum_def.name()))?,
+          Some(enum_def) => write!(f, "'{}", enum_def.name())?,
           None => f.write_char('_')?,
         }
-        f.write_char(' ')?;
-        f.write_str(&value.tag.to_string())?;
+        write!(f, " {}", value.tag)?;
         for item in value.extra.iter() {
-          f.write_char(' ')?;
-          f.write_str(&item.to_string())?;
+          write!(f, " {item}")?;
         }
         f.write_char(')')
       }
       Buffer(buf) => {
         f.write_str("(&buffer")?;
         if buf.len() > 8 {
-          f.write_str(&format!(
-            " {} {} {} {} {} {} {} {} ..+{}",
-            buffer_bit_hex(buf[0]),
-            buffer_bit_hex(buf[1]),
-            buffer_bit_hex(buf[2]),
-            buffer_bit_hex(buf[3]),
-            buffer_bit_hex(buf[4]),
-            buffer_bit_hex(buf[5]),
-            buffer_bit_hex(buf[6]),
-            buffer_bit_hex(buf[7]),
+          write!(
+            f,
+            " {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} ..+{}",
+            buf[0],
+            buf[1],
+            buf[2],
+            buf[3],
+            buf[4],
+            buf[5],
+            buf[6],
+            buf[7],
             buf.len() - 8
-          ))?;
+          )?;
         } else {
           for b in buf.iter() {
-            f.write_str(" ")?;
-            f.write_str(&buffer_bit_hex(b.to_owned()))?;
+            write!(f, " {b:02x}")?;
           }
         }
-        f.write_str(")")
+        f.write_char(')')
       }
       BufList(items) => {
         let items = items.lock().expect("BufList lock");
-        f.write_str(&format!("(&buf-list count={})", items.len()))
+        write!(f, "(&buf-list count={})", items.len())
       }
       Recur(xs) => {
         f.write_str("(&recur")?;
         for x in &**xs {
-          f.write_str(&format!(" {x}"))?;
+          write!(f, " {x}")?;
         }
-        f.write_str(")")
+        f.write_char(')')
       }
       List(xs) => {
         f.write_str("([]")?;
-        xs.traverse_result(&mut |x| match f.write_str(&format!(" {x}")) {
-          Ok(_) => Ok(()),
-          Err(e) => Err(e),
-        })?;
-        f.write_str(")")
+        xs.traverse_result(&mut |x| write!(f, " {x}"))?;
+        f.write_char(')')
       }
       Set(xs) => {
         f.write_str("(#{}")?;
         for x in xs {
-          f.write_str(&format!(" {x}"))?;
+          write!(f, " {x}")?;
         }
-        f.write_str(")")
+        f.write_char(')')
       }
       Map(xs) => {
         f.write_str("({}")?;
         for (k, v) in xs {
-          f.write_str(&format!(" ({k} {v})"))?;
+          write!(f, " ({k} {v})")?;
         }
-        f.write_str(")")?;
-        Ok(())
+        f.write_char(')')
       }
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         if struct_value::ANONYMOUS_STRUCT_NAME == struct_ref.name.ref_str() {
           f.write_str("(%{} _")?;
         } else {
-          f.write_str(&format!("(%{{}} '{}", struct_ref.name))?;
+          write!(f, "(%{{}} '{}", struct_ref.name)?;
         }
         for idx in 0..struct_ref.fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
+          write!(f, " (:{} {})", struct_ref.fields[idx], values[idx])?;
         }
-        f.write_str(")")
+        f.write_char(')')
       }
       StructDef(CalcitStructDef {
         name, fields, field_types, ..
       }) => {
-        f.write_str("(%struct-def ")?;
-        f.write_str(&format!("'{name}"))?;
+        write!(f, "(%struct-def '{name}")?;
         for (k, t) in fields.iter().zip(field_types.iter()) {
-          f.write_char(' ')?;
-          f.write_str(&format!("(:{k} {})", t.to_brief_string()))?;
+          write!(f, " (:{k} {})", t.to_brief_string())?;
         }
         f.write_char(')')
       }
       UnionDef(union_def) => {
-        f.write_str("(%union-def ")?;
-        f.write_str(&format!("'{}", union_def.name))?;
+        write!(f, "(%union-def '{}", union_def.name)?;
         for member in union_def.member_forms.iter() {
-          f.write_char(' ')?;
-          f.write_str(&format!("{member}"))?;
+          write!(f, " {member}")?;
         }
         f.write_char(')')
       }
       EnumDef(enum_def) => {
-        f.write_str("(%enum-def ")?;
-        f.write_str(&format!("'{}", enum_def.name()))?;
+        write!(f, "(%enum-def '{}", enum_def.name())?;
         for variant in enum_def.variants() {
-          f.write_char(' ')?;
-          f.write_str(&format!("(:{}", variant.tag))?;
+          write!(f, " (:{}", variant.tag)?;
           for t in variant.payload_types() {
-            f.write_char(' ')?;
-            f.write_str(&t.to_brief_string())?;
+            write!(f, " {}", t.to_brief_string())?;
           }
           f.write_char(')')?;
         }
@@ -320,106 +306,79 @@ impl fmt::Display for Calcit {
       }
       Trait(t) => write!(f, "{t}"),
       Impl(impl_def) => {
-        f.write_str("(%impl ")?;
-        f.write_str(&format!(":{}", impl_def.name()))?;
+        write!(f, "(%impl :{}", impl_def.name())?;
         for idx in 0..impl_def.fields().len() {
-          f.write_str(&format!(
-            " ({} {})",
-            Calcit::tag(impl_def.fields()[idx].ref_str()),
-            impl_def.values[idx]
-          ))?;
+          write!(f, " (:{} {})", impl_def.fields()[idx], impl_def.values[idx])?;
         }
-        f.write_str(")")
+        f.write_char(')')
       }
-      Proc(name) => f.write_str(&format!("(&proc {name})")),
+      Proc(name) => write!(f, "(&proc {name})"),
       Macro { info, .. } => {
-        let name = &info.name;
-        f.write_str(&format!("(&macro {name} ("))?;
-        let mut need_space = false;
-        for a in &**info.args {
-          if need_space {
-            f.write_str(" ")?;
+        write!(f, "(&macro {} (", info.name)?;
+        for (idx, a) in info.args.iter().enumerate() {
+          if idx > 0 {
+            f.write_char(' ')?;
           }
-          f.write_str(&a.to_string())?;
-          need_space = true;
+          write!(f, "{a}")?;
         }
         f.write_str(") (")?;
-        need_space = false;
-        for b in &*info.body {
-          if need_space {
-            f.write_str(" ")?;
+        for (idx, b) in info.body.iter().enumerate() {
+          if idx > 0 {
+            f.write_char(' ')?;
           }
           f.write_str(&format_to_lisp(b))?;
-          need_space = true;
         }
         f.write_str("))")
       }
       Fn { info, .. } => {
-        let name = &info.name;
-        f.write_str(&format!("(&fn {name} ("))?;
-        let mut need_space = false;
+        write!(f, "(&fn {} (", info.name)?;
         match &*info.args {
           CalcitFnArgs::MarkedArgs(xs) => {
-            for a in xs {
-              if need_space {
-                f.write_str(" ")?;
+            for (idx, a) in xs.iter().enumerate() {
+              if idx > 0 {
+                f.write_char(' ')?;
               }
-              f.write_str(&a.to_string())?;
-              need_space = true;
+              write!(f, "{a}")?;
             }
           }
           CalcitFnArgs::Args(xs) => {
-            for a in xs {
-              if need_space {
-                f.write_str(" ")?;
+            for (idx, a) in xs.iter().enumerate() {
+              if idx > 0 {
+                f.write_char(' ')?;
               }
               f.write_str(&CalcitLocal::read_name(*a))?;
-              need_space = true;
             }
           }
         }
         f.write_str(") ")?;
-        need_space = false;
-        for b in &*info.body {
-          if need_space {
-            f.write_str(" ")?;
+        for (idx, b) in info.body.iter().enumerate() {
+          if idx > 0 {
+            f.write_char(' ')?;
           }
           f.write_str(&format_to_lisp(b))?;
-          need_space = true;
         }
-        f.write_str(")")
+        f.write_char(')')
       }
-      Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
+      Syntax(name, _ns) => write!(f, "(&syntax {name})"),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(_) => f.write_str(&format!(".{name}")),
-        MethodKind::Access => f.write_str(&format!(".-{name}")),
-        MethodKind::InvokeNative => f.write_str(&format!(".!{name}")),
-        MethodKind::TagAccess => f.write_str(&format!(".:{name}")),
-        MethodKind::ExternalAccess(_) => f.write_str(&format!(".:{name}")),
-        MethodKind::ExternalGet(_) => f.write_str(&format!("(js-get :{name})")),
-        MethodKind::ExternalSet(_) => f.write_str(&format!("(js-set :{name})")),
-        MethodKind::ExternalInvoke(_) => f.write_str(&format!(".{name}")),
-        MethodKind::AccessOptional => f.write_str(&format!(".?-{name}")),
-        MethodKind::InvokeNativeOptional => f.write_str(&format!(".?!{name}")),
+        MethodKind::Invoke(_) => write!(f, ".{name}"),
+        MethodKind::Access => write!(f, ".-{name}"),
+        MethodKind::InvokeNative => write!(f, ".!{name}"),
+        MethodKind::TagAccess | MethodKind::ExternalAccess(_) => write!(f, ".:{name}"),
+        MethodKind::ExternalGet(_) => write!(f, "(js-get :{name})"),
+        MethodKind::ExternalSet(_) => write!(f, "(js-set :{name})"),
+        MethodKind::ExternalInvoke(_) => write!(f, ".{name}"),
+        MethodKind::AccessOptional => write!(f, ".?-{name}"),
+        MethodKind::InvokeNativeOptional => write!(f, ".?!{name}"),
       },
-      RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
+      RawCode(_, code) => write!(f, "(&raw-code {code})"),
       AnyRef(_r) => f.write_str("(&any-ref ...)"),
     }
   }
 }
 
 fn is_simple_str(tok: &str) -> bool {
-  for c in tok.chars() {
-    if !cirru_edn::is_simple_char(c) {
-      return false;
-    }
-  }
-  true
-}
-
-/// encode as hex string like `ff`
-fn buffer_bit_hex(n: u8) -> String {
-  hex::encode(vec![n])
+  tok.chars().all(cirru_edn::is_simple_char)
 }
 
 /// display data into Lisp style for readability
@@ -987,8 +946,8 @@ impl Calcit {
     format_to_lisp(self)
   }
 
-  pub fn new_str<T: Into<String>>(s: T) -> Calcit {
-    Calcit::Str(s.into().into())
+  pub fn new_str<T: Into<Arc<str>>>(s: T) -> Calcit {
+    Calcit::Str(s.into())
   }
 
   /// makes sure that tag is from global dict, not created by fresh
@@ -1400,11 +1359,7 @@ impl fmt::Display for NodeLocation {
 
 impl NodeLocation {
   pub fn new(ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u16>>) -> Self {
-    NodeLocation {
-      ns,
-      def,
-      coord: coord.to_owned(),
-    }
+    NodeLocation { ns, def, coord }
   }
 }
 
@@ -1789,13 +1744,13 @@ mod tests {
 
     let impl_left = Calcit::Impl(CalcitImpl {
       name: EdnTag::new("Box"),
-      origin: Some(Arc::new(trait_left.clone())),
+      origin: Some(Arc::new(trait_left)),
       fields: Arc::new(vec![EdnTag::new("foo")]),
       values: Arc::new(vec![Calcit::Number(1.0)]),
     });
     let impl_right = Calcit::Impl(CalcitImpl {
       name: EdnTag::new("Box"),
-      origin: Some(Arc::new(trait_right.clone())),
+      origin: Some(Arc::new(trait_right)),
       fields: Arc::new(vec![EdnTag::new("foo")]),
       values: Arc::new(vec![Calcit::Number(1.0)]),
     });
@@ -2057,10 +2012,7 @@ mod tests {
 
     // a changed element or value, a missing entry, and key/value swaps must change the hash
     let changed_value = map_forward.insert(keys[0].clone(), Calcit::Tag(EdnTag::new("other")));
-    assert_ne!(
-      calcit_hash(&Calcit::Map(map_forward.clone())),
-      calcit_hash(&Calcit::Map(changed_value))
-    );
+    assert_ne!(calcit_hash(&Calcit::Map(map_forward)), calcit_hash(&Calcit::Map(changed_value)));
     let smaller = set_forward.remove(&keys[0]);
     assert_ne!(calcit_hash(&Calcit::Set(set_forward)), calcit_hash(&Calcit::Set(smaller)));
     let swapped: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync()

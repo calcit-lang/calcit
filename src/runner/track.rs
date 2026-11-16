@@ -1,10 +1,10 @@
 use std::sync::atomic::{self, AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Condvar, LazyLock, Mutex};
+use std::sync::{Condvar, Mutex};
 use std::{thread, time};
 
 static TASK_COUNT: AtomicUsize = AtomicUsize::new(0);
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-static SHUTDOWN_WAKE: LazyLock<(Mutex<()>, Condvar)> = LazyLock::new(|| (Mutex::new(()), Condvar::new()));
+static SHUTDOWN_WAKE: (Mutex<()>, Condvar) = (Mutex::new(()), Condvar::new());
 
 pub fn reset_shutdown() {
   SHUTDOWN_REQUESTED.store(false, Ordering::Release);

@@ -148,7 +148,7 @@ pub(super) fn handle_pattern_rewrite(
     super::super::edit::StagedFixReport {
       changed: false,
       original_revision: revision.clone(),
-      new_revision: revision.clone(),
+      new_revision: revision,
     }
   };
   let report = FixReport {
@@ -309,7 +309,7 @@ fn compile_rewrite_scope(
       for (index, source) in entry.tests.iter().map(|test| &test.code).chain(entry.examples.iter()).enumerate() {
         let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(Vec::new()), source.clone()]);
         let synthetic = format!("&calcit:reviewed-rewrite:{definition}:{index}");
-        let parsed = code_to_calcit(&wrapper, namespace, &synthetic, vec![]).map_err(|error| error.to_string())?;
+        let parsed = code_to_calcit(&wrapper, namespace, &synthetic, vec![])?;
         let attached_warnings = RefCell::new(Vec::new());
         runner::preprocess::trace_source_expressions(&parsed, namespace, &synthetic, &attached_warnings, &CallStackList::default())
           .map_err(|failure| format!("Failed to check attached source {namespace}/{definition} #{index}: {failure}"))?;

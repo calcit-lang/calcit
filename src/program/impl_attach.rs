@@ -216,7 +216,7 @@ fn restore_written_code(program: &mut ProgramCodeData) {
     if let Some(entry) = program.get_mut(ns).and_then(|file| file.defs.get_mut(def))
       && entry.code == *generated
     {
-      entry.code = original.to_owned();
+      original.clone_into(&mut entry.code);
     }
     false
   });

@@ -531,7 +531,7 @@ pub(crate) fn load_snapshot_for_incremental_analysis(
     Err(_) => (None, Some("cache-unreadable".to_owned())),
   };
 
-  let base_dir = Path::new(&expected_input).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(&expected_input).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let mut first_reason = global_reason.clone();
   let mut cacheable = true;
@@ -914,13 +914,13 @@ fn collect_dependency_index(
     .filter(|record| record.ready)
     .map(|record| record.dependencies.len())
     .sum();
-  stats.status = match (stats.hits, stats.misses) {
+  match (stats.hits, stats.misses) {
     (0, 0) => "empty",
     (_, 0) => "warm",
     (0, _) => "cold",
     _ => "partial",
   }
-  .to_owned();
+  .clone_into(&mut stats.status);
   Ok(stats)
 }
 
@@ -1023,7 +1023,7 @@ pub(crate) fn collect_dynamic_methods(
       ),
       cached => {
         let findings = preprocess_dynamic_methods(snapshot, entries)?;
-        let reason = global_reason.clone().or_else(|| {
+        let reason = global_reason.or_else(|| {
           cached
             .map(|cached| {
               if cached.core_revision != core_revision {
@@ -1095,7 +1095,7 @@ pub(crate) fn run_incremental_strict_check(
       }
       cached => {
         check()?;
-        let reason = global_reason.clone().or_else(|| {
+        let reason = global_reason.or_else(|| {
           cached
             .map(|cached| {
               if cached.core_revision != core_revision {
@@ -1250,7 +1250,7 @@ pub(crate) fn collect_weak_types(
       };
     }
     record.weak_types_ready = true;
-    record.weak_types = row.clone();
+    record.weak_types.clone_from(&row);
     if let Some(row) = row {
       rows.push(row);
     }

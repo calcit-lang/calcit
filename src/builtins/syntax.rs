@@ -52,12 +52,12 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
         ))
       }) {
         if declares_args {
-          arg_types = signature.arg_types.clone();
+          arg_types.clone_from(&signature.arg_types);
           arg_types.resize(param_symbols.len(), calcit::DYNAMIC_TYPE.clone());
         }
         return_type = signature.return_type.clone();
         where_bounds = signature.where_bounds.clone();
-        declared_rest_type = signature.rest_type.clone();
+        declared_rest_type.clone_from(&signature.rest_type);
       }
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
@@ -294,10 +294,7 @@ mod tests {
       ns,
       vec![
         make_symbol("{}", ns, "demo"),
-        Calcit::List(Arc::new(CalcitList::Vector(vec![
-          Calcit::Tag(EdnTag::from("return")),
-          type_expr.to_owned(),
-        ]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::Tag(EdnTag::from("return")), type_expr]))),
       ],
     );
 
@@ -1068,7 +1065,7 @@ fn replace_code_single_pass(
       (Some(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _)), Some(expr)) => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
-          Calcit::List(zs) => Ok((SpanResult::Range(zs.to_owned()), true)),
+          Calcit::List(zs) => Ok((SpanResult::Range(zs), true)),
           _ => Err(CalcitErr::use_str(
             CalcitErrKind::Type,
             format!("unquote-slice unknown result, but received: {ret}"),
@@ -1387,7 +1384,7 @@ pub fn gensym(xs: &CalcitListView<'_>, _scope: &CalcitScope, file_ns: &str, _cal
       *n += 1;
       v
     } else {
-      ns_sym_dict.insert(key.clone(), 2);
+      ns_sym_dict.insert(key, 2);
       1
     }
   };

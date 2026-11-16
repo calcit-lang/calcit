@@ -978,7 +978,7 @@ pub fn try_call_blocking(
   let request = encode_buffer_request(args)?;
   let mut output = FfiBuffer::empty();
   let status = unsafe { call(request.as_ptr(), request.len(), task, host, &mut output) };
-  let output = unsafe { copy_and_free_buffer(output, &free, lib_name, &symbol) }?;
+  let output = unsafe { copy_and_free_buffer(output, *free, lib_name, &symbol) }?;
   decode_buffer_response(status, output, lib_name, &symbol).map(Some)
 }
 
@@ -997,28 +997,27 @@ fn decode_buffer_response(status: i32, output: Vec<u8>, lib_name: &str, symbol: 
   }
 }
 
-unsafe fn copy_and_free_buffer(
-  buffer: FfiBuffer,
-  free: &libloading::Symbol<FfiBufferFree>,
-  lib_name: &str,
-  symbol: &str,
-) -> Result<Vec<u8>, String> {
+unsafe fn copy_and_free_buffer(buffer: FfiBuffer, free: FfiBufferFree, lib_name: &str, symbol: &str) -> Result<Vec<u8>, String> {
   if buffer.len > buffer.cap {
     return Err(format!(
       "FFI buffer `{symbol}` in `{lib_name}` returned len {} larger than capacity {}",
       buffer.len, buffer.cap
     ));
   }
-  if buffer.len > MAX_BUFFER_BYTES {
-    return Err(format!(
-      "FFI buffer `{symbol}` in `{lib_name}` returned {} bytes, exceeding the {} byte safety limit",
-      buffer.len, MAX_BUFFER_BYTES
-    ));
-  }
   if buffer.ptr.is_null() && (buffer.len != 0 || buffer.cap != 0) {
     return Err(format!(
       "FFI buffer `{symbol}` in `{lib_name}` returned a null pointer with len {} and capacity {}",
       buffer.len, buffer.cap
+    ));
+  }
+  if buffer.len > MAX_BUFFER_BYTES {
+    if !buffer.ptr.is_null() {
+      // SAFETY: buffer header passed len <= cap and non-null checks; return ownership to module before failing.
+      unsafe { free(buffer) };
+    }
+    return Err(format!(
+      "FFI buffer `{symbol}` in `{lib_name}` returned {} bytes, exceeding the {} byte safety limit",
+      buffer.len, MAX_BUFFER_BYTES
     ));
   }
 
@@ -1069,7 +1068,7 @@ pub fn try_call_buffer(
   let request = encode_buffer_request(args)?;
   let mut output = FfiBuffer::empty();
   let status = unsafe { call(request.as_ptr(), request.len(), &mut output) };
-  let output = unsafe { copy_and_free_buffer(output, &free, lib_name, &symbol) }?;
+  let output = unsafe { copy_and_free_buffer(output, *free, lib_name, &symbol) }?;
   let output = decode_buffer_response(status, output, lib_name, &symbol)?;
   if !contains_resource_token(&output) {
     return Ok(Some(output));
@@ -1566,5 +1565,36 @@ mod tests {
     assert_eq!(error, FfiAsyncHandleError::InvalidHandle);
     assert_eq!(error.status_code(), async_status::INVALID_HANDLE);
     assert_eq!(FfiAsyncHandleError::StaleHandle.status_code(), async_status::STALE_HANDLE);
+  }
+
+  #[test]
+  fn oversized_foreign_buffer_is_freed_before_returning_error() {
+    static FREED_BUFFERS: AtomicUsize = AtomicUsize::new(0);
+    unsafe extern "C" fn record_free(buffer: FfiBuffer) {
+      assert!(!buffer.ptr.is_null());
+      FREED_BUFFERS.fetch_add(1, Ordering::SeqCst);
+    }
+
+    FREED_BUFFERS.store(0, Ordering::SeqCst);
+    let mut backing = [0_u8; 8];
+    let oversized = FfiBuffer {
+      ptr: backing.as_mut_ptr(),
+      len: super::MAX_BUFFER_BYTES + 1,
+      cap: super::MAX_BUFFER_BYTES + 1,
+    };
+    let err = unsafe { super::copy_and_free_buffer(oversized, record_free, "demo", "run_calcit_ffi_v1") }
+      .expect_err("oversized foreign buffer must fail");
+    assert!(err.contains("exceeding the"));
+    assert_eq!(FREED_BUFFERS.load(Ordering::SeqCst), 1);
+
+    let corrupt_null = FfiBuffer {
+      ptr: std::ptr::null_mut(),
+      len: super::MAX_BUFFER_BYTES + 1,
+      cap: super::MAX_BUFFER_BYTES + 1,
+    };
+    let null_err = unsafe { super::copy_and_free_buffer(corrupt_null, record_free, "demo", "run_calcit_ffi_v1") }
+      .expect_err("null pointer with nonzero len must fail without calling free");
+    assert!(null_err.contains("null pointer"));
+    assert_eq!(FREED_BUFFERS.load(Ordering::SeqCst), 1);
   }
 }

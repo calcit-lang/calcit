@@ -437,8 +437,8 @@ pub(crate) fn build_struct_ref_node(
       }
     };
     Calcit::Import(CalcitImport {
-      ns: ns.to_owned(),
-      def: def.to_owned(),
+      ns,
+      def,
       info: Arc::new(import_info),
       def_id: None,
     })
@@ -466,8 +466,8 @@ pub(crate) fn build_enum_ref_node(
       }
     };
     Calcit::Import(CalcitImport {
-      ns: ns.to_owned(),
-      def: def.to_owned(),
+      ns,
+      def,
       info: Arc::new(import_info),
       def_id: None,
     })

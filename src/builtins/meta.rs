@@ -89,10 +89,7 @@ pub fn with_compiling_def<R, E>(ns: &str, def: &str, f: impl FnOnce() -> Result<
   let key = format!("{ns}/{def}");
   CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = Some(key.clone()));
   // Reset counter so gensym numbers within this def always start at 1.
-  NS_SYMBOL_DICT
-    .lock()
-    .expect("reset gensym counter")
-    .remove(&Arc::from(key.as_str()));
+  NS_SYMBOL_DICT.lock().expect("reset gensym counter").remove(key.as_str());
   let result = f();
   CURRENT_COMPILING_DEF.with(|cell| *cell.borrow_mut() = prev);
   result
@@ -460,12 +457,12 @@ pub fn turn_symbol(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      info: info.to_owned(),
+      info,
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.arc_str(),
-      info: info.to_owned(),
+      info,
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
@@ -531,7 +528,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     let enum_value = xs[0].to_owned();
     match enum_value {
       Calcit::Struct(enum_struct) => {
-        let enum_proto = match CalcitEnumDef::from_struct(enum_struct.clone()) {
+        let enum_proto = match CalcitEnumDef::from_struct(enum_struct) {
           Ok(proto) => proto,
           Err(msg) => {
             return CalcitErr::err_str(CalcitErrKind::Type, format!("%:: expected a valid enum prototype, but {msg}"));
@@ -608,7 +605,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }))
       }
       Calcit::EnumDef(enum_def) => {
-        let enum_proto = enum_def.clone();
+        let enum_proto = enum_def;
 
         let tag_value = &xs[1];
         let tag_name = match tag_value {

@@ -5,10 +5,8 @@ use super::{
   load_agents_document, load_entry_snapshot_for_check_md, load_module_docs_for_project, load_module_docs_from_dir,
   parse_doc_frontmatter, parse_doc_knowledge_metadata, run_edn_parse_only, score_doc_query, score_doc_shape, validate_doc_frontmatter,
 };
-use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unique_temp_dir(label: &str) -> std::path::PathBuf {
@@ -23,40 +21,22 @@ fn write_file(path: &Path, content: &str) {
   fs::write(path, content).unwrap();
 }
 
-fn home_env_lock() -> &'static Mutex<()> {
-  static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-  ENV_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-fn lock_home_env() -> MutexGuard<'static, ()> {
-  home_env_lock().lock().unwrap()
-}
-
 struct TestHome {
-  previous: Option<OsString>,
-  _guard: MutexGuard<'static, ()>,
+  previous: Option<PathBuf>,
 }
 
 impl TestHome {
   fn new(path: &Path) -> Self {
-    let guard = lock_home_env();
-    let previous = std::env::var_os("HOME");
-    // SAFETY: the process-wide environment is serialized by ENV_LOCK for this test.
-    unsafe { std::env::set_var("HOME", path) };
-    Self { previous, _guard: guard }
+    let previous = super::TEST_HOME_OVERRIDE.with(|slot| slot.replace(Some(path.to_path_buf())));
+    Self { previous }
   }
 }
 
 impl Drop for TestHome {
   fn drop(&mut self) {
-    // SAFETY: the process-wide environment remains serialized until _guard is dropped.
-    unsafe {
-      if let Some(previous) = &self.previous {
-        std::env::set_var("HOME", previous);
-      } else {
-        std::env::remove_var("HOME");
-      }
-    }
+    super::TEST_HOME_OVERRIDE.with(|slot| {
+      *slot.borrow_mut() = self.previous.take();
+    });
   }
 }
 
@@ -242,7 +222,6 @@ fn load_entry_snapshot_for_check_md_reads_respo_project() {
 
 #[test]
 fn collect_docs_for_query_uses_guidebook_without_module() {
-  let _home_guard = lock_home_env();
   match collect_docs_for_query(None) {
     Ok(docs) => {
       assert!(!docs.is_empty());

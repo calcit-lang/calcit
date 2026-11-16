@@ -329,12 +329,12 @@ impl DataShapeGraph {
   pub(crate) fn nominal_paths(&self) -> Vec<(Arc<str>, Arc<str>)> {
     let mut paths = Vec::new();
     for node in &self.nodes {
-      let path = match node {
-        DataShapeNode::Struct { nominal_path, .. }
-        | DataShapeNode::Enum { nominal_path, .. }
-        | DataShapeNode::MapOption { nominal_path, .. }
-        | DataShapeNode::Union { nominal_path, .. } => nominal_path,
-        _ => continue,
+      let (DataShapeNode::Struct { nominal_path: path, .. }
+      | DataShapeNode::Enum { nominal_path: path, .. }
+      | DataShapeNode::MapOption { nominal_path: path, .. }
+      | DataShapeNode::Union { nominal_path: path, .. }) = node
+      else {
+        continue;
       };
       if let Some(path) = path
         && !paths.contains(path)
@@ -1126,7 +1126,7 @@ mod tests {
       .with_definition_ref("tests.shape-cache", "CacheBox");
     definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)))]);
     let first = field_write_shape(&definition, 0).expect("list shape");
-    let second = field_write_shape(&definition.clone(), 0).expect("cached list shape");
+    let second = field_write_shape(&definition, 0).expect("cached list shape");
     assert!(Arc::ptr_eq(&first, &second), "cloned definitions share immutable annotations");
 
     let mut different = definition.clone();
@@ -1326,8 +1326,7 @@ mod tests {
   #[test]
   fn rejects_structurally_equal_but_distinct_nominal_declarations() {
     let nominal = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Point"), vec![]));
-    let shape =
-      DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.shape").expect("point shape");
+    let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal, Arc::new(vec![])), "tests.shape").expect("point shape");
     let impostor = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Point"), vec![]));
     let struct_value = Calcit::Struct(CalcitStructValue {
       struct_ref: impostor,

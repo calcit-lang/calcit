@@ -635,11 +635,15 @@ impl EffectsGraphAnalyzer {
       && out.is_param(sym)
     {
       let key = format!("{UNKNOWN_EFFECT_KIND}::{sym}");
-      out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
-        kind: UNKNOWN_EFFECT_KIND.to_string(),
-        target: sym.to_string(),
-        count: 1,
-      });
+      out
+        .effects
+        .entry(key)
+        .and_modify(|item| item.count += 1)
+        .or_insert_with(|| EffectItem {
+          kind: UNKNOWN_EFFECT_KIND.to_string(),
+          target: sym.to_string(),
+          count: 1,
+        });
       return;
     }
     let Some(call) = resolve_call_head(head, current_ns) else {
@@ -664,11 +668,15 @@ impl EffectsGraphAnalyzer {
     }
     for kind in kinds {
       let key = format!("{kind}::{target}");
-      out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
-        kind,
-        target: target.clone(),
-        count: 1,
-      });
+      out
+        .effects
+        .entry(key)
+        .and_modify(|item| item.count += 1)
+        .or_insert_with(|| EffectItem {
+          kind,
+          target: target.clone(),
+          count: 1,
+        });
     }
 
     if let Some((call_ns, call_def)) = resolve_def_call(head, current_ns) {
@@ -676,11 +684,15 @@ impl EffectsGraphAnalyzer {
       if let Some(kinds) = out.declared.get(&fqn).cloned() {
         for kind in kinds {
           let key = format!("{kind}::{fqn}");
-          out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
-            kind,
-            target: fqn.clone(),
-            count: 1,
-          });
+          out
+            .effects
+            .entry(key)
+            .and_modify(|item| item.count += 1)
+            .or_insert_with(|| EffectItem {
+              kind,
+              target: fqn.clone(),
+              count: 1,
+            });
         }
       }
       if !is_meaningful_call_target(&call_ns, &call_def, self.config.include_core) {
@@ -758,7 +770,7 @@ fn extract_fn_params(
       for (idx, local_idx) in indices.iter().enumerate() {
         state.push(StateItem {
           kind: "param".into(),
-          name: CalcitLocal::read_name(*local_idx).to_string(),
+          name: CalcitLocal::read_name(*local_idx),
           type_hint: arg_types.get(idx).map(|t| t.to_string()),
         });
       }
@@ -905,8 +917,7 @@ fn def_call_head(ns: &str, def: &str) -> CallHead {
   }
   let loaded = PROGRAM_CODE_DATA
     .read()
-    .ok()
-    .is_some_and(|program_code| program_code.get(ns).is_some_and(|file| file.defs.contains_key(def)));
+    .is_ok_and(|program_code| program_code.get(ns).is_some_and(|file| file.defs.contains_key(def)));
   if loaded {
     CallHead::Def(ns.to_string(), def.to_string())
   } else {
@@ -2959,7 +2970,7 @@ mod tests {
     let mut snapshot = crate::snapshot::load_snapshot_data(&data, path.to_string_lossy().as_ref()).expect("load snapshot");
     let core = crate::load_core_snapshot().expect("load core");
     for (k, v) in core.files {
-      snapshot.files.insert(k.to_owned(), v.to_owned());
+      snapshot.files.insert(k, v);
     }
     {
       let mut prgm = crate::program::PROGRAM_CODE_DATA.write().expect("program data");

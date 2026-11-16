@@ -157,8 +157,7 @@ fn snapshot_mutation_entrypoints_respect_a_live_old_writer_lock() {
       assert!(!output.status.success(), "active writer should block {args:?}");
       assert!(
         String::from_utf8_lossy(&output.stderr).contains("writer lock"),
-        "{args:?}: {:?}",
-        output
+        "{args:?}: {output:?}"
       );
     }
   });
@@ -1170,7 +1169,7 @@ fn guarded_transaction_renames_then_recreates_the_old_name() {
   let revision = transaction_scope(&snapshot, &encoded);
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 
-  let mut invalid = operations.clone();
+  let mut invalid = operations;
   invalid.as_array_mut().unwrap().push(serde_json::json!([
     "edit",
     "def",
@@ -1543,7 +1542,7 @@ fn import_edits_recognize_legacy_list_prefixed_rules() {
     &run_calcit(&snapshot, &["edit", "rm-import", "app.main", "calcit.core"]),
     "remove legacy refer import",
   );
-  let mut expected = original.clone();
+  let mut expected = original;
   let cirru_parser::Cirru::List(ns) = &mut expected else {
     panic!("namespace expression")
   };

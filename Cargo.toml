@@ -5,6 +5,7 @@ autobins = false
 version = "0.43.0-alpha.2"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"
+rust-version = "1.100.0"
 license = "MIT"
 description = "Interpreter and JavaScript/WebAssembly codegen for Calcit"
 homepage = "http://calcit-lang.org"
@@ -17,6 +18,7 @@ exclude = [
   ".gitignore",
   ".npmignore",
   ".prettierrc",
+  ".rustfmt.toml",
   ".yarnrc.yml",
   "AGENTS.md",
   "RFCs/*",
@@ -25,14 +27,17 @@ exclude = [
   "docs/*",
   "!docs/CalcitAgent.md",
   "editing-history/*",
+  "examples/*",
   "js-out/*",
   "lib/*",
   "notes/*",
   "package.json",
   "profiling/*",
+  "rust-toolchain.toml",
   "scripts/*",
   "ts-src/*",
   "tsconfig.json",
+  "wasm-runtime/*",
   "yarn.lock",
 ]
 
@@ -124,3 +129,15 @@ opt-level = "s"
 codegen-units = 1
 panic = "unwind"
 strip = "debuginfo"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+assigning_clones = "warn"
+dbg_macro = "warn"
+manual_is_variant_and = "warn"
+manual_let_else = "warn"
+or_fun_call = "warn"
+redundant_clone = "warn"
+uninlined_format_args = "warn"

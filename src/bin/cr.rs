@@ -24,14 +24,13 @@ mod public_api_check;
 mod type_coverage;
 
 #[cfg(test)]
-static GLOBAL_TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> = std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+static GLOBAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Tests load the same embedded core snapshot hundreds of times. Decode it once
 /// per test process and let each test clone the files it needs.
 #[cfg(test)]
 fn cached_core_snapshot() -> &'static snapshot::Snapshot {
-  static CORE_SNAPSHOT: std::sync::OnceLock<snapshot::Snapshot> = std::sync::OnceLock::new();
-  CORE_SNAPSHOT.get_or_init(|| calcit::load_core_snapshot().expect("core snapshot should load"))
+  calcit::core_snapshot().expect("core snapshot should load")
 }
 
 #[cfg(test)]
@@ -804,7 +803,7 @@ fn run_cli() -> Result<(), String> {
   };
   let input_path = PathBuf::from(&cli_args.input);
   let input_path_str = input_path.to_string_lossy().to_string();
-  let base_dir = input_path.parent().expect("extract parent");
+  let base_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let mut js_namespace_sources: HashMap<String, calcit::JsNamespaceSource> = HashMap::new();
   if !calcit::quiet_tool_output() {
@@ -852,8 +851,7 @@ fn run_cli() -> Result<(), String> {
           && previous != source
         {
           return Err(format!(
-            "namespace `{namespace}` has conflicting JS FFI source owners: {:?} and {:?}",
-            previous, source
+            "namespace `{namespace}` has conflicting JS FFI source owners: {previous:?} and {source:?}"
           ));
         }
       }
@@ -925,8 +923,7 @@ fn run_cli() -> Result<(), String> {
           && previous != source
         {
           return Err(format!(
-            "namespace `{namespace}` has conflicting JS FFI source owners: {:?} and {:?}",
-            previous, source
+            "namespace `{namespace}` has conflicting JS FFI source owners: {previous:?} and {source:?}"
           ));
         }
       }
@@ -1787,9 +1784,9 @@ pub fn watch_files(
     .configure(config.with_compare_contents(true))
     .expect("config watcher");
 
-  let inc_path = PathBuf::from(&settings.input)
+  let inc_path = Path::new(&settings.input)
     .parent()
-    .expect("extract parent")
+    .unwrap_or_else(|| Path::new("."))
     .join(".compact-inc.cirru");
   if !inc_path.exists()
     && let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() })
@@ -1840,7 +1837,13 @@ pub fn watch_files(
           continue;
         }
         // load new program code
-        let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
+        let mut content = match fs::read_to_string(&inc_path) {
+          Ok(content) => content,
+          Err(error) => {
+            eprintln!("failed reading inc file {}: {error}", inc_path.display());
+            continue;
+          }
+        };
         strip_shebang(&mut content);
         if content.trim().is_empty() {
           eprintln!("failed re-compiling, got empty inc file");
@@ -4205,7 +4208,7 @@ mod tests {
     assert_eq!(weak_value["data"]["summary"]["hits"], 3);
     assert_eq!(check_value["diagnostics"][0]["code"], "W_TYPE_COVERAGE_GAPS");
 
-    let mut check_summary_options = check_options.clone();
+    let mut check_summary_options = check_options;
     check_summary_options.summary_only = true;
     let check_summary_json =
       type_coverage::format_check_types_json(&check_summary_options, &snapshot).expect("coverage summary JSON should format");
@@ -4213,7 +4216,7 @@ mod tests {
     assert_eq!(check_summary["data"]["summary"]["definitions"], 1);
     assert_eq!(check_summary["data"]["definitions"], serde_json::json!([]));
 
-    let mut weak_summary_options = weak_options.clone();
+    let mut weak_summary_options = weak_options;
     weak_summary_options.summary_only = true;
     let weak_summary_json =
       type_coverage::format_weak_types_json(&weak_summary_options, &snapshot).expect("weak summary JSON should format");
@@ -4415,7 +4418,7 @@ mod tests {
       tests: vec![],
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("implicit-unit"), list(vec![])]),
-      schema: unit_entry.schema.clone(),
+      schema: unit_entry.schema,
       ffi: None,
     };
     assert!(

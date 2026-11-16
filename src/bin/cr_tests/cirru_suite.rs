@@ -50,7 +50,7 @@ fn load_and_run_cirru(path: &str) {
   let (init_ns, init_def) = util::string::extract_ns_def(&config_init).expect("extract init ns/def");
   let (reload_ns, _reload_def) = util::string::extract_ns_def(&config_reload).expect("extract reload ns/def");
 
-  program::clear_runtime_caches_for_reload(init_ns.clone().into(), reload_ns.clone().into(), true).expect("clear runtime caches");
+  program::clear_runtime_caches_for_reload(init_ns.clone().into(), reload_ns.into(), true).expect("clear runtime caches");
 
   let warmup_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
   runner::preprocess::ensure_ns_def_compiled(

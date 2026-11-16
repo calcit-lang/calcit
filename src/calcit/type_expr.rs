@@ -141,7 +141,7 @@ pub(crate) fn is_bare_compact_payload(payload: &Cirru) -> bool {
   let Some(Cirru::Leaf(head)) = items.first() else {
     return false;
   };
-  let name = head.rsplit_once('/').map_or(head.as_ref(), |(_, def)| def);
+  let name = head.rsplit_once('/').map_or_else(|| head.as_ref(), |(_, def)| def);
   is_compact_payload(payload) && is_uppercase_name(name)
 }
 
@@ -183,7 +183,7 @@ pub(crate) fn unquoted_compact_form(form: &Calcit) -> Option<String> {
   let Some(Calcit::Symbol { sym, .. }) = list.first() else {
     return None;
   };
-  let name = sym.rsplit_once('/').map_or(sym.as_ref(), |(_, def)| def);
+  let name = sym.rsplit_once('/').map_or_else(|| sym.as_ref(), |(_, def)| def);
   if !is_uppercase_name(name) {
     return None;
   }

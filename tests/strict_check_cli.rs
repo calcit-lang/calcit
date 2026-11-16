@@ -2181,9 +2181,8 @@ fn set_difference_and_intersection_preserve_the_left_element_type() {
     let positive = format!(
       "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
        (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
-       (assert= {} ({proc} (#{{}} 1) (#{{}}))) \
+       (assert= {disjoint} ({proc} (#{{}} 1) (#{{}}))) \
        (assert= {disjoint} (assert-type ({proc} (#{{}} 1) (#{{}} |text)) (Set Number)))",
-      disjoint,
     );
     let eval = |code: &str| {
       Command::new(env!("CARGO_BIN_EXE_calcit"))

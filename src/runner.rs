@@ -160,7 +160,8 @@ fn build_runtime_cell_error(ns: &str, def: &str, call_stack: &CallStackList, cel
 }
 
 fn require_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  eval_symbol_from_program(sym, ns, call_stack).map(|value| value.expect("value"))
+  eval_symbol_from_program(sym, ns, call_stack)?
+    .ok_or_else(|| CalcitErr::use_msg_stack(CalcitErrKind::Var, format!("unknown symbol `{ns}/{sym}`"), call_stack))
 }
 
 fn lookup_symbol_in_program_namespaces(sym: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Option<Calcit>, CalcitErr> {
@@ -192,11 +193,7 @@ fn resolve_runtime_or_compiled_def(
 
 fn format_fn_arg_labels(args: &CalcitFnArgs) -> String {
   match args {
-    CalcitFnArgs::Args(xs) => xs
-      .iter()
-      .map(|idx| CalcitLocal::read_name(*idx).to_string())
-      .collect::<Vec<_>>()
-      .join(" "),
+    CalcitFnArgs::Args(xs) => xs.iter().map(|idx| CalcitLocal::read_name(*idx)).collect::<Vec<_>>().join(" "),
     CalcitFnArgs::MarkedArgs(xs) => xs.iter().map(ToString::to_string).collect::<Vec<_>>().join(" "),
   }
 }
@@ -446,13 +443,7 @@ pub fn call_expr(
       } else if matches!(kind, MethodKind::TagAccess) {
         if xs.len() == 2 {
           let obj = evaluate_expr(&xs[1], scope, file_ns, call_stack)?;
-          let tag = evaluate_expr(&Calcit::tag(name), scope, file_ns, call_stack)?;
-          if let Calcit::Map(m) = obj {
-            match m.get(&tag) {
-              Some(value) => Ok(value.to_owned()),
-              None => Ok(Calcit::Nil),
-            }
-          } else if let Calcit::Struct(struct_value) = &obj {
+          if let Calcit::Struct(struct_value) = &obj {
             struct_value.get(name).cloned().ok_or_else(|| {
               CalcitErr::use_msg_stack_location(
                 CalcitErrKind::Type,
@@ -461,6 +452,9 @@ pub fn call_expr(
                 obj.get_location(),
               )
             })
+          } else if let Calcit::Map(m) = obj {
+            let tag = Calcit::tag(name);
+            Ok(m.get(&tag).cloned().unwrap_or(Calcit::Nil))
           } else {
             Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
@@ -752,13 +746,12 @@ pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
   if !has_ns_part(s) {
     return None;
   }
-  let pieces: Vec<&str> = s.split('/').collect();
-  if pieces.len() == 2 {
-    if !pieces[0].is_empty() && !pieces[1].is_empty() {
-      Some((pieces[0].into(), pieces[1].into()))
-    } else {
-      None
-    }
+  if let Some((ns, def)) = s.split_once('/')
+    && !ns.is_empty()
+    && !def.is_empty()
+    && !def.contains('/')
+  {
+    Some((ns.into(), def.into()))
   } else {
     None
   }
@@ -822,7 +815,7 @@ fn reject_native_js_implementation(info: &CalcitFn, call_stack: &CallStackList) 
     .def_ref
     .as_ref()
     .map(|def_ref| (def_ref.def_ns.as_ref(), def_ref.def_name.as_ref()))
-    .unwrap_or((info.def_ns.as_ref(), info.name.as_ref()));
+    .unwrap_or_else(|| (info.def_ns.as_ref(), info.name.as_ref()));
   if let Some(ffi) = program::lookup_def_ffi(owner_ns, owner_def)
     && crate::js_ffi_source::parse_js_source(&ffi).ok().flatten().is_some()
   {
@@ -839,7 +832,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
   reject_native_js_implementation(info, call_stack)?;
   let completed_values = complete_trailing_option_args(values, info);
   let values = completed_values.as_deref().unwrap_or(values);
-  let mut body_scope = (*info.scope).to_owned();
+  let mut body_scope = CalcitScope::from_parent(&info.scope, values.len());
   let frame_checkpoint = body_scope.frame_checkpoint();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
@@ -891,7 +884,7 @@ pub fn run_fn_during_shutdown(values: &[Calcit], info: &CalcitFn, call_stack: &C
 pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   reject_native_js_implementation(info, call_stack)?;
   let values = complete_trailing_option_args(&values, info).unwrap_or(values);
-  let mut body_scope = (*info.scope).to_owned();
+  let mut body_scope = CalcitScope::from_parent(&info.scope, values.len());
   let frame_checkpoint = body_scope.frame_checkpoint();
   match &*info.args {
     CalcitFnArgs::Args(args) => {
@@ -1038,7 +1031,7 @@ fn render_marked_args(args: &[CalcitArgLabel]) -> String {
     match arg {
       CalcitArgLabel::RestMark => parts.push("&".to_owned()),
       CalcitArgLabel::OptionalMark => parts.push("?".to_owned()),
-      CalcitArgLabel::Idx(idx) => parts.push(CalcitLocal::read_name(*idx).to_string()),
+      CalcitArgLabel::Idx(idx) => parts.push(CalcitLocal::read_name(*idx)),
     }
   }
   format!("({})", parts.join(" "))

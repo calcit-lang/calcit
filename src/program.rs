@@ -30,7 +30,7 @@ pub use entry_book::EntryBook;
 
 static ACTIVE_FEATURE_POLICY: LazyLock<RwLock<HashMap<String, snapshot::FeaturePolicy>>> =
   LazyLock::new(|| RwLock::new(HashMap::new()));
-static ACTIVE_TARGET: LazyLock<RwLock<Option<snapshot::SnapshotTarget>>> = LazyLock::new(|| RwLock::new(None));
+static ACTIVE_TARGET: RwLock<Option<snapshot::SnapshotTarget>> = RwLock::new(None);
 
 pub fn configure_entry_feature_policy(policies: &HashMap<String, snapshot::FeaturePolicy>) {
   let mut active = ACTIVE_FEATURE_POLICY.write().expect("write active feature policy");
@@ -222,7 +222,7 @@ pub enum ImportRule {
 pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
 /// runtime values keyed by stable DefId, used by normal runtime lookup paths
-static PROGRAM_RUNTIME_DATA_STATE: LazyLock<RwLock<ProgramRuntimeData>> = LazyLock::new(|| RwLock::new(vec![]));
+static PROGRAM_RUNTIME_DATA_STATE: RwLock<ProgramRuntimeData> = RwLock::new(Vec::new());
 /// preprocessed / compiled definitions for codegen and future runtime boundary split
 static PROGRAM_COMPILED_DATA_STATE: LazyLock<RwLock<ProgramCompiledData>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 /// raw code information before program running
@@ -277,7 +277,7 @@ static PROGRAM_DEF_ID_INDEX: LazyLock<RwLock<ProgramDefIdIndex>> = LazyLock::new
 /// guard instead of defining a module-local mutex when they read or mutate
 /// program state.
 #[cfg(test)]
-static PROGRAM_TEST_STATE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+static PROGRAM_TEST_STATE_LOCK: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 pub(crate) struct ProgramTestStateGuard {
@@ -1327,13 +1327,11 @@ pub(crate) fn has_bundled_core_source() -> bool {
 
 pub fn lookup_def_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  let file = match program_code.get(ns) {
-    Some(f) => f,
-    None => return DYNAMIC_TYPE.clone(),
+  let Some(file) = program_code.get(ns) else {
+    return DYNAMIC_TYPE.clone();
   };
-  let entry = match file.defs.get(def) {
-    Some(e) => e,
-    None => return DYNAMIC_TYPE.clone(),
+  let Some(entry) = file.defs.get(def) else {
+    return DYNAMIC_TYPE.clone();
   };
   entry.schema.clone()
 }

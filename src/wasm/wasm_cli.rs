@@ -49,7 +49,7 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     println!("running entry: {}", snapshot.active_entry_name());
   }
 
-  let base_dir = input_path.parent().expect("extract parent");
+  let base_dir = input_path.parent().unwrap_or_else(|| std::path::Path::new("."));
   let module_folder = host::project_module_folder(base_dir);
 
   let module_paths = snapshot.active_entry()?.modules.clone();

@@ -965,17 +965,18 @@ fn emit_wasm_impl(
           .map(|callback| (index, callback.arg_types.len()))
       })
       .collect::<HashMap<_, _>>();
+    let qualified = format!("{ns}/{name}");
     let definition = Arc::new(StaticFnDef {
       params: fn_param_names(args),
       body: body.clone(),
       arg_types: signature.arg_types.clone(),
       callback_arities,
       fixed_arity: matches!(args, CalcitFnArgs::Args(_)),
-      nil_sensitive: nil_sensitive_defs.contains(&format!("{ns}/{name}")),
-      trait_sensitive: trait_sensitive_defs.contains(&format!("{ns}/{name}")),
-      method_sensitive: method_sensitive_defs.contains(&format!("{ns}/{name}")),
+      nil_sensitive: nil_sensitive_defs.contains(&qualified),
+      trait_sensitive: trait_sensitive_defs.contains(&qualified),
+      method_sensitive: method_sensitive_defs.contains(&qualified),
     });
-    static_fn_defs.insert(format!("{ns}/{name}"), definition.clone());
+    static_fn_defs.insert(qualified, definition.clone());
     if export_name_counts.get(name).copied() == Some(1) {
       static_fn_defs.insert(name.clone(), definition);
     }
@@ -1309,7 +1310,7 @@ fn emit_wasm_impl(
     })
     .collect();
   if !call_arities.is_empty() {
-    let mut adapter_ctx = WasmGenCtx::new(0, env.clone());
+    let mut adapter_ctx = WasmGenCtx::new(0, env);
     for (slot, (_, _, args, _)) in fn_defs.iter().enumerate() {
       let (_, Some(fixed)) = compute_fn_arity(args) else {
         continue;
@@ -6551,7 +6552,7 @@ fn compile_fn(
 
   let arity = param_names.len();
   let mut ctx = WasmGenCtx::new(arity as u32, env.clone());
-  ctx.source_ns = source_ns.to_owned();
+  source_ns.clone_into(&mut ctx.source_ns);
   ctx.source_fn_index = env
     .fn_index
     .get(&format!("{source_ns}/{export_name}"))

@@ -25,7 +25,7 @@ struct PendingBroadType {
   slot: Option<SlotKey>,
 }
 
-static PENDING: LazyLock<Mutex<Vec<PendingBroadType>>> = LazyLock::new(|| Mutex::new(vec![]));
+static PENDING: Mutex<Vec<PendingBroadType>> = Mutex::new(Vec::new());
 
 /// Per slot, the display of each concrete type passed, or `None` for a call
 /// whose type proves no particular definition.

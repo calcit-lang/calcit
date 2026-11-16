@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, RwLock};
 
 use cirru_edn::{Edn, EdnListView};
 use cirru_parser::Cirru;
@@ -84,7 +84,7 @@ struct IrSourceIndex {
   files: HashMap<Arc<str>, IrSourceFile>,
 }
 
-static IR_SOURCES: LazyLock<RwLock<Option<IrSourceIndex>>> = LazyLock::new(|| RwLock::new(None));
+static IR_SOURCES: RwLock<Option<IrSourceIndex>> = RwLock::new(None);
 
 /// Keep the Snapshot source for `:sources`. The program registry only holds
 /// parsed code, where reader shorthand such as `'T` is already expanded and
@@ -145,7 +145,7 @@ fn apply_changes_to(index: &mut IrSourceIndex, changes: &ChangesDict) {
   for (ns, info) in &changes.changed {
     let Some(file) = index.files.get_mut(ns) else { continue };
     if let Some(code) = &info.ns {
-      file.ns_code = code.to_owned();
+      code.clone_into(&mut file.ns_code);
     }
     for def in &info.removed_defs {
       file.defs.remove(def.as_str());
@@ -264,7 +264,7 @@ fn dump_def(ns: &str, def: &str, source: &Cirru, tests: &[(String, Cirru)], orig
   if origin == IrSourceOrigin::Project {
     let warnings = RefCell::new(vec![]);
     if let Err(failure) = preprocess::compile_source_def_for_snapshot(ns, def, &warnings, &CallStackList::default()) {
-      error = Some(failure.msg.to_string());
+      error = Some(failure.msg);
     }
   }
   let compiled = program::lookup_compiled_def(ns, def);

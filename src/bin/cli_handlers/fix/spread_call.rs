@@ -204,8 +204,8 @@ pub(super) fn plan_spread_call_fixes(
         .as_ref()
         .map(|replacement| {
           Ok::<_, String>(FixOperation::ReplaceNode {
-            original: original.format_one_liner().map_err(|error| error.to_string())?,
-            replacement: replacement.format_one_liner().map_err(|error| error.to_string())?,
+            original: original.format_one_liner()?,
+            replacement: replacement.format_one_liner()?,
           })
         })
         .transpose()?;

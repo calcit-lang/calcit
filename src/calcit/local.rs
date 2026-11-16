@@ -1,11 +1,16 @@
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use crate::program::EntryBook;
+use super::{CalcitSymbolInfo, CalcitTypeAnnotation};
+
+#[derive(Default)]
+struct LocalNameInterner {
+  by_idx: Vec<Arc<str>>,
+  by_name: HashMap<Arc<str>, u16, foldhash::fast::FixedState>,
+}
 
 /// names for local variables
-static LOCAL_NAMES: LazyLock<RwLock<EntryBook<()>>> = LazyLock::new(|| RwLock::new(EntryBook::default()));
-
-use super::{CalcitSymbolInfo, CalcitTypeAnnotation};
+static LOCAL_NAMES: LazyLock<RwLock<LocalNameInterner>> = LazyLock::new(|| RwLock::new(LocalNameInterner::default()));
 
 #[derive(Debug, Clone)]
 pub struct CalcitLocal {
@@ -19,23 +24,29 @@ pub struct CalcitLocal {
 }
 
 impl CalcitLocal {
+  pub fn lookup_sym(sym: &str) -> Option<u16> {
+    LOCAL_NAMES.read().expect("read local names").by_name.get(sym).copied()
+  }
+
   pub fn track_sym(sym: &Arc<str>) -> u16 {
-    let mut locals = LOCAL_NAMES.write().expect("read local names");
-    match locals.lookup_mut(sym) {
-      Some((_, idx)) => idx,
-      None => {
-        let idx = locals.len();
-        locals.insert(sym.clone(), ());
-        idx as u16
-      }
+    if let Some(&idx) = LOCAL_NAMES.read().expect("read local names").by_name.get(sym.as_ref()) {
+      return idx;
     }
+    let mut locals = LOCAL_NAMES.write().expect("write local names");
+    if let Some(&idx) = locals.by_name.get(sym.as_ref()) {
+      return idx;
+    }
+    let idx = u16::try_from(locals.by_idx.len()).expect("local variable table exceeded u16::MAX distinct names");
+    locals.by_idx.push(Arc::clone(sym));
+    locals.by_name.insert(Arc::clone(sym), idx);
+    idx
   }
 
   pub fn read_name(idx: u16) -> String {
     let locals = LOCAL_NAMES.read().expect("read local names");
-    match locals.load(idx) {
-      Ok((_, s)) => s.to_string(),
-      Err(_) => format!("<local:{idx}>"),
+    match locals.by_idx.get(idx as usize) {
+      Some(s) => s.to_string(),
+      None => format!("<local:{idx}>"),
     }
   }
 
