@@ -27,6 +27,46 @@
           :code $ quote $ defimpl Counter CounterOps (.next counter:next)
           :examples $ []
           :schema $ quote Impl
+        'SelfBindingBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SelfBindingBox (:value Number) (:impls SelfBindingOps)
+          :examples $ []
+          :schema $ quote StructDef
+        'SelfBindingBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SelfBindingBox SelfBindingOps
+            .describe $ fn (self)
+              hint-fn $ Fn Self $ -> String
+              , |box
+            .identity $ fn (self)
+              hint-fn $ Fn Self $ -> Self
+              , self
+            .pair $ fn (self)
+              hint-fn $ Fn Self $ -> (List Self)
+              [] self self
+          :examples $ []
+          :schema $ quote Impl
+          :tests $ []
+            %{} 'TestEntry (:name |self-receiver-describe)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= |box $ b .describe
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-return-identity)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= b $ b .identity
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-in-list)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= 2 $ count $ b .pair
+              :tags $ #{} :trait :unit
+        'SelfBindingOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait SelfBindingOps
+            .describe $ Fn Self $ -> String
+            .identity $ Fn Self $ -> Self
+            .pair $ Fn Self $ -> (List Self)
+          :examples $ []
+          :schema $ quote Trait
         'counter:add $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn counter:add (self other)
             %{} Counter $ :value $ + (:value self) (:value other)

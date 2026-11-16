@@ -58,7 +58,7 @@ deftrait Shape
 - 只要有一个方法用了 `Self`，每个方法的第一个参数都必须是 `Self`，因为方法按这个接收者分派；否则报 `E_TRAIT_SELF_RECEIVER`。
 - 只服务一种接收者的 trait 可以继续写具体类型，例如 core 的 `OptionOps` 写 `Fn (Option T) …`。
 - 签名里写 trait 自己的名字（`.label $ Fn Labeled (-> String)`）报 `E_TRAIT_AS_TYPE`，应改写为 `Self`。external-object trait 的成员仍以宿主句柄类型作接收者，不受影响。
-- `Self` 只在 `deftrait` 的方法签名里有意义；在其他 schema 里写 `Self` 报 `E_UNKNOWN_TYPE_NAME`。
+- `Self` 在 `deftrait` 的方法签名和 `defimpl` 内联方法的 `hint-fn` 里都表示接收者类型，省略 `(:generics Self)` 也成立；在其他 schema（普通 `defn`、`assert-type`）里写 `Self` 报 `E_UNKNOWN_TYPE_NAME`。
 - `:where $ T Shape` 约束下，`x .scale 2` 的返回类型是 `T`。
 
 普通 trait 的完整方法签名使用具体类型或显式声明的泛型；方法参数、返回值、容器和嵌套回调中的 `Dynamic` 沿用现有的拒绝规则。`deftrait` 中静态声明的这些签名会在预处理阶段报告定义位置。未提供完整合同的 `'Fn` 仍保留既有动态方法语义；需要保留输入、存储与返回之间的类型关系时，优先使用泛型合同。
@@ -142,6 +142,7 @@ This also replaces the old self-referential pattern `defimpl X X`, which can rec
 Implementation notes:
 
 - With a concrete trait argument, `defimpl` creates an impl that stores that exact trait value as its origin.
+- 内联方法体的 `hint-fn` 里，`Self` 就是 `Type`：`Fn Self (-> String)` 不需要 `(:generics Self)`，显式写出也等价。方法值用符号引用独立的 `defn` 时，hint 写在该 `defn` 内，不享有这个隐式绑定，需要写实现类型或显式声明泛型。
 - The impl must provide exactly the trait's declared method set; method values must be callable, and native preprocessing checks declared signatures when signature metadata is available.
 - Trait identity is nominal at runtime. Two independently evaluated traits do not become equal merely because their printed names and method sets match.
 - This origin is used by `assert-traits` and `&trait-call`; methods from multiple unrelated impls are never merged to satisfy one trait.

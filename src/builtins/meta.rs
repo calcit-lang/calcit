@@ -878,6 +878,36 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
     }
     return Calcit::from(vec![list[0].to_owned(), list[1].to_owned(), Calcit::from(entries)]);
   }
+  // A schema map without the `:: 'Fn` wrapper, as a `hint-fn` body carries it:
+  // `({} (:args …) (:return …) (:generics ([] 'T)))`.
+  if list.first().is_some_and(is_map_head) {
+    let Some(self_symbol) = self_symbol_like(form) else {
+      return form.to_owned();
+    };
+    let mut entries: Vec<Calcit> = list.iter().cloned().collect();
+    match entries.iter().position(is_generics_clause) {
+      Some(index) => {
+        let Calcit::List(entry) = &entries[index] else { unreachable!() };
+        let Some(Calcit::List(names)) = entry.get(1) else {
+          return form.to_owned();
+        };
+        if names.iter().any(names_self) {
+          return form.to_owned();
+        }
+        let mut name_items: Vec<Calcit> = names.iter().cloned().collect();
+        name_items.insert(1.min(name_items.len()), self_symbol);
+        entries[index] = Calcit::from(vec![entry[0].to_owned(), Calcit::from(name_items)]);
+      }
+      None => {
+        let list_head = Calcit::Proc(CalcitProc::List);
+        entries.push(Calcit::from(vec![
+          Calcit::tag("generics"),
+          Calcit::from(vec![list_head, self_symbol]),
+        ]));
+      }
+    }
+    return Calcit::from(entries);
+  }
   if !list.first().is_some_and(is_fn_head) {
     return form.to_owned();
   }
@@ -895,6 +925,48 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
     items[index] = Calcit::from(clause_items);
   } else {
     items.push(Calcit::from(vec![Calcit::tag("generics"), self_symbol]));
+  }
+  Calcit::from(items)
+}
+
+/// Inside a `defimpl Type Trait` method value, a body `hint-fn` describes the
+/// implementing type: `Self` is its implicit receiver binder, so the hint
+/// schema gets `Self` added to `(:generics …)` exactly as `deftrait` method
+/// signatures do. Other forms and hints are returned unchanged.
+pub(crate) fn with_implicit_self_generic_in_method_hint(form: &Calcit) -> Calcit {
+  fn is_named_head(item: &Calcit, name: &str) -> bool {
+    match item {
+      Calcit::Symbol { sym, .. } => sym.trim_start_matches('\'') == name,
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == name,
+      _ => false,
+    }
+  }
+  fn is_hint_fn_head(item: &Calcit) -> bool {
+    matches!(item, Calcit::Syntax(CalcitSyntax::HintFn, _)) || is_named_head(item, "hint-fn")
+  }
+  let Calcit::List(list) = form else {
+    return form.to_owned();
+  };
+  let body_start = if list.first().is_some_and(|head| is_named_head(head, "fn")) {
+    2
+  } else if list.first().is_some_and(|head| is_named_head(head, "defn")) {
+    3
+  } else {
+    return form.to_owned();
+  };
+  let mut items: Vec<Calcit> = list.iter().cloned().collect();
+  for item in items.iter_mut().skip(body_start) {
+    let Calcit::List(hint) = item else {
+      continue;
+    };
+    if hint.len() < 2 || !hint.first().is_some_and(is_hint_fn_head) {
+      continue;
+    }
+    let last = hint.len() - 1;
+    let schema = with_implicit_self_generic(hint.get(last).expect("hint-fn has a schema"));
+    let mut hint_items: Vec<Calcit> = hint.iter().cloned().collect();
+    hint_items[last] = schema;
+    *item = Calcit::from(hint_items);
   }
   Calcit::from(items)
 }
