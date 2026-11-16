@@ -10476,6 +10476,21 @@ defcomp comp-space (w h)
   }
 
   #[test]
+  fn create_file_from_snippet_keeps_implementations_separate_from_their_type() {
+    let file = create_file_from_snippet(
+      "defstruct Meter (:value Number)\n\ndeftrait Gauge\n  .read $ Fn Self $ -> Number\n\ndeftrait Reset\n  .reset $ Fn Self $ -> Self\n\ndefimpl Meter Gauge\n  .read $ fn (self) (:value self)\n\ndefimpl Meter Reset\n  .reset $ fn (self) self",
+    )
+    .expect("snippet should parse");
+    assert!(matches!(&file.defs["Meter"].code, Cirru::List(items) if items.first() == Some(&Cirru::leaf("defstruct"))));
+    let impl_count = file
+      .defs
+      .values()
+      .filter(|entry| matches!(&entry.code, Cirru::List(items) if items.first() == Some(&Cirru::leaf("defimpl"))))
+      .count();
+    assert_eq!(impl_count, 2);
+  }
+
+  #[test]
   fn create_file_from_expression_uses_a_structured_open_entry_schema() {
     let file = create_file_from_snippet("+ 1 2").expect("expression snippet should parse");
     let CalcitTypeAnnotation::Fn(schema) = file.defs["main!"].schema.as_ref() else {

@@ -9273,8 +9273,12 @@ fn check_struct_method_args(
   let Some(fn_info) = fn_info else {
     if let Some(inferred_fn) = infer_type_from_expr(method_entry, scope_types).and_then(|t| t.resolve_to_nonoptional_fn()) {
       let mut adjusted = inferred_fn.as_ref().clone();
-      if let Some(first) = adjusted.arg_types.first_mut() {
-        *first = calcit::DYNAMIC_TYPE.clone();
+      if let Some(bindings) = method_receiver_bindings(type_value.as_ref(), &inferred_fn, Some(scope_types)) {
+        // Preserve the receiver parameter so the checker still proves its bounds.
+        for argument in adjusted.arg_types.iter_mut().skip(1) {
+          *argument = argument.substitute_type_vars(&bindings);
+        }
+        adjusted.rest_type = adjusted.rest_type.map(|rest| rest.substitute_type_vars(&bindings));
       }
       type_checking::check_method_call_arg_types(
         head,
@@ -9468,6 +9472,7 @@ fn expected_method_argument_types(
           type_inference::infer_static_type_from_expr(method_entry)?
         }
       }
+      Calcit::Proc(_) => return None,
       Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def),
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {

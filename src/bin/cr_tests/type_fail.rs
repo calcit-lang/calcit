@@ -5709,6 +5709,37 @@ fn strict_type_fail_defimpl_infers_self_and_rejects_mismatch() {
 }
 
 #[test]
+fn strict_type_fail_local_method_shares_receiver_payload_type() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    for (replacement, should_reject) in [("2", false), ("|wrong-payload", true)] {
+      let entries = load_snippet_entries(&format!(
+        "deftrait ReplaceOps\n  .replace $ Fn Self Self $ -> Self\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox ReplaceOps\n        .replace $ fn (self other) other\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      other $ BoxWithImpl :value {replacement}\n    .replace receiver other\n  , &unit"
+      ));
+      // Compile directly so the ordinary argument checker must reject the bad call.
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.into_inner();
+      let mismatch = matches!(&result, Err(err) if err.code.as_deref() == Some("E_METHOD_ARG_TYPE_MISMATCH"))
+        || warnings.iter().any(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH"));
+      if should_reject {
+        assert!(
+          mismatch,
+          "expected a receiver-bound argument mismatch, got {result:?}, {warnings:?}"
+        );
+      } else {
+        assert!(
+          result.is_ok() && warnings.is_empty(),
+          "same-payload call should compile, got {result:?}, {warnings:?}"
+        );
+      }
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
