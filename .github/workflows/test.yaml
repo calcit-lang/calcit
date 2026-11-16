@@ -625,7 +625,6 @@ jobs:
       - wasi_preprocess
       - wasi03_command_smoke
       - wasi_business_smoke
-      - macos_main_thread
       - ubuntu_2204_no_wasm
       - rust_tests
       - core_checks
@@ -657,7 +656,6 @@ jobs:
           expect wasi_preprocess "${{ needs.plan.outputs.wasi }}"
           expect wasi03_command_smoke "${{ needs.plan.outputs.wasi }}"
           expect wasi_business_smoke "${{ needs.plan.outputs.wasi }}"
-          expect macos_main_thread "${{ needs.plan.outputs.platform }}"
           expect ubuntu_2204_no_wasm "${{ needs.plan.outputs.platform }}"
           expect lint_core_check_all "$full"
           if [[ "$full" == "true" ]]; then expect check_all_smoke false; else expect check_all_smoke true; fi

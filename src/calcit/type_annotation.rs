@@ -599,45 +599,58 @@ pub(crate) fn lexical_type_variables_in_forms<'a>(forms: impl IntoIterator<Item 
 }
 
 fn collect_type_variable_names(types: &[Arc<CalcitTypeAnnotation>], free_only: bool) -> HashSet<Arc<str>> {
-  let mut names = HashSet::new();
-  let mut pending = types.iter().map(|ty| (ty.as_ref(), HashSet::<Arc<str>>::new())).collect::<Vec<_>>();
-  while let Some((annotation, mut bound)) = pending.pop() {
+  fn walk(annotation: &CalcitTypeAnnotation, free_only: bool, bound: &HashSet<Arc<str>>, names: &mut HashSet<Arc<str>>) {
     match annotation {
       CalcitTypeAnnotation::TypeVar(name) => {
         if !bound.contains(name) {
-          names.insert(name.clone());
+          names.insert(Arc::clone(name));
         }
       }
       CalcitTypeAnnotation::TypeRef(_, args)
       | CalcitTypeAnnotation::Struct(_, args)
       | CalcitTypeAnnotation::Enum(_, args)
       | CalcitTypeAnnotation::Tuple(args) => {
-        pending.extend(args.iter().map(|ty| (ty.as_ref(), bound.clone())));
+        for ty in args.iter() {
+          walk(ty, free_only, bound, names);
+        }
       }
       CalcitTypeAnnotation::List(inner)
       | CalcitTypeAnnotation::Set(inner)
       | CalcitTypeAnnotation::Ref(inner)
       | CalcitTypeAnnotation::Nullable(inner, _)
-      | CalcitTypeAnnotation::Variadic(inner) => pending.push((inner, bound)),
+      | CalcitTypeAnnotation::Variadic(inner) => walk(inner, free_only, bound, names),
       CalcitTypeAnnotation::Map(key, value) => {
-        pending.push((key, bound.clone()));
-        pending.push((value, bound));
+        walk(key, free_only, bound, names);
+        walk(value, free_only, bound, names);
       }
       CalcitTypeAnnotation::Fn(signature) => {
-        if free_only {
-          bound.extend(signature.generics.iter().cloned());
+        let mut owned_bound;
+        let active_bound = if free_only && !signature.generics.is_empty() {
+          owned_bound = bound.clone();
+          owned_bound.extend(signature.generics.iter().cloned());
+          &owned_bound
+        } else {
+          bound
+        };
+        for ty in signature.arg_types.iter() {
+          walk(ty, free_only, active_bound, names);
         }
-        pending.extend(signature.arg_types.iter().map(|ty| (ty.as_ref(), bound.clone())));
-        pending.push((&signature.return_type, bound.clone()));
+        walk(&signature.return_type, free_only, active_bound, names);
         if let Some(guard) = &signature.guard {
-          pending.push((guard, bound.clone()));
+          walk(guard, free_only, active_bound, names);
         }
         if let Some(rest) = &signature.rest_type {
-          pending.push((rest, bound));
+          walk(rest, free_only, active_bound, names);
         }
       }
       _ => {}
     }
+  }
+
+  let mut names = HashSet::new();
+  let empty_bound = HashSet::new();
+  for ty in types {
+    walk(ty, free_only, &empty_bound, &mut names);
   }
   names
 }

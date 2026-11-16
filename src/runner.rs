@@ -407,7 +407,7 @@ pub fn call_expr(
       let rest_nodes = xs.skip(1).expect("expected syntax rest nodes");
       if using_stack() {
         let next_stack = call_stack.extend_owned(
-          def_ns,
+          Arc::clone(def_ns),
           s.as_ref(),
           StackKind::Syntax,
           Calcit::from(xs.to_vec()),
@@ -435,7 +435,7 @@ pub fn call_expr(
           evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
         };
         if using_stack() {
-          let next_stack = call_stack.extend(file_ns, name, StackKind::Method, &Calcit::Nil, &values);
+          let next_stack = call_stack.extend(file_ns, Arc::clone(name), StackKind::Method, &Calcit::Nil, &values);
           builtins::meta::invoke_method(name, &values, &next_stack)
         } else {
           builtins::meta::invoke_method(name, &values, call_stack)
@@ -498,7 +498,13 @@ pub fn call_expr(
         evaluate_args_from(xs, 1, scope, file_ns, call_stack)?
       };
       if using_stack() {
-        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_vec()), &values);
+        let next_stack = call_stack.extend(
+          Arc::clone(&info.def_ns),
+          Arc::clone(&info.name),
+          StackKind::Fn,
+          &Calcit::from(xs.to_vec()),
+          &values,
+        );
         run_fn_owned(values, info, &next_stack)
       } else {
         run_fn_owned(values, info, call_stack)
@@ -517,8 +523,8 @@ pub fn call_expr(
 
       let next_stack = if using_stack() {
         call_stack.extend_owned(
-          &info.def_ns,
-          &info.name,
+          Arc::clone(&info.def_ns),
+          Arc::clone(&info.name),
           StackKind::Macro,
           Calcit::from(xs.to_vec()),
           current_values.clone(),

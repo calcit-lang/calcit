@@ -2172,25 +2172,43 @@ fn later_union_argument_widens_generic_binding() {
 
 #[test]
 fn set_difference_and_intersection_preserve_the_left_element_type() {
-  for (proc, expected, disjoint) in [
-    ("&difference", "(#{} 1)", "(#{} 1)"),
-    ("&set:intersection", "(#{} 2)", "(#{})"),
-    ("difference", "(#{} 1)", "(#{} 1)"),
-    ("intersection", "(#{} 2)", "(#{})"),
+  let eval = |code: &str| {
+    Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args(["--tips-level", "none", "eval", code])
+      .output()
+      .expect("calcit eval should run")
+  };
+  for (proc, expected, disjoint, allows_disjoint_member_type) in [
+    ("&difference", "(#{} 1)", "(#{} 1)", true),
+    ("&set:intersection", "(#{} 2)", "(#{})", true),
+    ("difference", "(#{} 1)", "(#{} 1)", false),
+    ("intersection", "(#{} 2)", "(#{})", false),
   ] {
-    let positive = format!(
-      "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
-       (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
-       (assert= {disjoint} ({proc} (#{{}} 1) (#{{}}))) \
-       (assert= {disjoint} (assert-type ({proc} (#{{}} 1) (#{{}} |text)) (Set Number)))",
-    );
-    let eval = |code: &str| {
-      Command::new(env!("CARGO_BIN_EXE_calcit"))
-        .args(["--tips-level", "none", "eval", code])
-        .output()
-        .expect("calcit eval should run")
+    let positive = if allows_disjoint_member_type {
+      format!(
+        "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
+         (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
+         (assert= {disjoint} ({proc} (#{{}} 1) (#{{}}))) \
+         (assert= {disjoint} (assert-type ({proc} (#{{}} 1) (#{{}} |text)) (Set Number)))",
+      )
+    } else {
+      format!(
+        "do (assert= {expected} ({proc} (#{{}} 1 2) (#{{}} 2 3))) \
+         (assert= (#{{}}) ({proc} (#{{}}) (#{{}} 1))) \
+         (assert= {disjoint} (assert-type ({proc} (#{{}} 1) (#{{}})) (Set Number)))",
+      )
     };
     assert_success(&eval(&positive), proc);
+
+    if !allows_disjoint_member_type {
+      let mismatch = eval(&format!("{proc} (#{{}} 1) (#{{}} |text)"));
+      let stderr = String::from_utf8_lossy(&mismatch.stderr);
+      assert!(!mismatch.status.success(), "{proc} accepted mismatched Set element types");
+      assert!(
+        stderr.contains("E_FN_ARG_TYPE_MISMATCH") && stderr.contains("set<number>") && stderr.contains("set<string>"),
+        "{stderr}"
+      );
+    }
 
     let output = eval(&format!("{proc} (#{{}} 1) |text"));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2226,13 +2244,13 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
   for expression in [
     "&difference (#{} 1) (#{} true)",
     "&set:intersection (#{} false) (#{} 0)",
-    "difference (#{} 1) (#{} 2) (#{} true)",
-    "intersection (#{} 1) (#{} true)",
+    "difference (#{} 1 |x) (#{} 2 |x) (#{} true |x)",
+    "intersection (#{} 1 |x) (#{} true |x)",
     "&difference (#{} 1) (#{} true |x)",
     "&set:intersection (#{} false |x) (#{} 0)",
     "&difference (#{} :alpha) (#{} 78)",
     "&set:intersection (#{} ([] 1)) (#{} ([] true))",
-    "intersection (#{} ([] 1)) (#{} ([] 1)) (#{} ([] true))",
+    "intersection (#{} ([] 1) ([] |x)) (#{} ([] 1) ([] |x)) (#{} ([] true) ([] |x))",
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");

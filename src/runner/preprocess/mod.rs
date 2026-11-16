@@ -4749,9 +4749,13 @@ fn process_macro_source(
   reject_cond_without_default(info, args, ctx.call_location.clone(), ctx.call_stack)?;
 
   let code = Calcit::List(source.clone());
-  let next_stack = ctx
-    .call_stack
-    .extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
+  let next_stack = ctx.call_stack.extend_owned(
+    Arc::clone(&info.def_ns),
+    Arc::clone(&info.name),
+    StackKind::Macro,
+    code,
+    args.to_vec(),
+  );
 
   let native_lowered = if let Some(retained) = retained.as_ref().filter(|retained| retained.native_lowered) {
     Some(retained.code.clone())

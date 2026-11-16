@@ -587,7 +587,7 @@ impl Hash for Calcit {
       Syntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
-        name.to_string().hash(_state);
+        name.as_ref().hash(_state);
       }
       Method(name, call_native) => {
         "method:".hash(_state);
