@@ -5740,6 +5740,35 @@ fn strict_type_fail_local_method_shares_receiver_payload_type() {
 }
 
 #[test]
+fn strict_type_fail_local_method_keeps_callback_generics_independent() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    for (callback_schema, should_reject) in [("Fn T (-> T) (:generics T)", false), ("Fn Number (-> Number)", true)] {
+      let entries = load_snippet_entries(&format!(
+        "deftrait CallbackOps\n  .use-callback $ Fn Self (Fn T (-> T) (:generics T)) (-> Unit)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox CallbackOps\n        .use-callback $ fn (self callback) &unit\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      callback $ fn (x)\n        hint-fn $ {callback_schema}\n        , x\n    .use-callback receiver callback"
+      ));
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.into_inner();
+      if should_reject {
+        assert!(
+          matches!(&result, Err(err) if err.code.as_deref() == Some("E_METHOD_ARG_TYPE_MISMATCH"))
+            || warnings.iter().any(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH")),
+          "expected the method to reject a monomorphic callback, got {result:?}, {warnings:?}"
+        );
+      } else {
+        assert!(
+          result.is_ok() && warnings.is_empty(),
+          "polymorphic callback should compile, got {result:?}, {warnings:?}"
+        );
+      }
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

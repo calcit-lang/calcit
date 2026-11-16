@@ -9276,9 +9276,9 @@ fn check_struct_method_args(
       if let Some(bindings) = method_receiver_bindings(type_value.as_ref(), &inferred_fn, Some(scope_types)) {
         // Preserve the receiver parameter so the checker still proves its bounds.
         for argument in adjusted.arg_types.iter_mut().skip(1) {
-          *argument = argument.substitute_type_vars(&bindings);
+          *argument = argument.substitute_free_type_vars(&bindings);
         }
-        adjusted.rest_type = adjusted.rest_type.map(|rest| rest.substitute_type_vars(&bindings));
+        adjusted.rest_type = adjusted.rest_type.map(|rest| rest.substitute_free_type_vars(&bindings));
       } else if let Some(receiver) = adjusted.arg_types.first_mut() {
         // Explicit impl attachment can leave nominal receiver guards to runtime.
         // Without a proof, do not specialize the rest of the signature.
@@ -28657,11 +28657,9 @@ mod tests {
     concrete_callback.generics = Arc::new(vec![]);
     let callback_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(concrete_callback)));
     let callback = generic_relation_test_local("callback", callback_type.clone());
-    let expected_callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(generic_relation_test_signature(
-      vec![type_var.clone()],
-      type_var.clone(),
-      None,
-    ))));
+    let mut shared_callback = generic_relation_test_signature(vec![type_var.clone()], type_var.clone(), None);
+    shared_callback.generics = Arc::new(vec![]);
+    let expected_callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(shared_callback)));
     let map_signature = generic_relation_test_signature(
       vec![Arc::new(CalcitTypeAnnotation::List(type_var.clone())), expected_callback],
       Arc::new(CalcitTypeAnnotation::List(type_var)),

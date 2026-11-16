@@ -262,6 +262,14 @@ mod tests {
   }
 
   #[test]
+  fn local_definition_storage_distinguishes_clones_from_fresh_declarations() {
+    let declaration = || CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x")]);
+    let point = declaration();
+    assert!(point.shares_local_definition_storage(&point.clone()));
+    assert!(!point.shares_local_definition_storage(&declaration()));
+  }
+
+  #[test]
   fn nested_nominal_field_identity_keeps_qualified_definition() {
     let left = wrapper(nested_struct("alpha.models"));
     let right = wrapper(nested_struct("beta.models"));
