@@ -19,9 +19,7 @@ struct MacroCallSite {
   macro_name: Arc<str>,
   expansion_ns: Arc<str>,
   compiling_def: Arc<str>,
-  caller_ns: Arc<str>,
-  caller_def: Arc<str>,
-  coord: Arc<Vec<u16>>,
+  caller: NodeLocation,
 }
 
 #[derive(Debug, Clone)]
@@ -103,9 +101,7 @@ pub fn lookup(
     macro_name: Arc::from(macro_name),
     expansion_ns: Arc::from(file_ns),
     compiling_def: meta::current_compiling_key(file_ns),
-    caller_ns: location.ns.clone(),
-    caller_def: location.def.clone(),
-    coord: location.coord.clone(),
+    caller: location.clone(),
   };
   let signature_hash = signature_hash(signature);
   let gensym_start = meta::current_gensym_index(file_ns);

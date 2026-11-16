@@ -12,8 +12,8 @@ use super::{
   preprocess_expr,
 };
 use crate::calcit::{
-  self, Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSymbolInfo, CalcitTypeAnnotation,
-  CalcitUnionDef, ImportInfo,
+  self, Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitTypeAnnotation, CalcitUnionDef,
+  ImportInfo,
   union_def::{UnionMember, UnionMemberKind},
 };
 use crate::program;
@@ -148,12 +148,10 @@ fn member_test(member: &UnionMember, value: &Calcit, file_ns: &str, def_name: &s
   }
 }
 
-fn typed_local(
-  sym: &Arc<str>,
-  info: &Arc<CalcitSymbolInfo>,
-  location: &Option<Arc<Vec<u16>>>,
-  type_info: Arc<CalcitTypeAnnotation>,
-) -> Calcit {
+fn typed_local(symbol: &Calcit, type_info: Arc<CalcitTypeAnnotation>) -> Calcit {
+  let Calcit::Symbol { sym, info, location } = symbol else {
+    unreachable!("union match local binding must be a symbol");
+  };
   Calcit::Local(CalcitLocal {
     idx: CalcitLocal::track_sym(sym),
     sym: sym.to_owned(),
@@ -288,9 +286,7 @@ pub(super) fn lower_union_match(
         let binding = match pattern.get(1) {
           None => None,
           Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_" => None,
-          Some(Calcit::Symbol { sym, info, location }) => {
-            Some(typed_local(sym, info, location, members[member_index].annotation.to_owned()))
-          }
+          Some(symbol @ Calcit::Symbol { .. }) => Some(typed_local(symbol, members[member_index].annotation.to_owned())),
           Some(other) => {
             return Err(union_error(
               format!("type pattern binding must be a symbol, got: {other}"),
@@ -324,12 +320,9 @@ pub(super) fn lower_union_match(
   }
 
   let value_sym_symbol = generated_path_symbol("union_v", file_ns, ctx.call_stack)?;
-  let Calcit::Symbol { sym, info, location } = &value_sym_symbol else {
-    unreachable!("gensym returns a symbol");
-  };
   // The tested value is held as Dynamic so the generated kind tests stay
   // ordinary predicate calls; each branch rebinds it with the member type.
-  let value_local = typed_local(sym, info, location, calcit::DYNAMIC_TYPE.clone());
+  let value_local = typed_local(&value_sym_symbol, calcit::DYNAMIC_TYPE.clone());
 
   let mut chain = match wildcard {
     Some(body) => body.to_owned(),

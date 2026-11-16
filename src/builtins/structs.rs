@@ -1692,12 +1692,6 @@ mod tests {
     use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
 
     let _guard = lock_program_test_state();
-    crate::calcit::register_program_lookups(
-      crate::program::lookup_runtime_ready,
-      crate::program::lookup_def_code,
-      crate::program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     PROGRAM_CODE_DATA.write().expect("seed Items alias").insert(
       Arc::from("tests.struct-alias"),
       ProgramFileData {

@@ -41,12 +41,7 @@ fn bundled_core_initialization_releases_program_lock_for_schema_lookups() {
   }
 
   if std::env::var_os(CHILD).is_some() {
-    calcit::register_program_lookups(
-      lookup_runtime_ready,
-      audited_lookup,
-      lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
+    calcit::set_def_code_lookup_hook_for_test(audited_lookup);
     assert!(!has_bundled_core_source(), "an empty program is not the bundled core");
     assert!(
       LOOKUPS.load(Ordering::Relaxed) > 0,
@@ -125,7 +120,7 @@ fn strict_edn_decoder_nominals_are_compiled_dependencies() {
     vec![DataShapeNode::Struct {
       nominal: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![])),
       nominal_path: Some((ns, def)),
-      type_args: Arc::new(vec![]),
+      type_args: Arc::from([]),
       fields: vec![],
     }],
   )
@@ -223,12 +218,6 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
 fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
-  calcit::register_program_lookups(
-    lookup_runtime_ready,
-    lookup_def_code,
-    lookup_def_schema,
-    crate::runner::preprocess::infer_static_definition_type,
-  );
 
   let wrapper_code = code_to_calcit(
     &cirru_list(vec![
@@ -282,12 +271,6 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
 fn recursive_type_alias_relation_is_finite_and_incompatible() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
-  calcit::register_program_lookups(
-    lookup_runtime_ready,
-    lookup_def_code,
-    lookup_def_schema,
-    crate::runner::preprocess::infer_static_definition_type,
-  );
 
   let alias = |target: &str| ProgramDefEntry {
     tags: Default::default(),

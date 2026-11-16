@@ -24,8 +24,8 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let body_items = expr.skip(2)?.to_vec();
       let mut return_type = detect_return_type_hint(&body_items);
-      let generics = detect_fn_generics(&body_items);
-      let mut where_bounds = detect_fn_where_bounds(&body_items);
+      let generics = Arc::new(detect_fn_generics(&body_items));
+      let mut where_bounds = Arc::new(detect_fn_where_bounds(&body_items));
       let mut declared_rest_type = detect_fn_rest_type(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
       let param_symbols = match collect_param_symbols(xs) {
@@ -199,22 +199,18 @@ fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
   crate::calcit::DYNAMIC_TYPE.clone()
 }
 
-fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
-  for form in forms {
-    if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
-      return Arc::new(vars);
-    }
-  }
-  Arc::new(vec![])
+fn detect_fn_generics(forms: &[Calcit]) -> Vec<Arc<str>> {
+  forms
+    .iter()
+    .find_map(CalcitTypeAnnotation::extract_generics_from_hint_form)
+    .unwrap_or_default()
 }
 
-fn detect_fn_where_bounds(forms: &[Calcit]) -> Arc<Vec<crate::calcit::CalcitGenericBound>> {
-  for form in forms {
-    if let Some(bounds) = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(form) {
-      return Arc::new(bounds);
-    }
-  }
-  Arc::new(vec![])
+fn detect_fn_where_bounds(forms: &[Calcit]) -> Vec<crate::calcit::CalcitGenericBound> {
+  forms
+    .iter()
+    .find_map(CalcitTypeAnnotation::extract_where_bounds_from_hint_form)
+    .unwrap_or_default()
 }
 
 fn detect_fn_rest_type(forms: &[Calcit]) -> Option<Arc<CalcitTypeAnnotation>> {

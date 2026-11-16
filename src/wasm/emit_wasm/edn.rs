@@ -168,10 +168,7 @@ fn emit_edn_value(
   }
 }
 
-fn resolved_enum_variants(
-  nominal: &CalcitEnumDef,
-  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
-) -> Result<Vec<ResolvedEnumVariant>, String> {
+fn resolved_enum_variants(nominal: &CalcitEnumDef, args: &[Arc<CalcitTypeAnnotation>]) -> Result<Vec<ResolvedEnumVariant>, String> {
   if nominal.generics().len() != args.len() {
     return Err(format!(
       "E_WASM_EDN_ENUM_SHAPE: enum :{} expects {} type arguments, got {}",
@@ -208,7 +205,7 @@ fn emit_edn_enum(
   ctx: &mut WasmGenCtx,
   value: u32,
   nominal: &CalcitEnumDef,
-  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  args: &[Arc<CalcitTypeAnnotation>],
   depth: usize,
   nested: bool,
 ) -> Result<u32, String> {
@@ -300,7 +297,7 @@ fn emit_edn_enum(
 
 fn resolved_struct_fields(
   nominal: &CalcitStructDef,
-  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  args: &[Arc<CalcitTypeAnnotation>],
 ) -> Result<Vec<(EdnTag, Arc<CalcitTypeAnnotation>)>, String> {
   if nominal.generics.len() != args.len() {
     return Err(format!(
@@ -343,7 +340,7 @@ fn emit_edn_struct(
   ctx: &mut WasmGenCtx,
   value: u32,
   nominal: &CalcitStructDef,
-  args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  args: &[Arc<CalcitTypeAnnotation>],
   depth: usize,
   nested: bool,
 ) -> Result<u32, String> {

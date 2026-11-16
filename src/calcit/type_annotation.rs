@@ -15,8 +15,10 @@ use super::{
   CORE_NS, Calcit, CalcitEnumDef, CalcitEnumValue, CalcitFn, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
   CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitUnionDef,
 };
+use std::sync::LazyLock;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::{LazyLock, OnceLock};
 
 static LEXICAL_TYPE_BINDER: AtomicU64 = AtomicU64::new(0);
 
@@ -40,17 +42,16 @@ pub(crate) fn has_lexical_type_variables(types: &[Arc<CalcitTypeAnnotation>]) ->
     .any(|name| name.starts_with("#lexical:") && name.contains('\0'))
 }
 
-// ---------------------------------------------------------------------------
-// Decoupled program lookups – registered at runtime by `program::init_type_annotation_lookups()`
-// to avoid a circular dependency: type_annotation → program → snapshot → calcit.
-// ---------------------------------------------------------------------------
+#[cfg(test)]
 type LookupFn = fn(&str, &str) -> Option<Calcit>;
-type SchemaLookupFn = fn(&str, &str) -> Arc<CalcitTypeAnnotation>;
-type InferredTypeLookupFn = fn(&str, &str) -> Option<Arc<CalcitTypeAnnotation>>;
-static LOOKUP_RUNTIME_READY_DEF: OnceLock<LookupFn> = OnceLock::new();
-static LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
-static LOOKUP_DEF_SCHEMA: OnceLock<SchemaLookupFn> = OnceLock::new();
-static LOOKUP_INFERRED_DEF_TYPE: OnceLock<InferredTypeLookupFn> = OnceLock::new();
+#[cfg(test)]
+static TEST_LOOKUP_DEF_CODE: OnceLock<LookupFn> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn set_def_code_lookup_hook_for_test(code_lookup: LookupFn) {
+  let _ = TEST_LOOKUP_DEF_CODE.set(code_lookup);
+}
+
 thread_local! {
   static TYPE_ANNOTATION_WARNING_CONTEXT: RefCell<Vec<Arc<str>>> = const { RefCell::new(vec![]) };
   /// Global type-slot registry: maps slot names to their bound type annotations.
@@ -61,21 +62,6 @@ thread_local! {
   /// Scoped type-slot overrides for `with-type-slot` blocks.
   /// Each entry is a stack; the top value shadows the base `TYPE_SLOTS` binding within the scope.
   static TYPE_SLOT_OVERRIDES: RefCell<HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>> = RefCell::new(HashMap::new());
-}
-
-/// Register program-level lookup functions.  Must be called once at startup
-/// (e.g. from `program::extract_program_data`) before any type-annotation
-/// resolution that needs import-chain traversal.
-pub fn register_program_lookups(
-  runtime_ready_lookup: LookupFn,
-  code_lookup: LookupFn,
-  schema_lookup: SchemaLookupFn,
-  inferred_type_lookup: InferredTypeLookupFn,
-) {
-  let _ = LOOKUP_RUNTIME_READY_DEF.set(runtime_ready_lookup);
-  let _ = LOOKUP_DEF_CODE.set(code_lookup);
-  let _ = LOOKUP_DEF_SCHEMA.set(schema_lookup);
-  let _ = LOOKUP_INFERRED_DEF_TYPE.set(inferred_type_lookup);
 }
 
 pub fn with_type_annotation_warning_context<T>(label: impl Into<Arc<str>>, f: impl FnOnce() -> T) -> T {
@@ -176,12 +162,10 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
     if let CalcitTypeAnnotation::TypeRef(path, args) = binding.as_ref()
       && args.is_empty()
       && let Some((ns, def)) = path.rsplit_once('/')
-      && LOOKUP_DEF_SCHEMA
-        .get()
-        .is_some_and(|lookup| crate::snapshot::schema_annotation_is_missing(&lookup(ns, def)))
+      && crate::snapshot::schema_annotation_is_missing(&crate::program::lookup_def_schema(ns, def))
       && binding.resolve_to_enum().is_none()
       && binding.resolve_to_struct().is_none()
-      && let Some(inferred) = LOOKUP_INFERRED_DEF_TYPE.get().and_then(|lookup| lookup(ns, def))
+      && let Some(inferred) = crate::runner::preprocess::infer_static_definition_type(ns, def)
       && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic)
     {
       return Some(inferred);
@@ -256,17 +240,21 @@ fn emit_legacy_fn_type_syntax_warning(schema_hint: &str, form: &Calcit) {
 }
 
 fn lookup_runtime_ready_registered(ns: &str, def: &str) -> Option<Calcit> {
-  LOOKUP_RUNTIME_READY_DEF.get().and_then(|f| f(ns, def))
+  crate::program::lookup_runtime_ready(ns, def)
 }
 
 fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
-  LOOKUP_DEF_CODE.get().and_then(|f| f(ns, def))
+  #[cfg(test)]
+  if let Some(lookup) = TEST_LOOKUP_DEF_CODE.get() {
+    return lookup(ns, def);
+  }
+  crate::program::lookup_def_code(ns, def)
 }
 
 /// Look up a definition's schema type annotation by namespace and definition name.
-/// Returns `None` if the lookup function is not registered, or the schema is `Dynamic`.
+/// Returns `None` if the schema is `Dynamic`.
 fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
-  let schema = LOOKUP_DEF_SCHEMA.get().map(|f| f(ns, def))?;
+  let schema = crate::program::lookup_def_schema(ns, def);
   if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     None
   } else {
@@ -8218,12 +8206,6 @@ mod tests {
     use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
 
     let _guard = lock_program_test_state();
-    register_program_lookups(
-      crate::program::lookup_runtime_ready,
-      crate::program::lookup_def_code,
-      crate::program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let alias_ref = |name: &'static str| {
       Arc::new(CalcitTypeAnnotation::TypeRef(
         Arc::from(format!("tests.alias-cycle/{name}")),
@@ -8274,12 +8256,6 @@ mod tests {
     use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
 
     let _guard = lock_program_test_state();
-    register_program_lookups(
-      crate::program::lookup_runtime_ready,
-      crate::program::lookup_def_code,
-      crate::program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let namespace = "tests.runtime-alias";
     let alias_ref = |name: &'static str| {
       Arc::new(CalcitTypeAnnotation::TypeRef(
@@ -8502,12 +8478,6 @@ mod tests {
     use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
 
     let _guard = lock_program_test_state();
-    register_program_lookups(
-      crate::program::lookup_runtime_ready,
-      crate::program::lookup_def_code,
-      crate::program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let mut definition = CalcitStructDef::from_fields(EdnTag::new("Box"), vec![EdnTag::new("value")]);
     definition.definition_ref = Some(Arc::from("tests.nominal-capability/Box"));
     definition.generics = Arc::new(vec![Arc::from("T")]);
@@ -8904,12 +8874,6 @@ mod tests {
   #[test]
   fn nominal_trait_matching_does_not_reverse_unqualified_placeholders() {
     let _guard = crate::program::lock_program_test_state();
-    register_program_lookups(
-      crate::program::lookup_runtime_ready,
-      crate::program::lookup_def_code,
-      crate::program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let bare_placeholder = CalcitTrait::new_reference("DomElement");
     let runtime_trait = CalcitTrait::new_runtime(EdnTag::new("DomElement"), vec![], vec![]);
 

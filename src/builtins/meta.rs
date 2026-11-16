@@ -1060,24 +1060,24 @@ pub(crate) fn qualify_trait_member_type_form(form: &Calcit, fallback_ns: &str) -
       _ => false,
     }
   }
-  fn qualified_symbol(sym: &str, info: &Arc<CalcitSymbolInfo>, location: &Option<Arc<Vec<u16>>>, fallback_ns: &str) -> Option<Calcit> {
+  fn qualified_symbol_name(sym: &str, info: &CalcitSymbolInfo, fallback_ns: &str) -> Option<Arc<str>> {
     let stripped = sym.trim_start_matches('\'');
     let quotes = &sym[..sym.len() - stripped.len()];
     if quotes.len() > 1 {
       return None;
     }
-    qualify_name(stripped, info, fallback_ns).map(|qualified| Calcit::Symbol {
-      sym: Arc::from(format!("{quotes}{qualified}")),
-      info: info.to_owned(),
-      location: location.to_owned(),
-    })
+    qualify_name(stripped, info, fallback_ns).map(|qualified| Arc::from(format!("{quotes}{qualified}")))
   }
   // Inside `quote`, bare symbols are type names too, e.g. `quote $ Box Fn`.
   fn walk(form: &Calcit, fallback_ns: &str, quoted: bool) -> Calcit {
     match form {
-      Calcit::Symbol { sym, info, location } if quoted || sym.starts_with('\'') => {
-        qualified_symbol(sym, info, location, fallback_ns).unwrap_or_else(|| form.to_owned())
-      }
+      Calcit::Symbol { sym, info, location } if quoted || sym.starts_with('\'') => qualified_symbol_name(sym, info, fallback_ns)
+        .map(|qualified| Calcit::Symbol {
+          sym: qualified,
+          info: info.to_owned(),
+          location: location.to_owned(),
+        })
+        .unwrap_or_else(|| form.to_owned()),
       // Compact `(Fn …)` and canonical `(:: 'Fn …)` schemas, possibly quoted.
       Calcit::List(list) if is_callable_schema_form(list) => form.to_owned(),
       Calcit::List(list) if list.len() == 2 && list.first().is_some_and(is_quote_head) => match list.get(1) {
