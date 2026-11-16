@@ -27,6 +27,67 @@
           :code $ quote $ defimpl Counter CounterOps (.next counter:next)
           :examples $ []
           :schema $ quote Impl
+        'SelfBindingBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SelfBindingBox (:value Number) (:impls SelfBindingOps)
+          :examples $ []
+          :schema $ quote StructDef
+        'SelfBindingBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SelfBindingBox SelfBindingOps
+            .describe $ fn (self)
+              hint-fn $ Fn Self $ -> String
+              , |box
+            .identity $ fn (self)
+              hint-fn $ Fn Self $ -> Self
+              , self
+            .pair $ fn (self)
+              hint-fn $ Fn Self $ -> (List Self)
+              [] self self
+            .echo-self $ core/fn (self)
+              hint-fn $ Fn Self $ -> Self
+              , self
+            .keep-self $ fn (self _other)
+              hint-fn $ {}
+                :args $ [] 'Self 'T
+                :return 'Self
+                |generics $ [] 'T
+              , self
+          :examples $ []
+          :schema $ quote Impl
+          :tests $ []
+            %{} 'TestEntry (:name |self-receiver-describe)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= |box $ b .describe
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-return-identity)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= b $ b .identity
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-in-list)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= 2 $ count $ b .pair
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-qualified-core-fn)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= b $ b .echo-self
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |self-string-key-generics)
+              :code $ quote $ let
+                  b $ SelfBindingBox :value 7
+                assert= b $ b .keep-self |ignored
+              :tags $ #{} :trait :unit
+        'SelfBindingOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait SelfBindingOps
+            .describe $ Fn Self $ -> String
+            .identity $ Fn Self $ -> Self
+            .pair $ Fn Self $ -> (List Self)
+            .echo-self $ Fn Self $ -> Self
+            .keep-self $ Fn Self T (-> Self) (:generics T)
+          :examples $ []
+          :schema $ quote Trait
         'counter:add $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn counter:add (self other)
             %{} Counter $ :value $ + (:value self) (:value other)
@@ -39,6 +100,7 @@
           :schema $ quote $ Fn Counter (-> Counter)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.external
+          :require $ calcit.core :as core
     'test-traits.identity $ %{} 'FileEntry
       :defs $ {} $ 'make-marker
         %{} 'CodeEntry

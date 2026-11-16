@@ -5824,14 +5824,24 @@ fn preprocess_list_call(
               let _nested_defimpl = DefimplContextScope::enter(None);
               let p0 = preprocess_expr(&pair_items[0], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
               let p1 = preprocess_expr(&pair_items[1], scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+              // A body `hint-fn` in this method value names the implementing
+              // type as `Self`, so it is an implicit generic of that hint.
+              let method_value = if matches!(
+                &pair_items[2],
+                Calcit::List(items) if matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if scope_defs.contains(sym))
+              ) {
+                pair_items[2].clone()
+              } else {
+                crate::builtins::meta::with_implicit_self_generic_in_method_hint(&pair_items[2])
+              };
               let p2 = if let Some(signature) = expected_fn.resolve_to_fn() {
                 let mut context = callback_parameter_context(signature, false, &[]);
                 context.check_return = true;
                 let _tail = offer_callback(Some(context));
-                preprocess_expr(&pair_items[2], scope_defs, scope_types, file_ns, check_warnings, call_stack)?
+                preprocess_expr(&method_value, scope_defs, scope_types, file_ns, check_warnings, call_stack)?
               } else {
                 preprocess_argument_with_context(
-                  &pair_items[2],
+                  &method_value,
                   Some((&expected_fn, false, &[])),
                   scope_defs,
                   scope_types,

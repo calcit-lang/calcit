@@ -5393,6 +5393,20 @@ fn strict_type_fail_unknown_type_name_suggests_candidates() {
   });
 }
 
+/// `Self` is the receiver type only in a `deftrait` signature or a `defimpl`
+/// method hint; an ordinary `defn` hint still reports an unknown type name
+/// (#2727).
+#[test]
+fn strict_type_fail_self_outside_defimpl_hint() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/self-outside-defimpl-hint-fn.cirru");
+    let err = run_check_only(&entries).expect_err("a plain defn hint must reject Self");
+    assert!(err.contains("E_UNKNOWN_TYPE_NAME"), "{err}");
+    assert!(err.contains("`Self` in hint-fn"), "{err}");
+  });
+}
+
 /// A plain trait in a type position is rejected with `E_TRAIT_AS_TYPE` and
 /// points to the `:where` bound (or `assert-traits`) that states the capability.
 #[test]
