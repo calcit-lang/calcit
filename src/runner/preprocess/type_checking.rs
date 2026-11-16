@@ -1106,6 +1106,15 @@ pub(crate) fn check_proc_arg_types(
     );
     return;
   }
+  if *proc == CalcitProc::NativeMapAssoc && actual_count >= min_count && actual_count.is_multiple_of(2) {
+    super::gen_check_warning_with_location_code(
+      format!("[Error] Proc `{proc}` expects a Map followed by key/value pairs, got {actual_count} args"),
+      "E_PROC_ARITY",
+      arity_location(),
+      check_warnings,
+    );
+    return;
+  }
   if !has_variadic {
     if actual_count < min_count || actual_count > max_count {
       let expected_str = if min_count == max_count {
@@ -1187,6 +1196,14 @@ pub(crate) fn check_proc_arg_types(
       ];
       for _ in 0..actual_count.saturating_sub(1) / 3 {
         expected.extend(triple.iter().cloned());
+      }
+      expected
+    }
+    CalcitProc::NativeMapAssoc => {
+      let mut expected = vec![signature.arg_types[0].clone()];
+      let pair = [signature.arg_types[1].clone(), signature.arg_types[2].clone()];
+      for _ in 0..actual_count.saturating_sub(1) / 2 {
+        expected.extend(pair.iter().cloned());
       }
       expected
     }

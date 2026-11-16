@@ -676,7 +676,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | Unreachable | NativeTraitNew => 1,
+      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Raise | Todo | Unreachable | NativeTraitNew => 1,
       _ => 0,
     }
   }

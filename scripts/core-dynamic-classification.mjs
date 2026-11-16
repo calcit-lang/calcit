@@ -129,6 +129,8 @@ const runtimePolymorphic = new Set([
   "with-type-slot",
 ]);
 const openDataBoundaries = new Set([
+  "data-definition-clause?",
+  "data-definition-clauses",
   "data-definition-form",
   "data-definition-malformed-nesting?",
   "data-definition-where-form?",
@@ -214,8 +216,16 @@ const compilerSpecializedPositions = new Map([
     "Supported sequence receivers recover the Option payload from List, String, or Enum evidence; the representation-polymorphic facade receiver is reviewed alongside this specialization.",
   ],
   [
+    "&map:assoc|schema.rest",
+    "表面 schema 的单一 :rest 槽位无法表达 K 与 V 交替出现的变参对；预处理将每组尾随键值按接收者的 (K, V) 展开校验，并拒绝不成对的参数数量。",
+  ],
+  [
     "each|schema.args.0",
     "Known List and Set receivers specialize callbacks to the member type, while Map callbacks receive the honest heterogeneous runtime pair; focused mismatch regressions cover all three families.",
+  ],
+  [
+    "each|schema.args.1.args.0",
+    "已知 List、Set 或 Map 接收者按成员或条目类型特化回调入参；开放接收者保留 Dynamic，避免从未证明的接收者推导出任意具体回调入参类型。",
   ],
   [
     "every?|schema.args.0",
@@ -374,12 +384,7 @@ const reviewedPublicBoundaryPositions = new Map([
     "Variadic spaced string conversion deliberately accepts every runtime value; Dynamic is the honest universal presentation input rather than a relation between arguments.",
   ],
 ]);
-const reviewedTestPositions = new Map([
-  [
-    "fail|schema.return",
-    "The test helper always raises and therefore has no runtime return value; until the type grammar has a bottom/Never type, Dynamic is the honest non-returning test boundary.",
-  ],
-]);
+const reviewedTestPositions = new Map([]);
 
 /** Classify one exact Dynamic occurrence while leaving unknown public positions in the migration queue. */
 function classify(entry) {

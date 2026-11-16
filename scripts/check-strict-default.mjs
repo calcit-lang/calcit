@@ -248,6 +248,16 @@ try {
   assert.equal((replay.stdout + replay.stderr).match(/guard-recheck-expansion-token/g)?.length, 1,
     "source macros evaluate once even when the body must be rechecked");
 
+  apply([
+    ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn guarded (x) (&map:assoc ({} (:a (ref 1))) & ([] :b (ref 2) :c x))"],
+    ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+      "quote $ Fn (Ref Dynamic) (-> Dynamic)"],
+  ]);
+  const unprovenSpreadMapAssoc = inFixture("--check-only", "--ns", "app.main");
+  expectStatus(unprovenSpreadMapAssoc, 1, "direct Map association proof audit rejects an unproven literal-spread trailing pair value");
+  assert.match(unprovenSpreadMapAssoc.stdout + unprovenSpreadMapAssoc.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+
   // Calcit values are immutable, so only a set! can make a guard on a local
   // stale. Effects in a definition that never rewrites the local keep it.
   for (const [label, body, returnType, rule] of [
@@ -746,6 +756,36 @@ const invalidMapMethod = run(["eval", "let ((m ({} (:a 1)))) (m .assoc :b |oops)
 expectStatus(invalidMapMethod, 1, "typed Map .assoc rejects a mismatched value");
 if (!invalidMapMethod.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`typed Map .assoc lost its lowered Proc type diagnostic:\n${invalidMapMethod.stderr}`);
+}
+
+const invalidTrailingMapAssoc = run(["eval", "&map:assoc ({} (:a 1)) :b 2 :c |oops"]);
+expectStatus(invalidTrailingMapAssoc, 1, "direct Map association rejects a mismatched trailing pair value");
+if (!invalidTrailingMapAssoc.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`direct Map association lost its trailing pair type diagnostic:\n${invalidTrailingMapAssoc.stderr}`);
+}
+
+const invalidSpreadMapAssoc = run(["eval", "&map:assoc ({} (:a 1)) & ([] :b 2 :c |oops)"]);
+expectStatus(invalidSpreadMapAssoc, 1, "direct Map association rejects a mismatched literal-spread trailing pair value");
+if (!invalidSpreadMapAssoc.stderr.includes("E_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`direct Map association lost its literal-spread trailing pair type diagnostic:\n${invalidSpreadMapAssoc.stderr}`);
+}
+
+const invalidMapAssocArity = run(["eval", "&map:assoc ({} (:a 1)) :b 2 :c"]);
+expectStatus(invalidMapAssocArity, 1, "direct Map association rejects an incomplete trailing pair");
+if (!invalidMapAssocArity.stderr.includes("E_PROC_ARITY")) {
+  throw new Error(`direct Map association lost its trailing pair arity diagnostic:\n${invalidMapAssocArity.stderr}`);
+}
+
+const noneBottomCheck = run(["eval", "assert-type None (Option Number)"]);
+expectStatus(noneBottomCheck, 0, "None carries Option Never and satisfies concrete Option<T> contracts");
+
+const validRaiseForms = run(["eval", "fn (flag) (if flag (raise |boom ([] :extra 1)) (raise :tag-error))"]);
+expectStatus(validRaiseForms, 0, "raise accepts 1~2 arguments and returns Never");
+
+const invalidEmptyRaise = run(["eval", "fn () (raise)"]);
+expectStatus(invalidEmptyRaise, 1, "raise requires at least one argument");
+if (!invalidEmptyRaise.stderr.includes("E_PROC_ARITY")) {
+  throw new Error(`raise lost its minimum arity diagnostic:\n${invalidEmptyRaise.stderr}`);
 }
 
 const validMapDissoc = run(["eval", "let ((m ({} (:a 1)))) (m .dissoc :missing)"]);

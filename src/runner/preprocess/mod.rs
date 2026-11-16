@@ -6612,6 +6612,37 @@ fn preprocess_list_call(
             {
               Arc::make_mut(&mut signature).arg_types = specialized;
             }
+            let expanded_assoc_args;
+            let assoc_args = if matches!(proc, CalcitProc::NativeMapAssoc)
+              && processed_args
+                .iter()
+                .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+            {
+              match type_inference::expand_literal_call_arguments(&processed_args) {
+                Ok(arguments) => {
+                  expanded_assoc_args = arguments;
+                  Some(&expanded_assoc_args)
+                }
+                Err(_) => None,
+              }
+            } else {
+              Some(&processed_args)
+            };
+            if matches!(proc, CalcitProc::NativeMapAssoc)
+              && let Some(assoc_args) = assoc_args
+              && assoc_args.len() >= 3
+              && (assoc_args.len() - 1).is_multiple_of(2)
+              && signature.arg_types.len() >= 3
+            {
+              let mut expected = vec![signature.arg_types[0].clone()];
+              let pair = [signature.arg_types[1].clone(), signature.arg_types[2].clone()];
+              for _ in 0..(assoc_args.len() - 1) / 2 {
+                expected.extend(pair.iter().cloned());
+              }
+              let specialized = Arc::make_mut(&mut signature);
+              specialized.arg_types = expected;
+              specialized.rest_type = None;
+            }
             reject_strict_unproven_generic_relation(
               &Calcit::Proc(*proc),
               &processed_args,
