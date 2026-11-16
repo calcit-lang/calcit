@@ -56,19 +56,7 @@ impl PartialEq for CalcitList {
       (CalcitList::Vector(xs), CalcitList::Vector(ys)) => xs == ys,
       (CalcitList::Call(xs, _), CalcitList::Call(ys, _)) => xs == ys,
       (CalcitList::List(xs), CalcitList::List(ys)) => xs == ys,
-      (a, b) => {
-        let a_size = a.len();
-        let b_size = b.len();
-        if a_size != b_size {
-          return false;
-        }
-        for idx in 0..a_size {
-          if a[idx] != b[idx] {
-            return false;
-          }
-        }
-        true
-      }
+      (a, b) => a.len() == b.len() && a.iter().eq(b.iter()),
     }
   }
 }
@@ -89,6 +77,7 @@ impl PartialOrd for CalcitList {
 
 impl Hash for CalcitList {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.len().hash(state);
     for x in self {
       x.hash(state);
     }

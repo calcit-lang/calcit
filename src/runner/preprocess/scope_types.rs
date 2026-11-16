@@ -10,21 +10,23 @@ use std::sync::Arc;
 use crate::calcit::CalcitTypeAnnotation;
 
 type Annotation = Arc<CalcitTypeAnnotation>;
+type FastMap<K, V> = HashMap<K, V, foldhash::fast::FixedState>;
+type FastSet<T> = HashSet<T, foldhash::fast::FixedState>;
 
 #[doc(hidden)]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScopeTypes {
   values: HashMap<Arc<str>, Annotation>,
-  parameter_shadowed_types: HashMap<Arc<str>, Annotation>,
-  refinements: HashMap<Arc<str>, Option<Annotation>>,
-  generics: HashMap<Arc<str>, Arc<str>>,
+  parameter_shadowed_types: FastMap<Arc<str>, Annotation>,
+  refinements: FastMap<Arc<str>, Option<Annotation>>,
+  generics: FastMap<Arc<str>, Arc<str>>,
   generic_capabilities: Option<Arc<HashMap<Arc<str>, Annotation>>>,
   /// Names that still refer to the parameters of the enclosing top-level
   /// `defn`; any later binding of the name drops it.
-  defn_parameters: HashSet<Arc<str>>,
+  defn_parameters: FastSet<Arc<str>>,
   /// Parameter types of the innermost enclosing function, the contract a
   /// `recur` written here has to meet. `None` when its arity is not fixed.
-  recur_parameters: Option<Arc<Vec<Annotation>>>,
+  recur_parameters: Option<Arc<[Annotation]>>,
 }
 
 impl ScopeTypes {
@@ -35,11 +37,11 @@ impl ScopeTypes {
   pub fn with_capacity(capacity: usize) -> Self {
     Self {
       values: HashMap::with_capacity(capacity),
-      parameter_shadowed_types: HashMap::new(),
-      refinements: HashMap::new(),
-      generics: HashMap::new(),
+      parameter_shadowed_types: FastMap::default(),
+      refinements: FastMap::default(),
+      generics: FastMap::default(),
       generic_capabilities: None,
-      defn_parameters: HashSet::new(),
+      defn_parameters: FastSet::default(),
       recur_parameters: None,
     }
   }
@@ -78,7 +80,7 @@ impl ScopeTypes {
 
   /// Records what a `recur` in the function body being entered transfers to.
   pub(super) fn set_recur_parameters(&mut self, parameters: Option<&[Annotation]>) {
-    self.recur_parameters = parameters.map(|parameters| Arc::new(parameters.to_vec()));
+    self.recur_parameters = parameters.map(Arc::from);
   }
 
   /// The declared type of the `index`-th parameter a `recur` here transfers to.
@@ -285,11 +287,11 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
   fn from(values: HashMap<Arc<str>, Annotation>) -> Self {
     Self {
       values,
-      parameter_shadowed_types: HashMap::new(),
-      refinements: HashMap::new(),
-      generics: HashMap::new(),
+      parameter_shadowed_types: FastMap::default(),
+      refinements: FastMap::default(),
+      generics: FastMap::default(),
       generic_capabilities: None,
-      defn_parameters: HashSet::new(),
+      defn_parameters: FastSet::default(),
       recur_parameters: None,
     }
   }

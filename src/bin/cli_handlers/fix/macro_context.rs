@@ -184,9 +184,8 @@ impl MacroParameter<'_> {
 }
 
 fn core_macro_names() -> &'static HashSet<String> {
-  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
-  NAMES.get_or_init(|| {
-    calcit::load_core_snapshot()
+  static NAMES: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(|| {
+    calcit::core_snapshot()
       .map(|core| {
         core.files[calcit::calcit::CORE_NS]
           .defs
@@ -196,5 +195,6 @@ fn core_macro_names() -> &'static HashSet<String> {
           .collect()
       })
       .unwrap_or_default()
-  })
+  });
+  &NAMES
 }

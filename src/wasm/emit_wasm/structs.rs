@@ -249,7 +249,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
     Calcit::Tag(t) => t.clone(),
     Calcit::Symbol { sym, .. } => {
       // ns/def format — extract just the def part
-      let name_str = sym.as_ref().rsplit('/').next().unwrap_or(sym.as_ref());
+      let name_str = sym.as_ref().rsplit('/').next().unwrap_or_else(|| sym.as_ref());
       cirru_edn::EdnTag::from(name_str)
     }
     Calcit::Import(CalcitImport { def, .. }) => cirru_edn::EdnTag::from(def.as_ref()),

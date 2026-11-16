@@ -858,7 +858,7 @@ mod tests {
       panic!("map callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[number]);
-    assert_eq!(callback.return_type, string.clone());
+    assert_eq!(callback.return_type, string);
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(string)));
     assert_eq!(contract.lowering, Some(CheckedCallLowering::CoreDef("&list:map")));
   }
@@ -883,7 +883,7 @@ mod tests {
       panic!("map-list-kv callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[key, value]);
-    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(callback.return_type, output);
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
     assert_eq!(contract.lowering, None);
   }
@@ -907,7 +907,7 @@ mod tests {
       panic!("map-indexed callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[Arc::new(CalcitTypeAnnotation::Number), dynamic]);
-    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(callback.return_type, output);
     assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::List(output)));
     assert_eq!(contract.lowering, None);
   }
@@ -929,7 +929,7 @@ mod tests {
       panic!("result:map callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[input]);
-    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(callback.return_type, output);
     assert_eq!(contract.return_type, core_type_ref("Result", vec![output, error]));
     assert_eq!(contract.lowering, None);
   }
@@ -954,7 +954,7 @@ mod tests {
       panic!("result:map callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), &[input]);
-    assert_eq!(callback.return_type, output.clone());
+    assert_eq!(callback.return_type, output);
     assert_eq!(contract.return_type, core_type_ref("Result", vec![output, error]));
 
     let user_receiver = Arc::new(CalcitTypeAnnotation::Enum(
@@ -1096,7 +1096,7 @@ mod tests {
       panic!("update callback should be checked as a function");
     };
     assert_eq!(callback.arg_types.as_slice(), std::slice::from_ref(&number));
-    assert_eq!(callback.return_type, number.clone());
+    assert_eq!(callback.return_type, number);
 
     let set_type = Arc::new(CalcitTypeAnnotation::Set(number));
     let predicate = Arc::new(CalcitTypeAnnotation::from_function_parts(

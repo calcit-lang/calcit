@@ -13,7 +13,7 @@ pub fn project_directory_for_snapshot(snapshot_file: &str) -> &Path {
   Path::new(snapshot_file)
     .parent()
     .filter(|path| !path.as_os_str().is_empty())
-    .unwrap_or(Path::new("."))
+    .unwrap_or_else(|| Path::new("."))
 }
 
 pub fn state_directory(project_directory: &Path) -> PathBuf {
@@ -34,7 +34,10 @@ pub fn set_active_project_directory_from_snapshot(snapshot_file: &str) {
 
 pub fn active_state_file(file_name: &str) -> PathBuf {
   state_file(
-    ACTIVE_PROJECT_DIRECTORY.get().map(PathBuf::as_path).unwrap_or(Path::new(".")),
+    ACTIVE_PROJECT_DIRECTORY
+      .get()
+      .map(PathBuf::as_path)
+      .unwrap_or_else(|| Path::new(".")),
     file_name,
   )
 }

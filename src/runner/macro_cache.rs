@@ -12,7 +12,7 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 static CACHE: LazyLock<Mutex<HashMap<MacroCallSite, CachedExpansion>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(test)]
-pub(super) static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct MacroCallSite {

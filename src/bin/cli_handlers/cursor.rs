@@ -249,7 +249,7 @@ pub(crate) fn set_cursor_from_query_match(
 pub(crate) fn load_cursor_last_query(snapshot_file: &str) -> Result<CursorLastQuery, String> {
   load_cursor_document(snapshot_file)?
     .last_query
-    .ok_or("No repeatable cursor search is saved. Run `calcit query search ... --set-cursor <index>` first.".to_string())
+    .ok_or_else(|| "No repeatable cursor search is saved. Run `calcit query search ... --set-cursor <index>` first.".to_string())
 }
 
 fn concrete_cursor_path(path: &[usize]) -> String {
@@ -479,7 +479,7 @@ fn barf_first(snapshot_file: &str) -> Result<(), String> {
 
 fn duplicate_cursor(snapshot_file: &str, at: &str) -> Result<(), String> {
   if !matches!(at, "before" | "after") {
-    return Err(format!("Unsupported duplicate position '{}'. Use before or after.", at));
+    return Err(format!("Unsupported duplicate position '{at}'. Use before or after."));
   }
   let state = validate_cursor(snapshot_file, true)?;
   if state.path.is_empty() {
@@ -1223,8 +1223,7 @@ pub(crate) fn resolve_cursor_path_argument(snapshot_file: &str, target: &str, pa
   let (cursor_target, cursor_path) = resolve_active_cursor_reference(snapshot_file)?;
   if cursor_target != target {
     return Err(format!(
-      "Cursor target mismatch: cursor points to '{}', but command targets '{}'.",
-      cursor_target, target
+      "Cursor target mismatch: cursor points to '{cursor_target}', but command targets '{target}'."
     ));
   }
   Ok(cursor_path)
@@ -1559,8 +1558,7 @@ fn read_cursor_context(snapshot_file: &str, target: &str, path: &[usize]) -> Res
     .get(definition_name)
     .ok_or_else(|| format!("Cursor definition '{target}' no longer exists."))?;
   let node = navigate_to_path(&entry.code, path)
-    .map_err(|error| format!("Cursor path {} is no longer valid in '{}': {error}", format_path(path), target))?
-    .clone();
+    .map_err(|error| format!("Cursor path {} is no longer valid in '{}': {error}", format_path(path), target))?;
   Ok((entry.code.clone(), node, snapshot::definition_revision(entry)?))
 }
 

@@ -166,9 +166,9 @@ pub(crate) fn merge_snapshots(base: &Snapshot, ours: &Snapshot, theirs: &Snapsho
 /// Apply their unit, returning false when surviving definitions prevent namespace deletion.
 fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<bool, String> {
   if unit == "project" {
-    merged.package = theirs.package.clone();
-    merged.about = theirs.about.clone();
-    merged.version = theirs.version.clone();
+    merged.package.clone_from(&theirs.package);
+    merged.about.clone_from(&theirs.about);
+    merged.version.clone_from(&theirs.version);
     merged.verification = theirs.verification.clone();
   } else if let Some(name) = unit.strip_prefix("entry:") {
     match theirs.entries.get(name) {

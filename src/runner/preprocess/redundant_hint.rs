@@ -2,7 +2,7 @@
 //! receives from its call context (#2636).
 
 use std::collections::BTreeSet;
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 
 use crate::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, NodeLocation};
 
@@ -14,7 +14,7 @@ pub struct RedundantHintSite {
   pub coord: Vec<u16>,
 }
 
-static SITES: LazyLock<Mutex<BTreeSet<RedundantHintSite>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
+static SITES: Mutex<BTreeSet<RedundantHintSite>> = Mutex::new(BTreeSet::new());
 
 /// How much of a written body hint the expected callback contract repeats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

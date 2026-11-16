@@ -43,7 +43,7 @@ const ASYNC_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 static CTRL_C_CALLBACK_PENDING: AtomicBool = AtomicBool::new(false);
 type CtrlCCallback = (Arc<Calcit>, Arc<CallStackList>);
-static CTRL_C_CALLBACK: LazyLock<Mutex<Option<CtrlCCallback>>> = LazyLock::new(|| Mutex::new(None));
+static CTRL_C_CALLBACK: Mutex<Option<CtrlCCallback>> = Mutex::new(None);
 
 #[derive(Clone)]
 struct NativeAsyncTask {
@@ -129,11 +129,7 @@ impl NativeAsyncResponseIndex {
 
   fn take_due(&mut self, now: Instant) -> Vec<FfiAsyncHandle> {
     let mut due = vec![];
-    while let Some((&deadline, _handles)) = self.deadlines.first_key_value() {
-      if deadline > now {
-        break;
-      }
-      let (_deadline, handles) = self.deadlines.pop_first().expect("first deadline exists");
+    for (deadline, handles) in self.deadlines.extract_if(..=now, |_, _| true) {
       for handle in handles {
         let Some((owner, current)) = self.responses.remove(&handle) else {
           continue;
@@ -152,11 +148,18 @@ impl NativeAsyncResponseIndex {
   }
 
   fn take_owner(&mut self, owner: FfiAsyncHandle) -> Vec<FfiAsyncHandle> {
-    let Some(handles) = self.by_owner.get(&owner).cloned() else {
+    let Some(handles) = self.by_owner.remove(&owner) else {
       return vec![];
     };
-    for handle in &handles {
-      self.remove(*handle);
+    for &handle in &handles {
+      if let Some((_, deadline)) = self.responses.remove(&handle)
+        && let Some(due) = self.deadlines.get_mut(&deadline)
+      {
+        due.remove(&handle);
+        if due.is_empty() {
+          self.deadlines.remove(&deadline);
+        }
+      }
     }
     handles.into_iter().collect()
   }
@@ -480,24 +483,30 @@ fn resolve_trace_path(lib_name: &str) -> String {
   }
 }
 
+fn emit_ffi_trace(label: &str, message: std::fmt::Arguments<'_>) {
+  let event_id = TRACE_FFI_EVENT_ID.fetch_add(1, Ordering::Relaxed);
+  let elapsed_ms = TRACE_FFI_STARTED.elapsed().as_secs_f64() * 1000.0;
+  eprintln!(
+    "[ffi #{event_id} +{elapsed_ms:.3}ms pid={} tid={:?}] {label} {message}",
+    process::id(),
+    thread::current().id(),
+  );
+}
+
+macro_rules! trace_ffi {
+  ($label:expr, $($arg:tt)*) => {
+    if should_trace_ffi() {
+      emit_ffi_trace($label, format_args!($($arg)*));
+    }
+  };
+}
+
 fn trace_ffi_event(label: &str, message: impl AsRef<str>) {
-  if should_trace_ffi() {
-    let event_id = TRACE_FFI_EVENT_ID.fetch_add(1, Ordering::Relaxed);
-    let elapsed_ms = TRACE_FFI_STARTED.elapsed().as_secs_f64() * 1000.0;
-    eprintln!(
-      "[ffi #{event_id} +{elapsed_ms:.3}ms pid={} tid={:?}] {label} {}",
-      process::id(),
-      thread::current().id(),
-      message.as_ref()
-    );
-  }
+  trace_ffi!(label, "{}", message.as_ref());
 }
 
 fn trace_ffi_resource_event(label: &str, lib_name: &str, handle: u64, generation: u64, status: i32) {
-  trace_ffi_event(
-    label,
-    format!("lib={lib_name} handle={handle} generation={generation} status={status}"),
-  );
+  trace_ffi!(label, "lib={lib_name} handle={handle} generation={generation} status={status}");
 }
 
 /// Bind the async queue to the CLI worker thread before any dylib can publish
@@ -631,9 +640,8 @@ unsafe extern "C" fn native_blocking_invoke(
   out: *mut FfiBuffer,
 ) -> i32 {
   std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     // SAFETY: forwarded from the C entry point's documented pointer contract.
     unsafe { invoke_native_blocking(runtime, context, task_handle, payload_ptr, payload_len, out) }
@@ -728,9 +736,8 @@ unsafe fn invoke_native_blocking(
 
 unsafe extern "C" fn native_blocking_finish(context: u64, task_handle: u64) -> i32 {
   std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     let (handle, _, blocking) = match resolve_native_blocking_task(runtime, context, task_handle) {
       Ok(task) => task,
@@ -749,9 +756,8 @@ unsafe extern "C" fn native_blocking_finish(context: u64, task_handle: u64) -> i
 
 unsafe extern "C" fn native_blocking_free_buffer(context: u64, task_handle: u64, buffer: FfiBuffer) -> i32 {
   std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     let (_, _, blocking) = match resolve_native_blocking_task(runtime, context, task_handle) {
       Ok(task) => task,
@@ -777,9 +783,8 @@ unsafe extern "C" fn native_async_enqueue(
   payload_len: usize,
 ) -> i32 {
   std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     // SAFETY: the C caller promises that a non-empty payload remains readable
     // for this call. The helper validates length/null and copies immediately.
@@ -878,9 +883,8 @@ unsafe extern "C" fn native_async_configure_task(
     if context != task_handle {
       return async_status::INVALID_HANDLE;
     }
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     let kind = match FfiAsyncHandleKind::try_from(kind) {
       Ok(kind) if kind != FfiAsyncHandleKind::Response => kind,
@@ -898,9 +902,8 @@ unsafe extern "C" fn native_async_configure_task(
     if let Err(error) = runtime.registry.configure(FfiAsyncHandle::from_raw(task_handle), kind, flags) {
       return error.status_code();
     }
-    let mut control = match resource.control.lock() {
-      Ok(control) => control,
-      Err(_) => return async_status::INTERNAL_ERROR,
+    let Ok(mut control) = resource.control.lock() else {
+      return async_status::INTERNAL_ERROR;
     };
     control.control = cancel.map(|cancel| NativeAsyncTaskControl {
       context: task_context,
@@ -933,9 +936,8 @@ unsafe extern "C" fn native_async_open_response(
     let Some(resolve) = resolve else {
       return async_status::INVALID_PAYLOAD;
     };
-    let runtime = match native_async_runtime() {
-      Ok(runtime) => runtime,
-      Err(_) => return async_status::HOST_CLOSING,
+    let Ok(runtime) = native_async_runtime() else {
+      return async_status::HOST_CLOSING;
     };
     let task_handle = FfiAsyncHandle::from_raw(task_handle);
     let task_state = match runtime.registry.state(task_handle) {
@@ -957,9 +959,8 @@ unsafe extern "C" fn native_async_open_response(
       deadline,
       resolve,
     };
-    let mut responses = match runtime.responses.lock() {
-      Ok(responses) => responses,
-      Err(_) => return async_status::INTERNAL_ERROR,
+    let Ok(mut responses) = runtime.responses.lock() else {
+      return async_status::INTERNAL_ERROR;
     };
     let response_handle = match runtime.registry.register_for_active_owner(
       task_handle,
@@ -1799,15 +1800,14 @@ pub fn exit_when_async_cleared(fail_on_error: bool) -> Result<(), String> {
 
 /// load dylib, cache it
 fn load_dylib(lib_name: &str) -> Result<Arc<libloading::Library>, CalcitErr> {
-  let resolved_path = resolve_trace_path(lib_name);
   let mut dylibs = DYLIBS
     .lock()
     .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "failed to lock dylib cache"))?;
   if let Some(lib) = dylibs.get(lib_name) {
-    trace_ffi_event("reuse-dylib", format!("lib={lib_name} resolved={resolved_path}"));
-    return Ok(lib.to_owned());
+    trace_ffi!("reuse-dylib", "lib={lib_name} resolved={}", resolve_trace_path(lib_name));
+    return Ok(Arc::clone(lib));
   }
-  trace_ffi_event("load-dylib", format!("lib={lib_name} resolved={resolved_path}"));
+  trace_ffi!("load-dylib", "lib={lib_name} resolved={}", resolve_trace_path(lib_name));
   let lib = unsafe { libloading::Library::new(lib_name) }
     .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to load dylib `{lib_name}`: {e}")))?;
   let lib = Arc::new(lib);
@@ -1979,27 +1979,23 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     ys.push(calcit_to_edn(&v)?);
   }
 
-  trace_ffi_event(
+  trace_ffi!(
     "call",
-    format!(
-      "lib={lib_name} resolved={} symbol={method} argc={} args={}",
-      resolve_trace_path(&lib_name),
-      ys.len(),
-      format_edn_args_for_trace(&ys)
-    ),
+    "lib={lib_name} resolved={} symbol={method} argc={} args={}",
+    resolve_trace_path(&lib_name),
+    ys.len(),
+    format_edn_args_for_trace(&ys)
   );
 
   let lib = load_dylib(&lib_name)?;
-  match calcit::wasm::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone(), Some(trace_ffi_resource_event))
+  match calcit::wasm::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys, Some(trace_ffi_resource_event))
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
   {
     Some(ret) => {
-      trace_ffi_event(
+      trace_ffi!(
         "return-buffer",
-        format!(
-          "lib={lib_name} symbol={method}_calcit_ffi_v1 ret={}",
-          format_edn_args_for_trace(std::slice::from_ref(&ret))
-        ),
+        "lib={lib_name} symbol={method}_calcit_ffi_v1 ret={}",
+        format_edn_args_for_trace(std::slice::from_ref(&ret))
       );
       Ok(edn_to_calcit(&ret, &Calcit::Nil))
     }
@@ -2197,18 +2193,16 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
     );
   }
 
-  trace_ffi_event(
+  trace_ffi!(
     "spawn-callback",
-    format!(
-      "lib={lib_name} resolved={} symbol={method} argc={} args={}",
-      resolve_trace_path(&lib_name),
-      ys.len(),
-      format_edn_args_for_trace(&ys)
-    ),
+    "lib={lib_name} resolved={} symbol={method} argc={} args={}",
+    resolve_trace_path(&lib_name),
+    ys.len(),
+    format_edn_args_for_trace(&ys)
   );
 
   let lib = load_dylib(&lib_name)?;
-  if let Some(result) = try_start_async_callback_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)? {
+  if let Some(result) = try_start_async_callback_v1(&lib, &lib_name, &method, ys, callback, call_stack)? {
     return Ok(result);
   }
   let symbol = calcit::wasm::ffi_abi::async_method_symbol(&method);
@@ -2383,21 +2377,19 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
     );
   }
 
-  trace_ffi_event(
+  trace_ffi!(
     "blocking-call",
-    format!(
-      "lib={lib_name} resolved={} symbol={method} argc={} args={}",
-      resolve_trace_path(&lib_name),
-      ys.len(),
-      format_edn_args_for_trace(&ys)
-    ),
+    "lib={lib_name} resolved={} symbol={method} argc={} args={}",
+    resolve_trace_path(&lib_name),
+    ys.len(),
+    format_edn_args_for_trace(&ys)
   );
 
   let lib = load_dylib(&lib_name)?;
   let has_blocking_v1 = calcit::wasm::ffi_abi::has_blocking_method(&lib, &lib_name, &method)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   if has_blocking_v1 {
-    return try_call_blocking_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)?.ok_or_else(|| {
+    return try_call_blocking_v1(&lib, &lib_name, &method, ys, callback, call_stack)?.ok_or_else(|| {
       CalcitErr::use_str(
         CalcitErrKind::Unexpected,
         format!("FFI blocking method `{method}` in `{lib_name}` disappeared after protocol lookup"),
@@ -2416,7 +2408,6 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
 }
 
 /// need to put it here since the crate does not compile for dylib
-#[unsafe(no_mangle)]
 pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     if !matches!(&xs[0], Calcit::Fn { .. }) {
@@ -2440,7 +2431,7 @@ mod async_callback_tests {
   use super::*;
 
   type RecordedResponse = (u64, u64, u32, Vec<u8>);
-  static RESPONSE_EVENTS: LazyLock<Mutex<Vec<RecordedResponse>>> = LazyLock::new(|| Mutex::new(vec![]));
+  static RESPONSE_EVENTS: Mutex<Vec<RecordedResponse>> = Mutex::new(Vec::new());
 
   #[test]
   fn opaque_async_payload_is_rejected_before_task_or_response_runtime_access() {

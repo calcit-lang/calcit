@@ -1,5 +1,7 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
 
+use strum::IntoEnumIterator;
 use strum_macros::{AsRefStr, EnumIter, EnumString};
 
 use crate::calcit::CalcitTypeAnnotation;
@@ -12,7 +14,7 @@ pub struct SyntaxTypeSignature {
 }
 
 /// core syntax inside Calcit
-#[derive(Debug, Clone, PartialEq, EnumString, EnumIter, strum_macros::Display, AsRefStr, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, EnumIter, strum_macros::Display, AsRefStr, PartialOrd, Ord)]
 pub enum CalcitSyntax {
   #[strum(serialize = "defn")]
   Defn,
@@ -113,119 +115,113 @@ impl CalcitSyntax {
     s.parse::<CalcitSyntax>().is_ok()
   }
 
-  pub fn get_type_signature(&self) -> Option<SyntaxTypeSignature> {
-    use CalcitSyntax::*;
-    let dyn_t = Arc::new(CalcitTypeAnnotation::Dynamic);
-    let bool_t = Arc::new(CalcitTypeAnnotation::Bool);
-    let symbol_t = Arc::new(CalcitTypeAnnotation::Symbol);
-    let tag_t = Arc::new(CalcitTypeAnnotation::Tag);
-    let cirru_quote_t = Arc::new(CalcitTypeAnnotation::CirruQuote);
-    let list_dyn = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
-    let value_t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+  pub fn get_type_signature(self) -> Option<SyntaxTypeSignature> {
+    static SIGNATURES: LazyLock<HashMap<CalcitSyntax, SyntaxTypeSignature, foldhash::fast::FixedState>> = LazyLock::new(|| {
+      use CalcitSyntax::*;
+      let dyn_t = Arc::clone(&crate::calcit::DYNAMIC_TYPE);
+      let bool_t = Arc::new(CalcitTypeAnnotation::Bool);
+      let symbol_t = Arc::new(CalcitTypeAnnotation::Symbol);
+      let tag_t = Arc::new(CalcitTypeAnnotation::Tag);
+      let string_t = Arc::new(CalcitTypeAnnotation::String);
+      let nil_t = Arc::new(CalcitTypeAnnotation::Nil);
+      let cirru_quote_t = Arc::new(CalcitTypeAnnotation::CirruQuote);
+      let list_dyn = Arc::new(CalcitTypeAnnotation::List(Arc::clone(&dyn_t)));
+      let value_t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+      let ref_value_t = Arc::new(CalcitTypeAnnotation::Ref(Arc::clone(&value_t)));
 
-    match self {
-      If => Some(SyntaxTypeSignature {
-        param_names: vec!["condition", "then-expr", "else-expr"],
-        param_types: vec![bool_t.clone(), dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      Quote | Quasiquote => Some(SyntaxTypeSignature {
-        param_names: vec!["expr"],
-        param_types: vec![dyn_t.clone()],
-        return_type: cirru_quote_t.clone(),
-      }),
-      Gensym => Some(SyntaxTypeSignature {
-        param_names: vec!["name"],
-        param_types: vec![symbol_t.clone()],
-        return_type: symbol_t.clone(),
-      }),
-      Eval => Some(SyntaxTypeSignature {
-        param_names: vec!["expr"],
-        param_types: vec![cirru_quote_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      Macroexpand | Macroexpand1 | MacroexpandAll => Some(SyntaxTypeSignature {
-        param_names: vec!["expr"],
-        param_types: vec![cirru_quote_t.clone()],
-        return_type: cirru_quote_t.clone(),
-      }),
-      Try => Some(SyntaxTypeSignature {
-        param_names: vec!["expr", "err", "catch-expr"],
-        param_types: vec![dyn_t.clone(), symbol_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      Defref => Some(SyntaxTypeSignature {
-        param_names: vec!["name", "init"],
-        param_types: vec![symbol_t.clone(), value_t.clone()],
-        return_type: Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())),
-      }),
-      Reset => Some(SyntaxTypeSignature {
-        param_names: vec!["ref", "value"],
-        param_types: vec![Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())), value_t.clone()],
-        return_type: value_t.clone(),
-      }),
-      HintFn => Some(SyntaxTypeSignature {
-        param_names: vec!["target-or-schema", "schema"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: Arc::new(CalcitTypeAnnotation::Nil),
-      }),
-      AssertType => Some(SyntaxTypeSignature {
-        param_names: vec!["expr", "type"],
-        param_types: vec![value_t.clone(), dyn_t.clone()],
-        return_type: value_t.clone(),
-      }),
-      UnsafeCoerce | JsCast => Some(SyntaxTypeSignature {
-        param_names: vec!["value", "type"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      ParseCirruEdnAs => Some(SyntaxTypeSignature {
-        param_names: vec!["text", "type"],
-        param_types: vec![Arc::new(CalcitTypeAnnotation::String), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      TryParseCirruEdnAs => Some(SyntaxTypeSignature {
-        param_names: vec!["text", "type"],
-        param_types: vec![Arc::new(CalcitTypeAnnotation::String), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      DecodeMapAs => Some(SyntaxTypeSignature {
-        param_names: vec!["value", "type"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      TryDecodeMapAs => Some(SyntaxTypeSignature {
-        param_names: vec!["value", "type"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      EncodeMapAs => Some(SyntaxTypeSignature {
-        param_names: vec!["value", "type"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      AssertTraits => Some(SyntaxTypeSignature {
-        param_names: vec!["expr", "trait"],
-        param_types: vec![value_t.clone(), tag_t.clone()],
-        return_type: value_t.clone(),
-      }),
-      CoreLet => Some(SyntaxTypeSignature {
-        param_names: vec!["binding", "body"],
-        param_types: vec![list_dyn.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      CallSpread => Some(SyntaxTypeSignature {
-        param_names: vec!["f", "args"],
-        param_types: vec![dyn_t.clone(), list_dyn.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      Match => Some(SyntaxTypeSignature {
-        param_names: vec!["value", "branches"],
-        param_types: vec![dyn_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
-      }),
-      Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
-    }
+      let mut map = HashMap::with_hasher(foldhash::fast::FixedState::default());
+      for syntax in CalcitSyntax::iter() {
+        let sig = match syntax {
+          If => Some(SyntaxTypeSignature {
+            param_names: vec!["condition", "then-expr", "else-expr"],
+            param_types: vec![Arc::clone(&bool_t), Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          Quote | Quasiquote => Some(SyntaxTypeSignature {
+            param_names: vec!["expr"],
+            param_types: vec![Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&cirru_quote_t),
+          }),
+          Gensym => Some(SyntaxTypeSignature {
+            param_names: vec!["name"],
+            param_types: vec![Arc::clone(&symbol_t)],
+            return_type: Arc::clone(&symbol_t),
+          }),
+          Eval => Some(SyntaxTypeSignature {
+            param_names: vec!["expr"],
+            param_types: vec![Arc::clone(&cirru_quote_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          Macroexpand | Macroexpand1 | MacroexpandAll => Some(SyntaxTypeSignature {
+            param_names: vec!["expr"],
+            param_types: vec![Arc::clone(&cirru_quote_t)],
+            return_type: Arc::clone(&cirru_quote_t),
+          }),
+          Try => Some(SyntaxTypeSignature {
+            param_names: vec!["expr", "err", "catch-expr"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&symbol_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          Defref => Some(SyntaxTypeSignature {
+            param_names: vec!["name", "init"],
+            param_types: vec![Arc::clone(&symbol_t), Arc::clone(&value_t)],
+            return_type: Arc::clone(&ref_value_t),
+          }),
+          Reset => Some(SyntaxTypeSignature {
+            param_names: vec!["ref", "value"],
+            param_types: vec![Arc::clone(&ref_value_t), Arc::clone(&value_t)],
+            return_type: Arc::clone(&value_t),
+          }),
+          HintFn => Some(SyntaxTypeSignature {
+            param_names: vec!["target-or-schema", "schema"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&nil_t),
+          }),
+          AssertType => Some(SyntaxTypeSignature {
+            param_names: vec!["expr", "type"],
+            param_types: vec![Arc::clone(&value_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&value_t),
+          }),
+          UnsafeCoerce | JsCast | DecodeMapAs | TryDecodeMapAs | EncodeMapAs => Some(SyntaxTypeSignature {
+            param_names: vec!["value", "type"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          ParseCirruEdnAs | TryParseCirruEdnAs => Some(SyntaxTypeSignature {
+            param_names: vec!["text", "type"],
+            param_types: vec![Arc::clone(&string_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          AssertTraits => Some(SyntaxTypeSignature {
+            param_names: vec!["expr", "trait"],
+            param_types: vec![Arc::clone(&value_t), Arc::clone(&tag_t)],
+            return_type: Arc::clone(&value_t),
+          }),
+          CoreLet => Some(SyntaxTypeSignature {
+            param_names: vec!["binding", "body"],
+            param_types: vec![Arc::clone(&list_dyn), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          CallSpread => Some(SyntaxTypeSignature {
+            param_names: vec!["f", "args"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&list_dyn)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          Match => Some(SyntaxTypeSignature {
+            param_names: vec!["value", "branches"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
+        };
+        if let Some(sig) = sig {
+          map.insert(syntax, sig);
+        }
+      }
+      map
+    });
+
+    SIGNATURES.get(&self).cloned()
   }
 }
 

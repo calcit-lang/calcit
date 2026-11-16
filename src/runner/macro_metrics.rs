@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::calcit::MacroSignature;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static METRICS: LazyLock<Mutex<BTreeMap<String, MacroExpansionMetric>>> = LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static METRICS: Mutex<BTreeMap<String, MacroExpansionMetric>> = Mutex::new(BTreeMap::new());
 
 thread_local! {
   static ACTIVE_PHASES: RefCell<Vec<ActivePhase>> = const { RefCell::new(vec![]) };

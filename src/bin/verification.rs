@@ -178,7 +178,7 @@ fn read_procs_evidence(base_dir: &Path) -> Result<Option<ProcsEvidence>, String>
   if declared == "workspace:."
     && let Some(version) = package.get("version").and_then(serde_json::Value::as_str)
   {
-    declared = version.to_owned();
+    version.clone_into(&mut declared);
   }
   let mut sources = vec![package_path.display().to_string()];
   let installed_path = base_dir.join("node_modules/@calcit/procs/package.json");
@@ -237,7 +237,7 @@ pub(crate) fn collect_preflight(
   active_entries: &[String],
 ) -> Result<PreflightReport, String> {
   let input_path = PathBuf::from(snapshot_file);
-  let base_dir = input_path.parent().unwrap_or(Path::new("."));
+  let base_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
   let mut diagnostics = Vec::new();
   let mut tools = Vec::new();
 
@@ -249,7 +249,7 @@ pub(crate) fn collect_preflight(
     diagnostics.push(preflight_diagnostic(
       "E_PREFLIGHT_CALCIT_VERSION",
       format!("Declared Calcit {declared} does not match the running Calcit {current_calcit}."),
-      serde_json::json!({ "tool": "calcit", "declared": declared, "observed": current_calcit.clone(), "source": source }),
+      serde_json::json!({ "tool": "calcit", "declared": declared, "observed": current_calcit, "source": source }),
     ));
   }
   tools.push(PreflightToolEvidence {
@@ -292,10 +292,10 @@ pub(crate) fn collect_preflight(
         format!("@calcit/procs must resolve exactly to the running Calcit version {current_calcit}."),
         serde_json::json!({
           "tool": "@calcit/procs",
-          "declared": declared.clone(),
-          "installed": installed.clone(),
-          "locked": locked.clone(),
-          "calcit": current_calcit.clone()
+          "declared": declared,
+          "installed": installed,
+          "locked": locked,
+          "calcit": current_calcit
         }),
       ));
     }
@@ -322,9 +322,8 @@ pub(crate) fn collect_preflight(
   for (tool, requirement) in declared_hosts {
     let observed = observe_tool_version(&tool).ok();
     let matched = observed.as_deref().is_some_and(|version| {
-      semver::VersionReq::parse(&requirement)
-        .expect("host requirements are validated while loading")
-        .matches(&semver::Version::parse(version).expect("observed host version is semantic"))
+      let req = semver::VersionReq::parse(&requirement).expect("host requirements are validated while loading");
+      semver::Version::parse(version).is_ok_and(|parsed| req.matches(&parsed))
     });
     if !matched {
       diagnostics.push(preflight_diagnostic(
@@ -337,7 +336,7 @@ pub(crate) fn collect_preflight(
           "Declared {tool} requirement {requirement} is not satisfied by {}.",
           observed.as_deref().unwrap_or("the current PATH")
         ),
-        serde_json::json!({ "tool": tool.clone(), "declared": requirement.clone(), "observed": observed.clone() }),
+        serde_json::json!({ "tool": tool, "declared": requirement, "observed": observed }),
       ));
     }
     tools.push(PreflightToolEvidence {
@@ -638,7 +637,7 @@ fn run_inner(options: &VerifyCommand, output_format: StructuredOutputFormat, sna
   })?;
   let preflight = collect_preflight(&base_snapshot, snapshot_file, &revision, &profile.entries)?;
 
-  let base_dir = input_path.parent().unwrap_or(Path::new("."));
+  let base_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let core_snapshot = calcit::load_core_snapshot()?;
   let project_namespaces = base_snapshot.files.keys().cloned().collect::<HashSet<_>>();

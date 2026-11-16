@@ -537,9 +537,17 @@ impl CalcitScope {
     None
   }
 
+  pub fn from_parent(parent: &Self, extra_capacity: usize) -> Self {
+    let mut vars = Vec::with_capacity(parent.0.len() + extra_capacity);
+    vars.extend_from_slice(&parent.0);
+    Self(vars)
+  }
+
   pub fn get_by_name(&self, s: &str) -> Option<&Calcit> {
-    let key = CalcitLocal::track_sym(&Arc::from(s));
-    self.get(key)
+    if self.0.is_empty() {
+      return None;
+    }
+    self.get(CalcitLocal::lookup_sym(s)?)
   }
 
   /// mutable insertion of variable

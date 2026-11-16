@@ -94,7 +94,7 @@ pub(super) fn compile_boundary_review(
     {
       // A contradictory implementation cannot lend its declared return type
       // to an assertion, even when ordinary checking reports it as a warning.
-      return Err(format!("{rule} cannot borrow a contradictory producer contract: {}", warning));
+      return Err(format!("{rule} cannot borrow a contradictory producer contract: {warning}"));
     }
     for error in recovered.into_iter().chain(result.err()) {
       // One compiler pass serves the combined workflow; keep existing rule identifiers.

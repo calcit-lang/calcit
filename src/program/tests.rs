@@ -124,7 +124,7 @@ fn strict_edn_decoder_nominals_are_compiled_dependencies() {
     0,
     vec![DataShapeNode::Struct {
       nominal: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Person"), vec![])),
-      nominal_path: Some((ns.clone(), def.clone())),
+      nominal_path: Some((ns, def)),
       type_args: Arc::new(vec![]),
       fields: vec![],
     }],
@@ -1469,7 +1469,7 @@ fn lookup_codegen_type_hint_prefers_compiled_schema_over_runtime_value() {
       deps: vec![],
       type_summary: None,
       source_code: None,
-      schema: schema.clone(),
+      schema,
       doc: Arc::from(""),
       examples: vec![],
     },
@@ -2010,7 +2010,7 @@ fn legacy_code_only_incremental_entries_keep_documented_metadata_behaviour() {
   let loaded = ProgramDefEntry {
     tags: HashSet::from([EdnTag::new("effect")]),
     code: old_code,
-    schema: schema.clone(),
+    schema,
     doc: Arc::from("kept doc"),
     examples: vec![Cirru::leaf("1")],
     ffi: Some(cirru_edn::Edn::map_from_iter([(
@@ -2148,7 +2148,7 @@ fn incremental_changes_apply_all_namespaces_or_none() {
           Arc::from("demo"),
           ProgramDefEntry {
             tags: Default::default(),
-            code: old_code.clone(),
+            code: old_code,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
             examples: vec![],

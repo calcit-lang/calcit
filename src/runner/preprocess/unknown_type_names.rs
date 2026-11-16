@@ -251,7 +251,7 @@ pub(super) fn reject_unknown_type_names(
     return Err(unknown_type_name_error(owner, position, &unknown, file_ns, call_stack, location));
   }
   if let Some((path, name, generics, actual)) = find_type_alias_arity_mismatch(annotation, file_ns, position) {
-    let short = name.rsplit_once('/').map_or(name.as_ref(), |(_, def)| def);
+    let short = name.rsplit_once('/').map_or_else(|| name.as_ref(), |(_, def)| def);
     let usage = if generics.is_empty() {
       short.to_owned()
     } else {

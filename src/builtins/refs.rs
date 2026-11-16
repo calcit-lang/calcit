@@ -72,7 +72,7 @@ pub fn defref(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, cal
       };
 
       match defined {
-        Some(v) => Ok(Calcit::Ref(path_info, v.to_owned())),
+        Some(v) => Ok(Calcit::Ref(path_info, v)),
         None => {
           let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
           let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
@@ -99,7 +99,7 @@ pub fn defref(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, cal
       };
 
       match defined {
-        Some(v) => Ok(Calcit::Ref(path_info, v.to_owned())),
+        Some(v) => Ok(Calcit::Ref(path_info, v)),
         None => {
           let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
           let pair_value = Arc::new(Mutex::new((v, HashMap::new())));

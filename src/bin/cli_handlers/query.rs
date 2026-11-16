@@ -779,10 +779,7 @@ fn preview_node_oneline(node: &Cirru, max_len: usize) -> (String, bool) {
 }
 
 fn is_token_delimiter(ch: Option<char>) -> bool {
-  match ch {
-    None => true,
-    Some(c) => c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '$' | ','),
-  }
+  ch.is_none_or(|c| c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '$' | ','))
 }
 
 fn highlight_target_text(text: &str, target: Option<&str>, loose: bool) -> String {
@@ -1909,7 +1906,7 @@ mod type_query_tests {
     );
     assert!(render_context_method(&rendered_concat).contains("(...list) -> list"));
     let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
-    let mut changed = list_get.clone();
+    let mut changed = list_get;
     changed.return_type = Some("type calcit.core/Option<string>".to_owned());
     let changed_fingerprint = method_contract_fingerprint(&Some(vec![changed])).expect("method serialization");
     assert_ne!(
@@ -3447,7 +3444,7 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
   let lowering = type_at_lowering(&source_target, processed_target);
   let data = TypeAtData {
     id: format!("{namespace}/{definition}"),
-    path: semantic_path.clone(),
+    path: semantic_path,
     expression,
     tree: cirru_to_json_value(&target_node),
     inferred_type: inferred_rendered,
@@ -3534,7 +3531,7 @@ fn namespace_source(snapshot: &snapshot::Snapshot, namespace: &str) -> String {
 }
 
 fn js_ffi_owner(input_path: &str, snapshot: &snapshot::Snapshot, namespace: &str) -> Option<calcit::JsNamespaceSource> {
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(input_path).parent().unwrap_or_else(|| Path::new("."));
   if snapshot.files.contains_key(namespace) && namespace_source(snapshot, namespace) == "project" {
     return Some(calcit::JsNamespaceSource {
       module: snapshot.package.clone(),
@@ -4060,7 +4057,7 @@ fn build_regular_context(
   let usages = context_usages(snapshot, namespace, definition, opts.deps, opts.usage_limit);
   let id = format!("{namespace}/{definition}");
   let docs = context_docs(&id, &mut diagnostics);
-  let effective_schema = inferred_schema.as_deref().unwrap_or(entry.schema.as_ref());
+  let effective_schema = inferred_schema.as_deref().unwrap_or_else(|| entry.schema.as_ref());
   let static_methods = if metadata_ready.is_ok() {
     context_methods(effective_schema, opts.budget / 3, opts.include_core)
   } else {
@@ -4587,7 +4584,7 @@ fn load_snapshot_for_search(input_path: &str, options: &SearchCommonOpts) -> Res
   let mut modules_to_load = snapshot.active_entry()?.modules.clone();
   let mut seen_modules = HashSet::new();
   modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(input_path).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
 
   for module_path in &modules_to_load {
@@ -4658,7 +4655,7 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
   modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
 
   // Load modules (dependencies) silently
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(input_path).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
 
   for module_path in &modules_to_load {

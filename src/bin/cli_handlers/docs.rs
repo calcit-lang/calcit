@@ -470,9 +470,23 @@ fn extract_agent_mutation_contract(content: &str) -> Result<AgentMutationContrac
   Ok(AgentMutationContract { content: contract, digest })
 }
 
+#[cfg(test)]
+thread_local! {
+  static TEST_HOME_OVERRIDE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+fn calcit_home_dir() -> Result<PathBuf, String> {
+  #[cfg(test)]
+  if let Some(override_dir) = TEST_HOME_OVERRIDE.with(|slot| slot.borrow().clone()) {
+    return Ok(override_dir);
+  }
+  std::env::var("HOME")
+    .map(PathBuf::from)
+    .map_err(|_| "Unable to get HOME environment variable".to_string())
+}
+
 fn get_agents_cache_path() -> Result<PathBuf, String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
-  Ok(Path::new(&home_dir).join(".config/calcit/Agents.md"))
+  Ok(calcit_home_dir()?.join(".config/calcit/Agents.md"))
 }
 
 fn download_agents_doc() -> Result<String, String> {
@@ -573,11 +587,11 @@ fn find_doc_by_query<'a>(guide_docs: &'a [GuideDoc], query: &str) -> Result<&'a 
 }
 
 fn get_guidebook_dir() -> Result<PathBuf, String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
-  let docs_dir = Path::new(&home_dir).join(".config/calcit/docs");
+  let home_dir = calcit_home_dir()?;
+  let docs_dir = home_dir.join(".config/calcit/docs");
 
   if !docs_dir.exists() {
-    let calcit_repo_dir = Path::new(&home_dir).join(".config/calcit/calcit");
+    let calcit_repo_dir = home_dir.join(".config/calcit/calcit");
     return Err(format!(
       "Guidebook documentation directory not found: {docs_dir:?}\n\nDownload the Calcit docs repo with git, then create a symlink for the docs directory:\nmkdir -p ~/.config/calcit\ngit clone https://github.com/calcit-lang/calcit.git {}\nln -s {}/docs {}",
       calcit_repo_dir.display(),
@@ -1601,7 +1615,7 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
   ensure_runtime_initialized();
 
   let entry_path = PathBuf::from(entry);
-  let base_dir = entry_path.parent().unwrap_or(Path::new("."));
+  let base_dir = entry_path.parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
   let module_paths = collect_check_md_module_paths(entry, deps)?;
 
@@ -1624,7 +1638,7 @@ fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMa
 
   let core_snapshot = calcit::load_core_snapshot()?;
   for (k, v) in core_snapshot.files {
-    shared_files.insert(k.to_owned(), v);
+    shared_files.insert(k, v);
   }
 
   Ok(shared_files)

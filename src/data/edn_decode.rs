@@ -843,7 +843,7 @@ mod tests {
       0,
       vec![
         DataShapeNode::Struct {
-          nominal: response.clone(),
+          nominal: response,
           nominal_path: None,
           type_args: Arc::new(vec![]),
           fields: vec![(EdnTag::new("code"), 1), (EdnTag::new("message"), 2), (EdnTag::new("body"), 4)],

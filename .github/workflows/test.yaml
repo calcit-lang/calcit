@@ -75,7 +75,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Build optimized CLI
         # Both consumers retain debug assertions and overflow checks.
@@ -98,7 +98,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - name: Install Wasmtime 49.0.1
@@ -132,7 +132,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Install Wasmtime 49.0.1 with verified digest
         run: |
@@ -220,7 +220,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Cache published Calcit tools
@@ -230,7 +230,7 @@ jobs:
           path: |
             ~/.cargo/bin/calcit
             ~/.cargo/bin/calcit-bindgen
-          key: published-tools-${{ runner.os }}-calcit-0.18.0-bindgen-0.1.7-rust-1.98.1
+          key: published-tools-${{ runner.os }}-calcit-0.18.0-bindgen-0.1.7-rust-1.100.0
       - name: Install published Calcit 0.18.0
         if: steps.published_tools.outputs.cache-hit != 'true'
         run: cargo install calcit --version 0.18.0 --locked
@@ -250,6 +250,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --bin calcit
       - name: Verify the reserved process-main stack
@@ -269,7 +271,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Verify no-WASM normal dependency graph
         run: |
@@ -309,7 +311,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
+          toolchain: 1.100.0
           targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
@@ -597,12 +599,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.1
-          components: clippy
+          toolchain: 1.100.0
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo clippy -- -D warnings
+      - run: cargo fmt --all -- --check
+
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       # Light runs skip the Ubuntu 22.04 no-WASM job; still prove the feature-gated code compiles.
       - name: Check no-WASM build

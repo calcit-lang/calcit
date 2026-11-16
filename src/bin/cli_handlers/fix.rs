@@ -987,7 +987,7 @@ pub(crate) fn handle_fix_command(
         rule_id: options
           .rule
           .as_deref()
-          .unwrap_or(if options.workflow.is_some() { "workflow:strict" } else { "all" }),
+          .unwrap_or_else(|| if options.workflow.is_some() { "workflow:strict" } else { "all" }),
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
@@ -2237,12 +2237,10 @@ fn collect_optional_parameter_usages(
         failed_definitions.push(format!("{owner_ns}/{owner_def}"));
         continue;
       };
-      let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
-        Ok(usages) => usages,
-        Err(_) => {
-          failed_definitions.push(format!("{owner_ns}/{owner_def}"));
-          continue;
-        }
+      let Ok(usages) = runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
+      else {
+        failed_definitions.push(format!("{owner_ns}/{owner_def}"));
+        continue;
       };
       for usage in usages {
         if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
@@ -3344,7 +3342,7 @@ fn removed_data_api_source_suggestion(snapshot_file: &str, source: &Cirru, warni
     replacement,
     applicability,
     message,
-    target_path: target_path.clone(),
+    target_path,
     operation: replacement_leaf.map(|replacement| FixOperation::ReplaceLeaf {
       original: original_leaf,
       replacement,
@@ -3358,7 +3356,7 @@ fn plan_removed_data_api_source(
   definition: &str,
   source: &Cirru,
 ) -> Result<Vec<FixSuggestion>, String> {
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let parsed = code_to_calcit(source, namespace, definition, vec![])?;
   let warnings = RefCell::new(Vec::new());
   let usages = with_legacy_migration_mode(|| {
     runner::preprocess::trace_source_usages(&parsed, namespace, definition, &warnings, &CallStackList::default())
@@ -3378,8 +3376,8 @@ fn plan_removed_data_api_source(
       suggestion.applicability = "requires-review";
       suggestion.replacement = None;
       suggestion.operation = None;
-      suggestion.message =
-        "The removed API reference crosses an unknown source context; review whether expansion observes its spelling.".to_owned();
+      "The removed API reference crosses an unknown source context; review whether expansion observes its spelling."
+        .clone_into(&mut suggestion.message);
     }
     let key = (namespace.to_owned(), definition.to_owned(), suggestion.target_path.clone());
     insert_fix_suggestion(&mut suggestions, key, suggestion)?;
@@ -3586,7 +3584,7 @@ fn plan_core_nominal_method_source(
   let mut local_bindings = HashSet::new();
   collect_potential_local_bindings(source, &mut local_bindings);
   let compiled = program::lookup_compiled_def(namespace, definition);
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let parsed = code_to_calcit(source, namespace, definition, vec![])?;
   let mut safe_calls = BTreeMap::<Vec<usize>, CoreNominalMethod>::new();
   let mut review_calls = BTreeMap::<Vec<usize>, String>::new();
   let warnings = RefCell::new(Vec::new());
@@ -3671,7 +3669,7 @@ fn plan_core_nominal_method_source(
       let short_constructor_is_shadowed = matches!(receiver, Cirru::List(parts)
         if matches!(parts.first(), Some(Cirru::Leaf(name)) if name.as_ref() == kind.nominal()))
         && !core_nominal_type_is_unshadowed(snapshot, namespace, kind.nominal(), &local_bindings);
-      let source_receiver = code_to_calcit(receiver, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+      let source_receiver = code_to_calcit(receiver, namespace, definition, vec![])?;
       // Reader shorthand is a call, not the located leaf inside that expansion.
       let direct_source_shape = !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_));
       // Lowered children can inherit the source call's coordinates but not its result type.
@@ -4168,7 +4166,7 @@ fn plan_core_identity_conversion_source(
   let mut local_bindings = HashSet::new();
   collect_potential_local_bindings(source, &mut local_bindings);
   let compiled = program::lookup_compiled_def(namespace, definition);
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let parsed = code_to_calcit(source, namespace, definition, vec![])?;
   let (preprocessed, expressions) =
     runner::preprocess::trace_source_expressions(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
       .map_err(|failure| failure.msg)?;
@@ -4196,8 +4194,7 @@ fn plan_core_identity_conversion_source(
         .iter()
         .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
         .collect::<Result<Vec<_>, _>>()?,
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) {
       continue;
     }
@@ -4210,8 +4207,7 @@ fn plan_core_identity_conversion_source(
         .iter()
         .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
         .collect::<Result<Vec<_>, _>>()?,
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     let direct_source_shape = !matches!(argument, Cirru::Leaf(_)) || !matches!(parsed_argument, Calcit::List(_));
     let inferred = compiled
       .as_ref()
@@ -4394,7 +4390,7 @@ fn plan_attached_do_rewrite(
     return Ok(None);
   }
   let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
-  let parsed = code_to_calcit(&wrapper, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let parsed = code_to_calcit(&wrapper, namespace, definition, vec![])?;
   let usages =
     runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
       .map_err(|error| error.msg)?;
@@ -4763,7 +4759,7 @@ fn plan_named_constructor_source(
     return Ok(suggestions);
   }
   let usages = if paths.iter().any(|(_, depth)| *depth == 0) {
-    let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+    let parsed = code_to_calcit(source, namespace, definition, vec![])?;
     runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
       .map_err(|error| error.msg)?
   } else {
@@ -5187,9 +5183,8 @@ const CORE_NS: &str = "calcit.core";
 /// Enums that `calcit.core` declares with `defenum`, read once from the embedded core snapshot.
 /// Core wraps most of them as `def Name (impl-traits (defenum Name ...) ...)`.
 fn core_enum_names() -> &'static HashSet<String> {
-  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
-  NAMES.get_or_init(|| {
-    calcit::load_core_snapshot()
+  static NAMES: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(|| {
+    calcit::core_snapshot()
       .ok()
       .and_then(|core| {
         core.files.get(CORE_NS).map(|file| {
@@ -5202,7 +5197,8 @@ fn core_enum_names() -> &'static HashSet<String> {
         })
       })
       .unwrap_or_default()
-  })
+  });
+  &NAMES
 }
 
 /// Whether a definition body evaluates `defenum <name>`, looking through wrapping forms but not quoted data.

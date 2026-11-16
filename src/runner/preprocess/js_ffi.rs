@@ -123,7 +123,7 @@ pub(super) fn require_js_ffi_feature(
   if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.clone(),
+      message,
       "E_JS_FFI_FEATURE_REQUIRED",
       call_stack,
       location,
@@ -290,7 +290,7 @@ pub(super) fn reject_or_warn_on_nullable_js_ffi_dereference(
   if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.clone(),
+      message,
       "E_JS_FFI_NULLABLE_DEREF",
       call_stack,
       location,
@@ -398,7 +398,7 @@ pub(super) fn check_typed_js_field_operation(
     if matches!(policy, crate::snapshot::FeaturePolicy::Error) {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
-        message.clone(),
+        message,
         "E_JS_FFI_FIELD_READONLY",
         call_stack,
         location,
@@ -546,7 +546,7 @@ pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(
   if strict_types_enabled() && should_emit_project_source_lint(file_ns) {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
-      message.clone(),
+      message,
       "E_JS_FFI_NULLABLE_PREDICATE",
       call_stack,
       location,

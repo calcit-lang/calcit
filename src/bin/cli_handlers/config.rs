@@ -457,7 +457,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
   let format = config_output_format(&opts.format)?;
   if format != StructuredOutputFormat::Human {
     let (revision, result) = config_json_query(input_path, |snapshot| {
-      let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+      let base_dir = Path::new(input_path).parent().unwrap_or_else(|| Path::new("."));
       let module_folder = calcit::project_module_folder(base_dir);
       let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
       let entry = snapshot.entries.get(name).ok_or_else(|| missing_entry_error(&snapshot, name))?;
@@ -487,7 +487,7 @@ fn handle_modules(opts: &ConfigModulesCommand, input_path: &str) -> Result<(), S
   }
   let snapshot = load_snapshot_for_display(input_path)?;
 
-  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let base_dir = Path::new(input_path).parent().unwrap_or_else(|| Path::new("."));
   let module_folder = calcit::project_module_folder(base_dir);
 
   let name = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
@@ -589,15 +589,15 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
       format!("{} Set [{entry_label}] target = '{}'", "✓".green(), format_target(entry.target))
     }
     "init-fn" | "init_fn" => {
-      entry.init_fn = opts.value.clone();
+      entry.init_fn.clone_from(&opts.value);
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "reload-fn" | "reload_fn" => {
-      entry.reload_fn = opts.value.clone();
+      entry.reload_fn.clone_from(&opts.value);
       format!("{} Set [{entry_label}] '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value)
     }
     "description" => {
-      entry.description = opts.value.clone();
+      entry.description.clone_from(&opts.value);
       format!("{} Set [{entry_label}] description = '{}'", "✓".green(), opts.value)
     }
     key if key.starts_with("feature-policy.") => {
@@ -757,7 +757,7 @@ fn handle_add_entry(opts: &ConfigAddEntryCommand, snapshot_file: &str) -> Result
     entry.reload_fn = validate_entry_fn(&snapshot, "reload-fn", reload_fn)?;
   }
   if let Some(description) = &opts.description {
-    entry.description = description.clone();
+    entry.description.clone_from(description);
   }
 
   snapshot.entries.insert(name.to_owned(), entry);

@@ -268,7 +268,7 @@ fn component_diagnostic(
   suggestion: &str,
 ) -> FfiInterfaceDiagnostic {
   let mut item = diagnostic(definition, path, code, message, suggestion);
-  item.phase = "component-interface-ir".to_owned();
+  "component-interface-ir".clone_into(&mut item.phase);
   item
 }
 
@@ -282,7 +282,7 @@ fn componentize_diagnostic(mut item: FfiInterfaceDiagnostic) -> FfiInterfaceDiag
       text.replace(&format!("Interface IR v{FFI_INTERFACE_IR_VERSION}"), &component_name)
     }
   };
-  item.phase = "component-interface-ir".to_owned();
+  "component-interface-ir".clone_into(&mut item.phase);
   item.message = componentize_text(item.message);
   item.suggestion = componentize_text(item.suggestion);
   item

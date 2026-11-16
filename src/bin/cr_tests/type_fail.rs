@@ -2173,7 +2173,7 @@ fn assert_type_qualifies_same_namespace_union_in_type_forms() {
           "`assert-type t {target}` on {value} should pass (#2682): {:?}",
           r.err().map(|e| e.msg)
         );
-        let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def.clone(), &[]);
+        let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def, &[]);
         assert!(
           ran.is_ok(),
           "`assert-type t {target}` on {value} should hold at runtime: {:?}",
@@ -2225,7 +2225,7 @@ fn assert_type_resolves_short_names_in_type_forms() {
         .collect();
       assert!(r.is_ok(), "`assert-type t {target}` on {value} should pass (#2682): {:?}", r.err());
       assert!(w.is_empty(), "unexpected warnings for `{target}`: {w:?}");
-      let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def.clone(), &[]);
+      let ran = calcit::run_program(entries.init_ns.clone(), entries.init_def, &[]);
       assert!(
         ran.is_ok(),
         "`assert-type t {target}` on {value} should also hold at runtime: {:?}",

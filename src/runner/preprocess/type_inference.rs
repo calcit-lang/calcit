@@ -473,7 +473,7 @@ fn merge_nominal_enum_branches<'a>(
         return None;
       }
     } else {
-      prototype = Some(definition.clone());
+      prototype = Some(definition);
       slots.resize(arguments.len(), None);
     }
     for (index, argument) in arguments.iter().enumerate() {
@@ -1469,9 +1469,9 @@ fn enrich_declared_struct_return_with_impls(
   declared: &Arc<CalcitTypeAnnotation>,
   inferred: &Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
-  let inferred_struct = match inferred.as_ref() {
-    CalcitTypeAnnotation::Struct(struct_def, _) | CalcitTypeAnnotation::StructValue(struct_def) => struct_def,
-    _ => return None,
+  let (CalcitTypeAnnotation::Struct(inferred_struct, _) | CalcitTypeAnnotation::StructValue(inferred_struct)) = inferred.as_ref()
+  else {
+    return None;
   };
   if inferred_struct.impls.is_empty() {
     return None;
@@ -1486,7 +1486,7 @@ fn enrich_declared_struct_return_with_impls(
   {
     return None;
   }
-  declared_struct.impls = inferred_struct.impls.clone();
+  declared_struct.impls.clone_from(&inferred_struct.impls);
 
   match declared.as_ref() {
     CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) => {
@@ -4046,13 +4046,13 @@ fn infer_struct_value_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   let proto_arg = xs.get(1)?;
   let struct_value = resolve_struct_value(proto_arg, scope_types)?;
   if struct_value.struct_ref.generics.is_empty() {
-    return Some(Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref.clone())));
+    return Some(Arc::new(CalcitTypeAnnotation::StructValue(struct_value.struct_ref)));
   }
 
   let field_values = collect_struct_literal_values(xs, &struct_value)?;
   let applied_args = infer_struct_applied_args(struct_value.struct_ref.as_ref(), field_values.iter(), scope_types);
   Some(Arc::new(CalcitTypeAnnotation::Struct(
-    struct_value.struct_ref.clone(),
+    struct_value.struct_ref,
     Arc::new(applied_args),
   )))
 }
@@ -4197,7 +4197,7 @@ pub(super) fn collect_struct_literal_values(xs: &CalcitList, struct_value: &Calc
       _ => continue,
     };
     if let Some(pos) = struct_value.index_of(field_name) {
-      values[pos] = value.to_owned();
+      value.clone_into(&mut values[pos]);
     }
   }
 
@@ -4303,7 +4303,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
       Some(Calcit::StructDef(struct_def)) => {
         let values = vec![Calcit::Nil; struct_def.fields.len()];
         Some(CalcitStructValue {
-          struct_ref: Arc::new(struct_def.to_owned()),
+          struct_ref: Arc::new(struct_def),
           values: Arc::new(values),
         })
       }
@@ -4317,7 +4317,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
         Some(Calcit::StructDef(struct_def)) => {
           let values = vec![Calcit::Nil; struct_def.fields.len()];
           Some(CalcitStructValue {
-            struct_ref: Arc::new(struct_def.to_owned()),
+            struct_ref: Arc::new(struct_def),
             values: Arc::new(values),
           })
         }
@@ -4868,10 +4868,7 @@ mod tests {
       merge_if_branch_types(number.clone(), option_number.clone()),
       Some(option_number.clone())
     );
-    assert_eq!(
-      merge_if_branch_types(option_number.clone(), number.clone()),
-      Some(option_number.clone())
-    );
+    assert_eq!(merge_if_branch_types(option_number.clone(), number.clone()), Some(option_number));
 
     // An internal nil-join wrapper is kept by the corrected compatibility
     // direction instead of being dropped for the plain payload.
@@ -4927,7 +4924,7 @@ mod tests {
       merge_nominal_enum_branches([&empty_type, &left_type, &right_type]),
       Some(annotation(number, string.clone()))
     );
-    assert_eq!(merge_nominal_enum_branches([&open_type, &right_type]), Some(open_type.clone()));
+    assert_eq!(merge_nominal_enum_branches([&open_type, &right_type]), Some(open_type));
     let dynamic_left_type = annotation(calcit::DYNAMIC_TYPE.clone(), crate::calcit::type_annotation::NEVER_TYPE.clone());
     assert_eq!(
       merge_nominal_enum_branches([&dynamic_left_type, &right_type]),
@@ -5151,7 +5148,7 @@ mod tests {
   #[test]
   fn generic_return_preserves_a_callers_symbolic_payload() {
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let generic_list = Arc::new(CalcitTypeAnnotation::List(type_var.clone()));
+    let generic_list = Arc::new(CalcitTypeAnnotation::List(type_var));
     let items = local("items", generic_list.clone());
 
     let inferred = resolve_generic_return_type_parts(
@@ -5176,7 +5173,7 @@ mod tests {
     let callable = local(
       "combine",
       Arc::new(CalcitTypeAnnotation::from_function_parts(
-        vec![number.clone(), number.clone()],
+        vec![number.clone(), number],
         Arc::new(CalcitTypeAnnotation::String),
       )),
     );
@@ -5328,7 +5325,7 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::String),
       )),
     );
-    let unknown_length = local("arguments", Arc::new(CalcitTypeAnnotation::List(number.clone())));
+    let unknown_length = local("arguments", Arc::new(CalcitTypeAnnotation::List(number)));
     let too_short = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
 
     for arguments in [unknown_length, too_short] {
@@ -5607,7 +5604,7 @@ mod tests {
       Some(Arc::new(CalcitTypeAnnotation::List(string.clone())))
     );
 
-    let map_type = Arc::new(CalcitTypeAnnotation::Map(string.clone(), number.clone()));
+    let map_type = Arc::new(CalcitTypeAnnotation::Map(string, number.clone()));
     let get_call = CalcitList::from(&[symbol("get"), local("counts", map_type.clone()), Calcit::Str(Arc::from("a"))] as &[Calcit]);
     assert_eq!(
       infer_return_type_from_compiled_callable(calcit::CORE_NS, "get", &get_call, &ScopeTypes::new()),
@@ -5725,12 +5722,12 @@ mod tests {
       "a one-step path is dissoc on the Map"
     );
     assert_eq!(
-      dissoc_in(nested_map.clone(), path(vec![groups.clone(), id.clone()])),
-      Some(nested_map.clone()),
+      dissoc_in(nested_map.clone(), path(vec![groups.clone(), id])),
+      Some(nested_map),
       "a nested Map payload keeps its own Map contract"
     );
     assert!(
-      dissoc_in(list_payload_map, path(vec![groups.clone(), Calcit::Number(0.0)])).is_none(),
+      dissoc_in(list_payload_map, path(vec![groups, Calcit::Number(0.0)])).is_none(),
       "a List payload stays on the open contract"
     );
     assert!(dissoc_in(dynamic_map.clone(), path(vec![])).is_none(), "the empty path stays open");
@@ -6334,7 +6331,7 @@ mod tests {
         proc_call(CalcitProc::Raise, vec![Calcit::Str(Arc::from("cannot construct"))]),
       ]),
     ]);
-    assert_eq!(infer_guaranteed_nominal_impl_return(&diverging_match), Some(inferred_body.clone()));
+    assert_eq!(infer_guaranteed_nominal_impl_return(&diverging_match), Some(inferred_body));
 
     let mut incompatible_struct = declared_struct;
     incompatible_struct.impls = vec![Arc::new(CalcitImpl {

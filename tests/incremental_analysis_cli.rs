@@ -209,7 +209,7 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["affected"], 0);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["unresolved"], unresolved_dependencies);
-  assert_eq!(without_cache(cold.clone()), without_cache(warm.clone()));
+  assert_eq!(without_cache(cold.clone()), without_cache(warm));
 
   #[cfg(unix)]
   {
@@ -239,7 +239,7 @@ fn incremental_analysis_reuses_unchanged_definitions_and_reports_invalidation() 
   assert_eq!(dependency_changed["data"]["cache"]["input"]["module_hits"], 1);
   assert_eq!(dependency_changed["data"]["cache"]["input"]["module_misses"], 1);
   assert_eq!(
-    without_cache(dependency_changed.clone()),
+    without_cache(dependency_changed),
     without_cache(full_report(&snapshot, "check-types"))
   );
 
@@ -538,7 +538,7 @@ fn incremental_dynamic_methods_reuses_only_an_unchanged_entry_dependency_closure
   assert_eq!(warm["data"]["cache"]["status"], "warm");
   assert_eq!(warm["data"]["cache"]["preprocessing_cached"], true);
   assert_eq!(warm["data"]["cache"]["dependency_index"]["changed"], 0);
-  assert_eq!(without_cache(warm.clone()), without_cache(dynamic_report(&snapshot, false)));
+  assert_eq!(without_cache(warm), without_cache(dynamic_report(&snapshot, false)));
 
   let add_unrelated = run_calcit(
     &snapshot,

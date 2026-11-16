@@ -2441,7 +2441,7 @@ impl Snapshot {
   pub fn select_entry(&mut self, entry: Option<&str>) -> Result<(), String> {
     let name = entry.unwrap_or(DEFAULT_ENTRY_NAME);
     if self.entries.contains_key(name) {
-      self.active_entry = name.to_owned();
+      name.clone_into(&mut self.active_entry);
       Ok(())
     } else {
       let mut available = self.entries.keys().cloned().collect::<Vec<_>>();
@@ -4387,7 +4387,7 @@ fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), 
     return Err(format!("{owner}: `defexternal` requires at least one field or method member"));
   }
 
-  let mut trait_items: Vec<Cirru> = vec![Cirru::Leaf(Arc::from("deftrait")), Cirru::Leaf(name.clone())];
+  let mut trait_items: Vec<Cirru> = vec![Cirru::Leaf(Arc::from("deftrait")), Cirru::Leaf(name)];
   trait_items.extend(members.iter().cloned());
   let trait_code = Cirru::List(trait_items);
 
@@ -4722,8 +4722,8 @@ pub fn is_generated_namespace(ns: &str) -> bool {
 
 pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let path_data = Path::new(path);
-  let parent = path_data.parent().expect("parent path");
-  let parent_str = parent.to_str().expect("get path string");
+  let parent = path_data.parent().unwrap_or_else(|| Path::new("."));
+  let parent_str = parent.to_string_lossy();
 
   // Both generated values are string literals, so they carry the String
   // schema instead of the Dynamic default; tools such as `analyze weak-types`
@@ -4735,7 +4735,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   };
   let def_dict: HashMap<String, CodeEntry> = HashMap::from_iter([
     ("calcit-filename".into(), string_def("calcit-filename", path)),
-    ("calcit-dirname".into(), string_def("calcit-dirname", parent_str)),
+    ("calcit-dirname".into(), string_def("calcit-dirname", &parent_str)),
   ]);
 
   FileInSnapShot {
@@ -4800,7 +4800,7 @@ fn extract_def_name(items: &[Cirru], index: usize) -> Option<String> {
   match (items.first(), items.get(1)) {
     (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) if TOP_LEVEL_DEF_HEADS.contains(&head.as_ref()) => {
       if head.as_ref() == "defimpl" {
-        Some(format!("__defimpl_{}_{}", name, index))
+        Some(format!("__defimpl_{name}_{index}"))
       } else {
         Some(name.as_ref().to_owned())
       }
@@ -5885,9 +5885,8 @@ fn binding_names(node: &Cirru) -> HashSet<String> {
 /// matches one resolves to the core definition even when the namespace
 /// declares its own, so only the quoted spelling names the local one.
 fn core_def_names() -> &'static HashSet<String> {
-  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
-  NAMES.get_or_init(|| {
-    crate::load_core_snapshot()
+  static NAMES: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(|| {
+    crate::core_snapshot()
       .ok()
       .and_then(|core| {
         core
@@ -5896,7 +5895,8 @@ fn core_def_names() -> &'static HashSet<String> {
           .map(|file| file.defs.keys().cloned().collect())
       })
       .unwrap_or_default()
-  })
+  });
+  &NAMES
 }
 
 /// Names that a bare type position in this namespace resolves to its own
@@ -7053,7 +7053,7 @@ mod tests {
       definition_revision(&changed).expect("changed code revision should render")
     );
 
-    let mut changed = entry.clone();
+    let mut changed = entry;
     changed.tests[0].code = Cirru::List(vec![Cirru::leaf("assert="), Cirru::leaf("43"), Cirru::leaf("answer")]);
     assert_ne!(
       revision,
@@ -7268,7 +7268,7 @@ mod tests {
     }
 
     // 转换为 EDN 再转换回来，验证序列化/反序列化
-    let edn: Edn = code_entry.clone().into();
+    let edn: Edn = code_entry.into();
     let parsed_entry: CodeEntry = edn.try_into().expect("Failed to parse CodeEntry from EDN");
 
     assert_eq!(parsed_entry.examples.len(), 2);
@@ -7658,7 +7658,7 @@ mod tests {
       map.push(Cirru::List(vec![Cirru::leaf(":open"), Cirru::leaf(":host")]));
     }
     assert!(validate_schema_for_write(&doubled).is_err(), "duplicate open reason: {doubled}");
-    let mut on_macro = canonical.clone();
+    let mut on_macro = canonical;
     if let Cirru::List(items) = &mut on_macro {
       items[1] = Cirru::leaf("Macro");
     }
@@ -8542,7 +8542,7 @@ mod tests {
     );
 
     // Invalid for reasons other than retired storage: the strict error is kept as-is.
-    let Edn::Map(mut broken) = canonical.clone() else {
+    let Edn::Map(mut broken) = canonical else {
       panic!("snapshot is a map")
     };
     broken.0.remove(&Edn::tag("entries"));

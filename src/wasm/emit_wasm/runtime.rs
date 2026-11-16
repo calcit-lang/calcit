@@ -3723,7 +3723,7 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_ryu_format"), base_index);
 
   let copy_name = String::from("__rt_copy_f64_slots");
-  fn_index.insert(copy_name.clone(), base_index + fns.len() as u32);
+  fn_index.insert(copy_name, base_index + fns.len() as u32);
 
   let i_local = 3u32;
   let copy_instructions = vec![

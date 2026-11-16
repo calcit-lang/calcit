@@ -788,9 +788,9 @@ impl CallCountAnalyzer {
     // Count the entry itself if it matches filters
     let entry_is_core = self.is_core_ns(entry_ns);
     let entry_matches_core = self.include_core || !entry_is_core;
-    let entry_matches_prefix = self.ns_prefix.as_ref().map(|p| entry_ns.starts_with(p)).unwrap_or(true);
+    let entry_matches_prefix = self.ns_prefix.as_deref().is_none_or(|p| entry_ns.starts_with(p));
     if entry_matches_core && entry_matches_prefix {
-      *self.call_counts.entry(fqn.clone()).or_insert(0) += 1;
+      *self.call_counts.entry(fqn).or_insert(0) += 1;
     }
 
     // Traverse and count
@@ -848,7 +848,7 @@ impl CallCountAnalyzer {
     if self.visited.contains(&fqn) {
       return Ok(());
     }
-    self.visited.insert(fqn.clone());
+    self.visited.insert(fqn);
 
     let program_code = PROGRAM_CODE_DATA.read().map_err(|e| format!("Failed to read program code: {e}"))?;
 
@@ -868,7 +868,7 @@ impl CallCountAnalyzer {
       for (call_ns, call_def) in call_refs {
         let is_core = self.is_core_ns(&call_ns);
         let matches_core = self.include_core || !is_core;
-        let matches_prefix = self.ns_prefix.as_ref().map(|p| call_ns.starts_with(p)).unwrap_or(true);
+        let matches_prefix = self.ns_prefix.as_deref().is_none_or(|p| call_ns.starts_with(p));
 
         // Increment count only when it matches filters
         if matches_core && matches_prefix {

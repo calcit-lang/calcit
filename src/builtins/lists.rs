@@ -415,12 +415,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
           match pair {
             Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the enum",
-                  call_stack,
-                  x0.get_location(),
-                ))?;
+                let x1 = extra.first().ok_or_else(|| {
+                  CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Arity,
+                    "&list:foldl-shortcut expected a value in the enum",
+                    call_stack,
+                    x0.get_location(),
+                  )
+                })?;
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
@@ -455,12 +457,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
           match pair {
             Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the enum",
-                  call_stack,
-                  x0.get_location(),
-                ))?;
+                let x1 = extra.first().ok_or_else(|| {
+                  CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Arity,
+                    "&list:foldl-shortcut expected a value in the enum",
+                    call_stack,
+                    x0.get_location(),
+                  )
+                })?;
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
@@ -499,12 +503,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
           match pair {
             Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Arity,
-                  "&list:foldl-shortcut expected a value in the enum",
-                  call_stack,
-                  x0.get_location(),
-                ))?;
+                let x1 = extra.first().ok_or_else(|| {
+                  CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Arity,
+                    "&list:foldl-shortcut expected a value in the enum",
+                    call_stack,
+                    x0.get_location(),
+                  )
+                })?;
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
@@ -564,16 +570,18 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let pair = runner::run_fn(&[state.to_owned(), x.to_owned()], info, call_stack)?;
+          let pair = runner::run_fn(&[state.to_owned(), x], info, call_stack)?;
           match pair {
             Calcit::Enum(CalcitEnumValue { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
-                  CalcitErrKind::Arity,
-                  "&list:foldr-shortcut expected a value in the enum",
-                  call_stack,
-                  x0.get_location(),
-                ))?;
+                let x1 = extra.first().ok_or_else(|| {
+                  CalcitErr::use_msg_stack_location(
+                    CalcitErrKind::Arity,
+                    "&list:foldr-shortcut expected a value in the enum",
+                    call_stack,
+                    x0.get_location(),
+                  )
+                })?;
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {

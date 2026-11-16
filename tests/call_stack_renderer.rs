@@ -182,7 +182,7 @@ fn broken_current_error_path_does_not_fall_back_to_legacy() {
       current.parent().unwrap().to_path_buf()
     } else {
       fs::create_dir(current.parent().unwrap()).unwrap();
-      current.clone()
+      current
     };
     std::os::unix::fs::symlink("missing-target", &link).unwrap();
     fs::write(directory.path().join(".calcit-error.cirru"), "stale diagnostic").unwrap();

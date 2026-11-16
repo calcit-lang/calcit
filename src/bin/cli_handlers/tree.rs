@@ -266,7 +266,7 @@ fn parse_with_references(with_strs: &[String], original_node: &Cirru) -> Result<
     };
 
     let node = navigate_to_path(original_node, &path)?;
-    references.insert(name.trim().to_string(), node.clone());
+    references.insert(name.trim().to_string(), node);
   }
 
   Ok(references)
@@ -721,9 +721,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   if !path.is_empty() {
     let parent_path = &path[..path.len() - 1];
     let parent_after = if parent_path.is_empty() {
-      new_code.clone()
+      new_code
     } else {
-      navigate_to_path(&new_code, parent_path)?.clone()
+      navigate_to_path(&new_code, parent_path)?
     };
     println!();
     print_preview_block("Containing expression after", &parent_after, opts.depth, "cyan");
@@ -776,7 +776,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&processed_node))?;
-  code_entry.code = new_code.clone();
+  code_entry.code = new_code;
 
   save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
@@ -835,7 +835,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   let mut replaced_count = 0;
 
   // Sort paths in reverse order to replace from deepest/rightmost first
-  let mut sorted_matches = matches.clone();
+  let mut sorted_matches = matches;
   sorted_matches.sort_by(|a, b| b.0.cmp(&a.0));
 
   for (path, _) in sorted_matches {
@@ -1117,7 +1117,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   print_preview_block("Deleted node", &old_node, opts.depth, "yellow");
   println!();
   let new_parent = if parent_path.is_empty() {
-    new_code.clone()
+    new_code
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
@@ -1300,7 +1300,7 @@ fn generic_insert_handler<T: InsertOperation>(
   print_preview_block("Inserted node", &processed_node, depth, "cyan");
   println!();
   let new_parent = if context_path.is_empty() {
-    new_code.clone()
+    new_code
   } else {
     navigate_to_path(&new_code, context_path)?
   };
@@ -1443,7 +1443,7 @@ fn generic_swap_handler(
     tips.print();
   }
   let new_parent = if parent_path.is_empty() {
-    new_code.clone()
+    new_code
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
@@ -1510,7 +1510,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let node = navigate_to_path(&code_entry.code, &path)?.clone();
+  let node = navigate_to_path(&code_entry.code, &path)?;
   let children = match &node {
     Cirru::List(children) => children.clone(),
     _ => return Err(format!("Node at path [{}] is a leaf; cannot unwrap", opts.path)),
@@ -1525,7 +1525,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
   let parent_after = if parent_path.is_empty() {
     new_code.clone()
   } else {
-    navigate_to_path(&new_code, parent_path)?.clone()
+    navigate_to_path(&new_code, parent_path)?
   };
   code_entry.code = new_code;
 
@@ -1567,8 +1567,8 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let child_node = navigate_to_path(&code_entry.code, &path)?.clone();
-  let parent_node = navigate_to_path(&code_entry.code, parent_path)?.clone();
+  let child_node = navigate_to_path(&code_entry.code, &path)?;
+  let parent_node = navigate_to_path(&code_entry.code, parent_path)?;
 
   let new_code = apply_operation_at_path(&code_entry.code, parent_path, TreeOperation::Replace, Some(&child_node))?;
   code_entry.code = new_code;
@@ -1607,7 +1607,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let original_node = navigate_to_path(&code_entry.code, &path)?.clone();
+  let original_node = navigate_to_path(&code_entry.code, &path)?;
 
   // `self` always refers to the original node (equivalent to rewrite --with self=.)
   let mut references = std::collections::BTreeMap::new();
