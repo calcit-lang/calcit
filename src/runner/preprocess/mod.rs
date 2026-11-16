@@ -9271,7 +9271,25 @@ fn check_struct_method_args(
   };
 
   let Some(fn_info) = fn_info else {
-    return; // Can't get function info, skip check
+    if let Some(inferred_fn) = infer_type_from_expr(method_entry, scope_types).and_then(|t| t.resolve_to_nonoptional_fn()) {
+      let mut adjusted = inferred_fn.as_ref().clone();
+      if let Some(first) = adjusted.arg_types.first_mut() {
+        *first = calcit::DYNAMIC_TYPE.clone();
+      }
+      type_checking::check_method_call_arg_types(
+        head,
+        &Arc::new(adjusted),
+        args,
+        scope_types,
+        &CallTypeCheckInfo {
+          file_ns,
+          def_name,
+          call_location,
+        },
+        check_warnings,
+      );
+    }
+    return;
   };
   // Core methods report against the same receiver-bound contract that
   // `method_call_signature` proves, so the lowered direct call agrees.
@@ -10973,32 +10991,71 @@ fn resolve_defimpl_self_type(
     Calcit::Symbol { sym, .. } => program::resolve_type_name_in_ns(file_ns, sym)?,
     _ => return None,
   };
+  let qualify_bounds = |bounds: &[crate::calcit::CalcitGenericBound]| -> Vec<crate::calcit::CalcitGenericBound> {
+    bounds
+      .iter()
+      .map(|bound| {
+        let traits = bound
+          .traits
+          .iter()
+          .map(|trait_ref| {
+            if trait_ref.definition_ref.is_some()
+              || !trait_ref.methods.is_empty()
+              || crate::calcit::type_annotation::family_of_bound_trait(trait_ref).is_some()
+            {
+              return trait_ref.clone();
+            }
+            let raw_name = trait_ref.name.ref_str();
+            let (trait_ns, trait_name) = if let Some((ns, name)) = raw_name.rsplit_once('/') {
+              let resolved_ns = program::lookup_ns_target_in_import(&target_ns, ns).unwrap_or_else(|| Arc::from(ns));
+              (resolved_ns, Arc::from(name))
+            } else if program::has_def_code(&target_ns, raw_name) {
+              (target_ns.clone(), Arc::from(raw_name))
+            } else if let Some(imported_ns) = program::lookup_def_target_in_import(&target_ns, raw_name) {
+              (imported_ns, Arc::from(raw_name))
+            } else if program::has_def_code(calcit::CORE_NS, raw_name) {
+              (Arc::from(calcit::CORE_NS), Arc::from(raw_name))
+            } else {
+              return trait_ref.clone();
+            };
+            lookup_source_backed_trait_def(&trait_ns, &trait_name)
+              .map(|resolved| Arc::new(resolved.with_definition_ref(&trait_ns, &trait_name)))
+              .unwrap_or_else(|| Arc::new(CalcitTrait::new_reference(&format!("{trait_ns}/{trait_name}"))))
+          })
+          .collect();
+        crate::calcit::CalcitGenericBound {
+          name: bound.name.clone(),
+          traits: Arc::new(traits),
+        }
+      })
+      .collect()
+  };
   let ref_name: Arc<str> = Arc::from(format!("{target_ns}/{target_def}"));
   let base_ref = CalcitTypeAnnotation::TypeRef(ref_name.clone(), Arc::new(vec![]));
   if let Some(sd) = base_ref.resolve_to_struct() {
     return Some(DefimplSelfTarget {
       self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
       generics: sd.generics.as_ref().clone(),
-      where_bounds: sd.where_bounds.as_ref().clone(),
+      where_bounds: qualify_bounds(&sd.where_bounds),
     });
   }
   if let Some(ed) = base_ref.resolve_to_enum() {
     return Some(DefimplSelfTarget {
       self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
       generics: ed.generics().to_vec(),
-      where_bounds: ed.where_bounds().to_vec(),
+      where_bounds: qualify_bounds(ed.where_bounds()),
     });
   }
   match resolve_program_value_for_preprocess(&target_ns, &target_def, None) {
     Some(Calcit::StructDef(sd)) => Some(DefimplSelfTarget {
       self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(&sd.generics))),
       generics: sd.generics.as_ref().clone(),
-      where_bounds: sd.where_bounds.as_ref().clone(),
+      where_bounds: qualify_bounds(&sd.where_bounds),
     }),
     Some(Calcit::EnumDef(ed)) => Some(DefimplSelfTarget {
       self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, generic_vars(ed.generics()))),
       generics: ed.generics().to_vec(),
-      where_bounds: ed.where_bounds().to_vec(),
+      where_bounds: qualify_bounds(ed.where_bounds()),
     }),
     _ if program::names_nominal_type_definition(&target_ns, &target_def) => Some(DefimplSelfTarget {
       self_type: Arc::new(CalcitTypeAnnotation::TypeRef(ref_name, Arc::new(vec![]))),
@@ -11038,7 +11095,37 @@ fn resolve_defimpl_method_context(
       continue;
     };
     let qualified = resolve_trait_method_type(&trait_def, method_type.clone());
-    let substituted = qualified.substitute_type_vars(&bindings);
+    let method_sig_generics: Vec<Arc<str>> = match qualified.as_ref() {
+      CalcitTypeAnnotation::Fn(sig) => sig.generics.as_ref().clone(),
+      _ => vec![],
+    };
+    let mut method_renames: HashMap<Arc<str>, Arc<str>> = HashMap::new();
+    let mut method_rename_types: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    let mut occupied: HashSet<Arc<str>> = impl_generics.iter().cloned().chain(method_sig_generics.iter().cloned()).collect();
+    for g in &method_sig_generics {
+      if g.as_ref() != "Self" && impl_generics.contains(g) {
+        let mut idx_suffix = 0usize;
+        let fresh: Arc<str> = loop {
+          let candidate: Arc<str> = if idx_suffix == 0 {
+            Arc::from(format!("{g}#method"))
+          } else {
+            Arc::from(format!("{g}#method_{idx_suffix}"))
+          };
+          idx_suffix += 1;
+          if occupied.insert(candidate.clone()) {
+            break candidate;
+          }
+        };
+        method_renames.insert(g.clone(), fresh.clone());
+        method_rename_types.insert(g.clone(), Arc::new(CalcitTypeAnnotation::TypeVar(fresh)));
+      }
+    }
+    let renamed_qualified = if method_rename_types.is_empty() {
+      qualified
+    } else {
+      qualified.substitute_type_vars(&method_rename_types)
+    };
+    let substituted = renamed_qualified.substitute_type_vars(&bindings);
     let final_type = match substituted.as_ref() {
       CalcitTypeAnnotation::Fn(sig)
         if sig.generics.iter().any(|g| g.as_ref() == "Self") || !impl_generics.is_empty() || !impl_where_bounds.is_empty() =>
@@ -11051,16 +11138,27 @@ fn resolve_defimpl_method_context(
           }
         }
         for g in sig.generics.iter() {
-          if g.as_ref() != "Self" && !merged_generics.contains(g) {
-            merged_generics.push(g.clone());
+          if g.as_ref() != "Self" {
+            let renamed = method_renames.get(g).cloned().unwrap_or_else(|| g.clone());
+            if !merged_generics.contains(&renamed) {
+              merged_generics.push(renamed);
+            }
           }
         }
         updated.generics = Arc::new(merged_generics);
-        if !impl_where_bounds.is_empty() {
+        let renamed_sig_bounds: Vec<crate::calcit::CalcitGenericBound> = sig
+          .where_bounds
+          .iter()
+          .map(|b| crate::calcit::CalcitGenericBound {
+            name: method_renames.get(&b.name).cloned().unwrap_or_else(|| b.name.clone()),
+            traits: b.traits.clone(),
+          })
+          .collect();
+        if !impl_where_bounds.is_empty() || !method_renames.is_empty() {
           let mut merged_bounds = impl_where_bounds.clone();
-          for b in sig.where_bounds.iter() {
-            if !merged_bounds.contains(b) {
-              merged_bounds.push(b.clone());
+          for b in renamed_sig_bounds {
+            if !merged_bounds.contains(&b) {
+              merged_bounds.push(b);
             }
           }
           updated.where_bounds = Arc::new(merged_bounds);
@@ -16402,7 +16500,7 @@ pub fn preprocess_defn(
                 expected.arg_types.is_empty() && expected.rest_type.is_none() && schema.return_type.contains_type_var()
               });
             if !return_is_output_only
-              && !check_contextual_return
+              && (!check_contextual_return || matches!(schema.return_type.as_ref(), CalcitTypeAnnotation::Dynamic))
               && (!matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || schema.return_type.contains_type_var())
             {
               schema.return_type = detected_return_type.clone();
