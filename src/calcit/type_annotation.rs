@@ -2863,7 +2863,7 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn schema_key_matches(form: &Calcit, key: &str) -> bool {
+  pub(crate) fn schema_key_matches(form: &Calcit, key: &str) -> bool {
     matches!(Self::schema_key_name(form), Some(name) if name == key)
   }
 

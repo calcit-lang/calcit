@@ -817,6 +817,21 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
       _ => None,
     }
   }
+  fn is_list_head(item: &Calcit) -> bool {
+    match item {
+      Calcit::Proc(CalcitProc::List) => true,
+      Calcit::Symbol { sym, .. } => sym.as_ref() == "[]",
+      Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == "[]",
+      _ => false,
+    }
+  }
+  fn is_schema_generics_entry(item: &Calcit) -> bool {
+    matches!(
+      item,
+      Calcit::List(pair)
+        if pair.len() >= 2 && pair.first().is_some_and(|key| CalcitTypeAnnotation::schema_key_matches(key, "generics"))
+    )
+  }
   fn is_generics_clause(item: &Calcit) -> bool {
     matches!(item, Calcit::List(clause) if matches!(clause.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "generics"))
   }
@@ -854,7 +869,7 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
       return form.to_owned();
     };
     let mut entries: Vec<Calcit> = map.iter().cloned().collect();
-    let generics_index = entries.iter().position(is_generics_clause);
+    let generics_index = entries.iter().position(is_schema_generics_entry);
     match generics_index {
       Some(index) => {
         let Calcit::List(entry) = &entries[index] else { unreachable!() };
@@ -865,8 +880,11 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
           return form.to_owned();
         }
         let mut name_items: Vec<Calcit> = names.iter().cloned().collect();
-        name_items.insert(1.min(name_items.len()), self_item);
-        entries[index] = Calcit::from(vec![entry[0].to_owned(), Calcit::from(name_items)]);
+        let insert_at = usize::from(names.first().is_some_and(is_list_head));
+        name_items.insert(insert_at, self_item);
+        let mut updated_entry: Vec<Calcit> = entry.iter().cloned().collect();
+        updated_entry[1] = Calcit::from(name_items);
+        entries[index] = Calcit::from(updated_entry);
       }
       None => {
         let list_head = Calcit::Proc(CalcitProc::List);
@@ -885,7 +903,7 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
       return form.to_owned();
     };
     let mut entries: Vec<Calcit> = list.iter().cloned().collect();
-    match entries.iter().position(is_generics_clause) {
+    match entries.iter().position(is_schema_generics_entry) {
       Some(index) => {
         let Calcit::List(entry) = &entries[index] else { unreachable!() };
         let Some(Calcit::List(names)) = entry.get(1) else {
@@ -895,8 +913,11 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
           return form.to_owned();
         }
         let mut name_items: Vec<Calcit> = names.iter().cloned().collect();
-        name_items.insert(1.min(name_items.len()), self_symbol);
-        entries[index] = Calcit::from(vec![entry[0].to_owned(), Calcit::from(name_items)]);
+        let insert_at = usize::from(names.first().is_some_and(is_list_head));
+        name_items.insert(insert_at, self_symbol);
+        let mut updated_entry: Vec<Calcit> = entry.iter().cloned().collect();
+        updated_entry[1] = Calcit::from(name_items);
+        entries[index] = Calcit::from(updated_entry);
       }
       None => {
         let list_head = Calcit::Proc(CalcitProc::List);
@@ -936,10 +957,31 @@ pub(crate) fn with_implicit_self_generic(form: &Calcit) -> Calcit {
 pub(crate) fn with_implicit_self_generic_in_method_hint(form: &Calcit) -> Calcit {
   fn is_named_head(item: &Calcit, name: &str) -> bool {
     match item {
-      Calcit::Symbol { sym, .. } => sym.trim_start_matches('\'') == name,
+      Calcit::Symbol { sym, info, .. } => {
+        let stripped = sym.trim_start_matches('\'');
+        if stripped == name {
+          return true;
+        }
+        let Some((prefix, def)) = stripped.split_once('/') else {
+          return false;
+        };
+        if def != name {
+          return false;
+        }
+        if prefix == calcit::CORE_NS {
+          return true;
+        }
+        if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, prefix) {
+          return target_ns.as_ref() == calcit::CORE_NS;
+        }
+        prefix == "core" && !program::has_def_code("core", def)
+      }
       Calcit::Import(CalcitImport { ns, def, .. }) => &**ns == calcit::CORE_NS && &**def == name,
       _ => false,
     }
+  }
+  fn is_defn_head(item: &Calcit) -> bool {
+    matches!(item, Calcit::Syntax(CalcitSyntax::Defn, _)) || is_named_head(item, "defn")
   }
   fn is_hint_fn_head(item: &Calcit) -> bool {
     matches!(item, Calcit::Syntax(CalcitSyntax::HintFn, _)) || is_named_head(item, "hint-fn")
@@ -949,7 +991,7 @@ pub(crate) fn with_implicit_self_generic_in_method_hint(form: &Calcit) -> Calcit
   };
   let body_start = if list.first().is_some_and(|head| is_named_head(head, "fn")) {
     2
-  } else if list.first().is_some_and(|head| is_named_head(head, "defn")) {
+  } else if list.first().is_some_and(is_defn_head) {
     3
   } else {
     return form.to_owned();
@@ -2644,6 +2686,47 @@ mod tests {
     assert_eq!(with_implicit_self_generic(&declared).to_string(), declared.to_string());
     let no_self = Calcit::from(vec![sym("Fn"), sym("T"), arrow(sym("T"))]);
     assert_eq!(with_implicit_self_generic(&no_self).to_string(), no_self.to_string());
+
+    for generics_key in [Calcit::new_str("generics"), sym("generics")] {
+      let schema_map = Calcit::from(vec![
+        sym("{}"),
+        Calcit::from(vec![Calcit::tag("args"), Calcit::from(vec![sym("[]"), sym("'Self"), sym("'T")])]),
+        Calcit::from(vec![Calcit::tag("return"), sym("'Self")]),
+        Calcit::from(vec![generics_key, Calcit::from(vec![sym("[]"), sym("'T")])]),
+      ]);
+      let rewritten = with_implicit_self_generic(&schema_map);
+      let parsed = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&Calcit::from(vec![sym("hint-fn"), rewritten]))
+        .expect("rewritten schema map should parse");
+      let CalcitTypeAnnotation::Fn(signature) = parsed.as_ref() else {
+        panic!("expected Fn annotation, got {parsed:?}");
+      };
+      assert_eq!(signature.generics.as_slice(), &[Arc::<str>::from("Self"), Arc::<str>::from("T")]);
+    }
+
+    for head in ["fn", "core/fn", "calcit.core/fn"] {
+      let method = Calcit::from(vec![
+        sym(head),
+        Calcit::from(vec![sym("self")]),
+        Calcit::from(vec![sym("hint-fn"), compact.clone()]),
+        sym("self"),
+      ]);
+      assert!(
+        with_implicit_self_generic_in_method_hint(&method)
+          .to_string()
+          .contains(&Calcit::from(vec![Calcit::tag("generics"), sym("Self")]).to_string()),
+        "expected implicit Self generic for `{head}`"
+      );
+    }
+    let unrelated = Calcit::from(vec![
+      sym("other/fn"),
+      Calcit::from(vec![sym("self")]),
+      Calcit::from(vec![sym("hint-fn"), compact]),
+      sym("self"),
+    ]);
+    assert_eq!(
+      with_implicit_self_generic_in_method_hint(&unrelated).to_string(),
+      unrelated.to_string()
+    );
   }
   use crate::calcit::{
     CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitFnUsageMeta, CalcitGenericBound, CalcitLocal, CalcitScope, CalcitSymbolInfo,
