@@ -3807,8 +3807,7 @@
         '&unreachable! $ %{} 'CodeEntry (:doc "|编译器内部的不可到达分支入口，接收包含调用位置的错误消息。")
           :code $ quote $ def &unreachable! &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return :never)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Never)
           :tags $ #{} :builtin :control :internal
         '&wait-ms $ %{} 'CodeEntry
           :doc "|内部同步等待边界；显式接收 Result 原型和宿主错误前缀，供 public wrapper 与 backend lowering 使用。"
@@ -4332,8 +4331,19 @@
           :doc "|Shorthand for `Option :none`, the empty nominal Option<T>. A bare `None` is rewritten to `Option :none` during preprocessing, so it takes T from the expected type like the long form."
           :code $ quote $ def None None
           :examples $ [] $ quote (assert= None None)
-          :schema $ quote $ Option Dynamic
+          :schema $ quote $ Option Never
           :tags $ #{} :data
+          :tests $ [] $ %{} 'TestEntry (:name |accepts-distinct-expected-option-types)
+            :code $ quote $ let
+                missing-number $ fn ()
+                  hint-fn $ Fn $ -> (Option Number)
+                  , None
+                missing-text $ fn ()
+                  hint-fn $ Fn $ -> (Option String)
+                  , calcit.core/None
+              assert= 42 $ .unwrap-or (missing-number) 42
+              assert= |fallback $ .unwrap-or (missing-text) |fallback
+            :tags $ #{} :core :unit
         'Option $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Option<T> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Option :some value 或 Option :none 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Option
@@ -12289,8 +12299,7 @@
           :doc "|抛出异常，控制流不会从该调用返回。通常传入一个错误消息字符串。Native 会把实参拼成错误消息，JS 将第二个实参放入错误的 data 字段，WASM/WASI 在求值后触发 trap。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return :never)
-            :args $ []
+          :schema $ quote $ Fn (& Dynamic) (-> Never)
           :tags $ #{} :builtin :control :internal
           :tests $ [] $ %{} 'TestEntry (:name |keeps-live-branch-type)
             :code $ quote $ let
@@ -13530,6 +13539,11 @@
               assert-type (to-tag |ready) Tag
               assert= :ready $ to-tag |ready
             :tags $ #{} :core :unit
+        'todo! $ %{} 'CodeEntry (:doc "|标记尚未实现的代码。可省略说明或提供字符串，执行时总是失败，预处理会报告 E_TODO。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn String (-> Never)
+          :tags $ #{} :builtin :control :internal
         'trim $ %{} 'CodeEntry
           :doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string"
           :code $ quote &runtime-implementation
@@ -13910,8 +13924,7 @@
           :doc "|标记按程序逻辑不可到达的分支。可省略说明，也可传入一个 String。执行到这里会报错，消息包含调用位置。返回类型为 Never。"
           :code $ quote $ def unreachable! &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return :never)
-            :args $ [] 'String
+          :schema $ quote $ Fn String (-> Never)
           :tags $ #{} :builtin :control
           :tests $ [] $ %{} 'TestEntry (:name |preserves-live-branch-type)
             :code $ quote $ let

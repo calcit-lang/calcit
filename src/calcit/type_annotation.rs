@@ -2430,7 +2430,7 @@ impl CalcitTypeAnnotation {
 
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      // Round-trip compiler-generated hints without adding source symbol syntax.
+      // Keep the canonical EDN spelling used by compiler-generated hints.
       "never" => Some(Self::Never),
       // `:any` is a legacy spelling of `:dynamic`. Keep accepting it at input
       // boundaries, but canonicalize immediately so downstream analysis cannot
@@ -2498,6 +2498,7 @@ impl CalcitTypeAnnotation {
       "unit" | "Unit" => Some("Unit"),
       "bool" | "Bool" => Some("Bool"),
       "number" | "Number" => Some("Number"),
+      "never" | "Never" => Some("Never"),
       other if CalcitNumericRefinement::from_name(other).is_some() => Some(
         CalcitNumericRefinement::from_name(other)
           .expect("guarded numeric refinement")
@@ -2565,6 +2566,7 @@ impl CalcitTypeAnnotation {
   fn builtin_type_from_symbol_name(name: &str) -> Option<Self> {
     match Self::canonical_type_symbol_name(name)? {
       "Dynamic" => Some(Self::Dynamic),
+      "Never" => Some(Self::Never),
       "Nil" => Some(Self::Nil),
       "Unit" => Some(Self::Unit),
       "Bool" => Some(Self::Bool),

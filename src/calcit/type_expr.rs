@@ -243,6 +243,9 @@ fn describe(node: &Cirru) -> String {
 }
 
 fn desugar_leaf(name: &str) -> Result<Cirru, String> {
+  if name == "Never" {
+    return Ok(Cirru::leaf(":never"));
+  }
   // Type slots keep the `'*slot` spelling of the canonical form, which is
   // also what the Cirru EDN reader accepts inside a Snapshot schema.
   if let Some(slot) = name.strip_prefix('*')
@@ -708,6 +711,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
 /// `desugar_type_expr`. Shapes without a compact spelling return `Err`.
 pub(crate) fn print_type_compact(edn: &Edn) -> Result<Cirru, String> {
   match edn {
+    Edn::Tag(tag) if tag.ref_str() == "never" => Ok(Cirru::leaf("Never")),
     Edn::Symbol(name) => {
       let leaf = Cirru::Leaf(name.clone());
       desugar_type_expr(&leaf)?;
@@ -880,6 +884,7 @@ mod tests {
       "(:: 'Map 'String (:: 'List 'app.schema/Item))"
     );
     assert_eq!(desugar_text("Option *item").unwrap(), "(:: 'Option '*item)");
+    assert_eq!(desugar_text("Option Never").unwrap(), "(:: 'Option :never)");
     assert_eq!(
       desugar_text("recollect.schema/change-op Number").unwrap(),
       "(:: 'recollect.schema/change-op 'Number)"
