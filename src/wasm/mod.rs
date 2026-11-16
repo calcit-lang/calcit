@@ -1,15 +1,11 @@
 //! Entry surface of the WASM backend and the FFI ABI modules that live in `src/wasm/`.
 //!
-//! The implementation files keep their historical public paths so existing consumers do not
-//! break: `calcit::ffi_abi`, `calcit::ffi_async`, `calcit::ffi_interface_ir`, `calcit::wasm_cli`
-//! and `calcit::codegen::emit_wasm`. Those modules are declared with `#[path]` in `src/lib.rs`
-//! and `src/codegen.rs` because the FFI modules compile without the `wasm` feature while the
-//! code generator and CLI driver need it.
-//!
-//! This module is the documented facade: it re-exports the supported surface under one name,
-//! `calcit::wasm`. Code in this repository outside `src/wasm/` must reach WASM internals only
-//! through this facade; `boundary_tests` enforces that. The historical paths above remain public
-//! as compatibility aliases for external consumers and are not removed in patch releases.
+//! This module owns `ffi_abi`, `ffi_async`, `ffi_interface_ir`, `emit_wasm` and `wasm_cli`, and
+//! re-exports the supported surface under one name, `calcit::wasm`. Code in this repository
+//! outside `src/wasm/` must reach WASM internals only through this facade; `boundary_tests`
+//! enforces that. The historical paths (`calcit::ffi_abi`, `calcit::ffi_async`,
+//! `calcit::ffi_interface_ir`, `calcit::wasm_cli` and `calcit::codegen::emit_wasm`) remain public
+//! via `pub use` re-exports in `src/lib.rs` and `src/codegen.rs` for external consumers.
 
 // Host facade: the single place in this directory that names main-crate internals.
 pub(crate) mod host;
@@ -28,9 +24,7 @@ pub mod emit_wasm;
 pub mod wasm_cli;
 
 #[cfg(feature = "wasm")]
-pub use emit_wasm::{
-  WasmBoundary, WasmTarget, check_wasm_command_component, emit_wasm, validate_wasm_boundary, validate_wasm_target,
-};
+pub use emit_wasm::{WasmBoundary, WasmTarget, check_wasm_command_component, emit_wasm, validate_wasm_boundary, validate_wasm_target};
 #[cfg(feature = "wasm")]
 pub use wasm_cli::{WasmCliOptions, run};
 

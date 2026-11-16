@@ -1456,9 +1456,15 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
 /// Aliases and trait decoration must retain an existing declaration identity.
 pub(crate) fn with_runtime_definition_ref(ns: &str, def: &str, value: Calcit) -> Calcit {
   match value {
-    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => Calcit::Trait(trait_def.with_definition_ref(ns, def)),
-    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => Calcit::StructDef(struct_def.with_definition_ref(ns, def)),
-    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => Calcit::EnumDef(enum_def.with_definition_ref(ns, def)),
+    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => {
+      Calcit::Trait(Arc::new(trait_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
+    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => {
+      Calcit::StructDef(Arc::new(struct_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
+    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => {
+      Calcit::EnumDef(Arc::new(enum_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
     other => other,
   }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::calcit::{self, CalcitEnumDef, CalcitEnumValue, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitStructDef};
+use crate::calcit::{self, CalcitEnumDef, CalcitEnumValue, CalcitImport, CalcitList, CalcitLocal, CalcitStructDef};
 use crate::calcit::{Calcit, CalcitStructValue};
 use crate::{calcit::MethodKind, data::cirru};
 
@@ -83,12 +83,12 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             None => Edn::enum_value(variant, extra_values),
           })
         }
-        Impl(CalcitImpl { name, .. }) => {
+        Impl(impl_def) => {
           let mut extra_values = vec![];
           for item in extra.iter() {
             extra_values.push(calcit_to_edn(item)?);
           }
-          let variant = name.arc_str();
+          let variant = impl_def.name.arc_str();
           Ok(match type_name {
             Some(type_name) => Edn::typed_enum(type_name, variant, extra_values),
             None => Edn::enum_value(variant, extra_values),
@@ -434,7 +434,7 @@ fn find_enum_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calci
 
 fn resolve_type_name(type_name: &str, options: &Calcit) -> Option<Arc<CalcitEnumDef>> {
   match find_enum_in_options(type_name, options) {
-    Some(Calcit::EnumDef(enum_def)) => Some(Arc::new(enum_def.to_owned())),
+    Some(Calcit::EnumDef(enum_def)) => Some(enum_def.to_owned()),
     _ => None,
   }
 }

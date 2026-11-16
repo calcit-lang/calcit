@@ -443,7 +443,7 @@ pub(crate) fn build_struct_ref_node(
       def_id: None,
     })
   } else {
-    Calcit::StructDef(struct_def.clone())
+    Calcit::StructDef(Arc::new(struct_def.clone()))
   }
 }
 

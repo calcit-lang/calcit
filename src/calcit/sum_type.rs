@@ -312,7 +312,7 @@ mod tests {
   fn rejects_non_generic_struct_type_args_in_payloads() {
     let pair = CalcitStructDef::from_fields(EdnTag::new("Pair"), vec![EdnTag::new("left"), EdnTag::new("right")]);
     let applied_pair = Calcit::Enum(CalcitEnumValue {
-      tag: Arc::new(Calcit::StructDef(pair)),
+      tag: Arc::new(Calcit::StructDef(Arc::new(pair))),
       extra: vec![Calcit::tag("number"), Calcit::tag("string")].into(),
       sum_type: None,
     });

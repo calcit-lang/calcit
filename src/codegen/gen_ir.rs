@@ -569,12 +569,12 @@ mod tests {
 
   #[test]
   fn dumps_impl_values_for_ir() {
-    let value = Calcit::Impl(CalcitImpl {
+    let value = Calcit::Impl(Arc::new(CalcitImpl {
       name: EdnTag::new("DemoImpl"),
       origin: None,
       fields: Arc::new(vec![EdnTag::new("show")]),
       values: Arc::new(vec![Calcit::Proc(CalcitProc::NativeStr)]),
-    });
+    }));
 
     let dumped = dump_code(&value);
     let Edn::Map(entries) = dumped else {

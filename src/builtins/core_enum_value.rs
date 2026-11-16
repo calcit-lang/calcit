@@ -20,7 +20,7 @@ fn core_enum_def(name: &'static str) -> Result<Arc<CalcitEnumDef>, CalcitErr> {
     return Ok(def.clone());
   }
   let def = match crate::runner::eval_symbol_from_program(name, CORE_NS, &CallStackList::default())? {
-    Some(Calcit::EnumDef(def)) => Arc::new(def),
+    Some(Calcit::EnumDef(def)) => def,
     Some(other) => {
       return Err(CalcitErr::use_str(
         CalcitErrKind::Type,

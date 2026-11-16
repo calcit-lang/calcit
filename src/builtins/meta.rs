@@ -673,7 +673,7 @@ pub fn new_named_enum_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Enum(CalcitEnumValue {
           tag: Arc::new(xs[1].to_owned()),
           extra: extra.into(),
-          sum_type: Some(Arc::new(enum_proto)),
+          sum_type: Some(enum_proto),
         }))
       }
       other => CalcitErr::err_str(
@@ -691,7 +691,7 @@ pub fn enum_definition(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Enum(enum_value) => match &enum_value.sum_type {
-      Some(enum_proto) => option_value::some(Calcit::EnumDef((**enum_proto).clone())),
+      Some(enum_proto) => option_value::some(Calcit::EnumDef(enum_proto.clone())),
       None => option_value::none(),
     },
     a => {
@@ -1195,11 +1195,11 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
   let trait_def = CalcitTrait::new_runtime(name, methods, method_types);
   let Some(requires_form) = xs.get(2) else {
-    return Ok(Calcit::Trait(trait_def));
+    return Ok(Calcit::Trait(Arc::new(trait_def)));
   };
   let requires = trait_requires_from_value(requires_form, &trait_def.name)?;
   match trait_def.with_requires(requires) {
-    Ok(trait_def) => Ok(Calcit::Trait(trait_def)),
+    Ok(trait_def) => Ok(Calcit::Trait(Arc::new(trait_def))),
     Err(message) => Err(trait_requires_error(message)),
   }
 }
@@ -1220,7 +1220,7 @@ fn trait_requires_from_value(form: &Calcit, name: &cirru_edn::EdnTag) -> Result<
   items
     .iter()
     .map(|item| match item {
-      Calcit::Trait(parent) => Ok(Arc::new(parent.to_owned())),
+      Calcit::Trait(parent) => Ok(parent.to_owned()),
       other => Err(trait_requires_error(format!(
         "trait {name}: each requires entry must be a trait, but received: {other}"
       ))),
@@ -1232,7 +1232,7 @@ fn collect_trait_impls(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitI
   let mut traits: Vec<Arc<CalcitImpl>> = Vec::with_capacity(xs.len());
   for item in xs {
     match item {
-      Calcit::Impl(imp) => traits.push(Arc::new(imp.to_owned())),
+      Calcit::Impl(imp) => traits.push(imp.to_owned()),
       other => {
         return Err(CalcitErr::use_str(
           CalcitErrKind::Type,
@@ -1351,12 +1351,12 @@ pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::StructDef(struct_def) => {
-      let mut next = struct_def.to_owned();
+      let mut next = struct_def.as_ref().clone();
       let mut next_impls = next.impls.clone();
       next_impls.extend(collect_trait_impls(&xs[1..], "&struct-def:impl-traits")?);
       check_required_trait_impls(&next_impls, "&struct-def:impl-traits")?;
       next.impls = next_impls;
-      Ok(Calcit::StructDef(next))
+      Ok(Calcit::StructDef(Arc::new(next)))
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -1375,10 +1375,10 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::EnumDef(enum_def) => {
-      let mut next = enum_def.to_owned();
+      let mut next = enum_def.as_ref().clone();
       next.impls.extend(collect_trait_impls(&xs[1..], "&enum-def:impl-traits")?);
       check_required_trait_impls(&next.impls, "&enum-def:impl-traits")?;
-      Ok(Calcit::EnumDef(next))
+      Ok(Calcit::EnumDef(Arc::new(next)))
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -1393,7 +1393,7 @@ pub fn impl_origin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Impl(imp) => match &imp.origin {
-      Some(trait_def) => option_value::some(Calcit::Trait(trait_def.as_ref().to_owned())),
+      Some(trait_def) => option_value::some(Calcit::Trait(trait_def.clone())),
       None => option_value::none(),
     },
     other => CalcitErr::err_str(CalcitErrKind::Type, format!("&impl:origin expected an impl, but received: {other}")),
@@ -1658,12 +1658,12 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
 
 fn collect_impls_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match impls_value {
-    Calcit::Impl(imp) => Ok(vec![Arc::new(imp.to_owned())]),
+    Calcit::Impl(imp) => Ok(vec![imp.to_owned()]),
     Calcit::List(list) => {
       let mut impls: Vec<Arc<CalcitImpl>> = Vec::with_capacity(list.len());
       for item in list.iter() {
         match item {
-          Calcit::Impl(imp) => impls.push(Arc::new(imp.to_owned())),
+          Calcit::Impl(imp) => impls.push(imp.to_owned()),
           other => {
             return Err(CalcitErr::use_msg_stack(
               CalcitErrKind::Type,
@@ -1883,11 +1883,7 @@ pub fn enum_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Enum(enum_value) => Ok(Calcit::from(
-      enum_value
-        .impls()
-        .iter()
-        .map(|imp| Calcit::Impl((**imp).to_owned()))
-        .collect::<Vec<_>>(),
+      enum_value.impls().iter().cloned().map(Calcit::Impl).collect::<Vec<_>>(),
     )),
     x => {
       let msg = format!(
@@ -2894,15 +2890,12 @@ mod tests {
     });
 
     let left_result = trait_call(
-      &[Calcit::Trait(left.as_ref().clone()), Calcit::tag("render"), receiver.clone()],
+      &[Calcit::Trait(left), Calcit::tag("render"), receiver.clone()],
       &CallStackList::default(),
     )
     .expect("left origin call");
-    let right_result = trait_call(
-      &[Calcit::Trait(right.as_ref().clone()), Calcit::tag("render"), receiver],
-      &CallStackList::default(),
-    )
-    .expect("right origin call");
+    let right_result =
+      trait_call(&[Calcit::Trait(right), Calcit::tag("render"), receiver], &CallStackList::default()).expect("right origin call");
     assert_eq!(left_result, Calcit::Str(Arc::from("A")));
     assert_eq!(right_result, Calcit::Str(Arc::from("B")));
   }
@@ -2985,7 +2978,7 @@ mod tests {
       runner::evaluate_expr(
         &list(vec![
           Calcit::Proc(CalcitProc::NativeTraitCall),
-          Calcit::Trait(selected.as_ref().clone()),
+          Calcit::Trait(selected.clone()),
           Calcit::tag("render"),
           receiver,
           increment(&arguments),
@@ -3036,7 +3029,7 @@ mod tests {
     let _guard = crate::program::lock_program_test_state();
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let result = new_named_enum_value(&[
-      Calcit::EnumDef(shown_maybe_enum(show_trait.clone())),
+      Calcit::EnumDef(Arc::new(shown_maybe_enum(show_trait.clone()))),
       Calcit::tag("some"),
       value_with_trait(show_trait),
     ]);
@@ -3049,7 +3042,7 @@ mod tests {
     let _guard = crate::program::lock_program_test_state();
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let err = new_named_enum_value(&[
-      Calcit::EnumDef(shown_maybe_enum(show_trait)),
+      Calcit::EnumDef(Arc::new(shown_maybe_enum(show_trait))),
       Calcit::tag("some"),
       Calcit::Proc(CalcitProc::NativeResetGenSymIndex),
     ])

@@ -1953,8 +1953,8 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
       None => Some(Arc::new(CalcitTypeAnnotation::AnonymousEnum)),
     },
     Calcit::Struct(struct_value) => Some(infer_struct_value_annotation(struct_value, scope_types)),
-    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def.to_owned())))),
-    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def.to_owned())))),
+    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(struct_def.to_owned()))),
+    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(enum_def.to_owned()))),
     Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
       trait_def.to_owned(),
     ))))),
@@ -2551,14 +2551,14 @@ fn infer_preprocessed_function_parameters(
 
 fn resolve_impl_origin(value: &Calcit, scope_types: &ScopeTypes) -> Option<(EdnTag, Option<Arc<CalcitTrait>>)> {
   let resolved_trait = match value {
-    Calcit::Trait(trait_def) => Some(Arc::new(trait_def.to_owned())),
+    Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
     Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
-      Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
+      Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def.as_ref().clone().with_definition_ref(&import.ns, &import.def))),
       _ => lookup_source_backed_trait_def(&import.ns, &import.def)
         .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
     },
     Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
-      Some(Calcit::Trait(trait_def)) => Some(Arc::new(trait_def)),
+      Some(Calcit::Trait(trait_def)) => Some(trait_def),
       _ => super::resolve_trait_reference_target(value, &info.at_ns).and_then(|(ns, def)| {
         lookup_source_backed_trait_def(&ns, &def).map(|trait_def| Arc::new(trait_def.with_definition_ref(&ns, &def)))
       }),
@@ -2675,7 +2675,7 @@ fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
       .filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List)))
       .map(|item| match item {
         Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
-          .map(|trait_def| Calcit::Trait(trait_def.with_definition_ref(&import.ns, &import.def))),
+          .map(|trait_def| Calcit::Trait(Arc::new(trait_def.with_definition_ref(&import.ns, &import.def)))),
         Calcit::Trait(trait_def) => Some(Calcit::Trait(trait_def.to_owned())),
         _ => None,
       })
@@ -2683,7 +2683,7 @@ fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
     args[2] = Calcit::from(CalcitList::from(resolved.as_slice()));
   }
   match builtins::meta::trait_new(&args).ok()? {
-    Calcit::Trait(trait_def) => Some(trait_def),
+    Calcit::Trait(trait_def) => Some(trait_def.as_ref().clone()),
     _ => None,
   }
 }
@@ -2699,13 +2699,12 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
   for parent in parents.iter().filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List))) {
     let trait_def = match parent {
       Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
-      Calcit::Import(import) => {
-        lookup_source_backed_trait_def(&import.ns, &import.def).map(|trait_def| trait_def.with_definition_ref(&import.ns, &import.def))
-      }
+      Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
       _ => None,
     };
     match trait_def {
-      Some(trait_def) => resolved.push(Arc::new(trait_def)),
+      Some(trait_def) => resolved.push(trait_def),
       None => {
         return Some(format!(
           "trait {file_ns}/{def_name} requires `{parent}`, which is not a trait definition"
@@ -2802,7 +2801,7 @@ fn resolve_impl_annotation(value: &Calcit, scope_types: &ScopeTypes) -> Option<A
   let inferred = resolve_type_value(value, scope_types)?;
   match inferred.as_ref() {
     CalcitTypeAnnotation::Custom(inner) => match inner.as_ref() {
-      Calcit::Impl(impl_def) => Some(Arc::new(impl_def.to_owned())),
+      Calcit::Impl(impl_def) => Some(impl_def.to_owned()),
       _ => None,
     },
     _ => None,
@@ -2900,7 +2899,7 @@ pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &Scop
   let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
   let receiver_traits = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types);
   let trait_def = match xs.get(1)? {
-    Calcit::Trait(definition) => definition.clone(),
+    Calcit::Trait(definition) => definition.as_ref().clone(),
     // A declared capability is a source contract, not an evaluated impl.
     // Compare it with the same source origin; concrete receivers below still
     // require the exact evaluated nominal identity for implementation lookup.
@@ -2910,7 +2909,7 @@ pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &Scop
     Calcit::Import(import) => match program::lookup_runtime_ready(&import.ns, &import.def) {
       // Dispatch compares evaluated nominal identities. A fresh source
       // placeholder cannot stand in for an already evaluated trait here.
-      Some(Calcit::Trait(definition)) => definition,
+      Some(Calcit::Trait(definition)) => definition.as_ref().clone(),
       Some(_) => return None,
       None => lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def),
     },
@@ -3137,12 +3136,12 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   if matches!(proc, CalcitProc::NativeTraitNew)
     && let Some(trait_def) = infer_trait_value(xs)
   {
-    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(trait_def)))));
+    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(Arc::new(trait_def))))));
   }
   if matches!(proc, CalcitProc::NativeImplNew)
     && let Some(impl_def) = infer_impl_value(xs, scope_types)
   {
-    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Impl(impl_def)))));
+    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Impl(Arc::new(impl_def))))));
   }
   if matches!(
     proc,
@@ -3583,9 +3582,9 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
     || matches!(schema.as_ref(), CalcitTypeAnnotation::Custom(value)
       if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "trait"));
   if schema_allows_trait_metadata && let Some(definition) = lookup_source_backed_trait_def(ns, def) {
-    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
+    return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(Arc::new(
       definition.with_definition_ref(ns, def),
-    )))));
+    ))))));
   }
 
   // Data definitions keep `:dynamic` as their value schema because their
@@ -3723,8 +3722,8 @@ pub fn resolve_core_nominal_instance_type(ns: &str, def: &str) -> Option<Arc<Cal
     return None;
   }
   match resolve_program_value_for_preprocess(ns, def, None)? {
-    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def), Arc::new(vec![])))),
-    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(vec![])))),
+    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def, Arc::new(vec![])))),
+    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def, Arc::new(vec![])))),
     _ => None,
   }
 }
@@ -4060,7 +4059,7 @@ fn infer_struct_value_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
 fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
   match builtins::structs::new_struct(&args).ok()? {
-    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(struct_def)))),
+    Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(struct_def))),
     _ => None,
   }
 }
@@ -4068,7 +4067,7 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
 fn infer_enum_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
   match builtins::structs::new_enum(&args).ok()? {
-    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(enum_def)))),
+    Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(enum_def))),
     _ => None,
   }
 }
@@ -4245,7 +4244,7 @@ pub(crate) fn resolve_program_value_for_preprocess(ns: &str, def: &str, def_id: 
 pub(crate) fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitEnumDef> {
   fn resolve_named_enum(ns: &str, def: &str, def_id: Option<u32>) -> Option<CalcitEnumDef> {
     match resolve_program_value_for_preprocess(ns, def, def_id) {
-      Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
+      Some(Calcit::EnumDef(enum_def)) => Some(enum_def.as_ref().to_owned()),
       Some(Calcit::Struct(struct_value)) => CalcitEnumDef::from_struct(struct_value).ok(),
       _ => {
         // A trait method can request its own enum while its impl attachment
@@ -4257,7 +4256,7 @@ pub(crate) fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> O
   }
 
   match target {
-    Calcit::EnumDef(enum_def) => Some(enum_def.to_owned()),
+    Calcit::EnumDef(enum_def) => Some(enum_def.as_ref().to_owned()),
     Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value.to_owned()).ok(),
     Calcit::Symbol { sym, info, .. } => resolve_named_enum(&info.at_ns, sym, None),
     Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_named_enum(ns, def, *def_id),
@@ -4293,7 +4292,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
     Calcit::StructDef(struct_def) => {
       let values = vec![Calcit::Nil; struct_def.fields.len()];
       Some(CalcitStructValue {
-        struct_ref: Arc::new(struct_def.to_owned()),
+        struct_ref: struct_def.to_owned(),
         values: Arc::new(values),
       })
     }
@@ -4303,7 +4302,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
       Some(Calcit::StructDef(struct_def)) => {
         let values = vec![Calcit::Nil; struct_def.fields.len()];
         Some(CalcitStructValue {
-          struct_ref: Arc::new(struct_def),
+          struct_ref: struct_def,
           values: Arc::new(values),
         })
       }
@@ -4317,7 +4316,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
         Some(Calcit::StructDef(struct_def)) => {
           let values = vec![Calcit::Nil; struct_def.fields.len()];
           Some(CalcitStructValue {
-            struct_ref: Arc::new(struct_def),
+            struct_ref: struct_def,
             values: Arc::new(values),
           })
         }
@@ -4458,7 +4457,11 @@ mod tests {
       rest_type: None,
       features: Arc::new(HashSet::new()),
     })));
-    let origin = CalcitTrait::new_runtime(EdnTag::from("Render"), vec![EdnTag::from("render")], vec![signature.clone()]);
+    let origin = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::from("Render"),
+      vec![EdnTag::from("render")],
+      vec![signature.clone()],
+    ));
     let foreign = CalcitTrait::new_runtime(EdnTag::from("Render"), vec![EdnTag::from("render")], vec![signature]);
     let receiver = |traits| typed_local("receiver", Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(traits))));
     let call = |receiver, argument| {
@@ -4472,17 +4475,14 @@ mod tests {
         ],
       )
     };
-    let matching = receiver(vec![Arc::new(origin.clone())]);
+    let matching = receiver(vec![origin.clone()]);
     assert_eq!(
       infer_type_from_expr(&call(matching.clone(), Calcit::Str(Arc::from("prefix"))), &ScopeTypes::new()),
       Some(Arc::new(CalcitTypeAnnotation::Number))
     );
     for invalid in [
       call(receiver(vec![Arc::new(foreign)]), Calcit::Str(Arc::from("prefix"))),
-      call(
-        receiver(vec![Arc::new(origin.clone()), Arc::new(origin.clone())]),
-        Calcit::Str(Arc::from("prefix")),
-      ),
+      call(receiver(vec![origin.clone(), origin.clone()]), Calcit::Str(Arc::from("prefix"))),
       call(matching.clone(), Calcit::Number(1.0)),
       call(matching, typed_local("open", calcit::DYNAMIC_TYPE.clone())),
     ] {
@@ -5896,7 +5896,7 @@ mod tests {
       Calcit::from(vec![
         Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.match-raise")),
         Calcit::Tag(EdnTag::from("ok")),
-        Calcit::EnumDef(enum_def.clone()),
+        Calcit::EnumDef(Arc::new(enum_def.clone())),
         Calcit::from(vec![branch("ok", live.clone()), branch("err", other), Calcit::Nil]),
       ])
     };
@@ -5940,7 +5940,7 @@ mod tests {
 
     let from_map_call = proc_call(
       CalcitProc::NativeStructFromMap,
-      vec![Calcit::StructDef(struct_def.as_ref().clone()), Calcit::Map(Default::default())],
+      vec![Calcit::StructDef(struct_def), Calcit::Map(Default::default())],
     );
     assert_eq!(infer_type_from_expr(&from_map_call, &ScopeTypes::new()), Some(user_type));
   }
@@ -6048,7 +6048,7 @@ mod tests {
 
     let none_call = CalcitList::from(&[
       Calcit::Proc(CalcitProc::NativeNamedEnumNew),
-      Calcit::EnumDef(enum_def.clone()),
+      Calcit::EnumDef(Arc::new(enum_def.clone())),
       Calcit::Tag(EdnTag::from("none")),
     ] as &[Calcit]);
     assert!(matches!(
@@ -6060,7 +6060,7 @@ mod tests {
 
     let some_call = CalcitList::from(&[
       Calcit::Proc(CalcitProc::NativeNamedEnumNew),
-      Calcit::EnumDef(enum_def.clone()),
+      Calcit::EnumDef(Arc::new(enum_def.clone())),
       Calcit::Tag(EdnTag::from("some")),
       Calcit::Number(1.0),
     ] as &[Calcit]);
@@ -6073,7 +6073,7 @@ mod tests {
 
     let some_list_call = CalcitList::from(&[
       Calcit::Proc(CalcitProc::NativeNamedEnumNew),
-      Calcit::EnumDef(enum_def.clone()),
+      Calcit::EnumDef(Arc::new(enum_def.clone())),
       Calcit::Tag(EdnTag::from("some")),
       Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0), Calcit::Number(2.0)]),
     ] as &[Calcit]);
@@ -6242,13 +6242,16 @@ mod tests {
 
   #[test]
   fn impl_attachment_procs_preserve_nominal_data_types() {
-    let method_impl = CalcitImpl {
+    let method_impl = Arc::new(CalcitImpl {
       name: EdnTag::from("BirdMethods"),
       origin: None,
       fields: Arc::new(vec![EdnTag::from("show")]),
       values: Arc::new(vec![Calcit::Nil]),
-    };
-    let struct_def = CalcitStructDef::from_fields(cirru_edn::EdnTag::from("Bird"), vec![cirru_edn::EdnTag::from("name")]);
+    });
+    let struct_def = Arc::new(CalcitStructDef::from_fields(
+      cirru_edn::EdnTag::from("Bird"),
+      vec![cirru_edn::EdnTag::from("name")],
+    ));
     let struct_call = proc_call(
       CalcitProc::NativeStructImplTraits,
       vec![Calcit::StructDef(struct_def.clone()), Calcit::Impl(method_impl.clone())],
@@ -6266,7 +6269,7 @@ mod tests {
       )),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     };
-    let enum_def = CalcitEnumDef::from_struct(enum_struct).expect("valid enum fixture");
+    let enum_def = Arc::new(CalcitEnumDef::from_struct(enum_struct).expect("valid enum fixture"));
     let enum_call = proc_call(
       CalcitProc::NativeEnumImplTraits,
       vec![Calcit::EnumDef(enum_def.clone()), Calcit::Impl(method_impl)],

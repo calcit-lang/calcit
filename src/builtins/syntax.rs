@@ -485,7 +485,7 @@ mod tests {
       }),
     );
 
-    let empty_trait = Calcit::Trait(empty_trait_def.as_ref().clone());
+    let empty_trait = Calcit::Trait(empty_trait_def);
     let expr = CalcitList::Vector(vec![
       Calcit::Local(CalcitLocal {
         idx,
@@ -529,7 +529,7 @@ mod tests {
           extra: Arc::new(extra),
           sum_type: Some(enum_def.clone()),
         }),
-        Calcit::EnumDef(enum_def.as_ref().to_owned()),
+        Calcit::EnumDef(enum_def.clone()),
         table.to_owned(),
       ])
     };

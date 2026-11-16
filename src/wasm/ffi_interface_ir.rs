@@ -845,7 +845,7 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
             id,
             source_id,
             namespace: namespace.clone(),
-            nominal,
+            nominal: nominal.as_ref().clone(),
           }
         }
         Calcit::EnumDef(nominal) => {
@@ -854,7 +854,7 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
             id,
             source_id,
             namespace: namespace.clone(),
-            nominal,
+            nominal: nominal.as_ref().clone(),
           }
         }
         _ => continue,
