@@ -782,7 +782,7 @@ mod tests {
         DataShapeNode::Struct {
           nominal: person.clone(),
           nominal_path: None,
-          type_args: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+          type_args: Arc::from([Arc::new(CalcitTypeAnnotation::Number)]),
           fields: vec![(EdnTag::new("age"), 1), (EdnTag::new("name"), 2)],
         },
         DataShapeNode::Number,
@@ -845,7 +845,7 @@ mod tests {
         DataShapeNode::Struct {
           nominal: response,
           nominal_path: None,
-          type_args: Arc::new(vec![]),
+          type_args: Arc::from([]),
           fields: vec![(EdnTag::new("code"), 1), (EdnTag::new("message"), 2), (EdnTag::new("body"), 4)],
         },
         DataShapeNode::Number,

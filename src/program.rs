@@ -1162,14 +1162,6 @@ pub fn configure_active_entry_type_slots(s: &Snapshot) -> Result<(), String> {
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
-  // Register the program lookup functions in type_annotation so it can resolve
-  // imported type definitions without a circular module dependency.
-  calcit::register_program_lookups(
-    lookup_runtime_ready,
-    lookup_def_code,
-    lookup_def_schema,
-    crate::runner::preprocess::infer_static_definition_type,
-  );
   calcit::clear_type_slots();
 
   let entry = s.active_entry()?;

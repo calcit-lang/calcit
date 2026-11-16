@@ -3453,12 +3453,6 @@ mod tests {
     use crate::program;
 
     let _guard = program::lock_program_test_state();
-    crate::calcit::register_program_lookups(
-      program::lookup_runtime_ready,
-      program::lookup_def_code,
-      program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let ns = "tests.fold-open-pair";
     let open_list = Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone()));
     program::PROGRAM_CODE_DATA.write().unwrap().insert(

@@ -33,7 +33,7 @@ pub(super) fn compare_trait_sequences(a: &[Arc<CalcitTrait>], b: &[Arc<CalcitTra
   a.len().cmp(&b.len())
 }
 
-fn compare_trait_defaults(a: &Arc<Vec<Option<Arc<CalcitFn>>>>, b: &Arc<Vec<Option<Arc<CalcitFn>>>>) -> Ordering {
+fn compare_trait_defaults(a: &[Option<Arc<CalcitFn>>], b: &[Option<Arc<CalcitFn>>]) -> Ordering {
   match a.len().cmp(&b.len()) {
     Equal => {
       for (left, right) in a.iter().zip(b.iter()) {

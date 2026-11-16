@@ -102,7 +102,7 @@ struct ExpectedFunctionContext {
   /// Output binders declared by the callee or synthesized by its checked call
   /// contract. Their ownership distinguishes unresolved result slots from
   /// captured lexical variables with the same source spelling.
-  callee_owned_generics: Arc<Vec<Arc<str>>>,
+  callee_owned_generics: Arc<[Arc<str>]>,
   /// What the caller's own expected type says this callback returns, when
   /// the signature still leaves the result to inference (#2733). It types
   /// forms written in the callback's return position and is never a
@@ -142,7 +142,7 @@ impl DefinitionContextScope {
         signature: signature.clone(),
         member_inputs: false,
         immediate: false,
-        callee_owned_generics: Arc::new(vec![]),
+        callee_owned_generics: Arc::from([]),
         offered_return: None,
         check_return: false,
       })
@@ -177,7 +177,7 @@ fn callback_parameter_context(
     signature,
     member_inputs,
     immediate: false,
-    callee_owned_generics: Arc::new(callee_owned_generics.to_vec()),
+    callee_owned_generics: Arc::from(callee_owned_generics),
     offered_return: None,
     check_return: false,
   }
@@ -4524,7 +4524,7 @@ fn preprocess_immediate_call_context(
         signature,
         member_inputs: false,
         immediate: true,
-        callee_owned_generics: Arc::new(vec![]),
+        callee_owned_generics: Arc::from([]),
         offered_return: None,
         check_return: false,
       }));
@@ -15951,7 +15951,7 @@ pub fn preprocess_defn(
       let expected_callee_owned_generics = expected_context
         .as_ref()
         .map(|context| context.callee_owned_generics.clone())
-        .unwrap_or_else(|| Arc::new(vec![]));
+        .unwrap_or_else(|| Arc::from([]));
       let borrows_capture_refinements =
         expected_context.as_ref().is_some_and(|context| context.immediate) && body_types.has_refinements();
       // A direct invocation runs after its already-checked arguments. An
@@ -16908,7 +16908,7 @@ fn recheck_let_lambda_call(
     signature,
     member_inputs: false,
     immediate: true,
-    callee_owned_generics: Arc::new(vec![]),
+    callee_owned_generics: Arc::from([]),
     offered_return: None,
     check_return: false,
   }));
@@ -19814,7 +19814,7 @@ mod tests {
       signature: signature.clone(),
       member_inputs: true,
       immediate: true,
-      callee_owned_generics: Arc::new(vec![]),
+      callee_owned_generics: Arc::from([]),
       offered_return: None,
       check_return: false,
     }));
@@ -20673,7 +20673,7 @@ mod tests {
       signature,
       member_inputs: true,
       immediate: true,
-      callee_owned_generics: Arc::new(vec![]),
+      callee_owned_generics: Arc::from([]),
       offered_return: None,
       check_return: false,
     }));
@@ -24858,12 +24858,6 @@ mod tests {
     )
     .expect("persisted raw IR may reorder fields when its concrete Struct layout remains exact");
 
-    calcit::register_program_lookups(
-      program::lookup_runtime_ready,
-      program::lookup_def_code,
-      program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let snapshot_ns = "tests.raw-constructor-snapshot";
     let struct_source_marker = Calcit::from(vec![Calcit::Symbol {
       sym: Arc::from("defstruct"),
@@ -25090,12 +25084,6 @@ mod tests {
   #[test]
   fn nested_struct_field_type_inherits_the_declaring_namespace() {
     let _guard = lock_preprocess_test_state();
-    calcit::register_program_lookups(
-      program::lookup_runtime_ready,
-      program::lookup_def_code,
-      program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
 
     let ns = "tests.nested-struct-owner";
     let mut router_def = CalcitStructDef::from_fields(EdnTag::from("Router"), vec![EdnTag::from("name")]);

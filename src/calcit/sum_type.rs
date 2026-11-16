@@ -28,9 +28,9 @@ impl EnumVariant {
 pub struct CalcitEnumDef {
   definition_ref: Option<Arc<str>>,
   name: EdnTag,
-  generics: Arc<Vec<Arc<str>>>,
-  where_bounds: Arc<Vec<CalcitGenericBound>>,
-  variants: Arc<Vec<EnumVariant>>,
+  generics: Arc<[Arc<str>]>,
+  where_bounds: Arc<[CalcitGenericBound]>,
+  variants: Arc<[EnumVariant]>,
   /// Trait implementations attached to this enum (multiple allowed for composition)
   pub impls: Vec<Arc<CalcitImpl>>,
   /// Precomputed index for O(1) lookup by tag name; avoids linear scans on frequent queries.
@@ -47,15 +47,15 @@ impl CalcitEnumDef {
   pub fn from_arc(struct_value: Arc<CalcitStructValue>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&struct_value)?;
     let name = struct_value.name().to_owned();
-    let generics = struct_value.struct_ref.generics.clone();
-    let where_bounds = struct_value.struct_ref.where_bounds.clone();
+    let generics = Arc::from(struct_value.struct_ref.generics.as_slice());
+    let where_bounds = Arc::from(struct_value.struct_ref.where_bounds.as_slice());
     let impls = struct_value.struct_ref.impls.clone();
     Ok(Self {
       definition_ref: struct_value.struct_ref.definition_ref.clone(),
       name,
       generics,
       where_bounds,
-      variants: Arc::new(variants),
+      variants: Arc::from(variants),
       impls,
       variant_index: Arc::new(variant_index),
     })
@@ -138,8 +138,8 @@ impl CalcitEnumDef {
       name: self.name.clone(),
       fields: Arc::new(fields),
       field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
-      generics: self.generics.clone(),
-      where_bounds: self.where_bounds.clone(),
+      generics: Arc::new(self.generics.to_vec()),
+      where_bounds: Arc::new(self.where_bounds.to_vec()),
       impls: self.impls.clone(),
     };
     CalcitStructValue {
@@ -349,15 +349,23 @@ mod tests {
     CalcitEnumDef {
       definition_ref: Some(Arc::from("app/Wrapper")),
       name: EdnTag::new("Wrapper"),
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      variants: Arc::new(vec![EnumVariant {
+      generics: Arc::from([]),
+      where_bounds: Arc::from([]),
+      variants: Arc::from([EnumVariant {
         tag: EdnTag::new("item"),
         payload_types: Arc::new(vec![payload]),
       }]),
       impls: vec![],
       variant_index: Arc::new(HashMap::from([(String::from("item"), 0)])),
     }
+  }
+
+  #[test]
+  fn local_definition_storage_distinguishes_clones_from_fresh_declarations() {
+    let declaration = || CalcitEnumDef::from_struct(sample_enum_struct()).expect("valid enum");
+    let result_enum = declaration();
+    assert!(result_enum.shares_local_definition_storage(&result_enum.clone()));
+    assert!(!result_enum.shares_local_definition_storage(&declaration()));
   }
 
   #[test]

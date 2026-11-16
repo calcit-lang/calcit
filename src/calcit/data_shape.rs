@@ -179,13 +179,13 @@ pub(crate) enum DataShapeNode {
   Struct {
     nominal: Arc<CalcitStructDef>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
-    type_args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+    type_args: Arc<[Arc<CalcitTypeAnnotation>]>,
     fields: Vec<(EdnTag, usize)>,
   },
   Enum {
     nominal: Arc<CalcitEnumDef>,
     nominal_path: Option<(Arc<str>, Arc<str>)>,
-    type_args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+    type_args: Arc<[Arc<CalcitTypeAnnotation>]>,
     variants: Vec<(EdnTag, Vec<usize>)>,
   },
   /// A `defunion`: the value is exactly one of the member shapes, chosen by
@@ -716,7 +716,7 @@ impl GraphBuilder {
           .as_deref()
           .and_then(split_nominal_path)
           .or_else(|| infer_nominal_path(default_ns, nominal.name.ref_str()));
-        self.build_struct(nominal.clone(), &Arc::new(vec![]), path, default_ns)
+        self.build_struct(nominal.clone(), &[], path, default_ns)
       }
       CalcitTypeAnnotation::Enum(nominal, args) => {
         let path = nominal
@@ -732,7 +732,7 @@ impl GraphBuilder {
           .map(AsRef::as_ref)
           .and_then(split_nominal_path)
           .or_else(|| infer_nominal_path(default_ns, nominal.name().ref_str()));
-        self.build_enum(nominal.clone(), &Arc::new(vec![]), path, default_ns)
+        self.build_enum(nominal.clone(), &[], path, default_ns)
       }
       CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Err(unsupported_type(
         "type-definition values are not closed application data; use the corresponding Struct or Enum instance type",
@@ -793,9 +793,9 @@ impl GraphBuilder {
     }
   }
 
-  fn build_named(&mut self, name: &str, args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>, default_ns: &str) -> Result<usize, DataShapeError> {
+  fn build_named(&mut self, name: &str, args: &[Arc<CalcitTypeAnnotation>], default_ns: &str) -> Result<usize, DataShapeError> {
     let (ns, def) = qualify_type_ref(name, default_ns);
-    let qualified = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), args.clone());
+    let qualified = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(args.to_vec()));
     if let Some(struct_def) = qualified.resolve_to_struct() {
       return self.build_struct(Arc::new(struct_def), args, Some((ns, def)), default_ns);
     }
@@ -859,7 +859,7 @@ impl GraphBuilder {
   fn build_struct(
     &mut self,
     nominal: Arc<CalcitStructDef>,
-    args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+    args: &[Arc<CalcitTypeAnnotation>],
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     default_ns: &str,
   ) -> Result<usize, DataShapeError> {
@@ -896,7 +896,7 @@ impl GraphBuilder {
     self.nodes[node_id] = Some(DataShapeNode::Struct {
       nominal,
       nominal_path,
-      type_args: args.clone(),
+      type_args: Arc::from(args),
       fields,
     });
     Ok(node_id)
@@ -905,7 +905,7 @@ impl GraphBuilder {
   fn build_enum(
     &mut self,
     nominal: Arc<CalcitEnumDef>,
-    args: &Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+    args: &[Arc<CalcitTypeAnnotation>],
     nominal_path: Option<(Arc<str>, Arc<str>)>,
     default_ns: &str,
   ) -> Result<usize, DataShapeError> {
@@ -937,7 +937,7 @@ impl GraphBuilder {
     self.nodes[node_id] = Some(DataShapeNode::Enum {
       nominal,
       nominal_path,
-      type_args: args.clone(),
+      type_args: Arc::from(args),
       variants,
     });
     Ok(node_id)
@@ -1157,12 +1157,6 @@ mod tests {
   #[test]
   fn field_write_cache_retries_unresolved_types_and_tracks_replaced_nominals() {
     let _guard = program::lock_program_test_state();
-    super::super::register_program_lookups(
-      program::lookup_runtime_ready,
-      program::lookup_def_code,
-      program::lookup_def_schema,
-      crate::runner::preprocess::infer_static_definition_type,
-    );
     let mut parent = CalcitStructDef::from_fields(EdnTag::new("CacheParent"), vec![EdnTag::new("item")]);
     parent.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from("tests.shape-cache/Child"),
