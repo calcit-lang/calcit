@@ -43,17 +43,11 @@ use crate::wasm::host::runner::preprocess::{
   expression_definitely_diverges, infer_static_type_from_expr, resolve_runtime_method_callable, resolve_static_trait_callable,
 };
 
-#[path = "emit_wasm/component.rs"]
 mod component;
-#[path = "emit_wasm/edn_parse.rs"]
 mod edn_parse;
-#[path = "emit_wasm/methods.rs"]
 mod methods;
-#[path = "emit_wasm/number_format.rs"]
 mod number_format;
-#[path = "emit_wasm/runtime.rs"]
 mod runtime;
-#[path = "emit_wasm/structs.rs"]
 mod structs;
 
 use component::{
@@ -147,21 +141,14 @@ fn mem_arg_byte(offset: u64) -> wasm_encoder::MemArg {
   }
 }
 
-#[path = "emit_wasm/edn.rs"]
 mod edn;
 /// Emit a WASM binary module from the compiled program.
 /// Processes functions from all namespaces in the program.
-#[path = "emit_wasm/heap.rs"]
 mod heap;
-#[path = "emit_wasm/hof.rs"]
 mod hof;
-#[path = "emit_wasm/lists.rs"]
 mod lists;
-#[path = "emit_wasm/maps.rs"]
 mod maps;
-#[path = "emit_wasm/sets.rs"]
 mod sets;
-#[path = "emit_wasm/strings.rs"]
 mod strings;
 
 use edn::*;

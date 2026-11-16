@@ -13,15 +13,11 @@ mod injection;
 
 mod analysis_cache;
 mod cli_handlers;
-mod strict_check;
-mod verification;
-
-#[path = "../deprecated_api.rs"]
 mod deprecated_api;
-#[path = "../public_api_check.rs"]
 mod public_api_check;
-#[path = "../type_coverage.rs"]
+mod strict_check;
 mod type_coverage;
+mod verification;
 
 #[cfg(test)]
 static GLOBAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

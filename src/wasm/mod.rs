@@ -16,18 +16,23 @@ pub(crate) mod host;
 
 // FFI ABI modules: available without the `wasm` feature.
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::ffi_abi;
+pub mod ffi_abi;
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::ffi_async;
-pub use crate::ffi_interface_ir;
+pub mod ffi_async;
+pub mod ffi_interface_ir;
 
 // Code generator and CLI driver: require the `wasm` feature.
 #[cfg(feature = "wasm")]
-pub use crate::codegen::emit_wasm::{
+pub mod emit_wasm;
+#[cfg(feature = "wasm")]
+pub mod wasm_cli;
+
+#[cfg(feature = "wasm")]
+pub use emit_wasm::{
   WasmBoundary, WasmTarget, check_wasm_command_component, emit_wasm, validate_wasm_boundary, validate_wasm_target,
 };
 #[cfg(feature = "wasm")]
-pub use crate::wasm_cli::{WasmCliOptions, run};
+pub use wasm_cli::{WasmCliOptions, run};
 
 #[cfg(test)]
 mod boundary_tests {
