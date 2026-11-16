@@ -2282,16 +2282,6 @@
                   do (&list:nth xs -1) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
-        '&list:numbers $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn &list:numbers (xs)
-            foldl xs ([])
-              defn %&list:numbers (acc x)
-                hint-fn $ Fn (List Number) Dynamic $ -> (List Number)
-                if (number? x) (append acc x) (raise "|expected a Number item")
-          :examples $ []
-          :schema $ quote $ Fn (List Dynamic)
-            -> $ List Number
-            :open :decode
         '&list:prepend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -11104,11 +11094,18 @@
               :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn max (xs)
-            if (list? xs)
-              &list:max $ &list:numbers xs
-              if (set? xs)
-                &list:max $ &list:numbers $ &set:to-list xs
-                raise "|max expected a list or set"
+            &let
+              items $ if (list? xs) xs $ if (set? xs) (&set:to-list xs) (raise "|max expected a list or set")
+              foldl items None $ defn %max (acc x)
+                hint-fn $ Fn (Option Number) T
+                  -> $ Option Number
+                  :generics T
+                if (number? x)
+                  match acc
+                    (:none) (Some x)
+                    (:some current)
+                      Some $ if (&> x current) x current
+                  raise "|expected a Number item"
           :examples $ []
           :schema $ quote $ Fn T
             -> $ Option Number
@@ -11188,11 +11185,18 @@
             :tags $ #{} :core :unit
         'min $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn min (xs)
-            if (list? xs)
-              &list:min $ &list:numbers xs
-              if (set? xs)
-                &list:min $ &list:numbers $ &set:to-list xs
-                raise "|min expected a list or set"
+            &let
+              items $ if (list? xs) xs $ if (set? xs) (&set:to-list xs) (raise "|min expected a list or set")
+              foldl items None $ defn %min (acc x)
+                hint-fn $ Fn (Option Number) T
+                  -> $ Option Number
+                  :generics T
+                if (number? x)
+                  match acc
+                    (:none) (Some x)
+                    (:some current)
+                      Some $ if (&< x current) x current
+                  raise "|expected a Number item"
           :examples $ []
           :schema $ quote $ Fn T
             -> $ Option Number
@@ -12299,7 +12303,7 @@
           :doc "|抛出异常，控制流不会从该调用返回。通常传入一个错误消息字符串。Native 会把实参拼成错误消息，JS 将第二个实参放入错误的 data 字段，WASM/WASI 在求值后触发 trap。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn (& Dynamic) (-> Never)
+          :schema $ quote $ Fn M D (-> Never) (:generics M D)
           :tags $ #{} :builtin :control :internal
           :tests $ [] $ %{} 'TestEntry (:name |keeps-live-branch-type)
             :code $ quote $ let
@@ -14720,7 +14724,7 @@
         'fail $ %{} 'CodeEntry (:doc "|Fail a test immediately with a message.")
           :code $ quote $ defn fail (message) (raise message)
           :examples $ []
-          :schema $ quote $ Fn String (-> Dynamic)
+          :schema $ quote $ Fn String (-> Never)
           :tags $ #{} :control :test
           :tests $ [] $ %{} 'TestEntry (:name |raises-errors)
             :code $ quote $ is
