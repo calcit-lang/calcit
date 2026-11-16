@@ -9279,6 +9279,10 @@ fn check_struct_method_args(
           *argument = argument.substitute_type_vars(&bindings);
         }
         adjusted.rest_type = adjusted.rest_type.map(|rest| rest.substitute_type_vars(&bindings));
+      } else if let Some(receiver) = adjusted.arg_types.first_mut() {
+        // Explicit impl attachment can leave nominal receiver guards to runtime.
+        // Without a proof, do not specialize the rest of the signature.
+        *receiver = calcit::DYNAMIC_TYPE.clone();
       }
       type_checking::check_method_call_arg_types(
         head,
