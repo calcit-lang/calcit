@@ -2430,7 +2430,7 @@ impl CalcitTypeAnnotation {
 
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      // Round-trip compiler-generated hints without adding source symbol syntax.
+      // Keep the canonical EDN spelling used by compiler-generated hints.
       "never" => Some(Self::Never),
       // `:any` is a legacy spelling of `:dynamic`. Keep accepting it at input
       // boundaries, but canonicalize immediately so downstream analysis cannot
@@ -2498,6 +2498,7 @@ impl CalcitTypeAnnotation {
       "unit" | "Unit" => Some("Unit"),
       "bool" | "Bool" => Some("Bool"),
       "number" | "Number" => Some("Number"),
+      "never" | "Never" => Some("Never"),
       other if CalcitNumericRefinement::from_name(other).is_some() => Some(
         CalcitNumericRefinement::from_name(other)
           .expect("guarded numeric refinement")
@@ -2565,6 +2566,7 @@ impl CalcitTypeAnnotation {
   fn builtin_type_from_symbol_name(name: &str) -> Option<Self> {
     match Self::canonical_type_symbol_name(name)? {
       "Dynamic" => Some(Self::Dynamic),
+      "Never" => Some(Self::Never),
       "Nil" => Some(Self::Nil),
       "Unit" => Some(Self::Unit),
       "Bool" => Some(Self::Bool),
@@ -4269,7 +4271,7 @@ impl CalcitTypeAnnotation {
       if let Some(open) = Self::open_family_type(&name) {
         return open;
       }
-      if let Some(builtin) = Self::builtin_type_from_symbol_name(&name) {
+      if let Some(builtin) = Self::builtin_type_from_symbol_name(&name).filter(|_| !Self::generics_contains(generics, &name)) {
         return Arc::new(builtin);
       }
       // Compact type expressions spell a slot `'*name`, the same symbol a
@@ -4296,7 +4298,7 @@ impl CalcitTypeAnnotation {
       if let Some(open) = Self::open_family_type(sym) {
         return open;
       }
-      if let Some(builtin) = Self::builtin_type_from_symbol_name(sym) {
+      if let Some(builtin) = Self::builtin_type_from_symbol_name(sym).filter(|_| !Self::generics_contains(generics, sym)) {
         return Arc::new(builtin);
       }
       if sym.starts_with('\'') {
@@ -4325,10 +4327,8 @@ impl CalcitTypeAnnotation {
           return Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from(slot_name)));
         }
       }
-      if Self::generics_contains(generics, sym) {
-        return Arc::new(CalcitTypeAnnotation::TypeVar(
-          Self::generic_in_scope(generics, sym).expect("generic in scope"),
-        ));
+      if let Some(generic) = Self::generic_in_scope(generics, sym) {
+        return Arc::new(Self::TypeVar(generic));
       }
     }
 
@@ -11486,6 +11486,19 @@ mod tests {
     };
     assert_eq!(signature.generics.as_slice(), &[Arc::<str>::from("T")]);
     assert_eq!(runtime.as_ref(), &CalcitTypeAnnotation::from_calcit(&value));
+  }
+
+  #[test]
+  fn declared_generic_never_shadows_the_bottom_type() {
+    use CalcitTypeAnnotation as T;
+    let name = Arc::<str>::from("Never");
+    for form in [T::make_symbol(&name), T::quote_symbol(&name)] {
+      assert_eq!(T::parse_type_annotation_form_inner(&form, &[], true).as_ref(), &T::Never);
+      assert_eq!(
+        T::parse_type_annotation_form_inner(&form, std::slice::from_ref(&name), true).as_ref(),
+        &T::TypeVar(name.clone())
+      );
+    }
   }
 
   #[test]

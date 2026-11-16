@@ -243,6 +243,9 @@ fn describe(node: &Cirru) -> String {
 }
 
 fn desugar_leaf(name: &str) -> Result<Cirru, String> {
+  if name == "Never" {
+    return Ok(Cirru::leaf(":never"));
+  }
   // Type slots keep the `'*slot` spelling of the canonical form, which is
   // also what the Cirru EDN reader accepts inside a Snapshot schema.
   if let Some(slot) = name.strip_prefix('*')
@@ -294,6 +297,7 @@ fn builtin_constructor_arity(head: &str) -> Option<usize> {
 
 fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
   match node {
+    Cirru::Leaf(name) if scope.iter().any(|binder| binder == name.as_ref()) => Ok(quoted(name)),
     Cirru::Leaf(name) => desugar_leaf(name),
     Cirru::List(items) => {
       let Some(head) = items.first() else {
@@ -707,31 +711,44 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
 /// Print canonical type EDN in the compact syntax, the inverse of
 /// `desugar_type_expr`. Shapes without a compact spelling return `Err`.
 pub(crate) fn print_type_compact(edn: &Edn) -> Result<Cirru, String> {
+  print_type_in_scope(edn, false)
+}
+
+fn print_type_in_scope(edn: &Edn, never_is_bound: bool) -> Result<Cirru, String> {
   match edn {
+    Edn::Tag(tag) if tag.ref_str() == "never" => {
+      if never_is_bound {
+        Err(String::from(
+          "no compact spelling for the bottom type while a generic named `Never` is in scope",
+        ))
+      } else {
+        Ok(Cirru::leaf("Never"))
+      }
+    }
     Edn::Symbol(name) => {
       let leaf = Cirru::Leaf(name.clone());
       desugar_type_expr(&leaf)?;
       Ok(leaf)
     }
     Edn::Enum(view) if view.type_name.is_none() && view.variant.as_ref() == "Fn" => match view.extra.as_slice() {
-      [Edn::Map(map)] => print_fn(map),
+      [Edn::Map(map)] => print_fn(map, never_is_bound),
       _ => Err(format!("unexpected Fn payload {edn}")),
     },
     Edn::Enum(view) if view.type_name.is_none() && view.variant.as_ref() == "Macro" => match view.extra.as_slice() {
-      [Edn::Map(map)] => print_macro(map),
+      [Edn::Map(map)] => print_macro(map, never_is_bound),
       _ => Err(format!("unexpected Macro payload {edn}")),
     },
     Edn::Enum(view) if view.type_name.is_none() => {
       let mut out = vec![Cirru::Leaf(view.variant.clone())];
       for arg in &view.extra {
-        out.push(print_type_compact(arg)?);
+        out.push(print_type_in_scope(arg, never_is_bound)?);
       }
       Ok(Cirru::List(out))
     }
     Edn::List(xs) if matches!(xs.0.first(), Some(Edn::Symbol(head)) if head.as_ref() == "::") => {
       let mut out = vec![];
       for item in xs.0.iter().skip(1) {
-        out.push(print_type_compact(item)?);
+        out.push(print_type_in_scope(item, never_is_bound)?);
       }
       Ok(Cirru::List(out))
     }
@@ -739,23 +756,25 @@ pub(crate) fn print_type_compact(edn: &Edn) -> Result<Cirru, String> {
   }
 }
 
-fn print_macro(map: &EdnMapView) -> Result<Cirru, String> {
+fn print_macro(map: &EdnMapView, never_is_bound: bool) -> Result<Cirru, String> {
   let get = |key: &str| map.0.get(&Edn::tag(key));
+  let never_is_bound = never_is_bound || has_never_binder(get("generics"));
+  let print = |ty| print_type_in_scope(ty, never_is_bound);
   let mut out = vec![Cirru::leaf("Macro")];
   if let Some(Edn::List(args)) = get("required") {
     for arg in &args.0 {
-      out.push(print_type_compact(arg)?);
+      out.push(print(arg)?);
     }
   }
   if let Some(rest) = get("rest") {
-    out.push(Cirru::List(vec![Cirru::leaf("&"), print_type_compact(rest)?]));
+    out.push(Cirru::List(vec![Cirru::leaf("&"), print(rest)?]));
   }
   let expansion = get("expansion").ok_or_else(|| String::from("macro without expansion"))?;
-  out.push(Cirru::List(vec![Cirru::leaf("->"), print_type_compact(expansion)?]));
+  out.push(Cirru::List(vec![Cirru::leaf("->"), print(expansion)?]));
   if let Some(Edn::List(optional)) = get("optional") {
     let mut clause = vec![Cirru::leaf(":optional")];
     for item in &optional.0 {
-      clause.push(print_type_compact(item)?);
+      clause.push(print(item)?);
     }
     out.push(Cirru::List(clause));
   }
@@ -772,24 +791,23 @@ fn print_macro(map: &EdnMapView) -> Result<Cirru, String> {
   Ok(Cirru::List(out))
 }
 
-fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
+fn print_fn(map: &EdnMapView, never_is_bound: bool) -> Result<Cirru, String> {
   let get = |key: &str| map.0.get(&Edn::tag(key));
+  let never_is_bound = never_is_bound || has_never_binder(get("generics"));
+  let print = |ty| print_type_in_scope(ty, never_is_bound);
   if get("kind").is_some() {
     return Err(String::from("macro schema"));
   }
   let mut out = vec![Cirru::leaf("Fn")];
   if let Some(Edn::List(args)) = get("args") {
     for arg in &args.0 {
-      out.push(print_type_compact(arg)?);
+      out.push(print(arg)?);
     }
   }
   if let Some(rest) = get("rest") {
-    out.push(Cirru::List(vec![Cirru::leaf("&"), print_type_compact(rest)?]));
+    out.push(Cirru::List(vec![Cirru::leaf("&"), print(rest)?]));
   }
-  let ret = get("return")
-    .map(print_type_compact)
-    .transpose()?
-    .unwrap_or_else(|| Cirru::leaf("Dynamic"));
+  let ret = get("return").map(print).transpose()?.unwrap_or_else(|| Cirru::leaf("Dynamic"));
   out.push(Cirru::List(vec![Cirru::leaf("->"), ret]));
   print_shared_clauses(&get, &mut out)?;
   if matches!(get("async"), Some(Edn::Bool(true))) {
@@ -802,9 +820,13 @@ fn print_fn(map: &EdnMapView) -> Result<Cirru, String> {
     ]));
   }
   if let Some(target) = get("guard") {
-    out.push(Cirru::List(vec![Cirru::leaf(":guard"), print_type_compact(target)?]));
+    out.push(Cirru::List(vec![Cirru::leaf(":guard"), print(target)?]));
   }
   Ok(Cirru::List(out))
+}
+
+fn has_never_binder(generics: Option<&Edn>) -> bool {
+  matches!(generics, Some(Edn::List(names)) if names.0.iter().any(|name| matches!(name, Edn::Symbol(symbol) if symbol.as_ref() == "Never")))
 }
 
 fn print_shared_clauses<'a>(get: &dyn Fn(&str) -> Option<&'a Edn>, out: &mut Vec<Cirru>) -> Result<(), String> {
@@ -880,6 +902,11 @@ mod tests {
       "(:: 'Map 'String (:: 'List 'app.schema/Item))"
     );
     assert_eq!(desugar_text("Option *item").unwrap(), "(:: 'Option '*item)");
+    assert_eq!(desugar_text("Option Never").unwrap(), "(:: 'Option :never)");
+    assert_eq!(
+      desugar_text("Fn Never (-> Never) (:generics Never)").unwrap(),
+      "(:: 'Fn ({} (:args ([] 'Never)) (:return 'Never) (:generics ([] 'Never))))"
+    );
     assert_eq!(
       desugar_text("recollect.schema/change-op Number").unwrap(),
       "(:: 'recollect.schema/change-op 'Number)"
@@ -992,6 +1019,24 @@ mod tests {
     assert_eq!(print_type_compact(&edn).expect("print"), compact);
     assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :other)")).is_err());
     assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :reflect) (:open :host)")).is_err());
+  }
+
+  #[test]
+  fn compact_printer_preserves_bottom_and_bound_never() {
+    let edn = crate::snapshot::schema_cirru_to_edn;
+    for source in [
+      ":: 'Fn $ {} (:args $ [] :never) (:return 'Never) (:generics $ [] 'Never)",
+      ":: 'Fn $ {} (:args $ [] (:: 'Fn $ {} (:args $ [] :never) (:return 'Unit))) (:return 'Never) (:generics $ [] 'Never)",
+      ":: 'Macro $ {} (:required $ [] :never) (:expansion 'Never) (:generics $ [] 'Never)",
+    ] {
+      let error = print_type_compact(&edn(parse_one(source))).expect_err("the bottom type would become a generic variable");
+      assert!(error.contains("generic named `Never`"), "{error}");
+    }
+    for source in ["Fn Never (-> Unit)", "Fn Never (-> Never) (:generics Never)"] {
+      let original = parse_one(source);
+      let canonical = edn(desugar_type_expr(&original).expect("desugar"));
+      assert_eq!(print_type_compact(&canonical).expect("unambiguous type"), original);
+    }
   }
 
   #[test]
