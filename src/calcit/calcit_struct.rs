@@ -101,6 +101,18 @@ impl CalcitStructDef {
     }
   }
 
+  /// Whether two local (`definition_ref == None`) struct descriptors share the
+  /// exact underlying definition allocations across `impl-traits` decoration.
+  pub(crate) fn shares_local_definition_storage(&self, other: &Self) -> bool {
+    self.definition_ref.is_none()
+      && other.definition_ref.is_none()
+      && self.name == other.name
+      && Arc::ptr_eq(&self.fields, &other.fields)
+      && Arc::ptr_eq(&self.field_types, &other.field_types)
+      && Arc::ptr_eq(&self.generics, &other.generics)
+      && Arc::ptr_eq(&self.where_bounds, &other.where_bounds)
+  }
+
   /// Return the declaration-order field position. Small structs stay on the
   /// allocation-free linear path; wide structs use a read-only pointer/Weak
   /// cache without sorting or changing field layout.
@@ -247,6 +259,14 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       impls: vec![],
     }
+  }
+
+  #[test]
+  fn local_definition_storage_distinguishes_clones_from_fresh_declarations() {
+    let declaration = || CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x")]);
+    let point = declaration();
+    assert!(point.shares_local_definition_storage(&point.clone()));
+    assert!(!point.shares_local_definition_storage(&declaration()));
   }
 
   #[test]

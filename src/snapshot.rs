@@ -4784,15 +4784,27 @@ const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "defref",
   "defstruct",
   "defenum",
+  "deftrait",
+  "defimpl",
+  "deftype",
   "defmacro",
   "defrecord",
 ];
 
 /// Extract the binding name from a top-level definition form.
 /// Returns `Some(name)` for recognised `(def name ...)` / `(defn name args ...)` etc.
-fn extract_def_name(items: &[Cirru]) -> Option<&str> {
+/// Bare `defimpl` forms do not bind a named type or value under the implementing
+/// type's name, so they receive a synthetic per-entry name to avoid overwriting
+/// the type declaration or earlier implementations.
+fn extract_def_name(items: &[Cirru], index: usize) -> Option<String> {
   match (items.first(), items.get(1)) {
-    (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) if TOP_LEVEL_DEF_HEADS.contains(&head.as_ref()) => Some(name.as_ref()),
+    (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) if TOP_LEVEL_DEF_HEADS.contains(&head.as_ref()) => {
+      if head.as_ref() == "defimpl" {
+        Some(format!("__defimpl_{}_{}", name, index))
+      } else {
+        Some(name.as_ref().to_owned())
+      }
+    }
     _ => None,
   }
 }
@@ -4844,9 +4856,9 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       // each to its own CodeEntry.  This lets the type-checker handle multi-def
       // snippets that appear in documentation (no-run mode).
       let all_top_level = !body_lines.is_empty()
-        && body_lines.iter().all(|line| {
+        && body_lines.iter().enumerate().all(|(idx, line)| {
           if let Cirru::List(items) = line {
-            extract_def_name(items).is_some()
+            extract_def_name(items, idx).is_some()
           } else {
             false
           }
@@ -4855,11 +4867,11 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(body_lines.len() + 2);
 
       if all_top_level {
-        for line in &body_lines {
+        for (idx, line) in body_lines.iter().enumerate() {
           if let Cirru::List(items) = line
-            && let Some(name) = extract_def_name(items)
+            && let Some(name) = extract_def_name(items, idx)
           {
-            def_dict.insert(name.to_owned(), CodeEntry::from_code(line.clone()));
+            def_dict.insert(name, CodeEntry::from_code(line.clone()));
           }
         }
         // Each def is registered as its own CodeEntry so the type-checker can
@@ -10461,6 +10473,21 @@ defcomp comp-space (w h)
     assert!(file.defs.contains_key("reload!"));
     assert!(matches!(file.defs["main!"].schema.as_ref(), CalcitTypeAnnotation::Fn(_)));
     assert!(matches!(file.defs["reload!"].schema.as_ref(), CalcitTypeAnnotation::Fn(_)));
+  }
+
+  #[test]
+  fn create_file_from_snippet_keeps_implementations_separate_from_their_type() {
+    let file = create_file_from_snippet(
+      "defstruct Meter (:value Number)\n\ndeftrait Gauge\n  .read $ Fn Self $ -> Number\n\ndeftrait Reset\n  .reset $ Fn Self $ -> Self\n\ndefimpl Meter Gauge\n  .read $ fn (self) (:value self)\n\ndefimpl Meter Reset\n  .reset $ fn (self) self",
+    )
+    .expect("snippet should parse");
+    assert!(matches!(&file.defs["Meter"].code, Cirru::List(items) if items.first() == Some(&Cirru::leaf("defstruct"))));
+    let impl_count = file
+      .defs
+      .values()
+      .filter(|entry| matches!(&entry.code, Cirru::List(items) if items.first() == Some(&Cirru::leaf("defimpl"))))
+      .count();
+    assert_eq!(impl_count, 2);
   }
 
   #[test]

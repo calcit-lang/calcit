@@ -5691,7 +5691,180 @@ fn strict_type_fail_defimpl_infers_self_and_rejects_mismatch() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     let entries = load_fixture_entries("calcit/type-fail/defimpl-self-mismatch.cirru");
-    let err = run_check_only(&entries).expect_err("defimpl inline lambda must infer Self signature and reject return type mismatch");
-    assert!(err.contains("Found 1 error") || err.contains("E_FN_RETURN_TYPE_MISMATCH"), "{err}");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("defimpl return mismatch should report a warning diagnostic");
+    assert!(
+      warnings.borrow().iter().any(|warning| {
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "expected E_FN_RETURN_TYPE_MISMATCH for defimpl inline lambda return mismatch, got: {:?}",
+      warnings.borrow()
+    );
+    run_check_only(&entries).expect_err("defimpl inline lambda must infer Self signature and reject return type mismatch");
+  });
+}
+
+#[test]
+fn strict_type_fail_local_method_shares_receiver_payload_type() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    for (replacement, should_reject) in [("2", false), ("|wrong-payload", true)] {
+      let entries = load_snippet_entries(&format!(
+        "deftrait ReplaceOps\n  .replace $ Fn Self Self $ -> Self\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox ReplaceOps\n        .replace $ fn (self other) other\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      other $ BoxWithImpl :value {replacement}\n    .replace receiver other\n  , &unit"
+      ));
+      // Compile directly so the ordinary argument checker must reject the bad call.
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.into_inner();
+      let mismatch = matches!(&result, Err(err) if err.code.as_deref() == Some("E_METHOD_ARG_TYPE_MISMATCH"))
+        || warnings.iter().any(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH"));
+      if should_reject {
+        assert!(
+          mismatch,
+          "expected a receiver-bound argument mismatch, got {result:?}, {warnings:?}"
+        );
+      } else {
+        assert!(
+          result.is_ok() && warnings.is_empty(),
+          "same-payload call should compile, got {result:?}, {warnings:?}"
+        );
+      }
+    }
+  });
+}
+
+#[test]
+fn strict_type_fail_local_method_keeps_callback_generics_independent() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+    for (callback_schema, should_reject) in [("Fn T (-> T) (:generics T)", false), ("Fn Number (-> Number)", true)] {
+      let entries = load_snippet_entries(&format!(
+        "deftrait CallbackOps\n  .use-callback $ Fn Self (Fn T (-> T) (:generics T)) (-> Unit)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox CallbackOps\n        .use-callback $ fn (self callback) &unit\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      callback $ fn (x)\n        hint-fn $ {callback_schema}\n        , x\n    .use-callback receiver callback"
+      ));
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.into_inner();
+      if should_reject {
+        assert!(
+          matches!(&result, Err(err) if err.code.as_deref() == Some("E_METHOD_ARG_TYPE_MISMATCH"))
+            || warnings.iter().any(|warning| warning.code() == Some("E_METHOD_ARG_TYPE_MISMATCH")),
+          "expected the method to reject a monomorphic callback, got {result:?}, {warnings:?}"
+        );
+      } else {
+        assert!(
+          result.is_ok() && warnings.is_empty(),
+          "polymorphic callback should compile, got {result:?}, {warnings:?}"
+        );
+      }
+    }
+  });
+}
+
+#[test]
+fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    injection::inject_platform_apis();
+
+    // 1. #2838: `defimpl` referencing a trait through an `:as` namespace alias must infer Self and reject return mismatch.
+    let alias_entries = load_snippet_entries_with_library(
+      "lib.gauge",
+      "def Gauge $ deftrait Gauge\n  .reading $ Fn Self $ -> Number",
+      "ns app.main $ :require $ lib.gauge :as g\n\ndefstruct Meter $ :v Number\n\ndef MeterImpl $ defimpl Meter g/Gauge\n  .reading $ fn (self) |bad-reading\n\ndefn main! () &unit",
+    );
+    let alias_warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&alias_entries.init_ns, "MeterImpl", &alias_warnings, &CallStackList::default())
+      .expect("aliased defimpl return mismatch should report a warning diagnostic");
+    assert!(
+      alias_warnings.borrow().iter().any(|warning| {
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "expected E_FN_RETURN_TYPE_MISMATCH for :as aliased trait in defimpl, got: {:?}",
+      alias_warnings.borrow()
+    );
+
+    // 2. #2840: Generic `defimpl` with `Self` return must reject an unhinted lambda returning a non-Self value.
+    let generic_entries = load_snippet_entries(
+      "def BoxOps $ deftrait BoxOps\n  .clone-box $ Fn Self $ -> Self\n\ndefstruct GenericBox (:generics T) (:value T)\n\ndef GenericBoxImpl $ defimpl GenericBox BoxOps\n  .clone-box $ fn (self) true\n\ndefn main! () &unit",
+    );
+    let generic_warnings = RefCell::new(vec![]);
+    let generic_res = runner::preprocess::ensure_ns_def_compiled(
+      &generic_entries.init_ns,
+      "GenericBoxImpl",
+      &generic_warnings,
+      &CallStackList::default(),
+    );
+    assert!(
+      matches!(&generic_res, Err(err) if err.code.as_deref() == Some("E_FN_RETURN_TYPE_MISMATCH"))
+        || generic_warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")),
+      "expected generic defimpl Self return mismatch to fail, got res={generic_res:?}, warnings={:?}",
+      generic_warnings.borrow()
+    );
+
+    // 3. #2839: Local `let` nominal Struct decorated with `impl-traits` must enforce method argument types and return types.
+    let local_arg_entries = load_snippet_entries(
+      "def StepOps $ deftrait StepOps\n  .step $ Fn Self Number $ -> Number\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      LocalCounter $ defstruct LocalCounter $ :v Number\n      counter-impl $ defimpl LocalCounter StepOps\n        .step $ fn (self delta) (+ (:v self) delta)\n      CounterWithImpl $ impl-traits LocalCounter counter-impl\n      c $ CounterWithImpl :v 1\n    .step c |wrong-arg",
+    );
+    let local_arg_warnings = RefCell::new(vec![]);
+    let local_arg_res = runner::preprocess::ensure_ns_def_compiled(
+      &local_arg_entries.init_ns,
+      &local_arg_entries.init_def,
+      &local_arg_warnings,
+      &CallStackList::default(),
+    );
+    assert!(
+      matches!(&local_arg_res, Err(err) if matches!(err.code.as_deref(), Some("E_METHOD_ARG_TYPE_MISMATCH" | "E_LOCAL_FN_ARG_TYPE_MISMATCH")))
+        || local_arg_warnings
+          .borrow()
+          .iter()
+          .any(|warning| matches!(warning.code(), Some("E_METHOD_ARG_TYPE_MISMATCH" | "E_LOCAL_FN_ARG_TYPE_MISMATCH"))),
+      "expected local impl-traits method call with wrong argument type to fail, got res={local_arg_res:?}, warnings={:?}",
+      local_arg_warnings.borrow()
+    );
+
+    // 4. Contextual check_contextual_return: dynamic contextual return still refines to concrete Child, and explicit Number contract is preserved.
+    let child_refine_entries = load_snippet_entries(
+      "defstruct Child (:value Number)\n\ndefstruct Parent (:v Number)\n\ndef ExplicitOps $ deftrait ExplicitOps\n  .val $ Fn Self $ -> Number\n\ndef ParentExplicitImpl $ defimpl Parent ExplicitOps\n  .val $ fn (self) (:v self)\n\ndefn run-open (cb)\n  hint-fn $ Fn (Fn (-> Dynamic)) (-> Unit)\n  cb\n  , &unit\n\ndefn read-open ()\n  hint-fn $ Fn $ -> Unit\n  run-open $ fn () (Child :value 1)\n\ndefn read-explicit ()\n  hint-fn $ Fn $ -> Number\n  let\n      p $ impl-traits (Parent :v 2) ParentExplicitImpl\n    + 1 (.val p)\n\ndefn main! () &unit",
+    );
+    for target in ["read-open", "read-explicit"] {
+      let warnings = RefCell::new(vec![]);
+      let res = runner::preprocess::ensure_ns_def_compiled(&child_refine_entries.init_ns, target, &warnings, &CallStackList::default());
+      assert!(res.is_ok(), "expected {target} to compile cleanly, got {res:?}");
+      let app_warnings: Vec<_> = warnings
+        .borrow()
+        .iter()
+        .filter(|w| !w.message().contains("eprintln"))
+        .cloned()
+        .collect();
+      assert!(
+        app_warnings.is_empty(),
+        "expected {target} to have no warnings, got {app_warnings:?}"
+      );
+    }
+
+    // 5. Method generic `T` colliding with implementing type's `T` must stay distinct.
+    let collision_entries = load_snippet_entries(
+      "def SwapOps $ deftrait SwapOps\n  .take $ Fn Self T (-> T) (:generics T)\n\ndefstruct GenericHolder (:generics T) (:value T)\n\ndef GenericHolderImpl $ defimpl GenericHolder SwapOps\n  .take $ fn (self other) (:value self)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      h $ impl-traits (GenericHolder :value 1) GenericHolderImpl\n    .take h 2",
+    );
+    let collision_err = run_check_only(&collision_entries)
+      .expect_err("expected colliding method generic T vs impl generic T to reject returning (:value self)");
+    assert!(
+      collision_err.contains("E_ERASED_GENERIC_RELATION") || collision_err.contains("E_FN_RETURN_TYPE_MISMATCH"),
+      "unexpected error for colliding method generic T vs impl generic T: {collision_err}"
+    );
   });
 }

@@ -1328,7 +1328,7 @@ mod tests {
     let nominal = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Point"), vec![]));
     let shape =
       DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), "tests.shape").expect("point shape");
-    let impostor = Arc::new((*nominal).clone());
+    let impostor = Arc::new(CalcitStructDef::from_fields(EdnTag::new("Point"), vec![]));
     let struct_value = Calcit::Struct(CalcitStructValue {
       struct_ref: impostor,
       values: Arc::new(vec![]),
