@@ -9320,10 +9320,7 @@ fn result_error_helpers_infer_fallback_without_erasing_error_payload() {
     ],
   );
   assert_success(&receiver, "Result error payload type query");
-  assert_eq!(
-    parse_stdout(&receiver)["data"]["inferred_type"],
-    "[] ':: 'calcit.core/Result :never 'Number"
-  );
+  assert_eq!(parse_stdout(&receiver)["data"]["inferred_type"], "calcit.core/Result Never Number");
 }
 
 #[test]
