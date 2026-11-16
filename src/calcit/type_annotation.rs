@@ -789,12 +789,15 @@ impl CallTypeProof {
       }
       return TypeProof::Proven;
     }
-    let expected = expected.substitute_free_type_vars(&self.renaming);
-    let expected = match expected.as_ref() {
-      CalcitTypeAnnotation::Fn(signature) if !signature.generics.is_empty() => {
-        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_lexical_binders())))
-      }
-      _ => expected,
+    let requires_universal_callback = matches!(
+      (actual, expected),
+      (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected))
+        if actual.generics.is_empty() && !expected.generics.is_empty()
+    );
+    let expected = if requires_universal_callback && let CalcitTypeAnnotation::Fn(signature) = expected {
+      CalcitTypeAnnotation::Fn(Arc::new(signature.with_lexical_binders())).substitute_free_type_vars(&self.renaming)
+    } else {
+      expected.substitute_type_vars(&self.renaming)
     };
     if matches!(actual, CalcitTypeAnnotation::TypeVar(name)
       if self.caller_capabilities.as_deref().is_some_and(|items| items.contains_key(name)))
@@ -917,8 +920,8 @@ impl CallTypeProof {
       }
     }
     let proof = actual.prove_available_bindings(&expected, &mut staged);
-    if let CalcitTypeAnnotation::Fn(signature) = expected.as_ref()
-      && !signature.generics.is_empty()
+    if requires_universal_callback
+      && let CalcitTypeAnnotation::Fn(signature) = expected.as_ref()
       && (matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
         || signature.generics.iter().any(|name| staged.contains_key(name)))
     {
