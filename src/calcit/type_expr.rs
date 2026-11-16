@@ -297,6 +297,7 @@ fn builtin_constructor_arity(head: &str) -> Option<usize> {
 
 fn desugar_type(node: &Cirru, scope: &[String]) -> Result<Cirru, String> {
   match node {
+    Cirru::Leaf(name) if scope.iter().any(|binder| binder == name.as_ref()) => Ok(quoted(name)),
     Cirru::Leaf(name) => desugar_leaf(name),
     Cirru::List(items) => {
       let Some(head) = items.first() else {
@@ -885,6 +886,10 @@ mod tests {
     );
     assert_eq!(desugar_text("Option *item").unwrap(), "(:: 'Option '*item)");
     assert_eq!(desugar_text("Option Never").unwrap(), "(:: 'Option :never)");
+    assert_eq!(
+      desugar_text("Fn Never (-> Never) (:generics Never)").unwrap(),
+      "(:: 'Fn ({} (:args ([] 'Never)) (:return 'Never) (:generics ([] 'Never))))"
+    );
     assert_eq!(
       desugar_text("recollect.schema/change-op Number").unwrap(),
       "(:: 'recollect.schema/change-op 'Number)"

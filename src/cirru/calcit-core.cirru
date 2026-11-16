@@ -13407,13 +13407,6 @@
                 assert= 2 $ .len $ .unwrap
                   .first $ .to-list ps
               :tags $ #{} :core :unit
-        'todo! $ %{} 'CodeEntry
-          :doc "|标记尚未实现的代码。可省略说明或提供字符串，执行时总是失败，预处理会报告 E_TODO。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return :never)
-            :args $ [] 'String
-          :tags $ #{} :builtin :internal :control
         'to-string $ %{} 'CodeEntry
           :doc "|将实现 ToString 的值转换为文本。标量转换不等同于 Show 的用户展示或 Debug 的诊断表示；没有实现的集合、名义值与开放 Dynamic 不能直接调用。"
           :code $ quote $ defn to-string (value) (.to-string value)
