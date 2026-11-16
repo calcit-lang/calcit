@@ -718,9 +718,9 @@ pub fn syntax_let(
 ) -> Result<Calcit, CalcitErr> {
   match expr.first() {
     // Some(Calcit::Nil) => runner::evaluate_lines(&expr.drop_left(), scope, file_ns, call_stack),
-    Some(Calcit::List(xs)) if xs.is_empty() => runner::evaluate_lines(&expr.skip(1)?.to_vec(), scope, file_ns, call_stack),
+    Some(Calcit::List(xs)) if xs.is_empty() => runner::evaluate_view_lines(&expr.skip(1)?, scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
-      let mut body_scope = scope.to_owned();
+      let mut body_scope = CalcitScope::from_parent(scope, 1);
       match (&xs[0], &xs[1]) {
         (Calcit::Local(CalcitLocal { idx, .. }), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
@@ -736,7 +736,7 @@ pub fn syntax_let(
         }
         (a, _) => return CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid binding name: {a}")),
       }
-      runner::evaluate_lines(&expr.skip(1)?.to_vec(), &body_scope, file_ns, call_stack)
+      runner::evaluate_view_lines(&expr.skip(1)?, &body_scope, file_ns, call_stack)
     }
     Some(Calcit::List(xs)) => CalcitErr::err_nodes(CalcitErrKind::Arity, "let invalid length, but received:", &xs.to_vec()),
     Some(_) => CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid node, but received: {}", expr.to_owned())),
@@ -1155,16 +1155,18 @@ pub fn macroexpand(
           Calcit::Macro { info, .. } => {
             let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             // mutable operation
-            let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
+            let mut rest_nodes: Vec<Calcit> = xs.view_from(1)?.to_vec();
             let mut body_scope = scope.to_owned();
+            let frame_checkpoint = body_scope.frame_checkpoint();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes.to_vec(), call_stack)?;
-              let v = runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+              body_scope.restore_frame(frame_checkpoint);
+              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  (*rest_code).clone_into(&mut rest_nodes);
+                  rest_nodes = rest_code;
                 }
                 _ => {
                   if let Some(next_macro) = detect_macro_head_name(&v, scope, file_ns, call_stack) {
@@ -1209,8 +1211,9 @@ pub fn macroexpand_1(
           Calcit::Macro { info, .. } => {
             let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             let mut body_scope = scope.to_owned();
-            runner::bind_marked_args(&mut body_scope, &info.args, &xs.drop_left().to_vec(), call_stack)?;
-            let expanded = runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+            let rest_nodes = xs.view_from(1)?.to_vec();
+            runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+            let expanded = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
             if let Some(next_macro) = detect_macro_head_name(&expanded, scope, file_ns, call_stack) {
               chain.push(next_macro);
             }
@@ -1250,17 +1253,19 @@ pub fn macroexpand_all(
           Calcit::Macro { info, .. } => {
             let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             // mutable operation
-            let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
+            let mut rest_nodes: Vec<Calcit> = xs.view_from(1)?.to_vec();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
             let mut body_scope = scope.to_owned();
+            let frame_checkpoint = body_scope.frame_checkpoint();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
+              body_scope.restore_frame(frame_checkpoint);
               runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
-              let v = runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+              let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_vec();
+                  rest_nodes = rest_code;
                 }
                 _ => {
                   if let Some(next_macro) = detect_macro_head_name(&v, scope, file_ns, call_stack) {
@@ -1534,8 +1539,11 @@ pub fn syntax_match(
 
         let binding_count = pat_xs.len() - 1;
         if *pat_tag == tag && binding_count == extra.len() {
+          if binding_count == 0 {
+            return evaluate_expr(body, scope, file_ns, call_stack);
+          }
           // Bind payload values to scope
-          let mut body_scope = scope.to_owned();
+          let mut body_scope = CalcitScope::from_parent(scope, binding_count);
           for i in 0..binding_count {
             match &pat_xs[i + 1] {
               Calcit::Local(CalcitLocal { idx, .. }) => {
@@ -1617,7 +1625,10 @@ fn evaluate_indexed_match_branch(
   if binding_count != extra.len() {
     return Ok(None);
   }
-  let mut body_scope = scope.to_owned();
+  if binding_count == 0 {
+    return evaluate_expr(body, scope, file_ns, call_stack).map(Some);
+  }
+  let mut body_scope = CalcitScope::from_parent(scope, binding_count);
   for (binding, value) in pattern_items.iter().skip(1).zip(extra) {
     match binding {
       Calcit::Local(CalcitLocal { idx, .. }) => body_scope.insert_mut(*idx, value.to_owned()),

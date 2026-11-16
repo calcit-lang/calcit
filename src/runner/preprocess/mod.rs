@@ -20917,7 +20917,7 @@ mod tests {
     let Calcit::List(call) = resolved else {
       panic!("expected executable call")
     };
-    assert_eq!(call.call_kind(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+    assert_eq!(call.call_kind(), &CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
   }
 
   #[test]

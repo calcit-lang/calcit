@@ -3477,7 +3477,7 @@ impl CalcitTypeAnnotation {
   fn checked_hint_signature(form: &Calcit) -> Option<Arc<CalcitFnTypeAnnotation>> {
     let Calcit::List(items) = form else { return None };
     if let super::CalcitCallKind::TypedFnHint(signature, _) = items.call_kind() {
-      Some(signature)
+      Some(signature.clone())
     } else {
       None
     }
