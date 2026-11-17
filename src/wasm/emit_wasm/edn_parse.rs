@@ -69,7 +69,8 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   let parsed = ctx.alloc_local();
   let ok = ctx.alloc_local_typed(ValType::I32);
   let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit, 5 enum
-  emit_parse_node(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind))?;
+  let error_path = literal_local(ctx, "")?;
+  emit_parse_node_with_path(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind, error_path))?;
 
   ctx.emit(Instruction::LocalGet(ok));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -113,6 +114,21 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalSet(parse_error));
+  let error_path_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(error_path));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(error_path_ptr));
+  let error_path_len = load_string_len(ctx, error_path_ptr);
+  ctx.emit(Instruction::LocalGet(error_path_len));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  let at_prefix = literal_local(ctx, " at $")?;
+  let with_prefix = concat_string_locals(ctx, parse_error, at_prefix);
+  let full_error = concat_string_locals(ctx, with_prefix, error_path);
+  ctx.emit(Instruction::LocalGet(full_error));
+  ctx.emit(Instruction::LocalSet(parse_error));
+  ctx.emit(Instruction::End);
   emit_result_enum(ctx, "err", parse_error)?;
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
@@ -195,13 +211,26 @@ fn emit_parse_node(
   outputs: (u32, u32, u32),
 ) -> Result<(), String> {
   let (parsed, ok, error_kind) = outputs;
+  let error_path = literal_local(ctx, "")?;
+  emit_parse_node_with_path(ctx, graph, node_id, token, token_ptr, (parsed, ok, error_kind, error_path))
+}
+
+fn emit_parse_node_with_path(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  node_id: usize,
+  token: u32,
+  token_ptr: u32,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (parsed, ok, error_kind, error_path) = outputs;
   let node = graph
     .nodes
     .get(node_id)
     .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed Cirru EDN parser references missing node #{node_id}"))?;
   let (token, token_ptr) = emit_unwrap_nested_token(ctx, token, token_ptr);
   match node {
-    DataShapeNode::List(item) => emit_parse_scalar_list(ctx, graph, *item, token_ptr, parsed, ok, error_kind),
+    DataShapeNode::List(item) => emit_parse_scalar_list(ctx, graph, *item, token_ptr, (parsed, ok, error_kind, error_path)),
     DataShapeNode::Map { key, value } => emit_parse_scalar_map(ctx, graph, (*key, *value), token_ptr, (parsed, ok, error_kind)),
     DataShapeNode::Struct { nominal, fields, .. } => {
       emit_parse_scalar_struct(ctx, graph, nominal, fields, token_ptr, (parsed, ok, error_kind))
@@ -567,10 +596,9 @@ fn emit_parse_scalar_list(
   graph: &DataShapeGraph,
   item_id: usize,
   token_ptr: u32,
-  parsed: u32,
-  ok: u32,
-  error_kind: u32,
+  outputs: (u32, u32, u32, u32),
 ) -> Result<(), String> {
+  let (parsed, ok, error_kind, error_path) = outputs;
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::I32Const(0));
@@ -627,7 +655,15 @@ fn emit_parse_scalar_list(
     let item_value = ctx.alloc_local();
     let item_ok = ctx.alloc_local_typed(ValType::I32);
     let item_error = ctx.alloc_local_typed(ValType::I32);
-    emit_parse_node(ctx, graph, item_id, item_token, item_ptr, (item_value, item_ok, item_error))?;
+    let item_error_path = literal_local(ctx, "")?;
+    emit_parse_node_with_path(
+      ctx,
+      graph,
+      item_id,
+      item_token,
+      item_ptr,
+      (item_value, item_ok, item_error, item_error_path),
+    )?;
     ctx.emit(Instruction::LocalGet(item_ok));
     ctx.begin_block_if();
     emit_list_store_elem(ctx, list_ptr, index, item_value);
@@ -636,6 +672,18 @@ fn emit_parse_scalar_list(
     ctx.emit(Instruction::LocalSet(valid));
     ctx.emit(Instruction::LocalGet(item_error));
     ctx.emit(Instruction::LocalSet(error_kind));
+    let open_bracket = literal_local(ctx, "[")?;
+    let close_bracket = literal_local(ctx, "]")?;
+    let index_str = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(index));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.call_rt("__rt_f64_to_str");
+    ctx.emit(Instruction::LocalSet(index_str));
+    let step1 = concat_string_locals(ctx, open_bracket, index_str);
+    let step2 = concat_string_locals(ctx, step1, close_bracket);
+    let step3 = concat_string_locals(ctx, step2, item_error_path);
+    ctx.emit(Instruction::LocalGet(step3));
+    ctx.emit(Instruction::LocalSet(error_path));
     ctx.emit(Instruction::End);
     Ok(())
   })?;
@@ -1652,6 +1700,21 @@ fn literal_local(ctx: &mut WasmGenCtx, text: &str) -> Result<u32, String> {
   emit_literal(ctx, text)?;
   ctx.emit(Instruction::LocalSet(local));
   Ok(local)
+}
+
+fn concat_string_locals(ctx: &mut WasmGenCtx, left: u32, right: u32) -> u32 {
+  let left_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(left));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(left_ptr));
+  let right_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(right));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(right_ptr));
+  emit_str_concat_from_ptrs(ctx, left_ptr, right_ptr);
+  let output = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(output));
+  output
 }
 
 fn load_string_len(ctx: &mut WasmGenCtx, ptr: u32) -> u32 {

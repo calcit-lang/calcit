@@ -846,22 +846,27 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
     return Err(":: requires at least a tag argument".into());
   }
 
-  // First arg is the tag — accept Calcit::Tag or Calcit::Bool (used by the `&list:foldl-shortcut` pattern)
-  let tag_f64 = match &args[0] {
+  // First arg is the tag — accept Calcit::Tag or Calcit::Bool (or a runtime
+  // Bool/Tag expression such as `(&= x 2)` used by `&list:foldl-shortcut` / `foldr-shortcut`).
+  let static_tag_f64 = match &args[0] {
     Calcit::Tag(t) => {
       let tag_str = t.to_string();
       let tag_id = *ctx
         .tag_index
         .get(&tag_str)
         .ok_or_else(|| format!("unknown tag in enum constructor: {tag_str}"))?;
-      tag_id as f64
+      Some(tag_id as f64)
     }
-    Calcit::Bool(b) => {
-      if *b {
-        1.0
-      } else {
-        0.0
-      }
+    Calcit::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+    other
+      if infer_wasm_static_type(ctx, other).is_some_and(|ty| {
+        matches!(
+          CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+          CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag
+        )
+      }) =>
+    {
+      None
     }
     other => return Err(format!("::: expected tag as first arg, got: {other}")),
   };
@@ -880,7 +885,11 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 
   // Store tag at offset 8
   ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(tag_f64));
+  if let Some(tag_f64) = static_tag_f64 {
+    ctx.emit(f64_const(tag_f64));
+  } else {
+    emit_expr(ctx, &args[0])?;
+  }
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
 
   // Store payload fields starting at offset 16
