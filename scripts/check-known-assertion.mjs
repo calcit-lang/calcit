@@ -3291,7 +3291,7 @@ try {
       const refWasm = spawnSync(binary, [snapshot, "wasm", "--emit-path", refWasmOutput], options);
       if (refWasm.error) throw refWasm.error;
       assert.notEqual(refWasm.status, 0, `${refWasm.stdout}\n${refWasm.stderr}`);
-      assert.match(`${refWasm.stdout}\n${refWasm.stderr}`, /try-decode-map-as is not yet supported in WASM codegen/);
+      assert.match(`${refWasm.stdout}\n${refWasm.stderr}`, /E_WASM_EDN_SHAPE: Ref\(\d+\) is not yet supported by the typed map decoder/);
       await assert.rejects(readFile(join(refWasmOutput, "program.wasm")), { code: "ENOENT" });
       // Decoding produces a new cell; proof must never narrow the original alias.
       run("edit", "def", "calcit.assert-evidence/alias-proof", "--input-format", "json-ast", "--code",
