@@ -102,6 +102,40 @@ fn slot_bound_to_union_accepts_callbacks_over_that_union() {
 }
 
 #[test]
+fn enum_slot_accepts_nominal_enum_but_rejects_other_values() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-nominal-argument.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "nominal enum passed to a callback with an AnyEnum-bound slot",
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/invoke",
+        "--overwrite",
+        "--code",
+        "quote $ defn invoke (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f 42)",
+      ],
+    ),
+    "replace the enum argument with a number",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "a number must not satisfy an enum slot");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  assert!(output.contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"), "{output}");
+}
+
+#[test]
 fn enum_payload_lambdas_take_the_declared_payload_type() {
   // A lambda passed as a variant payload gets the declared `Fn Task (-> String)`
   // like a Struct field does, so a misspelled field on `t` is caught (#2644).
