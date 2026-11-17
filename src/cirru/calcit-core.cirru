@@ -13687,6 +13687,26 @@
                     assert= true $ message .includes? |[0][1]
                   (:ok _) (raise "|expected nested element failure")
               :tags $ #{} :unit
+            %{} 'TestEntry
+              :name |error-paths-set-collision-and-heap-address-number
+              :code $ quote $ do
+                assert= 16392 $ decode-map-as 16392 'Number
+                match
+                  try-decode-map-as ([] |ok |bad) (Tuple String Number)
+                  (:err message)
+                    assert= true $ message .includes? |$[1]
+                  (:ok _) (raise "|expected tuple slot path error")
+                match
+                  try-decode-map-as
+                    {} $ :k $ [] 128
+                    Map Tag $ List Int8
+                  (:err message)
+                    assert= true $ message .includes? |$.value[0]
+                  (:ok _) (raise "|expected map value path error")
+                assert= true $ result:err? $ try-decode-map-as
+                  #{} 7 $ Some 7
+                  Set $ Option Number
+              :tags $ #{} :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source)

@@ -386,6 +386,136 @@ fn emit_has_heap_tag(ctx: &mut WasmGenCtx, val_local: u32, tag_name: &str) -> u3
   matches_tag
 }
 
+fn prepend_static_path(ctx: &mut WasmGenCtx, prefix: &str, child_path: u32) -> Result<u32, String> {
+  let prefix_local = literal_local(ctx, prefix)?;
+  Ok(concat_string_locals(ctx, prefix_local, child_path))
+}
+
+fn prepend_indexed_path(ctx: &mut WasmGenCtx, open_prefix: &str, index: usize, child_path: u32) -> Result<u32, String> {
+  let open_local = literal_local(ctx, open_prefix)?;
+  let close_local = literal_local(ctx, "]")?;
+  let idx_local = ctx.alloc_local();
+  ctx.emit(f64_const(index as f64));
+  ctx.call_rt("__rt_f64_to_str");
+  ctx.emit(Instruction::LocalSet(idx_local));
+  let step1 = concat_string_locals(ctx, open_local, idx_local);
+  let step2 = concat_string_locals(ctx, step1, close_local);
+  Ok(concat_string_locals(ctx, step2, child_path))
+}
+
+fn prepend_field_path(ctx: &mut WasmGenCtx, field: &str, child_path: u32) -> Result<u32, String> {
+  let dot_local = literal_local(ctx, ".")?;
+  let field_local = literal_local(ctx, field)?;
+  let step1 = concat_string_locals(ctx, dot_local, field_local);
+  Ok(concat_string_locals(ctx, step1, child_path))
+}
+
+fn expand_static_hint(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
+  hint.map(|ty| CalcitTypeAnnotation::expand_schema_alias(&Arc::new(ty.clone())).as_ref().clone())
+}
+
+fn is_proven_numeric(hint: Option<&CalcitTypeAnnotation>) -> bool {
+  hint.is_some_and(|ty| matches!(ty, CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
+}
+
+fn hint_list_elem(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
+  match hint {
+    Some(CalcitTypeAnnotation::List(elem)) => Some(CalcitTypeAnnotation::expand_schema_alias(elem).as_ref().clone()),
+    _ => None,
+  }
+}
+
+fn hint_tuple_slot(hint: Option<&CalcitTypeAnnotation>, idx: usize) -> Option<CalcitTypeAnnotation> {
+  match hint {
+    Some(CalcitTypeAnnotation::Tuple(slots)) => slots
+      .get(idx)
+      .map(|s| CalcitTypeAnnotation::expand_schema_alias(s).as_ref().clone()),
+    _ => None,
+  }
+}
+
+fn hint_set_elem(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
+  match hint {
+    Some(CalcitTypeAnnotation::Set(elem)) => Some(CalcitTypeAnnotation::expand_schema_alias(elem).as_ref().clone()),
+    _ => None,
+  }
+}
+
+fn hint_map_kv(hint: Option<&CalcitTypeAnnotation>) -> (Option<CalcitTypeAnnotation>, Option<CalcitTypeAnnotation>) {
+  match hint {
+    Some(CalcitTypeAnnotation::Map(k, v)) => (
+      Some(CalcitTypeAnnotation::expand_schema_alias(k).as_ref().clone()),
+      Some(CalcitTypeAnnotation::expand_schema_alias(v).as_ref().clone()),
+    ),
+    _ => (None, None),
+  }
+}
+
+fn hint_option_inner(hint: Option<&CalcitTypeAnnotation>, option_nominal: &CalcitEnumDef) -> Option<CalcitTypeAnnotation> {
+  match hint {
+    Some(CalcitTypeAnnotation::Enum(enum_def, args))
+      if (enum_def.name() == option_nominal.name() || enum_def.same_nominal_definition(option_nominal)) && args.len() == 1 =>
+    {
+      Some(CalcitTypeAnnotation::expand_schema_alias(&args[0]).as_ref().clone())
+    }
+    _ => None,
+  }
+}
+
+fn substitute_type_var(
+  ty: &Arc<CalcitTypeAnnotation>,
+  generics: &[Arc<str>],
+  args: &[Arc<CalcitTypeAnnotation>],
+) -> CalcitTypeAnnotation {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(ty);
+  if let CalcitTypeAnnotation::TypeVar(name) = &*expanded
+    && let Some(pos) = generics.iter().position(|g| g.as_ref() == name.as_ref())
+    && let Some(arg) = args.get(pos)
+  {
+    return CalcitTypeAnnotation::expand_schema_alias(arg).as_ref().clone();
+  }
+  expanded.as_ref().clone()
+}
+
+fn hint_struct_field(
+  hint: Option<&CalcitTypeAnnotation>,
+  nominal: &Arc<crate::calcit::CalcitStructDef>,
+  idx: usize,
+) -> Option<CalcitTypeAnnotation> {
+  let actual = hint.and_then(|ty| ty.resolve_to_struct())?;
+  if !actual.same_nominal_definition(nominal) {
+    return None;
+  }
+  let args: &[Arc<CalcitTypeAnnotation>] = match hint {
+    Some(CalcitTypeAnnotation::Struct(_, args)) => args.as_slice(),
+    _ => &[],
+  };
+  actual
+    .field_types
+    .get(idx)
+    .map(|ty| substitute_type_var(ty, &actual.generics, args))
+}
+
+fn hint_enum_payload(
+  hint: Option<&CalcitTypeAnnotation>,
+  nominal: &Arc<CalcitEnumDef>,
+  variant: &cirru_edn::EdnTag,
+  pidx: usize,
+) -> Option<CalcitTypeAnnotation> {
+  let actual = hint.and_then(|ty| ty.resolve_to_enum())?;
+  if !actual.same_nominal_definition(nominal) {
+    return None;
+  }
+  let args: &[Arc<CalcitTypeAnnotation>] = match hint {
+    Some(CalcitTypeAnnotation::Enum(_, args)) => args.as_slice(),
+    _ => &[],
+  };
+  actual
+    .find_variant(variant)
+    .and_then(|v| v.payload_types().get(pidx))
+    .map(|ty| substitute_type_var(ty, actual.generics(), args))
+}
+
 fn emit_decode_map_node(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
@@ -399,6 +529,9 @@ fn emit_decode_map_node(
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(error_kind));
+
+  let static_hint = expand_static_hint(static_hint);
+  let static_hint = static_hint.as_ref();
 
   let node = graph
     .nodes
@@ -471,25 +604,34 @@ fn emit_decode_map_node(
       if static_hint
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
       {
-        let is_heap = emit_is_heap_value(ctx, input);
-        ctx.emit(Instruction::LocalGet(is_heap));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(ok));
-        ctx.emit(Instruction::End);
+        if is_proven_numeric(static_hint) {
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::LocalSet(decoded));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(ok));
+        } else {
+          let is_heap = emit_is_heap_value(ctx, input);
+          ctx.emit(Instruction::LocalGet(is_heap));
+          ctx.emit(Instruction::I32Eqz);
+          ctx.begin_block_if();
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::LocalSet(decoded));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(ok));
+          ctx.emit(Instruction::End);
+        }
       }
     }
     DataShapeNode::Numeric(kind) => {
       if static_hint
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)))
       {
-        let is_heap = emit_is_heap_value(ctx, input);
-        ctx.emit(Instruction::LocalGet(is_heap));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.begin_block_if();
+        if !is_proven_numeric(static_hint) {
+          let is_heap = emit_is_heap_value(ctx, input);
+          ctx.emit(Instruction::LocalGet(is_heap));
+          ctx.emit(Instruction::I32Eqz);
+          ctx.begin_block_if();
+        }
         let in_range = ctx.alloc_local_typed(ValType::I32);
         emit_numeric_refinement_check(ctx, input, *kind, in_range);
         ctx.emit(Instruction::LocalGet(in_range));
@@ -502,7 +644,9 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::I32Const(1));
         ctx.emit(Instruction::LocalSet(error_kind));
         ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
+        if !is_proven_numeric(static_hint) {
+          ctx.emit(Instruction::End);
+        }
       }
     }
     DataShapeNode::String => {
@@ -545,85 +689,98 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::End);
       }
     }
-    DataShapeNode::MapOption { inner, .. } => {
+    DataShapeNode::MapOption { nominal, inner, .. } => {
       let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
       let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
+      let allow_option_enum = static_hint
+        .and_then(|ty| ty.resolve_to_enum())
+        .is_none_or(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal));
       let is_enum = emit_has_heap_tag(ctx, input, "enum");
       let handled_as_option_enum = ctx.alloc_i32(0);
-      ctx.emit(Instruction::LocalGet(is_enum));
-      ctx.begin_block_if();
-      let ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(ptr));
-      let count = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(count));
-      let vtag = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-      ctx.emit(Instruction::LocalSet(vtag));
+      if allow_option_enum {
+        ctx.emit(Instruction::LocalGet(is_enum));
+        ctx.begin_block_if();
+        let ptr = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(input));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::LocalSet(ptr));
+        let count = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalSet(count));
+        let vtag = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+        ctx.emit(Instruction::LocalSet(vtag));
 
-      ctx.emit(Instruction::LocalGet(vtag));
-      ctx.emit(f64_const(none_tag));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(handled_as_option_enum));
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(vtag));
-      ctx.emit(f64_const(some_tag));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(f64_const(1.0));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(handled_as_option_enum));
-      let item = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
-      ctx.emit(Instruction::LocalSet(item));
-      let inner_decoded = ctx.alloc_local();
-      let inner_ok = ctx.alloc_local_typed(ValType::I32);
-      let inner_err = ctx.alloc_local_typed(ValType::I32);
-      let inner_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *inner, item, None, (inner_decoded, inner_ok, inner_err, inner_path))?;
-      ctx.emit(Instruction::LocalGet(inner_ok));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(inner_decoded));
-      ctx.emit(Instruction::I64ReinterpretF64);
-      ctx.emit(Instruction::LocalGet(item));
-      ctx.emit(Instruction::I64ReinterpretF64);
-      ctx.emit(Instruction::I64Eq);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::Else);
-      emit_option_enum(ctx, Some(inner_decoded))?;
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(inner_err));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      ctx.emit(Instruction::LocalGet(inner_path));
-      ctx.emit(Instruction::LocalSet(error_path));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(vtag));
+        ctx.emit(f64_const(none_tag));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::LocalGet(count));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::I32And);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(handled_as_option_enum));
+        ctx.emit(Instruction::LocalGet(input));
+        ctx.emit(Instruction::LocalSet(decoded));
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(ok));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(vtag));
+        ctx.emit(f64_const(some_tag));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::LocalGet(count));
+        ctx.emit(f64_const(1.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::I32And);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(handled_as_option_enum));
+        let item = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+        ctx.emit(Instruction::LocalSet(item));
+        let inner_decoded = ctx.alloc_local();
+        let inner_ok = ctx.alloc_local_typed(ValType::I32);
+        let inner_err = ctx.alloc_local_typed(ValType::I32);
+        let inner_path = literal_local(ctx, "")?;
+        let inner_hint = hint_option_inner(static_hint, nominal);
+        emit_decode_map_node(
+          ctx,
+          graph,
+          *inner,
+          item,
+          inner_hint.as_ref(),
+          (inner_decoded, inner_ok, inner_err, inner_path),
+        )?;
+        ctx.emit(Instruction::LocalGet(inner_ok));
+        ctx.begin_block_if();
+        ctx.emit(Instruction::LocalGet(inner_decoded));
+        ctx.emit(Instruction::I64ReinterpretF64);
+        ctx.emit(Instruction::LocalGet(item));
+        ctx.emit(Instruction::I64ReinterpretF64);
+        ctx.emit(Instruction::I64Eq);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::LocalGet(input));
+        ctx.emit(Instruction::LocalSet(decoded));
+        ctx.emit(Instruction::Else);
+        emit_option_enum(ctx, Some(inner_decoded))?;
+        ctx.emit(Instruction::LocalSet(decoded));
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(ok));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(inner_err));
+        ctx.emit(Instruction::LocalSet(error_kind));
+        ctx.emit(Instruction::LocalGet(inner_path));
+        ctx.emit(Instruction::LocalSet(error_path));
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+      }
 
       ctx.emit(Instruction::LocalGet(handled_as_option_enum));
       ctx.emit(Instruction::I32Eqz);
@@ -682,7 +839,15 @@ fn emit_decode_map_node(
       let item_ok = ctx.alloc_local_typed(ValType::I32);
       let item_err = ctx.alloc_local_typed(ValType::I32);
       let item_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *item_id, elem, None, (item_val, item_ok, item_err, item_path))?;
+      let inner_hint = hint_list_elem(static_hint);
+      emit_decode_map_node(
+        ctx,
+        graph,
+        *item_id,
+        elem,
+        inner_hint.as_ref(),
+        (item_val, item_ok, item_err, item_path),
+      )?;
       ctx.emit(Instruction::LocalGet(item_ok));
       ctx.begin_block_if();
       emit_list_store_elem(ctx, dst_ptr, i, item_val);
@@ -743,7 +908,15 @@ fn emit_decode_map_node(
         let item_ok = ctx.alloc_local_typed(ValType::I32);
         let item_err = ctx.alloc_local_typed(ValType::I32);
         let item_path = literal_local(ctx, "")?;
-        emit_decode_map_node(ctx, graph, *slot_id, elem, None, (item_val, item_ok, item_err, item_path))?;
+        let slot_hint = hint_tuple_slot(static_hint, idx);
+        emit_decode_map_node(
+          ctx,
+          graph,
+          *slot_id,
+          elem,
+          slot_hint.as_ref(),
+          (item_val, item_ok, item_err, item_path),
+        )?;
         ctx.emit(Instruction::LocalGet(item_ok));
         ctx.begin_block_if();
         ctx.emit(Instruction::LocalGet(dst_ptr));
@@ -754,7 +927,8 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::LocalSet(valid));
         ctx.emit(Instruction::LocalGet(item_err));
         ctx.emit(Instruction::LocalSet(error_kind));
-        ctx.emit(Instruction::LocalGet(item_path));
+        let full_path = prepend_indexed_path(ctx, "[", idx, item_path)?;
+        ctx.emit(Instruction::LocalGet(full_path));
         ctx.emit(Instruction::LocalSet(error_path));
         ctx.emit(Instruction::End);
         ctx.emit(Instruction::End);
@@ -799,16 +973,54 @@ fn emit_decode_map_node(
       let item_ok = ctx.alloc_local_typed(ValType::I32);
       let item_err = ctx.alloc_local_typed(ValType::I32);
       let item_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *item_id, elem, None, (item_val, item_ok, item_err, item_path))?;
+      let inner_hint = hint_set_elem(static_hint);
+      emit_decode_map_node(
+        ctx,
+        graph,
+        *item_id,
+        elem,
+        inner_hint.as_ref(),
+        (item_val, item_ok, item_err, item_path),
+      )?;
       ctx.emit(Instruction::LocalGet(item_ok));
       ctx.begin_block_if();
+      let dup = ctx.alloc_i32(0);
+      let j = ctx.alloc_i32(0);
+      ctx.begin_block();
+      ctx.begin_loop();
+      ctx.emit(Instruction::LocalGet(j));
+      ctx.emit(Instruction::LocalGet(i));
+      ctx.emit(Instruction::I32GeU);
+      ctx.emit(Instruction::LocalGet(dup));
+      ctx.emit(Instruction::I32Or);
+      ctx.emit(Instruction::BrIf(1));
+      let prev = ctx.alloc_local();
+      emit_list_load_elem(ctx, dst_ptr, j);
+      ctx.emit(Instruction::LocalSet(prev));
+      ctx.emit(Instruction::LocalGet(prev));
+      ctx.emit(Instruction::LocalGet(item_val));
+      ctx.call_rt("__rt_value_equal");
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::LocalSet(dup));
+      ctx.emit(Instruction::End);
+      ctx.i32_inc(j);
+      ctx.br_loop();
+      ctx.end_block_loop();
+      ctx.emit(Instruction::LocalGet(dup));
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(valid));
+      ctx.emit(Instruction::Else);
       emit_list_store_elem(ctx, dst_ptr, i, item_val);
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::Else);
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::LocalSet(valid));
       ctx.emit(Instruction::LocalGet(item_err));
       ctx.emit(Instruction::LocalSet(error_kind));
-      ctx.emit(Instruction::LocalGet(item_path));
+      let full_path = prepend_static_path(ctx, ".item", item_path)?;
+      ctx.emit(Instruction::LocalGet(full_path));
       ctx.emit(Instruction::LocalSet(error_path));
       ctx.emit(Instruction::End);
       ctx.i32_inc(i);
@@ -872,16 +1084,17 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::I32Add);
       ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
       ctx.emit(Instruction::LocalSet(raw_v));
+      let (k_hint, v_hint) = hint_map_kv(static_hint);
       let k_val = ctx.alloc_local();
       let k_ok = ctx.alloc_local_typed(ValType::I32);
       let k_err = ctx.alloc_local_typed(ValType::I32);
       let k_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *key, raw_k, None, (k_val, k_ok, k_err, k_path))?;
+      emit_decode_map_node(ctx, graph, *key, raw_k, k_hint.as_ref(), (k_val, k_ok, k_err, k_path))?;
       let v_val = ctx.alloc_local();
       let v_ok = ctx.alloc_local_typed(ValType::I32);
       let v_err = ctx.alloc_local_typed(ValType::I32);
       let v_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *value, raw_v, None, (v_val, v_ok, v_err, v_path))?;
+      emit_decode_map_node(ctx, graph, *value, raw_v, v_hint.as_ref(), (v_val, v_ok, v_err, v_path))?;
       ctx.emit(Instruction::LocalGet(k_ok));
       ctx.emit(Instruction::LocalGet(v_ok));
       ctx.emit(Instruction::I32And);
@@ -899,6 +1112,21 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::Else);
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::LocalSet(valid));
+      ctx.emit(Instruction::LocalGet(k_ok));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(k_err));
+      ctx.emit(Instruction::LocalSet(error_kind));
+      let full_k_path = prepend_static_path(ctx, ".key", k_path)?;
+      ctx.emit(Instruction::LocalGet(full_k_path));
+      ctx.emit(Instruction::LocalSet(error_path));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(v_err));
+      ctx.emit(Instruction::LocalSet(error_kind));
+      let full_v_path = prepend_static_path(ctx, ".value", v_path)?;
+      ctx.emit(Instruction::LocalGet(full_v_path));
+      ctx.emit(Instruction::LocalSet(error_path));
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       ctx.i32_inc(i);
       ctx.br_loop();
@@ -947,7 +1175,7 @@ fn emit_decode_map_node(
       let valid = ctx.alloc_i32(1);
       let all_identical = ctx.alloc_i32(1);
       let values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-      for (idx, (_field, child)) in fields.iter().enumerate() {
+      for (idx, (field, child)) in fields.iter().enumerate() {
         ctx.emit(Instruction::LocalGet(valid));
         ctx.begin_block_if();
         let raw_val = ctx.alloc_local();
@@ -957,7 +1185,8 @@ fn emit_decode_map_node(
         let f_ok = ctx.alloc_local_typed(ValType::I32);
         let f_err = ctx.alloc_local_typed(ValType::I32);
         let f_path = literal_local(ctx, "")?;
-        emit_decode_map_node(ctx, graph, *child, raw_val, None, (values[idx], f_ok, f_err, f_path))?;
+        let field_hint = hint_struct_field(static_hint, nominal, idx);
+        emit_decode_map_node(ctx, graph, *child, raw_val, field_hint.as_ref(), (values[idx], f_ok, f_err, f_path))?;
         ctx.emit(Instruction::LocalGet(f_ok));
         ctx.begin_block_if();
         ctx.emit(Instruction::LocalGet(all_identical));
@@ -973,7 +1202,8 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::LocalSet(valid));
         ctx.emit(Instruction::LocalGet(f_err));
         ctx.emit(Instruction::LocalSet(error_kind));
-        ctx.emit(Instruction::LocalGet(f_path));
+        let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
+        ctx.emit(Instruction::LocalGet(full_path));
         ctx.emit(Instruction::LocalSet(error_path));
         ctx.emit(Instruction::End);
         ctx.emit(Instruction::End);
@@ -1105,7 +1335,7 @@ fn emit_decode_map_node(
       ctx.end_block_loop();
 
       let decoded_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-      for (idx, (_field, child)) in fields.iter().enumerate() {
+      for (idx, (field, child)) in fields.iter().enumerate() {
         ctx.emit(Instruction::LocalGet(valid));
         ctx.begin_block_if();
         ctx.emit(Instruction::LocalGet(seen[idx]));
@@ -1128,7 +1358,8 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::LocalSet(valid));
         ctx.emit(Instruction::LocalGet(f_err));
         ctx.emit(Instruction::LocalSet(error_kind));
-        ctx.emit(Instruction::LocalGet(f_path));
+        let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
+        ctx.emit(Instruction::LocalGet(full_path));
         ctx.emit(Instruction::LocalSet(error_path));
         ctx.emit(Instruction::End);
         ctx.emit(Instruction::Else);
@@ -1168,6 +1399,16 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::End);
     }
     DataShapeNode::Enum { nominal, variants, .. } => {
+      // WASM enum heap objects do not carry a runtime definition tag, so only inputs
+      // with static enum declaration evidence matching `nominal` can be validated safely.
+      let enum_matches_nominal = static_hint
+        .and_then(|ty| ty.resolve_to_enum())
+        .is_some_and(|actual| actual.same_nominal_definition(nominal));
+      if !enum_matches_nominal {
+        ctx.emit(Instruction::I32Const(5));
+        ctx.emit(Instruction::LocalSet(error_kind));
+        return Ok(());
+      }
       let is_enum = emit_has_heap_tag(ctx, input, "enum");
       ctx.emit(Instruction::LocalGet(is_enum));
       ctx.begin_block_if();
@@ -1215,7 +1456,15 @@ fn emit_decode_map_node(
           let p_ok = ctx.alloc_local_typed(ValType::I32);
           let p_err = ctx.alloc_local_typed(ValType::I32);
           let p_path = literal_local(ctx, "")?;
-          emit_decode_map_node(ctx, graph, *pnode, raw_p, None, (values[pidx], p_ok, p_err, p_path))?;
+          let payload_hint = hint_enum_payload(static_hint, nominal, variant, pidx);
+          emit_decode_map_node(
+            ctx,
+            graph,
+            *pnode,
+            raw_p,
+            payload_hint.as_ref(),
+            (values[pidx], p_ok, p_err, p_path),
+          )?;
           ctx.emit(Instruction::LocalGet(p_ok));
           ctx.begin_block_if();
           ctx.emit(Instruction::LocalGet(all_identical));
@@ -1231,7 +1480,8 @@ fn emit_decode_map_node(
           ctx.emit(Instruction::LocalSet(valid));
           ctx.emit(Instruction::LocalGet(p_err));
           ctx.emit(Instruction::LocalSet(error_kind));
-          ctx.emit(Instruction::LocalGet(p_path));
+          let full_path = prepend_indexed_path(ctx, ".payload[", pidx, p_path)?;
+          ctx.emit(Instruction::LocalGet(full_path));
           ctx.emit(Instruction::LocalSet(error_path));
           ctx.emit(Instruction::End);
           ctx.emit(Instruction::End);
