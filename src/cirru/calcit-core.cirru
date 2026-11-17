@@ -10538,6 +10538,8 @@
               :code $ quote $ do
                 assert= (#{} :a :b)
                   keys-non-nil $ &{} :a false :b 0 :c nil
+                assert= (#{} :b)
+                  keys-non-nil $ &{} :a 1 :a nil :b false
                 assert= (#{} :a :b)
                   let
                       m $ &{} :a false :b true
@@ -12943,8 +12945,13 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |orders-list-with-default-comparator)
-              :code $ quote $ assert= ([] 1 2 3 4)
-                sort $ [] 4 3 2 1
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  sort $ [] 4 3 2 1
+                assert= ([] 16392 16393)
+                  sort $ [] 16392 16393
+                assert= ([] 16392 16393)
+                  sort $ [] 16393 16392
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |sorts-nan-after-numbers)
               :code $ quote $ let

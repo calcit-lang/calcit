@@ -895,8 +895,10 @@ fn emit_parse_scalar_map(
   ctx.emit(Instruction::LocalGet(flat_root));
   ctx.call_rt("__rt_map_root_from_flat");
   let hashed_root = ctx.alloc_local_typed(ValType::I32);
+  let actual_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
-  let map_ptr = emit_alloc_map_with_root(ctx, count, hashed_root);
+  ctx.emit(Instruction::LocalSet(actual_count));
+  let map_ptr = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
 
   emit_scan_scalar_map_entries(
     ctx,

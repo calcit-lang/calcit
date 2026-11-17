@@ -279,9 +279,15 @@ pub(super) fn emit_foldl_proc_call(
   });
   let prev_a = ctx.locals.insert(sym_a.as_ref().to_owned(), acc);
   let prev_b = ctx.locals.insert(sym_b.as_ref().to_owned(), elem);
-  let prev_type_a = ctx.local_types.remove(sym_a.as_ref());
-  let prev_type_b = ctx.local_types.remove(sym_b.as_ref());
   let [type_a, type_b] = types;
+  let prev_type_a = match &type_a {
+    Some(ty) => ctx.local_types.insert(sym_a.to_string(), WasmTypeEvidence::contract(ty.clone())),
+    None => ctx.local_types.remove(sym_a.as_ref()),
+  };
+  let prev_type_b = match &type_b {
+    Some(ty) => ctx.local_types.insert(sym_b.to_string(), WasmTypeEvidence::contract(ty.clone())),
+    None => ctx.local_types.remove(sym_b.as_ref()),
+  };
   let expr_a = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym_a.clone(),
@@ -297,11 +303,21 @@ pub(super) fn emit_foldl_proc_call(
     type_info: type_b.unwrap_or_else(|| DYNAMIC_TYPE.clone()),
   });
   let result = emit_proc_call(ctx, proc, &[expr_a, expr_b]);
-  if let Some(annotation) = prev_type_a {
-    ctx.local_types.insert(sym_a.to_string(), annotation);
+  match prev_type_a {
+    Some(annotation) => {
+      ctx.local_types.insert(sym_a.to_string(), annotation);
+    }
+    None => {
+      ctx.local_types.remove(sym_a.as_ref());
+    }
   }
-  if let Some(annotation) = prev_type_b {
-    ctx.local_types.insert(sym_b.to_string(), annotation);
+  match prev_type_b {
+    Some(annotation) => {
+      ctx.local_types.insert(sym_b.to_string(), annotation);
+    }
+    None => {
+      ctx.local_types.remove(sym_b.as_ref());
+    }
   }
   match prev_a {
     Some(v) => {
@@ -599,23 +615,7 @@ fn emit_unary_step_with_type(
       emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[arg]);
       Ok(())
     }
-    FoldlCallKind::Inline(closure) => {
-      if let Some((param, annotation)) = closure.params.first().zip(annotation) {
-        let prev_type = ctx.local_types.insert(param.clone(), WasmTypeEvidence::contract(annotation));
-        let res = emit_inline_closure_body(ctx, closure, &[arg]);
-        match prev_type {
-          Some(prev) => {
-            ctx.local_types.insert(param.clone(), prev);
-          }
-          None => {
-            ctx.local_types.remove(param);
-          }
-        }
-        res
-      } else {
-        emit_inline_closure_body(ctx, closure, &[arg])
-      }
-    }
+    FoldlCallKind::Inline(closure) => emit_inline_closure_body_with_types(ctx, closure, &[arg], &[annotation]),
     FoldlCallKind::Proc(proc) => {
       let sym: Arc<str> = Arc::from("__hof_arg__");
       let dummy_info = Arc::new(CalcitSymbolInfo {
@@ -1446,7 +1446,7 @@ mod tests {
         fn_arity: HashMap::from([("calcit.core/nil?".into(), 1)]),
         fn_has_rest: HashMap::new(),
         runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
-        tag_index: HashMap::from([("struct".into(), 1), ("flag".into(), 2), ("number".into(), 3)]),
+        tag_index: HashMap::from([("struct".into(), 1), ("flag".into(), 2), ("number".into(), 3), ("list".into(), 4)]),
         struct_layouts,
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
@@ -1482,7 +1482,55 @@ mod tests {
       }),
       def_id: None,
     });
-    emit_update(&mut ctx, &[receiver, Calcit::Tag(cirru_edn::EdnTag::from("flag")), nil_callee])
-      .expect("Struct update with Bool field and nil? callback must receive field type evidence");
+    emit_update(
+      &mut ctx,
+      &[receiver.clone(), Calcit::Tag(cirru_edn::EdnTag::from("flag")), nil_callee],
+    )
+    .expect("Struct update with Bool field and nil? callback must receive field type evidence");
+
+    let unresolved_param = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("x"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.hof"),
+        at_def: Arc::from("cb"),
+      }),
+      location: None,
+      type_info: crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+    });
+    let inline_nil_lambda = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.hof")),
+      Calcit::Symbol {
+        sym: Arc::from("cb"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.hof"),
+          at_def: Arc::from("cb"),
+        }),
+        location: None,
+      },
+      Calcit::from(vec![unresolved_param.clone()]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::NilQuestion), unresolved_param]),
+    ]);
+    emit_update(
+      &mut ctx,
+      &[receiver, Calcit::Tag(cirru_edn::EdnTag::from("flag")), inline_nil_lambda.clone()],
+    )
+    .expect("Struct update with inline nil? callback and unresolved param must receive field type evidence");
+
+    let list_type = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Bool)));
+    ctx.locals.insert("xs".into(), 1);
+    ctx.local_types.insert("xs".into(), WasmTypeEvidence::contract(list_type.clone()));
+    let list_receiver = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("xs"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.hof"),
+        at_def: Arc::from("test"),
+      }),
+      location: None,
+      type_info: list_type,
+    });
+    emit_map(&mut ctx, &[list_receiver, inline_nil_lambda])
+      .expect("map over List<Bool> with inline nil? callback and unresolved param must receive element type evidence");
   }
 }

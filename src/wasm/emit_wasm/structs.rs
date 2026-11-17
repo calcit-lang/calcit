@@ -1055,7 +1055,10 @@ pub(super) fn enum_identity_tag(enum_def: &CalcitEnumDef) -> String {
   let bounds = enum_def
     .where_bounds()
     .iter()
-    .map(|b| format!("{b:?}"))
+    .map(|b| {
+      let traits = b.traits.iter().map(|t| t.name.ref_str()).collect::<Vec<_>>().join("+");
+      format!("{}:{traits}", b.name)
+    })
     .collect::<Vec<_>>()
     .join(",");
   let variants = enum_def
@@ -1065,16 +1068,15 @@ pub(super) fn enum_identity_tag(enum_def: &CalcitEnumDef) -> String {
       let payloads = v
         .payload_types()
         .iter()
-        .map(|t| format!("{}", t.to_calcit()))
+        .map(|t| format!("{}", t.to_type_edn()))
         .collect::<Vec<_>>()
         .join(",");
       format!("{}:{:08}:[{}]", v.tag, v.payload_types().len(), payloads)
     })
     .collect::<Vec<_>>()
     .join(";");
-  let impls = enum_def.impls().iter().map(|imp| format!("{imp:?}")).collect::<Vec<_>>().join(";");
   format!(
-    "__enum_def__:{}:{}:{:08}:<{}>:{:08}:<{}>:{:08}:{{{}}}:{:08}:[{}]",
+    "__enum_def__:{}:{}:{:08}:<{}>:{:08}:<{}>:{:08}:{{{}}}",
     def_ref,
     enum_def.name(),
     enum_def.generics().len(),
@@ -1082,9 +1084,7 @@ pub(super) fn enum_identity_tag(enum_def: &CalcitEnumDef) -> String {
     enum_def.where_bounds().len(),
     bounds,
     enum_def.variants().len(),
-    variants,
-    enum_def.impls().len(),
-    impls
+    variants
   )
 }
 

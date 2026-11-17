@@ -5578,10 +5578,29 @@ fn inline_closure_tail(expr: &Calcit) -> (Vec<&Calcit>, &Calcit) {
 }
 
 fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
+  let param_types = vec![None; param_locals.len()];
+  emit_inline_closure_body_with_types(ctx, closure, param_locals, &param_types)
+}
+
+fn emit_inline_closure_body_with_types(
+  ctx: &mut WasmGenCtx,
+  closure: &InlineClosure,
+  param_locals: &[u32],
+  param_types: &[Option<Arc<CalcitTypeAnnotation>>],
+) -> Result<(), String> {
   if closure.body.iter().any(check_uses_recur) {
     return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
   }
-  let args = param_locals.iter().map(|local| (InlineArgument::Value(*local), None)).collect();
+  let args = param_locals
+    .iter()
+    .enumerate()
+    .map(|(idx, local)| {
+      (
+        InlineArgument::Value(*local),
+        param_types.get(idx).and_then(|ty| ty.clone()).map(WasmTypeEvidence::contract),
+      )
+    })
+    .collect();
   let bindings = bind_inline_closure_args(ctx, closure, args)?;
   emit_inline_closure_with_bindings(ctx, closure, bindings)
 }
@@ -6100,6 +6119,32 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
     })
     .collect::<Option<Vec<_>>>()?;
 
+  fn widens_closed_element_to_dynamic(actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>) -> bool {
+    let actual = CalcitTypeAnnotation::expand_schema_alias(actual);
+    let expected = CalcitTypeAnnotation::expand_schema_alias(expected);
+    if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+      && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Never)
+    {
+      return true;
+    }
+    match (actual.as_ref(), expected.as_ref()) {
+      (CalcitTypeAnnotation::List(a), CalcitTypeAnnotation::List(e)) | (CalcitTypeAnnotation::Set(a), CalcitTypeAnnotation::Set(e)) => {
+        widens_closed_element_to_dynamic(a, e)
+      }
+      (CalcitTypeAnnotation::Map(ak, av), CalcitTypeAnnotation::Map(ek, ev)) => {
+        widens_closed_element_to_dynamic(ak, ek) || widens_closed_element_to_dynamic(av, ev)
+      }
+      (CalcitTypeAnnotation::Tuple(items), CalcitTypeAnnotation::List(e)) => {
+        items.iter().any(|item| widens_closed_element_to_dynamic(item, e))
+      }
+      (CalcitTypeAnnotation::Tuple(a_items), CalcitTypeAnnotation::Tuple(e_items)) => a_items
+        .iter()
+        .zip(e_items.iter())
+        .any(|(a, e)| widens_closed_element_to_dynamic(a, e)),
+      _ => false,
+    }
+  }
+
   Some(
     actuals
       .into_iter()
@@ -6116,6 +6161,7 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
           && actual.annotation.is_proven_for(&substituted)
           && !substituted.is_proven_for(&actual.annotation)
           && !matches!(substituted.as_ref(), CalcitTypeAnnotation::Dynamic)
+          && !widens_closed_element_to_dynamic(&actual.annotation, &substituted)
         {
           WasmTypeEvidence::contract(substituted)
         } else {
@@ -7492,7 +7538,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
-        "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
+        "keys-non-nil"
+          if args_list.len() == 1
+            && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+            && !ctx.lambda_locals.contains_key(name)
+            && !ctx.locals.contains_key(name) =>
+        {
+          return emit_map_keys_non_nil(ctx, &args_list);
+        }
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
@@ -8186,6 +8239,55 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
+      let a_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let b_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let is_proven_numeric_scalar = |ty: Option<&CalcitTypeAnnotation>| {
+        matches!(
+          ty,
+          Some(
+            CalcitTypeAnnotation::Number
+              | CalcitTypeAnnotation::Numeric(_)
+              | CalcitTypeAnnotation::Bool
+              | CalcitTypeAnnotation::Nil
+              | CalcitTypeAnnotation::Unit
+          )
+        )
+      };
+      if is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()) {
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Lt);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.emit(f64_const(-1.0));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Gt);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.emit(f64_const(1.0));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::F64ConvertI32U);
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::F64ConvertI32U);
+        ctx.emit(Instruction::F64Sub);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+        return Ok(());
+      }
+      if matches!(a_ty.as_deref(), Some(CalcitTypeAnnotation::String)) && matches!(b_ty.as_deref(), Some(CalcitTypeAnnotation::String))
+      {
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.call_rt("__rt_str_compare");
+        return Ok(());
+      }
       // Strings are heap pointers: ordering them as numbers would compare
       // allocation addresses, so dispatch to the lexicographic runtime compare.
       // A string sorts after every non-string, matching native ordering.
@@ -14278,5 +14380,105 @@ mod tests {
     assert_ne!(super::enum_identity_tag(&original), super::enum_identity_tag(&arity));
     assert!(super::enum_identity_tag(&original) > super::enum_identity_tag(&different));
     assert!(super::enum_identity_tag(&original) < super::enum_identity_tag(&arity));
+
+    let list_number_enum = make_enum(vec![Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("::"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.enum"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(EdnTag::from("list")),
+      Calcit::Tag(EdnTag::from("number")),
+    ])]);
+    let list_string_enum = make_enum(vec![Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("::"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.enum"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(EdnTag::from("list")),
+      Calcit::Tag(EdnTag::from("string")),
+    ])]);
+    assert_ne!(
+      super::enum_identity_tag(&list_number_enum),
+      super::enum_identity_tag(&list_string_enum)
+    );
+
+    let list_bool = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Bool)));
+    let list_dyn = Arc::new(CalcitTypeAnnotation::List(crate::wasm::host::calcit::DYNAMIC_TYPE.clone()));
+    let mut ctx = WasmGenCtx::new(
+      0,
+      WasmCompileEnv {
+        function_value_dependencies: Default::default(),
+        fn_index: HashMap::new(),
+        fn_arity: HashMap::new(),
+        fn_has_rest: HashMap::new(),
+        runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
+        tag_index: HashMap::from([("list".into(), 1)]),
+        struct_layouts: Default::default(),
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        value_imports: HashMap::new(),
+        static_fn_defs: HashMap::from([(
+          "tests.spec/check-list".into(),
+          Arc::new(StaticFnDef {
+            params: vec!["xs".into(), "tag".into()],
+            arg_types: vec![list_dyn, crate::wasm::host::calcit::DYNAMIC_TYPE.clone()],
+            callback_arities: HashMap::new(),
+            fixed_arity: true,
+            body: vec![Calcit::from(vec![
+              Calcit::Symbol {
+                sym: Arc::from("map"),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: Arc::from(crate::wasm::host::calcit::CORE_NS),
+                  at_def: Arc::from("check-list"),
+                }),
+                location: None,
+              },
+              Calcit::Local(CalcitLocal {
+                idx: 0,
+                sym: Arc::from("xs"),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: Arc::from("tests.spec"),
+                  at_def: Arc::from("check-list"),
+                }),
+                location: None,
+                type_info: crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+              }),
+              Calcit::Proc(CalcitProc::NilQuestion),
+            ])],
+            nil_sensitive: true,
+            trait_sensitive: false,
+            method_sensitive: false,
+          }),
+        )]),
+        fn_table_index: HashMap::new(),
+        host_imports: HashMap::new(),
+        target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
+      },
+    );
+    ctx.locals.insert("arg".into(), 0);
+    ctx.local_types.insert("arg".into(), WasmTypeEvidence::contract(list_bool.clone()));
+    let arg_expr = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("arg"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.spec"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+      type_info: list_bool,
+    });
+    assert!(
+      super::emit_specialized_static_call(&mut ctx, "tests.spec/check-list", &[arg_expr, Calcit::Number(1.0)])
+        .expect("List<Bool> passed to List<Dynamic> parameter must preserve closed element evidence for nil?")
+    );
   }
 }

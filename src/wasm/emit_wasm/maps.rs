@@ -38,8 +38,10 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::LocalGet(root));
   ctx.call_rt("__rt_map_root_from_flat");
   let hashed_root = ctx.alloc_local_typed(ValType::I32);
+  let actual_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
-  let ptr = emit_alloc_map_with_root(ctx, count_local, hashed_root);
+  ctx.emit(Instruction::LocalSet(actual_count));
+  let ptr = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
   ctx.ptr_to_f64(ptr);
   Ok(())
 }
@@ -334,8 +336,10 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     ctx.emit(Instruction::LocalGet(root));
     ctx.call_rt("__rt_map_root_from_flat");
     let hashed_root = ctx.alloc_local_typed(ValType::I32);
+    let actual_count = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalSet(hashed_root));
-    emit_alloc_map_with_root(ctx, count_local, hashed_root)
+    ctx.emit(Instruction::LocalSet(actual_count));
+    emit_alloc_map_with_root(ctx, actual_count, hashed_root)
   } else {
     let map_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
     let Some(CalcitTypeAnnotation::Map(_, val_type)) = map_type.as_deref() else {
