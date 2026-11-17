@@ -10529,10 +10529,24 @@
           :schema $ quote $ Fn (Map K V)
             -> $ Set K
             :generics K V
-          :tests $ [] $ %{} 'TestEntry (:name |omits-nil-map-values)
-            :code $ quote $ assert= (#{} :a :b)
-              keys-non-nil $ {,} :a 1 :b 2 :c nil
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |omits-nil-map-values)
+              :code $ quote $ assert= (#{} :a :b)
+                keys-non-nil $ {,} :a 1 :b 2 :c nil
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-false-and-zero-values)
+              :code $ quote $ do
+                assert= (#{} :a :b)
+                  keys-non-nil $ &{} :a false :b 0 :c nil
+                assert= (#{} :a :b)
+                  let
+                      m $ &{} :a false :b true
+                    keys-non-nil m
+                assert= (#{} :a :b)
+                  let
+                      m $ &{} :a 0 :b 1
+                    keys-non-nil m
+              :tags $ #{} :core :unit
         'last $ %{} 'CodeEntry
           :doc "|Return the last item as Option<T>; empty collections produce none."
           :code $ quote $ defn last (xs)
@@ -14057,7 +14071,10 @@
               :code $ quote $ let
                   path $ FsPath :value |a
                   changed $ update path :value $ fn (s) (&str:concat s |/b)
+                  checked $ update path :value $ fn (s)
+                    if (nil? s) |nil |non-nil
                 assert= |a/b $ :value changed
+                assert= |non-nil $ :value checked
                 assert= |a $ :value path
                 assert= path $ update path :missing $ fn (s) (raise |unexpected-callback)
               :tags $ #{} :core :unit

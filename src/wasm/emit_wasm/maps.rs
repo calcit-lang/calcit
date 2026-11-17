@@ -285,10 +285,94 @@ pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   Ok(())
 }
 
+fn extract_literal_map_pairs(expr: &Calcit) -> Option<Vec<Calcit>> {
+  let Calcit::List(xs) = expr else {
+    return None;
+  };
+  if matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeMap))) && (xs.len() - 1).is_multiple_of(2) {
+    return Some(xs.iter().skip(1).cloned().collect());
+  }
+  let is_core_call = |head: &Calcit, name: &str| match head {
+    Calcit::Import(import) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == name,
+    Calcit::Symbol { sym, info, .. } => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == name,
+    _ => false,
+  };
+  if xs.len() == 2
+    && is_core_call(&xs[0], "pairs-map")
+    && let Calcit::List(chunks_xs) = &xs[1]
+    && chunks_xs.len() == 3
+    && is_core_call(&chunks_xs[0], "chunks")
+    && matches!(chunks_xs.get(2), Some(Calcit::Number(n)) if *n == 2.0)
+    && let Calcit::List(list_xs) = &chunks_xs[1]
+    && (matches!(list_xs.first(), Some(Calcit::Proc(CalcitProc::List))) || list_xs.first().is_some_and(|h| is_core_call(h, "[]")))
+    && (list_xs.len() - 1).is_multiple_of(2)
+  {
+    return Some(list_xs.iter().skip(1).cloned().collect());
+  }
+  None
+}
+
 /// `keys-non-nil map` — return a set of keys whose values are not nil.
 pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "keys-non-nil")?;
-  let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let map_ptr = if let Some(pair_args) = extract_literal_map_pairs(&args[0]) {
+    let count = pair_args.len() / 2;
+    let count_local = ctx.alloc_i32(count as i32);
+    let total_slots = ctx.alloc_i32((count * 2 + 1) as i32);
+    let root = emit_alloc_with_count(ctx, count_local, total_slots, "map");
+    for i in 0..count {
+      ctx.emit(Instruction::LocalGet(root));
+      emit_expr(ctx, &pair_args[i * 2])?;
+      ctx.emit(Instruction::F64Store(mem_arg_f64((8 + i * 16) as u64)));
+      ctx.emit(Instruction::LocalGet(root));
+      emit_nil_predicate(ctx, std::slice::from_ref(&pair_args[i * 2 + 1]))?;
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::F64Store(mem_arg_f64((16 + i * 16) as u64)));
+    }
+    ctx.emit(Instruction::LocalGet(root));
+    ctx.call_rt("__rt_map_root_from_flat");
+    let hashed_root = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalSet(hashed_root));
+    emit_alloc_map_with_root(ctx, count_local, hashed_root)
+  } else {
+    let map_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+    let Some(CalcitTypeAnnotation::Map(_, val_type)) = map_type.as_deref() else {
+      return Err(
+        "E_WASM_NIL_TYPE_EVIDENCE: keys-non-nil requires a statically proven Map value type in the current scalar ABI".to_owned(),
+      );
+    };
+    let val_type = CalcitTypeAnnotation::expand_schema_alias(val_type);
+    match val_type.as_ref() {
+      CalcitTypeAnnotation::Nil => {
+        emit_expr(ctx, &args[0])?;
+        ctx.emit(Instruction::Drop);
+        let zero = ctx.alloc_i32(0);
+        let one = ctx.alloc_i32(1);
+        let dst = emit_alloc_with_count(ctx, zero, one, "set");
+        ctx.ptr_to_f64(dst);
+        return Ok(());
+      }
+      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if wasm_non_nil_value_is_nonzero(inner) => {}
+      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
+        return Err(format!(
+          "E_WASM_NIL_TYPE_EVIDENCE: keys-non-nil cannot distinguish nil from a zero-valued nil-join {} payload in the current scalar ABI",
+          inner.to_brief_string()
+        ));
+      }
+      annotation if nil_type_evidence_is_open(annotation) => {
+        return Err(format!(
+          "E_WASM_NIL_TYPE_EVIDENCE: keys-non-nil cannot distinguish nil from false or 0 for open type `{}`",
+          annotation.to_brief_string()
+        ));
+      }
+      _ => {
+        return emit_map_keys(ctx, args);
+      }
+    }
+    emit_ptr_to_i32(ctx, &args[0])?
+  };
   let count = emit_load_count_i32(ctx, map_ptr);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 

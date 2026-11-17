@@ -70,7 +70,7 @@ use structs::{
   StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_definition,
   emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def,
   emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
-  emit_struct_to_map, emit_struct_with_at, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
+  emit_struct_to_map, emit_struct_with_at, enum_identity_tag, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -7125,11 +7125,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       ctx.emit(f64_const(id as f64));
     }
     Calcit::EnumDef(e) => {
-      let name = e.name().to_string();
+      let key = enum_identity_tag(e);
       let id = *ctx
         .tag_index
-        .get(&name)
-        .ok_or_else(|| format!("unknown enum definition tag in WASM: {name}"))?;
+        .get(&key)
+        .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", e.name()))?;
       ctx.emit(f64_const(id as f64));
     }
     Calcit::Local(local) => {
@@ -7169,11 +7169,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         let id = ctx.struct_layouts.id(&struct_def)?;
         ctx.emit(f64_const(id as f64));
       } else if let Ok(enum_def) = resolve_enum_ref(expr) {
-        let name = enum_def.name().to_string();
+        let key = enum_identity_tag(&enum_def);
         let id = *ctx
           .tag_index
-          .get(&name)
-          .ok_or_else(|| format!("unknown enum definition tag in WASM: {name}"))?;
+          .get(&key)
+          .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", enum_def.name()))?;
         ctx.emit(f64_const(id as f64));
       } else if let Some(&slot) = ctx
         .fn_table_index
@@ -10947,7 +10947,7 @@ fn collect_all_tags_from(
   if let Some(program_data) = program_data {
     for (ns, file) in program_data {
       for (name, compiled) in &file.defs {
-        if let Some(value @ Calcit::StructDef(_)) = program::lookup_runtime_ready(ns, name) {
+        if let Some(value @ (Calcit::StructDef(_) | Calcit::EnumDef(_))) = program::lookup_runtime_ready(ns, name) {
           collect_tags_from_expr(&value, &mut tags);
         }
         for code in compiled
@@ -10981,6 +10981,7 @@ fn collect_all_tags_from(
             },
           };
           if let Some(enum_def) = enum_def {
+            tags.push(enum_identity_tag(&enum_def));
             tags.extend(enum_def.variants().iter().map(|variant| variant.tag.ref_str().to_owned()));
           }
         }
@@ -11011,6 +11012,11 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
     Calcit::Tag(t) => {
       tags.push(t.to_string());
     }
+    Calcit::Local(local) => {
+      if let Some(enum_def) = CalcitTypeAnnotation::expand_schema_alias(&local.type_info).resolve_to_enum() {
+        tags.push(enum_identity_tag(&enum_def));
+      }
+    }
     Calcit::List(xs) => {
       for x in xs.iter() {
         collect_tags_from_expr(x, tags);
@@ -11023,7 +11029,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
       }
     }
     Calcit::EnumDef(e) => {
-      tags.push(e.name().to_string());
+      tags.push(enum_identity_tag(e));
       for v in e.variants() {
         tags.push(v.tag.to_string());
       }
@@ -11036,7 +11042,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
           tags.push(f.to_string());
         }
       } else if let Ok(enum_def) = resolve_enum_ref(expr) {
-        tags.push(enum_def.name().to_string());
+        tags.push(enum_identity_tag(&enum_def));
         for v in enum_def.variants() {
           tags.push(v.tag.to_string());
         }
@@ -14251,5 +14257,26 @@ mod tests {
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));
+  }
+
+  #[test]
+  fn enum_identity_and_collection_helper_guards_preserve_type_evidence() {
+    let make_enum = |payloads: Vec<Calcit>| {
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Entry"), vec![EdnTag::from("item")])),
+        values: Arc::new(vec![Calcit::from(payloads)]),
+      })
+      .expect("valid enum def")
+    };
+    let original = make_enum(vec![Calcit::Tag(EdnTag::from("string"))]);
+    let equivalent = make_enum(vec![Calcit::Tag(EdnTag::from("string"))]);
+    let different = make_enum(vec![Calcit::Tag(EdnTag::from("number"))]);
+    let arity = make_enum(vec![Calcit::Tag(EdnTag::from("string")), Calcit::Tag(EdnTag::from("string"))]);
+
+    assert_eq!(super::enum_identity_tag(&original), super::enum_identity_tag(&equivalent));
+    assert_ne!(super::enum_identity_tag(&original), super::enum_identity_tag(&different));
+    assert_ne!(super::enum_identity_tag(&original), super::enum_identity_tag(&arity));
+    assert!(super::enum_identity_tag(&original) > super::enum_identity_tag(&different));
+    assert!(super::enum_identity_tag(&original) < super::enum_identity_tag(&arity));
   }
 }

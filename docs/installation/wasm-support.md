@@ -57,7 +57,7 @@ aliases:
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
 | 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
 | `&exclude` 排除不同种类的标量 | supported-with-type-evidence | 如果集合成员与待排除值已证明属于不同标量种类，按原顺序求值后返回原集合。适用于 Number 与 Bool 等共享 WASM 数值表示的种类 | `calcit.core/exclude#distinguishes-disjoint-scalar-kinds` |
-| 默认比较器的 `sort` | supported（静态证明标量/字符串元素的列表） | 开放元素类型仍需显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator`、`calcit.core/sort#sorts-nan-after-numbers` |
+| 默认比较器的 `sort` | supported（静态证明的同种标量/字符串列表或 Tuple） | Tag 及开放/异构元素类型仍需显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator`、`calcit.core/sort#sorts-nan-after-numbers` |
 | `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
@@ -169,7 +169,7 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 - 边界检查忽略注释（含块注释）与字符串、字符字面量，并展开多行与嵌套的 `use` 分组，要求这五个模块名前面是 `calcit::wasm::`、`crate::wasm::`，或已用 `use calcit::wasm;` / `use calcit::wasm::{self, …}` 引入的 `wasm::`；它不解析 `as` 别名、`super::` 和宏生成的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
-- `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
+- `update` 的接收者为 Struct 时，仅支持静态证明的具名 Struct 与字面量 tag key；开放类型或动态 key 的 Struct 接收者在 WASM 上仍会 trap，native 会改写对应字段。
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。
 - `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。
 - `=`、`&compare` 和缺少具体标量证据的 `type-of` 仍使用堆值判定（整数、位于已分配堆内、ptr-8 处为 `HEAP_MAGIC`）；没有 NaN-boxing，开放／可空边界仍可能无法区分同值标量与指针。具体 Number、Bool、Nil、Unit 的静态证据不受该猜测覆盖。

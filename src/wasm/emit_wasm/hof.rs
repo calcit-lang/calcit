@@ -577,6 +577,21 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// Emit a call with the element evidence from the actual source collection.
 fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32, source_collection: Option<&Calcit>) -> Result<(), String> {
+  let annotation = source_collection
+    .and_then(|source| infer_wasm_static_type(ctx, source))
+    .and_then(|annotation| match annotation.as_ref() {
+      CalcitTypeAnnotation::List(element) | CalcitTypeAnnotation::Set(element) => Some(element.clone()),
+      _ => None,
+    });
+  emit_unary_step_with_type(ctx, kind, arg, annotation)
+}
+
+fn emit_unary_step_with_type(
+  ctx: &mut WasmGenCtx,
+  kind: &FoldlCallKind,
+  arg: u32,
+  annotation: Option<Arc<CalcitTypeAnnotation>>,
+) -> Result<(), String> {
   use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
   match kind {
@@ -584,21 +599,34 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32, source_
       emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[arg]);
       Ok(())
     }
-    FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[arg]),
+    FoldlCallKind::Inline(closure) => {
+      if let Some((param, annotation)) = closure.params.first().zip(annotation) {
+        let prev_type = ctx.local_types.insert(param.clone(), WasmTypeEvidence::contract(annotation));
+        let res = emit_inline_closure_body(ctx, closure, &[arg]);
+        match prev_type {
+          Some(prev) => {
+            ctx.local_types.insert(param.clone(), prev);
+          }
+          None => {
+            ctx.local_types.remove(param);
+          }
+        }
+        res
+      } else {
+        emit_inline_closure_body(ctx, closure, &[arg])
+      }
+    }
     FoldlCallKind::Proc(proc) => {
-      let annotation = source_collection
-        .and_then(|source| infer_wasm_static_type(ctx, source))
-        .and_then(|annotation| match annotation.as_ref() {
-          CalcitTypeAnnotation::List(element) | CalcitTypeAnnotation::Set(element) => Some(element.clone()),
-          _ => None,
-        });
       let sym: Arc<str> = Arc::from("__hof_arg__");
       let dummy_info = Arc::new(CalcitSymbolInfo {
         at_ns: Arc::from("wasm"),
         at_def: Arc::from("__hof"),
       });
       let prev = ctx.locals.insert(sym.as_ref().to_owned(), arg);
-      let prev_type = ctx.local_types.remove(sym.as_ref());
+      let prev_type = match &annotation {
+        Some(ty) => ctx.local_types.insert(sym.to_string(), WasmTypeEvidence::contract(ty.clone())),
+        None => ctx.local_types.remove(sym.as_ref()),
+      };
       let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
         idx: 0,
         sym: sym.clone(),
@@ -607,8 +635,13 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32, source_
         type_info: annotation.unwrap_or_else(|| DYNAMIC_TYPE.clone()),
       });
       let result = emit_proc_call(ctx, proc, &[expr]);
-      if let Some(annotation) = prev_type {
-        ctx.local_types.insert(sym.to_string(), annotation);
+      match prev_type {
+        Some(annotation) => {
+          ctx.local_types.insert(sym.to_string(), annotation);
+        }
+        None => {
+          ctx.local_types.remove(sym.as_ref());
+        }
       }
       match prev {
         Some(v) => {
@@ -667,6 +700,18 @@ fn emit_binary_step_ie(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, idx: u32, ele
 
 /// Resolve a HOF callee for the argument count supplied by its caller.
 fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
+  if expected_arity == 1
+    && match callee {
+      Calcit::Proc(CalcitProc::NilQuestion) => true,
+      Calcit::Import(import) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "nil?",
+      Calcit::Symbol { sym, info, .. } if !ctx.locals.contains_key(sym.as_ref()) => {
+        info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == "nil?"
+      }
+      _ => false,
+    }
+  {
+    return Ok(FoldlCallKind::Proc(CalcitProc::NilQuestion));
+  }
   if let Some(closure) = resolve_inline_closure(ctx, callee) {
     return Ok(FoldlCallKind::Inline(closure));
   }
@@ -1035,9 +1080,8 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// unchanged without calling `f`; the receiver kind is dispatched at runtime.
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "update")?;
-  if let Some(struct_def) = infer_wasm_static_type(ctx, &args[0])
-    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
-    .and_then(|ty| ty.resolve_to_struct())
+  let receiver_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  if let Some(struct_def) = receiver_type.as_ref().and_then(|ty| ty.resolve_to_struct())
     && let Calcit::Tag(field) = &args[1]
   {
     let receiver = ctx.alloc_local();
@@ -1047,13 +1091,29 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
     ctx.emit(Instruction::Drop);
     let kind = resolve_unary_callee(ctx, &args[2]).map_err(|e| format!("update: {e}"))?;
     if let Some(slot) = struct_def.fields.iter().position(|f| f == field) {
+      let field_type = struct_def.field_types.get(slot).map(|ft| {
+        if let Some(CalcitTypeAnnotation::Struct(_, type_args)) = receiver_type.as_deref()
+          && !struct_def.generics.is_empty()
+          && !type_args.is_empty()
+        {
+          let bindings = struct_def
+            .generics
+            .iter()
+            .cloned()
+            .zip(type_args.iter().cloned())
+            .collect::<HashMap<_, _>>();
+          ft.substitute_type_vars(&bindings)
+        } else {
+          ft.clone()
+        }
+      });
       let cur_val = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(receiver));
       ctx.emit(Instruction::I32TruncF64U);
       ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + slot) * 8) as u64)));
       ctx.emit(Instruction::LocalSet(cur_val));
       let new_val = ctx.alloc_local();
-      emit_unary_step(ctx, &kind, cur_val, None)?;
+      emit_unary_step_with_type(ctx, &kind, cur_val, field_type)?;
       ctx.emit(Instruction::LocalSet(new_val));
       return super::structs::emit_struct_update_from_locals(ctx, receiver, new_val, slot, field.ref_str());
     }
@@ -1285,7 +1345,7 @@ mod tests {
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
-        runtime_fn_index: HashMap::new(),
+        runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),
         string_pool: HashMap::new(),
@@ -1365,5 +1425,64 @@ mod tests {
         );
       }
     }
+  }
+
+  #[test]
+  fn struct_update_passes_field_type_to_nil_predicate_callback() {
+    let mut struct_def = CalcitStructDef::from_fields(cirru_edn::EdnTag::from("Flagged"), vec![cirru_edn::EdnTag::from("flag")]);
+    struct_def.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Bool)]);
+    let struct_def = Arc::new(struct_def);
+    let mut struct_layouts = StructLayouts::default();
+    struct_layouts
+      .ids
+      .insert(super::structs::StructIdentity::from(struct_def.as_ref()), 1);
+    struct_layouts.field_tags.insert(1, vec![2]);
+
+    let mut ctx = WasmGenCtx::new(
+      0,
+      WasmCompileEnv {
+        function_value_dependencies: Default::default(),
+        fn_index: HashMap::from([("calcit.core/nil?".into(), 1)]),
+        fn_arity: HashMap::from([("calcit.core/nil?".into(), 1)]),
+        fn_has_rest: HashMap::new(),
+        runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
+        tag_index: HashMap::from([("struct".into(), 1), ("flag".into(), 2), ("number".into(), 3)]),
+        struct_layouts,
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        value_imports: HashMap::new(),
+        static_fn_defs: HashMap::new(),
+        fn_table_index: HashMap::new(),
+        host_imports: HashMap::new(),
+        target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
+      },
+    );
+    ctx.locals.insert("item".into(), 0);
+    let struct_type = Arc::new(CalcitTypeAnnotation::Struct(struct_def, Arc::new(vec![])));
+    ctx
+      .local_types
+      .insert("item".into(), WasmTypeEvidence::contract(struct_type.clone()));
+
+    let receiver = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("item"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.hof"),
+        at_def: Arc::from("test"),
+      }),
+      location: None,
+      type_info: struct_type,
+    });
+    let nil_callee = Calcit::Import(CalcitImport {
+      ns: Arc::from(crate::wasm::host::calcit::CORE_NS),
+      def: Arc::from("nil?"),
+      info: Arc::new(ImportInfo::Core {
+        at_ns: Arc::from("tests.hof"),
+      }),
+      def_id: None,
+    });
+    emit_update(&mut ctx, &[receiver, Calcit::Tag(cirru_edn::EdnTag::from("flag")), nil_callee])
+      .expect("Struct update with Bool field and nil? callback must receive field type evidence");
   }
 }

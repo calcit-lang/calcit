@@ -1046,6 +1046,48 @@ pub(super) fn emit_enum_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
+pub(super) fn enum_identity_tag(enum_def: &CalcitEnumDef) -> String {
+  let def_ref = match enum_def.definition_ref() {
+    Some(r) => format!("1:{r}"),
+    None => "0:".to_owned(),
+  };
+  let generics = enum_def.generics().iter().map(|g| g.as_ref()).collect::<Vec<_>>().join(",");
+  let bounds = enum_def
+    .where_bounds()
+    .iter()
+    .map(|b| format!("{b:?}"))
+    .collect::<Vec<_>>()
+    .join(",");
+  let variants = enum_def
+    .variants()
+    .iter()
+    .map(|v| {
+      let payloads = v
+        .payload_types()
+        .iter()
+        .map(|t| format!("{}", t.to_calcit()))
+        .collect::<Vec<_>>()
+        .join(",");
+      format!("{}:{:08}:[{}]", v.tag, v.payload_types().len(), payloads)
+    })
+    .collect::<Vec<_>>()
+    .join(";");
+  let impls = enum_def.impls().iter().map(|imp| format!("{imp:?}")).collect::<Vec<_>>().join(";");
+  format!(
+    "__enum_def__:{}:{}:{:08}:<{}>:{:08}:<{}>:{:08}:{{{}}}:{:08}:[{}]",
+    def_ref,
+    enum_def.name(),
+    enum_def.generics().len(),
+    generics,
+    enum_def.where_bounds().len(),
+    bounds,
+    enum_def.variants().len(),
+    variants,
+    enum_def.impls().len(),
+    impls
+  )
+}
+
 pub(super) fn resolve_enum_ref(node: &Calcit) -> Result<CalcitEnumDef, String> {
   match node {
     Calcit::EnumDef(e) => Ok(e.as_ref().clone()),
@@ -1073,11 +1115,11 @@ pub(super) fn emit_enum_definition(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   if let Some(enum_def) = value_type.as_deref().and_then(|ty| ty.resolve_to_enum()) {
     emit_expr(ctx, &args[0])?;
     ctx.emit(Instruction::Drop);
-    let enum_name = enum_def.name().to_string();
+    let enum_key = enum_identity_tag(&enum_def);
     let tag_id = *ctx
       .tag_index
-      .get(&enum_name)
-      .ok_or_else(|| format!("unknown enum definition tag in WASM: {enum_name}"))?;
+      .get(&enum_key)
+      .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", enum_def.name()))?;
     let def_local = ctx.alloc_local();
     ctx.emit(f64_const(tag_id as f64));
     ctx.emit(Instruction::LocalSet(def_local));

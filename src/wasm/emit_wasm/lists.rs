@@ -370,6 +370,26 @@ pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 /// ordering. Requiring an explicit comparator keeps the supported path
 /// type-directed and avoids silently returning an unsorted list.
 pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  #[derive(Clone, Copy, PartialEq, Eq)]
+  enum DefaultSortElemKind {
+    Number,
+    String,
+    Bool,
+    Nil,
+    Unit,
+  }
+
+  fn classify_default_sort_elem(elem: &CalcitTypeAnnotation) -> Option<DefaultSortElemKind> {
+    match elem {
+      CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some(DefaultSortElemKind::Number),
+      CalcitTypeAnnotation::String => Some(DefaultSortElemKind::String),
+      CalcitTypeAnnotation::Bool => Some(DefaultSortElemKind::Bool),
+      CalcitTypeAnnotation::Nil => Some(DefaultSortElemKind::Nil),
+      CalcitTypeAnnotation::Unit => Some(DefaultSortElemKind::Unit),
+      _ => None,
+    }
+  }
+
   if !(1..=2).contains(&args.len()) {
     return Err("&list:sort in WASM requires a list and an optional 2-argument comparator".into());
   }
@@ -378,32 +398,27 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     let comparable_elem = match list_type.as_deref() {
       Some(CalcitTypeAnnotation::List(elem)) => {
         let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
-        matches!(
-          elem.as_ref(),
-          CalcitTypeAnnotation::Number
-            | CalcitTypeAnnotation::Numeric(_)
-            | CalcitTypeAnnotation::String
-            | CalcitTypeAnnotation::Tag
-            | CalcitTypeAnnotation::Bool
-            | CalcitTypeAnnotation::Nil
-            | CalcitTypeAnnotation::Unit
-            | CalcitTypeAnnotation::Never
-        )
+        matches!(elem.as_ref(), CalcitTypeAnnotation::Never) || classify_default_sort_elem(elem.as_ref()).is_some()
       }
-      Some(CalcitTypeAnnotation::Tuple(elems)) => elems.iter().all(|elem| {
-        let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
-        matches!(
-          elem.as_ref(),
-          CalcitTypeAnnotation::Number
-            | CalcitTypeAnnotation::Numeric(_)
-            | CalcitTypeAnnotation::String
-            | CalcitTypeAnnotation::Tag
-            | CalcitTypeAnnotation::Bool
-            | CalcitTypeAnnotation::Nil
-            | CalcitTypeAnnotation::Unit
-            | CalcitTypeAnnotation::Never
-        )
-      }),
+      Some(CalcitTypeAnnotation::Tuple(elems)) => {
+        let mut tuple_kind: Option<DefaultSortElemKind> = None;
+        elems.iter().all(|elem| {
+          let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
+          if matches!(elem.as_ref(), CalcitTypeAnnotation::Never) {
+            return true;
+          }
+          let Some(kind) = classify_default_sort_elem(elem.as_ref()) else {
+            return false;
+          };
+          match tuple_kind {
+            None => {
+              tuple_kind = Some(kind);
+              true
+            }
+            Some(prev) => prev == kind,
+          }
+        })
+      }
       _ => false,
     };
     if !comparable_elem {
@@ -1936,5 +1951,39 @@ mod sort_tests {
   fn sort_rejects_the_unsupported_total_order_form() {
     let error = emit_list_sort(&mut empty_context(), &[Calcit::Nil]).expect_err("one-argument sort must not compile as identity");
     assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+
+    let make_typed_local = |type_info: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(crate::wasm::host::calcit::CalcitLocal {
+        idx: 0,
+        sym: Arc::from("xs"),
+        info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+          at_ns: Arc::from("tests.sort"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+        type_info,
+      })
+    };
+    for unsupported_type in [
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Tag))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![Arc::new(CalcitTypeAnnotation::Tag)]))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::Number),
+        Arc::new(CalcitTypeAnnotation::Bool),
+      ]))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::Bool),
+        Arc::new(CalcitTypeAnnotation::Nil),
+      ]))),
+    ] {
+      let mut ctx = empty_context();
+      ctx.locals.insert("xs".into(), 0);
+      ctx
+        .local_types
+        .insert("xs".into(), WasmTypeEvidence::contract(unsupported_type.clone()));
+      let error = emit_list_sort(&mut ctx, &[make_typed_local(unsupported_type)])
+        .expect_err("tag and heterogeneous tuple default sorting must require an explicit comparator");
+      assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+    }
   }
 }
