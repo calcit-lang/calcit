@@ -11,3 +11,8 @@ This adds work during construction, especially for larger maps. It changes no
 syntax or type contract. Definition-attached core tests exercise duplicate keys
 across native, JS and WASM; JS collision and structural-key behavior also need
 verification because the hash buckets are a backend implementation detail.
+
+Typed EDN has a separate contract: differently written source keys that decode
+to equal typed keys must be rejected. Its intermediate map view therefore
+preserves source entries until after decoding, like its existing set view. Exact
+repeated source keys retain their existing parser behavior.

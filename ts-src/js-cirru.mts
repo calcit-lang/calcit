@@ -13,7 +13,7 @@ import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 import { ref } from "./js-ref.mjs";
-import { TypedEdnSetView } from "./typed-edn.mjs";
+import { TypedEdnMapView, TypedEdnSetView } from "./typed-edn.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
@@ -442,6 +442,11 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
           throw new Error(`Expected pairs for map, got: ${pair}`);
         }
       });
+      if (preserveSourceEntries) {
+        const entries: [any, any][] = [];
+        for (let i = 0; i < result.length; i += 2) entries.push([result[i], result[i + 1]]);
+        return new TypedEdnMapView(entries);
+      }
       return new CalcitSliceMap(result);
     }
     if (x[0] === "%{}") {
@@ -568,8 +573,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
   return extract_cirru_edn_inner(x, options, false) as CalcitValue;
 };
 
-export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValue): CalcitValue | TypedEdnSetView => {
-  return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView;
+export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValue): CalcitValue | TypedEdnSetView | TypedEdnMapView => {
+  return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView | TypedEdnMapView;
 };
 
 export let format_cirru_edn = function (data: CalcitValue, useInline?: boolean): string {
