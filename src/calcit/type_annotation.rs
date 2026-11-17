@@ -5455,14 +5455,11 @@ impl CalcitTypeAnnotation {
   // Expand only the former; a definition's schema denotes its constructor,
   // not an instance of that nominal type.
   fn expand_slot_schema_alias(type_value: &Arc<Self>) -> Arc<Self> {
-    if !matches!(type_value.as_ref(), Self::TypeRef(..))
-      || type_value.resolve_to_enum().is_some()
-      || type_value.resolve_to_struct().is_some()
-      || type_value.resolve_to_union().is_some()
-    {
+    let expanded = Self::expand_schema_alias(type_value);
+    if matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
       type_value.clone()
     } else {
-      Self::expand_schema_alias(type_value)
+      expanded
     }
   }
 
