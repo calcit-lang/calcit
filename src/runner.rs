@@ -334,7 +334,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         expr.get_location(),
       )),
       Some(x) => {
-        if let CalcitCallKind::NumberBinary(operation) = xs.call_kind()
+        if let &CalcitCallKind::NumberBinary(operation) = xs.call_kind()
           && xs.len() == 3
           && matches!(xs.first(), Some(Calcit::Proc(proc)) if *proc == number_binary_proc(operation))
         {
@@ -516,7 +516,7 @@ pub fn call_expr(
         Calcit::from(xs.to_vec()).lisp_str()
       );
 
-      let mut current_values: Vec<Calcit> = xs.iter().skip(1).cloned().collect();
+      let mut current_values: Vec<Calcit> = xs.skip(1).map(|tail| tail.to_vec()).unwrap_or_default();
       let macro_name = format!("{}/{}", info.def_ns, info.name);
       macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
       macro_metrics::record_cache_bypass(&macro_name, "runtime-evaluator");
@@ -1077,6 +1077,27 @@ pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call
   Ok(ret)
 }
 
+pub fn evaluate_view_lines(
+  lines: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if let Some(slice) = lines.as_slice() {
+    return evaluate_lines(slice, scope, file_ns, call_stack);
+  }
+  let len = lines.len();
+  let mut ret: Calcit = Calcit::Nil;
+  for (idx, line) in lines.iter().enumerate() {
+    let v = evaluate_expr(line, scope, file_ns, call_stack)?;
+    if idx + 1 < len {
+      reject_escaping_recur(&v, call_stack)?;
+    }
+    ret = v
+  }
+  Ok(ret)
+}
+
 /// quick path evaluate symbols before calling a function, not need to check `&` for spreading
 pub fn evaluate_args(
   items: CalcitList,
@@ -1094,15 +1115,11 @@ pub fn evaluate_args_from(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len().saturating_sub(start));
-  let mut idx = 0;
-  items.traverse_result::<CalcitErr>(&mut |item| {
-    if idx < start {
-      idx += 1;
-      return Ok(());
-    }
-    idx += 1;
-
+  let Ok(tail) = items.skip(start) else {
+    return Ok(vec![]);
+  };
+  let mut ret: Vec<Calcit> = Vec::with_capacity(tail.len());
+  tail.traverse_result::<CalcitErr>(&mut |item| {
     let value = if item.is_expr_evaluated() {
       item.to_owned()
     } else {
@@ -1112,7 +1129,6 @@ pub fn evaluate_args_from(
     ret.push(value);
     Ok(())
   })?;
-  // println!("Evaluated args: {}", ret);
   Ok(ret)
 }
 
@@ -1134,17 +1150,13 @@ pub fn evaluate_spreaded_args_from(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len().saturating_sub(start));
+  let Ok(tail) = items.skip(start) else {
+    return Ok(vec![]);
+  };
+  let mut ret: Vec<Calcit> = Vec::with_capacity(tail.len());
   let mut spreading = false;
 
-  let mut idx = 0;
-  items.traverse_result::<CalcitErr>(&mut |item| {
-    if idx < start {
-      idx += 1;
-      return Ok(());
-    }
-    idx += 1;
-
+  tail.traverse_result::<CalcitErr>(&mut |item| {
     match item {
       Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
         spreading = true;
@@ -1201,7 +1213,6 @@ pub fn evaluate_spreaded_args_from(
     }
     Ok(())
   })?;
-  // println!("Evaluated args: {}", ret);
   Ok(ret)
 }
 

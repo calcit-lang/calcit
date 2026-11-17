@@ -197,7 +197,7 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl::new expected arguments, but received none:", xs);
   }
   let (name_id, origin) = match &xs[0] {
-    Calcit::Trait(trait_def) => (trait_def.name.to_owned(), Some(Arc::new(trait_def.to_owned()))),
+    Calcit::Trait(trait_def) => (trait_def.name.to_owned(), Some(trait_def.to_owned())),
     Calcit::Symbol { sym, .. } => (EdnTag(sym.to_owned()), None),
     Calcit::Tag(k) => (k.to_owned(), None),
     Calcit::Str(s) => (EdnTag(s.to_owned()), None),
@@ -278,12 +278,12 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let fields: Vec<EdnTag> = entries.iter().map(|(tag, _)| tag.to_owned()).collect();
   let values: Vec<Calcit> = entries.into_iter().map(|(_, v)| v).collect();
 
-  Ok(Calcit::Impl(CalcitImpl {
+  Ok(Calcit::Impl(Arc::new(CalcitImpl {
     name: name_id,
     origin,
     fields: Arc::new(fields),
     values: Arc::new(values),
-  }))
+  })))
 }
 
 pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -407,7 +407,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     vec![]
   };
 
-  Ok(Calcit::StructDef(CalcitStructDef {
+  Ok(Calcit::StructDef(Arc::new(CalcitStructDef {
     field_defaults: Arc::new(field_defaults),
     definition_ref: None,
     name: name_id,
@@ -416,7 +416,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     generics: Arc::new(generics),
     where_bounds: Arc::new(where_bounds),
     impls: vec![],
-  }))
+  })))
 }
 
 /// Field defaults are literal constants, so preprocess can place them at any
@@ -562,7 +562,7 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   };
 
   match CalcitEnumDef::from_struct(struct_value) {
-    Ok(enum_def) => Ok(Calcit::EnumDef(enum_def)),
+    Ok(enum_def) => Ok(Calcit::EnumDef(Arc::new(enum_def))),
     Err(msg) => CalcitErr::err_str(CalcitErrKind::Type, format!("&enum-def:new failed to build enum: {msg}")),
   }
 }
@@ -853,7 +853,7 @@ pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::StructDef(struct_def) => {
       let struct_value = CalcitStructValue {
-        struct_ref: Arc::new(struct_def.to_owned()),
+        struct_ref: struct_def.to_owned(),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
       };
       call_struct_with_prototype(&struct_value, xs)
@@ -1045,15 +1045,12 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         .struct_ref
         .impls
         .iter()
-        .map(|x| Calcit::Impl((**x).to_owned()))
+        .cloned()
+        .map(Calcit::Impl)
         .collect::<Vec<Calcit>>(),
     )),
     Calcit::Enum(enum_value) => Ok(Calcit::from(
-      enum_value
-        .impls()
-        .iter()
-        .map(|c| Calcit::Impl((**c).to_owned()))
-        .collect::<Vec<_>>(),
+      enum_value.impls().iter().cloned().map(Calcit::Impl).collect::<Vec<_>>(),
     )),
     a => {
       let msg = format!(
@@ -1072,7 +1069,7 @@ pub fn struct_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   // first argument must be a Struct prototype
   let (struct_ref, base_values): (Arc<CalcitStructDef>, Vec<Calcit>) = match &xs[0] {
-    Calcit::StructDef(s) => (Arc::new(s.to_owned()), vec![Calcit::Nil; s.fields.len()]),
+    Calcit::StructDef(s) => (s.to_owned(), vec![Calcit::Nil; s.fields.len()]),
     a => {
       let msg = format!(
         "&struct:from-map requires a struct as prototype, but received: {}",
@@ -1150,7 +1147,7 @@ pub fn get_struct_def(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Struct(value) if value.is_anonymous() => option_value::none(),
-    Calcit::Struct(CalcitStructValue { struct_ref, .. }) => option_value::some(Calcit::StructDef(struct_ref.as_ref().to_owned())),
+    Calcit::Struct(CalcitStructValue { struct_ref, .. }) => option_value::some(Calcit::StructDef(struct_ref.to_owned())),
     a => {
       let msg = format!(
         "&struct:definition requires a struct value, but received: {}",
@@ -1634,7 +1631,7 @@ mod tests {
       values: Arc::new(vec![Calcit::Number(1.0)]),
     });
     assert_eq!(
-      matches(&[value.clone(), Calcit::StructDef(definition.clone())]).unwrap(),
+      matches(&[value.clone(), Calcit::StructDef(Arc::new(definition.clone()))]).unwrap(),
       Calcit::Bool(true)
     );
     let mut changed_type = definition.clone();
@@ -1644,14 +1641,20 @@ mod tests {
     let mut changed_owner = definition.clone();
     changed_owner.definition_ref = Some(Arc::from("tests.other/Point"));
     for stale in [changed_type, changed_layout, changed_owner] {
-      assert_eq!(matches(&[value.clone(), Calcit::StructDef(stale)]).unwrap(), Calcit::Bool(false));
+      assert_eq!(
+        matches(&[value.clone(), Calcit::StructDef(Arc::new(stale))]).unwrap(),
+        Calcit::Bool(false)
+      );
     }
-    let Calcit::Impl(marker) = new_impl(&[Calcit::Trait(dyn_fn_trait("OriginMarker", &[]))]).unwrap() else {
+    let Calcit::Impl(marker) = new_impl(&[Calcit::Trait(Arc::new(dyn_fn_trait("OriginMarker", &[])))]).unwrap() else {
       panic!("marker must be an impl");
     };
     let mut decorated = definition.clone();
-    decorated.impls.push(Arc::new(marker));
-    assert_eq!(matches(&[value.clone(), Calcit::StructDef(decorated)]).unwrap(), Calcit::Bool(true));
+    decorated.impls.push(marker);
+    assert_eq!(
+      matches(&[value.clone(), Calcit::StructDef(Arc::new(decorated))]).unwrap(),
+      Calcit::Bool(true)
+    );
     let mut ownerless = definition.clone();
     ownerless.definition_ref = None;
     let unbound_value = Calcit::Struct(CalcitStructValue {
@@ -1659,10 +1662,13 @@ mod tests {
       values: Arc::new(vec![Calcit::Number(1.0)]),
     });
     assert_eq!(
-      matches(&[unbound_value, Calcit::StructDef(definition)]).unwrap(),
+      matches(&[unbound_value, Calcit::StructDef(Arc::new(definition))]).unwrap(),
       Calcit::Bool(false)
     );
-    assert_eq!(matches(&[value, Calcit::StructDef(ownerless)]).unwrap(), Calcit::Bool(true));
+    assert_eq!(
+      matches(&[value, Calcit::StructDef(Arc::new(ownerless))]).unwrap(),
+      Calcit::Bool(true)
+    );
   }
 
   #[test]
@@ -1681,7 +1687,7 @@ mod tests {
       impls: vec![],
     };
 
-    let err = call_struct(&[Calcit::StructDef(struct_def), Calcit::tag("next"), Calcit::Nil])
+    let err = call_struct(&[Calcit::StructDef(Arc::new(struct_def)), Calcit::tag("next"), Calcit::Nil])
       .expect_err("a required recursive field must reject nil instead of recursing");
 
     assert!(err.msg.contains("expects type `'RequiredNode`"), "unexpected error: {err:?}");
@@ -1724,7 +1730,7 @@ mod tests {
     };
 
     let result = call_struct(&[
-      Calcit::StructDef(box_def),
+      Calcit::StructDef(Arc::new(box_def)),
       Calcit::tag("items"),
       Calcit::List(Arc::new(CalcitList::default())),
     ])
@@ -1786,7 +1792,7 @@ mod tests {
 
   #[test]
   fn nominal_impl_requires_the_exact_trait_method_set() {
-    let trait_def = dyn_fn_trait("Renderable", &["render", "debug"]);
+    let trait_def = Arc::new(dyn_fn_trait("Renderable", &["render", "debug"]));
     let missing =
       new_impl(&[Calcit::Trait(trait_def.clone()), impl_pair("render", callable_proc())]).expect_err("missing trait method must fail");
     assert!(missing.msg.contains("missing methods") && missing.msg.contains("debug"));
@@ -1804,7 +1810,7 @@ mod tests {
   #[test]
   fn nominal_impl_rejects_non_callable_method_values() {
     let err = new_impl(&[
-      Calcit::Trait(dyn_fn_trait("Renderable", &["render"])),
+      Calcit::Trait(Arc::new(dyn_fn_trait("Renderable", &["render"]))),
       impl_pair("render", Calcit::Nil),
     ])
     .expect_err("non-callable trait method must fail");
@@ -1814,14 +1820,14 @@ mod tests {
 
   #[test]
   fn nominal_impl_checks_available_method_signatures() {
-    let trait_def = CalcitTrait::new_runtime(
+    let trait_def = Arc::new(CalcitTrait::new_runtime(
       EdnTag::new("Renderable"),
       vec![EdnTag::new("render")],
       vec![Arc::new(CalcitTypeAnnotation::from_function_parts(
         vec![Arc::new(CalcitTypeAnnotation::Number)],
         crate::calcit::DYNAMIC_TYPE.clone(),
       ))],
-    );
+    ));
     let err =
       new_impl(&[Calcit::Trait(trait_def), impl_pair("render", callable_proc())]).expect_err("wrong callable signature must fail");
 
@@ -1831,7 +1837,7 @@ mod tests {
   #[test]
   fn inherent_method_bag_can_be_promoted_to_a_nominal_impl() {
     let method_bag = new_impl(&[Calcit::tag("legacy-methods"), impl_pair("render", callable_proc())]).expect("originless method bag");
-    let trait_def = dyn_fn_trait("Renderable", &["render"]);
+    let trait_def = Arc::new(dyn_fn_trait("Renderable", &["render"]));
     let promoted = new_impl(&[Calcit::Trait(trait_def.clone()), method_bag]).expect("promoted nominal impl");
     let Calcit::Impl(promoted) = promoted else {
       panic!("expected impl value");
@@ -1842,8 +1848,8 @@ mod tests {
     assert!(promoted.get("render").is_some());
   }
 
-  fn shown_box_struct(show_trait: Arc<CalcitTrait>) -> CalcitStructDef {
-    CalcitStructDef {
+  fn shown_box_struct(show_trait: Arc<CalcitTrait>) -> Arc<CalcitStructDef> {
+    Arc::new(CalcitStructDef {
       field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("ShownBox"),
@@ -1855,7 +1861,7 @@ mod tests {
         traits: Arc::new(vec![show_trait]),
       }]),
       impls: vec![],
-    }
+    })
   }
 
   fn value_with_trait(trait_def: Arc<CalcitTrait>) -> Calcit {

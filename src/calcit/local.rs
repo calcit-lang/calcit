@@ -50,18 +50,40 @@ impl CalcitLocal {
     }
   }
 
+  /// Append comma-separated local variable names under a single read lock.
+  pub(crate) fn format_names(indices: impl IntoIterator<Item = u16>) -> String {
+    use std::fmt::Write as _;
+    let locals = LOCAL_NAMES.read().expect("read local names");
+    let mut vars = String::new();
+    for (i, idx) in indices.into_iter().enumerate() {
+      if i > 0 {
+        vars.push(',');
+      }
+      match locals.by_idx.get(idx as usize) {
+        Some(s) => vars.push_str(s),
+        None => {
+          let _ = write!(vars, "<local:{idx}>");
+        }
+      }
+    }
+    vars
+  }
+
   /// display local variables from numbers
   pub fn display_args(xs: &[u16]) -> String {
+    use std::fmt::Write as _;
+    let locals = LOCAL_NAMES.read().expect("read local names");
     let mut s = "(".to_owned();
-    let mut first = true;
-    for i in xs {
-      let name = Self::read_name(*i);
-      if first {
-        first = false;
-      } else {
+    for (i, &idx) in xs.iter().enumerate() {
+      if i > 0 {
         s.push(' ');
       }
-      s.push_str(&name);
+      match locals.by_idx.get(idx as usize) {
+        Some(name) => s.push_str(name),
+        None => {
+          let _ = write!(s, "<local:{idx}>");
+        }
+      }
     }
     s.push(')');
     s

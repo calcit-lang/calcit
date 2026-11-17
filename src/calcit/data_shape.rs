@@ -1165,10 +1165,10 @@ mod tests {
     assert!(field_write_shape(&parent, 0).is_none());
     let mut child = CalcitStructDef::from_fields(EdnTag::new("Child"), vec![EdnTag::new("value")]);
     child.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
-    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(child.clone())).unwrap();
+    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(Arc::new(child.clone()))).unwrap();
     let number = field_write_shape(&parent, 0).expect("newly resolved nominal");
     child.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
-    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(child)).unwrap();
+    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(Arc::new(child))).unwrap();
     let string = field_write_shape(&parent, 0).expect("replaced nested nominal");
     assert_ne!(number.fingerprint(), string.fingerprint());
   }

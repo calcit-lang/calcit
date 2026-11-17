@@ -362,7 +362,7 @@ pub fn fs_read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         .into_iter()
         .map(|child| {
           Calcit::Struct(CalcitStructValue {
-            struct_ref: std::sync::Arc::new(path_type.to_owned()),
+            struct_ref: path_type.to_owned(),
             values: std::sync::Arc::new(vec![Calcit::new_str(child)]),
           })
         })

@@ -135,15 +135,15 @@ pub enum Calcit {
   /// Struct value with a fixed field set.
   Struct(CalcitStructValue),
   /// `defstruct` definition value, carries field types and names.
-  StructDef(CalcitStructDef),
+  StructDef(Arc<CalcitStructDef>),
   /// `defenum` definition value, wraps the closed variant set.
-  EnumDef(CalcitEnumDef),
+  EnumDef(Arc<CalcitEnumDef>),
   /// `defunion` definition value: a closed set of member types without a runtime wrapper.
   UnionDef(Arc<CalcitUnionDef>),
   /// trait definition value, carries method signatures
-  Trait(CalcitTrait),
+  Trait(Arc<CalcitTrait>),
   /// trait implementation value, carries methods and target trait name
-  Impl(CalcitImpl),
+  Impl(Arc<CalcitImpl>),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -279,11 +279,9 @@ impl fmt::Display for Calcit {
         }
         f.write_char(')')
       }
-      StructDef(CalcitStructDef {
-        name, fields, field_types, ..
-      }) => {
-        write!(f, "(%struct-def '{name}")?;
-        for (k, t) in fields.iter().zip(field_types.iter()) {
+      StructDef(struct_def) => {
+        write!(f, "(%struct-def '{}", struct_def.name)?;
+        for (k, t) in struct_def.fields.iter().zip(struct_def.field_types.iter()) {
           write!(f, " (:{k} {})", t.to_brief_string())?;
         }
         f.write_char(')')
@@ -527,17 +525,18 @@ impl Hash for Calcit {
         struct_ref.fields.hash(_state);
         values.hash(_state);
       }
-      StructDef(CalcitStructDef {
-        definition_ref,
-        name,
-        fields,
-        field_types,
-        generics,
-        where_bounds,
-        field_defaults,
-        impls,
-        ..
-      }) => {
+      StructDef(struct_def) => {
+        let CalcitStructDef {
+          definition_ref,
+          name,
+          fields,
+          field_types,
+          generics,
+          where_bounds,
+          field_defaults,
+          impls,
+          ..
+        } = struct_def.as_ref();
         "struct:".hash(_state);
         definition_ref.hash(_state);
         name.hash(_state);
@@ -1728,8 +1727,8 @@ mod tests {
   fn cmp_equal_matches_eq_for_complex_named_variants() {
     let trait_left = CalcitTrait::new(EdnTag::new("X"), vec![EdnTag::new("foo")], vec![DYNAMIC_TYPE.clone()]);
     let trait_right = CalcitTrait::new(EdnTag::new("X"), vec![EdnTag::new("bar")], vec![DYNAMIC_TYPE.clone()]);
-    let trait_left_value = Calcit::Trait(trait_left.clone());
-    let trait_right_value = Calcit::Trait(trait_right.clone());
+    let trait_left_value = Calcit::Trait(Arc::new(trait_left.clone()));
+    let trait_right_value = Calcit::Trait(Arc::new(trait_right.clone()));
     assert_ne!(trait_left_value, trait_right_value);
     assert_ne!(trait_left_value.cmp(&trait_right_value), Equal);
 
@@ -1739,27 +1738,27 @@ mod tests {
     schema_method.runtime_id = None;
     let mut schema_field = schema_method.clone();
     schema_field.member_kinds = Arc::new(vec![CalcitTraitMemberKind::Field]);
-    let schema_method_value = Calcit::Trait(schema_method);
-    let schema_field_value = Calcit::Trait(schema_field);
+    let schema_method_value = Calcit::Trait(Arc::new(schema_method));
+    let schema_field_value = Calcit::Trait(Arc::new(schema_field));
     assert_ne!(schema_method_value, schema_field_value);
     assert_ne!(schema_method_value.cmp(&schema_field_value), Equal);
 
-    let impl_left = Calcit::Impl(CalcitImpl {
+    let impl_left = Calcit::Impl(Arc::new(CalcitImpl {
       name: EdnTag::new("Box"),
       origin: Some(Arc::new(trait_left)),
       fields: Arc::new(vec![EdnTag::new("foo")]),
       values: Arc::new(vec![Calcit::Number(1.0)]),
-    });
-    let impl_right = Calcit::Impl(CalcitImpl {
+    }));
+    let impl_right = Calcit::Impl(Arc::new(CalcitImpl {
       name: EdnTag::new("Box"),
       origin: Some(Arc::new(trait_right)),
       fields: Arc::new(vec![EdnTag::new("foo")]),
       values: Arc::new(vec![Calcit::Number(1.0)]),
-    });
+    }));
     assert_ne!(impl_left, impl_right);
     assert_ne!(impl_left.cmp(&impl_right), Equal);
 
-    let struct_left = Calcit::StructDef(CalcitStructDef {
+    let struct_left = Calcit::StructDef(Arc::new(CalcitStructDef {
       field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
@@ -1768,8 +1767,8 @@ mod tests {
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       impls: vec![],
-    });
-    let struct_right = Calcit::StructDef(CalcitStructDef {
+    }));
+    let struct_right = Calcit::StructDef(Arc::new(CalcitStructDef {
       field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("Person"),
@@ -1778,7 +1777,7 @@ mod tests {
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       impls: vec![],
-    });
+    }));
     assert_ne!(struct_left, struct_right);
     assert_ne!(struct_left.cmp(&struct_right), Equal);
 
@@ -1790,8 +1789,8 @@ mod tests {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Result"), vec![EdnTag::new("ok")])),
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")])))]),
     };
-    let enum_left = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_left_struct).expect("valid enum"));
-    let enum_right = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_right_struct).expect("valid enum"));
+    let enum_left = Calcit::EnumDef(Arc::new(CalcitEnumDef::from_struct(enum_left_struct).expect("valid enum")));
+    let enum_right = Calcit::EnumDef(Arc::new(CalcitEnumDef::from_struct(enum_right_struct).expect("valid enum")));
     assert_ne!(enum_left, enum_right);
     assert_ne!(enum_left.cmp(&enum_right), Equal);
   }
@@ -1808,7 +1807,7 @@ mod tests {
         Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
       ]),
     };
-    let enum_value = Calcit::EnumDef(CalcitEnumDef::from_struct(enum_struct).expect("valid enum"));
+    let enum_value = Calcit::EnumDef(Arc::new(CalcitEnumDef::from_struct(enum_struct).expect("valid enum")));
     let text = enum_value.to_string();
     assert!(text.starts_with("(%enum-def 'Result"), "unexpected display: {text}");
     assert!(text.contains(":ok)"), "missing zero-payload variant: {text}");
@@ -1821,7 +1820,10 @@ mod tests {
       struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")])),
       values: Arc::new(vec![Calcit::Str(Arc::from(""))]),
     });
-    let struct_def = Calcit::StructDef(CalcitStructDef::from_fields(EdnTag::new("TodoState"), vec![EdnTag::new("draft")]));
+    let struct_def = Calcit::StructDef(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::new("TodoState"),
+      vec![EdnTag::new("draft")],
+    )));
 
     assert_eq!(struct_value.to_string(), "(%{} 'TodoState (:draft |))");
     assert!(struct_def.to_string().starts_with("(%struct-def 'TodoState"));
@@ -1829,12 +1831,12 @@ mod tests {
 
   #[test]
   fn hash_matches_eq_for_complex_named_variants() {
-    let trait_value = Calcit::Trait(CalcitTrait::new(
+    let trait_value = Calcit::Trait(Arc::new(CalcitTrait::new(
       EdnTag::new("Display"),
       vec![EdnTag::new("show")],
       vec![DYNAMIC_TYPE.clone()],
-    ));
-    let impl_value = Calcit::Impl(CalcitImpl {
+    )));
+    let impl_value = Calcit::Impl(Arc::new(CalcitImpl {
       name: EdnTag::new("Box"),
       origin: Some(Arc::new(CalcitTrait::new(
         EdnTag::new("Display"),
@@ -1860,8 +1862,8 @@ mod tests {
           rest_type: None,
         }),
       }]),
-    });
-    let struct_value = Calcit::StructDef(CalcitStructDef {
+    }));
+    let struct_value = Calcit::StructDef(Arc::new(CalcitStructDef {
       field_defaults: Default::default(),
       definition_ref: None,
       name: EdnTag::new("S"),
@@ -1870,7 +1872,7 @@ mod tests {
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       impls: vec![],
-    });
+    }));
 
     for value in [trait_value, impl_value, struct_value] {
       let cloned = value.clone();
@@ -2052,5 +2054,14 @@ mod tests {
     assert_eq!(calcit_hash(&original), calcit_hash(&cloned));
     assert_ne!(original, Calcit::Buffer(Arc::from(vec![1u8, 2, 3, 5])));
     assert_eq!(original.to_string(), "(&buffer 01 02 03 04)");
+  }
+
+  #[test]
+  fn calcit_enum_size_stays_compact() {
+    assert!(
+      std::mem::size_of::<Calcit>() <= 56,
+      "Calcit enum size regressed to {} bytes",
+      std::mem::size_of::<Calcit>()
+    );
   }
 }

@@ -61,7 +61,7 @@ pub(super) fn collect_struct_layouts(
     }
     match expression {
       Calcit::StructDef(definition) => {
-        identities.insert(StructIdentity::from(definition));
+        identities.insert(StructIdentity::from(definition.as_ref()));
       }
       Calcit::Import(_) => {
         if let Ok(definition) = resolve_struct_ref(expression) {
@@ -85,7 +85,7 @@ pub(super) fn collect_struct_layouts(
   for (ns, file) in program_data.iter() {
     for (name, compiled) in &file.defs {
       if let Some(Calcit::StructDef(definition)) = program::lookup_runtime_ready(ns, name) {
-        identities.insert(StructIdentity::from(&definition));
+        identities.insert(StructIdentity::from(definition.as_ref()));
       }
       for expression in [&compiled.preprocessed_code, &compiled.codegen_form] {
         visit(expression, &mut identities);
@@ -195,19 +195,19 @@ pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// Resolve a struct reference (either inline Calcit::StructDef or Calcit::Import) to a CalcitStructDef.
 pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStructDef, String> {
   match node {
-    Calcit::StructDef(s) => Ok(s.clone()),
+    Calcit::StructDef(s) => Ok(s.as_ref().clone()),
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       // Try runtime first
       if let Some(Calcit::StructDef(s)) = program::lookup_runtime_ready(ns, def) {
-        return Ok(s);
+        return Ok(s.as_ref().clone());
       }
       // Try compiled def
       if let Some(compiled) = program::lookup_compiled_def(ns, def) {
         if let Calcit::StructDef(s) = &compiled.codegen_form {
-          return Ok(s.clone());
+          return Ok(s.as_ref().clone());
         }
         if let Calcit::StructDef(s) = &compiled.preprocessed_code {
-          return Ok(s.clone());
+          return Ok(s.as_ref().clone());
         }
         // Try to extract struct from defrecord form: (defrecord Name :field1 :field2 ...)
         if let Some(struct_def) = try_parse_defrecord_form(&compiled.codegen_form) {

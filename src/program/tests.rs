@@ -180,12 +180,12 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
     Some("a-owner"),
     "provenance is source-backed and deterministic"
   );
-  let tagged_impl = Calcit::Impl(CalcitImpl {
+  let tagged_impl = Calcit::Impl(Arc::new(CalcitImpl {
     name: EdnTag::new("z-owner"),
     origin: None,
     fields: Arc::new(vec![]),
     values: Arc::new(vec![]),
-  });
+  }));
   assert_eq!(
     find_source_def_for_runtime_value("tests.runtime-provenance", &tagged_impl).as_deref(),
     Some("z-owner"),
@@ -194,13 +194,13 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
   assert_eq!(find_source_def_for_runtime_value("tests.missing", &target), None);
 
   let origin = Arc::new(crate::calcit::CalcitTrait::new(EdnTag::new("z-owner"), vec![], vec![]));
-  let trait_impl = Calcit::Impl(CalcitImpl {
+  let trait_impl = Calcit::Impl(Arc::new(CalcitImpl {
     name: origin.name.clone(),
     origin: Some(origin.clone()),
     fields: Arc::new(vec![]),
     values: Arc::new(vec![]),
-  });
-  write_runtime_ready("tests.runtime-provenance", "z-owner", Calcit::Trait(origin.as_ref().clone())).expect("seed trait owner");
+  }));
+  write_runtime_ready("tests.runtime-provenance", "z-owner", Calcit::Trait(origin)).expect("seed trait owner");
   assert_eq!(
     find_source_def_for_runtime_value("tests.runtime-provenance", &trait_impl),
     None,
@@ -660,7 +660,7 @@ fn write_runtime_ready_attaches_trait_definition_identity() {
   reset_program_test_state();
 
   let trait_value = crate::calcit::CalcitTrait::new_runtime(cirru_edn::EdnTag::new("Show"), vec![], vec![]);
-  write_runtime_ready("app.traits", "Show", Calcit::Trait(trait_value)).expect("store runtime trait");
+  write_runtime_ready("app.traits", "Show", Calcit::Trait(Arc::new(trait_value))).expect("store runtime trait");
 
   let Calcit::Trait(stored) = lookup_runtime_ready("app.traits", "Show").expect("stored trait") else {
     panic!("expected stored trait");
@@ -674,7 +674,7 @@ fn write_runtime_ready_attaches_struct_and_enum_definition_identity() {
   reset_program_test_state();
 
   let struct_value = crate::calcit::CalcitStructDef::from_fields(cirru_edn::EdnTag::new("User"), vec![]);
-  write_runtime_ready("app.models", "User", Calcit::StructDef(struct_value)).expect("store runtime struct");
+  write_runtime_ready("app.models", "User", Calcit::StructDef(Arc::new(struct_value))).expect("store runtime struct");
   let Calcit::StructDef(stored_struct) = lookup_runtime_ready("app.models", "User").expect("stored struct") else {
     panic!("expected stored struct");
   };
@@ -688,7 +688,7 @@ fn write_runtime_ready_attaches_struct_and_enum_definition_identity() {
     values: Arc::new(vec![Calcit::Nil]),
   };
   let enum_value = crate::calcit::CalcitEnumDef::from_struct(enum_struct).expect("build runtime enum");
-  write_runtime_ready("app.models", "Status", Calcit::EnumDef(enum_value)).expect("store runtime enum");
+  write_runtime_ready("app.models", "Status", Calcit::EnumDef(Arc::new(enum_value))).expect("store runtime enum");
   let Calcit::EnumDef(stored_enum) = lookup_runtime_ready("app.models", "Status").expect("stored enum") else {
     panic!("expected stored enum");
   };

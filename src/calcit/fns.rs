@@ -556,14 +556,6 @@ impl CalcitScope {
   }
 
   pub fn get_names(&self) -> String {
-    let mut vars = String::new();
-    for (i, k) in self.0.iter().enumerate() {
-      if i > 0 {
-        vars.push(',');
-      }
-      let name = CalcitLocal::read_name(k.key);
-      vars.push_str(&name);
-    }
-    vars
+    CalcitLocal::format_names(self.0.iter().map(|pair| pair.key))
   }
 }

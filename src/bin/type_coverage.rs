@@ -19,9 +19,7 @@ use md5::{Digest, Md5};
 
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
 
-#[path = "type_coverage/inferred_dynamic.rs"]
 pub(crate) mod inferred_dynamic;
-#[path = "type_coverage/option_nil_roundtrip.rs"]
 pub(crate) mod option_nil_roundtrip;
 
 /// Analyze compiler-proven absent contracts without changing source declarations.

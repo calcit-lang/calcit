@@ -258,22 +258,39 @@ impl<'a> CalcitListView<'a> {
     }
   }
 
+  pub fn as_slice(&self) -> Option<&'a [Calcit]> {
+    match self.value {
+      CalcitList::Vector(xs) | CalcitList::Call(xs, _) => Some(&xs[self.start..self.end]),
+      CalcitList::List(_) => None,
+    }
+  }
+
   pub fn to_vec(&self) -> Vec<Calcit> {
-    self.iter().cloned().collect()
+    if let Some(slice) = self.as_slice() {
+      slice.to_vec()
+    } else {
+      self.iter().cloned().collect()
+    }
   }
 
   pub fn traverse_result<S>(&self, f: &mut dyn FnMut(&Calcit) -> Result<(), S>) -> Result<(), S> {
-    for item in self {
-      f(item)?;
+    if let Some(slice) = self.as_slice() {
+      for item in slice {
+        f(item)?;
+      }
+      Ok(())
+    } else {
+      for item in self {
+        f(item)?;
+      }
+      Ok(())
     }
-    Ok(())
   }
 
   pub fn iter(&self) -> CalcitListViewIterator<'a> {
-    CalcitListViewIterator {
-      value: self.value,
-      index: self.start,
-      end: self.end,
+    match self.value {
+      CalcitList::Vector(xs) | CalcitList::Call(xs, _) => CalcitListViewIterator::Slice(xs[self.start..self.end].iter()),
+      CalcitList::List(xs) => CalcitListViewIterator::Tree(xs.iter().skip(self.start).take(self.len())),
     }
   }
 }
@@ -297,25 +314,30 @@ impl<'list> IntoIterator for &CalcitListView<'list> {
   }
 }
 
-pub struct CalcitListViewIterator<'a> {
-  value: &'a CalcitList,
-  index: usize,
-  end: usize,
+pub enum CalcitListViewIterator<'a> {
+  Slice(std::slice::Iter<'a, Calcit>),
+  Tree(std::iter::Take<std::iter::Skip<finger_vec::Iter<'a, Calcit>>>),
 }
 
 impl<'a> Iterator for CalcitListViewIterator<'a> {
   type Item = &'a Calcit;
 
   fn next(&mut self) -> Option<Self::Item> {
-    if self.index < self.end {
-      let ret = self.value.get(self.index);
-      self.index += 1;
-      ret
-    } else {
-      None
+    match self {
+      CalcitListViewIterator::Slice(it) => it.next(),
+      CalcitListViewIterator::Tree(it) => it.next(),
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    match self {
+      CalcitListViewIterator::Slice(it) => it.size_hint(),
+      CalcitListViewIterator::Tree(it) => it.size_hint(),
     }
   }
 }
+
+impl ExactSizeIterator for CalcitListViewIterator<'_> {}
 
 impl CalcitList {
   pub fn new_inner() -> FingerVec<Calcit> {
@@ -374,10 +396,10 @@ impl CalcitList {
     CalcitList::Call(items, kind)
   }
 
-  pub fn call_kind(&self) -> CalcitCallKind {
+  pub fn call_kind(&self) -> &CalcitCallKind {
     match self {
-      CalcitList::Call(_, kind) => kind.clone(),
-      CalcitList::Vector(_) | CalcitList::List(_) => CalcitCallKind::Normal,
+      CalcitList::Call(_, kind) => kind,
+      CalcitList::Vector(_) | CalcitList::List(_) => &CalcitCallKind::Normal,
     }
   }
 
@@ -446,13 +468,13 @@ impl CalcitList {
 
   pub fn slice(&self, start: usize, end: usize) -> Result<Self, String> {
     match self {
-      CalcitList::Vector(xs) => {
-        let ys = FingerVec::from(xs);
-        Ok(CalcitList::List(ys.slice(start, end)?))
-      }
-      CalcitList::Call(xs, _) => {
-        let ys = FingerVec::from(xs);
-        Ok(CalcitList::List(ys.slice(start, end)?))
+      CalcitList::Vector(xs) | CalcitList::Call(xs, _) => {
+        if start <= end && end <= xs.len() {
+          Ok(CalcitList::List(FingerVec::from(&xs[start..end])))
+        } else {
+          let ys = FingerVec::from(xs);
+          Ok(CalcitList::List(ys.slice(start, end)?))
+        }
       }
       CalcitList::List(xs) => Ok(CalcitList::List(xs.slice(start, end)?)),
     }
@@ -621,7 +643,7 @@ mod tests {
     assert_eq!(specialized, vector);
     assert_eq!(specialized, persistent);
     assert_eq!(normal.cmp(&specialized), Ordering::Equal);
-    assert_eq!(specialized.call_kind(), CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
-    assert_eq!(specialized.push_right(Calcit::Number(5.0)).call_kind(), CalcitCallKind::Normal);
+    assert_eq!(specialized.call_kind(), &CalcitCallKind::NumberBinary(CalcitNumberBinaryOp::Add));
+    assert_eq!(specialized.push_right(Calcit::Number(5.0)).call_kind(), &CalcitCallKind::Normal);
   }
 }

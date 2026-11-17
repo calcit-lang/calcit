@@ -43,17 +43,11 @@ use crate::wasm::host::runner::preprocess::{
   expression_definitely_diverges, infer_static_type_from_expr, resolve_runtime_method_callable, resolve_static_trait_callable,
 };
 
-#[path = "emit_wasm/component.rs"]
 mod component;
-#[path = "emit_wasm/edn_parse.rs"]
 mod edn_parse;
-#[path = "emit_wasm/methods.rs"]
 mod methods;
-#[path = "emit_wasm/number_format.rs"]
 mod number_format;
-#[path = "emit_wasm/runtime.rs"]
 mod runtime;
-#[path = "emit_wasm/structs.rs"]
 mod structs;
 
 use component::{
@@ -147,21 +141,14 @@ fn mem_arg_byte(offset: u64) -> wasm_encoder::MemArg {
   }
 }
 
-#[path = "emit_wasm/edn.rs"]
 mod edn;
 /// Emit a WASM binary module from the compiled program.
 /// Processes functions from all namespaces in the program.
-#[path = "emit_wasm/heap.rs"]
 mod heap;
-#[path = "emit_wasm/hof.rs"]
 mod hof;
-#[path = "emit_wasm/lists.rs"]
 mod lists;
-#[path = "emit_wasm/maps.rs"]
 mod maps;
-#[path = "emit_wasm/sets.rs"]
 mod sets;
-#[path = "emit_wasm/strings.rs"]
 mod strings;
 
 use edn::*;
@@ -2041,9 +2028,9 @@ fn resolve_component_enum_ref(
       .iter()
       .chain([&compiled.preprocessed_code, &compiled.codegen_form])
       .find_map(|code| match code {
-        Calcit::EnumDef(enum_def) => Some(Arc::new(enum_def.clone())),
+        Calcit::EnumDef(enum_def) => Some(enum_def.clone()),
         code => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
-          Some(Calcit::EnumDef(enum_def)) => Some(Arc::new(enum_def)),
+          Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
           _ => None,
         },
       }),
@@ -2070,9 +2057,9 @@ fn resolve_component_struct_ref(
       .iter()
       .chain([&compiled.preprocessed_code, &compiled.codegen_form])
       .find_map(|code| match code {
-        Calcit::StructDef(struct_def) => Some(Arc::new(struct_def.clone())),
+        Calcit::StructDef(struct_def) => Some(struct_def.clone()),
         code => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
-          Some(Calcit::StructDef(struct_def)) => Some(Arc::new(struct_def)),
+          Some(Calcit::StructDef(struct_def)) => Some(struct_def),
           _ => None,
         },
       }),
@@ -6072,7 +6059,7 @@ fn nominal_option_none_expression() -> Result<Calcit, String> {
   let definition = none.sum_type.expect("the core Option value retains its definition");
   Ok(Calcit::from(vec![
     Calcit::Proc(CalcitProc::NativeNamedEnumNew),
-    Calcit::EnumDef(definition.as_ref().clone()),
+    Calcit::EnumDef(definition),
     Calcit::tag("none"),
   ]))
 }
@@ -10747,11 +10734,11 @@ fn collect_all_tags_from(
           // compiled definitions outside the selected function bodies.
           collect_tags_from_expr(code, &mut tags);
           let struct_def = match code {
-            Calcit::StructDef(struct_def) => Some(struct_def.clone()),
+            Calcit::StructDef(struct_def) => Some(struct_def.as_ref().clone()),
             _ => {
               try_parse_defrecord_form(code).or_else(|| {
                 match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
-                  Some(Calcit::StructDef(struct_def)) => Some(struct_def),
+                  Some(Calcit::StructDef(struct_def)) => Some(struct_def.as_ref().clone()),
                   _ => None,
                 }
               })

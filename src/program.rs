@@ -335,6 +335,9 @@ fn ensure_runtime_capacity(runtime: &mut ProgramRuntimeData, def_id: DefId) {
 }
 
 fn register_program_def_id(ns: &str, def: &str) -> DefId {
+  if let Some(def_id) = lookup_def_id(ns, def) {
+    return def_id;
+  }
   let mut index = PROGRAM_DEF_ID_INDEX.write().expect("write program def id index");
   if let Some(def_id) = index.by_ns.get(ns).and_then(|defs| defs.get(def)) {
     *def_id
@@ -422,8 +425,16 @@ pub fn seed_runtime_lazy_from_compiled(ns: &str, def: &str) -> bool {
 }
 
 fn clear_runtime_ns(ns: &str) {
-  for def_id in collect_ns_def_ids(ns) {
-    clear_runtime_value(def_id);
+  let def_ids = collect_ns_def_ids(ns);
+  if def_ids.is_empty() {
+    return;
+  }
+  invalidate_field_write_shapes();
+  let mut runtime = PROGRAM_RUNTIME_DATA_STATE.write().expect("write runtime data");
+  for def_id in def_ids {
+    if let Some(slot) = runtime.get_mut(def_id.0 as usize) {
+      *slot = RuntimeCell::Cold;
+    }
   }
 }
 
@@ -908,9 +919,16 @@ fn collect_reload_affected_def_ids(
 }
 
 fn register_program_def_ids(program_data: &ProgramCodeData) {
+  let mut index = PROGRAM_DEF_ID_INDEX.write().expect("write program def id index");
+  let ProgramDefIdIndex { next_id, by_ns } = &mut *index;
   for (ns, file) in program_data {
+    let ns_defs = by_ns.entry(Arc::clone(ns)).or_default();
     for def in file.defs.keys() {
-      let _ = register_program_def_id(ns, def);
+      ns_defs.entry(Arc::clone(def)).or_insert_with(|| {
+        let def_id = DefId(*next_id);
+        *next_id += 1;
+        def_id
+      });
     }
   }
 }
@@ -1456,9 +1474,15 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
 /// Aliases and trait decoration must retain an existing declaration identity.
 pub(crate) fn with_runtime_definition_ref(ns: &str, def: &str, value: Calcit) -> Calcit {
   match value {
-    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => Calcit::Trait(trait_def.with_definition_ref(ns, def)),
-    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => Calcit::StructDef(struct_def.with_definition_ref(ns, def)),
-    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => Calcit::EnumDef(enum_def.with_definition_ref(ns, def)),
+    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => {
+      Calcit::Trait(Arc::new(trait_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
+    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => {
+      Calcit::StructDef(Arc::new(struct_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
+    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => {
+      Calcit::EnumDef(Arc::new(enum_def.as_ref().clone().with_definition_ref(ns, def)))
+    }
     other => other,
   }
 }

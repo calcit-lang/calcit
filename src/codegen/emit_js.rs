@@ -3720,7 +3720,7 @@ mod tests {
     let struct_def = calcit::CalcitStructDef::from_fields(EdnTag::from("Op"), vec![]);
 
     let failure = to_js_code(
-      &Calcit::StructDef(struct_def),
+      &Calcit::StructDef(Arc::new(struct_def)),
       "tests.emit-js",
       &local_defs,
       &file_imports,
