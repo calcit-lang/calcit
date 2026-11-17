@@ -52,7 +52,7 @@ aliases:
 | 运行时 quote 值、`macroexpand`、`format-to-lisp` 非静态表达式 | unsupported | 宏在编译前展开，不受影响 | `calcit.core/deftrait#requires-head-accepts-bare-and-quoted`、`calcit.core/data-view#classifies-symbol-struct-ref` 排除项 |
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |
-| `decode-map-as`、`parse-cirru-edn-as` | unsupported | | `calcit.core/decode-map-as#decodes-struct-and-option` 排除项 |
+| `decode-map-as`、`try-decode-map-as`、`parse-cirru-edn-as` | supported-with-type-evidence | 复用预处理生成的闭合 `DataShapeGraph` 解码标量、容器及名义 Struct / Enum / Option / Result（`try-decode-map-as` 返回 `Result`，`decode-map-as` 与 `parse-cirru-edn-as` 失败时 trap） | `calcit.core/decode-map-as#decodes-struct-and-option`、`calcit.core/try-decode-map-as#result-contract`、`calcit.core/try-parse-cirru-edn-as#parse-form-inside-typed-nth` |
 | `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
 | 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |

@@ -13672,6 +13672,21 @@
                       assert= |bad $ deref alias
                   (:ok _) (raise "|invalid ref payload was accepted")
               :tags $ #{} :ref-alias-boundary :unit
+            %{} 'TestEntry (:name |nested-list-and-error-path)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ [] $ [] 1 2
+                  try-decode-map-as
+                    [] $ [] 1 2
+                    List $ List Number
+                match
+                  try-decode-map-as
+                    [] $ [] 1 |bad
+                    List $ List Number
+                  (:err message)
+                    assert= true $ message .includes? |[0][1]
+                  (:ok _) (raise "|expected nested element failure")
+              :tags $ #{} :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source)

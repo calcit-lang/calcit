@@ -7356,11 +7356,10 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         }
       }
       CalcitSyntax::TryParseCirruEdnAs => edn_parse::emit_try_parse_cirru_edn_as(ctx, &args_list),
-      CalcitSyntax::JsCast
-      | CalcitSyntax::ParseCirruEdnAs
-      | CalcitSyntax::DecodeMapAs
-      | CalcitSyntax::TryDecodeMapAs
-      | CalcitSyntax::EncodeMapAs => Err(format!("{syn} is not yet supported in WASM codegen")),
+      CalcitSyntax::ParseCirruEdnAs => edn_parse::emit_parse_cirru_edn_as(ctx, &args_list),
+      CalcitSyntax::TryDecodeMapAs => edn_parse::emit_try_decode_map_as(ctx, &args_list),
+      CalcitSyntax::DecodeMapAs => edn_parse::emit_decode_map_as(ctx, &args_list),
+      CalcitSyntax::JsCast | CalcitSyntax::EncodeMapAs => Err(format!("{syn} is not yet supported in WASM codegen")),
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
       CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
       CalcitSyntax::Reset => {
@@ -11391,7 +11390,13 @@ fn expr_uses_cirru_edn_format(expr: &Calcit) -> bool {
 fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => {
-      matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, _))) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
+      matches!(
+        xs.first(),
+        Some(Calcit::Syntax(
+          CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+          _
+        ))
+      ) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
     }
     _ => false,
   }
