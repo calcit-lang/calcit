@@ -7288,8 +7288,18 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
           // `filter-not` — keep elements where f(elem) is falsy.
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
-          // `dissoc` — delegated to map dissoc for 2-arg calls.
-          "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
+          // `dissoc` — delegated to map dissoc when the receiver is not a List.
+          "dissoc"
+            if args_list.len() >= 2
+              && !infer_wasm_static_type(ctx, &args_list[0]).is_some_and(|ty| {
+                matches!(
+                  CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+                  CalcitTypeAnnotation::List(_)
+                )
+              }) =>
+          {
+            return emit_map_dissoc(ctx, &args_list);
+          }
           // `conj` — append one or more elements to a list.
           "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
           // `update` — rewrite a List/Map/Enum slot with f(old value) when it exists.
@@ -7547,6 +7557,19 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
   // specialization (for example Map `.merge`), while retaining the ABI guard
   // below for unknown function-table targets whose Fn type does not prove arity.
   if let Some(definition) = resolve_known_function_value(ctx, head) {
+    if definition.ns.as_ref() == "calcit.core"
+      && definition.def.as_ref() == "dissoc"
+      && call_args.len() >= 2
+      && !matches!(call_args.first(), Some(Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+      && infer_wasm_static_type(ctx, &call_args[0]).is_some_and(|ty| {
+        matches!(
+          CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+          CalcitTypeAnnotation::Map(_, _)
+        )
+      })
+    {
+      return emit_map_dissoc(ctx, call_args);
+    }
     let mut expanded = vec![head.clone()];
     let mut runtime_spreads = vec![];
     expand_literal_spread_args("call", call_args, &mut expanded, &mut runtime_spreads)?;
@@ -7801,13 +7824,31 @@ fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arit
   let n_from_spread = fixed.saturating_sub(n_explicit);
 
   // Emit explicit fixed args.
-  for arg in explicit_args {
+  for arg in &explicit_args[..fixed.min(n_explicit)] {
     emit_expr(ctx, arg)?;
   }
 
   if n_from_spread == 0 {
-    // All fixed params already emitted; spread_list_expr IS the rest arg.
-    emit_expr(ctx, spread_list_expr)?;
+    if n_explicit == fixed {
+      // All fixed params already emitted; spread_list_expr IS the rest arg.
+      emit_expr(ctx, spread_list_expr)?;
+    } else {
+      let mut extra_locals = Vec::with_capacity(n_explicit - fixed);
+      for arg in &explicit_args[fixed..] {
+        let local = ctx.alloc_local();
+        emit_expr(ctx, arg)?;
+        ctx.emit(Instruction::LocalSet(local));
+        extra_locals.push(local);
+      }
+      let prefix_f64 = emit_list_from_locals(ctx, &extra_locals);
+      let prefix_i32 = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(prefix_f64));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(prefix_i32));
+      let spread_i32 = emit_ptr_to_i32(ctx, spread_list_expr)?;
+      let combined = emit_list_concat_two_i32(ctx, prefix_i32, spread_i32);
+      ctx.ptr_to_f64(combined);
+    }
   } else {
     // Need to extract `n_from_spread` fixed params from the spread list,
     // then emit the remainder as the rest arg.
