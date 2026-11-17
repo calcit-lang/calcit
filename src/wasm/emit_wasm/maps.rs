@@ -125,7 +125,36 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   if args.len() < 2 {
     return Err("&map:dissoc expects a map and at least one key".into());
   }
-  let accumulator = emit_ptr_to_i32(ctx, &args[0])?;
+  let receiver = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(receiver));
+  if !infer_wasm_static_type(ctx, &args[0]).is_some_and(|annotation| {
+    matches!(
+      CalcitTypeAnnotation::expand_schema_alias(&annotation).as_ref(),
+      CalcitTypeAnnotation::Map(_, _)
+    )
+  }) {
+    let is_heap = emit_is_heap_value(ctx, receiver);
+    ctx.emit(Instruction::LocalGet(is_heap));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(receiver));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Sub);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::I32Const(*ctx.tag_index.get("map").ok_or("map tag not found")? as i32));
+    ctx.emit(Instruction::I32Ne);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+  }
+  let accumulator = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(accumulator));
   let key_count = ctx.alloc_i32(0);
   let mut arguments = args[1..].iter();
   while let Some(argument) = arguments.next() {

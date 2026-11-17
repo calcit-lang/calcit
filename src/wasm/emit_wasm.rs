@@ -7288,8 +7288,18 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
           // `filter-not` — keep elements where f(elem) is falsy.
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
-          // `dissoc` — delegated to map dissoc for 2-arg calls.
-          "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
+          // `dissoc` — delegated to map dissoc when the receiver is statically a Map.
+          "dissoc"
+            if args_list.len() >= 2
+              && infer_wasm_static_type(ctx, &args_list[0]).is_some_and(|ty| {
+                matches!(
+                  CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+                  CalcitTypeAnnotation::Map(_, _)
+                )
+              }) =>
+          {
+            return emit_map_dissoc(ctx, &args_list);
+          }
           // `conj` — append one or more elements to a list.
           "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
           // `update` — rewrite a List/Map/Enum slot with f(old value) when it exists.
@@ -7547,6 +7557,19 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
   // specialization (for example Map `.merge`), while retaining the ABI guard
   // below for unknown function-table targets whose Fn type does not prove arity.
   if let Some(definition) = resolve_known_function_value(ctx, head) {
+    if definition.ns.as_ref() == "calcit.core"
+      && definition.def.as_ref() == "dissoc"
+      && call_args.len() >= 2
+      && !matches!(call_args.first(), Some(Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+      && infer_wasm_static_type(ctx, &call_args[0]).is_some_and(|ty| {
+        matches!(
+          CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(),
+          CalcitTypeAnnotation::Map(_, _)
+        )
+      })
+    {
+      return emit_map_dissoc(ctx, call_args);
+    }
     let mut expanded = vec![head.clone()];
     let mut runtime_spreads = vec![];
     expand_literal_spread_args("call", call_args, &mut expanded, &mut runtime_spreads)?;
@@ -7769,22 +7792,66 @@ fn list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
   }
 }
 
+fn emit_packed_spread_args_list(ctx: &mut WasmGenCtx, tail_args: &[Calcit]) -> Result<u32, String> {
+  let mut acc_i32: Option<u32> = None;
+  let mut run_locals: Vec<u32> = Vec::new();
+  let flush_run = |ctx: &mut WasmGenCtx, run_locals: &mut Vec<u32>, acc_i32: &mut Option<u32>| {
+    if run_locals.is_empty() {
+      return;
+    }
+    let seg_f64 = emit_list_from_locals(ctx, run_locals);
+    run_locals.clear();
+    let seg_i32 = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(seg_f64));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(seg_i32));
+    *acc_i32 = Some(match *acc_i32 {
+      Some(prev) => emit_list_concat_two_i32(ctx, prev, seg_i32),
+      None => seg_i32,
+    });
+  };
+
+  let mut iter = tail_args.iter();
+  while let Some(arg) = iter.next() {
+    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      flush_run(ctx, &mut run_locals, &mut acc_i32);
+      let spread_expr = iter
+        .next()
+        .filter(|item| !matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+        .ok_or("&call-spread missing spread list expression")?;
+      let spread_i32 = emit_ptr_to_i32(ctx, spread_expr)?;
+      acc_i32 = Some(match acc_i32 {
+        Some(prev) => emit_list_concat_two_i32(ctx, prev, spread_i32),
+        None => spread_i32,
+      });
+    } else {
+      let local = ctx.alloc_local();
+      emit_expr(ctx, arg)?;
+      ctx.emit(Instruction::LocalSet(local));
+      run_locals.push(local);
+    }
+  }
+  flush_run(ctx, &mut run_locals, &mut acc_i32);
+  acc_i32.ok_or_else(|| "&call-spread missing spread list expression".into())
+}
+
 fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
   let Some(fixed) = rest_fixed else {
     return Err("&call-spread in WASM currently requires the target function to accept rest args".into());
   };
   let fixed = fixed as usize;
 
-  // Locate the ArgSpread marker (if any) to split explicit args from the spread list.
+  // Locate the first ArgSpread marker (if any) to split leading explicit args from the spread tail.
   let spread_pos = call_args
     .iter()
     .position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
 
-  let (explicit_args, spread_list_opt): (&[Calcit], Option<&Calcit>) = if let Some(pos) = spread_pos {
-    (&call_args[..pos], call_args.get(pos + 1))
+  let (explicit_args, tail_args): (&[Calcit], &[Calcit]) = if let Some(pos) = spread_pos {
+    let prefix_fixed = fixed.min(pos);
+    (&call_args[..prefix_fixed], &call_args[prefix_fixed..])
   } else if call_args.len() == fixed + 1 {
     // Old-style: no ArgSpread marker; last arg is the rest list.
-    (&call_args[..fixed], Some(&call_args[fixed]))
+    (&call_args[..fixed], &call_args[fixed..])
   } else {
     return Err(format!(
       "&call-spread in WASM expects {} fixed args plus `& spread-list`, got {} args",
@@ -7793,42 +7860,48 @@ fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arit
     ));
   };
 
-  let Some(spread_list_expr) = spread_list_opt else {
-    return Err("&call-spread missing spread list expression".into());
-  };
-
   let n_explicit = explicit_args.len();
   let n_from_spread = fixed.saturating_sub(n_explicit);
 
-  // Emit explicit fixed args.
+  // Emit leading explicit fixed args.
   for arg in explicit_args {
     emit_expr(ctx, arg)?;
   }
 
-  if n_from_spread == 0 {
-    // All fixed params already emitted; spread_list_expr IS the rest arg.
+  if spread_pos.is_none() {
+    // Old-style single rest list expression at `tail_args[0]`.
+    emit_expr(ctx, &tail_args[0])?;
+  } else if n_from_spread == 0 && tail_args.len() == 2 && matches!(tail_args[0], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+    // Fast path: all fixed params already emitted and a single `& spread_list` is the entire rest arg.
+    let spread_list_expr = &tail_args[1];
+    if matches!(spread_list_expr, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      return Err("&call-spread missing spread list expression".into());
+    }
     emit_expr(ctx, spread_list_expr)?;
   } else {
-    // Need to extract `n_from_spread` fixed params from the spread list,
-    // then emit the remainder as the rest arg.
-    emit_expr(ctx, spread_list_expr)?;
-    let spread_f64 = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(spread_f64));
-    let spread_i32 = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(spread_f64));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(spread_i32));
+    let combined_i32 = emit_packed_spread_args_list(ctx, tail_args)?;
+    if n_from_spread == 0 {
+      ctx.ptr_to_f64(combined_i32);
+    } else {
+      let combined_count = emit_load_count_i32(ctx, combined_i32);
+      ctx.emit(Instruction::LocalGet(combined_count));
+      ctx.emit(Instruction::I32Const(n_from_spread as i32));
+      ctx.emit(Instruction::I32LtU);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
 
-    // Extract each required fixed param: list[i] = spread_i32[(1+i)*8]
-    for i in 0..n_from_spread {
-      ctx.emit(Instruction::LocalGet(spread_i32));
-      ctx.emit(Instruction::I32Const(((1 + i) * 8) as i32));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      // Extract each required fixed param: list[i] = combined_i32[(1+i)*8]
+      for i in 0..n_from_spread {
+        ctx.emit(Instruction::LocalGet(combined_i32));
+        ctx.emit(Instruction::I32Const(((1 + i) * 8) as i32));
+        ctx.emit(Instruction::I32Add);
+        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      }
+
+      // Emit the rest arg = list_slice(combined, n_from_spread).
+      emit_list_slice_from_i32_local(ctx, combined_i32, n_from_spread)?;
     }
-
-    // Emit the rest arg = list_slice(spread, n_from_spread).
-    emit_list_slice_from_i32_local(ctx, spread_i32, n_from_spread)?;
   }
 
   let emitted_args = fixed + 1;

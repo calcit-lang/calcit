@@ -553,7 +553,7 @@ pub(super) fn emit_list_concat_spread(ctx: &mut WasmGenCtx, explicit: &[Calcit],
 }
 
 /// Concatenate two lists held in i32 pointer locals; returns the i32 local of the new list.
-fn emit_list_concat_two_i32(ctx: &mut WasmGenCtx, src_a: u32, src_b: u32) -> u32 {
+pub(super) fn emit_list_concat_two_i32(ctx: &mut WasmGenCtx, src_a: u32, src_b: u32) -> u32 {
   let count_a = emit_load_count_i32(ctx, src_a);
   let count_b = emit_load_count_i32(ctx, src_b);
 
