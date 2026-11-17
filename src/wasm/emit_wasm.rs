@@ -7883,6 +7883,14 @@ fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arit
     if n_from_spread == 0 {
       ctx.ptr_to_f64(combined_i32);
     } else {
+      let combined_count = emit_load_count_i32(ctx, combined_i32);
+      ctx.emit(Instruction::LocalGet(combined_count));
+      ctx.emit(Instruction::I32Const(n_from_spread as i32));
+      ctx.emit(Instruction::I32LtU);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
+
       // Extract each required fixed param: list[i] = combined_i32[(1+i)*8]
       for i in 0..n_from_spread {
         ctx.emit(Instruction::LocalGet(combined_i32));

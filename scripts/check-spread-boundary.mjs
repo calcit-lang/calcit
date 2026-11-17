@@ -138,6 +138,10 @@ try {
     "quote $ defwasm-export rest-tail-spread () $ let\n    xs $ foldl ([] 3) (assert-type ([]) (List Number)) $ fn (acc item) (hint-fn $ Fn (List Number) Number (-> (List Number))) (append acc item)\n    ys $ foldl ([] 1 2 3) (assert-type ([]) (List Number)) $ fn (acc item) (hint-fn $ Fn (List Number) Number (-> (List Number))) (append acc item)\n  &+ (sum-rest 1 2 & xs 4) (sum-rest & ys 4)"], options);
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "calcit.spread-evidence/rest-tail-spread", "--input-format", "cirru", "--code",
     "quote $ Fn (-> Number)"], options);
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "calcit.spread-evidence/short-rest-spread", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export short-rest-spread () $ let\n    empty-xs $ foldl (assert-type ([]) (List Number)) (assert-type ([]) (List Number)) $ fn (acc item) (hint-fn $ Fn (List Number) Number (-> (List Number))) (append acc item)\n  sum-rest & empty-xs"], options);
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "calcit.spread-evidence/short-rest-spread", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Number)"], options);
   execFileSync(binary, [wasmSnapshot, "--emit-path", output, "wasm"], options);
   const module = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
   const imports = {};
@@ -148,6 +152,7 @@ try {
   const wasmExports = new WebAssembly.Instance(module, imports).exports;
   assert.equal(wasmExports["fixed-spread"](), 3);
   assert.equal(wasmExports["rest-tail-spread"](), 2468);
+  assert.throws(() => wasmExports["short-rest-spread"](), WebAssembly.RuntimeError);
   run("config", "set", "init-fn", "calcit.spread-evidence/run-tests");
   run("config", "set", "reload-fn", "calcit.spread-evidence/run-tests");
 
