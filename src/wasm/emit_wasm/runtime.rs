@@ -5248,6 +5248,7 @@ fn build_rt_map_root_from_flat(hash_idx: u32, root_assoc_idx: u32) -> CompiledFn
   let count = b.alloc_i32();
   let i = b.alloc_i32();
   let root = b.alloc_i32();
+  let actual = b.alloc_i32();
   let key = b.alloc_f64();
   let val = b.alloc_f64();
   let hash = b.alloc_i32();
@@ -5261,6 +5262,8 @@ fn build_rt_map_root_from_flat(hash_idx: u32, root_assoc_idx: u32) -> CompiledFn
   b.emit(Instruction::LocalSet(i));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(root));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(actual));
   b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
@@ -5295,6 +5298,10 @@ fn build_rt_map_root_from_flat(hash_idx: u32, root_assoc_idx: u32) -> CompiledFn
   b.emit(Instruction::Call(root_assoc_idx));
   b.emit(Instruction::LocalSet(added));
   b.emit(Instruction::LocalSet(root));
+  b.emit(Instruction::LocalGet(actual));
+  b.emit(Instruction::LocalGet(added));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(actual));
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
@@ -5302,8 +5309,9 @@ fn build_rt_map_root_from_flat(hash_idx: u32, root_assoc_idx: u32) -> CompiledFn
   b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(actual));
   b.emit(Instruction::LocalGet(root));
-  b.finish(vec![ValType::I32], vec![ValType::I32])
+  b.finish(vec![ValType::I32], vec![ValType::I32, ValType::I32])
 }
 
 fn build_rt_map_linearize(root_write_pairs_idx: u32, list_tag: i32) -> CompiledFn {

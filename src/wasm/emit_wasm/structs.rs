@@ -334,7 +334,13 @@ pub(super) fn emit_struct_with_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-fn emit_struct_update_from_locals(ctx: &mut WasmGenCtx, receiver: u32, value: u32, index: usize, field: &str) -> Result<(), String> {
+pub(super) fn emit_struct_update_from_locals(
+  ctx: &mut WasmGenCtx,
+  receiver: u32,
+  value: u32,
+  index: usize,
+  field: &str,
+) -> Result<(), String> {
   let field_id = ctx.tag_index.get(field).copied().ok_or("unknown Struct field tag")?;
   let mut layouts = ctx
     .struct_layouts
@@ -1038,4 +1044,91 @@ pub(super) fn emit_enum_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
+}
+
+pub(super) fn enum_identity_tag(enum_def: &CalcitEnumDef) -> String {
+  let def_ref = match enum_def.definition_ref() {
+    Some(r) => format!("1:{r}"),
+    None => "0:".to_owned(),
+  };
+  let generics = enum_def.generics().iter().map(|g| g.as_ref()).collect::<Vec<_>>().join(",");
+  let bounds = enum_def
+    .where_bounds()
+    .iter()
+    .map(|b| {
+      let traits = b.traits.iter().map(|t| t.name.ref_str()).collect::<Vec<_>>().join("+");
+      format!("{}:{traits}", b.name)
+    })
+    .collect::<Vec<_>>()
+    .join(",");
+  let variants = enum_def
+    .variants()
+    .iter()
+    .map(|v| {
+      let payloads = v
+        .payload_types()
+        .iter()
+        .map(|t| format!("{}", t.to_type_edn()))
+        .collect::<Vec<_>>()
+        .join(",");
+      format!("{}:{:08}:[{}]", v.tag, v.payload_types().len(), payloads)
+    })
+    .collect::<Vec<_>>()
+    .join(";");
+  format!(
+    "__enum_def__:{}:{}:{:08}:<{}>:{:08}:<{}>:{:08}:{{{}}}",
+    def_ref,
+    enum_def.name(),
+    enum_def.generics().len(),
+    generics,
+    enum_def.where_bounds().len(),
+    bounds,
+    enum_def.variants().len(),
+    variants
+  )
+}
+
+pub(super) fn resolve_enum_ref(node: &Calcit) -> Result<CalcitEnumDef, String> {
+  match node {
+    Calcit::EnumDef(e) => Ok(e.as_ref().clone()),
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      if let Some(Calcit::EnumDef(e)) = program::lookup_runtime_ready(ns, def) {
+        return Ok(e.as_ref().clone());
+      }
+      if let Some(compiled) = program::lookup_compiled_def(ns, def) {
+        if let Calcit::EnumDef(e) = &compiled.codegen_form {
+          return Ok(e.as_ref().clone());
+        }
+        if let Calcit::EnumDef(e) = &compiled.preprocessed_code {
+          return Ok(e.as_ref().clone());
+        }
+      }
+      Err(format!("cannot resolve enum reference {ns}/{def}"))
+    }
+    other => Err(format!("expected enum reference, got: {other}")),
+  }
+}
+
+pub(super) fn emit_enum_definition(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "&enum:definition expects 1 arg")?;
+  let value_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  if let Some(enum_def) = value_type.as_deref().and_then(|ty| ty.resolve_to_enum()) {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    let enum_key = enum_identity_tag(&enum_def);
+    let tag_id = *ctx
+      .tag_index
+      .get(&enum_key)
+      .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", enum_def.name()))?;
+    let def_local = ctx.alloc_local();
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::LocalSet(def_local));
+    return emit_option_enum(ctx, Some(def_local));
+  }
+  if matches!(value_type.as_deref(), Some(CalcitTypeAnnotation::AnonymousEnum)) {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    return emit_option_enum(ctx, None);
+  }
+  Err("Enum operation &enum:definition not yet supported in WASM codegen".into())
 }

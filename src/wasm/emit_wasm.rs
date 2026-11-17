@@ -67,10 +67,10 @@ use runtime::{
   host_imports_for_target,
 };
 use structs::{
-  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
-  emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag,
-  emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map,
-  emit_struct_with_at, resolve_struct_ref, try_parse_defrecord_form,
+  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_definition,
+  emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def,
+  emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
+  emit_struct_to_map, emit_struct_with_at, enum_identity_tag, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -5578,10 +5578,29 @@ fn inline_closure_tail(expr: &Calcit) -> (Vec<&Calcit>, &Calcit) {
 }
 
 fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
+  let param_types = vec![None; param_locals.len()];
+  emit_inline_closure_body_with_types(ctx, closure, param_locals, &param_types)
+}
+
+fn emit_inline_closure_body_with_types(
+  ctx: &mut WasmGenCtx,
+  closure: &InlineClosure,
+  param_locals: &[u32],
+  param_types: &[Option<Arc<CalcitTypeAnnotation>>],
+) -> Result<(), String> {
   if closure.body.iter().any(check_uses_recur) {
     return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
   }
-  let args = param_locals.iter().map(|local| (InlineArgument::Value(*local), None)).collect();
+  let args = param_locals
+    .iter()
+    .enumerate()
+    .map(|(idx, local)| {
+      (
+        InlineArgument::Value(*local),
+        param_types.get(idx).and_then(|ty| ty.clone()).map(WasmTypeEvidence::contract),
+      )
+    })
+    .collect();
   let bindings = bind_inline_closure_args(ctx, closure, args)?;
   emit_inline_closure_with_bindings(ctx, closure, bindings)
 }
@@ -5819,6 +5838,24 @@ fn infer_wasm_evidence_in_scope(
 
 /// A declared data result is not a witness for value-carried implementations.
 /// Recover that witness from the checked body with the actual argument evidence.
+fn replace_unbound_type_vars_with_never(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  if !annotation.contains_type_var() {
+    return annotation.clone();
+  }
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_) => {
+      crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()
+    }
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(replace_unbound_type_vars_with_never(inner))),
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(replace_unbound_type_vars_with_never(inner))),
+    CalcitTypeAnnotation::Map(k, v) => Arc::new(CalcitTypeAnnotation::Map(
+      replace_unbound_type_vars_with_never(k),
+      replace_unbound_type_vars_with_never(v),
+    )),
+    _ => annotation.clone(),
+  }
+}
+
 fn infer_wasm_callable_result(
   ctx: &WasmGenCtx,
   expr: &Calcit,
@@ -5826,7 +5863,39 @@ fn infer_wasm_callable_result(
   locals: &HashMap<String, WasmTypeEvidence>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
-  let declared = infer_static_type_from_expr(expr)?;
+  let mut declared = infer_static_type_from_expr(expr)?;
+  let Calcit::List(items) = expr else {
+    return Some(WasmTypeEvidence::contract(declared));
+  };
+  if declared.contains_type_var()
+    && let Some(head) = items.first()
+    && let Some(key) = direct_definition_reference(head)
+    && let Some((ns, def)) = key.rsplit_once('/')
+    && let Some(signature) = program::lookup_def_schema(ns, def).resolve_to_fn()
+  {
+    let mut bindings = TypeBindings::new();
+    let mut matched = true;
+    for (index, argument) in args.iter().enumerate() {
+      let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+        matched = false;
+        break;
+      };
+      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, visiting) else {
+        matched = false;
+        break;
+      };
+      if actual.annotation.prove_available_bindings(expected, &mut bindings).is_mismatch() {
+        matched = false;
+        break;
+      }
+    }
+    if matched {
+      let substituted = replace_unbound_type_vars_with_never(&signature.return_type.substitute_type_vars(&bindings));
+      if !substituted.contains_type_var() {
+        declared = substituted;
+      }
+    }
+  }
   let fallback = WasmTypeEvidence::contract(declared.clone());
   if declared.resolve_to_enum().is_none()
     && declared.resolve_to_struct().is_none()
@@ -5834,7 +5903,6 @@ fn infer_wasm_callable_result(
   {
     return Some(fallback);
   }
-  let Calcit::List(items) = expr else { return Some(fallback) };
   let (key, params, body, expected) = match items.first()? {
     Calcit::Fn { id, info } if info.scope.is_empty() && matches!(info.args.as_ref(), CalcitFnArgs::Args(_)) => (
       format!("fn:{id}"),
@@ -6035,7 +6103,7 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
   // Retain actual evidence, including an intentionally open transported value.
   // The operation that consumes it (nil?, numeric ordering or trait dispatch)
   // must prove its own requirements; an unrelated parameter need not be closed.
-  args
+  let actuals = args
     .iter()
     .zip(definition.arg_types.iter())
     .map(|(arg, expected)| {
@@ -6049,7 +6117,59 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
       }
       Some(actual)
     })
-    .collect::<Option<Vec<_>>>()
+    .collect::<Option<Vec<_>>>()?;
+
+  fn widens_closed_element_to_dynamic(actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>) -> bool {
+    let actual = CalcitTypeAnnotation::expand_schema_alias(actual);
+    let expected = CalcitTypeAnnotation::expand_schema_alias(expected);
+    if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic)
+      && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Never)
+    {
+      return true;
+    }
+    match (actual.as_ref(), expected.as_ref()) {
+      (CalcitTypeAnnotation::List(a), CalcitTypeAnnotation::List(e)) | (CalcitTypeAnnotation::Set(a), CalcitTypeAnnotation::Set(e)) => {
+        widens_closed_element_to_dynamic(a, e)
+      }
+      (CalcitTypeAnnotation::Map(ak, av), CalcitTypeAnnotation::Map(ek, ev)) => {
+        widens_closed_element_to_dynamic(ak, ek) || widens_closed_element_to_dynamic(av, ev)
+      }
+      (CalcitTypeAnnotation::Tuple(items), CalcitTypeAnnotation::List(e)) => {
+        items.iter().any(|item| widens_closed_element_to_dynamic(item, e))
+      }
+      (CalcitTypeAnnotation::Tuple(a_items), CalcitTypeAnnotation::Tuple(e_items)) => a_items
+        .iter()
+        .zip(e_items.iter())
+        .any(|(a, e)| widens_closed_element_to_dynamic(a, e)),
+      _ => false,
+    }
+  }
+
+  Some(
+    actuals
+      .into_iter()
+      .zip(definition.arg_types.iter())
+      .map(|(actual, expected)| {
+        let substituted = replace_unbound_type_vars_with_never(&expected.substitute_type_vars(&bindings));
+        if matches!(
+          actual.annotation.as_ref(),
+          CalcitTypeAnnotation::Tuple(_)
+            | CalcitTypeAnnotation::List(_)
+            | CalcitTypeAnnotation::Set(_)
+            | CalcitTypeAnnotation::Map(_, _)
+        ) && !substituted.contains_type_var()
+          && actual.annotation.is_proven_for(&substituted)
+          && !substituted.is_proven_for(&actual.annotation)
+          && !matches!(substituted.as_ref(), CalcitTypeAnnotation::Dynamic)
+          && !widens_closed_element_to_dynamic(&actual.annotation, &substituted)
+        {
+          WasmTypeEvidence::contract(substituted)
+        } else {
+          actual
+        }
+      })
+      .collect(),
+  )
 }
 
 fn nominal_option_none_expression() -> Result<Calcit, String> {
@@ -6566,6 +6686,24 @@ fn compile_fn(
     ctx.recur_shape = arg_labels_shape(labels).filter(|&(required, rest)| rest || required != arity);
   }
 
+  if source_ns == "calcit.core" && export_name == "keys-non-nil" && arity == 1 {
+    let arg0 = Calcit::Symbol {
+      sym: param_names[0].clone().into(),
+      info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+        at_ns: source_ns.into(),
+        at_def: export_name.into(),
+      }),
+      location: None,
+    };
+    emit_map_keys_non_nil(&mut ctx, &[arg0])?;
+    return Ok(CompiledFn {
+      export_name: None,
+      params: vec![ValType::F64; arity],
+      results: vec![ValType::F64],
+      locals: std::mem::take(&mut ctx.extra_locals),
+      instructions: std::mem::take(&mut ctx.instructions),
+    });
+  }
   reject_non_tail_recur(body, &format!("{source_ns}/{export_name}"))?;
   // Check if body uses recur
   ctx.uses_recur = body.iter().any(check_uses_recur);
@@ -7032,6 +7170,14 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       let id = ctx.struct_layouts.id(s)?;
       ctx.emit(f64_const(id as f64));
     }
+    Calcit::EnumDef(e) => {
+      let key = enum_identity_tag(e);
+      let id = *ctx
+        .tag_index
+        .get(&key)
+        .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", e.name()))?;
+      ctx.emit(f64_const(id as f64));
+    }
     Calcit::Local(local) => {
       let name = &*local.sym;
       if ctx.lambda_locals.contains_key(name) {
@@ -7067,6 +7213,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         emit_list_new(ctx, &[])?;
       } else if let Ok(struct_def) = resolve_struct_ref(expr) {
         let id = ctx.struct_layouts.id(&struct_def)?;
+        ctx.emit(f64_const(id as f64));
+      } else if let Ok(enum_def) = resolve_enum_ref(expr) {
+        let key = enum_identity_tag(&enum_def);
+        let id = *ctx
+          .tag_index
+          .get(&key)
+          .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", enum_def.name()))?;
         ctx.emit(f64_const(id as f64));
       } else if let Some(&slot) = ctx
         .fn_table_index
@@ -7318,6 +7471,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
           // `filter-map-kv xs f` — consume typed :keep/:drop decisions.
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           // `'` — list literal constructor (calcit.core/'), same as ([] a b c).
           "'" => return emit_list_new(ctx, &args_list),
           _ => {}
@@ -7384,6 +7538,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+        "keys-non-nil"
+          if args_list.len() == 1
+            && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+            && !ctx.lambda_locals.contains_key(name)
+            && !ctx.locals.contains_key(name) =>
+        {
+          return emit_map_keys_non_nil(ctx, &args_list);
+        }
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
@@ -7449,6 +7611,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           _ => {}
         }
       }
@@ -8076,6 +8239,55 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
+      let a_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let b_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let is_proven_numeric_scalar = |ty: Option<&CalcitTypeAnnotation>| {
+        matches!(
+          ty,
+          Some(
+            CalcitTypeAnnotation::Number
+              | CalcitTypeAnnotation::Numeric(_)
+              | CalcitTypeAnnotation::Bool
+              | CalcitTypeAnnotation::Nil
+              | CalcitTypeAnnotation::Unit
+          )
+        )
+      };
+      if is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()) {
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Lt);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.emit(f64_const(-1.0));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Gt);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+        ctx.emit(f64_const(1.0));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::F64ConvertI32U);
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::F64ConvertI32U);
+        ctx.emit(Instruction::F64Sub);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::End);
+        return Ok(());
+      }
+      if matches!(a_ty.as_deref(), Some(CalcitTypeAnnotation::String)) && matches!(b_ty.as_deref(), Some(CalcitTypeAnnotation::String))
+      {
+        ctx.emit(Instruction::LocalGet(a));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::LocalGet(b));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.call_rt("__rt_str_compare");
+        return Ok(());
+      }
       // Strings are heap pointers: ordering them as numbers would compare
       // allocation addresses, so dispatch to the lexicographic runtime compare.
       // A string sorts after every non-string, matching native ordering.
@@ -8344,9 +8556,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeEnumValidate => Err("runtime enum validation is not supported in WASM".into()),
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
     CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
+    CalcitProc::NativeEnumDefinition => emit_enum_definition(ctx, args),
     CalcitProc::NativeEnumImpls
     | CalcitProc::NativeEnumParams
-    | CalcitProc::NativeEnumDefinition
     | CalcitProc::NativeEnumValueImplTraits
     | CalcitProc::NativeEnumDefHasVariant
     | CalcitProc::NativeEnumDefVariantArity => Err(format!("Enum operation {proc} not yet supported in WASM codegen")),
@@ -10837,7 +11049,7 @@ fn collect_all_tags_from(
   if let Some(program_data) = program_data {
     for (ns, file) in program_data {
       for (name, compiled) in &file.defs {
-        if let Some(value @ Calcit::StructDef(_)) = program::lookup_runtime_ready(ns, name) {
+        if let Some(value @ (Calcit::StructDef(_) | Calcit::EnumDef(_))) = program::lookup_runtime_ready(ns, name) {
           collect_tags_from_expr(&value, &mut tags);
         }
         for code in compiled
@@ -10871,6 +11083,7 @@ fn collect_all_tags_from(
             },
           };
           if let Some(enum_def) = enum_def {
+            tags.push(enum_identity_tag(&enum_def));
             tags.extend(enum_def.variants().iter().map(|variant| variant.tag.ref_str().to_owned()));
           }
         }
@@ -10901,6 +11114,11 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
     Calcit::Tag(t) => {
       tags.push(t.to_string());
     }
+    Calcit::Local(local) => {
+      if let Some(enum_def) = CalcitTypeAnnotation::expand_schema_alias(&local.type_info).resolve_to_enum() {
+        tags.push(enum_identity_tag(&enum_def));
+      }
+    }
     Calcit::List(xs) => {
       for x in xs.iter() {
         collect_tags_from_expr(x, tags);
@@ -10912,12 +11130,23 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
         tags.push(f.to_string());
       }
     }
-    // When struct refs are imports, resolve them to collect their tags
+    Calcit::EnumDef(e) => {
+      tags.push(enum_identity_tag(e));
+      for v in e.variants() {
+        tags.push(v.tag.to_string());
+      }
+    }
+    // When struct/enum refs are imports, resolve them to collect their tags
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       if let Ok(struct_def) = resolve_struct_ref(expr) {
         tags.push(struct_def.name.to_string());
         for f in struct_def.fields.iter() {
           tags.push(f.to_string());
+        }
+      } else if let Ok(enum_def) = resolve_enum_ref(expr) {
+        tags.push(enum_identity_tag(&enum_def));
+        for v in enum_def.variants() {
+          tags.push(v.tag.to_string());
         }
       }
       // Also try to collect tags from the expression in case it's used as a value
@@ -14130,5 +14359,126 @@ mod tests {
       ]
     );
     assert!(imports.iter().all(|import| import.module == "wasi_snapshot_preview1"));
+  }
+
+  #[test]
+  fn enum_identity_and_collection_helper_guards_preserve_type_evidence() {
+    let make_enum = |payloads: Vec<Calcit>| {
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("Entry"), vec![EdnTag::from("item")])),
+        values: Arc::new(vec![Calcit::from(payloads)]),
+      })
+      .expect("valid enum def")
+    };
+    let original = make_enum(vec![Calcit::Tag(EdnTag::from("string"))]);
+    let equivalent = make_enum(vec![Calcit::Tag(EdnTag::from("string"))]);
+    let different = make_enum(vec![Calcit::Tag(EdnTag::from("number"))]);
+    let arity = make_enum(vec![Calcit::Tag(EdnTag::from("string")), Calcit::Tag(EdnTag::from("string"))]);
+
+    assert_eq!(super::enum_identity_tag(&original), super::enum_identity_tag(&equivalent));
+    assert_ne!(super::enum_identity_tag(&original), super::enum_identity_tag(&different));
+    assert_ne!(super::enum_identity_tag(&original), super::enum_identity_tag(&arity));
+    assert!(super::enum_identity_tag(&original) > super::enum_identity_tag(&different));
+    assert!(super::enum_identity_tag(&original) < super::enum_identity_tag(&arity));
+
+    let list_number_enum = make_enum(vec![Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("::"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.enum"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(EdnTag::from("list")),
+      Calcit::Tag(EdnTag::from("number")),
+    ])]);
+    let list_string_enum = make_enum(vec![Calcit::from(vec![
+      Calcit::Symbol {
+        sym: Arc::from("::"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.enum"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+      },
+      Calcit::Tag(EdnTag::from("list")),
+      Calcit::Tag(EdnTag::from("string")),
+    ])]);
+    assert_ne!(
+      super::enum_identity_tag(&list_number_enum),
+      super::enum_identity_tag(&list_string_enum)
+    );
+
+    let list_bool = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Bool)));
+    let list_dyn = Arc::new(CalcitTypeAnnotation::List(crate::wasm::host::calcit::DYNAMIC_TYPE.clone()));
+    let mut ctx = WasmGenCtx::new(
+      0,
+      WasmCompileEnv {
+        function_value_dependencies: Default::default(),
+        fn_index: HashMap::new(),
+        fn_arity: HashMap::new(),
+        fn_has_rest: HashMap::new(),
+        runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
+        tag_index: HashMap::from([("list".into(), 1)]),
+        struct_layouts: Default::default(),
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        value_imports: HashMap::new(),
+        static_fn_defs: HashMap::from([(
+          "tests.spec/check-list".into(),
+          Arc::new(StaticFnDef {
+            params: vec!["xs".into(), "tag".into()],
+            arg_types: vec![list_dyn, crate::wasm::host::calcit::DYNAMIC_TYPE.clone()],
+            callback_arities: HashMap::new(),
+            fixed_arity: true,
+            body: vec![Calcit::from(vec![
+              Calcit::Symbol {
+                sym: Arc::from("map"),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: Arc::from(crate::wasm::host::calcit::CORE_NS),
+                  at_def: Arc::from("check-list"),
+                }),
+                location: None,
+              },
+              Calcit::Local(CalcitLocal {
+                idx: 0,
+                sym: Arc::from("xs"),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: Arc::from("tests.spec"),
+                  at_def: Arc::from("check-list"),
+                }),
+                location: None,
+                type_info: crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+              }),
+              Calcit::Proc(CalcitProc::NilQuestion),
+            ])],
+            nil_sensitive: true,
+            trait_sensitive: false,
+            method_sensitive: false,
+          }),
+        )]),
+        fn_table_index: HashMap::new(),
+        host_imports: HashMap::new(),
+        target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
+      },
+    );
+    ctx.locals.insert("arg".into(), 0);
+    ctx.local_types.insert("arg".into(), WasmTypeEvidence::contract(list_bool.clone()));
+    let arg_expr = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("arg"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.spec"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+      type_info: list_bool,
+    });
+    assert!(
+      super::emit_specialized_static_call(&mut ctx, "tests.spec/check-list", &[arg_expr, Calcit::Number(1.0)])
+        .expect("List<Bool> passed to List<Dynamic> parameter must preserve closed element evidence for nil?")
+    );
   }
 }

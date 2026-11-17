@@ -162,6 +162,11 @@
           :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic) (Expr Dynamic)
             -> $ Expr Dynamic
           :tags $ #{} :internal :macro
+        '&assert-traits $ %{} 'CodeEntry (:doc "|运行时检查值是否具有所需的名义 trait 实现，成功时返回原值。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn T Trait (-> T) (:generics T)
+          :tags $ #{} :builtin :control :internal
         '&atom:deref $ %{} 'CodeEntry
           :doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom"
           :code $ quote &runtime-implementation
@@ -233,12 +238,6 @@
                 assert= ([] 1 |x) frozen
                 assert= ([] 1 |x 2) (&buf-list:to-list buf)
             :tags $ #{} :core :unit
-        '&assert-traits $ %{} 'CodeEntry
-          :doc "|运行时检查值是否具有所需的名义 trait 实现，成功时返回原值。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn T Trait (-> T) (:generics T)
-          :tags $ #{} :builtin :internal :control
         '&buffer $ %{} 'CodeEntry
           :doc "|internal function for buffer operations\nSyntax: (&buffer data)\nParams: data (list of numbers or bytes)\nReturns: buffer object\nCreates a binary buffer from list of byte values"
           :code $ quote &runtime-implementation
@@ -1563,6 +1562,16 @@
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
           :tags $ #{} :effect :internal
+        '&inspect-methods $ %{} 'CodeEntry (:doc "|将运行时方法及其实现来源打印到 stderr，返回传入的值。可选字符串用于标记诊断位置。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic String (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal :io :log
+        '&inspect-type $ %{} 'CodeEntry (:doc "|预处理阶段打印表达式的推断类型。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
+          :tags $ #{} :builtin :internal
         '&let $ %{} 'CodeEntry
           :doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable"
           :code $ quote &runtime-implementation
@@ -1598,18 +1607,6 @@
                 assert= ([] 6) tail
                 &+ head $ &list:nth tail 0
             :tags $ #{} :core :unit
-        '&inspect-methods $ %{} 'CodeEntry
-          :doc "|将运行时方法及其实现来源打印到 stderr，返回传入的值。可选字符串用于标记诊断位置。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn Dynamic String (-> Dynamic) (:open :reflect)
-          :tags $ #{} :builtin :internal :io :log
-        '&inspect-type $ %{} 'CodeEntry
-          :doc "|预处理阶段打印表达式的推断类型。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
-          :tags $ #{} :builtin :internal
         '&list:append $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -2876,6 +2873,13 @@
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
+        '&methods-of $ %{} 'CodeEntry (:doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn Dynamic
+            -> $ List Method
+            :open :reflect
+          :tags $ #{} :builtin :internal
         '&min $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &min (a b)
             assert "|expects numbers for &min" $ if (number? a) (number? b)
@@ -2883,12 +2887,6 @@
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
           :tags $ #{} :internal
-        '&methods-of $ %{} 'CodeEntry
-          :doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> (List Method)) (:open :reflect)
-          :tags $ #{} :builtin :internal
         '&number:display-by $ %{} 'CodeEntry
           :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (non-negative safe integer), base (2, 8 or 16)\nReturns: string\nDisplays n exactly with a 0b, 0o or 0x prefix; other inputs raise an error"
           :code $ quote &runtime-implementation
@@ -3741,8 +3739,7 @@
               assert= 3 $ :key $ &struct:with-at pair 0 :key 3 1 :value 4
               assert= 4 $ :value $ &struct:with-at pair 0 :key 3 1 :value 4
             :tags $ #{} :core :indexed-struct-update :unit
-        '&trait-call $ %{} 'CodeEntry
-          :doc "|按指定 trait 和方法名分派调用。已知的名义实现和方法由编译器独立检查。"
+        '&trait-call $ %{} 'CodeEntry (:doc "|按指定 trait 和方法名分派调用。已知的名义实现和方法由编译器独立检查。")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Trait Dynamic Dynamic (& Dynamic) (-> Dynamic) (:open :reflect)
@@ -4097,6 +4094,11 @@
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :builtin :internal :syntax
+        '?{} $ %{} 'CodeEntry (:doc "|内部匿名 Struct 构造器。交替接收字段标签和值，并检查重复字段。")
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn (& Dynamic) (-> Struct)
+          :tags $ #{} :builtin :internal
         'Add $ %{} 'CodeEntry (:doc "|Core trait: Add")
           :code $ quote $ deftrait Add
             .add $ Fn Self Self $ -> Self
@@ -4566,12 +4568,6 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-        '?{} $ %{} 'CodeEntry
-          :doc "|内部匿名 Struct 构造器。交替接收字段标签和值，并检查重复字段。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn (& Dynamic) (-> Struct)
-          :tags $ #{} :builtin :internal
         '\ $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro \ (& xs)
             if (&list:empty? xs) (raise "|\\ expects function body")
@@ -4593,7 +4589,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (Ref T) Tag
-            Fn T T (-> Unit) (:features :state :io)
+            Fn T T (-> Unit) (:features :io :state)
             -> Unit
             :generics T
           :tags $ #{} :builtin :internal :state :watch
@@ -10533,10 +10529,26 @@
           :schema $ quote $ Fn (Map K V)
             -> $ Set K
             :generics K V
-          :tests $ [] $ %{} 'TestEntry (:name |omits-nil-map-values)
-            :code $ quote $ assert= (#{} :a :b)
-              keys-non-nil $ {,} :a 1 :b 2 :c nil
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |omits-nil-map-values)
+              :code $ quote $ assert= (#{} :a :b)
+                keys-non-nil $ {,} :a 1 :b 2 :c nil
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-false-and-zero-values)
+              :code $ quote $ do
+                assert= (#{} :a :b)
+                  keys-non-nil $ &{} :a false :b 0 :c nil
+                assert= (#{} :b)
+                  keys-non-nil $ &{} :a 1 :a nil :b false
+                assert= (#{} :a :b)
+                  let
+                      m $ &{} :a false :b true
+                    keys-non-nil m
+                assert= (#{} :a :b)
+                  let
+                      m $ &{} :a 0 :b 1
+                    keys-non-nil m
+              :tags $ #{} :core :unit
         'last $ %{} 'CodeEntry
           :doc "|Return the last item as Option<T>; empty collections produce none."
           :code $ quote $ defn last (xs)
@@ -12483,12 +12495,11 @@
           :examples $ []
           :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Ref)
           :tags $ #{} :builtin :internal :state
-        'register-calcit-builtin-impls $ %{} 'CodeEntry
-          :doc "|注册 JavaScript 后端内建方法实现。Native 入口返回 Unit。"
+        'register-calcit-builtin-impls $ %{} 'CodeEntry (:doc "|注册 JavaScript 后端内建方法实现。Native 入口返回 Unit。")
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> Unit)
-          :tags $ #{} :builtin :internal :effect
+          :tags $ #{} :builtin :effect :internal
         'remove-watch! $ %{} 'CodeEntry
           :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态。"
           :code $ quote &runtime-implementation
@@ -12934,8 +12945,13 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |orders-list-with-default-comparator)
-              :code $ quote $ assert= ([] 1 2 3 4)
-                sort $ [] 4 3 2 1
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  sort $ [] 4 3 2 1
+                assert= ([] 16392 16393)
+                  sort $ [] 16392 16393
+                assert= ([] 16392 16393)
+                  sort $ [] 16393 16392
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |sorts-nan-after-numbers)
               :code $ quote $ let
@@ -14057,6 +14073,17 @@
                   update ([] 3 1 2) 3 $ fn (x) (&+ x 10)
                 assert= (&{} :a 1)
                   update (&{} :a 1) :b $ fn (x) (&+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |updates-nominal-struct-fields)
+              :code $ quote $ let
+                  path $ FsPath :value |a
+                  changed $ update path :value $ fn (s) (&str:concat s |/b)
+                  checked $ update path :value $ fn (s)
+                    if (nil? s) |nil |non-nil
+                assert= |a/b $ :value changed
+                assert= |non-nil $ :value checked
+                assert= |a $ :value path
+                assert= path $ update path :missing $ fn (s) (raise |unexpected-callback)
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a collection path and update its leaf. An open or unknown path supplies Option<Dynamic>; decode or narrow the payload before concrete use. A proven nonempty homogeneous Map path requires Option<Leaf> input and Leaf output, retaining the Map type. Callback output is independent for open paths and literal empty paths; an empty path supplies the receiver itself. Missing intermediate containers are created as maps."

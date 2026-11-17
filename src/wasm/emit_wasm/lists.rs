@@ -370,9 +370,83 @@ pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 /// ordering. Requiring an explicit comparator keeps the supported path
 /// type-directed and avoids silently returning an unsorted list.
 pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:sort in WASM requires a list and an explicit 2-argument comparator".into());
+  #[derive(Clone, Copy, PartialEq, Eq)]
+  enum DefaultSortElemKind {
+    Number,
+    String,
+    Bool,
+    Nil,
+    Unit,
   }
+
+  fn classify_default_sort_elem(elem: &CalcitTypeAnnotation) -> Option<DefaultSortElemKind> {
+    match elem {
+      CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some(DefaultSortElemKind::Number),
+      CalcitTypeAnnotation::String => Some(DefaultSortElemKind::String),
+      CalcitTypeAnnotation::Bool => Some(DefaultSortElemKind::Bool),
+      CalcitTypeAnnotation::Nil => Some(DefaultSortElemKind::Nil),
+      CalcitTypeAnnotation::Unit => Some(DefaultSortElemKind::Unit),
+      _ => None,
+    }
+  }
+
+  fn default_sort_elem_annotation(kind: DefaultSortElemKind) -> Arc<CalcitTypeAnnotation> {
+    Arc::new(match kind {
+      DefaultSortElemKind::Number => CalcitTypeAnnotation::Number,
+      DefaultSortElemKind::String => CalcitTypeAnnotation::String,
+      DefaultSortElemKind::Bool => CalcitTypeAnnotation::Bool,
+      DefaultSortElemKind::Nil => CalcitTypeAnnotation::Nil,
+      DefaultSortElemKind::Unit => CalcitTypeAnnotation::Unit,
+    })
+  }
+
+  if !(1..=2).contains(&args.len()) {
+    return Err("&list:sort in WASM requires a list and an optional 2-argument comparator".into());
+  }
+  let default_compare_elem_type = if args.len() == 1 {
+    let list_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+    let resolved_kind = match list_type.as_deref() {
+      Some(CalcitTypeAnnotation::List(elem)) => {
+        let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
+        if matches!(elem.as_ref(), CalcitTypeAnnotation::Never) {
+          Some(DefaultSortElemKind::Number)
+        } else {
+          classify_default_sort_elem(elem.as_ref())
+        }
+      }
+      Some(CalcitTypeAnnotation::Tuple(elems)) => {
+        let mut tuple_kind: Option<DefaultSortElemKind> = None;
+        let ok = elems.iter().all(|elem| {
+          let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
+          if matches!(elem.as_ref(), CalcitTypeAnnotation::Never) {
+            return true;
+          }
+          let Some(kind) = classify_default_sort_elem(elem.as_ref()) else {
+            return false;
+          };
+          match tuple_kind {
+            None => {
+              tuple_kind = Some(kind);
+              true
+            }
+            Some(prev) => prev == kind,
+          }
+        });
+        if ok {
+          Some(tuple_kind.unwrap_or(DefaultSortElemKind::Number))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    };
+    let Some(kind) = resolved_kind else {
+      return Err("&list:sort in WASM requires a list and an explicit 2-argument comparator".into());
+    };
+    Some(default_sort_elem_annotation(kind))
+  } else {
+    None
+  };
 
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
@@ -386,8 +460,11 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   // Equal (and NaN) comparator results do not move the left element.
   let left = ctx.alloc_local();
   let key = ctx.alloc_local();
-  let comparator =
-    resolve_callee_kind(ctx, &args[1], left, key).map_err(|error| format!("&list:sort comparator is not callable in WASM: {error}"))?;
+  let comparator = if default_compare_elem_type.is_some() {
+    FoldlCallKind::Proc(CalcitProc::NativeCompare)
+  } else {
+    resolve_callee_kind(ctx, &args[1], left, key).map_err(|error| format!("&list:sort comparator is not callable in WASM: {error}"))?
+  };
   let i = ctx.alloc_i32(1);
   let j = ctx.alloc_local_typed(ValType::I32);
   let previous_index = ctx.alloc_local_typed(ValType::I32);
@@ -418,7 +495,17 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
   // Shift only when comparator(left, key) > 0. Equal and NaN results retain
   // the original order, matching the interpreter's stable-sort behavior.
-  emit_foldl_step(ctx, &comparator, left, key)?;
+  if let Some(elem_ty) = &default_compare_elem_type {
+    super::hof::emit_foldl_proc_call(
+      ctx,
+      &CalcitProc::NativeCompare,
+      left,
+      key,
+      [Some(elem_ty.clone()), Some(elem_ty.clone())],
+    )?;
+  } else {
+    emit_foldl_step(ctx, &comparator, left, key)?;
+  }
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Gt);
   ctx.emit(Instruction::I32Eqz);
@@ -1893,5 +1980,52 @@ mod sort_tests {
   fn sort_rejects_the_unsupported_total_order_form() {
     let error = emit_list_sort(&mut empty_context(), &[Calcit::Nil]).expect_err("one-argument sort must not compile as identity");
     assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+
+    let make_typed_local = |type_info: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(crate::wasm::host::calcit::CalcitLocal {
+        idx: 0,
+        sym: Arc::from("xs"),
+        info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+          at_ns: Arc::from("tests.sort"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+        type_info,
+      })
+    };
+    for unsupported_type in [
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Tag))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![Arc::new(CalcitTypeAnnotation::Tag)]))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::Number),
+        Arc::new(CalcitTypeAnnotation::Bool),
+      ]))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::Bool),
+        Arc::new(CalcitTypeAnnotation::Nil),
+      ]))),
+    ] {
+      let mut ctx = empty_context();
+      ctx.locals.insert("xs".into(), 0);
+      ctx
+        .local_types
+        .insert("xs".into(), WasmTypeEvidence::contract(unsupported_type.clone()));
+      let error = emit_list_sort(&mut ctx, &[make_typed_local(unsupported_type)])
+        .expect_err("tag and heterogeneous tuple default sorting must require an explicit comparator");
+      assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+    }
+
+    // Proven numeric tuples (including integers in the heap address range such
+    // as 16392/16393) must emit direct numeric comparison without probing the
+    // "string" heap header tag.
+    let mut num_ctx = empty_context();
+    num_ctx.tag_index.insert("list".into(), 1);
+    num_ctx.runtime_fn_index.insert("__rt_copy_f64_slots".into(), 0);
+    let numeric_tuple = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::List),
+      Calcit::Number(16392.0),
+      Calcit::Number(16393.0),
+    ]);
+    emit_list_sort(&mut num_ctx, &[numeric_tuple]).expect("proven numeric tuple default sort must not probe string heap headers");
   }
 }
