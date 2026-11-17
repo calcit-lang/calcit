@@ -4,22 +4,53 @@ use super::*;
 // Set operations — layout: [count:f64] [elem0:f64] [elem1:f64] ...
 // ===========================================================================
 
-/// `#{} elem0 elem1 ...` — create a set.
+/// `#{} elem0 elem1 ...` — create a set, deduplicating elements in insertion order.
 pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  // Same layout as list; deduplicate is the caller's responsibility
   let count = args.len();
   let total_bytes = ((1 + count) * 8) as i32;
   let ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, total_bytes, ptr, "set");
 
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(f64_const(count as f64));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-
-  for (i, arg) in args.iter().enumerate() {
+  if count <= 1 {
     ctx.emit(Instruction::LocalGet(ptr));
-    emit_expr(ctx, arg)?;
-    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+    ctx.emit(f64_const(count as f64));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+    for (i, arg) in args.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(ptr));
+      emit_expr(ctx, arg)?;
+      ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+    }
+  } else {
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+
+    let write_idx = ctx.alloc_i32(0);
+    for (i, arg) in args.iter().enumerate() {
+      let elem = ctx.alloc_local();
+      emit_expr(ctx, arg)?;
+      ctx.emit(Instruction::LocalSet(elem));
+      if i == 0 {
+        emit_list_store_elem(ctx, ptr, write_idx, elem);
+        ctx.i32_inc(write_idx);
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(f64_const(1.0));
+        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+      } else {
+        let found_idx = emit_set_find_structural(ctx, ptr, elem);
+        ctx.emit(Instruction::LocalGet(found_idx));
+        ctx.emit(Instruction::I32Const(-1));
+        ctx.emit(Instruction::I32Eq);
+        ctx.begin_block_if();
+        emit_list_store_elem(ctx, ptr, write_idx, elem);
+        ctx.i32_inc(write_idx);
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.ptr_to_f64(write_idx);
+        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+        ctx.emit(Instruction::End);
+      }
+    }
   }
 
   ctx.ptr_to_f64(ptr);

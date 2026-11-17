@@ -4916,7 +4916,13 @@ fn preprocess_list_call(
   // user function, and leave nonliteral/spread-bearing lists on their own path.
   if matches!(&head_form, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "apply")
     && args.len() == 2
-    && (resolve_type_value(&args[0], scope_types).is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
+    && (resolve_type_value(&args[0], scope_types)
+      .or_else(|| {
+        let silent_warnings = RefCell::new(Vec::new());
+        let preprocessed_callee = preprocess_expr(&args[0], scope_defs, scope_types, file_ns, &silent_warnings, call_stack).ok()?;
+        resolve_type_value(&preprocessed_callee, scope_types)
+      })
+      .is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
       || matches!(&args[0], Calcit::List(definition) if
         matches!(definition.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _)))
           || matches!(definition.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn" || sym.as_ref() == "defn")))

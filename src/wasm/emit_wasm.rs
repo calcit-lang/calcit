@@ -7325,6 +7325,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       }
       // Try qualified "ns/def" first, then bare "def" as fallback
       let qualified = format!("{}/{}", import.ns, import.def);
+      if let Some(Calcit::Proc(proc)) = ctx.value_imports.get(&qualified).cloned() {
+        return emit_proc_call(ctx, &proc, &args_list);
+      }
       if emit_specialized_static_call(ctx, &qualified, &args_list)? {
         return Ok(());
       }
@@ -7386,6 +7389,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       // Check if this symbol refers to an inline lambda captured in this scope.
       if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list, None);
+      }
+      if let Some(Calcit::Proc(proc)) = ctx.value_imports.get(&qualified).cloned() {
+        return emit_proc_call(ctx, &proc, &args_list);
       }
       let target_name = if ctx.fn_index.contains_key(&qualified) {
         qualified.as_str()
@@ -9688,9 +9694,36 @@ fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
 /// - Fast path: `a == b` on raw f64 representation.
 /// - If not equal and both look like heap strings, compare by `__rt_str_compare`.
 /// - Otherwise false.
+fn proven_disjoint_value_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
+  if let Some(scalar) = proven_scalar_kind(annotation) {
+    return Some(scalar);
+  }
+  match annotation {
+    CalcitTypeAnnotation::String => Some("string"),
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("list"),
+    CalcitTypeAnnotation::Set(_) => Some("set"),
+    CalcitTypeAnnotation::Map(_, _) => Some("map"),
+    _ => None,
+  }
+}
+
 fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err(format!("= expects 2 args, got {}", args.len()));
+  }
+
+  let left_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  let right_type = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  if let (Some(left_type), Some(right_type)) = (left_type.as_deref(), right_type.as_deref())
+    && let (Some(left_kind), Some(right_kind)) = (proven_disjoint_value_kind(left_type), proven_disjoint_value_kind(right_type))
+    && left_kind != right_kind
+  {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(0.0));
+    return Ok(());
   }
 
   let left_buffer = buffer_literal_bytes(&args[0])?;
@@ -10598,8 +10631,13 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let ptr_f64 = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(ptr_f64));
 
-  // Convert to i32 for memory access and load the tag_id (f64 at offset 8, after count)
+  // Convert to i32 for memory access and load count (offset 0) + tag_id (offset 8)
+  let count_local = ctx.alloc_local();
   let tag_local = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(count_local));
   ctx.emit(Instruction::LocalGet(ptr_f64));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -10668,16 +10706,20 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
       .get(&tag_str)
       .ok_or_else(|| format!("unknown tag in match pattern: {tag_str}"))?;
 
-    // Compare: tag_local == tag_id
+    // Compare: tag_local == tag_id && count_local == binding_count
+    let binding_count = pat_xs.len() - 1;
     ctx.emit(Instruction::LocalGet(tag_local));
     ctx.emit(f64_const(tag_id as f64));
     ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(count_local));
+    ctx.emit(f64_const(binding_count as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
 
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     ctx.block_depth += 1;
 
     // Bind payload variables from enum fields
-    let binding_count = pat_xs.len() - 1;
     for bind_idx in 0..binding_count {
       let binding = &pat_xs[1 + bind_idx];
       let bind_name = match binding {
@@ -10944,6 +10986,10 @@ fn build_string_pool(
   if needs_edn_parse {
     strings.extend(
       [
+        "",
+        "[",
+        "]",
+        " at $",
         "do ",
         "nil",
         "true",
@@ -11006,7 +11052,7 @@ pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
     && let Calcit::Proc(p) = &list[0]
     && *p == CalcitProc::NativeEnum
   {
-    let mut s = String::from("(:: ");
+    let mut s = String::from("(%:: _ ");
     for (i, item) in list.iter().skip(1).enumerate() {
       if i > 0 {
         s.push(' ');
