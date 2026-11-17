@@ -13,6 +13,7 @@ import {
   Hash,
   toPairsArray,
   mapGetDefault,
+  hashGenerator,
   initEmptyTernaryTreeMap,
   initTernaryTreeMapFromArray,
 } from "@calcit/ternary-tree";
@@ -199,8 +200,46 @@ export class CalcitSliceMap {
   constructor(value: CalcitValue[]) {
     if (value == null) {
       this.chunk = [];
-    } else if (Array.isArray(value)) {
+    } else if (Array.isArray(value) && value.length <= 2) {
       this.chunk = value;
+    } else if (Array.isArray(value)) {
+      // A Map contains one entry per equal key. Keep the first key position
+      // while replacing its value with the last occurrence, as native does.
+      const entries: CalcitValue[] = [];
+      if (value.length <= 16) {
+        for (let i = 0; i < value.length; i += 2) {
+          if (i + 1 === value.length) {
+            entries.push(value[i]);
+            break;
+          }
+          let position = -1;
+          for (let j = 0; j < entries.length; j += 2) {
+            if (DATA_EQUAL(entries[j], value[i])) {
+              position = j;
+              break;
+            }
+          }
+          if (position < 0) entries.push(value[i], value[i + 1]);
+          else entries[position + 1] = value[i + 1];
+        }
+      } else {
+        const buckets = new Map<Hash, number[]>();
+        for (let i = 0; i < value.length; i += 2) {
+          if (i + 1 === value.length) {
+            entries.push(value[i]);
+            break;
+          }
+          const hash = hashGenerator(value[i]);
+          const bucket = buckets.get(hash);
+          const position = bucket?.find((index) => DATA_EQUAL(entries[index], value[i]));
+          if (position === undefined) {
+            if (bucket) bucket.push(entries.length);
+            else buckets.set(hash, [entries.length]);
+            entries.push(value[i], value[i + 1]);
+          } else entries[position + 1] = value[i + 1];
+        }
+      }
+      this.chunk = entries;
     } else {
       throw new Error("unknown data for map");
     }
