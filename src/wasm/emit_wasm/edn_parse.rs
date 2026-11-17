@@ -452,48 +452,47 @@ fn hint_map_kv(hint: Option<&CalcitTypeAnnotation>) -> (Option<CalcitTypeAnnotat
 }
 
 fn hint_option_inner(hint: Option<&CalcitTypeAnnotation>, option_nominal: &CalcitEnumDef) -> Option<CalcitTypeAnnotation> {
-  match hint {
-    Some(CalcitTypeAnnotation::Enum(enum_def, args))
-      if (enum_def.name() == option_nominal.name() || enum_def.same_nominal_definition(option_nominal)) && args.len() == 1 =>
-    {
-      Some(CalcitTypeAnnotation::expand_schema_alias(&args[0]).as_ref().clone())
-    }
-    _ => None,
+  let actual = hint.and_then(|ty| ty.resolve_to_enum())?;
+  if actual.name() != option_nominal.name() && !actual.same_nominal_definition(option_nominal) {
+    return None;
   }
+  let args: &[Arc<CalcitTypeAnnotation>] = match hint {
+    Some(CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)) => args.as_slice(),
+    _ => &[],
+  };
+  (args.len() == 1).then(|| CalcitTypeAnnotation::expand_schema_alias(&args[0]).as_ref().clone())
 }
 
-fn substitute_type_var(
+fn substitute_type_vars_with_args(
   ty: &Arc<CalcitTypeAnnotation>,
   generics: &[Arc<str>],
   args: &[Arc<CalcitTypeAnnotation>],
 ) -> CalcitTypeAnnotation {
   let expanded = CalcitTypeAnnotation::expand_schema_alias(ty);
-  if let CalcitTypeAnnotation::TypeVar(name) = &*expanded
-    && let Some(pos) = generics.iter().position(|g| g.as_ref() == name.as_ref())
-    && let Some(arg) = args.get(pos)
-  {
-    return CalcitTypeAnnotation::expand_schema_alias(arg).as_ref().clone();
+  if generics.is_empty() || args.is_empty() {
+    return expanded.as_ref().clone();
   }
-  expanded.as_ref().clone()
+  let bindings: std::collections::HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = generics
+    .iter()
+    .zip(args.iter())
+    .map(|(name, arg)| (name.clone(), CalcitTypeAnnotation::expand_schema_alias(arg)))
+    .collect();
+  expanded.substitute_type_vars(&bindings).as_ref().clone()
 }
 
-fn hint_struct_field(
-  hint: Option<&CalcitTypeAnnotation>,
-  nominal: &Arc<crate::calcit::CalcitStructDef>,
-  idx: usize,
-) -> Option<CalcitTypeAnnotation> {
+fn hint_struct_field(hint: Option<&CalcitTypeAnnotation>, nominal: &Arc<CalcitStructDef>, idx: usize) -> Option<CalcitTypeAnnotation> {
   let actual = hint.and_then(|ty| ty.resolve_to_struct())?;
   if !actual.same_nominal_definition(nominal) {
     return None;
   }
   let args: &[Arc<CalcitTypeAnnotation>] = match hint {
-    Some(CalcitTypeAnnotation::Struct(_, args)) => args.as_slice(),
+    Some(CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::TypeRef(_, args)) => args.as_slice(),
     _ => &[],
   };
   actual
     .field_types
     .get(idx)
-    .map(|ty| substitute_type_var(ty, &actual.generics, args))
+    .map(|ty| substitute_type_vars_with_args(ty, &actual.generics, args))
 }
 
 fn hint_enum_payload(
@@ -507,13 +506,13 @@ fn hint_enum_payload(
     return None;
   }
   let args: &[Arc<CalcitTypeAnnotation>] = match hint {
-    Some(CalcitTypeAnnotation::Enum(_, args)) => args.as_slice(),
+    Some(CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)) => args.as_slice(),
     _ => &[],
   };
   actual
     .find_variant(variant)
     .and_then(|v| v.payload_types().get(pidx))
-    .map(|ty| substitute_type_var(ty, actual.generics(), args))
+    .map(|ty| substitute_type_vars_with_args(ty, actual.generics(), args))
 }
 
 fn emit_decode_map_node(
@@ -822,6 +821,7 @@ fn emit_decode_map_node(
       let count = emit_load_count_i32(ctx, src_ptr);
       let dst_ptr = emit_alloc_list(ctx, count);
       let valid = ctx.alloc_i32(1);
+      let all_identical = ctx.alloc_i32(1);
       let i = ctx.alloc_i32(0);
       ctx.begin_block();
       ctx.begin_loop();
@@ -851,6 +851,15 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::LocalGet(item_ok));
       ctx.begin_block_if();
       emit_list_store_elem(ctx, dst_ptr, i, item_val);
+      ctx.emit(Instruction::LocalGet(item_val));
+      ctx.emit(Instruction::I64ReinterpretF64);
+      ctx.emit(Instruction::LocalGet(elem));
+      ctx.emit(Instruction::I64ReinterpretF64);
+      ctx.emit(Instruction::I64Ne);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::LocalSet(all_identical));
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::Else);
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::LocalSet(valid));
@@ -874,9 +883,15 @@ fn emit_decode_map_node(
       ctx.end_block_loop();
       ctx.emit(Instruction::LocalGet(valid));
       ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(all_identical));
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(input));
+      ctx.emit(Instruction::LocalSet(decoded));
+      ctx.emit(Instruction::Else);
       ctx.emit(Instruction::LocalGet(dst_ptr));
       ctx.emit(Instruction::F64ConvertI32U);
       ctx.emit(Instruction::LocalSet(decoded));
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::I32Const(1));
       ctx.emit(Instruction::LocalSet(ok));
       ctx.emit(Instruction::End);
@@ -1334,6 +1349,7 @@ fn emit_decode_map_node(
       ctx.br_loop();
       ctx.end_block_loop();
 
+      let (_, map_val_hint) = hint_map_kv(static_hint);
       let decoded_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
       for (idx, (field, child)) in fields.iter().enumerate() {
         ctx.emit(Instruction::LocalGet(valid));
@@ -1348,7 +1364,7 @@ fn emit_decode_map_node(
           graph,
           *child,
           raw_values[idx],
-          None,
+          map_val_hint.as_ref(),
           (decoded_values[idx], f_ok, f_err, f_path),
         )?;
         ctx.emit(Instruction::LocalGet(f_ok));
