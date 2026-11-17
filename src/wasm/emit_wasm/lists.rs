@@ -370,9 +370,49 @@ pub(super) fn emit_list_reverse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 /// ordering. Requiring an explicit comparator keeps the supported path
 /// type-directed and avoids silently returning an unsorted list.
 pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 2 {
-    return Err("&list:sort in WASM requires a list and an explicit 2-argument comparator".into());
+  if !(1..=2).contains(&args.len()) {
+    return Err("&list:sort in WASM requires a list and an optional 2-argument comparator".into());
   }
+  let use_default_compare = if args.len() == 1 {
+    let list_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+    let comparable_elem = match list_type.as_deref() {
+      Some(CalcitTypeAnnotation::List(elem)) => {
+        let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
+        matches!(
+          elem.as_ref(),
+          CalcitTypeAnnotation::Number
+            | CalcitTypeAnnotation::Numeric(_)
+            | CalcitTypeAnnotation::String
+            | CalcitTypeAnnotation::Tag
+            | CalcitTypeAnnotation::Bool
+            | CalcitTypeAnnotation::Nil
+            | CalcitTypeAnnotation::Unit
+            | CalcitTypeAnnotation::Never
+        )
+      }
+      Some(CalcitTypeAnnotation::Tuple(elems)) => elems.iter().all(|elem| {
+        let elem = CalcitTypeAnnotation::expand_schema_alias(elem);
+        matches!(
+          elem.as_ref(),
+          CalcitTypeAnnotation::Number
+            | CalcitTypeAnnotation::Numeric(_)
+            | CalcitTypeAnnotation::String
+            | CalcitTypeAnnotation::Tag
+            | CalcitTypeAnnotation::Bool
+            | CalcitTypeAnnotation::Nil
+            | CalcitTypeAnnotation::Unit
+            | CalcitTypeAnnotation::Never
+        )
+      }),
+      _ => false,
+    };
+    if !comparable_elem {
+      return Err("&list:sort in WASM requires a list and an explicit 2-argument comparator".into());
+    }
+    true
+  } else {
+    false
+  };
 
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
@@ -386,8 +426,11 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   // Equal (and NaN) comparator results do not move the left element.
   let left = ctx.alloc_local();
   let key = ctx.alloc_local();
-  let comparator =
-    resolve_callee_kind(ctx, &args[1], left, key).map_err(|error| format!("&list:sort comparator is not callable in WASM: {error}"))?;
+  let comparator = if use_default_compare {
+    FoldlCallKind::Proc(CalcitProc::NativeCompare)
+  } else {
+    resolve_callee_kind(ctx, &args[1], left, key).map_err(|error| format!("&list:sort comparator is not callable in WASM: {error}"))?
+  };
   let i = ctx.alloc_i32(1);
   let j = ctx.alloc_local_typed(ValType::I32);
   let previous_index = ctx.alloc_local_typed(ValType::I32);

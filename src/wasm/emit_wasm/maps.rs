@@ -285,6 +285,58 @@ pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   Ok(())
 }
 
+/// `keys-non-nil map` — return a set of keys whose values are not nil.
+pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "keys-non-nil")?;
+  let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let count = emit_load_count_i32(ctx, map_ptr);
+  let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
+
+  let ts = ctx.i32_offset(count, 1);
+  let dst = emit_alloc_with_count(ctx, count, ts, "set");
+  let write_idx = ctx.alloc_i32(0);
+
+  let i = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(i, count);
+  let entry_addr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalTee(entry_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(entry_addr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.i32_inc(write_idx);
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(i);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.ptr_to_f64(write_idx);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
 /// `&map:vals m` — list of all values in the map (unordered).
 pub(super) fn emit_map_vals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {

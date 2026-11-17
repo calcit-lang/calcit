@@ -1035,6 +1035,32 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// unchanged without calling `f`; the receiver kind is dispatched at runtime.
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "update")?;
+  if let Some(struct_def) = infer_wasm_static_type(ctx, &args[0])
+    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .and_then(|ty| ty.resolve_to_struct())
+    && let Calcit::Tag(field) = &args[1]
+  {
+    let receiver = ctx.alloc_local();
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::LocalSet(receiver));
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::Drop);
+    let kind = resolve_unary_callee(ctx, &args[2]).map_err(|e| format!("update: {e}"))?;
+    if let Some(slot) = struct_def.fields.iter().position(|f| f == field) {
+      let cur_val = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(receiver));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + slot) * 8) as u64)));
+      ctx.emit(Instruction::LocalSet(cur_val));
+      let new_val = ctx.alloc_local();
+      emit_unary_step(ctx, &kind, cur_val, None)?;
+      ctx.emit(Instruction::LocalSet(new_val));
+      return super::structs::emit_struct_update_from_locals(ctx, receiver, new_val, slot, field.ref_str());
+    }
+    ctx.emit(Instruction::LocalGet(receiver));
+    return Ok(());
+  }
+
   let receiver = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(receiver));

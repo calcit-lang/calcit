@@ -67,10 +67,10 @@ use runtime::{
   host_imports_for_target,
 };
 use structs::{
-  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
-  emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag,
-  emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map,
-  emit_struct_with_at, resolve_struct_ref, try_parse_defrecord_form,
+  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_definition,
+  emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def,
+  emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
+  emit_struct_to_map, emit_struct_with_at, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -5819,6 +5819,24 @@ fn infer_wasm_evidence_in_scope(
 
 /// A declared data result is not a witness for value-carried implementations.
 /// Recover that witness from the checked body with the actual argument evidence.
+fn replace_unbound_type_vars_with_never(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  if !annotation.contains_type_var() {
+    return annotation.clone();
+  }
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_) => {
+      crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()
+    }
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(replace_unbound_type_vars_with_never(inner))),
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(replace_unbound_type_vars_with_never(inner))),
+    CalcitTypeAnnotation::Map(k, v) => Arc::new(CalcitTypeAnnotation::Map(
+      replace_unbound_type_vars_with_never(k),
+      replace_unbound_type_vars_with_never(v),
+    )),
+    _ => annotation.clone(),
+  }
+}
+
 fn infer_wasm_callable_result(
   ctx: &WasmGenCtx,
   expr: &Calcit,
@@ -5826,7 +5844,39 @@ fn infer_wasm_callable_result(
   locals: &HashMap<String, WasmTypeEvidence>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
-  let declared = infer_static_type_from_expr(expr)?;
+  let mut declared = infer_static_type_from_expr(expr)?;
+  let Calcit::List(items) = expr else {
+    return Some(WasmTypeEvidence::contract(declared));
+  };
+  if declared.contains_type_var()
+    && let Some(head) = items.first()
+    && let Some(key) = direct_definition_reference(head)
+    && let Some((ns, def)) = key.rsplit_once('/')
+    && let Some(signature) = program::lookup_def_schema(ns, def).resolve_to_fn()
+  {
+    let mut bindings = TypeBindings::new();
+    let mut matched = true;
+    for (index, argument) in args.iter().enumerate() {
+      let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+        matched = false;
+        break;
+      };
+      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, visiting) else {
+        matched = false;
+        break;
+      };
+      if actual.annotation.prove_available_bindings(expected, &mut bindings).is_mismatch() {
+        matched = false;
+        break;
+      }
+    }
+    if matched {
+      let substituted = replace_unbound_type_vars_with_never(&signature.return_type.substitute_type_vars(&bindings));
+      if !substituted.contains_type_var() {
+        declared = substituted;
+      }
+    }
+  }
   let fallback = WasmTypeEvidence::contract(declared.clone());
   if declared.resolve_to_enum().is_none()
     && declared.resolve_to_struct().is_none()
@@ -5834,7 +5884,6 @@ fn infer_wasm_callable_result(
   {
     return Some(fallback);
   }
-  let Calcit::List(items) = expr else { return Some(fallback) };
   let (key, params, body, expected) = match items.first()? {
     Calcit::Fn { id, info } if info.scope.is_empty() && matches!(info.args.as_ref(), CalcitFnArgs::Args(_)) => (
       format!("fn:{id}"),
@@ -6035,7 +6084,7 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
   // Retain actual evidence, including an intentionally open transported value.
   // The operation that consumes it (nil?, numeric ordering or trait dispatch)
   // must prove its own requirements; an unrelated parameter need not be closed.
-  args
+  let actuals = args
     .iter()
     .zip(definition.arg_types.iter())
     .map(|(arg, expected)| {
@@ -6049,7 +6098,32 @@ fn resolve_static_specialization_types(ctx: &WasmGenCtx, definition: &StaticFnDe
       }
       Some(actual)
     })
-    .collect::<Option<Vec<_>>>()
+    .collect::<Option<Vec<_>>>()?;
+
+  Some(
+    actuals
+      .into_iter()
+      .zip(definition.arg_types.iter())
+      .map(|(actual, expected)| {
+        let substituted = replace_unbound_type_vars_with_never(&expected.substitute_type_vars(&bindings));
+        if matches!(
+          actual.annotation.as_ref(),
+          CalcitTypeAnnotation::Tuple(_)
+            | CalcitTypeAnnotation::List(_)
+            | CalcitTypeAnnotation::Set(_)
+            | CalcitTypeAnnotation::Map(_, _)
+        ) && !substituted.contains_type_var()
+          && actual.annotation.is_proven_for(&substituted)
+          && !substituted.is_proven_for(&actual.annotation)
+          && !matches!(substituted.as_ref(), CalcitTypeAnnotation::Dynamic)
+        {
+          WasmTypeEvidence::contract(substituted)
+        } else {
+          actual
+        }
+      })
+      .collect(),
+  )
 }
 
 fn nominal_option_none_expression() -> Result<Calcit, String> {
@@ -6566,6 +6640,24 @@ fn compile_fn(
     ctx.recur_shape = arg_labels_shape(labels).filter(|&(required, rest)| rest || required != arity);
   }
 
+  if source_ns == "calcit.core" && export_name == "keys-non-nil" && arity == 1 {
+    let arg0 = Calcit::Symbol {
+      sym: param_names[0].clone().into(),
+      info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+        at_ns: source_ns.into(),
+        at_def: export_name.into(),
+      }),
+      location: None,
+    };
+    emit_map_keys_non_nil(&mut ctx, &[arg0])?;
+    return Ok(CompiledFn {
+      export_name: None,
+      params: vec![ValType::F64; arity],
+      results: vec![ValType::F64],
+      locals: std::mem::take(&mut ctx.extra_locals),
+      instructions: std::mem::take(&mut ctx.instructions),
+    });
+  }
   reject_non_tail_recur(body, &format!("{source_ns}/{export_name}"))?;
   // Check if body uses recur
   ctx.uses_recur = body.iter().any(check_uses_recur);
@@ -7032,6 +7124,14 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       let id = ctx.struct_layouts.id(s)?;
       ctx.emit(f64_const(id as f64));
     }
+    Calcit::EnumDef(e) => {
+      let name = e.name().to_string();
+      let id = *ctx
+        .tag_index
+        .get(&name)
+        .ok_or_else(|| format!("unknown enum definition tag in WASM: {name}"))?;
+      ctx.emit(f64_const(id as f64));
+    }
     Calcit::Local(local) => {
       let name = &*local.sym;
       if ctx.lambda_locals.contains_key(name) {
@@ -7067,6 +7167,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         emit_list_new(ctx, &[])?;
       } else if let Ok(struct_def) = resolve_struct_ref(expr) {
         let id = ctx.struct_layouts.id(&struct_def)?;
+        ctx.emit(f64_const(id as f64));
+      } else if let Ok(enum_def) = resolve_enum_ref(expr) {
+        let name = enum_def.name().to_string();
+        let id = *ctx
+          .tag_index
+          .get(&name)
+          .ok_or_else(|| format!("unknown enum definition tag in WASM: {name}"))?;
         ctx.emit(f64_const(id as f64));
       } else if let Some(&slot) = ctx
         .fn_table_index
@@ -7318,6 +7425,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
           // `filter-map-kv xs f` — consume typed :keep/:drop decisions.
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           // `'` — list literal constructor (calcit.core/'), same as ([] a b c).
           "'" => return emit_list_new(ctx, &args_list),
           _ => {}
@@ -7384,6 +7492,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+        "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
         _ => {}
       }
       // Check if this symbol refers to an inline lambda captured in this scope.
@@ -7449,6 +7558,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
+          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           _ => {}
         }
       }
@@ -8344,9 +8454,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeEnumValidate => Err("runtime enum validation is not supported in WASM".into()),
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
     CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
+    CalcitProc::NativeEnumDefinition => emit_enum_definition(ctx, args),
     CalcitProc::NativeEnumImpls
     | CalcitProc::NativeEnumParams
-    | CalcitProc::NativeEnumDefinition
     | CalcitProc::NativeEnumValueImplTraits
     | CalcitProc::NativeEnumDefHasVariant
     | CalcitProc::NativeEnumDefVariantArity => Err(format!("Enum operation {proc} not yet supported in WASM codegen")),
@@ -10912,12 +11022,23 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
         tags.push(f.to_string());
       }
     }
-    // When struct refs are imports, resolve them to collect their tags
+    Calcit::EnumDef(e) => {
+      tags.push(e.name().to_string());
+      for v in e.variants() {
+        tags.push(v.tag.to_string());
+      }
+    }
+    // When struct/enum refs are imports, resolve them to collect their tags
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       if let Ok(struct_def) = resolve_struct_ref(expr) {
         tags.push(struct_def.name.to_string());
         for f in struct_def.fields.iter() {
           tags.push(f.to_string());
+        }
+      } else if let Ok(enum_def) = resolve_enum_ref(expr) {
+        tags.push(enum_def.name().to_string());
+        for v in enum_def.variants() {
+          tags.push(v.tag.to_string());
         }
       }
       // Also try to collect tags from the expression in case it's used as a value
