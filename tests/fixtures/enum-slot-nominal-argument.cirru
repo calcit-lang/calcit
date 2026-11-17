@@ -19,6 +19,13 @@
             :: :states ([]) nil
           :examples $ []
           :schema $ quote AnyEnum
+        'forward $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn forward (f value)
+            hint-fn $ Fn
+              Fn *dispatch-op $ -> Unit
+              , demo.main/RemoteOp $ -> Unit
+            f value
+          :examples $ []
         'invoke $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn invoke (f)
             hint-fn $ Fn
