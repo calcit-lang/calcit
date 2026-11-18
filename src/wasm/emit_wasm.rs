@@ -59,12 +59,13 @@ use component::{
 };
 use methods::{emit_call_args, emit_method_invoke, emit_type_of_local};
 use runtime::{
-  HostImport, ModuleFunctionLayout, WasiComponentReadImports, WasiComponentWriteImports, build_runtime_fns, build_utf8_valid_fn,
-  build_wasi_component_get_env_fn, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
-  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_write_bytes_fn,
-  build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn,
-  build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, call_indirect, core_host_import,
-  host_imports_for_target,
+  HostImport, ModuleFunctionLayout, WasiComponentReadDirImports, WasiComponentReadImports, WasiComponentWriteImports,
+  build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn, build_wasi_component_open_at_fn,
+  build_wasi_component_random_get_fn, build_wasi_component_read_bytes_fn, build_wasi_component_read_dir_fn,
+  build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_wait_fn,
+  build_wasi_component_write_bytes_fn, build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn,
+  build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, call_indirect,
+  core_host_import, host_imports_for_target,
 };
 use structs::{
   StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_definition,
@@ -282,16 +283,25 @@ fn emit_wasm_impl(
   }
   let wasi_command_stdio = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
-    && fn_defs
-      .iter()
-      .any(|(namespace, _, _, body)| namespace != "calcit.core" && body.iter().any(expr_uses_wasi_stdio));
+    && fn_defs.iter().any(|(namespace, name, _, body)| {
+      (namespace != "calcit.core" || name.starts_with("&calcit:test:")) && body.iter().any(expr_uses_wasi_stdio)
+    });
   let wasi_command_file = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
     && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
   let wasi_command_stdin = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
     && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
-  let wasi_command_stackful = wasi_command_stdio || wasi_command_file || wasi_command_stdin;
+  let wasi_command_clocks = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_clocks);
+  let wasi_command_wait = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_wait);
+  let wasi_command_random = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
+  let wasi_command_stackful = wasi_command_stdio || wasi_command_file || wasi_command_stdin || wasi_command_wait;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -366,6 +376,36 @@ fn emit_wasm_impl(
       if wasi_command_stdin {
         host_imports.extend(wasi_component_stdin_imports());
       }
+      if wasi_command_clocks {
+        host_imports.push(HostImport {
+          module: "wasi:clocks/monotonic-clock@0.3.1".into(),
+          name: "now".into(),
+          params: vec![],
+          results: vec![ValType::I64],
+        });
+        host_imports.push(HostImport {
+          module: "wasi:clocks/system-clock@0.3.1".into(),
+          name: "now".into(),
+          params: vec![ValType::I32],
+          results: vec![],
+        });
+      }
+      if wasi_command_wait {
+        host_imports.push(HostImport {
+          module: "wasi:clocks/monotonic-clock@0.3.1".into(),
+          name: "[async-lower]wait-for".into(),
+          params: vec![ValType::I64],
+          results: vec![ValType::I32],
+        });
+      }
+      if wasi_command_random {
+        host_imports.push(HostImport {
+          module: "wasi:random/random@0.3.1".into(),
+          name: "get-random-bytes".into(),
+          params: vec![ValType::I64, ValType::I32],
+          results: vec![],
+        });
+      }
       if wasi_command_stdio {
         for interface in ["stdout", "stderr"] {
           let module = format!("wasi:cli/{interface}@0.3.1");
@@ -397,6 +437,7 @@ fn emit_wasm_impl(
     }
     if wasi_command_file
       || wasi_command_stdin
+      || wasi_command_wait
       || component_import_adapters
         .iter()
         .any(|adapter| adapter.invocation == ComponentAbiInvocation::Async)
@@ -526,7 +567,14 @@ fn emit_wasm_impl(
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
 
+  if wasi_command_file || wasi_command_stdin {
+    let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
+    compiled_fns.push(build_utf8_valid_fn());
+  }
+
   if wasi_command_file {
+    let utf8_valid_idx = *runtime_fn_index.get("__rt_utf8_valid").expect("UTF-8 validation helper must exist");
     let route_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_component_route_path".into(), route_idx);
     compiled_fns.push(build_wasi_component_route_path_fn());
@@ -604,11 +652,57 @@ fn emit_wasm_impl(
         .as_ref()
         .expect("WASI async file operations must register canonical lifecycle imports"),
     ));
+    let read_dir_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_read_dir".into(), read_dir_idx);
+    compiled_fns.push(build_wasi_component_read_dir_fn(
+      WasiComponentReadDirImports {
+        open: open_idx,
+        read_directory: descriptor_import("[method]descriptor.read-directory"),
+        stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-directory"),
+        stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-directory"),
+        future_read: descriptor_import("[future-read-1][method]descriptor.read-directory"),
+        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-directory"),
+        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+        utf8_valid: utf8_valid_idx,
+        str_compare: *runtime_fn_index
+          .get("__rt_str_compare")
+          .expect("string comparison helper must exist"),
+        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+        list_tag: *tag_index.get("list").expect("list tag must exist") as i32,
+        string_tag: str_tag_id,
+      },
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async file operations must register canonical lifecycle imports"),
+    ));
   }
-  if wasi_command_file || wasi_command_stdin {
-    let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
-    runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
-    compiled_fns.push(build_utf8_valid_fn());
+  if wasi_command_wait {
+    let wait_for_idx = *index_host_imports(&host_imports)
+      .get(&("wasi:clocks/monotonic-clock@0.3.1".into(), "[async-lower]wait-for".into()))
+      .expect("WASI 0.3 wait-for import must be registered");
+    let wait_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_wait".into(), wait_idx);
+    compiled_fns.push(build_wasi_component_wait_fn(
+      wait_for_idx,
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+      component_async_canonical_imports
+        .as_ref()
+        .expect("WASI async wait operations must register canonical lifecycle imports"),
+    ));
+  }
+  if wasi_command_random {
+    let get_random_bytes_idx = *index_host_imports(&host_imports)
+      .get(&("wasi:random/random@0.3.1".into(), "get-random-bytes".into()))
+      .expect("WASI 0.3 random import must be registered");
+    let random_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_component_random_get".into(), random_idx);
+    compiled_fns.push(build_wasi_component_random_get_fn(
+      get_random_bytes_idx,
+      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+      component_cabi_free_index.expect("Component boundary must install cabi_free"),
+    ));
   }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
@@ -1126,8 +1220,11 @@ fn emit_wasm_impl(
             .static_fn_defs
             .get(&qualified)
             .is_some_and(|definition| definition_requires_trait_specialization(definition));
+        let deferred_wasi_capability =
+          target == WasmTarget::Wasi && boundary == WasmBoundary::Component && e.starts_with("E_WASI_COMMAND_CAPABILITY:");
         if explicit_export
-          || (ns == init_ns && (def_name == init_def || !(deferred_nil_specialization || deferred_trait_specialization)))
+          || (ns == init_ns
+            && (def_name == init_def || !(deferred_nil_specialization || deferred_trait_specialization || deferred_wasi_capability)))
         {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
@@ -5968,6 +6065,10 @@ fn infer_wasm_evidence_in_scope(
     Calcit::List(items) => items
       .first()
       .and_then(|head| match head {
+        Calcit::Syntax(CalcitSyntax::EncodeMapAs, _) => {
+          let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(items.get(2)?, &[]);
+          Some(WasmTypeEvidence::contract(infer_encoded_map_type(&target)))
+        }
         Calcit::Method(name, MethodKind::Invoke(_)) => {
           let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, closures, visiting)?;
           let callable = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns).ok()??;
@@ -6028,6 +6129,58 @@ fn infer_wasm_evidence_in_scope(
       annotation,
     }),
     _ => infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract),
+  }
+}
+
+fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(infer_encoded_map_type(inner))),
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(infer_encoded_map_type(inner))),
+    CalcitTypeAnnotation::Map(k, v) => Arc::new(CalcitTypeAnnotation::Map(infer_encoded_map_type(k), infer_encoded_map_type(v))),
+    CalcitTypeAnnotation::Tuple(slots) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+      slots.iter().map(infer_encoded_map_type).collect(),
+    ))),
+    CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
+      Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), DYNAMIC_TYPE.clone()))
+    }
+    CalcitTypeAnnotation::Enum(def, args) => {
+      if def.name().ref_str() == "Option" {
+        DYNAMIC_TYPE.clone()
+      } else {
+        Arc::new(CalcitTypeAnnotation::Enum(
+          def.clone(),
+          Arc::new(args.iter().map(infer_encoded_map_type).collect()),
+        ))
+      }
+    }
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if expanded.resolve_to_struct().is_some() {
+        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), DYNAMIC_TYPE.clone()))
+      } else if let Some(def) = expanded.resolve_to_enum() {
+        if def.name().ref_str() == "Option" {
+          DYNAMIC_TYPE.clone()
+        } else {
+          Arc::new(CalcitTypeAnnotation::Enum(
+            Arc::new(def),
+            Arc::new(args.iter().map(infer_encoded_map_type).collect()),
+          ))
+        }
+      } else {
+        DYNAMIC_TYPE.clone()
+      }
+    }
+    CalcitTypeAnnotation::Nil
+    | CalcitTypeAnnotation::Unit
+    | CalcitTypeAnnotation::Bool
+    | CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Tag
+    | CalcitTypeAnnotation::Symbol
+    | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::CirruQuote => expanded,
+    _ => DYNAMIC_TYPE.clone(),
   }
 }
 
@@ -7653,7 +7806,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       CalcitSyntax::ParseCirruEdnAs => edn_parse::emit_parse_cirru_edn_as(ctx, &args_list),
       CalcitSyntax::TryDecodeMapAs => edn_parse::emit_try_decode_map_as(ctx, &args_list),
       CalcitSyntax::DecodeMapAs => edn_parse::emit_decode_map_as(ctx, &args_list),
-      CalcitSyntax::JsCast | CalcitSyntax::EncodeMapAs => Err(format!("{syn} is not yet supported in WASM codegen")),
+      CalcitSyntax::EncodeMapAs => edn_parse::emit_encode_map_as(ctx, &args_list),
+      CalcitSyntax::JsCast => Err(format!("{syn} is not yet supported in WASM codegen")),
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
       CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
       CalcitSyntax::Reset => {
@@ -9490,13 +9644,37 @@ fn emit_wasi_write_literal(ctx: &mut WasmGenCtx, fd: i32, text: &str) -> Result<
   Ok(())
 }
 
-/// Read a Preview 1 clock into the runtime scratch area and return milliseconds.
+/// Read a WASI clock and return milliseconds.
 fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err(format!("E_WASI_COMMAND_CAPABILITY: `{proc_name}` needs WASI 0.3 clocks lowering"));
-  }
   if ctx.target != WasmTarget::Wasi {
     return Err(format!("E_WASM_CAPABILITY: {proc_name} is unavailable for the core WASM target"));
+  }
+  if ctx.boundary == WasmBoundary::Component {
+    if clock_id == 1 {
+      let now_idx = resolve_host_import(ctx, "wasi:clocks/monotonic-clock@0.3.1", "now")
+        .map_err(|_| format!("E_WASI_COMMAND_CAPABILITY: `{proc_name}` needs a reachable WASI 0.3 clocks effect"))?;
+      ctx.emit(Instruction::Call(now_idx));
+      ctx.emit(Instruction::F64ConvertI64U);
+      ctx.emit(f64_const(1_000_000.0));
+      ctx.emit(Instruction::F64Div);
+      return Ok(());
+    }
+    let now_idx = resolve_host_import(ctx, "wasi:clocks/system-clock@0.3.1", "now")
+      .map_err(|_| format!("E_WASI_COMMAND_CAPABILITY: `{proc_name}` needs a reachable WASI 0.3 clocks effect"))?;
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::Call(now_idx));
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::I64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::F64ConvertI64S);
+    ctx.emit(f64_const(1000.0));
+    ctx.emit(Instruction::F64Mul);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(8)));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(f64_const(1_000_000.0));
+    ctx.emit(Instruction::F64Div);
+    ctx.emit(Instruction::F64Add);
+    return Ok(());
   }
   ctx.emit(Instruction::I32Const(clock_id));
   ctx.emit(Instruction::I64Const(1_000_000));
@@ -9517,14 +9695,14 @@ fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> R
   Ok(())
 }
 
-/// Lower the typed synchronous wait boundary through Preview 1 `poll_oneoff`.
+/// Lower the typed synchronous wait boundary through `__rt_wasi_wait`.
 fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&wait-ms` needs WASI 0.3 clocks lowering".into());
-  }
   expect_arity(3, args, "&wait-ms")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: wait-ms is unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_wait") {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&wait-ms` needs a reachable WASI 0.3 clocks effect".into());
   }
 
   let milliseconds = ctx.alloc_local();
@@ -9575,14 +9753,14 @@ fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   Ok(())
 }
 
-/// Fill a managed Buffer through Preview 1 and wrap it in the caller's Result type.
+/// Fill a managed Buffer through WASI random and wrap it in the caller's Result type.
 fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs WASI 0.3 random lowering".into());
-  }
   expect_arity(3, args, "&secure-random-bytes")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_component_random_get") {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs a reachable WASI 0.3 random effect".into());
   }
 
   let size = ctx.alloc_local();
@@ -9631,7 +9809,11 @@ fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(size_i32));
-  ctx.emit(Instruction::Call(resolve_host_import(ctx, "wasi_snapshot_preview1", "random_get")?));
+  if ctx.boundary == WasmBoundary::Component {
+    ctx.call_rt("__rt_wasi_component_random_get");
+  } else {
+    ctx.emit(Instruction::Call(resolve_host_import(ctx, "wasi_snapshot_preview1", "random_get")?));
+  }
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   emit_result_enum(ctx, "err", host_error)?;
   ctx.emit(Instruction::Else);
@@ -9752,14 +9934,14 @@ fn emit_wasi_read_text(ctx: &mut WasmGenCtx, args: &[Calcit], stdin: bool) -> Re
   Ok(())
 }
 
-/// Lower the typed filesystem directory boundary through a private Preview 1 helper.
+/// Lower the typed filesystem directory boundary through `__rt_wasi_read_dir`.
 fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if ctx.boundary == WasmBoundary::Component {
-    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-dir` needs WASI 0.3 filesystem lowering".into());
-  }
   expect_arity(4, args, "&fs-read-dir")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
+  }
+  if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_read_dir") {
+    return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-dir` needs a reachable WASI 0.3 filesystem effect".into());
   }
   let path = emit_ptr_to_i32(ctx, &args[2])?;
   let host_error = ctx.alloc_local();
@@ -11845,7 +12027,11 @@ fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
       matches!(
         xs.first(),
         Some(Calcit::Syntax(
-          CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+          CalcitSyntax::TryParseCirruEdnAs
+            | CalcitSyntax::ParseCirruEdnAs
+            | CalcitSyntax::DecodeMapAs
+            | CalcitSyntax::TryDecodeMapAs
+            | CalcitSyntax::EncodeMapAs,
           _
         ))
       ) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
@@ -11871,14 +12057,43 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
 fn expr_uses_wasi_file(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_file),
-    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText) => true,
+    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText | CalcitProc::NativeFsReadDir) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
-      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text" | "fs-path:read-dir")
     }
     Calcit::Method(name, MethodKind::Invoke(receiver)) => {
-      matches!(name.as_ref(), "read-text" | "write-text!")
+      matches!(name.as_ref(), "read-text" | "write-text!" | "read-dir")
         && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
     }
+    _ => false,
+  }
+}
+
+fn expr_uses_wasi_clocks(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_clocks),
+    Calcit::Proc(CalcitProc::UnixTimeMs | CalcitProc::MonotonicTimeMs | CalcitProc::NativeWaitMs) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "unix-time-ms" | "monotonic-time-ms" | "wait-ms")
+    }
+    _ => false,
+  }
+}
+
+fn expr_uses_wasi_wait(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_wait),
+    Calcit::Proc(CalcitProc::NativeWaitMs) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "wait-ms",
+    _ => false,
+  }
+}
+
+fn expr_uses_wasi_random(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_random),
+    Calcit::Proc(CalcitProc::NativeSecureRandomBytes) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "secure-random-bytes",
     _ => false,
   }
 }
@@ -11918,8 +12133,8 @@ fn reachable_wasi_effect(
     .flat_map(|(namespace, file)| {
       file
         .defs
-        .values()
-        .map(move |definition| (definition.def_id, (namespace.as_ref(), definition)))
+        .iter()
+        .map(move |(def_name, definition)| (definition.def_id, (namespace.as_ref(), def_name.as_ref(), definition)))
     })
     .collect::<HashMap<_, _>>();
   let Some(entry) = program_data.get(init_ns).and_then(|file| file.defs.get(init_def)) else {
@@ -11931,10 +12146,10 @@ fn reachable_wasi_effect(
     if !visited.insert(id) {
       continue;
     }
-    let Some((namespace, definition)) = definitions.get(&id) else {
+    let Some((namespace, def_name, definition)) = definitions.get(&id) else {
       continue;
     };
-    if *namespace != "calcit.core" && uses_effect(&definition.preprocessed_code) {
+    if (*namespace != "calcit.core" || def_name.starts_with("&calcit:test:")) && uses_effect(&definition.preprocessed_code) {
       return true;
     }
     pending.extend(definition.deps.iter().copied());
@@ -12049,6 +12264,36 @@ fn wasi_component_file_imports() -> Vec<HostImport> {
     HostImport {
       module: "wasi:filesystem/types@0.3.1".into(),
       name: "[future-drop-readable-1][method]descriptor.write-via-stream".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[method]descriptor.read-directory".into(),
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[async-lower][stream-read-0][method]descriptor.read-directory".into(),
+      params: vec![ValType::I32; 3],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[stream-drop-readable-0][method]descriptor.read-directory".into(),
+      params: vec![ValType::I32],
+      results: vec![],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-read-1][method]descriptor.read-directory".into(),
+      params: vec![ValType::I32; 2],
+      results: vec![ValType::I32],
+    },
+    HostImport {
+      module: "wasi:filesystem/types@0.3.1".into(),
+      name: "[future-drop-readable-1][method]descriptor.read-directory".into(),
       params: vec![ValType::I32],
       results: vec![],
     },
@@ -12996,7 +13241,7 @@ mod tests {
   }
 
   #[test]
-  fn wasi_file_effects_require_stackful_command_without_enabling_directory_calls() {
+  fn wasi_file_effects_require_stackful_command_for_read_write_and_directory_calls() {
     let fs_path = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![])));
     let read = Calcit::Method(Arc::from("read-text"), MethodKind::Invoke(fs_path.clone()));
     let retired_write = Calcit::Method(Arc::from("write-text"), MethodKind::Invoke(fs_path.clone()));
@@ -13011,7 +13256,8 @@ mod tests {
     );
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
-    assert!(!expr_uses_wasi_file(&directory));
+    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadDir)));
+    assert!(expr_uses_wasi_file(&directory));
   }
 
   #[test]

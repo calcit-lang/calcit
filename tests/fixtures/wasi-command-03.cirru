@@ -16,6 +16,25 @@
           :schema $ quote $ Fn (-> Unit) (:features :io)
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
             :code $ quote $ assert= &unit (main!)
+        'main-capabilities! $ %{} 'CodeEntry (:doc "|验证 WASI 0.3 Component 时钟、等待与安全随机数能力。")
+          :code $ quote $ defn main-capabilities! ()
+            let
+                wall $ unix-time-ms
+                t0 $ monotonic-time-ms
+                waited $ wait-ms 1
+                t1 $ monotonic-time-ms
+                rand0 $ secure-random-bytes 0
+                rand16 $ secure-random-bytes 16
+                rand-err $ secure-random-bytes -1
+              assert= true $ > wall 0
+              assert= true $ result:ok? waited
+              assert= true $ >= t1 t0
+              assert= true $ result:ok? rand0
+              assert= true $ result:ok? rand16
+              assert= true $ result:err? rand-err
+              println |Capabilities-ok
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-file! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-file! ()
             assert= "|你好" $ result:unwrap-or (read-workspace-file |workspace/valid.txt) |missing
@@ -29,6 +48,10 @@
             assert= true $ result:err? $ write-workspace-file |workspace/no-dir/missing.txt |blocked
             assert= true $ result:ok? $ write-workspace-file |workspace/limit-output.txt
               result:unwrap-or (read-workspace-file |workspace/limit.txt) |missing
+            assert=
+              Result :ok $ [] (fs:path |workspace/listing/a.txt) (fs:path "|workspace/listing/子.txt")
+              .read-dir $ fs:path |workspace/listing
+            assert= true $ result:err? $ .read-dir (fs:path |workspace/no-such-dir)
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
@@ -80,7 +103,7 @@
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-unsupported! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported! ()
-            assert= true $ result:ok? $ .read-dir (fs:path |workspace)
+            assert= true $ result:ok? $ .walk-dir (fs:path |workspace)
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)

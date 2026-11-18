@@ -154,6 +154,12 @@ pub(super) fn emit_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> 
   emit_parse_cirru_edn_common(ctx, args, "parse-cirru-edn-as", true)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MapCodecMode {
+  Decode,
+  Encode,
+}
+
 fn emit_decode_map_common(ctx: &mut WasmGenCtx, args: &[Calcit], op_name: &str, trap_on_error: bool) -> Result<(), String> {
   if args.len() != 3 {
     return Err(format!(
@@ -181,6 +187,7 @@ fn emit_decode_map_common(ctx: &mut WasmGenCtx, args: &[Calcit], op_name: &str, 
     input,
     static_hint.as_deref(),
     (decoded, ok, error_kind, error_path),
+    MapCodecMode::Decode,
   )?;
 
   if trap_on_error {
@@ -206,6 +213,44 @@ pub(super) fn emit_try_decode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
 
 pub(super) fn emit_decode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   emit_decode_map_common(ctx, args, "decode-map-as", true)
+}
+
+pub(super) fn emit_encode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 3 {
+    return Err(format!(
+      "encode-map-as expects preprocessed value, type and data shape arguments, got {}",
+      args.len()
+    ));
+  }
+  let graph = DataShapeGraph::from_calcit_handle(&args[2])
+    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed map encoder is missing its preprocessed data shape".to_string())?;
+  validate_map_decode_shape(&graph, graph.root, 0)?;
+
+  let static_hint = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  emit_expr(ctx, &args[0])?;
+  let input = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(input));
+
+  let encoded = ctx.alloc_local();
+  let ok = ctx.alloc_local_typed(ValType::I32);
+  let error_kind = ctx.alloc_local_typed(ValType::I32);
+  let error_path = literal_local(ctx, "")?;
+  emit_decode_map_node(
+    ctx,
+    &graph,
+    graph.root,
+    input,
+    static_hint.as_deref(),
+    (encoded, ok, error_kind, error_path),
+    MapCodecMode::Encode,
+  )?;
+  ctx.emit(Instruction::LocalGet(ok));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(encoded));
+  Ok(())
 }
 
 fn validate_map_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Result<(), String> {
@@ -411,6 +456,7 @@ fn emit_decode_map_node(
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (decoded, ok, error_kind, _error_path) = outputs;
   ctx.emit(Instruction::I32Const(0));
@@ -577,17 +623,119 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::End);
       }
     }
-    DataShapeNode::MapOption { nominal, inner, .. } => {
-      emit_decode_map_option(ctx, graph, nominal, *inner, input, static_hint, outputs)?
+    DataShapeNode::MapOption { nominal, inner, .. } => match mode {
+      MapCodecMode::Decode => emit_decode_map_option(ctx, graph, nominal, *inner, input, static_hint, outputs)?,
+      MapCodecMode::Encode => emit_encode_map_option(ctx, graph, nominal, *inner, input, static_hint, outputs)?,
+    },
+    DataShapeNode::List(item_id) => emit_decode_map_list(ctx, graph, *item_id, input, static_hint, outputs, mode)?,
+    DataShapeNode::Tuple(slots) => emit_decode_map_tuple(ctx, graph, slots, input, static_hint, outputs, mode)?,
+    DataShapeNode::Set(item_id) => emit_decode_map_set(ctx, graph, *item_id, input, static_hint, outputs, mode)?,
+    DataShapeNode::Map { key, value } => emit_decode_map_table(ctx, graph, (*key, *value), input, static_hint, outputs, mode)?,
+    DataShapeNode::Struct { nominal, fields, .. } => match mode {
+      MapCodecMode::Decode => emit_decode_map_struct(ctx, graph, nominal, fields, input, static_hint, outputs)?,
+      MapCodecMode::Encode => emit_encode_map_struct(ctx, graph, nominal, fields, input, static_hint, outputs)?,
+    },
+    DataShapeNode::Enum { nominal, variants, .. } => {
+      emit_decode_map_enum(ctx, graph, (nominal, variants), input, static_hint, outputs, mode)?
     }
-    DataShapeNode::List(item_id) => emit_decode_map_list(ctx, graph, *item_id, input, static_hint, outputs)?,
-    DataShapeNode::Tuple(slots) => emit_decode_map_tuple(ctx, graph, slots, input, static_hint, outputs)?,
-    DataShapeNode::Set(item_id) => emit_decode_map_set(ctx, graph, *item_id, input, static_hint, outputs)?,
-    DataShapeNode::Map { key, value } => emit_decode_map_table(ctx, graph, (*key, *value), input, static_hint, outputs)?,
-    DataShapeNode::Struct { nominal, fields, .. } => emit_decode_map_struct(ctx, graph, nominal, fields, input, static_hint, outputs)?,
-    DataShapeNode::Enum { nominal, variants, .. } => emit_decode_map_enum(ctx, graph, nominal, variants, input, static_hint, outputs)?,
     _ => unreachable!("shape was validated before map decoder emission"),
   }
+  Ok(())
+}
+
+fn emit_encode_map_option(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitEnumDef>,
+  inner: usize,
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
+  let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
+  let allow_option_enum = static_hint
+    .and_then(|ty| ty.resolve_to_enum())
+    .is_none_or(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal));
+  if !allow_option_enum {
+    return Ok(());
+  }
+  let is_enum = emit_has_heap_tag(ctx, input, "enum");
+  ctx.emit(Instruction::LocalGet(is_enum));
+  ctx.begin_block_if();
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let count = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(count));
+  let vtag = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(vtag));
+
+  ctx.emit(Instruction::LocalGet(vtag));
+  ctx.emit(f64_const(none_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(vtag));
+  ctx.emit(f64_const(some_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  let item = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalSet(item));
+  let inner_encoded = ctx.alloc_local();
+  let inner_ok = ctx.alloc_local_typed(ValType::I32);
+  let inner_err = ctx.alloc_local_typed(ValType::I32);
+  let inner_path = literal_local(ctx, "")?;
+  let inner_hint = hint_option_inner(static_hint, nominal);
+  emit_decode_map_node(
+    ctx,
+    graph,
+    inner,
+    item,
+    inner_hint.as_ref(),
+    (inner_encoded, inner_ok, inner_err, inner_path),
+    MapCodecMode::Encode,
+  )?;
+  ctx.emit(Instruction::LocalGet(inner_ok));
+  ctx.begin_block_if();
+  if matches!(graph.nodes.get(inner), Some(DataShapeNode::MapOption { .. })) {
+    emit_option_enum(ctx, Some(inner_encoded))?;
+    ctx.emit(Instruction::LocalSet(decoded));
+  } else {
+    ctx.emit(Instruction::LocalGet(inner_encoded));
+    ctx.emit(Instruction::LocalSet(decoded));
+  }
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(inner_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  ctx.emit(Instruction::LocalGet(inner_path));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -665,6 +813,7 @@ fn emit_decode_map_option(
       item,
       inner_hint.as_ref(),
       (inner_decoded, inner_ok, inner_err, inner_path),
+      MapCodecMode::Decode,
     )?;
     ctx.emit(Instruction::LocalGet(inner_ok));
     ctx.begin_block_if();
@@ -707,6 +856,7 @@ fn emit_decode_map_option(
     input,
     static_hint,
     (inner_decoded, inner_ok, inner_err, inner_path),
+    MapCodecMode::Decode,
   )?;
   ctx.emit(Instruction::LocalGet(inner_ok));
   ctx.begin_block_if();
@@ -731,6 +881,7 @@ fn emit_decode_map_list(
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (decoded, ok, error_kind, error_path) = outputs;
   let is_list = emit_has_heap_tag(ctx, input, "list");
@@ -769,6 +920,7 @@ fn emit_decode_map_list(
     elem,
     inner_hint.as_ref(),
     (item_val, item_ok, item_err, item_path),
+    mode,
   )?;
   ctx.emit(Instruction::LocalGet(item_ok));
   ctx.begin_block_if();
@@ -828,6 +980,7 @@ fn emit_decode_map_tuple(
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (decoded, ok, error_kind, error_path) = outputs;
   let is_list = emit_has_heap_tag(ctx, input, "list");
@@ -863,6 +1016,7 @@ fn emit_decode_map_tuple(
       elem,
       slot_hint.as_ref(),
       (item_val, item_ok, item_err, item_path),
+      mode,
     )?;
     ctx.emit(Instruction::LocalGet(item_ok));
     ctx.begin_block_if();
@@ -900,6 +1054,7 @@ fn emit_decode_map_set(
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (decoded, ok, error_kind, error_path) = outputs;
   let is_set = emit_has_heap_tag(ctx, input, "set");
@@ -938,6 +1093,7 @@ fn emit_decode_map_set(
     elem,
     inner_hint.as_ref(),
     (item_val, item_ok, item_err, item_path),
+    mode,
   )?;
   ctx.emit(Instruction::LocalGet(item_ok));
   ctx.begin_block_if();
@@ -1002,6 +1158,7 @@ fn emit_decode_map_table(
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (key, value) = &kv;
   let (decoded, ok, error_kind, error_path) = outputs;
@@ -1057,12 +1214,12 @@ fn emit_decode_map_table(
   let k_ok = ctx.alloc_local_typed(ValType::I32);
   let k_err = ctx.alloc_local_typed(ValType::I32);
   let k_path = literal_local(ctx, "")?;
-  emit_decode_map_node(ctx, graph, *key, raw_k, k_hint.as_ref(), (k_val, k_ok, k_err, k_path))?;
+  emit_decode_map_node(ctx, graph, *key, raw_k, k_hint.as_ref(), (k_val, k_ok, k_err, k_path), mode)?;
   let v_val = ctx.alloc_local();
   let v_ok = ctx.alloc_local_typed(ValType::I32);
   let v_err = ctx.alloc_local_typed(ValType::I32);
   let v_path = literal_local(ctx, "")?;
-  emit_decode_map_node(ctx, graph, *value, raw_v, v_hint.as_ref(), (v_val, v_ok, v_err, v_path))?;
+  emit_decode_map_node(ctx, graph, *value, raw_v, v_hint.as_ref(), (v_val, v_ok, v_err, v_path), mode)?;
   ctx.emit(Instruction::LocalGet(k_ok));
   ctx.emit(Instruction::LocalGet(v_ok));
   ctx.emit(Instruction::I32And);
@@ -1123,6 +1280,139 @@ fn emit_decode_map_table(
   Ok(())
 }
 
+fn emit_encode_map_struct(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitStructDef>,
+  fields: &[(EdnTag, usize)],
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let struct_tag_id = ctx.struct_layouts.id(nominal)?;
+  let is_struct = emit_has_heap_tag(ctx, input, "struct");
+  ctx.emit(Instruction::LocalGet(is_struct));
+  ctx.begin_block_if();
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(f64_const(fields.len() as f64));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  let valid = ctx.alloc_i32(1);
+  let values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+  let include_field = fields.iter().map(|_| ctx.alloc_i32(0)).collect::<Vec<_>>();
+  let included_count = ctx.alloc_i32(0);
+  for (idx, (field, child)) in fields.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let raw_val = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + idx) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(raw_val));
+    let f_ok = ctx.alloc_local_typed(ValType::I32);
+    let f_err = ctx.alloc_local_typed(ValType::I32);
+    let f_path = literal_local(ctx, "")?;
+    let field_hint = hint_struct_field(static_hint, nominal, idx);
+    emit_decode_map_node(
+      ctx,
+      graph,
+      *child,
+      raw_val,
+      field_hint.as_ref(),
+      (values[idx], f_ok, f_err, f_path),
+      MapCodecMode::Encode,
+    )?;
+    ctx.emit(Instruction::LocalGet(f_ok));
+    ctx.begin_block_if();
+    if matches!(graph.nodes.get(*child), Some(DataShapeNode::MapOption { .. })) {
+      ctx.emit(Instruction::LocalGet(raw_val));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Ne);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::LocalSet(include_field[idx]));
+      ctx.i32_inc(included_count);
+      ctx.emit(Instruction::End);
+    } else {
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::LocalSet(include_field[idx]));
+      ctx.i32_inc(included_count);
+    }
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::LocalGet(f_err));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
+    ctx.emit(Instruction::LocalGet(full_path));
+    ctx.emit(Instruction::LocalSet(error_path));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(included_count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(total_slots));
+  let dst_flat = emit_alloc_with_count(ctx, included_count, total_slots, "map");
+  let write_off = ctx.alloc_i32(8);
+  for (idx, (field, _)) in fields.iter().enumerate() {
+    let field_tag_id = *ctx
+      .tag_index
+      .get(field.ref_str())
+      .ok_or_else(|| format!("unknown struct field tag in WASM map encode: {field}"))? as f64;
+    ctx.emit(Instruction::LocalGet(include_field[idx]));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(dst_flat));
+    ctx.emit(Instruction::LocalGet(write_off));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(f64_const(field_tag_id));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalGet(dst_flat));
+    ctx.emit(Instruction::LocalGet(write_off));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(values[idx]));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    ctx.emit(Instruction::LocalGet(write_off));
+    ctx.emit(Instruction::I32Const(16));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(write_off));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(dst_flat));
+  ctx.call_rt("__rt_map_root_from_flat");
+  let hashed_root = ctx.alloc_local_typed(ValType::I32);
+  let actual_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(hashed_root));
+  ctx.emit(Instruction::LocalSet(actual_count));
+  let out_map = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  ctx.emit(Instruction::LocalGet(out_map));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
 fn emit_decode_map_struct(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
@@ -1165,7 +1455,15 @@ fn emit_decode_map_struct(
     let f_err = ctx.alloc_local_typed(ValType::I32);
     let f_path = literal_local(ctx, "")?;
     let field_hint = hint_struct_field(static_hint, nominal, idx);
-    emit_decode_map_node(ctx, graph, *child, raw_val, field_hint.as_ref(), (values[idx], f_ok, f_err, f_path))?;
+    emit_decode_map_node(
+      ctx,
+      graph,
+      *child,
+      raw_val,
+      field_hint.as_ref(),
+      (values[idx], f_ok, f_err, f_path),
+      MapCodecMode::Decode,
+    )?;
     ctx.emit(Instruction::LocalGet(f_ok));
     ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(all_identical));
@@ -1330,6 +1628,7 @@ fn emit_decode_map_struct(
       raw_values[idx],
       map_val_hint.as_ref(),
       (decoded_values[idx], f_ok, f_err, f_path),
+      MapCodecMode::Decode,
     )?;
     ctx.emit(Instruction::LocalGet(f_ok));
     ctx.emit(Instruction::I32Eqz);
@@ -1383,11 +1682,11 @@ fn emit_decode_map_struct(
 fn emit_decode_map_enum(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
-  nominal: &Arc<CalcitEnumDef>,
-  variants: &[(EdnTag, Vec<usize>)],
+  (nominal, variants): (&Arc<CalcitEnumDef>, &[(EdnTag, Vec<usize>)]),
   input: u32,
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
+  mode: MapCodecMode,
 ) -> Result<(), String> {
   let (decoded, ok, error_kind, error_path) = outputs;
   // WASM enum heap objects do not carry a runtime definition tag, so only inputs
@@ -1455,6 +1754,7 @@ fn emit_decode_map_enum(
         raw_p,
         payload_hint.as_ref(),
         (values[pidx], p_ok, p_err, p_path),
+        mode,
       )?;
       ctx.emit(Instruction::LocalGet(p_ok));
       ctx.begin_block_if();
