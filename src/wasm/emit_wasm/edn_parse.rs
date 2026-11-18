@@ -258,25 +258,26 @@ pub(super) fn emit_encode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 const MAX_MAP_CODEC_EXPANDED_NODES: usize = 512;
 
 fn validate_map_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Result<(), String> {
-  let mut expanded_nodes = 0;
-  validate_map_decode_shape_with_budget(graph, node_id, depth, &mut expanded_nodes)
+  let mut total_nodes = 0;
+  let mut compound_nodes = 0;
+  validate_map_decode_shape_with_budget(graph, node_id, depth, (&mut total_nodes, &mut compound_nodes))
 }
 
 fn validate_map_decode_shape_with_budget(
   graph: &DataShapeGraph,
   node_id: usize,
   depth: usize,
-  expanded_nodes: &mut usize,
+  (total_nodes, compound_nodes): (&mut usize, &mut usize),
 ) -> Result<(), String> {
   if depth > MAX_EDN_DECODE_SHAPE_DEPTH {
     return Err(format!(
       "E_WASM_EDN_DEPTH: typed map decode shape nesting exceeds {MAX_EDN_DECODE_SHAPE_DEPTH}"
     ));
   }
-  *expanded_nodes = expanded_nodes.saturating_add(1);
-  if *expanded_nodes > MAX_MAP_CODEC_EXPANDED_NODES {
+  *total_nodes = total_nodes.saturating_add(1);
+  if *total_nodes > MAX_EDN_DECODE_EXPANDED_NODES {
     return Err(format!(
-      "E_WASM_EDN_DEPTH: typed map decode shape expansion exceeds {MAX_MAP_CODEC_EXPANDED_NODES} nodes"
+      "E_WASM_EDN_DEPTH: typed map decode shape expansion exceeds {MAX_EDN_DECODE_EXPANDED_NODES} nodes"
     ));
   }
   let node = graph
@@ -292,52 +293,62 @@ fn validate_map_decode_shape_with_budget(
     | DataShapeNode::Numeric(_)
     | DataShapeNode::String
     | DataShapeNode::Tag => Ok(()),
-    DataShapeNode::MapOption { inner, .. } => {
-      if let Some(DataShapeNode::Enum {
-        nominal: inner_enum,
-        variants,
-        ..
-      }) = graph.nodes.get(*inner)
-        && variants
-          .iter()
-          .any(|(tag, payloads)| (tag.ref_str() == "none" && payloads.is_empty()) || (tag.ref_str() == "some" && payloads.len() == 1))
-      {
+    _ => {
+      *compound_nodes = compound_nodes.saturating_add(1);
+      if *compound_nodes > MAX_MAP_CODEC_EXPANDED_NODES {
         return Err(format!(
-          "E_WASM_EDN_ENUM_SHAPE: Option<{}> cannot be unambiguously represented in the WASM enum ABI because :{} defines a conflicting :none or :some variant",
-          inner_enum.name(),
-          inner_enum.name()
+          "E_WASM_EDN_DEPTH: typed map decode shape expansion exceeds {MAX_MAP_CODEC_EXPANDED_NODES} compound nodes"
         ));
       }
-      validate_map_decode_shape_with_budget(graph, *inner, depth + 1, expanded_nodes)
-    }
-    DataShapeNode::List(inner) | DataShapeNode::Set(inner) => {
-      validate_map_decode_shape_with_budget(graph, *inner, depth + 1, expanded_nodes)
-    }
-    DataShapeNode::Tuple(slots) => {
-      for slot in slots {
-        validate_map_decode_shape_with_budget(graph, *slot, depth + 1, expanded_nodes)?;
-      }
-      Ok(())
-    }
-    DataShapeNode::Map { key, value } => {
-      validate_map_decode_shape_with_budget(graph, *key, depth + 1, expanded_nodes)?;
-      validate_map_decode_shape_with_budget(graph, *value, depth + 1, expanded_nodes)
-    }
-    DataShapeNode::Struct { fields, .. } => {
-      for (_, field) in fields {
-        validate_map_decode_shape_with_budget(graph, *field, depth + 1, expanded_nodes)?;
-      }
-      Ok(())
-    }
-    DataShapeNode::Enum { variants, .. } => {
-      for (_, payloads) in variants {
-        for payload in payloads {
-          validate_map_decode_shape_with_budget(graph, *payload, depth + 1, expanded_nodes)?;
+      match node {
+        DataShapeNode::MapOption { inner, .. } => {
+          if let Some(DataShapeNode::Enum {
+            nominal: inner_enum,
+            variants,
+            ..
+          }) = graph.nodes.get(*inner)
+            && variants.iter().any(|(tag, payloads)| {
+              (tag.ref_str() == "none" && payloads.is_empty()) || (tag.ref_str() == "some" && payloads.len() == 1)
+            })
+          {
+            return Err(format!(
+              "E_WASM_EDN_ENUM_SHAPE: Option<{}> cannot be unambiguously represented in the WASM enum ABI because :{} defines a conflicting :none or :some variant",
+              inner_enum.name(),
+              inner_enum.name()
+            ));
+          }
+          validate_map_decode_shape_with_budget(graph, *inner, depth + 1, (total_nodes, compound_nodes))
         }
+        DataShapeNode::List(inner) | DataShapeNode::Set(inner) => {
+          validate_map_decode_shape_with_budget(graph, *inner, depth + 1, (total_nodes, compound_nodes))
+        }
+        DataShapeNode::Tuple(slots) => {
+          for slot in slots {
+            validate_map_decode_shape_with_budget(graph, *slot, depth + 1, (total_nodes, compound_nodes))?;
+          }
+          Ok(())
+        }
+        DataShapeNode::Map { key, value } => {
+          validate_map_decode_shape_with_budget(graph, *key, depth + 1, (total_nodes, compound_nodes))?;
+          validate_map_decode_shape_with_budget(graph, *value, depth + 1, (total_nodes, compound_nodes))
+        }
+        DataShapeNode::Struct { fields, .. } => {
+          for (_, field) in fields {
+            validate_map_decode_shape_with_budget(graph, *field, depth + 1, (total_nodes, compound_nodes))?;
+          }
+          Ok(())
+        }
+        DataShapeNode::Enum { variants, .. } => {
+          for (_, payloads) in variants {
+            for payload in payloads {
+              validate_map_decode_shape_with_budget(graph, *payload, depth + 1, (total_nodes, compound_nodes))?;
+            }
+          }
+          Ok(())
+        }
+        other => Err(format!("E_WASM_EDN_SHAPE: {other:?} is not yet supported by the typed map decoder")),
       }
-      Ok(())
     }
-    other => Err(format!("E_WASM_EDN_SHAPE: {other:?} is not yet supported by the typed map decoder")),
   }
 }
 
@@ -569,13 +580,6 @@ fn emit_decode_map_node(
   outputs: (u32, u32, u32, u32),
   mode: MapCodecMode,
 ) -> Result<(), String> {
-  ctx.map_codec_expanded_nodes = ctx.map_codec_expanded_nodes.saturating_add(1);
-  if ctx.map_codec_expanded_nodes > MAX_MAP_CODEC_EXPANDED_NODES {
-    return Err(format!(
-      "E_WASM_EDN_DEPTH: typed map decode shape expansion exceeds {MAX_MAP_CODEC_EXPANDED_NODES} nodes"
-    ));
-  }
-
   let (decoded, ok, error_kind, _error_path) = outputs;
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ok));
@@ -589,6 +593,25 @@ fn emit_decode_map_node(
     .nodes
     .get(node_id)
     .ok_or_else(|| format!("E_WASM_EDN_SHAPE: typed map decoder references missing node #{node_id}"))?;
+
+  if !matches!(
+    node,
+    DataShapeNode::Dynamic
+      | DataShapeNode::Nil
+      | DataShapeNode::Unit
+      | DataShapeNode::Bool
+      | DataShapeNode::Number
+      | DataShapeNode::Numeric(_)
+      | DataShapeNode::String
+      | DataShapeNode::Tag
+  ) {
+    ctx.map_codec_expanded_nodes = ctx.map_codec_expanded_nodes.saturating_add(1);
+    if ctx.map_codec_expanded_nodes > MAX_MAP_CODEC_EXPANDED_NODES {
+      return Err(format!(
+        "E_WASM_EDN_DEPTH: typed map decode shape expansion exceeds {MAX_MAP_CODEC_EXPANDED_NODES} compound nodes"
+      ));
+    }
+  }
 
   if mode == MapCodecMode::Encode
     && matches!(
@@ -3763,6 +3786,7 @@ mod tests {
     )
     .expect("wide struct shape should be well formed");
     assert!(validate_decode_shape(&wide_edn_graph, wide_edn_graph.root, 0).is_ok());
+    assert!(validate_map_decode_shape(&wide_edn_graph, wide_edn_graph.root, 0).is_ok());
   }
 
   #[test]
