@@ -806,9 +806,13 @@ fn emit_encode_map_option(
   let (decoded, ok, error_kind, error_path) = outputs;
   let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
   let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
-  let allow_option_enum = static_hint.is_none_or(|ty| {
-    nil_type_evidence_is_open(ty)
-      || matches!(ty, CalcitTypeAnnotation::Never)
+  if static_hint.is_none_or(|ty| nil_type_evidence_is_open(ty) && !matches!(ty, CalcitTypeAnnotation::Never)) {
+    return Err(
+      "E_WASM_NIL_TYPE_EVIDENCE: encode-map-as on Option requires nominal Option type evidence in the current WASM enum ABI".into(),
+    );
+  }
+  let allow_option_enum = static_hint.is_some_and(|ty| {
+    matches!(ty, CalcitTypeAnnotation::Never)
       || ty
         .resolve_to_enum()
         .is_some_and(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal))
@@ -875,9 +879,25 @@ fn emit_encode_map_option(
           .into(),
       );
     }
-    hint_ty
-      .resolve_to_enum()
-      .is_some_and(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal))
+    if let Some(actual) = hint_ty.resolve_to_enum() {
+      if actual.name() == nominal.name() || actual.same_nominal_definition(nominal) {
+        true
+      } else if actual
+        .variants()
+        .iter()
+        .any(|v| (v.tag.ref_str() == "none" && v.arity() == 0) || (v.tag.ref_str() == "some" && v.arity() == 1))
+      {
+        return Err(format!(
+          "E_WASM_EDN_ENUM_SHAPE: Option<Dynamic> payload enum :{} cannot be unambiguously represented in the WASM enum ABI because :{} defines a conflicting :none or :some variant",
+          actual.name(),
+          actual.name()
+        ));
+      } else {
+        false
+      }
+    } else {
+      false
+    }
   } else {
     false
   };
@@ -1980,6 +2000,8 @@ fn emit_decode_map_enum(
   Ok(())
 }
 
+const MAX_EDN_DECODE_EXPANDED_NODES: usize = 4096;
+
 fn validate_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Result<(), String> {
   let mut expanded_nodes = 0;
   validate_decode_shape_with_budget(graph, node_id, depth, &mut expanded_nodes)
@@ -1997,9 +2019,9 @@ fn validate_decode_shape_with_budget(
     ));
   }
   *expanded_nodes = expanded_nodes.saturating_add(1);
-  if *expanded_nodes > MAX_MAP_CODEC_EXPANDED_NODES {
+  if *expanded_nodes > MAX_EDN_DECODE_EXPANDED_NODES {
     return Err(format!(
-      "E_WASM_EDN_DEPTH: typed Cirru EDN decode shape expansion exceeds {MAX_MAP_CODEC_EXPANDED_NODES} nodes"
+      "E_WASM_EDN_DEPTH: typed Cirru EDN decode shape expansion exceeds {MAX_EDN_DECODE_EXPANDED_NODES} nodes"
     ));
   }
   let node = graph
@@ -3714,6 +3736,32 @@ mod tests {
     let dag = DataShapeGraph::from_nodes(0, dag_nodes).expect("test DAG shape should be well formed");
     let dag_err = validate_map_decode_shape(&dag, dag.root, 0).expect_err("exponential shared-node DAG must hit the expansion budget");
     assert!(dag_err.starts_with("E_WASM_EDN_DEPTH:"), "{dag_err}");
+
+    let wide_fields = (0..512).map(|idx| (EdnTag::new(format!("f{idx}")), 1)).collect::<Vec<_>>();
+    let wide_struct = Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
+      definition_ref: Some(Arc::from("app.main/Wide512")),
+      name: EdnTag::new("Wide512"),
+      fields: Arc::new(wide_fields.iter().map(|(tag, _)| tag.clone()).collect()),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number); 512]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let wide_edn_graph = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::Struct {
+          nominal: wide_struct,
+          nominal_path: None,
+          type_args: Arc::from([]),
+          fields: wide_fields,
+        },
+        DataShapeNode::Number,
+      ],
+    )
+    .expect("wide struct shape should be well formed");
+    assert!(validate_decode_shape(&wide_edn_graph, wide_edn_graph.root, 0).is_ok());
   }
 
   #[test]
