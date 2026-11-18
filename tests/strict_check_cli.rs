@@ -2285,6 +2285,11 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
     "&difference (#{} :alpha) (#{} 78)",
     "&set:intersection (#{} ([] 1)) (#{} ([] true))",
     "intersection (#{} ([] 1) ([] |x)) (#{} ([] 1) ([] |x)) (#{} ([] true) ([] |x))",
+    "#{} 1 true",
+    "&union (assert-type (#{} 1) (Set Dynamic)) (assert-type (#{} true) (Set Dynamic))",
+    "&include (assert-type (#{} 1) (Set Dynamic)) true",
+    "&map:assoc (assert-type (&{} 1 10) (Map Dynamic Number)) true 20",
+    "&merge (assert-type (&{} 1 10) (Map Dynamic Number)) (assert-type (&{} true 20) (Map Dynamic Number))",
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");
@@ -2295,6 +2300,40 @@ fn wasm_and_wasi_reject_set_comparisons_that_erase_scalar_kinds() {
       let stderr = String::from_utf8_lossy(&output.stderr);
       assert!(!output.status.success(), "{target} accepted {expression}");
       assert!(stderr.contains("E_WASM_SET_ELEMENT_KIND"), "{target}: {stderr}");
+      assert!(!emit.join("program.wasm").exists(), "{target} emitted an invalid result");
+    }
+  }
+}
+
+#[test]
+fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  for (expression, expected_code) in [
+    (
+      "let ((xs $ assert-type ([] 1 true) (List Dynamic))) (&= (&list:nth xs 0) 1)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((xs $ assert-type ([] 0 false nil) (List Dynamic))) (&= (&list:nth xs 0) nil)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((xs $ assert-type ([] 1) (List Dynamic))) (json-stringify (&list:nth xs 0))",
+      "E_WASM_EDN_TYPE",
+    ),
+    ("if (&> 0 1) (json-stringify (&{} 1 2)) |ok", "E_WASM_EDN_MAP_KEY"),
+  ] {
+    edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
+    edit_schema(&snapshot, "main!", "Unit");
+    assert_success(&run_calcit(&snapshot, &[]), expression);
+    for target in ["wasm", "wasi"] {
+      let emit = directory.0.join(target);
+      let output = run_calcit(&snapshot, &[target, "--emit-path", emit.to_str().unwrap()]);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(!output.status.success(), "{target} accepted {expression}");
+      assert!(stderr.contains(expected_code), "{target} ({expression}): {stderr}");
       assert!(!emit.join("program.wasm").exists(), "{target} emitted an invalid result");
     }
   }

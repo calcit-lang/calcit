@@ -6,6 +6,30 @@ use super::*;
 
 /// `#{} elem0 elem1 ...` — create a set, deduplicating elements in insertion order.
 pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  let elem_types = args
+    .iter()
+    .map(|arg| {
+      infer_wasm_static_type(ctx, arg)
+        .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+        .unwrap_or_else(|| DYNAMIC_TYPE.clone())
+    })
+    .collect::<Vec<_>>();
+  for (i, ty_i) in elem_types.iter().enumerate() {
+    if set_comparison_can_erase_kind(ty_i, ty_i, 0) {
+      return Err(
+        "E_WASM_SET_ELEMENT_KIND: set construction needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+      );
+    }
+    for ty_j in &elem_types[..i] {
+      if set_comparison_can_erase_kind(ty_i, ty_j, 0) && !are_disjoint_number_and_heap_types(ty_i, ty_j) {
+        return Err(
+          "E_WASM_SET_ELEMENT_KIND: set construction needs element types that rule out distinct scalar kinds sharing a WASM value"
+            .into(),
+        );
+      }
+    }
+  }
+
   let count = args.len();
   let total_bytes = ((1 + count) * 8) as i32;
   let ptr = ctx.alloc_local_typed(ValType::I32);
@@ -27,21 +51,46 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
     let write_idx = ctx.alloc_i32(0);
+    let mut elem_locals = Vec::with_capacity(count);
     for (i, arg) in args.iter().enumerate() {
       let elem = ctx.alloc_local();
       emit_expr(ctx, arg)?;
       ctx.emit(Instruction::LocalSet(elem));
-      if i == 0 {
+      elem_locals.push(elem);
+      let compatible_prev = (0..i)
+        .filter(|&j| !are_disjoint_number_and_heap_types(&elem_types[i], &elem_types[j]))
+        .collect::<Vec<_>>();
+      if compatible_prev.is_empty() {
         emit_list_store_elem(ctx, ptr, write_idx, elem);
         ctx.i32_inc(write_idx);
         ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(f64_const(1.0));
+        ctx.ptr_to_f64(write_idx);
         ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-      } else {
+      } else if compatible_prev.len() == i {
         let found_idx = emit_set_find_structural(ctx, ptr, elem);
         ctx.emit(Instruction::LocalGet(found_idx));
         ctx.emit(Instruction::I32Const(-1));
         ctx.emit(Instruction::I32Eq);
+        ctx.begin_block_if();
+        emit_list_store_elem(ctx, ptr, write_idx, elem);
+        ctx.i32_inc(write_idx);
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.ptr_to_f64(write_idx);
+        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+        ctx.emit(Instruction::End);
+      } else {
+        let is_dup = ctx.alloc_i32(0);
+        for j in compatible_prev {
+          let eq = emit_equals_core_shallow(ctx, elem, elem_locals[j])?;
+          ctx.emit(Instruction::LocalGet(is_dup));
+          ctx.emit(Instruction::LocalGet(eq));
+          ctx.emit(f64_const(0.0));
+          ctx.emit(Instruction::F64Ne);
+          ctx.emit(Instruction::I32Or);
+          ctx.emit(Instruction::LocalSet(is_dup));
+        }
+        ctx.emit(Instruction::LocalGet(is_dup));
+        ctx.emit(Instruction::I32Eqz);
         ctx.begin_block_if();
         emit_list_store_elem(ctx, ptr, write_idx, elem);
         ctx.i32_inc(write_idx);
@@ -58,25 +107,146 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 }
 
 /// Tag for which native set binary operation to apply in `emit_set_op_variadic`.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum SetOpKind {
   Union,
   Difference,
   Intersection,
   Include,
+  Exclude,
+}
+
+pub(super) fn is_proven_non_scalar_heap_type(annotation: &Arc<CalcitTypeAnnotation>) -> bool {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::List(_)
+    | CalcitTypeAnnotation::Tuple(_)
+    | CalcitTypeAnnotation::Set(_)
+    | CalcitTypeAnnotation::Map(_, _)
+    | CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::StructValue(_)
+    | CalcitTypeAnnotation::Enum(_, _)
+    | CalcitTypeAnnotation::EnumValue(_) => true,
+    CalcitTypeAnnotation::TypeRef(_, _) => expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some(),
+    _ => false,
+  }
+}
+
+pub(super) fn are_disjoint_number_and_heap_types(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>) -> bool {
+  let left = CalcitTypeAnnotation::expand_schema_alias(left);
+  let right = CalcitTypeAnnotation::expand_schema_alias(right);
+  if set_comparison_can_erase_kind(&left, &left, 0) || set_comparison_can_erase_kind(&right, &right, 0) {
+    return false;
+  }
+  (proven_scalar_kind(&left) == Some("number") && is_proven_non_scalar_heap_type(&right))
+    || (is_proven_non_scalar_heap_type(&left) && proven_scalar_kind(&right) == Some("number"))
+}
+
+pub(super) fn infer_set_member_types(ctx: &WasmGenCtx, set: &Calcit) -> Vec<Arc<CalcitTypeAnnotation>> {
+  if let Some(evidence) = infer_wasm_value_evidence(ctx, set) {
+    if let Some(members) = evidence.set_member_types
+      && !members.is_empty()
+    {
+      return members;
+    }
+    let annotation = CalcitTypeAnnotation::expand_schema_alias(&evidence.annotation);
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::Set(element) => return vec![element.clone()],
+      CalcitTypeAnnotation::Never => return vec![annotation],
+      _ => {}
+    }
+  }
+  vec![DYNAMIC_TYPE.clone()]
 }
 
 fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<(), String> {
-  let element_type = |set| {
-    let annotation = CalcitTypeAnnotation::expand_schema_alias(&infer_wasm_static_type(ctx, set)?);
-    match annotation.as_ref() {
-      CalcitTypeAnnotation::Set(element) => Some(element.clone()),
-      CalcitTypeAnnotation::Never => Some(annotation),
-      _ => None,
+  let left_members = infer_set_member_types(ctx, left);
+  let right_members = infer_set_member_types(ctx, right);
+  if left_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0))
+    || right_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0))
+    || left_members
+      .iter()
+      .any(|l| right_members.iter().any(|r| set_comparison_can_erase_kind(l, r, 0)))
+  {
+    return Err(
+      "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+    );
+  }
+  Ok(())
+}
+
+pub(super) fn check_set_union_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -> Result<bool, String> {
+  let left_members = infer_set_member_types(ctx, left);
+  let right_members = infer_set_member_types(ctx, right);
+  if left_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0))
+    || right_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0))
+  {
+    return Err(
+      "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+    );
+  }
+  let mut all_disjoint = !left_members.is_empty() && !right_members.is_empty();
+  for l in &left_members {
+    for r in &right_members {
+      if matches!(l.as_ref(), CalcitTypeAnnotation::Never) || matches!(r.as_ref(), CalcitTypeAnnotation::Never) {
+        all_disjoint = false;
+        continue;
+      }
+      if are_disjoint_number_and_heap_types(l, r) {
+        continue;
+      }
+      all_disjoint = false;
+      if set_comparison_can_erase_kind(l, r, 0) {
+        return Err(
+          "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+        );
+      }
     }
-  };
-  let left = element_type(left).unwrap_or_else(|| DYNAMIC_TYPE.clone());
-  let right = element_type(right).unwrap_or_else(|| DYNAMIC_TYPE.clone());
-  if set_comparison_can_erase_kind(&left, &right, 0) {
+  }
+  Ok(all_disjoint)
+}
+
+fn check_set_include_types(ctx: &WasmGenCtx, set: &Calcit, elem: &Calcit) -> Result<bool, String> {
+  let set_members = infer_set_member_types(ctx, set);
+  let elem_type = infer_wasm_static_type(ctx, elem)
+    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  if set_comparison_can_erase_kind(&elem_type, &elem_type, 0) || set_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0)) {
+    return Err(
+      "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+    );
+  }
+  let mut all_disjoint = !set_members.is_empty();
+  for m in &set_members {
+    if matches!(m.as_ref(), CalcitTypeAnnotation::Never) || matches!(elem_type.as_ref(), CalcitTypeAnnotation::Never) {
+      all_disjoint = false;
+      continue;
+    }
+    if are_disjoint_number_and_heap_types(m, &elem_type) {
+      continue;
+    }
+    all_disjoint = false;
+    if set_comparison_can_erase_kind(m, &elem_type, 0) {
+      return Err(
+        "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
+      );
+    }
+  }
+  Ok(all_disjoint)
+}
+
+fn check_set_membership_types(ctx: &WasmGenCtx, set: &Calcit, target: &Calcit) -> Result<(), String> {
+  let set_members = infer_set_member_types(ctx, set);
+  let target_type = infer_wasm_static_type(ctx, target)
+    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  if set_comparison_can_erase_kind(&target_type, &target_type, 0)
+    || set_members
+      .iter()
+      .any(|m| set_comparison_can_erase_kind(m, m, 0) || set_comparison_can_erase_kind(m, &target_type, 0))
+  {
     return Err(
       "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value".into(),
     );
@@ -87,7 +257,7 @@ fn check_set_comparison_types(ctx: &WasmGenCtx, left: &Calcit, right: &Calcit) -
 /// The structural comparator uses untagged f64 values, including when it
 /// descends into containers. Compare corresponding slots so a heterogeneous
 /// tuple can still be compared with another tuple of the same shape.
-fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
   use CalcitTypeAnnotation as T;
 
   let left = T::expand_schema_alias(left);
@@ -114,7 +284,16 @@ fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<C
     }
     (T::List(member), T::Tuple(slots)) => slots.iter().any(|slot| compare(member, slot)),
     (T::Tuple(slots), T::List(member)) => slots.iter().any(|slot| compare(slot, member)),
-    (T::Map(left_key, left_value), T::Map(right_key, right_value)) => compare(left_key, right_key) || compare(left_value, right_value),
+    (T::Map(left_key, left_value), T::Map(right_key, right_value)) => {
+      let norm_key = |k: &Arc<T>| {
+        if matches!(k.as_ref(), T::StructValue(_)) {
+          Arc::new(T::Tag)
+        } else {
+          k.clone()
+        }
+      };
+      compare(&norm_key(left_key), &norm_key(right_key)) || compare(left_value, right_value)
+    }
     (T::Struct(..) | T::StructValue(_) | T::TypeRef(..), T::Struct(..) | T::StructValue(_) | T::TypeRef(..))
       if let (Some(left_def), Some(right_def)) = (left.resolve_to_struct(), right.resolve_to_struct()) =>
     {
@@ -161,16 +340,16 @@ fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<C
           })
       })
     }
-    (T::String, T::String) => false,
+    (T::String, T::String) | (T::Buffer, T::Buffer) => false,
     // Different known heap layouts do not share an address or recurse.
     (
-      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
-      T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _),
     ) => false,
     // Number may equal a heap pointer; the other scalar/heap comparisons
     // have the same representation constraints as elsewhere in codegen.
-    (T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _), T::Bool | T::Nil | T::Unit)
-    | (T::Bool | T::Nil | T::Unit, T::String | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _)) => false,
+    (T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _), T::Bool | T::Nil | T::Unit | T::Tag)
+    | (T::Bool | T::Nil | T::Unit | T::Tag, T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _)) => false,
     _ => true,
   }
 }
@@ -213,6 +392,7 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
       SetOpKind::Difference => emit_set_difference(ctx, args),
       SetOpKind::Intersection => emit_set_intersection(ctx, args),
       SetOpKind::Include => emit_set_include(ctx, args),
+      SetOpKind::Exclude => emit_set_exclude(ctx, args),
     };
   }
   // N-arg case: chain operations.
@@ -226,12 +406,56 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
       SetOpKind::Difference => emit_set_difference(ctx, &first_two)?,
       SetOpKind::Intersection => emit_set_intersection(ctx, &first_two)?,
       SetOpKind::Include => emit_set_include(ctx, &first_two)?,
+      SetOpKind::Exclude => emit_set_exclude(ctx, &first_two)?,
     }
     ctx.emit(Instruction::LocalSet(acc));
   }
-  for extra in &args[2..] {
-    if matches!(kind, SetOpKind::Difference | SetOpKind::Intersection) {
-      check_set_comparison_types(ctx, &args[0], extra)?;
+  for (extra_idx, extra) in args[2..].iter().enumerate() {
+    match kind {
+      SetOpKind::Difference | SetOpKind::Intersection => {
+        for prev in &args[..2 + extra_idx] {
+          check_set_comparison_types(ctx, prev, extra)?;
+        }
+      }
+      SetOpKind::Union => {
+        for prev in &args[..2 + extra_idx] {
+          check_set_union_types(ctx, prev, extra)?;
+        }
+      }
+      SetOpKind::Include => {
+        check_set_include_types(ctx, &args[0], extra)?;
+        for prev_elem in &args[1..2 + extra_idx] {
+          let prev_ty = infer_wasm_static_type(ctx, prev_elem)
+            .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+            .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+          let extra_ty = infer_wasm_static_type(ctx, extra)
+            .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+            .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+          if set_comparison_can_erase_kind(&prev_ty, &extra_ty, 0) && !are_disjoint_number_and_heap_types(&prev_ty, &extra_ty) {
+            return Err(
+              "E_WASM_SET_ELEMENT_KIND: set comparison needs element types that rule out distinct scalar kinds sharing a WASM value"
+                .into(),
+            );
+          }
+        }
+      }
+      SetOpKind::Exclude => {
+        let set_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+        let target_type = infer_wasm_static_type(ctx, extra).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+        let disjoint_scalar = if let (Some(CalcitTypeAnnotation::Set(item_type)), Some(target_type)) =
+          (set_type.as_deref(), target_type.as_deref())
+          && let (Some(item_kind), Some(target_kind)) = (
+            proven_scalar_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)),
+            proven_scalar_kind(target_type),
+          ) {
+          item_kind != target_kind
+        } else {
+          false
+        };
+        if !disjoint_scalar {
+          check_set_membership_types(ctx, &args[0], extra)?;
+        }
+      }
     }
     let extra_val = ctx.alloc_local();
     emit_expr(ctx, extra)?;
@@ -267,6 +491,7 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         emit_set_intersection_from_ptrs(ctx, acc_ptr, extra_ptr)
       }
       SetOpKind::Include => emit_set_include_from_ptrs(ctx, acc_ptr, extra_val)?,
+      SetOpKind::Exclude => emit_set_exclude_from_ptrs(ctx, acc_ptr, extra_val)?,
     };
     ctx.emit(Instruction::LocalGet(new_dst));
     ctx.emit(Instruction::LocalSet(acc));
@@ -473,6 +698,23 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
 /// `&set:includes? set value` — linear scan.
 pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&set:includes? expects 2 args")?;
+  let set_members = infer_set_member_types(ctx, &args[0]);
+  let target_ev = infer_wasm_evidence(ctx, &args[1]);
+  let target_type = CalcitTypeAnnotation::expand_schema_alias(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
+  if !set_members.is_empty()
+    && let Some(target_kind) = proven_disjoint_value_kind(&target_type)
+    && set_members.iter().all(|item_type| {
+      proven_disjoint_value_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)).is_some_and(|k| k != target_kind)
+    })
+  {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(0.0));
+    return Ok(());
+  }
+  check_set_membership_types(ctx, &args[0], &args[1])?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -504,11 +746,24 @@ pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 /// `&include set value` — new set with element added (if not present).
 pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&include expects 2 args")?;
+  let disjoint_append = check_set_include_types(ctx, &args[0], &args[1])?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
   let elem = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(elem));
+
+  if disjoint_append {
+    let nc = ctx.i32_offset(count, 1);
+    let ts = ctx.i32_offset(nc, 1);
+    let d = emit_alloc_with_count(ctx, nc, ts, "set");
+    let db = emit_addr_offset(ctx, d, 8);
+    let sb = emit_addr_offset(ctx, src, 8);
+    emit_copy_f64_loop(ctx, db, sb, count);
+    emit_list_store_elem(ctx, d, count, elem);
+    ctx.ptr_to_f64(d);
+    return Ok(());
+  }
 
   let found_idx = emit_set_find_structural(ctx, src, elem);
 
@@ -546,27 +801,33 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(2, args, "&exclude expects 2 args")?;
   // A statically different scalar kind cannot be present. Avoid comparing
   // their shared f64 representation, but still evaluate both arguments.
-  let set_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-  let target_type = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-  if let (Some(CalcitTypeAnnotation::Set(item_type)), Some(target_type)) = (set_type.as_deref(), target_type.as_deref())
-    && let (Some(item_kind), Some(target_kind)) = (
-      proven_scalar_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)),
-      proven_scalar_kind(target_type),
-    )
-    && item_kind != target_kind
+  let set_members = infer_set_member_types(ctx, &args[0]);
+  let target_ev = infer_wasm_evidence(ctx, &args[1]);
+  let target_type = CalcitTypeAnnotation::expand_schema_alias(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
+  if !set_members.is_empty()
+    && let Some(target_kind) = proven_disjoint_value_kind(&target_type)
+    && set_members.iter().all(|item_type| {
+      proven_disjoint_value_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)).is_some_and(|k| k != target_kind)
+    })
   {
     emit_expr(ctx, &args[0])?;
     emit_expr(ctx, &args[1])?;
     ctx.emit(Instruction::Drop);
     return Ok(());
   }
+  check_set_membership_types(ctx, &args[0], &args[1])?;
 
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src);
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
+  let result = emit_set_exclude_from_ptrs(ctx, src, target)?;
+  ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
 
+pub(super) fn emit_set_exclude_from_ptrs(ctx: &mut WasmGenCtx, src: u32, target: u32) -> Result<u32, String> {
+  let count = emit_load_count_i32(ctx, src);
   let found_idx = emit_set_find_structural(ctx, src, target);
 
   // If not found, return original
@@ -628,8 +889,10 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   }
   ctx.emit(Instruction::End);
 
+  let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
-  Ok(())
+  ctx.emit(Instruction::LocalSet(result));
+  Ok(result)
 }
 
 /// `&difference a b` — set of elements in `a` not in `b`.
@@ -637,164 +900,47 @@ pub(super) fn emit_set_difference(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   expect_arity(2, args, "&difference expects 2 args")?;
   check_set_comparison_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-
-  // Over-allocate: max possible result is a_count elements
-  let total_slots = ctx.i32_offset(a_count, 1);
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
-
-  let write_idx = ctx.alloc_i32(0);
-
-  let ai = ctx.alloc_i32(0);
-
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.loop_exit_if_ge(ai, a_count);
-
-  // Load a[ai]
-  let elem = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(a));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(ai));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(elem));
-
-  let found_idx = emit_set_find_structural(ctx, b, elem);
-
-  // If not found in b, copy elem to result
-  ctx.emit(Instruction::LocalGet(found_idx));
-  ctx.emit(Instruction::I32Const(-1));
-  ctx.emit(Instruction::I32Eq);
-  ctx.begin_block_if();
-  emit_list_store_elem(ctx, dst, write_idx, elem);
-  ctx.i32_inc(write_idx);
-  ctx.emit(Instruction::End);
-
-  // ai++
-  ctx.i32_inc(ai);
-  ctx.emit(Instruction::Br(0));
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-
-  // Patch actual count
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-
-  ctx.ptr_to_f64(dst);
+  let result = emit_set_difference_from_ptrs(ctx, a, b)?;
+  ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
 
 /// `&union a b` — set of all elements in `a` and `b` (no duplicates).
 pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&union expects 2 args")?;
+  let disjoint_concat = check_set_union_types(ctx, &args[0], &args[1])?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let b_count = emit_load_count_i32(ctx, b);
-
-  // Over-allocate: max is a_count + b_count
-  let max_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::LocalGet(b_count));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(max_count));
-
-  let total_slots = ctx.i32_offset(max_count, 1);
-  let dst = emit_alloc_with_count(ctx, max_count, total_slots, "set");
-
-  // Copy all of a into result
-  let db = emit_addr_offset(ctx, dst, 8);
-  let sb = emit_addr_offset(ctx, a, 8);
-  emit_copy_f64_loop(ctx, db, sb, a_count);
-
-  let write_idx = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(a_count));
-  ctx.emit(Instruction::LocalSet(write_idx));
-
-  let bi = ctx.alloc_i32(0);
-
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.loop_exit_if_ge(bi, b_count);
-
-  // Load b[bi]
-  let be = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(b));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(bi));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(be));
-
-  // Scan dst for matching element
-  let found = ctx.alloc_i32(0);
-  let di = ctx.alloc_i32(0);
-
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.loop_exit_if_ge(di, write_idx);
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(di));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(be));
-  emit_f64_value_eq(ctx);
-  ctx.begin_block_if();
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::LocalSet(found));
-  ctx.emit(Instruction::Br(2));
-  ctx.emit(Instruction::End);
-  ctx.i32_inc(di);
-  ctx.emit(Instruction::Br(0));
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-
-  ctx.emit(Instruction::LocalGet(found));
-  ctx.emit(Instruction::I32Eqz);
-  ctx.begin_block_if();
-  {
-    // Not found: append at write_idx position
-    let addr = ctx.alloc_local_typed(ValType::I32);
+  if disjoint_concat {
+    let a_count = emit_load_count_i32(ctx, a);
+    let b_count = emit_load_count_i32(ctx, b);
+    let total_count = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(a_count));
+    ctx.emit(Instruction::LocalGet(b_count));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalSet(total_count));
+    let total_slots = ctx.i32_offset(total_count, 1);
+    let dst = emit_alloc_with_count(ctx, total_count, total_slots, "set");
+    let db1 = emit_addr_offset(ctx, dst, 8);
+    let sb1 = emit_addr_offset(ctx, a, 8);
+    emit_copy_f64_loop(ctx, db1, sb1, a_count);
+    let db2 = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(dst));
     ctx.emit(Instruction::I32Const(8));
     ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(write_idx));
+    ctx.emit(Instruction::LocalGet(a_count));
     ctx.emit(Instruction::I32Const(8));
     ctx.emit(Instruction::I32Mul);
     ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(addr));
-    ctx.emit(Instruction::LocalGet(addr));
-    ctx.emit(Instruction::LocalGet(be));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.i32_inc(write_idx);
+    ctx.emit(Instruction::LocalSet(db2));
+    let sb2 = emit_addr_offset(ctx, b, 8);
+    emit_copy_f64_loop(ctx, db2, sb2, b_count);
+    ctx.ptr_to_f64(dst);
+    return Ok(());
   }
-  ctx.emit(Instruction::End);
-
-  // bi++
-  ctx.i32_inc(bi);
-  ctx.emit(Instruction::Br(0));
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-
-  // Patch actual count
-  ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-
-  ctx.ptr_to_f64(dst);
+  let result = emit_set_union_from_ptrs(ctx, a, b)?;
+  ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
 

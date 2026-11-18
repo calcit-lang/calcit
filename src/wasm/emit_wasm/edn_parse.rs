@@ -154,6 +154,94 @@ pub(super) fn emit_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> 
   emit_parse_cirru_edn_common(ctx, args, "parse-cirru-edn-as", true)
 }
 
+pub(super) fn emit_json_parse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("json-parse expected 1 argument, got {}", args.len()));
+  }
+  emit_expr(ctx, &args[0])?;
+  let input = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(input));
+  let is_str = emit_has_heap_tag(ctx, input, "string");
+  ctx.emit(Instruction::LocalGet(is_str));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let input_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(input_ptr));
+  let input_len = load_string_len(ctx, input_ptr);
+  ctx.emit(Instruction::LocalGet(input_len));
+  ctx.emit(Instruction::I32Const(MAX_EDN_INPUT_BYTES));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let val = ctx.alloc_local();
+  let ok = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.call_rt("__rt_json_parse_root");
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::LocalSet(val));
+  ctx.emit(Instruction::LocalGet(ok));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(val));
+  Ok(())
+}
+
+pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -> Result<(), String> {
+  let is_str = emit_has_heap_tag(ctx, input, "string");
+  ctx.emit(Instruction::LocalGet(is_str));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  let input_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(input_ptr));
+  let input_len = load_string_len(ctx, input_ptr);
+  ctx.emit(Instruction::LocalGet(input_len));
+  ctx.emit(Instruction::I32Const(MAX_EDN_INPUT_BYTES));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  let err_msg = literal_local(ctx, "E_WASM_EDN_SYNTAX: invalid JSON input")?;
+  emit_result_enum(ctx, "err", err_msg)?;
+  ctx.emit(Instruction::Else);
+  let val = ctx.alloc_local();
+  let ok = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.call_rt("__rt_json_parse_root");
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::LocalSet(val));
+  ctx.emit(Instruction::LocalGet(ok));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "ok", val)?;
+  ctx.emit(Instruction::Else);
+  let err_msg = literal_local(ctx, "E_WASM_EDN_SYNTAX: invalid JSON input")?;
+  emit_result_enum(ctx, "err", err_msg)?;
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  let err_msg = literal_local(ctx, "E_WASM_EDN_SYNTAX: invalid JSON input")?;
+  emit_result_enum(ctx, "err", err_msg)?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+pub(super) fn emit_try_parse_json(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("try-parse-json expected 1 argument, got {}", args.len()));
+  }
+  emit_expr(ctx, &args[0])?;
+  let input = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(input));
+  emit_try_parse_json_from_local(ctx, input)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MapCodecMode {
   Decode,

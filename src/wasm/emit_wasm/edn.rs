@@ -22,7 +22,9 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     return Ok(());
   }
 
-  let inferred_type = infer_static_type_from_expr(&args[0])
+  let inferred_type = super::infer_wasm_codec_hint(ctx, &args[0])
+    .or_else(|| super::infer_wasm_static_type(ctx, &args[0]))
+    .or_else(|| infer_static_type_from_expr(&args[0]))
     .ok_or_else(|| "E_WASM_EDN_TYPE: format-cirru-edn requires a closed inferred input type for WASM".to_string())?;
   let value_type = match inferred_type.as_ref() {
     CalcitTypeAnnotation::TypeRef(_, args) => {
@@ -295,7 +297,7 @@ fn emit_edn_enum(
   Ok(result)
 }
 
-fn resolved_struct_fields(
+pub(super) fn resolved_struct_fields(
   nominal: &CalcitStructDef,
   args: &[Arc<CalcitTypeAnnotation>],
 ) -> Result<Vec<(EdnTag, Arc<CalcitTypeAnnotation>)>, String> {
@@ -438,6 +440,39 @@ fn emit_map_key_less_than(ctx: &mut WasmGenCtx, left: u32, right: u32, key_type:
   }
 }
 
+fn resolved_encoded_struct_fields(
+  nominal: &CalcitStructDef,
+  args: &[Arc<CalcitTypeAnnotation>],
+) -> Result<Vec<(EdnTag, Arc<CalcitTypeAnnotation>)>, String> {
+  let raw_fields = resolved_struct_fields(nominal, args)?;
+  let mut out = Vec::with_capacity(raw_fields.len());
+  for (field, field_ty) in raw_fields {
+    let expanded = CalcitTypeAnnotation::expand_schema_alias(&field_ty);
+    let encoded_ty = if let Some(enum_def) = expanded.resolve_to_enum()
+      && enum_def.name().ref_str() == "Option"
+      && let CalcitTypeAnnotation::Enum(_, opt_args) | CalcitTypeAnnotation::TypeRef(_, opt_args) = expanded.as_ref()
+      && opt_args.len() == 1
+    {
+      let inner = CalcitTypeAnnotation::expand_schema_alias(&opt_args[0]);
+      let inner_is_option = inner
+        .resolve_to_enum()
+        .is_some_and(|inner_enum| inner_enum.name().ref_str() == "Option");
+      if inner_is_option {
+        Arc::new(CalcitTypeAnnotation::Enum(
+          Arc::new(enum_def),
+          Arc::new(vec![super::infer_encoded_codec_hint(&inner)]),
+        ))
+      } else {
+        super::infer_encoded_codec_hint(&inner)
+      }
+    } else {
+      super::infer_encoded_codec_hint(&expanded)
+    };
+    out.push((field, encoded_ty));
+  }
+  Ok(out)
+}
+
 fn emit_edn_map(
   ctx: &mut WasmGenCtx,
   value: u32,
@@ -446,13 +481,30 @@ fn emit_edn_map(
   depth: usize,
   nested: bool,
 ) -> Result<u32, String> {
-  if !is_supported_edn_scalar(key_type) {
-    return Err(format!(
-      "E_WASM_EDN_MAP_KEY: {key_type} cannot preserve native Cirru EDN map ordering in WASM"
-    ));
-  }
-  validate_edn_type(key_type, depth + 1)?;
-  validate_edn_type(value_type, depth + 1)?;
+  let encoded_struct_fields = match (key_type, value_type) {
+    (CalcitTypeAnnotation::StructValue(_), CalcitTypeAnnotation::Struct(nominal, args)) => {
+      let fields = resolved_encoded_struct_fields(nominal, args)?;
+      for (_, field_ty) in &fields {
+        validate_edn_type(field_ty, depth + 1)?;
+      }
+      Some((nominal, fields))
+    }
+    _ => {
+      if !is_supported_edn_scalar(key_type) {
+        return Err(format!(
+          "E_WASM_EDN_MAP_KEY: {key_type} cannot preserve native Cirru EDN map ordering in WASM"
+        ));
+      }
+      validate_edn_type(key_type, depth + 1)?;
+      validate_edn_type(value_type, depth + 1)?;
+      None
+    }
+  };
+  let effective_key_type = if encoded_struct_fields.is_some() {
+    &CalcitTypeAnnotation::Tag
+  } else {
+    key_type
+  };
 
   let map_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(value));
@@ -497,7 +549,7 @@ fn emit_edn_map(
   ctx.emit(Instruction::I32Sub);
   ctx.emit(Instruction::LocalSet(previous_index));
   emit_load_map_pair_slot(ctx, flat_ptr, previous_index, 8, previous_key);
-  emit_map_key_less_than(ctx, key, previous_key, key_type)?;
+  emit_map_key_less_than(ctx, key, previous_key, effective_key_type)?;
   ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::BrIf(1));
   emit_copy_map_pair(ctx, flat_ptr, previous_index, cursor);
@@ -530,14 +582,43 @@ fn emit_edn_map(
   let opened = concat_with_literal_after(ctx, result, " (")?;
   ctx.emit(Instruction::LocalGet(opened));
   ctx.emit(Instruction::LocalSet(result));
-  let formatted_key = emit_edn_value(ctx, key, key_type, depth + 1, true)?;
+  let formatted_key = emit_edn_value(ctx, key, effective_key_type, depth + 1, true)?;
   let with_key = concat_string_locals(ctx, result, formatted_key);
   ctx.emit(Instruction::LocalGet(with_key));
   ctx.emit(Instruction::LocalSet(result));
   let with_space = concat_with_literal_after(ctx, result, " ")?;
   ctx.emit(Instruction::LocalGet(with_space));
   ctx.emit(Instruction::LocalSet(result));
-  let formatted_value = emit_edn_value(ctx, item_value, value_type, depth + 1, true)?;
+  let formatted_value = if let Some((nominal, fields)) = &encoded_struct_fields {
+    let fv = ctx.alloc_local();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(fv));
+    for (field, field_ty) in fields {
+      let tag_id = *ctx.tag_index.get(field.ref_str()).ok_or_else(|| {
+        format!(
+          "E_WASM_EDN_STRUCT_SHAPE: struct :{} field :{} is not present in the compiled program",
+          nominal.name, field
+        )
+      })?;
+      ctx.emit(Instruction::LocalGet(key));
+      ctx.emit(f64_const(tag_id as f64));
+      ctx.emit(Instruction::F64Eq);
+      ctx.begin_block_if();
+      let candidate = emit_edn_value(ctx, item_value, field_ty, depth + 1, true)?;
+      ctx.emit(Instruction::LocalGet(candidate));
+      ctx.emit(Instruction::LocalSet(fv));
+      ctx.emit(Instruction::End);
+    }
+    ctx.emit(Instruction::LocalGet(fv));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    fv
+  } else {
+    emit_edn_value(ctx, item_value, value_type, depth + 1, true)?
+  };
   let with_value = concat_string_locals(ctx, result, formatted_value);
   ctx.emit(Instruction::LocalGet(with_value));
   ctx.emit(Instruction::LocalSet(result));
@@ -725,6 +806,12 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
       Ok(())
     }
     CalcitTypeAnnotation::Map(key, value) => {
+      if let (CalcitTypeAnnotation::StructValue(_), CalcitTypeAnnotation::Struct(nominal, args)) = (key.as_ref(), value.as_ref()) {
+        for (_, field_ty) in resolved_encoded_struct_fields(nominal, args)? {
+          validate_edn_type(&field_ty, depth + 1)?;
+        }
+        return Ok(());
+      }
       if !is_supported_edn_scalar(key) {
         return Err(format!(
           "E_WASM_EDN_MAP_KEY: {key} cannot preserve native Cirru EDN map ordering in WASM"
@@ -744,6 +831,745 @@ fn validate_edn_type(value_type: &CalcitTypeAnnotation, depth: usize) -> Result<
       "E_WASM_EDN_TYPE: {other} is not yet supported by the WASM Cirru EDN formatter"
     )),
   }
+}
+
+pub(super) fn emit_json_stringify(ctx: &mut WasmGenCtx, args: &[Calcit], pretty: bool) -> Result<(), String> {
+  let op_name = if pretty { "json-pretty" } else { "json-stringify" };
+  if args.len() != 1 {
+    return Err(format!("{op_name} expected 1 argument, got {}", args.len()));
+  }
+
+  let inferred_type = super::infer_wasm_codec_hint(ctx, &args[0])
+    .or_else(|| super::infer_wasm_static_type(ctx, &args[0]))
+    .or_else(|| infer_static_type_from_expr(&args[0]))
+    .ok_or_else(|| format!("E_WASM_EDN_TYPE: {op_name} requires a closed inferred input type for WASM"))?;
+  let value_type = match inferred_type.as_ref() {
+    CalcitTypeAnnotation::TypeRef(_, type_args) => {
+      if let Some(nominal) = inferred_type.resolve_to_struct() {
+        Arc::new(CalcitTypeAnnotation::Struct(Arc::new(nominal), type_args.clone()))
+      } else if let Some(nominal) = inferred_type.resolve_to_enum() {
+        Arc::new(CalcitTypeAnnotation::Enum(Arc::new(nominal), type_args.clone()))
+      } else {
+        inferred_type
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => Arc::new(CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![]))),
+    CalcitTypeAnnotation::EnumValue(nominal) => Arc::new(CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![]))),
+    _ => inferred_type,
+  };
+
+  validate_json_type(value_type.as_ref(), 0, op_name)?;
+
+  emit_expr(ctx, &args[0])?;
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+
+  let output = emit_json_value(ctx, value, value_type.as_ref(), 0, pretty, op_name)?;
+  ctx.emit(Instruction::LocalGet(output));
+  Ok(())
+}
+
+fn validate_json_type(value_type: &CalcitTypeAnnotation, depth: usize, op_name: &str) -> Result<(), String> {
+  if depth > MAX_EDN_TYPE_DEPTH {
+    return Err(format!("E_WASM_EDN_DEPTH: {op_name} type nesting exceeds {MAX_EDN_TYPE_DEPTH}"));
+  }
+  match value_type {
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(nominal) = value_type.resolve_to_struct() {
+        validate_json_type(&CalcitTypeAnnotation::Struct(Arc::new(nominal), args.clone()), depth, op_name)
+      } else if let Some(nominal) = value_type.resolve_to_enum() {
+        validate_json_type(&CalcitTypeAnnotation::Enum(Arc::new(nominal), args.clone()), depth, op_name)
+      } else {
+        Err(format!(
+          "E_WASM_EDN_TYPE: {value_type} cannot be resolved to a closed nominal type for WASM"
+        ))
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => {
+      validate_json_type(&CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(vec![])), depth, op_name)
+    }
+    CalcitTypeAnnotation::EnumValue(nominal) => {
+      validate_json_type(&CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![])), depth, op_name)
+    }
+    CalcitTypeAnnotation::Nil
+    | CalcitTypeAnnotation::Bool
+    | CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Tag => Ok(()),
+    CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item) => validate_json_type(item, depth + 1, op_name),
+    CalcitTypeAnnotation::Tuple(slots) => {
+      for slot in slots.iter() {
+        validate_json_type(slot, depth + 1, op_name)?;
+      }
+      Ok(())
+    }
+    CalcitTypeAnnotation::Struct(nominal, args) => {
+      for (_, field_type) in resolved_struct_fields(nominal, args)? {
+        validate_json_type(&field_type, depth + 1, op_name)?;
+      }
+      Ok(())
+    }
+    CalcitTypeAnnotation::Enum(nominal, args) => {
+      for (_, payloads) in resolved_enum_variants(nominal, args)? {
+        for payload in payloads {
+          validate_json_type(&payload, depth + 1, op_name)?;
+        }
+      }
+      Ok(())
+    }
+    CalcitTypeAnnotation::Map(key, value) => {
+      if let (CalcitTypeAnnotation::StructValue(_), CalcitTypeAnnotation::Struct(nominal, args)) = (key.as_ref(), value.as_ref()) {
+        for (_, field_ty) in resolved_encoded_struct_fields(nominal, args)? {
+          validate_json_type(&field_ty, depth + 1, op_name)?;
+        }
+        return Ok(());
+      }
+      if !matches!(key.as_ref(), CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::String) {
+        return Err(format!(
+          "E_WASM_EDN_MAP_KEY: {op_name} expected object keys to be :tag or :string, got {key}"
+        ));
+      }
+      validate_json_type(key, depth + 1, op_name)?;
+      validate_json_type(value, depth + 1, op_name)
+    }
+    CalcitTypeAnnotation::Dynamic => Err(format!(
+      "E_WASM_EDN_TYPE: Dynamic cannot be formatted safely by {op_name} in WASM; decode or narrow it to a closed type first"
+    )),
+    other => Err(format!("E_WASM_EDN_TYPE: {other} is not supported by {op_name} in WASM")),
+  }
+}
+
+fn emit_json_value(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  value_type: &CalcitTypeAnnotation,
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  if depth > MAX_EDN_TYPE_DEPTH {
+    return Err(format!("E_WASM_EDN_DEPTH: {op_name} type nesting exceeds {MAX_EDN_TYPE_DEPTH}"));
+  }
+  match value_type {
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(nominal) = value_type.resolve_to_struct() {
+        emit_json_struct(ctx, value, &nominal, args, depth, pretty, op_name)
+      } else if let Some(nominal) = value_type.resolve_to_enum() {
+        emit_json_enum(ctx, value, &nominal, args, depth, pretty, op_name)
+      } else {
+        Err(format!(
+          "E_WASM_EDN_TYPE: {value_type} cannot be resolved to a closed nominal type for WASM"
+        ))
+      }
+    }
+    CalcitTypeAnnotation::StructValue(nominal) => emit_json_struct(ctx, value, nominal, &Arc::new(vec![]), depth, pretty, op_name),
+    CalcitTypeAnnotation::EnumValue(nominal) => emit_json_enum(ctx, value, nominal, &Arc::new(vec![]), depth, pretty, op_name),
+    CalcitTypeAnnotation::Nil => literal_local(ctx, "null"),
+    CalcitTypeAnnotation::Bool => {
+      let result = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      emit_literal(ctx, "false")?;
+      ctx.emit(Instruction::Else);
+      emit_literal(ctx, "true")?;
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalSet(result));
+      Ok(result)
+    }
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => {
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::F64Sub);
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Ne);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
+      let result = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.call_rt("__rt_f64_to_str");
+      ctx.emit(Instruction::LocalSet(result));
+      Ok(result)
+    }
+    CalcitTypeAnnotation::String => {
+      let result = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.call_rt("__rt_json_string");
+      ctx.emit(Instruction::LocalSet(result));
+      Ok(result)
+    }
+    CalcitTypeAnnotation::Tag => emit_json_tag(ctx, value),
+    CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type) => {
+      emit_json_list(ctx, value, item_type.as_ref(), depth, pretty, op_name)
+    }
+    CalcitTypeAnnotation::Tuple(slots) => emit_json_tuple(ctx, value, slots.as_ref(), depth, pretty, op_name),
+    CalcitTypeAnnotation::Map(key_type, val_type) => {
+      emit_json_map(ctx, value, key_type.as_ref(), val_type.as_ref(), depth, pretty, op_name)
+    }
+    CalcitTypeAnnotation::Struct(nominal, args) => emit_json_struct(ctx, value, nominal, args, depth, pretty, op_name),
+    CalcitTypeAnnotation::Enum(nominal, args) => emit_json_enum(ctx, value, nominal, args, depth, pretty, op_name),
+    other => Err(format!("E_WASM_EDN_TYPE: {other} is not supported by {op_name} in WASM")),
+  }
+}
+
+fn emit_json_tag(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
+  let raw_tag_str = ctx.alloc_local();
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(raw_tag_str));
+
+  let mut tags: Vec<(String, u32)> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
+  tags.sort_by_key(|(_, id)| *id);
+  for (name, id) in tags {
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(f64_const(id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    emit_literal(ctx, &name)?;
+    ctx.emit(Instruction::LocalSet(raw_tag_str));
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(raw_tag_str));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let result = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(raw_tag_str));
+  ctx.call_rt("__rt_json_string");
+  ctx.emit(Instruction::LocalSet(result));
+  Ok(result)
+}
+
+fn emit_json_list(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  item_type: &CalcitTypeAnnotation,
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  validate_json_type(item_type, depth + 1, op_name)?;
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(count));
+
+  let result = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  emit_literal(ctx, "[]")?;
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Else);
+  let init = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
+  ctx.emit(Instruction::LocalGet(init));
+  ctx.emit(Instruction::LocalSet(result));
+
+  let child_indent = "  ".repeat(depth + 1);
+  let close_indent = format!("\n{}", "  ".repeat(depth));
+  let index = ctx.alloc_i32(0);
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  let with_sep = concat_with_literal_after(ctx, result, if pretty { ",\n" } else { "," })?;
+  ctx.emit(Instruction::LocalGet(with_sep));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+
+  if pretty {
+    let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+    ctx.emit(Instruction::LocalGet(with_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+
+  let item = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(item));
+  let formatted = emit_json_value(ctx, item, item_type, depth + 1, pretty, op_name)?;
+  let appended = concat_string_locals(ctx, result, formatted);
+  ctx.emit(Instruction::LocalGet(appended));
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  if pretty {
+    let with_close_indent = concat_with_literal_after(ctx, result, &close_indent)?;
+    ctx.emit(Instruction::LocalGet(with_close_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  let closed = concat_with_literal_after(ctx, result, "]")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+  Ok(result)
+}
+
+fn emit_json_tuple(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  slots: &[Arc<CalcitTypeAnnotation>],
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  for slot in slots {
+    validate_json_type(slot, depth + 1, op_name)?;
+  }
+  if slots.is_empty() {
+    return literal_local(ctx, "[]");
+  }
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+
+  let result = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
+  let child_indent = "  ".repeat(depth + 1);
+  let close_indent = format!("\n{}", "  ".repeat(depth));
+
+  for (idx, slot_ty) in slots.iter().enumerate() {
+    if idx > 0 {
+      let with_sep = concat_with_literal_after(ctx, result, if pretty { ",\n" } else { "," })?;
+      ctx.emit(Instruction::LocalGet(with_sep));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    if pretty {
+      let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+      ctx.emit(Instruction::LocalGet(with_indent));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    let item = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + idx) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(item));
+    let formatted = emit_json_value(ctx, item, slot_ty, depth + 1, pretty, op_name)?;
+    let appended = concat_string_locals(ctx, result, formatted);
+    ctx.emit(Instruction::LocalGet(appended));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+
+  if pretty {
+    let with_close_indent = concat_with_literal_after(ctx, result, &close_indent)?;
+    ctx.emit(Instruction::LocalGet(with_close_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  let closed = concat_with_literal_after(ctx, result, "]")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+  Ok(result)
+}
+
+fn emit_json_struct(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  nominal: &CalcitStructDef,
+  args: &[Arc<CalcitTypeAnnotation>],
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  let fields = resolved_struct_fields(nominal, args)?;
+  for (_, field_type) in &fields {
+    validate_json_type(field_type, depth + 1, op_name)?;
+  }
+  if fields.is_empty() {
+    return literal_local(ctx, "{}");
+  }
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+
+  let mut indexed_fields = fields
+    .into_iter()
+    .enumerate()
+    .map(|(idx, (field, field_ty))| (idx, field, field_ty))
+    .collect::<Vec<_>>();
+  indexed_fields.sort_by(|a, b| a.1.ref_str().cmp(b.1.ref_str()));
+
+  let result = literal_local(ctx, if pretty { "{\n" } else { "{" })?;
+  let child_indent = "  ".repeat(depth + 1);
+  let close_indent = format!("\n{}", "  ".repeat(depth));
+
+  for (out_idx, (field_idx, field, field_type)) in indexed_fields.iter().enumerate() {
+    if out_idx > 0 {
+      let with_sep = concat_with_literal_after(ctx, result, if pretty { ",\n" } else { "," })?;
+      ctx.emit(Instruction::LocalGet(with_sep));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    if pretty {
+      let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+      ctx.emit(Instruction::LocalGet(with_indent));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    let raw_field = literal_local(ctx, field.ref_str())?;
+    let json_field = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(raw_field));
+    ctx.call_rt("__rt_json_string");
+    ctx.emit(Instruction::LocalSet(json_field));
+    let with_field = concat_string_locals(ctx, result, json_field);
+    ctx.emit(Instruction::LocalGet(with_field));
+    ctx.emit(Instruction::LocalSet(result));
+    let with_colon = concat_with_literal_after(ctx, result, if pretty { ": " } else { ":" })?;
+    ctx.emit(Instruction::LocalGet(with_colon));
+    ctx.emit(Instruction::LocalSet(result));
+
+    let field_value = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + *field_idx) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(field_value));
+    let formatted = emit_json_value(ctx, field_value, field_type, depth + 1, pretty, op_name)?;
+    let with_value = concat_string_locals(ctx, result, formatted);
+    ctx.emit(Instruction::LocalGet(with_value));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+
+  if pretty {
+    let with_close_indent = concat_with_literal_after(ctx, result, &close_indent)?;
+    ctx.emit(Instruction::LocalGet(with_close_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  let closed = concat_with_literal_after(ctx, result, "}")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+  Ok(result)
+}
+
+fn emit_json_enum(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  nominal: &CalcitEnumDef,
+  args: &[Arc<CalcitTypeAnnotation>],
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  let variants = resolved_enum_variants(nominal, args)?;
+  for (_, payloads) in &variants {
+    for payload in payloads {
+      validate_json_type(payload, depth + 1, op_name)?;
+    }
+  }
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let payload_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(payload_count));
+  let variant_tag = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(variant_tag));
+
+  let result = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
+  let child_indent = "  ".repeat(depth + 1);
+  let close_indent = format!("\n{}", "  ".repeat(depth));
+
+  let matched = ctx.alloc_i32(0);
+  for (variant, payloads) in variants {
+    let tag_id = *ctx.tag_index.get(variant.ref_str()).ok_or_else(|| {
+      format!(
+        "E_WASM_EDN_ENUM_SHAPE: enum :{} variant :{} is not present in the compiled program",
+        nominal.name(),
+        variant
+      )
+    })?;
+    ctx.emit(Instruction::LocalGet(variant_tag));
+    ctx.emit(f64_const(tag_id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(payload_count));
+    ctx.emit(Instruction::I32Const(payloads.len() as i32));
+    ctx.emit(Instruction::I32Ne);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+
+    if pretty {
+      let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+      ctx.emit(Instruction::LocalGet(with_indent));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    let raw_variant = literal_local(ctx, variant.ref_str())?;
+    let json_variant = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(raw_variant));
+    ctx.call_rt("__rt_json_string");
+    ctx.emit(Instruction::LocalSet(json_variant));
+    let with_variant = concat_string_locals(ctx, result, json_variant);
+    ctx.emit(Instruction::LocalGet(with_variant));
+    ctx.emit(Instruction::LocalSet(result));
+
+    for (index, payload_type) in payloads.iter().enumerate() {
+      let with_sep = concat_with_literal_after(ctx, result, if pretty { ",\n" } else { "," })?;
+      ctx.emit(Instruction::LocalGet(with_sep));
+      ctx.emit(Instruction::LocalSet(result));
+      if pretty {
+        let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+        ctx.emit(Instruction::LocalGet(with_indent));
+        ctx.emit(Instruction::LocalSet(result));
+      }
+      let payload = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+      ctx.emit(Instruction::LocalSet(payload));
+      let formatted = emit_json_value(ctx, payload, payload_type, depth + 1, pretty, op_name)?;
+      let with_payload = concat_string_locals(ctx, result, formatted);
+      ctx.emit(Instruction::LocalGet(with_payload));
+      ctx.emit(Instruction::LocalSet(result));
+    }
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  if pretty {
+    let with_close_indent = concat_with_literal_after(ctx, result, &close_indent)?;
+    ctx.emit(Instruction::LocalGet(with_close_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  let closed = concat_with_literal_after(ctx, result, "]")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+  Ok(result)
+}
+
+fn emit_json_map(
+  ctx: &mut WasmGenCtx,
+  value: u32,
+  key_type: &CalcitTypeAnnotation,
+  value_type: &CalcitTypeAnnotation,
+  depth: usize,
+  pretty: bool,
+  op_name: &str,
+) -> Result<u32, String> {
+  let encoded_struct_fields = match (key_type, value_type) {
+    (CalcitTypeAnnotation::StructValue(_), CalcitTypeAnnotation::Struct(nominal, args)) => {
+      let fields = resolved_encoded_struct_fields(nominal, args)?;
+      for (_, field_ty) in &fields {
+        validate_json_type(field_ty, depth + 1, op_name)?;
+      }
+      Some((nominal, fields))
+    }
+    _ => {
+      if !matches!(key_type, CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::String) {
+        return Err(format!(
+          "E_WASM_EDN_MAP_KEY: {op_name} expected object keys to be :tag or :string, got {key_type}"
+        ));
+      }
+      validate_json_type(key_type, depth + 1, op_name)?;
+      validate_json_type(value_type, depth + 1, op_name)?;
+      None
+    }
+  };
+  let effective_key_type = if encoded_struct_fields.is_some() {
+    &CalcitTypeAnnotation::Tag
+  } else {
+    key_type
+  };
+
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+  let flat_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(map_ptr));
+  ctx.call_rt("__rt_map_linearize");
+  ctx.emit(Instruction::LocalSet(flat_ptr));
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(count));
+
+  let result = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  emit_literal(ctx, "{}")?;
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::Else);
+
+  let index = ctx.alloc_i32(1);
+  let cursor = ctx.alloc_local_typed(ValType::I32);
+  let key = ctx.alloc_local();
+  let item_value = ctx.alloc_local();
+  let previous_key = ctx.alloc_local();
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  emit_load_map_pair_slot(ctx, flat_ptr, index, 8, key);
+  emit_load_map_pair_slot(ctx, flat_ptr, index, 16, item_value);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::LocalSet(cursor));
+
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+  let previous_index = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(cursor));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(previous_index));
+  emit_load_map_pair_slot(ctx, flat_ptr, previous_index, 8, previous_key);
+  emit_map_key_less_than(ctx, key, previous_key, effective_key_type)?;
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::BrIf(1));
+  emit_copy_map_pair(ctx, flat_ptr, previous_index, cursor);
+  ctx.emit(Instruction::LocalGet(previous_index));
+  ctx.emit(Instruction::LocalSet(cursor));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  emit_store_map_pair_slot(ctx, flat_ptr, cursor, 8, key);
+  emit_store_map_pair_slot(ctx, flat_ptr, cursor, 16, item_value);
+  ctx.emit(Instruction::LocalGet(index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  let init = literal_local(ctx, if pretty { "{\n" } else { "{" })?;
+  ctx.emit(Instruction::LocalGet(init));
+  ctx.emit(Instruction::LocalSet(result));
+  let child_indent = "  ".repeat(depth + 1);
+  let close_indent = format!("\n{}", "  ".repeat(depth));
+
+  let format_index = ctx.alloc_i32(0);
+  ctx.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::LocalGet(format_index));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::BrIf(1));
+  emit_load_map_pair_slot(ctx, flat_ptr, format_index, 8, key);
+  emit_load_map_pair_slot(ctx, flat_ptr, format_index, 16, item_value);
+
+  ctx.emit(Instruction::LocalGet(format_index));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  let with_sep = concat_with_literal_after(ctx, result, if pretty { ",\n" } else { "," })?;
+  ctx.emit(Instruction::LocalGet(with_sep));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+
+  if pretty {
+    let with_indent = concat_with_literal_after(ctx, result, &child_indent)?;
+    ctx.emit(Instruction::LocalGet(with_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+
+  let formatted_key = emit_json_value(ctx, key, effective_key_type, depth + 1, pretty, op_name)?;
+  let with_key = concat_string_locals(ctx, result, formatted_key);
+  ctx.emit(Instruction::LocalGet(with_key));
+  ctx.emit(Instruction::LocalSet(result));
+  let with_colon = concat_with_literal_after(ctx, result, if pretty { ": " } else { ":" })?;
+  ctx.emit(Instruction::LocalGet(with_colon));
+  ctx.emit(Instruction::LocalSet(result));
+
+  let formatted_value = if let Some((nominal, fields)) = &encoded_struct_fields {
+    let fv = ctx.alloc_local();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(fv));
+    for (field, field_ty) in fields {
+      let tag_id = *ctx.tag_index.get(field.ref_str()).ok_or_else(|| {
+        format!(
+          "E_WASM_EDN_STRUCT_SHAPE: struct :{} field :{} is not present in the compiled program",
+          nominal.name, field
+        )
+      })?;
+      ctx.emit(Instruction::LocalGet(key));
+      ctx.emit(f64_const(tag_id as f64));
+      ctx.emit(Instruction::F64Eq);
+      ctx.begin_block_if();
+      let candidate = emit_json_value(ctx, item_value, field_ty, depth + 1, pretty, op_name)?;
+      ctx.emit(Instruction::LocalGet(candidate));
+      ctx.emit(Instruction::LocalSet(fv));
+      ctx.emit(Instruction::End);
+    }
+    ctx.emit(Instruction::LocalGet(fv));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Eq);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    fv
+  } else {
+    emit_json_value(ctx, item_value, value_type, depth + 1, pretty, op_name)?
+  };
+  let with_value = concat_string_locals(ctx, result, formatted_value);
+  ctx.emit(Instruction::LocalGet(with_value));
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(format_index));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(format_index));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  if pretty {
+    let with_close_indent = concat_with_literal_after(ctx, result, &close_indent)?;
+    ctx.emit(Instruction::LocalGet(with_close_indent));
+    ctx.emit(Instruction::LocalSet(result));
+  }
+  let closed = concat_with_literal_after(ctx, result, "}")?;
+  ctx.emit(Instruction::LocalGet(closed));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+  Ok(result)
 }
 
 fn literal_local(ctx: &mut WasmGenCtx, text: &str) -> Result<u32, String> {

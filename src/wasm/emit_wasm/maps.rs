@@ -5,6 +5,132 @@ use super::*;
 // Root layout: [count:f64] [k0:f64] [v0:f64] [k1:f64] [v1:f64] ...
 // ===========================================================================
 
+fn normalize_map_key_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  if matches!(expanded.as_ref(), CalcitTypeAnnotation::StructValue(_)) {
+    Arc::new(CalcitTypeAnnotation::Tag)
+  } else {
+    expanded
+  }
+}
+
+fn is_empty_map_literal(expr: &Calcit) -> bool {
+  matches!(
+    expr,
+    Calcit::List(xs) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeMap)))
+  )
+}
+
+fn infer_map_key_types(ctx: &mut WasmGenCtx, map_expr: &Calcit, op_name: &str) -> Result<Vec<Arc<CalcitTypeAnnotation>>, String> {
+  let evidence = infer_wasm_evidence(ctx, map_expr);
+  if let Some(member_types) = evidence.set_member_types {
+    let normalized = member_types.iter().map(normalize_map_key_type).collect::<Vec<_>>();
+    for (idx, left) in normalized.iter().enumerate() {
+      if sets::set_comparison_can_erase_kind(left, left, 0) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: {op_name} requires statically non-colliding Map key kinds in the current scalar ABI, found `{}`",
+          left.to_brief_string()
+        ));
+      }
+      for right in normalized.iter().skip(idx + 1) {
+        if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: {op_name} cannot mix `{}` and `{}` keys in the current scalar ABI",
+            left.to_brief_string(),
+            right.to_brief_string()
+          ));
+        }
+      }
+    }
+    return Ok(normalized);
+  }
+  let mut expanded = CalcitTypeAnnotation::expand_schema_alias(&evidence.annotation);
+  if matches!(expanded.as_ref(), CalcitTypeAnnotation::Dynamic)
+    && let Some(hint) = &evidence.codec_hint
+  {
+    expanded = CalcitTypeAnnotation::expand_schema_alias(hint);
+  }
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Map(key_ty, _) => {
+      let key_ty = normalize_map_key_type(key_ty);
+      if matches!(
+        key_ty.as_ref(),
+        CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_)
+      ) && is_empty_map_literal(map_expr)
+      {
+        return Ok(vec![]);
+      }
+      if sets::set_comparison_can_erase_kind(&key_ty, &key_ty, 0) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: {op_name} requires a statically non-colliding Map key type in the current scalar ABI, found `{}`",
+          key_ty.to_brief_string()
+        ));
+      }
+      Ok(vec![key_ty])
+    }
+    CalcitTypeAnnotation::StructValue(_) => Ok(vec![Arc::new(CalcitTypeAnnotation::Tag)]),
+    other => Err(format!(
+      "E_WASM_SET_ELEMENT_KIND: {op_name} requires a statically proven Map key type in the current scalar ABI, found `{}`",
+      other.to_brief_string()
+    )),
+  }
+}
+
+fn check_map_key_lookup_types(ctx: &mut WasmGenCtx, map_expr: &Calcit, key_expr: &Calcit, op_name: &str) -> Result<bool, String> {
+  let map_key_types = infer_map_key_types(ctx, map_expr, op_name)?;
+  let key_evidence = infer_wasm_evidence(ctx, key_expr);
+  let key_ty = normalize_map_key_type(key_evidence.scalar_origin.as_ref().unwrap_or(&key_evidence.annotation));
+  if sets::set_comparison_can_erase_kind(&key_ty, &key_ty, 0) {
+    return Err(format!(
+      "E_WASM_SET_ELEMENT_KIND: {op_name} requires a statically non-colliding key type in the current scalar ABI, found `{}`",
+      key_ty.to_brief_string()
+    ));
+  }
+  if map_key_types.is_empty() {
+    return Ok(false);
+  }
+  let mut all_disjoint = true;
+  for map_key_ty in &map_key_types {
+    if !sets::set_comparison_can_erase_kind(map_key_ty, &key_ty, 0) {
+      all_disjoint = false;
+      continue;
+    }
+    if let (Some(left_kind), Some(right_kind)) = (proven_disjoint_value_kind(map_key_ty), proven_disjoint_value_kind(&key_ty))
+      && left_kind != right_kind
+    {
+      continue;
+    }
+    return Err(format!(
+      "E_WASM_SET_ELEMENT_KIND: {op_name} cannot compare Map key type `{}` with lookup key `{}` in the current scalar ABI",
+      map_key_ty.to_brief_string(),
+      key_ty.to_brief_string()
+    ));
+  }
+  Ok(all_disjoint)
+}
+
+pub(super) fn check_map_pair_key_types(
+  ctx: &mut WasmGenCtx,
+  left_map: &Calcit,
+  right_map: &Calcit,
+  op_name: &str,
+) -> Result<(), String> {
+  let left_keys = infer_map_key_types(ctx, left_map, op_name)?;
+  let right_keys = infer_map_key_types(ctx, right_map, op_name)?;
+  for left in &left_keys {
+    for right in &right_keys {
+      if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: {op_name} cannot combine Map key types `{}` and `{}` in the current scalar ABI",
+          left.to_brief_string(),
+          right.to_brief_string()
+        ));
+      }
+    }
+  }
+  Ok(())
+}
+
 /// `&{} key0 val0 key1 val1 ...` — create a map (key-value pairs).
 pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if !args.len().is_multiple_of(2) {
@@ -49,10 +175,15 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 /// `&map:get map key` — linear scan for key; returns value or nil.
 pub(super) fn emit_map_get_op(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&map:get")?;
+  let statically_disjoint = check_map_key_lookup_types(ctx, &args[0], &args[1], "&map:get")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
+  if statically_disjoint {
+    emit_option_enum(ctx, None)?;
+    return Ok(());
+  }
   let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_map_contains_key", ptr, target);
   ctx.emit(Instruction::LocalGet(found_idx));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -71,10 +202,15 @@ pub(super) fn emit_map_get_op(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// `&map:contains? map key` — scan for key, return bool.
 pub(super) fn emit_map_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&map:contains?")?;
+  let statically_disjoint = check_map_key_lookup_types(ctx, &args[0], &args[1], "&map:contains?")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
+  if statically_disjoint {
+    ctx.emit(f64_const(0.0));
+    return Ok(());
+  }
   let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_map_contains_key", ptr, target);
   ctx.emit(f64_const(1.0));
   ctx.emit(f64_const(0.0));
@@ -103,6 +239,27 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   if args.len() < 3 || args.len().is_multiple_of(2) {
     return Err("&map:assoc expects a map followed by one or more key/value pairs".into());
   }
+  let mut all_key_types = infer_map_key_types(ctx, &args[0], "&map:assoc")?;
+  for [key_expr, _] in args[1..].as_chunks::<2>().0 {
+    let key_ev = infer_wasm_evidence(ctx, key_expr);
+    let key_ty = normalize_map_key_type(&key_ev.annotation);
+    if sets::set_comparison_can_erase_kind(&key_ty, &key_ty, 0) {
+      return Err(format!(
+        "E_WASM_SET_ELEMENT_KIND: &map:assoc requires statically non-colliding key types in the current scalar ABI, found `{}`",
+        key_ty.to_brief_string()
+      ));
+    }
+    for existing in &all_key_types {
+      if sets::set_comparison_can_erase_kind(existing, &key_ty, 0) && !sets::are_disjoint_number_and_heap_types(existing, &key_ty) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: &map:assoc cannot mix `{}` and `{}` keys in the current scalar ABI",
+          existing.to_brief_string(),
+          key_ty.to_brief_string()
+        ));
+      }
+    }
+    all_key_types.push(key_ty);
+  }
   let accumulator = emit_ptr_to_i32(ctx, &args[0])?;
   let key = ctx.alloc_local();
   let val = ctx.alloc_local();
@@ -127,15 +284,18 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   if args.len() < 2 {
     return Err("&map:dissoc expects a map and at least one key".into());
   }
+  let map_evidence = infer_wasm_evidence(ctx, &args[0]);
+  let receiver_is_typed_map = matches!(
+    CalcitTypeAnnotation::expand_schema_alias(&map_evidence.annotation).as_ref(),
+    CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::StructValue(_)
+  );
+  if receiver_is_typed_map {
+    let _ = infer_map_key_types(ctx, &args[0], "&map:dissoc")?;
+  }
   let receiver = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(receiver));
-  if !infer_wasm_static_type(ctx, &args[0]).is_some_and(|annotation| {
-    matches!(
-      CalcitTypeAnnotation::expand_schema_alias(&annotation).as_ref(),
-      CalcitTypeAnnotation::Map(_, _)
-    )
-  }) {
+  if !receiver_is_typed_map {
     let is_heap = emit_is_heap_value(ctx, receiver);
     ctx.emit(Instruction::LocalGet(is_heap));
     ctx.emit(Instruction::I32Eqz);
@@ -165,10 +325,41 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
         .next()
         .filter(|argument| !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
         .ok_or("&map:dissoc expects a List after &")?;
+      let spread_ty = infer_wasm_static_type(ctx, spread).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let spread_is_typed_list = matches!(spread_ty.as_deref(), Some(CalcitTypeAnnotation::List(_)));
+      if receiver_is_typed_map && let Some(CalcitTypeAnnotation::List(elem_ty)) = spread_ty.as_deref() {
+        let elem_ty = normalize_map_key_type(elem_ty);
+        if !matches!(
+          elem_ty.as_ref(),
+          CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_)
+        ) {
+          let map_key_types = infer_map_key_types(ctx, &args[0], "&map:dissoc")?;
+          if sets::set_comparison_can_erase_kind(&elem_ty, &elem_ty, 0) {
+            return Err(format!(
+              "E_WASM_SET_ELEMENT_KIND: &map:dissoc requires statically non-colliding key types in the current scalar ABI, found `{}`",
+              elem_ty.to_brief_string()
+            ));
+          }
+          for map_key_ty in &map_key_types {
+            if sets::set_comparison_can_erase_kind(map_key_ty, &elem_ty, 0)
+              && !matches!(
+                (proven_disjoint_value_kind(map_key_ty), proven_disjoint_value_kind(&elem_ty)),
+                (Some(left_kind), Some(right_kind)) if left_kind != right_kind
+              )
+            {
+              return Err(format!(
+                "E_WASM_SET_ELEMENT_KIND: &map:dissoc cannot compare Map key type `{}` with spread key `{}` in the current scalar ABI",
+                map_key_ty.to_brief_string(),
+                elem_ty.to_brief_string()
+              ));
+            }
+          }
+        }
+      }
       let value = ctx.alloc_local();
       emit_expr(ctx, spread)?;
       ctx.emit(Instruction::LocalSet(value));
-      if !infer_wasm_static_type(ctx, spread).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_))) {
+      if !spread_is_typed_list {
         // Open values must prove their runtime List representation before any
         // pointer conversion or count/element load. Keep the typed fast path.
         let is_heap = emit_is_heap_value(ctx, value);
@@ -212,10 +403,17 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
     } else {
+      let statically_disjoint = if receiver_is_typed_map {
+        check_map_key_lookup_types(ctx, &args[0], argument, "&map:dissoc")?
+      } else {
+        false
+      };
       let key = ctx.alloc_local();
       emit_expr(ctx, argument)?;
       ctx.emit(Instruction::LocalSet(key));
-      emit_map_dissoc_key(ctx, accumulator, key);
+      if !statically_disjoint {
+        emit_map_dissoc_key(ctx, accumulator, key);
+      }
       ctx.i32_inc(key_count);
     }
   }
@@ -546,10 +744,17 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   if args.len() != 2 {
     return Err("&merge expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&merge")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
+  let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let dst = emit_map_merge_from_ptrs(ctx, a, b);
+  ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
+fn emit_map_merge_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
-  let b = emit_ptr_to_i32(ctx, &args[1])?;
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
@@ -659,7 +864,7 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::LocalTee(d_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   // Override value for existing key.
   ctx.emit(Instruction::LocalGet(d_addr));
@@ -709,8 +914,40 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
-  ctx.ptr_to_f64(dst);
+  emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root)
+}
+
+/// `calcit.core/merge x0 & xs` — variadic map merge.
+pub(super) fn emit_map_merge_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err("merge expects at least 1 arg".into());
+  }
+  if args.len() == 1 {
+    let _ = infer_map_key_types(ctx, &args[0], "merge")?;
+    return emit_expr(ctx, &args[0]);
+  }
+  let mut all_keys = infer_map_key_types(ctx, &args[0], "merge")?;
+  for arg in &args[1..] {
+    let right_keys = infer_map_key_types(ctx, arg, "merge")?;
+    for left in &all_keys {
+      for right in &right_keys {
+        if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: merge cannot combine Map key types `{}` and `{}` in the current scalar ABI",
+            left.to_brief_string(),
+            right.to_brief_string()
+          ));
+        }
+      }
+    }
+    all_keys.extend(right_keys);
+  }
+  let mut acc = emit_ptr_to_i32(ctx, &args[0])?;
+  for arg in &args[1..] {
+    let rhs = emit_ptr_to_i32(ctx, arg)?;
+    acc = emit_map_merge_from_ptrs(ctx, acc, rhs);
+  }
+  ctx.ptr_to_f64(acc);
   Ok(())
 }
 
@@ -720,6 +957,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   if args.len() != 2 {
     return Err("&map:diff-new expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-new")?;
   // `&map:diff-new a b` returns entries in `a` (args[0]) whose keys are not in `b` (args[1]).
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
@@ -784,7 +1022,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalTee(akv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
 
   // a key found in b — mark and break inner loop
@@ -843,6 +1081,7 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   if args.len() != 2 {
     return Err("&map:diff-keys expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-keys")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
@@ -890,7 +1129,7 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -937,6 +1176,7 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   if args.len() != 2 {
     return Err("&map:common-keys expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&map:common-keys")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
@@ -984,7 +1224,7 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -1033,6 +1273,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   if args.len() != 2 {
     return Err("&map:diff-triple expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-triple")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
@@ -1106,7 +1347,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::LocalTee(bkv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(bkv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -1234,7 +1475,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found_in_a));
@@ -1363,10 +1604,50 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
   if args.len() != 2 {
     return Err("&merge-non-nil expects 2 args".into());
   }
+  check_map_pair_key_types(ctx, &args[0], &args[1], "&merge-non-nil")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
+  let b = emit_ptr_to_i32(ctx, &args[1])?;
+  let dst = emit_map_merge_non_nil_from_ptrs(ctx, a, b);
+  ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
+pub(super) fn emit_map_merge_non_nil_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() {
+    return Err("merge-non-nil expects at least 1 arg".into());
+  }
+  if args.len() == 1 {
+    let _ = infer_map_key_types(ctx, &args[0], "merge-non-nil")?;
+    return emit_expr(ctx, &args[0]);
+  }
+  let mut all_keys = infer_map_key_types(ctx, &args[0], "merge-non-nil")?;
+  for arg in &args[1..] {
+    let right_keys = infer_map_key_types(ctx, arg, "merge-non-nil")?;
+    for left in &all_keys {
+      for right in &right_keys {
+        if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: merge-non-nil cannot combine Map key types `{}` and `{}` in the current scalar ABI",
+            left.to_brief_string(),
+            right.to_brief_string()
+          ));
+        }
+      }
+    }
+    all_keys.extend(right_keys);
+  }
+  let mut acc = emit_ptr_to_i32(ctx, &args[0])?;
+  for arg in &args[1..] {
+    let rhs = emit_ptr_to_i32(ctx, arg)?;
+    acc = emit_map_merge_non_nil_from_ptrs(ctx, acc, rhs);
+  }
+  ctx.ptr_to_f64(acc);
+  Ok(())
+}
+
+fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
-  let b = emit_ptr_to_i32(ctx, &args[1])?;
   let b_count = emit_load_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
@@ -1487,7 +1768,7 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
         ctx.emit(Instruction::LocalTee(dk_addr));
         ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
         ctx.emit(Instruction::LocalGet(bk));
-        emit_f64_value_eq(ctx);
+        ctx.call_rt("__rt_value_equal");
         ctx.begin_block_if();
         ctx.emit(Instruction::LocalGet(di));
         ctx.emit(Instruction::LocalSet(found_di));
@@ -1550,8 +1831,155 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
   ctx.emit(Instruction::LocalGet(dst_root));
   ctx.ptr_to_f64(write_idx);
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
-  ctx.ptr_to_f64(dst);
+  emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root)
+}
+
+pub(super) fn extract_pairs_list_key_exprs(pairs_arg: &Calcit) -> Option<Vec<Calcit>> {
+  let is_core_call = |head: &Calcit, name: &str| match head {
+    Calcit::Import(import) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == name,
+    Calcit::Symbol { sym, info, .. } => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == name,
+    _ => false,
+  };
+  let is_list_head = |head: &Calcit| matches!(head, Calcit::Proc(CalcitProc::List)) || is_core_call(head, "[]");
+  let Calcit::List(xs) = pairs_arg else {
+    return None;
+  };
+  if xs.len() == 3
+    && is_core_call(&xs[0], "chunks")
+    && matches!(xs.get(2), Some(Calcit::Number(n)) if *n == 2.0)
+    && let Calcit::List(list_xs) = &xs[1]
+    && list_xs.first().is_some_and(is_list_head)
+    && (list_xs.len() - 1).is_multiple_of(2)
+  {
+    return Some(list_xs.iter().skip(1).step_by(2).cloned().collect());
+  }
+  if xs.first().is_some_and(is_list_head) {
+    let mut keys = Vec::with_capacity(xs.len().saturating_sub(1));
+    for item in xs.iter().skip(1) {
+      let Calcit::List(pair_xs) = item else {
+        return None;
+      };
+      if pair_xs.len() != 3 || !pair_xs.first().is_some_and(is_list_head) {
+        return None;
+      }
+      keys.push(pair_xs[1].clone());
+    }
+    return Some(keys);
+  }
+  None
+}
+
+/// `calcit.core/pairs-map xs` — build a map from a list of `[key value]` pairs.
+pub(super) fn emit_pairs_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "pairs-map")?;
+  if let Some(key_exprs) = extract_pairs_list_key_exprs(&args[0]) {
+    let key_types = key_exprs
+      .iter()
+      .map(|expr| normalize_map_key_type(&infer_wasm_evidence(ctx, expr).annotation))
+      .collect::<Vec<_>>();
+    for (idx, left) in key_types.iter().enumerate() {
+      if sets::set_comparison_can_erase_kind(left, left, 0) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: pairs-map requires statically non-colliding key types in the current scalar ABI, found `{}`",
+          left.to_brief_string()
+        ));
+      }
+      for right in key_types.iter().skip(idx + 1) {
+        if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: pairs-map cannot mix `{}` and `{}` keys in the current scalar ABI",
+            left.to_brief_string(),
+            right.to_brief_string()
+          ));
+        }
+      }
+    }
+  } else {
+    let xs_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+    let key_ty = match xs_ty.as_deref() {
+      Some(CalcitTypeAnnotation::List(elem_ty)) => {
+        let elem_ty = CalcitTypeAnnotation::expand_schema_alias(elem_ty);
+        match elem_ty.as_ref() {
+          CalcitTypeAnnotation::Tuple(items) if !items.is_empty() => normalize_map_key_type(&items[0]),
+          CalcitTypeAnnotation::List(inner) => normalize_map_key_type(inner),
+          other => {
+            return Err(format!(
+              "E_WASM_SET_ELEMENT_KIND: pairs-map requires a statically proven pair key type in the current scalar ABI, found `{}`",
+              other.to_brief_string()
+            ));
+          }
+        }
+      }
+      other => {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: pairs-map requires a List of pairs with statically proven key types, found `{}`",
+          other.map(|t| t.to_brief_string()).unwrap_or_else(|| "Dynamic".to_owned())
+        ));
+      }
+    };
+    if sets::set_comparison_can_erase_kind(&key_ty, &key_ty, 0) {
+      return Err(format!(
+        "E_WASM_SET_ELEMENT_KIND: pairs-map requires a statically non-colliding key type in the current scalar ABI, found `{}`",
+        key_ty.to_brief_string()
+      ));
+    }
+  }
+
+  let xs_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let xs_count = emit_load_count_i32(ctx, xs_ptr);
+  let empty_map_f64 = ctx.alloc_local();
+  emit_map_new(ctx, &[])?;
+  ctx.emit(Instruction::LocalSet(empty_map_f64));
+  let acc = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(empty_map_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(acc));
+
+  let i = ctx.alloc_i32(0);
+  let pair_ptr = ctx.alloc_local_typed(ValType::I32);
+  let k = ctx.alloc_local();
+  let v = ctx.alloc_local();
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(i, xs_count);
+  ctx.emit(Instruction::LocalGet(xs_ptr));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(pair_ptr));
+
+  let pair_count = emit_load_count_i32(ctx, pair_ptr);
+  ctx.emit(Instruction::LocalGet(pair_count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  ctx.emit(Instruction::LocalGet(pair_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(k));
+  ctx.emit(Instruction::LocalGet(pair_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalSet(v));
+
+  ctx.emit(Instruction::LocalGet(acc));
+  ctx.emit(Instruction::LocalGet(k));
+  ctx.emit(Instruction::LocalGet(v));
+  ctx.call_rt("__rt_map_assoc");
+  ctx.emit(Instruction::LocalSet(acc));
+
+  ctx.i32_inc(i);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+
+  ctx.ptr_to_f64(acc);
   Ok(())
 }
 
@@ -1640,6 +2068,34 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
 pub(super) fn emit_zipmap(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err(format!("zipmap expects 2 args, got {}", args.len()));
+  }
+  let xs_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  match xs_ty.as_deref() {
+    Some(CalcitTypeAnnotation::List(elem_ty)) => {
+      let key_ty = normalize_map_key_type(elem_ty);
+      let is_empty_list = matches!(
+        &args[0],
+        Calcit::List(xs) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::List)))
+      );
+      if !(is_empty_list
+        && matches!(
+          key_ty.as_ref(),
+          CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_)
+        ))
+        && sets::set_comparison_can_erase_kind(&key_ty, &key_ty, 0)
+      {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: zipmap requires statically non-colliding key types in the current scalar ABI, found `{}`",
+          key_ty.to_brief_string()
+        ));
+      }
+    }
+    other => {
+      return Err(format!(
+        "E_WASM_SET_ELEMENT_KIND: zipmap requires a List of keys with statically proven key types, found `{}`",
+        other.map(|t| t.to_brief_string()).unwrap_or_else(|| "Dynamic".to_owned())
+      ));
+    }
   }
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
