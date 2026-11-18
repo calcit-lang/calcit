@@ -941,6 +941,7 @@ fn emit_wasm_impl(
     else {
       continue;
     };
+    let params = fn_param_names(args);
     let callback_arities = signature
       .arg_types
       .iter()
@@ -950,11 +951,21 @@ fn emit_wasm_impl(
           .resolve_to_fn()
           .filter(|callback| callback.rest_type.is_none())
           .map(|callback| (index, callback.arg_types.len()))
+          .or_else(|| {
+            if nil_type_evidence_is_open(annotation) {
+              params
+                .get(index)
+                .and_then(|param| infer_param_call_arity(param, body))
+                .map(|arity| (index, arity))
+            } else {
+              None
+            }
+          })
       })
       .collect::<HashMap<_, _>>();
     let qualified = format!("{ns}/{name}");
     let definition = Arc::new(StaticFnDef {
-      params: fn_param_names(args),
+      params,
       body: body.clone(),
       arg_types: signature.arg_types.clone(),
       callback_arities,
@@ -5477,6 +5488,9 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
     Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => None,
     Calcit::Import(_) | Calcit::Symbol { .. } => {
       let qualified = direct_definition_reference(expr)?;
+      if ctx.specialization_stack.iter().any(|active| active == &qualified) {
+        return None;
+      }
       let definition = ctx.static_fn_defs.get(&qualified)?;
       if !definition.fixed_arity
         || !(definition_requires_nil_specialization(definition) || definition_requires_trait_specialization(definition))
@@ -5503,8 +5517,134 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
         captured_closures: HashMap::new(),
       }))
     }
-    _ => capture_inline_closure(ctx, expr),
+    _ => capture_inline_closure(ctx, expr).or_else(|| resolve_composed_inline_closure(ctx, expr)),
   }
+}
+
+fn coerce_to_inline_closure(ctx: &WasmGenCtx, expr: &Calcit, arity: usize) -> Option<Arc<InlineClosure>> {
+  let (effects, tail) = inline_closure_tail(expr);
+  if !effects.is_empty() {
+    return None;
+  }
+  if let Some(closure) = resolve_inline_closure(ctx, tail) {
+    return closure.accepts(arity).then_some(closure);
+  }
+  if let Calcit::Proc(proc) = tail {
+    let params = (0..arity).map(|i| format!("__fn_comp_arg_{i}__")).collect::<Vec<_>>();
+    let mut call = Vec::with_capacity(arity + 1);
+    call.push(Calcit::Proc(*proc));
+    for param in &params {
+      call.push(Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from(param.as_str()),
+        info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+          at_ns: Arc::from(crate::wasm::host::calcit::CORE_NS),
+          at_def: Arc::from(""),
+        }),
+        location: None,
+        type_info: DYNAMIC_TYPE.clone(),
+      }));
+    }
+    return Some(Arc::new(InlineClosure {
+      params,
+      required: arity,
+      rest: false,
+      option_types: vec![],
+      body: vec![Calcit::from(call)],
+      captured_locals: HashMap::new(),
+      captured_local_types: HashMap::new(),
+      captured_closures: HashMap::new(),
+    }));
+  }
+  if let Some(import) = resolve_known_function_value(ctx, tail) {
+    let qualified = format!("{}/{}", import.ns, import.def);
+    let accepts_arity = match (ctx.fn_arity.get(&qualified), ctx.fn_has_rest.get(&qualified)) {
+      (Some(&n), None) => n as usize == arity,
+      (_, Some(&fixed)) => (fixed as usize) <= arity,
+      _ => false,
+    };
+    if !accepts_arity {
+      return None;
+    }
+    let params = (0..arity).map(|i| format!("__fn_comp_arg_{i}__")).collect::<Vec<_>>();
+    let mut call = Vec::with_capacity(arity + 1);
+    call.push(Calcit::Import(import.clone()));
+    for param in &params {
+      call.push(Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from(param.as_str()),
+        info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+          at_ns: import.ns.clone(),
+          at_def: import.def.clone(),
+        }),
+        location: None,
+        type_info: DYNAMIC_TYPE.clone(),
+      }));
+    }
+    return Some(Arc::new(InlineClosure {
+      params,
+      required: arity,
+      rest: false,
+      option_types: vec![],
+      body: vec![Calcit::from(call)],
+      captured_locals: HashMap::new(),
+      captured_local_types: HashMap::new(),
+      captured_closures: HashMap::new(),
+    }));
+  }
+  None
+}
+
+fn resolve_composed_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
+  let Calcit::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let (target_def, first_arity, second_arity) = match items.first()? {
+    Calcit::Import(import)
+      if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && matches!(import.def.as_ref(), "&fn:map" | "&fn:mappend" | "&fn:bind" | "&fn:apply") =>
+    {
+      let second_arity = if matches!(import.def.as_ref(), "&fn:bind" | "&fn:apply") {
+        2
+      } else {
+        1
+      };
+      (format!("{}/{}", import.ns, import.def), 1, second_arity)
+    }
+    Calcit::Symbol { sym, info, .. }
+      if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && !ctx.locals.contains_key(sym.as_ref())
+        && !ctx.lambda_locals.contains_key(sym.as_ref())
+        && matches!(sym.as_ref(), "&fn:map" | "&fn:mappend" | "&fn:bind" | "&fn:apply") =>
+    {
+      let second_arity = if matches!(sym.as_ref(), "&fn:bind" | "&fn:apply") { 2 } else { 1 };
+      (format!("{}/{}", info.at_ns, sym), 1, second_arity)
+    }
+    Calcit::Method(name, MethodKind::Invoke(_)) if matches!(name.as_ref(), "map" | "mappend" | "bind" | "apply") => {
+      let second_arity = if matches!(name.as_ref(), "bind" | "apply") { 2 } else { 1 };
+      (format!("{}/&fn:{}", crate::wasm::host::calcit::CORE_NS, name), 1, second_arity)
+    }
+    _ => return None,
+  };
+  let f_closure = coerce_to_inline_closure(ctx, items.get(1)?, first_arity)?;
+  let g_closure = coerce_to_inline_closure(ctx, items.get(2)?, second_arity)?;
+  let definition = ctx.static_fn_defs.get(&target_def)?;
+  if definition.params.len() != 2 {
+    return None;
+  }
+  let inner_lambda = definition.body.last()?;
+  let base_closure = capture_inline_closure(ctx, inner_lambda)?;
+  let mut composed = (*base_closure).clone();
+  for param in &definition.params {
+    composed.captured_locals.remove(param);
+    composed.captured_local_types.remove(param);
+  }
+  composed.captured_closures.insert(definition.params[0].clone(), f_closure);
+  composed.captured_closures.insert(definition.params[1].clone(), g_closure);
+  Some(Arc::new(composed))
 }
 
 fn resolve_known_function_value(ctx: &WasmGenCtx, expr: &Calcit) -> Option<CalcitImport> {
@@ -5721,13 +5861,14 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
 }
 
 fn infer_wasm_value_evidence(ctx: &WasmGenCtx, expr: &Calcit) -> Option<WasmTypeEvidence> {
-  infer_wasm_evidence_in_scope(ctx, expr, &ctx.local_types, &mut HashSet::new())
+  infer_wasm_evidence_in_scope(ctx, expr, &ctx.local_types, &ctx.lambda_locals, &mut HashSet::new())
 }
 
 fn infer_wasm_evidence_in_scope(
   ctx: &WasmGenCtx,
   expr: &Calcit,
   local_types: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
   if expression_definitely_diverges(expr) {
@@ -5742,8 +5883,8 @@ fn infer_wasm_evidence_in_scope(
       .or_else(|| Some(WasmTypeEvidence::contract(local.type_info.clone()))),
     Calcit::Symbol { sym, .. } if local_types.contains_key(sym.as_ref()) => local_types.get(sym.as_ref()).cloned(),
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) => {
-      let consequent = infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, visiting)?;
-      let alternative = infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, visiting)?;
+      let consequent = infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, closures, visiting)?;
+      let alternative = infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, closures, visiting)?;
       // A data-shape join may discard attached implementations. Preserve a
       // call-site identity only when both live branches carry identical evidence.
       if consequent == alternative || matches!(alternative.annotation.as_ref(), CalcitTypeAnnotation::Never) {
@@ -5758,18 +5899,18 @@ fn infer_wasm_evidence_in_scope(
       let Calcit::List(pair) = items.get(1)? else { return None };
       let tail = items.iter().skip(2).last()?;
       if pair.is_empty() {
-        return infer_wasm_evidence_in_scope(ctx, tail, local_types, visiting);
+        return infer_wasm_evidence_in_scope(ctx, tail, local_types, closures, visiting);
       }
       let name = match pair.first()? {
         Calcit::Local(local) => local.sym.as_ref(),
         Calcit::Symbol { sym, .. } => sym.as_ref(),
         _ => return None,
       };
-      let annotation = infer_wasm_evidence_in_scope(ctx, pair.get(1)?, local_types, visiting)
+      let annotation = infer_wasm_evidence_in_scope(ctx, pair.get(1)?, local_types, closures, visiting)
         .unwrap_or_else(|| WasmTypeEvidence::contract(DYNAMIC_TYPE.clone()));
       let mut body_types = local_types.clone();
       body_types.insert(name.to_owned(), annotation);
-      infer_wasm_evidence_in_scope(ctx, tail, &body_types, visiting)
+      infer_wasm_evidence_in_scope(ctx, tail, &body_types, closures, visiting)
     }
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))) => items
       .get(1)
@@ -5782,14 +5923,22 @@ fn infer_wasm_evidence_in_scope(
       .first()
       .and_then(|head| match head {
         Calcit::Method(name, MethodKind::Invoke(_)) => {
-          let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, visiting)?;
+          let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, closures, visiting)?;
           let callable = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns).ok()??;
           let mut direct = vec![callable];
           direct.extend(items.iter().skip(1).cloned());
-          infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, visiting)
+          infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, closures, visiting)
+        }
+        Calcit::Local(local) => {
+          let closure = closures.get(local.sym.as_ref())?;
+          infer_inline_closure_result(ctx, closure, &items.drop_left().to_vec(), local_types, closures, visiting)
+        }
+        Calcit::Symbol { sym, .. } if closures.contains_key(sym.as_ref()) => {
+          let closure = closures.get(sym.as_ref())?;
+          infer_inline_closure_result(ctx, closure, &items.drop_left().to_vec(), local_types, closures, visiting)
         }
         Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Fn { .. } => {
-          infer_wasm_callable_result(ctx, expr, &items.drop_left().to_vec(), local_types, visiting)
+          infer_wasm_callable_result(ctx, expr, &items.drop_left().to_vec(), local_types, closures, visiting)
         }
         Calcit::Proc(proc) => {
           let (ns, def) = proc.get_ns_def();
@@ -5817,7 +5966,7 @@ fn infer_wasm_evidence_in_scope(
           let mut bindings = TypeBindings::new();
           for (index, argument) in items.iter().skip(1).enumerate() {
             let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-            let actual = infer_wasm_evidence_in_scope(ctx, argument, local_types, visiting)?;
+            let actual = infer_wasm_evidence_in_scope(ctx, argument, local_types, closures, visiting)?;
             if actual.annotation.prove_available_bindings(expected, &mut bindings).is_mismatch() {
               return None;
             }
@@ -5856,11 +6005,64 @@ fn replace_unbound_type_vars_with_never(annotation: &Arc<CalcitTypeAnnotation>) 
   }
 }
 
+fn infer_inline_closure_result(
+  ctx: &WasmGenCtx,
+  closure: &InlineClosure,
+  args: &[Calcit],
+  local_types: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
+  visiting: &mut HashSet<String>,
+) -> Option<WasmTypeEvidence> {
+  if closure.rest || args.len() != closure.params.len() {
+    return None;
+  }
+  let mut body_types = closure.captured_local_types.clone();
+  for (param, arg) in closure.params.iter().zip(args.iter()) {
+    let evidence = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting)
+      .unwrap_or_else(|| WasmTypeEvidence::contract(DYNAMIC_TYPE.clone()));
+    body_types.insert(param.clone(), evidence);
+  }
+  let executable = closure
+    .body
+    .iter()
+    .filter(|expr| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(expr))
+    .collect::<Vec<_>>();
+  let tail = executable.last()?;
+  infer_wasm_evidence_in_scope(ctx, tail, &body_types, &closure.captured_closures, visiting)
+}
+
+fn infer_param_call_arity(param_name: &str, exprs: &[Calcit]) -> Option<usize> {
+  fn scan(param_name: &str, expr: &Calcit, found: &mut Option<usize>) -> bool {
+    let Calcit::List(items) = expr else {
+      return true;
+    };
+    if let Some(Calcit::Local(local)) = items.first()
+      && local.sym.as_ref() == param_name
+    {
+      let arity = items.len() - 1;
+      match *found {
+        None => *found = Some(arity),
+        Some(prev) if prev != arity => return false,
+        _ => {}
+      }
+    }
+    items.iter().all(|child| scan(param_name, child, found))
+  }
+  let mut found = None;
+  for expr in exprs {
+    if !scan(param_name, expr, &mut found) {
+      return None;
+    }
+  }
+  found
+}
+
 fn infer_wasm_callable_result(
   ctx: &WasmGenCtx,
   expr: &Calcit,
   args: &[Calcit],
   locals: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
   let mut declared = infer_static_type_from_expr(expr)?;
@@ -5880,7 +6082,7 @@ fn infer_wasm_callable_result(
         matched = false;
         break;
       };
-      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, visiting) else {
+      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, closures, visiting) else {
         matched = false;
         break;
       };
@@ -5932,7 +6134,7 @@ fn infer_wasm_callable_result(
     let mut bindings = TypeBindings::new();
     let mut scope = HashMap::with_capacity(params.len());
     for ((name, argument), expected) in params.iter().zip(args).zip(&expected) {
-      let actual = infer_wasm_evidence_in_scope(ctx, argument, locals, visiting)?;
+      let actual = infer_wasm_evidence_in_scope(ctx, argument, locals, closures, visiting)?;
       if actual.annotation.prove_available_bindings(expected, &mut bindings).is_mismatch() {
         return None;
       }
@@ -5941,11 +6143,12 @@ fn infer_wasm_callable_result(
     Some(scope)
   })();
   let Some(scope) = scope else { return Some(fallback) };
+  let empty_closures = HashMap::new();
   visiting.insert(key.clone());
   let inferred = body
     .iter()
     .rfind(|form| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(form))
-    .and_then(|tail| infer_wasm_evidence_in_scope(ctx, tail, &scope, visiting));
+    .and_then(|tail| infer_wasm_evidence_in_scope(ctx, tail, &scope, &empty_closures, visiting));
   visiting.remove(&key);
   Some(
     inferred
@@ -6459,7 +6662,12 @@ fn enum_contains_has_open_key(receiver: Option<&CalcitTypeAnnotation>, key: Opti
 fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion) => true,
-    Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NumberQuestion))) => {
+    Calcit::List(items)
+      if matches!(
+        items.first(),
+        Some(Calcit::Proc(CalcitProc::NumberQuestion | CalcitProc::TagQuestion))
+      ) =>
+    {
       let proven_scalar = items
         .get(1)
         .and_then(infer_static_type_from_expr)
@@ -6960,6 +7168,9 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
     if !is_last && is_quoted_leaf(expr) {
       continue;
     }
+    if !is_last && is_inline_closure_assert_type(ctx, expr) {
+      continue;
+    }
     emit_expr(ctx, expr)?;
     if !is_last {
       ctx.emit(Instruction::Drop);
@@ -6974,6 +7185,23 @@ fn is_quoted_leaf(expr: &Calcit) -> bool {
       items.len() == 2
         && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
         && matches!(items.get(1), Some(Calcit::Symbol { .. }))
+    }
+    _ => false,
+  }
+}
+
+fn is_inline_closure_assert_type(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  match expr {
+    // Preprocessing lowers `assert-type <local> <type>` to `<local>`, which is
+    // dropped in non-tail statement position without escaping.
+    Calcit::Local(local) => ctx.lambda_locals.contains_key(local.sym.as_ref()),
+    Calcit::Symbol { sym, .. } => ctx.lambda_locals.contains_key(sym.as_ref()),
+    Calcit::List(items) if items.len() == 3 && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))) => {
+      match items.get(1) {
+        Some(Calcit::Local(local)) => ctx.lambda_locals.contains_key(local.sym.as_ref()),
+        Some(Calcit::Symbol { sym, .. }) => ctx.lambda_locals.contains_key(sym.as_ref()),
+        _ => false,
+      }
     }
     _ => false,
   }
@@ -7338,6 +7566,12 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if args_list.is_empty() {
           return Err("assert-type expects at least 1 arg".into());
         }
+        if matches!(&args_list[0], Calcit::Local(local) if ctx.lambda_locals.contains_key(local.sym.as_ref()))
+          || matches!(&args_list[0], Calcit::Symbol { sym, .. } if ctx.lambda_locals.contains_key(sym.as_ref()))
+        {
+          ctx.emit(f64_const(0.0));
+          return Ok(());
+        }
         emit_expr(ctx, &args_list[0])
       }
       // Proven widening and erasure preserve the existing scalar value.
@@ -7681,6 +7915,10 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           Ok(())
         }
       }
+    }
+    Calcit::List(_) if resolve_inline_closure(ctx, head).is_some() => {
+      let closure = resolve_inline_closure(ctx, head).expect("checked inline closure head");
+      emit_inline_closure_call(ctx, &closure, &args_list, None)
     }
     // Dynamic call via a local variable holding a function table index (f64).
     // Implements Rust-style `dyn Fn` dispatch via WASM call_indirect.
@@ -10456,10 +10694,110 @@ fn emit_i32_operand(ctx: &mut WasmGenCtx, arg: &Calcit) -> Result<(), String> {
   Ok(())
 }
 
+fn static_predicate_condition_outcome(ctx: &WasmGenCtx, condition: &Calcit, allow_bool_leaf: bool) -> Option<bool> {
+  if allow_bool_leaf && let Calcit::Bool(b) = condition {
+    return Some(*b);
+  }
+  let Calcit::List(items) = condition else {
+    return None;
+  };
+  let head = items.first()?;
+  if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
+    && items.len() == 3
+    && let Some(Calcit::List(pair)) = items.get(1)
+    && pair.len() == 2
+  {
+    return static_predicate_condition_outcome(ctx, &pair[1], allow_bool_leaf);
+  }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) && (3..=4).contains(&items.len()) {
+    let cond_val = static_predicate_condition_outcome(ctx, items.get(1)?, true)?;
+    return if cond_val {
+      static_predicate_condition_outcome(ctx, items.get(2)?, true)
+    } else if let Some(alt) = items.get(3) {
+      static_predicate_condition_outcome(ctx, alt, true)
+    } else {
+      Some(false)
+    };
+  }
+  if items.len() != 2 {
+    return None;
+  }
+  let proc = match head {
+    Calcit::Proc(p) => Some(*p),
+    Calcit::Import(import) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => import.def.parse::<CalcitProc>().ok(),
+    Calcit::Symbol { sym, info, .. }
+      if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && !ctx.locals.contains_key(sym.as_ref())
+        && !ctx.lambda_locals.contains_key(sym.as_ref()) =>
+    {
+      sym.parse::<CalcitProc>().ok()
+    }
+    _ => None,
+  }?;
+  if proc == CalcitProc::Not {
+    return static_predicate_condition_outcome(ctx, items.get(1)?, true).map(|b| !b);
+  }
+  let operand = items.get(1)?;
+  if matches!(proc, CalcitProc::FnQuestion)
+    && (resolve_inline_closure(ctx, operand).is_some() || resolve_known_function_value(ctx, operand).is_some())
+  {
+    return Some(true);
+  }
+  let ty = infer_wasm_static_type(ctx, operand).map(|t| CalcitTypeAnnotation::expand_schema_alias(&t))?;
+  if nil_type_evidence_is_open(&ty) || matches!(ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_)) {
+    return None;
+  }
+  match proc {
+    CalcitProc::TagQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Tag)),
+    CalcitProc::NilQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Nil)),
+    CalcitProc::ListQuestion => Some(matches!(
+      ty.as_ref(),
+      CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_)
+    )),
+    CalcitProc::MapQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Map(_, _))),
+    CalcitProc::SetQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Set(_))),
+    CalcitProc::StringQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::String)),
+    CalcitProc::NumberQuestion => Some(matches!(
+      ty.as_ref(),
+      CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)
+    )),
+    CalcitProc::BoolQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Bool)),
+    CalcitProc::SymbolQuestion => Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Symbol)),
+    CalcitProc::FnQuestion => {
+      Some(matches!(ty.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) || ty.resolve_to_fn().is_some())
+    }
+    CalcitProc::StructQuestion => Some(
+      matches!(
+        ty.as_ref(),
+        CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_)
+      ) || ty.resolve_to_struct().is_some(),
+    ),
+    CalcitProc::EnumQuestion => Some(
+      matches!(
+        ty.as_ref(),
+        CalcitTypeAnnotation::Enum(_, _) | CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum
+      ) || ty.resolve_to_enum().is_some(),
+    ),
+    _ => None,
+  }
+}
+
 /// Emit WASM for `if` expression.
 fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() < 2 || args.len() > 3 {
     return Err(format!("if expects 2-3 args, got {}", args.len()));
+  }
+  if let Some(taken) = static_predicate_condition_outcome(ctx, &args[0], false) {
+    emit_if_condition(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    if taken {
+      return emit_expr(ctx, &args[1]);
+    } else if args.len() == 3 {
+      return emit_expr(ctx, &args[2]);
+    } else {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
   }
   emit_if_condition(ctx, &args[0])?;
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
