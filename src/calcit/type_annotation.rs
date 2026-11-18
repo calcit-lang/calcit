@@ -5451,6 +5451,18 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  // Slot bindings may name values with schemas or nominal type definitions.
+  // Expand only the former; a definition's schema denotes its constructor,
+  // not an instance of that nominal type.
+  fn expand_slot_schema_alias(type_value: &Arc<Self>) -> Arc<Self> {
+    let expanded = Self::expand_schema_alias(type_value);
+    if matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
+      type_value.clone()
+    } else {
+      expanded
+    }
+  }
+
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
       Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
@@ -6136,6 +6148,7 @@ impl CalcitTypeAnnotation {
       // guard, so an acyclic slot is not mistaken for its own recursive alias.
       (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => resolve_type_slot(actual).is_none_or(|resolved| {
         with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          let resolved = Self::expand_slot_schema_alias(&resolved);
           resolved.compatible_with_bindings(resolved.as_ref(), bindings)
         })
         .unwrap_or(false)
@@ -6145,7 +6158,7 @@ impl CalcitTypeAnnotation {
       (Self::TypeSlot(name), other) => {
         if let Some(resolved) = resolve_type_slot(name) {
           return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-            resolved.compatible_with_bindings(other, bindings)
+            Self::expand_slot_schema_alias(&resolved).compatible_with_bindings(other, bindings)
           })
           .unwrap_or(false);
         }
@@ -6155,7 +6168,7 @@ impl CalcitTypeAnnotation {
       (other, Self::TypeSlot(name)) => {
         if let Some(resolved) = resolve_type_slot(name) {
           return with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-            other.compatible_with_bindings(resolved.as_ref(), bindings)
+            other.compatible_with_bindings(Self::expand_slot_schema_alias(&resolved).as_ref(), bindings)
           })
           .unwrap_or(false);
         }
@@ -6479,6 +6492,7 @@ impl CalcitTypeAnnotation {
       }
       (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          let resolved = Self::expand_slot_schema_alias(&resolved);
           resolved.prove_with_staged_bindings(resolved.as_ref(), bindings)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
@@ -6486,14 +6500,14 @@ impl CalcitTypeAnnotation {
       },
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-          resolved.prove_with_staged_bindings(other, bindings)
+          Self::expand_slot_schema_alias(&resolved).prove_with_staged_bindings(other, bindings)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
       (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-          other.prove_with_staged_bindings(resolved.as_ref(), bindings)
+          other.prove_with_staged_bindings(Self::expand_slot_schema_alias(&resolved).as_ref(), bindings)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
