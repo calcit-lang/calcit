@@ -289,6 +289,10 @@ fn emit_wasm_impl(
   let wasi_command_file = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
     && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
+  let wasi_command_read_dir = target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_read_dir);
+  let wasi_command_fs_common = wasi_command_file || wasi_command_read_dir;
   let wasi_command_stdin = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
     && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
@@ -301,7 +305,7 @@ fn emit_wasm_impl(
   let wasi_command_random = target == WasmTarget::Wasi
     && boundary == WasmBoundary::Component
     && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
-  let wasi_command_stackful = wasi_command_stdio || wasi_command_file || wasi_command_stdin || wasi_command_wait;
+  let wasi_command_stackful = wasi_command_stdio || wasi_command_fs_common || wasi_command_stdin || wasi_command_wait;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
   // append after them.
@@ -372,6 +376,11 @@ fn emit_wasm_impl(
       });
       if wasi_command_file {
         host_imports.extend(wasi_component_file_imports());
+      } else if wasi_command_read_dir {
+        host_imports.extend(wasi_component_fs_common_imports());
+      }
+      if wasi_command_read_dir {
+        host_imports.extend(wasi_component_read_dir_imports());
       }
       if wasi_command_stdin {
         host_imports.extend(wasi_component_stdin_imports());
@@ -435,7 +444,7 @@ fn emit_wasm_impl(
         });
       }
     }
-    if wasi_command_file
+    if wasi_command_fs_common
       || wasi_command_stdin
       || wasi_command_wait
       || component_import_adapters
@@ -567,13 +576,13 @@ fn emit_wasm_impl(
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
 
-  if wasi_command_file || wasi_command_stdin {
+  if wasi_command_fs_common || wasi_command_stdin {
     let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
     compiled_fns.push(build_utf8_valid_fn());
   }
 
-  if wasi_command_file {
+  if wasi_command_fs_common {
     let utf8_valid_idx = *runtime_fn_index.get("__rt_utf8_valid").expect("UTF-8 validation helper must exist");
     let route_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_wasi_component_route_path".into(), route_idx);
@@ -608,74 +617,78 @@ fn emit_wasm_impl(
         .as_ref()
         .expect("WASI async file operations must register canonical lifecycle imports"),
     ));
-    let read_idx = num_imports + compiled_fns.len() as u32;
-    runtime_fn_index.insert("__rt_wasi_component_read_bytes".into(), read_idx);
     let descriptor_import = |name: &str| {
       *import_indices
         .get(&(descriptor_module.into(), name.into()))
         .unwrap_or_else(|| panic!("WASI descriptor import {name} must be registered"))
     };
-    compiled_fns.push(build_wasi_component_read_bytes_fn(
-      WasiComponentReadImports {
-        source: runtime::WasiComponentReadSource::File {
-          open: open_idx,
-          descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+    if wasi_command_file {
+      let read_idx = num_imports + compiled_fns.len() as u32;
+      runtime_fn_index.insert("__rt_wasi_component_read_bytes".into(), read_idx);
+      compiled_fns.push(build_wasi_component_read_bytes_fn(
+        WasiComponentReadImports {
+          source: runtime::WasiComponentReadSource::File {
+            open: open_idx,
+            descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+          },
+          read_via_stream: descriptor_import("[method]descriptor.read-via-stream"),
+          stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-via-stream"),
+          stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-via-stream"),
+          future_read: descriptor_import("[future-read-1][method]descriptor.read-via-stream"),
+          future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-via-stream"),
+          free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+          realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
         },
-        read_via_stream: descriptor_import("[method]descriptor.read-via-stream"),
-        stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-via-stream"),
-        stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-via-stream"),
-        future_read: descriptor_import("[future-read-1][method]descriptor.read-via-stream"),
-        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-via-stream"),
-        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
-        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
-      },
-      component_async_canonical_imports
-        .as_ref()
-        .expect("WASI async file operations must register canonical lifecycle imports"),
-    ));
-    let write_idx = num_imports + compiled_fns.len() as u32;
-    runtime_fn_index.insert("__rt_wasi_component_write_bytes".into(), write_idx);
-    compiled_fns.push(build_wasi_component_write_bytes_fn(
-      WasiComponentWriteImports {
-        open: open_idx,
-        stream_new: descriptor_import("[stream-new-0][method]descriptor.write-via-stream"),
-        stream_write: descriptor_import("[stream-write-0][method]descriptor.write-via-stream"),
-        stream_drop: descriptor_import("[stream-drop-writable-0][method]descriptor.write-via-stream"),
-        write_via_stream: descriptor_import("[method]descriptor.write-via-stream"),
-        future_read: descriptor_import("[future-read-1][method]descriptor.write-via-stream"),
-        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.write-via-stream"),
-        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
-        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
-        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
-      },
-      component_async_canonical_imports
-        .as_ref()
-        .expect("WASI async file operations must register canonical lifecycle imports"),
-    ));
-    let read_dir_idx = num_imports + compiled_fns.len() as u32;
-    runtime_fn_index.insert("__rt_wasi_read_dir".into(), read_dir_idx);
-    compiled_fns.push(build_wasi_component_read_dir_fn(
-      WasiComponentReadDirImports {
-        open: open_idx,
-        read_directory: descriptor_import("[method]descriptor.read-directory"),
-        stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-directory"),
-        stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-directory"),
-        future_read: descriptor_import("[future-read-1][method]descriptor.read-directory"),
-        future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-directory"),
-        descriptor_drop: descriptor_import("[resource-drop]descriptor"),
-        utf8_valid: utf8_valid_idx,
-        str_compare: *runtime_fn_index
-          .get("__rt_str_compare")
-          .expect("string comparison helper must exist"),
-        free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
-        realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
-        list_tag: *tag_index.get("list").expect("list tag must exist") as i32,
-        string_tag: str_tag_id,
-      },
-      component_async_canonical_imports
-        .as_ref()
-        .expect("WASI async file operations must register canonical lifecycle imports"),
-    ));
+        component_async_canonical_imports
+          .as_ref()
+          .expect("WASI async file operations must register canonical lifecycle imports"),
+      ));
+      let write_idx = num_imports + compiled_fns.len() as u32;
+      runtime_fn_index.insert("__rt_wasi_component_write_bytes".into(), write_idx);
+      compiled_fns.push(build_wasi_component_write_bytes_fn(
+        WasiComponentWriteImports {
+          open: open_idx,
+          stream_new: descriptor_import("[stream-new-0][method]descriptor.write-via-stream"),
+          stream_write: descriptor_import("[stream-write-0][method]descriptor.write-via-stream"),
+          stream_drop: descriptor_import("[stream-drop-writable-0][method]descriptor.write-via-stream"),
+          write_via_stream: descriptor_import("[method]descriptor.write-via-stream"),
+          future_read: descriptor_import("[future-read-1][method]descriptor.write-via-stream"),
+          future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.write-via-stream"),
+          descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+          free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+          realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+        },
+        component_async_canonical_imports
+          .as_ref()
+          .expect("WASI async file operations must register canonical lifecycle imports"),
+      ));
+    }
+    if wasi_command_read_dir {
+      let read_dir_idx = num_imports + compiled_fns.len() as u32;
+      runtime_fn_index.insert("__rt_wasi_read_dir".into(), read_dir_idx);
+      compiled_fns.push(build_wasi_component_read_dir_fn(
+        WasiComponentReadDirImports {
+          open: open_idx,
+          read_directory: descriptor_import("[method]descriptor.read-directory"),
+          stream_read: descriptor_import("[async-lower][stream-read-0][method]descriptor.read-directory"),
+          stream_drop: descriptor_import("[stream-drop-readable-0][method]descriptor.read-directory"),
+          future_read: descriptor_import("[future-read-1][method]descriptor.read-directory"),
+          future_drop: descriptor_import("[future-drop-readable-1][method]descriptor.read-directory"),
+          descriptor_drop: descriptor_import("[resource-drop]descriptor"),
+          utf8_valid: utf8_valid_idx,
+          str_compare: *runtime_fn_index
+            .get("__rt_str_compare")
+            .expect("string comparison helper must exist"),
+          free: component_cabi_free_index.expect("Component boundary must install cabi_free"),
+          realloc: component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
+          list_tag: *tag_index.get("list").expect("list tag must exist") as i32,
+          string_tag: str_tag_id,
+        },
+        component_async_canonical_imports
+          .as_ref()
+          .expect("WASI async file operations must register canonical lifecycle imports"),
+      ));
+    }
   }
   if wasi_command_wait {
     let wait_for_idx = *index_host_imports(&host_imports)
@@ -5026,18 +5039,27 @@ fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
   }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq)]
 struct WasmTypeEvidence {
   annotation: Arc<CalcitTypeAnnotation>,
+  /// Retains encoded-struct or uninhabited-enum constructor hints for map codec passes.
+  codec_hint: Option<Arc<CalcitTypeAnnotation>>,
   /// The value's actual construction/transport proves its attached impl table.
   /// A declared nominal data contract alone does not establish this identity.
   exact_impls: bool,
+}
+
+impl PartialEq for WasmTypeEvidence {
+  fn eq(&self, other: &Self) -> bool {
+    self.annotation == other.annotation && self.exact_impls == other.exact_impls
+  }
 }
 
 impl WasmTypeEvidence {
   fn contract(annotation: Arc<CalcitTypeAnnotation>) -> Self {
     Self {
       annotation,
+      codec_hint: None,
       exact_impls: false,
     }
   }
@@ -5988,6 +6010,13 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
   infer_wasm_value_evidence(ctx, expr).map(|evidence| evidence.annotation)
 }
 
+fn infer_wasm_codec_hint(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  infer_wasm_value_evidence(ctx, expr).map(|evidence| {
+    let ty = evidence.codec_hint.unwrap_or(evidence.annotation);
+    CalcitTypeAnnotation::expand_schema_alias(&ty)
+  })
+}
+
 fn infer_wasm_value_evidence(ctx: &WasmGenCtx, expr: &Calcit) -> Option<WasmTypeEvidence> {
   infer_wasm_evidence_in_scope(ctx, expr, &ctx.local_types, &ctx.lambda_locals, &mut HashSet::new())
 }
@@ -6004,7 +6033,7 @@ fn infer_wasm_evidence_in_scope(
       crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone(),
     ));
   }
-  match expr {
+  let mut result = match expr {
     Calcit::Local(local) => local_types
       .get(local.sym.as_ref())
       .cloned()
@@ -6025,7 +6054,14 @@ fn infer_wasm_evidence_in_scope(
       // A data-shape join may discard attached implementations. Preserve a
       // call-site identity only when both live branches carry identical evidence.
       if consequent == alternative || matches!(alternative.annotation.as_ref(), CalcitTypeAnnotation::Never) {
-        Some(consequent)
+        let codec_hint = if matches!(alternative.annotation.as_ref(), CalcitTypeAnnotation::Never)
+          || consequent.codec_hint == alternative.codec_hint
+        {
+          consequent.codec_hint.clone()
+        } else {
+          None
+        };
+        Some(WasmTypeEvidence { codec_hint, ..consequent })
       } else if matches!(consequent.annotation.as_ref(), CalcitTypeAnnotation::Never) {
         Some(alternative)
       } else {
@@ -6060,6 +6096,7 @@ fn infer_wasm_evidence_in_scope(
       .and_then(|definition| resolve_struct_ref(definition).ok())
       .map(|definition| WasmTypeEvidence {
         annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(definition))),
+        codec_hint: None,
         exact_impls: true,
       }),
     Calcit::List(items) => items
@@ -6067,7 +6104,11 @@ fn infer_wasm_evidence_in_scope(
       .and_then(|head| match head {
         Calcit::Syntax(CalcitSyntax::EncodeMapAs, _) => {
           let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(items.get(2)?, &[]);
-          Some(WasmTypeEvidence::contract(infer_encoded_map_type(&target)))
+          Some(WasmTypeEvidence {
+            annotation: infer_encoded_map_type(&target),
+            codec_hint: Some(infer_encoded_codec_hint(&target)),
+            exact_impls: false,
+          })
         }
         Calcit::Method(name, MethodKind::Invoke(_)) => {
           let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, closures, visiting)?;
@@ -6106,6 +6147,7 @@ fn infer_wasm_evidence_in_scope(
               .map(|annotation| WasmTypeEvidence {
                 exact_impls: matches!(proc, CalcitProc::NativeEnumNew | CalcitProc::NativeNamedEnumNew)
                   && annotation.resolve_to_enum().is_some(),
+                codec_hint: None,
                 annotation,
               })
               .or_else(|| Some(WasmTypeEvidence::contract(signature.return_type.clone())));
@@ -6126,10 +6168,145 @@ fn infer_wasm_evidence_in_scope(
       .or_else(|| infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract)),
     Calcit::Enum(_) | Calcit::Struct(_) => infer_static_type_from_expr(expr).map(|annotation| WasmTypeEvidence {
       exact_impls: annotation.resolve_to_enum().is_some() || annotation.resolve_to_struct().is_some(),
+      codec_hint: None,
       annotation,
     }),
     _ => infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract),
+  };
+  if let Some(ref mut evidence) = result
+    && evidence.codec_hint.is_none()
+  {
+    evidence.codec_hint = infer_enum_constructor_codec_hint(ctx, expr, &evidence.annotation, local_types, closures, visiting);
   }
+  result
+}
+
+fn infer_enum_constructor_codec_hint(
+  ctx: &WasmGenCtx,
+  expr: &Calcit,
+  base_annotation: &Arc<CalcitTypeAnnotation>,
+  local_types: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
+  visiting: &mut HashSet<String>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  match expr {
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == "calcit.core" && def.as_ref() == "None" => {
+      let enum_def = base_annotation.resolve_to_enum()?;
+      Some(Arc::new(CalcitTypeAnnotation::Enum(
+        Arc::new(enum_def),
+        Arc::new(vec![crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()]),
+      )))
+    }
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew))) => {
+      let Calcit::Tag(variant_tag) = items.get(2)? else {
+        return None;
+      };
+      let enum_def = base_annotation.resolve_to_enum()?;
+      if enum_def.generics().is_empty() {
+        return None;
+      }
+      let variant = enum_def.find_variant(variant_tag)?;
+      let mut payload_hints = Vec::new();
+      let mut any_custom_codec_hint = false;
+      for payload_expr in items.iter().skip(3) {
+        let evidence = infer_wasm_evidence_in_scope(ctx, payload_expr, local_types, closures, visiting)?;
+        if evidence.codec_hint.is_some() {
+          any_custom_codec_hint = true;
+        }
+        payload_hints.push(evidence.codec_hint.unwrap_or(evidence.annotation));
+      }
+      if !any_custom_codec_hint {
+        return None;
+      }
+      let base_args: &[Arc<CalcitTypeAnnotation>] = match base_annotation.as_ref() {
+        CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args.as_slice(),
+        _ => &[],
+      };
+      let mut bindings = TypeBindings::new();
+      for (actual_ty, expected_ty) in payload_hints.into_iter().zip(variant.payload_types().iter()) {
+        match expected_ty.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) if enum_def.generics().contains(name) => {
+            bindings.insert(name.clone(), actual_ty);
+          }
+          CalcitTypeAnnotation::TypeRef(name, args) if args.is_empty() && enum_def.generics().contains(name) => {
+            bindings.insert(name.clone(), actual_ty);
+          }
+          _ => {
+            let _ = actual_ty.prove_available_bindings(expected_ty, &mut bindings);
+          }
+        }
+      }
+      let args = enum_def
+        .generics()
+        .iter()
+        .enumerate()
+        .map(|(idx, g)| {
+          bindings
+            .get(g)
+            .cloned()
+            .or_else(|| base_args.get(idx).cloned())
+            .unwrap_or_else(|| crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone())
+        })
+        .collect();
+      Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def), Arc::new(args))))
+    }
+    _ => None,
+  }
+}
+
+fn infer_encoded_struct_field_type(
+  def: &CalcitStructDef,
+  args: &[Arc<CalcitTypeAnnotation>],
+  idx: usize,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let raw_field = def.field_types.get(idx)?;
+  let substituted = if def.generics.is_empty() || args.is_empty() {
+    CalcitTypeAnnotation::expand_schema_alias(raw_field)
+  } else {
+    let bindings: TypeBindings = def
+      .generics
+      .iter()
+      .zip(args.iter())
+      .map(|(name, arg)| (name.clone(), CalcitTypeAnnotation::expand_schema_alias(arg)))
+      .collect();
+    CalcitTypeAnnotation::expand_schema_alias(&raw_field.substitute_type_vars(&bindings))
+  };
+  if let Some(enum_def) = substituted.resolve_to_enum()
+    && enum_def.name().ref_str() == "Option"
+    && let CalcitTypeAnnotation::Enum(_, opt_args) | CalcitTypeAnnotation::TypeRef(_, opt_args) = substituted.as_ref()
+    && opt_args.len() == 1
+  {
+    let inner = CalcitTypeAnnotation::expand_schema_alias(&opt_args[0]);
+    let inner_is_option = inner
+      .resolve_to_enum()
+      .is_some_and(|inner_enum| inner_enum.name().ref_str() == "Option");
+    if inner_is_option {
+      return Some(Arc::new(CalcitTypeAnnotation::Enum(
+        Arc::new(enum_def),
+        Arc::new(vec![infer_encoded_map_type(&inner)]),
+      )));
+    }
+    return Some(infer_encoded_map_type(&inner));
+  }
+  Some(infer_encoded_map_type(&substituted))
+}
+
+fn infer_encoded_struct_map_value_type(def: &CalcitStructDef, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
+  if def.field_types.is_empty() {
+    return DYNAMIC_TYPE.clone();
+  }
+  let mut common: Option<Arc<CalcitTypeAnnotation>> = None;
+  for idx in 0..def.field_types.len() {
+    let Some(field_ty) = infer_encoded_struct_field_type(def, args, idx) else {
+      return DYNAMIC_TYPE.clone();
+    };
+    match &common {
+      None => common = Some(field_ty),
+      Some(prev) if prev == &field_ty => {}
+      Some(_) => return DYNAMIC_TYPE.clone(),
+    }
+  }
+  common.unwrap_or_else(|| DYNAMIC_TYPE.clone())
 }
 
 fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
@@ -6141,9 +6318,14 @@ fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitT
     CalcitTypeAnnotation::Tuple(slots) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
       slots.iter().map(infer_encoded_map_type).collect(),
     ))),
-    CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_) => {
-      Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), DYNAMIC_TYPE.clone()))
-    }
+    CalcitTypeAnnotation::Struct(def, args) => Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      infer_encoded_struct_map_value_type(def, args),
+    )),
+    CalcitTypeAnnotation::StructValue(def) => Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      infer_encoded_struct_map_value_type(def, &[]),
+    )),
     CalcitTypeAnnotation::Enum(def, args) => {
       if def.name().ref_str() == "Option" {
         DYNAMIC_TYPE.clone()
@@ -6155,8 +6337,11 @@ fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitT
       }
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
-      if expanded.resolve_to_struct().is_some() {
-        Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), DYNAMIC_TYPE.clone()))
+      if let Some(def) = expanded.resolve_to_struct() {
+        Arc::new(CalcitTypeAnnotation::Map(
+          Arc::new(CalcitTypeAnnotation::Tag),
+          infer_encoded_struct_map_value_type(&def, args),
+        ))
       } else if let Some(def) = expanded.resolve_to_enum() {
         if def.name().ref_str() == "Option" {
           DYNAMIC_TYPE.clone()
@@ -6181,6 +6366,47 @@ fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitT
     | CalcitTypeAnnotation::Buffer
     | CalcitTypeAnnotation::CirruQuote => expanded,
     _ => DYNAMIC_TYPE.clone(),
+  }
+}
+
+fn infer_encoded_codec_hint(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(infer_encoded_codec_hint(inner))),
+    CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(infer_encoded_codec_hint(inner))),
+    CalcitTypeAnnotation::Map(k, v) => Arc::new(CalcitTypeAnnotation::Map(infer_encoded_codec_hint(k), infer_encoded_codec_hint(v))),
+    CalcitTypeAnnotation::Tuple(slots) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+      slots.iter().map(infer_encoded_codec_hint).collect(),
+    ))),
+    CalcitTypeAnnotation::Struct(def, args) => Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::StructValue(def.clone())),
+      Arc::new(CalcitTypeAnnotation::Struct(def.clone(), args.clone())),
+    )),
+    CalcitTypeAnnotation::StructValue(def) => Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::StructValue(def.clone())),
+      Arc::new(CalcitTypeAnnotation::Struct(def.clone(), Arc::new(vec![]))),
+    )),
+    CalcitTypeAnnotation::Enum(def, args) => Arc::new(CalcitTypeAnnotation::Enum(
+      def.clone(),
+      Arc::new(args.iter().map(infer_encoded_codec_hint).collect()),
+    )),
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if let Some(def) = expanded.resolve_to_struct() {
+        let def = Arc::new(def);
+        Arc::new(CalcitTypeAnnotation::Map(
+          Arc::new(CalcitTypeAnnotation::StructValue(def.clone())),
+          Arc::new(CalcitTypeAnnotation::Struct(def, args.clone())),
+        ))
+      } else if let Some(def) = expanded.resolve_to_enum() {
+        Arc::new(CalcitTypeAnnotation::Enum(
+          Arc::new(def),
+          Arc::new(args.iter().map(infer_encoded_codec_hint).collect()),
+        ))
+      } else {
+        DYNAMIC_TYPE.clone()
+      }
+    }
+    _ => infer_encoded_map_type(&expanded),
   }
 }
 
@@ -12057,12 +12283,25 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
 fn expr_uses_wasi_file(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_file),
-    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText | CalcitProc::NativeFsReadDir) => true,
+    Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
-      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text" | "fs-path:read-dir")
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
     }
     Calcit::Method(name, MethodKind::Invoke(receiver)) => {
-      matches!(name.as_ref(), "read-text" | "write-text!" | "read-dir")
+      matches!(name.as_ref(), "read-text" | "write-text!")
+        && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
+    }
+    _ => false,
+  }
+}
+
+fn expr_uses_wasi_read_dir(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(xs) => xs.iter().any(expr_uses_wasi_read_dir),
+    Calcit::Proc(CalcitProc::NativeFsReadDir) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "fs-path:read-dir",
+    Calcit::Method(name, MethodKind::Invoke(receiver)) => {
+      name.as_ref() == "read-dir"
         && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
     }
     _ => false,
@@ -12072,9 +12311,9 @@ fn expr_uses_wasi_file(expr: &Calcit) -> bool {
 fn expr_uses_wasi_clocks(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_clocks),
-    Calcit::Proc(CalcitProc::UnixTimeMs | CalcitProc::MonotonicTimeMs | CalcitProc::NativeWaitMs) => true,
+    Calcit::Proc(CalcitProc::UnixTimeMs | CalcitProc::MonotonicTimeMs) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
-      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "unix-time-ms" | "monotonic-time-ms" | "wait-ms")
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "unix-time-ms" | "monotonic-time-ms")
     }
     _ => false,
   }
@@ -12179,9 +12418,7 @@ fn wasi_component_stdin_imports() -> Vec<HostImport> {
   .collect()
 }
 
-fn wasi_component_file_imports() -> Vec<HostImport> {
-  // Keep descriptors, streams, and futures below the FsPath Result boundary.
-  // WIT counts the write stream as slot 0, so its returned future is slot 1.
+fn wasi_component_fs_common_imports() -> Vec<HostImport> {
   vec![
     HostImport {
       module: "wasi:filesystem/preopens@0.3.1".into(),
@@ -12201,6 +12438,14 @@ fn wasi_component_file_imports() -> Vec<HostImport> {
       params: vec![ValType::I32, ValType::I32],
       results: vec![ValType::I32],
     },
+  ]
+}
+
+fn wasi_component_file_imports() -> Vec<HostImport> {
+  // Keep descriptors, streams, and futures below the FsPath Result boundary.
+  // WIT counts the write stream as slot 0, so its returned future is slot 1.
+  let mut imports = wasi_component_fs_common_imports();
+  imports.extend([
     HostImport {
       module: "wasi:filesystem/types@0.3.1".into(),
       name: "[method]descriptor.read-via-stream".into(),
@@ -12267,6 +12512,12 @@ fn wasi_component_file_imports() -> Vec<HostImport> {
       params: vec![ValType::I32],
       results: vec![],
     },
+  ]);
+  imports
+}
+
+fn wasi_component_read_dir_imports() -> Vec<HostImport> {
+  vec![
     HostImport {
       module: "wasi:filesystem/types@0.3.1".into(),
       name: "[method]descriptor.read-directory".into(),
@@ -12301,6 +12552,63 @@ fn wasi_component_file_imports() -> Vec<HostImport> {
 }
 
 #[cfg(test)]
+fn tests_option_enum_def_for_codec() -> Arc<CalcitEnumDef> {
+  let prototype = crate::wasm::host::calcit::CalcitStructValue {
+    struct_ref: Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
+      definition_ref: Some(Arc::from("calcit.core/Option")),
+      name: cirru_edn::EdnTag::new("Option"),
+      fields: Arc::new(vec![cirru_edn::EdnTag::new("none"), cirru_edn::EdnTag::new("some")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone(); 2]),
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    }),
+    values: Arc::new(vec![
+      Calcit::from(vec![]),
+      Calcit::from(vec![CalcitTypeAnnotation::TypeVar(Arc::from("T")).to_calcit()]),
+    ]),
+  };
+  Arc::new(CalcitEnumDef::from_struct(prototype).expect("valid test Option enum"))
+}
+
+#[cfg(test)]
+fn tests_flag_enum_def_with_none() -> Arc<CalcitEnumDef> {
+  let prototype = crate::wasm::host::calcit::CalcitStructValue {
+    struct_ref: Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
+      definition_ref: Some(Arc::from("app.main/Flag")),
+      name: cirru_edn::EdnTag::new("Flag"),
+      fields: Arc::new(vec![cirru_edn::EdnTag::new("none")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    }),
+    values: Arc::new(vec![Calcit::from(vec![])]),
+  };
+  Arc::new(CalcitEnumDef::from_struct(prototype).expect("valid test Flag enum"))
+}
+
+#[cfg(test)]
+fn tests_state_enum_def_for_codec() -> Arc<CalcitEnumDef> {
+  let prototype = crate::wasm::host::calcit::CalcitStructValue {
+    struct_ref: Arc::new(CalcitStructDef {
+      field_defaults: Default::default(),
+      definition_ref: Some(Arc::from("app.main/State")),
+      name: cirru_edn::EdnTag::new("State"),
+      fields: Arc::new(vec![cirru_edn::EdnTag::new("ready")]),
+      field_types: Arc::new(vec![DYNAMIC_TYPE.clone()]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    }),
+    values: Arc::new(vec![Calcit::from(vec![])]),
+  };
+  Arc::new(CalcitEnumDef::from_struct(prototype).expect("valid test State enum"))
+}
+
+#[cfg(test)]
 mod tests {
   use std::collections::{BTreeMap, HashMap};
   use std::fs;
@@ -12318,10 +12626,11 @@ mod tests {
     build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
     call_indirect, component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature,
     component_memory_layout, component_task_return_signature, emit_call_expr, emit_call_spread, emit_call_spread_args_as_regular,
-    emit_inline_closure_call, emit_proc_call, emit_recur_loop, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
-    mem_arg_f64, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence,
-    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    emit_inline_closure_call, emit_proc_call, emit_recur_loop, expr_uses_wasi_clocks, expr_uses_wasi_file, expr_uses_wasi_read_dir,
+    expr_uses_wasi_wait, host_imports_for_target, index_host_imports, mem_arg_f64, must_reject_extraction_failure,
+    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence, wasi_component_file_imports,
+    wasi_component_read_dir_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::wasm::host::calcit::{
     Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitNumericRefinement,
@@ -12387,10 +12696,12 @@ mod tests {
     });
     let expected = WasmTypeEvidence {
       annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left))),
+      codec_hint: None,
       exact_impls: true,
     };
     let changed = WasmTypeEvidence {
       annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right))),
+      codec_hint: None,
       exact_impls: true,
     };
     assert!(
@@ -12477,6 +12788,7 @@ mod tests {
           name.clone(),
           WasmTypeEvidence {
             annotation: annotation.clone(),
+            codec_hint: None,
             exact_impls: true,
           },
         );
@@ -13256,13 +13568,20 @@ mod tests {
     );
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
-    assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadDir)));
-    assert!(expr_uses_wasi_file(&directory));
+    assert!(!expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadDir)));
+    assert!(!expr_uses_wasi_file(&directory));
+    assert!(expr_uses_wasi_read_dir(&Calcit::Proc(CalcitProc::NativeFsReadDir)));
+    assert!(expr_uses_wasi_read_dir(&directory));
+    assert!(!expr_uses_wasi_clocks(&Calcit::Proc(CalcitProc::NativeWaitMs)));
+    assert!(expr_uses_wasi_wait(&Calcit::Proc(CalcitProc::NativeWaitMs)));
+    assert!(expr_uses_wasi_clocks(&Calcit::Proc(CalcitProc::UnixTimeMs)));
+    assert!(expr_uses_wasi_clocks(&Calcit::Proc(CalcitProc::MonotonicTimeMs)));
   }
 
   #[test]
   fn wasi_03_filesystem_preopen_imports_match_pinned_command_wit() {
-    let imports = wasi_component_file_imports();
+    let mut imports = wasi_component_file_imports();
+    imports.extend(wasi_component_read_dir_imports());
     let fns = vec![
       CompiledFn {
         export_name: Some("cabi_realloc".into()),
