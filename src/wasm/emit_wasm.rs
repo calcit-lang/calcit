@@ -5914,6 +5914,15 @@ fn infer_wasm_evidence_in_scope(
       .or_else(|| Some(WasmTypeEvidence::contract(local.type_info.clone()))),
     Calcit::Symbol { sym, .. } if local_types.contains_key(sym.as_ref()) => local_types.get(sym.as_ref()).cloned(),
     Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) => {
+      if let Some(taken) =
+        static_predicate_condition_outcome_in_scope(ctx, items.get(1)?, false, local_types, closures, &HashMap::new())
+      {
+        return if taken {
+          infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, closures, visiting)
+        } else {
+          infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, closures, visiting)
+        };
+      }
       let consequent = infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, closures, visiting)?;
       let alternative = infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, closures, visiting)?;
       // A data-shape join may discard attached implementations. Preserve a
@@ -6044,13 +6053,17 @@ fn replace_unbound_type_vars_with_never(annotation: &Arc<CalcitTypeAnnotation>) 
 
 fn infer_inline_closure_result(
   ctx: &WasmGenCtx,
-  closure: &InlineClosure,
+  closure: &Arc<InlineClosure>,
   args: &[Calcit],
   local_types: &HashMap<String, WasmTypeEvidence>,
   closures: &HashMap<String, Arc<InlineClosure>>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
-  if closure.rest || args.len() != closure.params.len() {
+  if closure.rest || args.len() != closure.params.len() || visiting.len() >= 16 {
+    return None;
+  }
+  let visit_key = format!("inline-closure:{:p}", Arc::as_ptr(closure));
+  if !visiting.insert(visit_key.clone()) {
     return None;
   }
   let mut body_types = closure.captured_local_types.clone();
@@ -6071,8 +6084,11 @@ fn infer_inline_closure_result(
     .iter()
     .filter(|expr| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(expr))
     .collect::<Vec<_>>();
-  let tail = executable.last()?;
-  infer_wasm_evidence_in_scope(ctx, tail, &body_types, &body_closures, visiting)
+  let result = executable
+    .last()
+    .and_then(|tail| infer_wasm_evidence_in_scope(ctx, tail, &body_types, &body_closures, visiting));
+  visiting.remove(&visit_key);
+  result
 }
 
 fn infer_param_call_arity(param_name: &str, exprs: &[Calcit]) -> Option<usize> {
@@ -10739,8 +10755,31 @@ fn emit_i32_operand(ctx: &mut WasmGenCtx, arg: &Calcit) -> Result<(), String> {
 }
 
 fn static_predicate_condition_outcome(ctx: &WasmGenCtx, condition: &Calcit, allow_bool_leaf: bool) -> Option<bool> {
-  if allow_bool_leaf && let Calcit::Bool(b) = condition {
-    return Some(*b);
+  static_predicate_condition_outcome_in_scope(
+    ctx,
+    condition,
+    allow_bool_leaf,
+    &ctx.local_types,
+    &ctx.lambda_locals,
+    &HashMap::new(),
+  )
+}
+
+fn static_predicate_condition_outcome_in_scope(
+  ctx: &WasmGenCtx,
+  condition: &Calcit,
+  allow_bool_leaf: bool,
+  local_types: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
+  bound_bools: &HashMap<String, Option<bool>>,
+) -> Option<bool> {
+  if allow_bool_leaf {
+    match condition {
+      Calcit::Bool(b) => return Some(*b),
+      Calcit::Local(local) => return bound_bools.get(local.sym.as_ref()).copied().flatten(),
+      Calcit::Symbol { sym, .. } => return bound_bools.get(sym.as_ref()).copied().flatten(),
+      _ => {}
+    }
   }
   let Calcit::List(items) = condition else {
     return None;
@@ -10751,7 +10790,7 @@ fn static_predicate_condition_outcome(ctx: &WasmGenCtx, condition: &Calcit, allo
     && let Some(Calcit::List(pair)) = items.get(1)
   {
     if pair.is_empty() {
-      return static_predicate_condition_outcome(ctx, &items[2], allow_bool_leaf);
+      return static_predicate_condition_outcome_in_scope(ctx, &items[2], allow_bool_leaf, local_types, closures, bound_bools);
     }
     if pair.len() == 2 {
       let bound_sym = match &pair[0] {
@@ -10759,38 +10798,29 @@ fn static_predicate_condition_outcome(ctx: &WasmGenCtx, condition: &Calcit, allo
         Calcit::Symbol { sym, .. } => sym.as_ref(),
         _ => return None,
       };
-      let is_bound_ref = |node: &Calcit| match node {
-        Calcit::Local(local) => local.sym.as_ref() == bound_sym,
-        Calcit::Symbol { sym, .. } => sym.as_ref() == bound_sym,
-        _ => false,
-      };
-      if is_bound_ref(&items[2]) {
-        return static_predicate_condition_outcome(ctx, &pair[1], allow_bool_leaf);
+      let rhs_evidence = infer_wasm_evidence_in_scope(ctx, &pair[1], local_types, closures, &mut HashSet::new())
+        .unwrap_or_else(|| WasmTypeEvidence::contract(DYNAMIC_TYPE.clone()));
+      let rhs_bool = static_predicate_condition_outcome_in_scope(ctx, &pair[1], true, local_types, closures, bound_bools);
+      let mut body_types = local_types.clone();
+      body_types.insert(bound_sym.to_owned(), rhs_evidence);
+      let mut body_closures = closures.clone();
+      if let Some(closure) = resolve_inline_closure_in_scope(ctx, &pair[1], local_types, closures) {
+        body_closures.insert(bound_sym.to_owned(), closure);
+      } else {
+        body_closures.remove(bound_sym);
       }
-      if let Calcit::List(if_items) = &items[2]
-        && matches!(if_items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _)))
-        && (3..=4).contains(&if_items.len())
-        && is_bound_ref(&if_items[1])
-        && is_bound_ref(&if_items[2])
-      {
-        let init_val = static_predicate_condition_outcome(ctx, &pair[1], true)?;
-        return if init_val {
-          Some(true)
-        } else if let Some(alt) = if_items.get(3) {
-          static_predicate_condition_outcome(ctx, alt, true)
-        } else {
-          Some(false)
-        };
-      }
+      let mut body_bools = bound_bools.clone();
+      body_bools.insert(bound_sym.to_owned(), rhs_bool);
+      return static_predicate_condition_outcome_in_scope(ctx, &items[2], allow_bool_leaf, &body_types, &body_closures, &body_bools);
     }
     return None;
   }
   if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) && (3..=4).contains(&items.len()) {
-    let cond_val = static_predicate_condition_outcome(ctx, items.get(1)?, true)?;
+    let cond_val = static_predicate_condition_outcome_in_scope(ctx, items.get(1)?, true, local_types, closures, bound_bools)?;
     return if cond_val {
-      static_predicate_condition_outcome(ctx, items.get(2)?, true)
+      static_predicate_condition_outcome_in_scope(ctx, items.get(2)?, true, local_types, closures, bound_bools)
     } else if let Some(alt) = items.get(3) {
-      static_predicate_condition_outcome(ctx, alt, true)
+      static_predicate_condition_outcome_in_scope(ctx, alt, true, local_types, closures, bound_bools)
     } else {
       Some(false)
     };
@@ -10803,23 +10833,26 @@ fn static_predicate_condition_outcome(ctx: &WasmGenCtx, condition: &Calcit, allo
     Calcit::Import(import) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => import.def.parse::<CalcitProc>().ok(),
     Calcit::Symbol { sym, info, .. }
       if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && !local_types.contains_key(sym.as_ref())
         && !ctx.locals.contains_key(sym.as_ref())
-        && !ctx.lambda_locals.contains_key(sym.as_ref()) =>
+        && !closures.contains_key(sym.as_ref()) =>
     {
       sym.parse::<CalcitProc>().ok()
     }
     _ => None,
   }?;
   if proc == CalcitProc::Not {
-    return static_predicate_condition_outcome(ctx, items.get(1)?, true).map(|b| !b);
+    return static_predicate_condition_outcome_in_scope(ctx, items.get(1)?, true, local_types, closures, bound_bools).map(|b| !b);
   }
   let operand = items.get(1)?;
   if matches!(proc, CalcitProc::FnQuestion)
-    && (resolve_inline_closure(ctx, operand).is_some() || resolve_known_function_value(ctx, operand).is_some())
+    && (resolve_inline_closure_in_scope(ctx, operand, local_types, closures).is_some()
+      || resolve_known_function_value(ctx, operand).is_some())
   {
     return Some(true);
   }
-  let ty = infer_wasm_static_type(ctx, operand).map(|t| CalcitTypeAnnotation::expand_schema_alias(&t))?;
+  let ty = infer_wasm_evidence_in_scope(ctx, operand, local_types, closures, &mut HashSet::new())
+    .map(|ev| CalcitTypeAnnotation::expand_schema_alias(&ev.annotation))?;
   if nil_type_evidence_is_open(&ty) || matches!(ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_)) {
     return None;
   }
@@ -15012,6 +15045,52 @@ mod tests {
     assert_eq!(
       super::static_predicate_condition_outcome(&ctx, &and_expanded_let, false),
       Some(true)
+    );
+
+    ctx
+      .local_types
+      .insert("v".into(), WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Nil)));
+    let shadowed_or_let = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+      Calcit::from(vec![
+        local_node("v"),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::NilQuestion), Calcit::Number(1.0)]),
+      ]),
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+        local_node("v"),
+        local_node("v"),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::NilQuestion), local_node("v")]),
+      ]),
+    ]);
+    assert_eq!(
+      super::static_predicate_condition_outcome(&ctx, &shadowed_or_let, false),
+      Some(false)
+    );
+
+    let self_apply = make_closure(&["f"], Calcit::from(vec![local_node("f"), local_node("f")]), HashMap::new());
+    ctx.lambda_locals.insert("self_apply".into(), self_apply);
+    let recursive_call = Calcit::from(vec![local_node("self_apply"), local_node("self_apply")]);
+    assert_eq!(
+      super::infer_wasm_static_type(&ctx, &recursive_call).as_deref(),
+      Some(&CalcitTypeAnnotation::Dynamic)
+    );
+
+    let guarded_self_apply = make_closure(
+      &["f"],
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::NumberQuestion), Calcit::Number(1.0)]),
+        Calcit::Number(1.0),
+        Calcit::from(vec![local_node("f"), local_node("f")]),
+      ]),
+      HashMap::new(),
+    );
+    ctx.lambda_locals.insert("guarded_self_apply".into(), guarded_self_apply);
+    let guarded_call = Calcit::from(vec![local_node("guarded_self_apply"), local_node("guarded_self_apply")]);
+    assert_eq!(
+      super::infer_wasm_static_type(&ctx, &guarded_call).as_deref(),
+      Some(&CalcitTypeAnnotation::Number)
     );
   }
 }
