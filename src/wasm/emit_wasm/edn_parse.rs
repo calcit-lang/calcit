@@ -3738,12 +3738,13 @@ mod tests {
     assert!(dag_err.starts_with("E_WASM_EDN_DEPTH:"), "{dag_err}");
 
     let wide_fields = (0..512).map(|idx| (EdnTag::new(format!("f{idx}")), 1)).collect::<Vec<_>>();
+    let number_field = Arc::new(CalcitTypeAnnotation::Number);
     let wide_struct = Arc::new(CalcitStructDef {
       field_defaults: Default::default(),
       definition_ref: Some(Arc::from("app.main/Wide512")),
       name: EdnTag::new("Wide512"),
       fields: Arc::new(wide_fields.iter().map(|(tag, _)| tag.clone()).collect()),
-      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number); 512]),
+      field_types: Arc::new(vec![number_field; 512]),
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       impls: vec![],
