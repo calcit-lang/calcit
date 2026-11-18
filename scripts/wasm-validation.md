@@ -114,7 +114,7 @@ calcit wasi tests/fixtures/wasi-command-03.cirru --emit-path target/wasi-doc-com
 wasmtime run -S p3 -W component-model-more-async-builtins=y -W component-model-async-stackful=y target/wasi-doc-component/program.wasm
 ```
 
-如果确实需要尚未迁移到 Component 的宿主能力，显式选择 Preview 1，不把它当作默认推荐：
+如果需要验证传统 Preview 1 `_start` 宿主兼容路径，可显式选择 `--boundary native`（不作为默认推荐）：
 
 ```bash
 calcit wasi calcit/test-wasi-command.cirru --boundary native --emit-path target/wasi-doc-native
@@ -142,12 +142,12 @@ yarn try-wasm
 公开命令名称明确区分两种宿主契约：
 
 - `calcit wasm` 默认 core boundary，供浏览器或嵌入式宿主提供已有的 `math`、`io` imports。通用 `--boundary component` 是供工具包装的 core adapter，不是默认 WASI command。
-- `calcit wasi` 默认 WASI 0.3.1 command Component；init 必须零参数并显式返回 Unit。支持标准流、参数/环境、`quit!`、`read-stdin-text` 以及 `FsPath .read-text` / `.write-text!`，不等同于所有宿主能力均可用。
-- `calcit wasi --boundary native` 才是带 `_start` 的 Preview 1 command。时钟、等待、安全随机数和 `.read-dir` 等尚未迁移的能力仍需此显式边界，不能在默认 Component 路径静默回退。
+- `calcit wasi` 默认 WASI 0.3.1 command Component；init 必须零参数并显式返回 Unit。支持标准流、参数/环境、`quit!`、`read-stdin-text`、时钟（`unix-time-ms` / `monotonic-time-ms`）、`wait-ms`、`secure-random-bytes` 以及 `FsPath .read-text` / `.write-text!` / `.read-dir`，不等同于所有宿主能力均可用。
+- `calcit wasi --boundary native` 是带 `_start` 的 Preview 1 command 兼容边界；仅在 Component 实现的能力（如 `read-stdin-text`）在此边界按 `E_WASI_COMMAND_CAPABILITY` 明确拒绝，两个边界之间不会静默回退。
 
 command init definition 正常返回时状态为 `0`；`quit!` 接受 `0..255` 的整数，映射到所选协议的退出操作（Preview 1 为 `proc_exit`）。该限制与原生、JavaScript 后端一致，避免宿主各自执行隐式饱和或取模。
 
-WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。通用目标校验使用 `E_WASM_CAPABILITY` / `E_WASM_TARGET`；WASI 0.3 command 另明确拒绝尚未迁移的能力（`E_WASI_COMMAND_CAPABILITY`）、无法证明的间接调用（`E_WASI_COMMAND_INDIRECT`）及通用 export（`E_WASI_COMMAND_EXPORT`）。这些诊断是目标证据，不是增加一套表层语言规则；Preview 1 的 ABI 名称也不会成为 Calcit 源码 API。
+WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。通用目标校验使用 `E_WASM_CAPABILITY` / `E_WASM_TARGET`；WASI 0.3 command 另明确拒绝边界不匹配或缺少对应 WASI 0.3 效应入口的能力（`E_WASI_COMMAND_CAPABILITY`）、可达但无法为当前目标编译的依赖定义如 `.walk-dir`（`E_WASI_COMMAND_DEPENDENCY`，内含底层 `E_WASM_CAPABILITY` 原因）、无法证明的间接调用（`E_WASI_COMMAND_INDIRECT`）及通用 export（`E_WASI_COMMAND_EXPORT`）。这些诊断是目标证据，不是增加一套表层语言规则；Preview 1 的 ABI 名称也不会成为 Calcit 源码 API。
 
 ## 声明式 WASM FFI
 

@@ -104,6 +104,10 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   fs::write(host.path().join("limit.txt"), vec![b'a'; 4 * 1024 * 1024]).expect("boundary-size input");
   fs::write(host.path().join("written.txt"), "stale content").expect("preexisting output file");
   fs::write(host.path().join("oversized-output.txt"), "sentinel").expect("preexisting oversized target");
+  let listing = host.path().join("listing");
+  fs::create_dir(&listing).expect("listing directory");
+  fs::write(listing.join("子.txt"), "child").expect("utf8 child file");
+  fs::write(listing.join("a.txt"), "alpha").expect("ascii child file");
   let outside = tempfile::tempdir().expect("outside directory");
   fs::write(outside.path().join("secret.txt"), "not authorized").expect("outside file");
   std::os::unix::fs::symlink(outside.path(), host.path().join("escape")).expect("escape symlink");
@@ -162,6 +166,7 @@ fn calcit_fs_path_read_text_runs_with_real_wasi_03_preopen() {
   for (entry, marker) in [
     ("app.main/main-read-loop!", "Read-loop-ok"),
     ("app.main/main-growth-loop!", "Growth-ok"),
+    ("app.main/main-capabilities!", "Capabilities-ok"),
   ] {
     let output = tempfile::tempdir().expect("loop Component output directory");
     let compiled = calcit(
@@ -490,8 +495,8 @@ fn component_file_capabilities_check_only_without_writing_an_artifact() {
   assert!(!output.path().join("program.wasm").exists());
 
   for (entry, diagnostic) in [
-    ("app.main/main-unsupported!", "E_WASI_COMMAND_CAPABILITY"),
-    ("app.main/main-unsupported-alias!", "E_WASI_COMMAND_CAPABILITY"),
+    ("app.main/main-unsupported!", "E_WASI_COMMAND_DEPENDENCY"),
+    ("app.main/main-unsupported-alias!", "E_WASI_COMMAND_DEPENDENCY"),
     ("app.main/main-unknown-alias!", "E_WASI_COMMAND_INDIRECT"),
   ] {
     let checked = calcit(

@@ -394,7 +394,9 @@ const runWasi = (tests) => runMarked("wasi", tests, {
   },
   execute: (_built, { output }) => spawnSync(process.env.WASMTIME_CLI, [
     "run", "-S", "p3", "-W", "component-model-async-stackful=y",
-    "-W", "component-model-more-async-builtins=y", join(output, "program.wasm"),
+    "-W", "component-model-more-async-builtins=y",
+    "--dir", "tests/fixtures::tests/fixtures",
+    join(output, "program.wasm"),
   ], execOptions),
 });
 

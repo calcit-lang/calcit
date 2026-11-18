@@ -7910,7 +7910,7 @@
                 assert= false $ empty? $ [] 1
               :tags $ #{} :core :unit
         'encode-map-as $ %{} 'CodeEntry
-          :doc "||Encode a typed value into the open data shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`. Syntax: (encode-map-as value TypeExpr). Structs become tag-keyed maps; an `Option :some x` struct field stores `x` and an `Option :none` field is left out. Enum values keep their nominal form with encoded payloads; lists, tuples, sets, maps and union members are encoded by their declared shape. The value must already have the declared type: a known mismatch is rejected during preprocessing with E_ENCODE_MAP_AS_TYPE_MISMATCH, and a union whose members share one map shape fails at runtime instead of encoding ambiguously. Use `format-cirru-edn` or `to-js-data` on the result to write it out. Native and JavaScript support this syntax; WASM does not."
+          :doc "||Encode a typed value into the open data shape that `decode-map-as` reads back, so `decode-map-as (encode-map-as x T) T` equals `x`. Syntax: (encode-map-as value TypeExpr). Structs become tag-keyed maps; an `Option :some x` struct field stores `x` and an `Option :none` field is left out. Enum values keep their nominal form with encoded payloads; lists, tuples, sets, maps and union members are encoded by their declared shape. The value must already have the declared type: a known mismatch is rejected during preprocessing with E_ENCODE_MAP_AS_TYPE_MISMATCH; in native and JavaScript, a union whose members share one map shape fails at runtime instead of encoding ambiguously, while WASM and WASI reject `Union`, `Ref`, `Symbol`, `Buffer`, and `CirruQuote` shape nodes during compilation with E_WASM_EDN_SHAPE before evaluating the value. Use `format-cirru-edn` or `to-js-data` on the result to write it out."
           :code $ quote $ def encode-map-as &runtime-implementation
           :examples $ [] $ quote
             assert=
@@ -7965,6 +7965,18 @@
                       {} $ :kind :nested
                     encode-map-as rows $ List RuntimeMapMeta
                   assert= None $ encode-map-as None $ Option RuntimeMapMeta
+                  assert= 7 $ encode-map-as (Some 7) $ Option Number
+                  assert= (Some 7) $ decode-map-as
+                    encode-map-as (Some 7) $ Option Number
+                    Option Number
+                  assert= (Some None) $ encode-map-as (Some None) $ Option Dynamic
+                  assert= (Some None) $ decode-map-as
+                    encode-map-as (Some None) $ Option Dynamic
+                    Option Dynamic
+                  assert= 7 $ encode-map-as (Some 7) $ Option Dynamic
+                  assert= (Some 7) $ decode-map-as
+                    encode-map-as (Some 7) $ Option Dynamic
+                    Option Dynamic
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"

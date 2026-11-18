@@ -71,17 +71,17 @@ no-op or fabricated success value.
 | --- | --- | --- | --- | --- | --- |
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
-| Current Unix time in milliseconds | yes | `Date.now()` | `Date.now()` | WASI Preview 1 realtime clock; Component 待实现；core WASM unavailable | `unix-time-ms` |
-| Monotonic milliseconds for elapsed-time measurement | yes | `process.uptime()` | `performance.now()` | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `monotonic-time-ms`（只比较同一进程内两次调用的差值） |
-| 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；Component 待实现；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
+| Current Unix time in milliseconds | yes | `Date.now()` | `Date.now()` | WASI 0.3 Component `wasi:clocks/system-clock` 与 Preview 1 realtime clock；core WASM unavailable | `unix-time-ms` |
+| Monotonic milliseconds for elapsed-time measurement | yes | `process.uptime()` | `performance.now()` | WASI 0.3 Component `wasi:clocks/monotonic-clock` 与 Preview 1 monotonic clock；core WASM unavailable | `monotonic-time-ms`（只比较同一进程内两次调用的差值） |
+| 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI 0.3 Component `monotonic-clock#wait-for` 与 Preview 1 `poll_oneoff`；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text!` | yes | host injection | browser `localStorage` adapter | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods；旧 `.write-text` 暂留兼容 |
-| `FsPath .read-dir` | yes | host injection | unavailable | WASI Preview 1 preopen；Component 待实现；core WASM unavailable | `FsPath` Result-returning methods |
+| `FsPath .read-dir` | yes | host injection | unavailable | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
 | `FsPath .walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
 | Repeating timer and timezone/date | `calcit.std` native module | Node adapter | browser adapter | unavailable | typed timer/date APIs in `calcit.std` |
 | Glob | focused native module | Node adapter | unavailable | unavailable | focused glob module; do not infer browser support |
-| 安全随机字节 | 系统 CSPRNG | Web Crypto | Web Crypto | WASI Preview 1 `random_get`；Component 待实现；core WASM unavailable | `secure-random-bytes`，返回 `Result<Buffer,String>` |
+| 安全随机字节 | 系统 CSPRNG | Web Crypto | Web Crypto | WASI 0.3 Component `wasi:random/random#get-random-bytes` 与 Preview 1 `random_get`；core WASM unavailable | `secure-random-bytes`，返回 `Result<Buffer,String>` |
 | 其他密码学能力 | focused native module | Node adapter | browser crypto adapter | unavailable | focused crypto module or host adapter |
 | HTTP fetch | `calcit-fetch` native module | Node adapter | browser adapter | unavailable | typed task/response APIs in `calcit-fetch` or a host adapter |
 | HTTP and WebSocket servers | `calcit-http` / `calcit-wss` native modules | Node adapter | unavailable | unavailable | typed server/request/response capabilities in focused modules |
@@ -101,25 +101,28 @@ The matrix records what exists today, not an entitlement for every backend.
   `try-read-dir` 暂作兼容入口，raw raising procedures 只供底层边界使用。
 - 文件系统：WASI command 的 `.read-text` / `.write-text!` / `.read-dir` 只解析 host 显式授予的
   preopen，选择最长 guest 路径前缀，并拒绝绝对路径、`..` 越界、非法 UTF-8 与
-  无法推进的 partial I/O。`.read-dir` 通过 cookie 分页枚举即时子项、过滤 `.` 与
-  `..` 并按完整 guest path 排序；descriptor 生命周期完全留在 adapter 内部。
-  递归 `.walk-dir` 仍保持 unavailable。
+  无法推进的 partial I/O。WASI 0.3 Component 通过 `descriptor.read-directory` 流枚举子项，
+  Preview 1 通过 cookie 分页枚举即时子项，均过滤 `.` 与 `..` 并按完整 guest path 排序；
+  descriptor 生命周期完全留在 adapter 内部。递归 `.walk-dir` 仍保持 unavailable。
 - 时钟：`unix-time-ms` 返回 Unix epoch 以来的系统时间；`monotonic-time-ms` 用于测量
-  经过时间，其绝对起点没有跨宿主语义。WASI command 通过 Preview 1
-  `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。
+  经过时间，其绝对起点没有跨宿主语义。WASI command 在默认 0.3 Component 边界使用
+  `wasi:clocks/system-clock#now` 与 `wasi:clocks/monotonic-clock#now`，在 Preview 1
+  边界通过 `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。
   更高层的日期、时区行为仍属于 `calcit.std`。
 - 同步等待：`wait-ms` 接收 `0..4294967295` 范围内的整数毫秒，返回
   `Result<Unit,String>`。零值立即成功且不触发宿主调用；小数、负数、溢出和宿主失败
   都进入错误分支，不做隐式舍入。Native 阻塞当前线程，生成的 JavaScript 优先使用
   host injection、否则尝试 `Atomics.wait`；同步 injection 不得返回 Promise/thenable，异步结果会立即转为错误，
-  不能先报告成功再丢失稍后的 rejection。WASI command 通过 Preview 1 `poll_oneoff`
+  不能先报告成功再丢失稍后的 rejection。WASI command 在默认 0.3 Component 边界使用
+  `wasi:clocks/monotonic-clock#[async-lower]wait-for`，在 Preview 1 边界通过 `poll_oneoff`
   使用相对单调时钟；core WASM 明确拒绝。异步 callback API `timeout-call` 保持独立。
   `async-sleep` 是 fire-and-forget 的兼容任务，单位和生命周期也不同，因此 migration/fix
   不得把这两个旧入口自动改写成 `wait-ms`。类型驱动工具只能报告语义差异并给出两个候选方向：
   需要阻塞顺序时由用户显式改成 `wait-ms`，需要异步调度时保留 callback/task API。
 - 安全随机数：`secure-random-bytes` 接收 `0..65536` 范围内的整数长度，返回
   `Result<Buffer,String>`。Native 使用系统 CSPRNG，生成的 JavaScript 使用 Web
-  Crypto，WASI command 使用 Preview 1 `random_get`；core WASM 会明确拒绝该宿主能力。
+  Crypto，WASI command 在默认 0.3 Component 边界使用 `wasi:random/random#get-random-bytes`、
+  在 Preview 1 边界使用 `random_get`；core WASM 会明确拒绝该宿主能力。
   随机数到领域值的编码、抽样和密码学协议仍放在 Calcit library 或专用模块中。
 - Native async/resource values: expose `FfiTask`, `FfiResponse`, and other
   nominal capabilities through methods. Keep raw `&ffi-*`, handles, status

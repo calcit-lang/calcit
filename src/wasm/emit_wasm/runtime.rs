@@ -76,6 +76,22 @@ pub(super) struct WasiComponentWriteImports {
   pub(super) realloc: u32,
 }
 
+pub(super) struct WasiComponentReadDirImports {
+  pub(super) open: u32,
+  pub(super) read_directory: u32,
+  pub(super) stream_read: u32,
+  pub(super) stream_drop: u32,
+  pub(super) future_read: u32,
+  pub(super) future_drop: u32,
+  pub(super) descriptor_drop: u32,
+  pub(super) utf8_valid: u32,
+  pub(super) str_compare: u32,
+  pub(super) free: u32,
+  pub(super) realloc: u32,
+  pub(super) list_tag: i32,
+  pub(super) string_tag: i32,
+}
+
 /// List of host-imported functions.
 /// These are provided by the selected host and indexed before user functions.
 static CORE_HOST_IMPORTS: LazyLock<Vec<HostImport>> = LazyLock::new(|| {
@@ -1968,6 +1984,850 @@ pub(super) fn build_wasi_component_write_bytes_fn(
     b.emit(instruction);
   }
   b.finish(vec![ValType::I32; 2], vec![ValType::I32])
+}
+
+/// Read a bounded WASI 0.3 directory into a sorted list of Calcit String pointers.
+/// Returns zero on validation, authority, UTF-8, capacity, or host failures.
+pub(super) fn build_wasi_component_read_dir_fn(
+  imports: WasiComponentReadDirImports,
+  canonical: &ComponentAsyncCanonicalImports,
+) -> CompiledFn {
+  let WasiComponentReadDirImports {
+    open: open_idx,
+    read_directory: read_directory_idx,
+    stream_read: stream_read_idx,
+    stream_drop: stream_drop_idx,
+    future_read: future_read_idx,
+    future_drop: future_drop_idx,
+    descriptor_drop: descriptor_drop_idx,
+    utf8_valid: utf8_valid_idx,
+    str_compare: str_compare_idx,
+    free: free_idx,
+    realloc: realloc_idx,
+    list_tag,
+    string_tag,
+  } = imports;
+  const BATCH_ENTRIES: i32 = 16;
+  const BATCH_BYTES: i32 = BATCH_ENTRIES * 24;
+  let mut b = RuntimeFnBuilder::new(1);
+  let path_len = b.alloc_i32();
+  let separator_len = b.alloc_i32();
+  let opened = b.alloc_i32();
+  let fd = b.alloc_i32();
+  let managed_size = b.alloc_i64();
+  let reserve_status = b.alloc_i32();
+  let list_size = b.alloc_i32();
+  let list = b.alloc_i32();
+  let pair = b.alloc_i32();
+  let entries = b.alloc_i32();
+  let future_result = b.alloc_i32();
+  let event = b.alloc_i32();
+  let stream = b.alloc_i32();
+  let future = b.alloc_i32();
+  let waitable_set = b.alloc_i32();
+  let count = b.alloc_i32();
+  let total_path_bytes = b.alloc_i32();
+  let done = b.alloc_i32();
+  let valid = b.alloc_i32();
+  let status = b.alloc_i32();
+  let kind = b.alloc_i32();
+  let progress = b.alloc_i32();
+  let entry_idx = b.alloc_i32();
+  let entry = b.alloc_i32();
+  let name = b.alloc_i32();
+  let name_len = b.alloc_i32();
+  let entry_valid = b.alloc_i32();
+  let name_index = b.alloc_i32();
+  let name_byte = b.alloc_i32();
+  let skip = b.alloc_i32();
+  let new_len = b.alloc_i32();
+  let padded = b.alloc_i32();
+  let string_size = b.alloc_i32();
+  let string = b.alloc_i32();
+  let string_data = b.alloc_i32();
+  let insert_at = b.alloc_i32();
+  let previous = b.alloc_i32();
+  let stream_owned = b.alloc_i32();
+  let future_status = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(path_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Const(WASI_DIR_PATH_BYTES_LIMIT));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(separator_len));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(path_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(b'/' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(separator_len));
+  b.emit(Instruction::End);
+
+  for instruction in [
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(4),
+    Instruction::I32Const(12),
+    Instruction::Call(realloc_idx),
+    Instruction::LocalSet(opened),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(2), // open-flags::directory
+    Instruction::I32Const(1), // descriptor-flags::read
+    Instruction::LocalGet(opened),
+    Instruction::Call(open_idx),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(opened),
+    Instruction::I32Const(12),
+    Instruction::Call(free_idx),
+    Instruction::I32Const(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(opened),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(fd),
+  ] {
+    b.emit(instruction);
+  }
+
+  b.emit(Instruction::I64Const(WASI_DIR_MANAGED_BYTES_LIMIT));
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_try_reserve_managed(&mut b, managed_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(descriptor_drop_idx));
+  b.emit(Instruction::LocalGet(opened));
+  b.emit(Instruction::I32Const(12));
+  b.emit(Instruction::Call(free_idx));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::I32Const(8 + WASI_DIR_ENTRY_LIMIT * 8));
+  b.emit(Instruction::LocalSet(list_size));
+  rt_emit_alloc_dynamic(&mut b, list_size, list, list_tag);
+
+  for (size, alignment, local) in [(8, 4, pair), (BATCH_BYTES, 4, entries), (32, 4, future_result), (8, 8, event)] {
+    for instruction in [
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(alignment),
+      Instruction::I32Const(size),
+      Instruction::Call(realloc_idx),
+      Instruction::LocalSet(local),
+    ] {
+      b.emit(instruction);
+    }
+  }
+
+  for instruction in [
+    Instruction::LocalGet(fd),
+    Instruction::LocalGet(pair),
+    Instruction::Call(read_directory_idx),
+    Instruction::LocalGet(pair),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(stream),
+    Instruction::LocalGet(pair),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::LocalSet(future),
+    Instruction::Call(canonical.waitable_set_new),
+    Instruction::LocalSet(waitable_set),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(count),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(total_path_bytes),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(done),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(valid),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(done),
+    Instruction::LocalGet(valid),
+    Instruction::I32Eqz,
+    Instruction::I32Or,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(stream),
+    Instruction::LocalGet(entries),
+    Instruction::I32Const(BATCH_ENTRIES),
+    Instruction::Call(stream_read_idx),
+    Instruction::LocalSet(status),
+    Instruction::LocalGet(status),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(stream),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(waitable_set),
+    Instruction::LocalGet(event),
+    Instruction::Call(canonical.waitable_set_wait),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalGet(stream),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::LocalSet(status),
+    Instruction::LocalGet(stream),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::End,
+    Instruction::LocalGet(status),
+    Instruction::I32Const(15),
+    Instruction::I32And,
+    Instruction::LocalSet(kind),
+    Instruction::LocalGet(status),
+    Instruction::I32Const(4),
+    Instruction::I32ShrU,
+    Instruction::LocalSet(progress),
+    Instruction::LocalGet(progress),
+    Instruction::I32Const(BATCH_ENTRIES),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::I32Const(0),
+    Instruction::LocalSet(entry_idx),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(entry_idx),
+    Instruction::LocalGet(progress),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(entries),
+    Instruction::LocalGet(entry_idx),
+    Instruction::I32Const(24),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::LocalSet(entry),
+    // Free descriptor-type::other optional string payload if present.
+    Instruction::LocalGet(entry),
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Const(7),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(entry),
+    Instruction::I32Load8U(mem_arg_byte(4)),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(entry),
+    Instruction::I32Load(mem_arg_i32(8)),
+    Instruction::LocalGet(entry),
+    Instruction::I32Load(mem_arg_i32(12)),
+    Instruction::Call(free_idx),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(entry),
+    Instruction::I32Load(mem_arg_i32(16)),
+    Instruction::LocalSet(name),
+    Instruction::LocalGet(entry),
+    Instruction::I32Load(mem_arg_i32(20)),
+    Instruction::LocalSet(name_len),
+    Instruction::LocalGet(valid),
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(entry_valid),
+    Instruction::LocalGet(name_len),
+    Instruction::I32Eqz,
+    Instruction::LocalGet(name_len),
+    Instruction::I32Const(WASI_DIR_NAME_LIMIT),
+    Instruction::I32GtU,
+    Instruction::I32Or,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(entry_valid),
+    Instruction::Else,
+    Instruction::LocalGet(name),
+    Instruction::LocalGet(name_len),
+    Instruction::Call(utf8_valid_idx),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(entry_valid),
+    Instruction::Else,
+    Instruction::I32Const(0),
+    Instruction::LocalSet(name_index),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(name_index),
+    Instruction::LocalGet(name_len),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(name),
+    Instruction::LocalGet(name_index),
+    Instruction::I32Add,
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::LocalTee(name_byte),
+    Instruction::I32Eqz,
+    Instruction::LocalGet(name_byte),
+    Instruction::I32Const(b'/' as i32),
+    Instruction::I32Eq,
+    Instruction::I32Or,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(entry_valid),
+    Instruction::Br(2),
+    Instruction::End,
+    Instruction::LocalGet(name_index),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(name_index),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(entry_valid),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(valid),
+    Instruction::Else,
+    Instruction::I32Const(0),
+    Instruction::LocalSet(skip),
+    Instruction::LocalGet(name_len),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(name),
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Const(b'.' as i32),
+    Instruction::I32Eq,
+    Instruction::LocalSet(skip),
+    Instruction::End,
+    Instruction::LocalGet(name_len),
+    Instruction::I32Const(2),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(name),
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Const(b'.' as i32),
+    Instruction::I32Eq,
+    Instruction::LocalGet(name),
+    Instruction::I32Load8U(mem_arg_byte(1)),
+    Instruction::I32Const(b'.' as i32),
+    Instruction::I32Eq,
+    Instruction::I32And,
+    Instruction::LocalSet(skip),
+    Instruction::End,
+    Instruction::LocalGet(skip),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(count),
+    Instruction::I32Const(WASI_DIR_ENTRY_LIMIT),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(valid),
+    Instruction::Else,
+    Instruction::LocalGet(path_len),
+    Instruction::LocalGet(separator_len),
+    Instruction::I32Add,
+    Instruction::LocalGet(name_len),
+    Instruction::I32Add,
+    Instruction::LocalTee(new_len),
+    Instruction::LocalGet(total_path_bytes),
+    Instruction::I32Add,
+    Instruction::LocalTee(total_path_bytes),
+    Instruction::I32Const(WASI_DIR_PATH_BYTES_LIMIT),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(valid),
+    Instruction::Else,
+    Instruction::LocalGet(new_len),
+    Instruction::I32Const(7),
+    Instruction::I32Add,
+    Instruction::I32Const(-8),
+    Instruction::I32And,
+    Instruction::LocalSet(padded),
+    Instruction::LocalGet(padded),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalSet(string_size),
+  ] {
+    b.emit(instruction);
+  }
+  rt_emit_alloc_dynamic(&mut b, string_size, string, string_tag);
+  for instruction in [
+    Instruction::LocalGet(string),
+    Instruction::LocalGet(new_len),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(string),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(string_data),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(path_len),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    Instruction::LocalGet(separator_len),
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(string_data),
+    Instruction::LocalGet(path_len),
+    Instruction::I32Add,
+    Instruction::I32Const(b'/' as i32),
+    Instruction::I32Store8(mem_arg_byte(0)),
+    Instruction::End,
+    Instruction::LocalGet(string_data),
+    Instruction::LocalGet(path_len),
+    Instruction::I32Add,
+    Instruction::LocalGet(separator_len),
+    Instruction::I32Add,
+    Instruction::LocalGet(name),
+    Instruction::LocalGet(name_len),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    Instruction::LocalGet(count),
+    Instruction::LocalSet(insert_at),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(insert_at),
+    Instruction::I32Eqz,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(list),
+    Instruction::LocalGet(insert_at),
+    Instruction::I32Const(8),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::F64Load(mem_arg_f64(0)),
+    Instruction::I32TruncF64U,
+    Instruction::LocalSet(previous),
+    Instruction::LocalGet(string),
+    Instruction::LocalGet(previous),
+    Instruction::Call(str_compare_idx),
+    Instruction::F64Const(Ieee64::from(0.0)),
+    Instruction::F64Ge,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(list),
+    Instruction::LocalGet(insert_at),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::I32Const(8),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::LocalGet(previous),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(insert_at),
+    Instruction::I32Const(1),
+    Instruction::I32Sub,
+    Instruction::LocalSet(insert_at),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(list),
+    Instruction::LocalGet(insert_at),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::I32Const(8),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::LocalGet(string),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(count),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(count),
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(name),
+    Instruction::LocalGet(name_len),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(entry_idx),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(entry_idx),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(kind),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(done),
+    Instruction::End,
+    Instruction::LocalGet(kind),
+    Instruction::I32Const(0),
+    Instruction::I32Ne,
+    Instruction::LocalGet(kind),
+    Instruction::I32Eqz,
+    Instruction::LocalGet(progress),
+    Instruction::I32Eqz,
+    Instruction::I32And,
+    Instruction::I32Or,
+    Instruction::LocalGet(kind),
+    Instruction::I32Const(1),
+    Instruction::I32Ne,
+    Instruction::I32And,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(valid),
+    Instruction::End,
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(valid),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(stream),
+    Instruction::Call(stream_drop_idx),
+    Instruction::End,
+    Instruction::LocalGet(valid),
+    Instruction::LocalSet(stream_owned),
+    Instruction::LocalGet(future),
+    Instruction::LocalGet(future_result),
+    Instruction::Call(future_read_idx),
+    Instruction::LocalSet(future_status),
+    Instruction::LocalGet(future_status),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(future),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(waitable_set),
+    Instruction::LocalGet(event),
+    Instruction::Call(canonical.waitable_set_wait),
+    Instruction::I32Const(4),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalGet(future),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::LocalSet(future_status),
+    Instruction::LocalGet(future),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::End,
+    Instruction::LocalGet(future_status),
+    Instruction::I32Eqz,
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Eqz,
+    Instruction::I32And,
+    Instruction::LocalGet(valid),
+    Instruction::I32And,
+    Instruction::LocalGet(done),
+    Instruction::I32And,
+    Instruction::LocalSet(valid),
+    Instruction::LocalGet(future_status),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load8U(mem_arg_byte(4)),
+    Instruction::I32Const(36),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load8U(mem_arg_byte(8)),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load(mem_arg_i32(12)),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Load(mem_arg_i32(16)),
+    Instruction::Call(free_idx),
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(stream_owned),
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(stream),
+    Instruction::Call(stream_drop_idx),
+    Instruction::End,
+    Instruction::LocalGet(future),
+    Instruction::Call(future_drop_idx),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_set_drop),
+    Instruction::LocalGet(fd),
+    Instruction::Call(descriptor_drop_idx),
+    Instruction::LocalGet(opened),
+    Instruction::I32Const(12),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(pair),
+    Instruction::I32Const(8),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(entries),
+    Instruction::I32Const(BATCH_BYTES),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(future_result),
+    Instruction::I32Const(32),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(event),
+    Instruction::I32Const(8),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(valid),
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(list),
+    Instruction::LocalGet(count),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(list),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::I32Const(0),
+  ] {
+    b.emit(instruction);
+  }
+  b.finish(vec![ValType::I32], vec![ValType::I32])
+}
+
+/// Suspend the current WASI 0.3 stackful command task for `nanos` nanoseconds.
+/// Returns 0 on normal completion and 1 if the subtask was cancelled.
+pub(super) fn build_wasi_component_wait_fn(
+  wait_for_idx: u32,
+  realloc_idx: u32,
+  free_idx: u32,
+  canonical: &ComponentAsyncCanonicalImports,
+) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let status = b.alloc_i32();
+  let subtask = b.alloc_i32();
+  let waitable_set = b.alloc_i32();
+  let event = b.alloc_i32();
+  let completed = b.alloc_i32();
+
+  for instruction in [
+    Instruction::LocalGet(0),
+    Instruction::Call(wait_for_idx),
+    Instruction::LocalTee(status),
+    Instruction::I32Const(15),
+    Instruction::I32And,
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(status),
+    Instruction::I32Const(15),
+    Instruction::I32And,
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(status),
+    Instruction::I32Const(4),
+    Instruction::I32ShrU,
+    Instruction::LocalTee(subtask),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(8),
+    Instruction::I32Const(8),
+    Instruction::Call(realloc_idx),
+    Instruction::LocalSet(event),
+    Instruction::Call(canonical.waitable_set_new),
+    Instruction::LocalSet(waitable_set),
+    Instruction::LocalGet(subtask),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(completed),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(waitable_set),
+    Instruction::LocalGet(event),
+    Instruction::Call(canonical.waitable_set_wait),
+    Instruction::I32Const(1),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalGet(subtask),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::I32Const(2),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(completed),
+    Instruction::Br(2),
+    Instruction::End,
+    Instruction::LocalGet(event),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::I32Const(1),
+    Instruction::I32GtU,
+    Instruction::BrIf(1),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(subtask),
+    Instruction::I32Const(0),
+    Instruction::Call(canonical.waitable_join),
+    Instruction::LocalGet(subtask),
+    Instruction::Call(canonical.subtask_drop),
+    Instruction::LocalGet(waitable_set),
+    Instruction::Call(canonical.waitable_set_drop),
+    Instruction::LocalGet(event),
+    Instruction::I32Const(8),
+    Instruction::Call(free_idx),
+    Instruction::Else,
+    Instruction::LocalGet(status),
+    Instruction::I32Const(2),
+    Instruction::I32Ne,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::I32Const(1),
+    Instruction::LocalSet(completed),
+    Instruction::End,
+    Instruction::LocalGet(completed),
+    Instruction::I32Eqz,
+  ] {
+    b.emit(instruction);
+  }
+  b.finish(vec![ValType::I64], vec![ValType::I32])
+}
+
+/// Fill `[dst_ptr, dst_ptr + size)` with cryptographically secure random bytes
+/// from `wasi:random/random@0.3.1#get-random-bytes`. Returns 0 on success and 1 on error.
+pub(super) fn build_wasi_component_random_get_fn(get_random_bytes_idx: u32, realloc_idx: u32, free_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  let retptr = b.alloc_i32();
+  let offset = b.alloc_i32();
+  let remaining = b.alloc_i32();
+  let chunk_ptr = b.alloc_i32();
+  let chunk_len = b.alloc_i32();
+
+  for instruction in [
+    Instruction::LocalGet(1),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::I32Const(0),
+    Instruction::I32Const(0),
+    Instruction::I32Const(4),
+    Instruction::I32Const(8),
+    Instruction::Call(realloc_idx),
+    Instruction::LocalSet(retptr),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(offset),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(offset),
+    Instruction::LocalGet(1),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(offset),
+    Instruction::I32Sub,
+    Instruction::LocalSet(remaining),
+    Instruction::LocalGet(remaining),
+    Instruction::I64ExtendI32U,
+    Instruction::LocalGet(retptr),
+    Instruction::Call(get_random_bytes_idx),
+    Instruction::LocalGet(retptr),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(chunk_ptr),
+    Instruction::LocalGet(retptr),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::LocalSet(chunk_len),
+    Instruction::LocalGet(chunk_len),
+    Instruction::I32Eqz,
+    Instruction::LocalGet(chunk_len),
+    Instruction::LocalGet(remaining),
+    Instruction::I32GtU,
+    Instruction::I32Or,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::LocalGet(chunk_len),
+    Instruction::Call(free_idx),
+    Instruction::End,
+    Instruction::LocalGet(retptr),
+    Instruction::I32Const(8),
+    Instruction::Call(free_idx),
+    Instruction::I32Const(1),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(offset),
+    Instruction::I32Add,
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::LocalGet(chunk_len),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    Instruction::LocalGet(chunk_ptr),
+    Instruction::LocalGet(chunk_len),
+    Instruction::Call(free_idx),
+    Instruction::LocalGet(offset),
+    Instruction::LocalGet(chunk_len),
+    Instruction::I32Add,
+    Instruction::LocalSet(offset),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(retptr),
+    Instruction::I32Const(8),
+    Instruction::Call(free_idx),
+    Instruction::I32Const(0),
+  ] {
+    b.emit(instruction);
+  }
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
 /// Validate an RFC 3629 UTF-8 byte sequence without constructing a Calcit value.
