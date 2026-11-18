@@ -5199,6 +5199,8 @@ struct WasmGenCtx {
   recur_selectors: Vec<Option<ImplSelector>>,
   /// Back-edge identities missing from the current loop's alternatives.
   recur_missing: Vec<(usize, WasmTypeEvidence)>,
+  /// Tracks expanded `DataShapeGraph` node visits during a single map codec emission.
+  map_codec_expanded_nodes: usize,
 }
 
 /// An i32 local selecting one entry of `alternatives` for a value local.
@@ -5270,6 +5272,7 @@ impl WasmGenCtx {
       impl_selectors: HashMap::new(),
       recur_selectors: vec![],
       recur_missing: vec![],
+      map_codec_expanded_nodes: 0,
     }
   }
 
