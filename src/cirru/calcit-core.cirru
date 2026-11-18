@@ -10549,6 +10549,26 @@
                       m $ &{} :a 0 :b 1
                     keys-non-nil m
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |duplicate-literal-keeps-last)
+              :code $ quote $ let
+                  small $ &{} :a 1 :b 2 :a 3
+                  large $ &{} :a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9 :a 10
+                assert= 2 $ .len small
+                assert= (Some 3) (get small :a)
+                assert= (#{} :a :b) (keys-non-nil small)
+                assert= 9 $ .len large
+                assert= (Some 10) (get large :a)
+                assert=
+                  #{} :a :b :c :d :e :f :g :h :i
+                  keys-non-nil large
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |structural-duplicate-key)
+              :code $ quote $ let
+                  m $ &{} ([] 1 2) 10 ([] 2 3) 20 ([] 1 2) 100
+                assert= 2 $ .len m
+                assert= (Some 100)
+                  get m $ [] 1 2
+              :tags $ #{} :core :unit
         'last $ %{} 'CodeEntry
           :doc "|Return the last item as Option<T>; empty collections produce none."
           :code $ quote $ defn last (xs)

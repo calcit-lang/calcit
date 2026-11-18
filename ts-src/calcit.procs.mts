@@ -59,7 +59,7 @@ import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
 import { core_enum_value } from "./js-core-enum-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
-import { TypedEdnSetView } from "./typed-edn.mjs";
+import { TypedEdnMapView, TypedEdnSetView } from "./typed-edn.mjs";
 import { FingerVec } from "@calcit/finger-vec";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
@@ -2278,7 +2278,7 @@ const typed_edn_kind = (value: any): string => {
   if (value instanceof CalcitSymbol) return "symbol";
   if (value instanceof CalcitTag) return "tag";
   if (value instanceof CalcitList || value instanceof CalcitSliceList) return "list";
-  if (value instanceof CalcitMap || value instanceof CalcitSliceMap) return "map";
+  if (value instanceof CalcitMap || value instanceof CalcitSliceMap || value instanceof TypedEdnMapView) return "map";
   if (value instanceof CalcitSet || value instanceof TypedEdnSetView) return "set";
   if (value instanceof CalcitStructValue) return "struct";
   if (value instanceof CalcitEnumValue) return "enum";
@@ -2311,7 +2311,7 @@ const union_member_matches = (node: DataShapeNode, input: any, byIdentity: boole
     case "list":
     case "tuple": return input instanceof CalcitList || input instanceof CalcitSliceList;
     case "set": return input instanceof CalcitSet || input instanceof TypedEdnSetView;
-    case "map": return input instanceof CalcitMap || input instanceof CalcitSliceMap;
+    case "map": return input instanceof CalcitMap || input instanceof CalcitSliceMap || input instanceof TypedEdnMapView;
     case "ref": return input instanceof CalcitRef;
     case "struct":
       return input instanceof CalcitStructValue &&
@@ -2438,11 +2438,12 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       return new CalcitSet(values);
     }
     case "map": {
-      if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
+      if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap || input instanceof TypedEdnMapView)) {
         return fail(path, `expected map, got ${typed_edn_kind(input)}`);
       }
       const entries: any[] = [];
-      input.pairs().forEach(([key, value]) => {
+      const sourceEntries = input instanceof TypedEdnMapView ? input.entries : input.pairs();
+      sourceEntries.forEach(([key, value]) => {
         const keyPath = `${path}.key`;
         const decodedKey = decode_typed_edn_node(graph, node.key, key, keyPath, depth + 1, fail);
         for (let idx = 0; idx < entries.length; idx += 2) {
