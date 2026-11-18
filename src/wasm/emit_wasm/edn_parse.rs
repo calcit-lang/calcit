@@ -13,10 +13,56 @@ const TOKEN_LIMIT_ERROR: &str = "E_WASM_EDN_TOKEN_LIMIT: Cirru EDN list exceeds 
 const MAP_LIMIT_ERROR: &str = "E_WASM_EDN_MAP_LIMIT: Cirru EDN map exceeds 2048 entries";
 const ENUM_ERROR: &str = "E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type";
 
-pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+fn emit_decode_result_envelope(ctx: &mut WasmGenCtx, value: u32, ok: u32, error_kind: u32, error_path: u32) -> Result<(), String> {
+  ctx.emit(Instruction::LocalGet(ok));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_result_enum(ctx, "ok", value)?;
+  ctx.emit(Instruction::Else);
+  let parse_error = ctx.alloc_local();
+  let error_cases = [
+    (1, RANGE_ERROR),
+    (2, TAG_ERROR),
+    (3, TOKEN_LIMIT_ERROR),
+    (4, MAP_LIMIT_ERROR),
+    (5, ENUM_ERROR),
+  ];
+  for (code, message) in error_cases {
+    ctx.emit(Instruction::LocalGet(error_kind));
+    ctx.emit(Instruction::I32Const(code));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    emit_literal(ctx, message)?;
+    ctx.emit(Instruction::Else);
+  }
+  emit_literal(ctx, SYNTAX_ERROR)?;
+  for _ in error_cases {
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalSet(parse_error));
+  let error_path_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(error_path));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(error_path_ptr));
+  let error_path_len = load_string_len(ctx, error_path_ptr);
+  ctx.emit(Instruction::LocalGet(error_path_len));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32GtU);
+  ctx.begin_block_if();
+  let at_prefix = literal_local(ctx, " at $")?;
+  let with_prefix = concat_string_locals(ctx, parse_error, at_prefix);
+  let full_error = concat_string_locals(ctx, with_prefix, error_path);
+  ctx.emit(Instruction::LocalGet(full_error));
+  ctx.emit(Instruction::LocalSet(parse_error));
+  ctx.emit(Instruction::End);
+  emit_result_enum(ctx, "err", parse_error)?;
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_parse_cirru_edn_common(ctx: &mut WasmGenCtx, args: &[Calcit], op_name: &str, trap_on_error: bool) -> Result<(), String> {
   if args.len() != 3 {
     return Err(format!(
-      "try-parse-cirru-edn-as expects preprocessed text, type and data shape arguments, got {}",
+      "{op_name} expects preprocessed text, type and data shape arguments, got {}",
       args.len()
     ));
   }
@@ -32,6 +78,57 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(input_ptr));
   let input_len = load_string_len(ctx, input_ptr);
+
+  let run_parse = |ctx: &mut WasmGenCtx| -> Result<(u32, u32, u32, u32), String> {
+    ctx.emit(Instruction::LocalGet(input));
+    ctx.call_rt("__rt_trim_ws");
+    let token = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(token));
+    let token_ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(token));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(token_ptr));
+
+    // Native Cirru EDN accepts both a bare scalar token and the formatter's
+    // top-level `do <token>` representation. Normalize that wrapper here.
+    if_then_string_prefix(ctx, token_ptr, "do ", |ctx| {
+      let len = load_string_len(ctx, token_ptr);
+      let sliced = slice_string(ctx, token_ptr, 3, len);
+      ctx.emit(Instruction::LocalGet(sliced));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.call_rt("__rt_trim_ws");
+      ctx.emit(Instruction::LocalSet(token));
+      ctx.emit(Instruction::LocalGet(token));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalSet(token_ptr));
+      Ok(())
+    })?;
+
+    let parsed = ctx.alloc_local();
+    let ok = ctx.alloc_local_typed(ValType::I32);
+    let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit, 5 enum
+    let error_path = literal_local(ctx, "")?;
+    emit_parse_node_with_path(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind, error_path))?;
+    Ok((parsed, ok, error_kind, error_path))
+  };
+
+  if trap_on_error {
+    ctx.emit(Instruction::LocalGet(input_len));
+    ctx.emit(Instruction::I32Const(MAX_EDN_INPUT_BYTES));
+    ctx.emit(Instruction::I32GtU);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+
+    let (parsed, ok, _error_kind, _error_path) = run_parse(ctx)?;
+    ctx.emit(Instruction::LocalGet(ok));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(parsed));
+    return Ok(());
+  }
 
   let result = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(input_len));
@@ -41,282 +138,74 @@ pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit])
   let error = literal_local(ctx, INPUT_LIMIT_ERROR)?;
   emit_result_enum(ctx, "err", error)?;
   ctx.emit(Instruction::Else);
-
-  ctx.emit(Instruction::LocalGet(input));
-  ctx.call_rt("__rt_trim_ws");
-  let token = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(token));
-  let token_ptr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(token));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(token_ptr));
-
-  // Native Cirru EDN accepts both a bare scalar token and the formatter's
-  // top-level `do <token>` representation. Normalize that wrapper here.
-  if_then_string_prefix(ctx, token_ptr, "do ", |ctx| {
-    let len = load_string_len(ctx, token_ptr);
-    let sliced = slice_string(ctx, token_ptr, 3, len);
-    ctx.emit(Instruction::LocalGet(sliced));
-    ctx.emit(Instruction::F64ConvertI32U);
-    ctx.call_rt("__rt_trim_ws");
-    ctx.emit(Instruction::LocalSet(token));
-    ctx.emit(Instruction::LocalGet(token));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(token_ptr));
-    Ok(())
-  })?;
-
-  let parsed = ctx.alloc_local();
-  let ok = ctx.alloc_local_typed(ValType::I32);
-  let error_kind = ctx.alloc_local_typed(ValType::I32); // 0 syntax, 1 range, 2 tag, 3 list limit, 4 map limit, 5 enum
-  let error_path = literal_local(ctx, "")?;
-  emit_parse_node_with_path(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind, error_path))?;
-
-  ctx.emit(Instruction::LocalGet(ok));
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_result_enum(ctx, "ok", parsed)?;
-  ctx.emit(Instruction::Else);
-  let parse_error = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, RANGE_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(2));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, TAG_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(3));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, TOKEN_LIMIT_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(4));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, MAP_LIMIT_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(5));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, ENUM_ERROR)?;
-  ctx.emit(Instruction::Else);
-  emit_literal(ctx, SYNTAX_ERROR)?;
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalSet(parse_error));
-  let error_path_ptr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(error_path));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(error_path_ptr));
-  let error_path_len = load_string_len(ctx, error_path_ptr);
-  ctx.emit(Instruction::LocalGet(error_path_len));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32GtU);
-  ctx.begin_block_if();
-  let at_prefix = literal_local(ctx, " at $")?;
-  let with_prefix = concat_string_locals(ctx, parse_error, at_prefix);
-  let full_error = concat_string_locals(ctx, with_prefix, error_path);
-  ctx.emit(Instruction::LocalGet(full_error));
-  ctx.emit(Instruction::LocalSet(parse_error));
-  ctx.emit(Instruction::End);
-  emit_result_enum(ctx, "err", parse_error)?;
-  ctx.emit(Instruction::End);
+  let (parsed, ok, error_kind, error_path) = run_parse(ctx)?;
+  emit_decode_result_envelope(ctx, parsed, ok, error_kind, error_path)?;
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
 
+pub(super) fn emit_try_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  emit_parse_cirru_edn_common(ctx, args, "try-parse-cirru-edn-as", false)
+}
+
 pub(super) fn emit_parse_cirru_edn_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  emit_parse_cirru_edn_common(ctx, args, "parse-cirru-edn-as", true)
+}
+
+fn emit_decode_map_common(ctx: &mut WasmGenCtx, args: &[Calcit], op_name: &str, trap_on_error: bool) -> Result<(), String> {
   if args.len() != 3 {
     return Err(format!(
-      "parse-cirru-edn-as expects preprocessed text, type and data shape arguments, got {}",
+      "{op_name} expects preprocessed value, type and data shape arguments, got {}",
       args.len()
     ));
   }
   let graph = DataShapeGraph::from_calcit_handle(&args[2])
-    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed Cirru EDN parser is missing its preprocessed data shape".to_string())?;
-  validate_decode_shape(&graph, graph.root, 0)?;
+    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed map decoder is missing its preprocessed data shape".to_string())?;
+  validate_map_decode_shape(&graph, graph.root, 0)?;
 
+  let static_hint = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
   emit_expr(ctx, &args[0])?;
   let input = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(input));
-  let input_ptr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(input));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(input_ptr));
-  let input_len = load_string_len(ctx, input_ptr);
 
-  ctx.emit(Instruction::LocalGet(input_len));
-  ctx.emit(Instruction::I32Const(MAX_EDN_INPUT_BYTES));
-  ctx.emit(Instruction::I32GtU);
-  ctx.begin_block_if();
-  ctx.emit(Instruction::Unreachable);
-  ctx.emit(Instruction::End);
-
-  ctx.emit(Instruction::LocalGet(input));
-  ctx.call_rt("__rt_trim_ws");
-  let token = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(token));
-  let token_ptr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(token));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(token_ptr));
-
-  if_then_string_prefix(ctx, token_ptr, "do ", |ctx| {
-    let len = load_string_len(ctx, token_ptr);
-    let sliced = slice_string(ctx, token_ptr, 3, len);
-    ctx.emit(Instruction::LocalGet(sliced));
-    ctx.emit(Instruction::F64ConvertI32U);
-    ctx.call_rt("__rt_trim_ws");
-    ctx.emit(Instruction::LocalSet(token));
-    ctx.emit(Instruction::LocalGet(token));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(token_ptr));
-    Ok(())
-  })?;
-
-  let parsed = ctx.alloc_local();
+  let decoded = ctx.alloc_local();
   let ok = ctx.alloc_local_typed(ValType::I32);
   let error_kind = ctx.alloc_local_typed(ValType::I32);
   let error_path = literal_local(ctx, "")?;
-  emit_parse_node_with_path(ctx, &graph, graph.root, token, token_ptr, (parsed, ok, error_kind, error_path))?;
+  emit_decode_map_node(
+    ctx,
+    &graph,
+    graph.root,
+    input,
+    static_hint.as_deref(),
+    (decoded, ok, error_kind, error_path),
+  )?;
 
-  ctx.emit(Instruction::LocalGet(ok));
-  ctx.emit(Instruction::I32Eqz);
-  ctx.begin_block_if();
-  ctx.emit(Instruction::Unreachable);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(parsed));
+  if trap_on_error {
+    ctx.emit(Instruction::LocalGet(ok));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(decoded));
+    return Ok(());
+  }
+
+  let result = ctx.alloc_local();
+  emit_decode_result_envelope(ctx, decoded, ok, error_kind, error_path)?;
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
 
 pub(super) fn emit_try_decode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err(format!(
-      "try-decode-map-as expects preprocessed value, type and data shape arguments, got {}",
-      args.len()
-    ));
-  }
-  let graph = DataShapeGraph::from_calcit_handle(&args[2])
-    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed map decoder is missing its preprocessed data shape".to_string())?;
-  validate_map_decode_shape(&graph, graph.root, 0)?;
-
-  let static_hint = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-  emit_expr(ctx, &args[0])?;
-  let input = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(input));
-
-  let decoded = ctx.alloc_local();
-  let ok = ctx.alloc_local_typed(ValType::I32);
-  let error_kind = ctx.alloc_local_typed(ValType::I32);
-  let error_path = literal_local(ctx, "")?;
-  emit_decode_map_node(
-    ctx,
-    &graph,
-    graph.root,
-    input,
-    static_hint.as_deref(),
-    (decoded, ok, error_kind, error_path),
-  )?;
-
-  let result = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ok));
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_result_enum(ctx, "ok", decoded)?;
-  ctx.emit(Instruction::Else);
-  let parse_error = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, RANGE_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(2));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, TAG_ERROR)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(error_kind));
-  ctx.emit(Instruction::I32Const(5));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_literal(ctx, ENUM_ERROR)?;
-  ctx.emit(Instruction::Else);
-  emit_literal(ctx, SYNTAX_ERROR)?;
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalSet(parse_error));
-  let error_path_ptr = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(error_path));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(error_path_ptr));
-  let error_path_len = load_string_len(ctx, error_path_ptr);
-  ctx.emit(Instruction::LocalGet(error_path_len));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32GtU);
-  ctx.begin_block_if();
-  let at_prefix = literal_local(ctx, " at $")?;
-  let with_prefix = concat_string_locals(ctx, parse_error, at_prefix);
-  let full_error = concat_string_locals(ctx, with_prefix, error_path);
-  ctx.emit(Instruction::LocalGet(full_error));
-  ctx.emit(Instruction::LocalSet(parse_error));
-  ctx.emit(Instruction::End);
-  emit_result_enum(ctx, "err", parse_error)?;
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalSet(result));
-  ctx.emit(Instruction::LocalGet(result));
-  Ok(())
+  emit_decode_map_common(ctx, args, "try-decode-map-as", false)
 }
 
 pub(super) fn emit_decode_map_as(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.len() != 3 {
-    return Err(format!(
-      "decode-map-as expects preprocessed value, type and data shape arguments, got {}",
-      args.len()
-    ));
-  }
-  let graph = DataShapeGraph::from_calcit_handle(&args[2])
-    .ok_or_else(|| "E_WASM_EDN_SHAPE: typed map decoder is missing its preprocessed data shape".to_string())?;
-  validate_map_decode_shape(&graph, graph.root, 0)?;
-
-  let static_hint = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-  emit_expr(ctx, &args[0])?;
-  let input = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(input));
-
-  let decoded = ctx.alloc_local();
-  let ok = ctx.alloc_local_typed(ValType::I32);
-  let error_kind = ctx.alloc_local_typed(ValType::I32);
-  let error_path = literal_local(ctx, "")?;
-  emit_decode_map_node(
-    ctx,
-    &graph,
-    graph.root,
-    input,
-    static_hint.as_deref(),
-    (decoded, ok, error_kind, error_path),
-  )?;
-
-  ctx.emit(Instruction::LocalGet(ok));
-  ctx.emit(Instruction::I32Eqz);
-  ctx.begin_block_if();
-  ctx.emit(Instruction::Unreachable);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::LocalGet(decoded));
-  Ok(())
+  emit_decode_map_common(ctx, args, "decode-map-as", true)
 }
 
 fn validate_map_decode_shape(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Result<(), String> {
@@ -523,7 +412,7 @@ fn emit_decode_map_node(
   static_hint: Option<&CalcitTypeAnnotation>,
   outputs: (u32, u32, u32, u32),
 ) -> Result<(), String> {
-  let (decoded, ok, error_kind, error_path) = outputs;
+  let (decoded, ok, error_kind, _error_path) = outputs;
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::I32Const(0));
@@ -689,858 +578,941 @@ fn emit_decode_map_node(
       }
     }
     DataShapeNode::MapOption { nominal, inner, .. } => {
-      let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
-      let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
-      let allow_option_enum = static_hint
-        .and_then(|ty| ty.resolve_to_enum())
-        .is_none_or(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal));
-      let is_enum = emit_has_heap_tag(ctx, input, "enum");
-      let handled_as_option_enum = ctx.alloc_i32(0);
-      if allow_option_enum {
-        ctx.emit(Instruction::LocalGet(is_enum));
-        ctx.begin_block_if();
-        let ptr = ctx.alloc_local_typed(ValType::I32);
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::I32TruncF64U);
-        ctx.emit(Instruction::LocalSet(ptr));
-        let count = ctx.alloc_local();
-        ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-        ctx.emit(Instruction::LocalSet(count));
-        let vtag = ctx.alloc_local();
-        ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-        ctx.emit(Instruction::LocalSet(vtag));
-
-        ctx.emit(Instruction::LocalGet(vtag));
-        ctx.emit(f64_const(none_tag));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::LocalGet(count));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(handled_as_option_enum));
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(ok));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::LocalGet(vtag));
-        ctx.emit(f64_const(some_tag));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::LocalGet(count));
-        ctx.emit(f64_const(1.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(handled_as_option_enum));
-        let item = ctx.alloc_local();
-        ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
-        ctx.emit(Instruction::LocalSet(item));
-        let inner_decoded = ctx.alloc_local();
-        let inner_ok = ctx.alloc_local_typed(ValType::I32);
-        let inner_err = ctx.alloc_local_typed(ValType::I32);
-        let inner_path = literal_local(ctx, "")?;
-        let inner_hint = hint_option_inner(static_hint, nominal);
-        emit_decode_map_node(
-          ctx,
-          graph,
-          *inner,
-          item,
-          inner_hint.as_ref(),
-          (inner_decoded, inner_ok, inner_err, inner_path),
-        )?;
-        ctx.emit(Instruction::LocalGet(inner_ok));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(inner_decoded));
-        ctx.emit(Instruction::I64ReinterpretF64);
-        ctx.emit(Instruction::LocalGet(item));
-        ctx.emit(Instruction::I64ReinterpretF64);
-        ctx.emit(Instruction::I64Eq);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::Else);
-        emit_option_enum(ctx, Some(inner_decoded))?;
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(ok));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::LocalGet(inner_err));
-        ctx.emit(Instruction::LocalSet(error_kind));
-        ctx.emit(Instruction::LocalGet(inner_path));
-        ctx.emit(Instruction::LocalSet(error_path));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-
-      ctx.emit(Instruction::LocalGet(handled_as_option_enum));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.begin_block_if();
-      let inner_decoded = ctx.alloc_local();
-      let inner_ok = ctx.alloc_local_typed(ValType::I32);
-      let inner_err = ctx.alloc_local_typed(ValType::I32);
-      let inner_path = literal_local(ctx, "")?;
-      emit_decode_map_node(
-        ctx,
-        graph,
-        *inner,
-        input,
-        static_hint,
-        (inner_decoded, inner_ok, inner_err, inner_path),
-      )?;
-      ctx.emit(Instruction::LocalGet(inner_ok));
-      ctx.begin_block_if();
-      emit_option_enum(ctx, Some(inner_decoded))?;
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(inner_err));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      ctx.emit(Instruction::LocalGet(inner_path));
-      ctx.emit(Instruction::LocalSet(error_path));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
+      emit_decode_map_option(ctx, graph, nominal, *inner, input, static_hint, outputs)?
     }
-    DataShapeNode::List(item_id) => {
-      let is_list = emit_has_heap_tag(ctx, input, "list");
-      ctx.emit(Instruction::LocalGet(is_list));
-      ctx.begin_block_if();
-      let src_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(src_ptr));
-      let count = emit_load_count_i32(ctx, src_ptr);
-      let dst_ptr = emit_alloc_list(ctx, count);
-      let valid = ctx.alloc_i32(1);
-      let all_identical = ctx.alloc_i32(1);
-      let i = ctx.alloc_i32(0);
-      ctx.begin_block();
-      ctx.begin_loop();
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32GeU);
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.emit(Instruction::I32Or);
-      ctx.emit(Instruction::BrIf(1));
-      let elem = ctx.alloc_local();
-      emit_list_load_elem(ctx, src_ptr, i);
-      ctx.emit(Instruction::LocalSet(elem));
-      let item_val = ctx.alloc_local();
-      let item_ok = ctx.alloc_local_typed(ValType::I32);
-      let item_err = ctx.alloc_local_typed(ValType::I32);
-      let item_path = literal_local(ctx, "")?;
-      let inner_hint = hint_list_elem(static_hint);
-      emit_decode_map_node(
-        ctx,
-        graph,
-        *item_id,
-        elem,
-        inner_hint.as_ref(),
-        (item_val, item_ok, item_err, item_path),
-      )?;
-      ctx.emit(Instruction::LocalGet(item_ok));
-      ctx.begin_block_if();
-      emit_list_store_elem(ctx, dst_ptr, i, item_val);
-      ctx.emit(Instruction::LocalGet(item_val));
-      ctx.emit(Instruction::I64ReinterpretF64);
-      ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::I64ReinterpretF64);
-      ctx.emit(Instruction::I64Ne);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(0));
-      ctx.emit(Instruction::LocalSet(all_identical));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::Else);
+    DataShapeNode::List(item_id) => emit_decode_map_list(ctx, graph, *item_id, input, static_hint, outputs)?,
+    DataShapeNode::Tuple(slots) => emit_decode_map_tuple(ctx, graph, slots, input, static_hint, outputs)?,
+    DataShapeNode::Set(item_id) => emit_decode_map_set(ctx, graph, *item_id, input, static_hint, outputs)?,
+    DataShapeNode::Map { key, value } => emit_decode_map_table(ctx, graph, (*key, *value), input, static_hint, outputs)?,
+    DataShapeNode::Struct { nominal, fields, .. } => emit_decode_map_struct(ctx, graph, nominal, fields, input, static_hint, outputs)?,
+    DataShapeNode::Enum { nominal, variants, .. } => emit_decode_map_enum(ctx, graph, nominal, variants, input, static_hint, outputs)?,
+    _ => unreachable!("shape was validated before map decoder emission"),
+  }
+  Ok(())
+}
+
+fn emit_decode_map_option(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitEnumDef>,
+  inner: usize,
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
+  let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
+  let allow_option_enum = static_hint
+    .and_then(|ty| ty.resolve_to_enum())
+    .is_none_or(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal));
+  let is_enum = emit_has_heap_tag(ctx, input, "enum");
+  let handled_as_option_enum = ctx.alloc_i32(0);
+  if allow_option_enum {
+    ctx.emit(Instruction::LocalGet(is_enum));
+    ctx.begin_block_if();
+    let ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(input));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(ptr));
+    let count = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalSet(count));
+    let vtag = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+    ctx.emit(Instruction::LocalSet(vtag));
+
+    ctx.emit(Instruction::LocalGet(vtag));
+    ctx.emit(f64_const(none_tag));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(count));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(handled_as_option_enum));
+    ctx.emit(Instruction::LocalGet(input));
+    ctx.emit(Instruction::LocalSet(decoded));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(ok));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(vtag));
+    ctx.emit(f64_const(some_tag));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(count));
+    ctx.emit(f64_const(1.0));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(handled_as_option_enum));
+    let item = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+    ctx.emit(Instruction::LocalSet(item));
+    let inner_decoded = ctx.alloc_local();
+    let inner_ok = ctx.alloc_local_typed(ValType::I32);
+    let inner_err = ctx.alloc_local_typed(ValType::I32);
+    let inner_path = literal_local(ctx, "")?;
+    let inner_hint = hint_option_inner(static_hint, nominal);
+    emit_decode_map_node(
+      ctx,
+      graph,
+      inner,
+      item,
+      inner_hint.as_ref(),
+      (inner_decoded, inner_ok, inner_err, inner_path),
+    )?;
+    ctx.emit(Instruction::LocalGet(inner_ok));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(inner_decoded));
+    ctx.emit(Instruction::I64ReinterpretF64);
+    ctx.emit(Instruction::LocalGet(item));
+    ctx.emit(Instruction::I64ReinterpretF64);
+    ctx.emit(Instruction::I64Eq);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(input));
+    ctx.emit(Instruction::LocalSet(decoded));
+    ctx.emit(Instruction::Else);
+    emit_option_enum(ctx, Some(inner_decoded))?;
+    ctx.emit(Instruction::LocalSet(decoded));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(ok));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(inner_err));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    ctx.emit(Instruction::LocalGet(inner_path));
+    ctx.emit(Instruction::LocalSet(error_path));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(handled_as_option_enum));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  let inner_decoded = ctx.alloc_local();
+  let inner_ok = ctx.alloc_local_typed(ValType::I32);
+  let inner_err = ctx.alloc_local_typed(ValType::I32);
+  let inner_path = literal_local(ctx, "")?;
+  emit_decode_map_node(
+    ctx,
+    graph,
+    inner,
+    input,
+    static_hint,
+    (inner_decoded, inner_ok, inner_err, inner_path),
+  )?;
+  ctx.emit(Instruction::LocalGet(inner_ok));
+  ctx.begin_block_if();
+  emit_option_enum(ctx, Some(inner_decoded))?;
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(inner_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  ctx.emit(Instruction::LocalGet(inner_path));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_list(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  item_id: usize,
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let is_list = emit_has_heap_tag(ctx, input, "list");
+  ctx.emit(Instruction::LocalGet(is_list));
+  ctx.begin_block_if();
+  let src_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src_ptr));
+  let count = emit_load_count_i32(ctx, src_ptr);
+  let dst_ptr = emit_alloc_list(ctx, count);
+  let valid = ctx.alloc_i32(1);
+  let all_identical = ctx.alloc_i32(1);
+  let i = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::BrIf(1));
+  let elem = ctx.alloc_local();
+  emit_list_load_elem(ctx, src_ptr, i);
+  ctx.emit(Instruction::LocalSet(elem));
+  let item_val = ctx.alloc_local();
+  let item_ok = ctx.alloc_local_typed(ValType::I32);
+  let item_err = ctx.alloc_local_typed(ValType::I32);
+  let item_path = literal_local(ctx, "")?;
+  let inner_hint = hint_list_elem(static_hint);
+  emit_decode_map_node(
+    ctx,
+    graph,
+    item_id,
+    elem,
+    inner_hint.as_ref(),
+    (item_val, item_ok, item_err, item_path),
+  )?;
+  ctx.emit(Instruction::LocalGet(item_ok));
+  ctx.begin_block_if();
+  emit_list_store_elem(ctx, dst_ptr, i, item_val);
+  ctx.emit(Instruction::LocalGet(item_val));
+  ctx.emit(Instruction::I64ReinterpretF64);
+  ctx.emit(Instruction::LocalGet(elem));
+  ctx.emit(Instruction::I64ReinterpretF64);
+  ctx.emit(Instruction::I64Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(all_identical));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::LocalGet(item_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let open_bracket = literal_local(ctx, "[")?;
+  let close_bracket = literal_local(ctx, "]")?;
+  let index_str = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.call_rt("__rt_f64_to_str");
+  ctx.emit(Instruction::LocalSet(index_str));
+  let step1 = concat_string_locals(ctx, open_bracket, index_str);
+  let step2 = concat_string_locals(ctx, step1, close_bracket);
+  let step3 = concat_string_locals(ctx, step2, item_path);
+  ctx.emit(Instruction::LocalGet(step3));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(all_identical));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_tuple(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  slots: &[usize],
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let is_list = emit_has_heap_tag(ctx, input, "list");
+  ctx.emit(Instruction::LocalGet(is_list));
+  ctx.begin_block_if();
+  let src_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src_ptr));
+  let count = emit_load_count_i32(ctx, src_ptr);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(slots.len() as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  let dst_ptr = emit_alloc_list(ctx, count);
+  let valid = ctx.alloc_i32(1);
+  for (idx, slot_id) in slots.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let elem = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(src_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + idx) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(elem));
+    let item_val = ctx.alloc_local();
+    let item_ok = ctx.alloc_local_typed(ValType::I32);
+    let item_err = ctx.alloc_local_typed(ValType::I32);
+    let item_path = literal_local(ctx, "")?;
+    let slot_hint = hint_tuple_slot(static_hint, idx);
+    emit_decode_map_node(
+      ctx,
+      graph,
+      *slot_id,
+      elem,
+      slot_hint.as_ref(),
+      (item_val, item_ok, item_err, item_path),
+    )?;
+    ctx.emit(Instruction::LocalGet(item_ok));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(dst_ptr));
+    ctx.emit(Instruction::LocalGet(item_val));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + idx) * 8) as u64)));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::LocalGet(item_err));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    let full_path = prepend_indexed_path(ctx, "[", idx, item_path)?;
+    ctx.emit(Instruction::LocalGet(full_path));
+    ctx.emit(Instruction::LocalSet(error_path));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_set(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  item_id: usize,
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let is_set = emit_has_heap_tag(ctx, input, "set");
+  ctx.emit(Instruction::LocalGet(is_set));
+  ctx.begin_block_if();
+  let src_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src_ptr));
+  let count = emit_load_count_i32(ctx, src_ptr);
+  let ts = ctx.i32_offset(count, 1);
+  let dst_ptr = emit_alloc_with_count(ctx, count, ts, "set");
+  let valid = ctx.alloc_i32(1);
+  let i = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::BrIf(1));
+  let elem = ctx.alloc_local();
+  emit_list_load_elem(ctx, src_ptr, i);
+  ctx.emit(Instruction::LocalSet(elem));
+  let item_val = ctx.alloc_local();
+  let item_ok = ctx.alloc_local_typed(ValType::I32);
+  let item_err = ctx.alloc_local_typed(ValType::I32);
+  let item_path = literal_local(ctx, "")?;
+  let inner_hint = hint_set_elem(static_hint);
+  emit_decode_map_node(
+    ctx,
+    graph,
+    item_id,
+    elem,
+    inner_hint.as_ref(),
+    (item_val, item_ok, item_err, item_path),
+  )?;
+  ctx.emit(Instruction::LocalGet(item_ok));
+  ctx.begin_block_if();
+  let dup = ctx.alloc_i32(0);
+  let j = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.emit(Instruction::LocalGet(j));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(dup));
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::BrIf(1));
+  let prev = ctx.alloc_local();
+  emit_list_load_elem(ctx, dst_ptr, j);
+  ctx.emit(Instruction::LocalSet(prev));
+  ctx.emit(Instruction::LocalGet(prev));
+  ctx.emit(Instruction::LocalGet(item_val));
+  ctx.call_rt("__rt_value_equal");
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(dup));
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(j);
+  ctx.br_loop();
+  ctx.end_block_loop();
+  ctx.emit(Instruction::LocalGet(dup));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::Else);
+  emit_list_store_elem(ctx, dst_ptr, i, item_val);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::LocalGet(item_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let full_path = prepend_static_path(ctx, ".item", item_path)?;
+  ctx.emit(Instruction::LocalGet(full_path));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_table(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  kv: (usize, usize),
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (key, value) = &kv;
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let is_map = emit_has_heap_tag(ctx, input, "map");
+  ctx.emit(Instruction::LocalGet(is_map));
+  ctx.begin_block_if();
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+  let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
+  let count = emit_load_count_i32(ctx, flat_ptr);
+  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(total_slots));
+  let dst_flat = emit_alloc_with_count(ctx, count, total_slots, "map");
+  let valid = ctx.alloc_i32(1);
+  let i = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::BrIf(1));
+  let entry_off = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(entry_off));
+  let raw_k = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(raw_k));
+  let raw_v = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(raw_v));
+  let (k_hint, v_hint) = hint_map_kv(static_hint);
+  let k_val = ctx.alloc_local();
+  let k_ok = ctx.alloc_local_typed(ValType::I32);
+  let k_err = ctx.alloc_local_typed(ValType::I32);
+  let k_path = literal_local(ctx, "")?;
+  emit_decode_map_node(ctx, graph, *key, raw_k, k_hint.as_ref(), (k_val, k_ok, k_err, k_path))?;
+  let v_val = ctx.alloc_local();
+  let v_ok = ctx.alloc_local_typed(ValType::I32);
+  let v_err = ctx.alloc_local_typed(ValType::I32);
+  let v_path = literal_local(ctx, "")?;
+  emit_decode_map_node(ctx, graph, *value, raw_v, v_hint.as_ref(), (v_val, v_ok, v_err, v_path))?;
+  ctx.emit(Instruction::LocalGet(k_ok));
+  ctx.emit(Instruction::LocalGet(v_ok));
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst_flat));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(k_val));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(dst_flat));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalGet(v_val));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::LocalGet(k_ok));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(k_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let full_k_path = prepend_static_path(ctx, ".key", k_path)?;
+  ctx.emit(Instruction::LocalGet(full_k_path));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(v_err));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  let full_v_path = prepend_static_path(ctx, ".value", v_path)?;
+  ctx.emit(Instruction::LocalGet(full_v_path));
+  ctx.emit(Instruction::LocalSet(error_path));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst_flat));
+  ctx.call_rt("__rt_map_root_from_flat");
+  let hashed_root = ctx.alloc_local_typed(ValType::I32);
+  let actual_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(hashed_root));
+  ctx.emit(Instruction::LocalSet(actual_count));
+  ctx.emit(Instruction::LocalGet(actual_count));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eq);
+  ctx.begin_block_if();
+  let out_map = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  ctx.emit(Instruction::LocalGet(out_map));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_struct(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitStructDef>,
+  fields: &[(EdnTag, usize)],
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  let struct_tag_id = ctx.struct_layouts.id(nominal)?;
+  let is_struct = emit_has_heap_tag(ctx, input, "struct");
+  ctx.emit(Instruction::LocalGet(is_struct));
+  ctx.begin_block_if();
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(f64_const(fields.len() as f64));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.begin_block_if();
+  let valid = ctx.alloc_i32(1);
+  let all_identical = ctx.alloc_i32(1);
+  let values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+  for (idx, (field, child)) in fields.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    let raw_val = ctx.alloc_local();
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + idx) * 8) as u64)));
+    ctx.emit(Instruction::LocalSet(raw_val));
+    let f_ok = ctx.alloc_local_typed(ValType::I32);
+    let f_err = ctx.alloc_local_typed(ValType::I32);
+    let f_path = literal_local(ctx, "")?;
+    let field_hint = hint_struct_field(static_hint, nominal, idx);
+    emit_decode_map_node(ctx, graph, *child, raw_val, field_hint.as_ref(), (values[idx], f_ok, f_err, f_path))?;
+    ctx.emit(Instruction::LocalGet(f_ok));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(all_identical));
+    ctx.emit(Instruction::LocalGet(values[idx]));
+    ctx.emit(Instruction::I64ReinterpretF64);
+    ctx.emit(Instruction::LocalGet(raw_val));
+    ctx.emit(Instruction::I64ReinterpretF64);
+    ctx.emit(Instruction::I64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::LocalSet(all_identical));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::LocalGet(f_err));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
+    ctx.emit(Instruction::LocalGet(full_path));
+    ctx.emit(Instruction::LocalSet(error_path));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(all_identical));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::Else);
+  let struct_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(fields.len() as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  for (index, value) in values.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(struct_ptr));
+    ctx.emit(Instruction::LocalGet(*value));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + index) * 8) as u64)));
+  }
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::Else);
+  let is_map = emit_has_heap_tag(ctx, input, "map");
+  ctx.emit(Instruction::LocalGet(is_map));
+  ctx.begin_block_if();
+  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(map_ptr));
+  let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
+  let entry_count = emit_load_count_i32(ctx, flat_ptr);
+  let valid = ctx.alloc_i32(1);
+  let raw_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+  let seen = fields.iter().map(|_| ctx.alloc_i32(0)).collect::<Vec<_>>();
+  let i = ctx.alloc_i32(0);
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::LocalGet(entry_count));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::BrIf(1));
+  let entry_off = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(entry_off));
+  let key = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(key));
+  let val = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(entry_off));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(val));
+  let key_is_str = emit_has_heap_tag(ctx, key, "string");
+  let key_is_heap = emit_is_heap_value(ctx, key);
+  let matched = ctx.alloc_i32(0);
+  for (idx, (field, _)) in fields.iter().enumerate() {
+    let field_tag_id = *ctx
+      .tag_index
+      .get(field.ref_str())
+      .ok_or_else(|| format!("unknown struct field tag in WASM map decode: {field}"))? as f64;
+    let is_this_field = ctx.alloc_i32(0);
+    ctx.emit(Instruction::LocalGet(key_is_heap));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.emit(Instruction::LocalGet(key));
+    ctx.emit(f64_const(field_tag_id));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(is_this_field));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(key_is_str));
+    ctx.begin_block_if();
+    let key_ptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(key));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(key_ptr));
+    emit_string_equals_literal(ctx, key_ptr, field.ref_str())?;
+    ctx.emit(Instruction::LocalSet(is_this_field));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+
+    ctx.emit(Instruction::LocalGet(is_this_field));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    ctx.emit(Instruction::LocalGet(seen[idx]));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(seen[idx]));
+    ctx.emit(Instruction::LocalGet(val));
+    ctx.emit(Instruction::LocalSet(raw_values[idx]));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(valid));
+  ctx.emit(Instruction::End);
+  ctx.i32_inc(i);
+  ctx.br_loop();
+  ctx.end_block_loop();
+
+  let (_, map_val_hint) = hint_map_kv(static_hint);
+  let decoded_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+  for (idx, (field, child)) in fields.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(seen[idx]));
+    ctx.begin_block_if();
+    let f_ok = ctx.alloc_local_typed(ValType::I32);
+    let f_err = ctx.alloc_local_typed(ValType::I32);
+    let f_path = literal_local(ctx, "")?;
+    emit_decode_map_node(
+      ctx,
+      graph,
+      *child,
+      raw_values[idx],
+      map_val_hint.as_ref(),
+      (decoded_values[idx], f_ok, f_err, f_path),
+    )?;
+    ctx.emit(Instruction::LocalGet(f_ok));
+    ctx.emit(Instruction::I32Eqz);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::LocalSet(valid));
+    ctx.emit(Instruction::LocalGet(f_err));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
+    ctx.emit(Instruction::LocalGet(full_path));
+    ctx.emit(Instruction::LocalSet(error_path));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::Else);
+    if matches!(graph.nodes.get(*child), Some(DataShapeNode::MapOption { .. })) {
+      emit_option_enum(ctx, None)?;
+      ctx.emit(Instruction::LocalSet(decoded_values[idx]));
+    } else {
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::LocalSet(valid));
-      ctx.emit(Instruction::LocalGet(item_err));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      let open_bracket = literal_local(ctx, "[")?;
-      let close_bracket = literal_local(ctx, "]")?;
-      let index_str = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.call_rt("__rt_f64_to_str");
-      ctx.emit(Instruction::LocalSet(index_str));
-      let step1 = concat_string_locals(ctx, open_bracket, index_str);
-      let step2 = concat_string_locals(ctx, step1, close_bracket);
-      let step3 = concat_string_locals(ctx, step2, item_path);
-      ctx.emit(Instruction::LocalGet(step3));
-      ctx.emit(Instruction::LocalSet(error_path));
-      ctx.emit(Instruction::End);
-      ctx.i32_inc(i);
-      ctx.br_loop();
-      ctx.end_block_loop();
+    }
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
+
+  ctx.emit(Instruction::LocalGet(valid));
+  ctx.begin_block_if();
+  let struct_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(fields.len() as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(f64_const(struct_tag_id as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  for (index, value) in decoded_values.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(struct_ptr));
+    ctx.emit(Instruction::LocalGet(*value));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + index) * 8) as u64)));
+  }
+  ctx.emit(Instruction::LocalGet(struct_ptr));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(decoded));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(ok));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
+fn emit_decode_map_enum(
+  ctx: &mut WasmGenCtx,
+  graph: &DataShapeGraph,
+  nominal: &Arc<CalcitEnumDef>,
+  variants: &[(EdnTag, Vec<usize>)],
+  input: u32,
+  static_hint: Option<&CalcitTypeAnnotation>,
+  outputs: (u32, u32, u32, u32),
+) -> Result<(), String> {
+  let (decoded, ok, error_kind, error_path) = outputs;
+  // WASM enum heap objects do not carry a runtime definition tag, so only inputs
+  // with static enum declaration evidence matching `nominal` can be validated safely.
+  let enum_matches_nominal = static_hint
+    .and_then(|ty| ty.resolve_to_enum())
+    .is_some_and(|actual| actual.same_nominal_definition(nominal));
+  if !enum_matches_nominal {
+    ctx.emit(Instruction::I32Const(5));
+    ctx.emit(Instruction::LocalSet(error_kind));
+    return Ok(());
+  }
+  let is_enum = emit_has_heap_tag(ctx, input, "enum");
+  ctx.emit(Instruction::LocalGet(is_enum));
+  ctx.begin_block_if();
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(input));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let count = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(count));
+  let vtag = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(vtag));
+  let matched = ctx.alloc_i32(0);
+  for (variant, payload_nodes) in variants {
+    let expected_tag = *ctx.tag_index.get(variant.ref_str()).ok_or_else(|| {
+      format!(
+        "E_WASM_EDN_SHAPE: enum :{} variant :{} is not present in the compiled program",
+        nominal.name(),
+        variant
+      )
+    })? as f64;
+    ctx.emit(Instruction::LocalGet(vtag));
+    ctx.emit(f64_const(expected_tag));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(count));
+    ctx.emit(f64_const(payload_nodes.len() as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.begin_block_if();
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(matched));
+    let valid = ctx.alloc_i32(1);
+    let all_identical = ctx.alloc_i32(1);
+    let values = payload_nodes.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
+    for (pidx, pnode) in payload_nodes.iter().enumerate() {
       ctx.emit(Instruction::LocalGet(valid));
+      ctx.begin_block_if();
+      let raw_p = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + pidx) * 8) as u64)));
+      ctx.emit(Instruction::LocalSet(raw_p));
+      let p_ok = ctx.alloc_local_typed(ValType::I32);
+      let p_err = ctx.alloc_local_typed(ValType::I32);
+      let p_path = literal_local(ctx, "")?;
+      let payload_hint = hint_enum_payload(static_hint, nominal, variant, pidx);
+      emit_decode_map_node(
+        ctx,
+        graph,
+        *pnode,
+        raw_p,
+        payload_hint.as_ref(),
+        (values[pidx], p_ok, p_err, p_path),
+      )?;
+      ctx.emit(Instruction::LocalGet(p_ok));
       ctx.begin_block_if();
       ctx.emit(Instruction::LocalGet(all_identical));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(dst_ptr));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-    }
-    DataShapeNode::Tuple(slots) => {
-      let is_list = emit_has_heap_tag(ctx, input, "list");
-      ctx.emit(Instruction::LocalGet(is_list));
-      ctx.begin_block_if();
-      let src_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(src_ptr));
-      let count = emit_load_count_i32(ctx, src_ptr);
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32Const(slots.len() as i32));
-      ctx.emit(Instruction::I32Eq);
-      ctx.begin_block_if();
-      let dst_ptr = emit_alloc_list(ctx, count);
-      let valid = ctx.alloc_i32(1);
-      for (idx, slot_id) in slots.iter().enumerate() {
-        ctx.emit(Instruction::LocalGet(valid));
-        ctx.begin_block_if();
-        let elem = ctx.alloc_local();
-        ctx.emit(Instruction::LocalGet(src_ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + idx) * 8) as u64)));
-        ctx.emit(Instruction::LocalSet(elem));
-        let item_val = ctx.alloc_local();
-        let item_ok = ctx.alloc_local_typed(ValType::I32);
-        let item_err = ctx.alloc_local_typed(ValType::I32);
-        let item_path = literal_local(ctx, "")?;
-        let slot_hint = hint_tuple_slot(static_hint, idx);
-        emit_decode_map_node(
-          ctx,
-          graph,
-          *slot_id,
-          elem,
-          slot_hint.as_ref(),
-          (item_val, item_ok, item_err, item_path),
-        )?;
-        ctx.emit(Instruction::LocalGet(item_ok));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(dst_ptr));
-        ctx.emit(Instruction::LocalGet(item_val));
-        ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + idx) * 8) as u64)));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::I32Const(0));
-        ctx.emit(Instruction::LocalSet(valid));
-        ctx.emit(Instruction::LocalGet(item_err));
-        ctx.emit(Instruction::LocalSet(error_kind));
-        let full_path = prepend_indexed_path(ctx, "[", idx, item_path)?;
-        ctx.emit(Instruction::LocalGet(full_path));
-        ctx.emit(Instruction::LocalSet(error_path));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(dst_ptr));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-    }
-    DataShapeNode::Set(item_id) => {
-      let is_set = emit_has_heap_tag(ctx, input, "set");
-      ctx.emit(Instruction::LocalGet(is_set));
-      ctx.begin_block_if();
-      let src_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(src_ptr));
-      let count = emit_load_count_i32(ctx, src_ptr);
-      let ts = ctx.i32_offset(count, 1);
-      let dst_ptr = emit_alloc_with_count(ctx, count, ts, "set");
-      let valid = ctx.alloc_i32(1);
-      let i = ctx.alloc_i32(0);
-      ctx.begin_block();
-      ctx.begin_loop();
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32GeU);
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.emit(Instruction::I32Or);
-      ctx.emit(Instruction::BrIf(1));
-      let elem = ctx.alloc_local();
-      emit_list_load_elem(ctx, src_ptr, i);
-      ctx.emit(Instruction::LocalSet(elem));
-      let item_val = ctx.alloc_local();
-      let item_ok = ctx.alloc_local_typed(ValType::I32);
-      let item_err = ctx.alloc_local_typed(ValType::I32);
-      let item_path = literal_local(ctx, "")?;
-      let inner_hint = hint_set_elem(static_hint);
-      emit_decode_map_node(
-        ctx,
-        graph,
-        *item_id,
-        elem,
-        inner_hint.as_ref(),
-        (item_val, item_ok, item_err, item_path),
-      )?;
-      ctx.emit(Instruction::LocalGet(item_ok));
-      ctx.begin_block_if();
-      let dup = ctx.alloc_i32(0);
-      let j = ctx.alloc_i32(0);
-      ctx.begin_block();
-      ctx.begin_loop();
-      ctx.emit(Instruction::LocalGet(j));
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::I32GeU);
-      ctx.emit(Instruction::LocalGet(dup));
-      ctx.emit(Instruction::I32Or);
-      ctx.emit(Instruction::BrIf(1));
-      let prev = ctx.alloc_local();
-      emit_list_load_elem(ctx, dst_ptr, j);
-      ctx.emit(Instruction::LocalSet(prev));
-      ctx.emit(Instruction::LocalGet(prev));
-      ctx.emit(Instruction::LocalGet(item_val));
-      ctx.call_rt("__rt_value_equal");
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(dup));
-      ctx.emit(Instruction::End);
-      ctx.i32_inc(j);
-      ctx.br_loop();
-      ctx.end_block_loop();
-      ctx.emit(Instruction::LocalGet(dup));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(0));
-      ctx.emit(Instruction::LocalSet(valid));
-      ctx.emit(Instruction::Else);
-      emit_list_store_elem(ctx, dst_ptr, i, item_val);
-      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalGet(values[pidx]));
+      ctx.emit(Instruction::I64ReinterpretF64);
+      ctx.emit(Instruction::LocalGet(raw_p));
+      ctx.emit(Instruction::I64ReinterpretF64);
+      ctx.emit(Instruction::I64Eq);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::LocalSet(all_identical));
       ctx.emit(Instruction::Else);
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::LocalSet(valid));
-      ctx.emit(Instruction::LocalGet(item_err));
+      ctx.emit(Instruction::LocalGet(p_err));
       ctx.emit(Instruction::LocalSet(error_kind));
-      let full_path = prepend_static_path(ctx, ".item", item_path)?;
+      let full_path = prepend_indexed_path(ctx, ".payload[", pidx, p_path)?;
       ctx.emit(Instruction::LocalGet(full_path));
       ctx.emit(Instruction::LocalSet(error_path));
       ctx.emit(Instruction::End);
-      ctx.i32_inc(i);
-      ctx.br_loop();
-      ctx.end_block_loop();
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(dst_ptr));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
     }
-    DataShapeNode::Map { key, value } => {
-      let is_map = emit_has_heap_tag(ctx, input, "map");
-      ctx.emit(Instruction::LocalGet(is_map));
-      ctx.begin_block_if();
-      let map_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(map_ptr));
-      let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
-      let count = emit_load_count_i32(ctx, flat_ptr);
-      let total_slots = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32Const(2));
-      ctx.emit(Instruction::I32Mul);
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::LocalSet(total_slots));
-      let dst_flat = emit_alloc_with_count(ctx, count, total_slots, "map");
-      let valid = ctx.alloc_i32(1);
-      let i = ctx.alloc_i32(0);
-      ctx.begin_block();
-      ctx.begin_loop();
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32GeU);
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.emit(Instruction::I32Or);
-      ctx.emit(Instruction::BrIf(1));
-      let entry_off = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::I32Const(16));
-      ctx.emit(Instruction::I32Mul);
-      ctx.emit(Instruction::I32Const(8));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::LocalSet(entry_off));
-      let raw_k = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(flat_ptr));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(raw_k));
-      let raw_v = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(flat_ptr));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-      ctx.emit(Instruction::LocalSet(raw_v));
-      let (k_hint, v_hint) = hint_map_kv(static_hint);
-      let k_val = ctx.alloc_local();
-      let k_ok = ctx.alloc_local_typed(ValType::I32);
-      let k_err = ctx.alloc_local_typed(ValType::I32);
-      let k_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *key, raw_k, k_hint.as_ref(), (k_val, k_ok, k_err, k_path))?;
-      let v_val = ctx.alloc_local();
-      let v_ok = ctx.alloc_local_typed(ValType::I32);
-      let v_err = ctx.alloc_local_typed(ValType::I32);
-      let v_path = literal_local(ctx, "")?;
-      emit_decode_map_node(ctx, graph, *value, raw_v, v_hint.as_ref(), (v_val, v_ok, v_err, v_path))?;
-      ctx.emit(Instruction::LocalGet(k_ok));
-      ctx.emit(Instruction::LocalGet(v_ok));
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(dst_flat));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::LocalGet(k_val));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalGet(dst_flat));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::LocalGet(v_val));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::I32Const(0));
-      ctx.emit(Instruction::LocalSet(valid));
-      ctx.emit(Instruction::LocalGet(k_ok));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(k_err));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      let full_k_path = prepend_static_path(ctx, ".key", k_path)?;
-      ctx.emit(Instruction::LocalGet(full_k_path));
-      ctx.emit(Instruction::LocalSet(error_path));
-      ctx.emit(Instruction::Else);
-      ctx.emit(Instruction::LocalGet(v_err));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      let full_v_path = prepend_static_path(ctx, ".value", v_path)?;
-      ctx.emit(Instruction::LocalGet(full_v_path));
-      ctx.emit(Instruction::LocalSet(error_path));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.i32_inc(i);
-      ctx.br_loop();
-      ctx.end_block_loop();
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(dst_flat));
-      ctx.call_rt("__rt_map_root_from_flat");
-      let hashed_root = ctx.alloc_local_typed(ValType::I32);
-      let actual_count = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalSet(hashed_root));
-      ctx.emit(Instruction::LocalSet(actual_count));
-      ctx.emit(Instruction::LocalGet(actual_count));
-      ctx.emit(Instruction::LocalGet(count));
-      ctx.emit(Instruction::I32Eq);
-      ctx.begin_block_if();
-      let out_map = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
-      ctx.emit(Instruction::LocalGet(out_map));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
+    ctx.emit(Instruction::LocalGet(valid));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(all_identical));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(input));
+    ctx.emit(Instruction::LocalSet(decoded));
+    ctx.emit(Instruction::Else);
+    let enum_ptr = ctx.alloc_local_typed(ValType::I32);
+    emit_bump_alloc(ctx, ((2 + payload_nodes.len()) * 8) as i32, enum_ptr, "enum");
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(f64_const(payload_nodes.len() as f64));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(f64_const(expected_tag));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+    for (payload_index, value) in values.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(enum_ptr));
+      ctx.emit(Instruction::LocalGet(*value));
+      ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + payload_index) * 8) as u64)));
     }
-    DataShapeNode::Struct { nominal, fields, .. } => {
-      let struct_tag_id = ctx.struct_layouts.id(nominal)?;
-      let is_struct = emit_has_heap_tag(ctx, input, "struct");
-      ctx.emit(Instruction::LocalGet(is_struct));
-      ctx.begin_block_if();
-      let ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(ptr));
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(f64_const(fields.len() as f64));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-      ctx.emit(f64_const(struct_tag_id as f64));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::I32And);
-      ctx.begin_block_if();
-      let valid = ctx.alloc_i32(1);
-      let all_identical = ctx.alloc_i32(1);
-      let values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-      for (idx, (field, child)) in fields.iter().enumerate() {
-        ctx.emit(Instruction::LocalGet(valid));
-        ctx.begin_block_if();
-        let raw_val = ctx.alloc_local();
-        ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + idx) * 8) as u64)));
-        ctx.emit(Instruction::LocalSet(raw_val));
-        let f_ok = ctx.alloc_local_typed(ValType::I32);
-        let f_err = ctx.alloc_local_typed(ValType::I32);
-        let f_path = literal_local(ctx, "")?;
-        let field_hint = hint_struct_field(static_hint, nominal, idx);
-        emit_decode_map_node(ctx, graph, *child, raw_val, field_hint.as_ref(), (values[idx], f_ok, f_err, f_path))?;
-        ctx.emit(Instruction::LocalGet(f_ok));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(all_identical));
-        ctx.emit(Instruction::LocalGet(values[idx]));
-        ctx.emit(Instruction::I64ReinterpretF64);
-        ctx.emit(Instruction::LocalGet(raw_val));
-        ctx.emit(Instruction::I64ReinterpretF64);
-        ctx.emit(Instruction::I64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.emit(Instruction::LocalSet(all_identical));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::I32Const(0));
-        ctx.emit(Instruction::LocalSet(valid));
-        ctx.emit(Instruction::LocalGet(f_err));
-        ctx.emit(Instruction::LocalSet(error_kind));
-        let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
-        ctx.emit(Instruction::LocalGet(full_path));
-        ctx.emit(Instruction::LocalSet(error_path));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(all_identical));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::Else);
-      let struct_ptr = ctx.alloc_local_typed(ValType::I32);
-      emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(f64_const(fields.len() as f64));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(f64_const(struct_tag_id as f64));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-      for (index, value) in values.iter().enumerate() {
-        ctx.emit(Instruction::LocalGet(struct_ptr));
-        ctx.emit(Instruction::LocalGet(*value));
-        ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + index) * 8) as u64)));
-      }
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::Else);
-      let is_map = emit_has_heap_tag(ctx, input, "map");
-      ctx.emit(Instruction::LocalGet(is_map));
-      ctx.begin_block_if();
-      let map_ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(map_ptr));
-      let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
-      let entry_count = emit_load_count_i32(ctx, flat_ptr);
-      let valid = ctx.alloc_i32(1);
-      let raw_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-      let seen = fields.iter().map(|_| ctx.alloc_i32(0)).collect::<Vec<_>>();
-      let i = ctx.alloc_i32(0);
-      ctx.begin_block();
-      ctx.begin_loop();
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::LocalGet(entry_count));
-      ctx.emit(Instruction::I32GeU);
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.emit(Instruction::I32Or);
-      ctx.emit(Instruction::BrIf(1));
-      let entry_off = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(i));
-      ctx.emit(Instruction::I32Const(16));
-      ctx.emit(Instruction::I32Mul);
-      ctx.emit(Instruction::I32Const(8));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::LocalSet(entry_off));
-      let key = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(flat_ptr));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(key));
-      let val = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(flat_ptr));
-      ctx.emit(Instruction::LocalGet(entry_off));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-      ctx.emit(Instruction::LocalSet(val));
-      let key_is_str = emit_has_heap_tag(ctx, key, "string");
-      let key_is_heap = emit_is_heap_value(ctx, key);
-      let matched = ctx.alloc_i32(0);
-      for (idx, (field, _)) in fields.iter().enumerate() {
-        let field_tag_id = *ctx
-          .tag_index
-          .get(field.ref_str())
-          .ok_or_else(|| format!("unknown struct field tag in WASM map decode: {field}"))? as f64;
-        let is_this_field = ctx.alloc_i32(0);
-        ctx.emit(Instruction::LocalGet(key_is_heap));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.emit(Instruction::LocalGet(key));
-        ctx.emit(f64_const(field_tag_id));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(is_this_field));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::LocalGet(key_is_str));
-        ctx.begin_block_if();
-        let key_ptr = ctx.alloc_local_typed(ValType::I32);
-        ctx.emit(Instruction::LocalGet(key));
-        ctx.emit(Instruction::I32TruncF64U);
-        ctx.emit(Instruction::LocalSet(key_ptr));
-        emit_string_equals_literal(ctx, key_ptr, field.ref_str())?;
-        ctx.emit(Instruction::LocalSet(is_this_field));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-
-        ctx.emit(Instruction::LocalGet(is_this_field));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(matched));
-        ctx.emit(Instruction::LocalGet(seen[idx]));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(0));
-        ctx.emit(Instruction::LocalSet(valid));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(seen[idx]));
-        ctx.emit(Instruction::LocalGet(val));
-        ctx.emit(Instruction::LocalSet(raw_values[idx]));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-      ctx.emit(Instruction::LocalGet(matched));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(0));
-      ctx.emit(Instruction::LocalSet(valid));
-      ctx.emit(Instruction::End);
-      ctx.i32_inc(i);
-      ctx.br_loop();
-      ctx.end_block_loop();
-
-      let (_, map_val_hint) = hint_map_kv(static_hint);
-      let decoded_values = fields.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-      for (idx, (field, child)) in fields.iter().enumerate() {
-        ctx.emit(Instruction::LocalGet(valid));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(seen[idx]));
-        ctx.begin_block_if();
-        let f_ok = ctx.alloc_local_typed(ValType::I32);
-        let f_err = ctx.alloc_local_typed(ValType::I32);
-        let f_path = literal_local(ctx, "")?;
-        emit_decode_map_node(
-          ctx,
-          graph,
-          *child,
-          raw_values[idx],
-          map_val_hint.as_ref(),
-          (decoded_values[idx], f_ok, f_err, f_path),
-        )?;
-        ctx.emit(Instruction::LocalGet(f_ok));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(0));
-        ctx.emit(Instruction::LocalSet(valid));
-        ctx.emit(Instruction::LocalGet(f_err));
-        ctx.emit(Instruction::LocalSet(error_kind));
-        let full_path = prepend_field_path(ctx, field.ref_str(), f_path)?;
-        ctx.emit(Instruction::LocalGet(full_path));
-        ctx.emit(Instruction::LocalSet(error_path));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::Else);
-        if matches!(graph.nodes.get(*child), Some(DataShapeNode::MapOption { .. })) {
-          emit_option_enum(ctx, None)?;
-          ctx.emit(Instruction::LocalSet(decoded_values[idx]));
-        } else {
-          ctx.emit(Instruction::I32Const(0));
-          ctx.emit(Instruction::LocalSet(valid));
-        }
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-
-      ctx.emit(Instruction::LocalGet(valid));
-      ctx.begin_block_if();
-      let struct_ptr = ctx.alloc_local_typed(ValType::I32);
-      emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(f64_const(fields.len() as f64));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(f64_const(struct_tag_id as f64));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-      for (index, value) in decoded_values.iter().enumerate() {
-        ctx.emit(Instruction::LocalGet(struct_ptr));
-        ctx.emit(Instruction::LocalGet(*value));
-        ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + index) * 8) as u64)));
-      }
-      ctx.emit(Instruction::LocalGet(struct_ptr));
-      ctx.emit(Instruction::F64ConvertI32U);
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::I32Const(1));
-      ctx.emit(Instruction::LocalSet(ok));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-    }
-    DataShapeNode::Enum { nominal, variants, .. } => {
-      // WASM enum heap objects do not carry a runtime definition tag, so only inputs
-      // with static enum declaration evidence matching `nominal` can be validated safely.
-      let enum_matches_nominal = static_hint
-        .and_then(|ty| ty.resolve_to_enum())
-        .is_some_and(|actual| actual.same_nominal_definition(nominal));
-      if !enum_matches_nominal {
-        ctx.emit(Instruction::I32Const(5));
-        ctx.emit(Instruction::LocalSet(error_kind));
-        return Ok(());
-      }
-      let is_enum = emit_has_heap_tag(ctx, input, "enum");
-      ctx.emit(Instruction::LocalGet(is_enum));
-      ctx.begin_block_if();
-      let ptr = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::LocalSet(ptr));
-      let count = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(count));
-      let vtag = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-      ctx.emit(Instruction::LocalSet(vtag));
-      let matched = ctx.alloc_i32(0);
-      for (variant, payload_nodes) in variants {
-        let expected_tag = *ctx.tag_index.get(variant.ref_str()).ok_or_else(|| {
-          format!(
-            "E_WASM_EDN_SHAPE: enum :{} variant :{} is not present in the compiled program",
-            nominal.name(),
-            variant
-          )
-        })? as f64;
-        ctx.emit(Instruction::LocalGet(vtag));
-        ctx.emit(f64_const(expected_tag));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::LocalGet(count));
-        ctx.emit(f64_const(payload_nodes.len() as f64));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(matched));
-        let valid = ctx.alloc_i32(1);
-        let all_identical = ctx.alloc_i32(1);
-        let values = payload_nodes.iter().map(|_| ctx.alloc_local()).collect::<Vec<_>>();
-        for (pidx, pnode) in payload_nodes.iter().enumerate() {
-          ctx.emit(Instruction::LocalGet(valid));
-          ctx.begin_block_if();
-          let raw_p = ctx.alloc_local();
-          ctx.emit(Instruction::LocalGet(ptr));
-          ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + pidx) * 8) as u64)));
-          ctx.emit(Instruction::LocalSet(raw_p));
-          let p_ok = ctx.alloc_local_typed(ValType::I32);
-          let p_err = ctx.alloc_local_typed(ValType::I32);
-          let p_path = literal_local(ctx, "")?;
-          let payload_hint = hint_enum_payload(static_hint, nominal, variant, pidx);
-          emit_decode_map_node(
-            ctx,
-            graph,
-            *pnode,
-            raw_p,
-            payload_hint.as_ref(),
-            (values[pidx], p_ok, p_err, p_path),
-          )?;
-          ctx.emit(Instruction::LocalGet(p_ok));
-          ctx.begin_block_if();
-          ctx.emit(Instruction::LocalGet(all_identical));
-          ctx.emit(Instruction::LocalGet(values[pidx]));
-          ctx.emit(Instruction::I64ReinterpretF64);
-          ctx.emit(Instruction::LocalGet(raw_p));
-          ctx.emit(Instruction::I64ReinterpretF64);
-          ctx.emit(Instruction::I64Eq);
-          ctx.emit(Instruction::I32And);
-          ctx.emit(Instruction::LocalSet(all_identical));
-          ctx.emit(Instruction::Else);
-          ctx.emit(Instruction::I32Const(0));
-          ctx.emit(Instruction::LocalSet(valid));
-          ctx.emit(Instruction::LocalGet(p_err));
-          ctx.emit(Instruction::LocalSet(error_kind));
-          let full_path = prepend_indexed_path(ctx, ".payload[", pidx, p_path)?;
-          ctx.emit(Instruction::LocalGet(full_path));
-          ctx.emit(Instruction::LocalSet(error_path));
-          ctx.emit(Instruction::End);
-          ctx.emit(Instruction::End);
-        }
-        ctx.emit(Instruction::LocalGet(valid));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(all_identical));
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::Else);
-        let enum_ptr = ctx.alloc_local_typed(ValType::I32);
-        emit_bump_alloc(ctx, ((2 + payload_nodes.len()) * 8) as i32, enum_ptr, "enum");
-        ctx.emit(Instruction::LocalGet(enum_ptr));
-        ctx.emit(f64_const(payload_nodes.len() as f64));
-        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-        ctx.emit(Instruction::LocalGet(enum_ptr));
-        ctx.emit(f64_const(expected_tag));
-        ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-        for (payload_index, value) in values.iter().enumerate() {
-          ctx.emit(Instruction::LocalGet(enum_ptr));
-          ctx.emit(Instruction::LocalGet(*value));
-          ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + payload_index) * 8) as u64)));
-        }
-        ctx.emit(Instruction::LocalGet(enum_ptr));
-        ctx.emit(Instruction::F64ConvertI32U);
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(ok));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-      }
-      ctx.emit(Instruction::LocalGet(matched));
-      ctx.emit(Instruction::I32Eqz);
-      ctx.begin_block_if();
-      ctx.emit(Instruction::I32Const(5));
-      ctx.emit(Instruction::LocalSet(error_kind));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
-    }
-    _ => unreachable!("shape was validated before map decoder emission"),
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(Instruction::LocalSet(decoded));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::LocalSet(ok));
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
   }
+  ctx.emit(Instruction::LocalGet(matched));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::I32Const(5));
+  ctx.emit(Instruction::LocalSet(error_kind));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
