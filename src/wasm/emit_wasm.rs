@@ -541,6 +541,8 @@ fn emit_wasm_impl(
       *tag_index.get("enum").expect("enum tag must exist") as i32,
       *tag_index.get("set").expect("set tag must exist") as i32,
       *tag_index.get("struct").expect("struct tag must exist") as i32,
+      *tag_index.get("nil").expect("nil tag must exist") as i32,
+      *tag_index.get("bool").expect("bool tag must exist") as i32,
     ),
     &tag_index,
   )?;
@@ -6035,7 +6037,7 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
 fn infer_wasm_codec_hint(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
   infer_wasm_value_evidence(ctx, expr).map(|evidence| {
     let ty = evidence.codec_hint.unwrap_or(evidence.annotation);
-    CalcitTypeAnnotation::expand_schema_alias(&ty)
+    expand_wasm_value_type(&ty)
   })
 }
 
@@ -6092,8 +6094,8 @@ fn infer_wasm_evidence_in_scope(
   let mut result = match expr {
     Calcit::Local(local) => {
       if let Some(bound) = local_types.get(local.sym.as_ref()) {
-        let bound_ty = CalcitTypeAnnotation::expand_schema_alias(&bound.annotation);
-        let local_ty = CalcitTypeAnnotation::expand_schema_alias(&local.type_info);
+        let bound_ty = expand_wasm_value_type(&bound.annotation);
+        let local_ty = expand_wasm_value_type(&local.type_info);
         if (nil_type_evidence_is_open(&bound_ty)
           || matches!(
             bound_ty.as_ref(),
@@ -6261,7 +6263,8 @@ fn infer_wasm_evidence_in_scope(
                   };
                   if let Some(pt) = variant.payload_types().get(bind_idx) {
                     let sub_pt = replace_unbound_type_vars_with_never(&pt.substitute_type_vars(&bindings));
-                    branch_types.insert(bind_name.to_owned(), WasmTypeEvidence::contract(sub_pt));
+                    let chosen = resolve_match_payload_type(binding, sub_pt);
+                    branch_types.insert(bind_name.to_owned(), WasmTypeEvidence::contract(chosen));
                   }
                 }
               }
@@ -6270,9 +6273,13 @@ fn infer_wasm_evidence_in_scope(
               if matches!(body_ev.annotation.as_ref(), CalcitTypeAnnotation::Never) {
                 continue;
               }
-              match &joined {
+              match &mut joined {
                 None => joined = Some(body_ev),
-                Some(prev) if prev.annotation == body_ev.annotation => {}
+                Some(prev) if prev.annotation == body_ev.annotation && prev.scalar_origin == body_ev.scalar_origin => {
+                  if prev.codec_hint != body_ev.codec_hint {
+                    prev.codec_hint = None;
+                  }
+                }
                 Some(_) => {
                   joined = infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract);
                   break;
@@ -6345,8 +6352,9 @@ fn infer_wasm_evidence_in_scope(
         }
         Calcit::Syntax(CalcitSyntax::EncodeMapAs, _) => {
           let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(items.get(2)?, &[]);
-          let expanded_target = CalcitTypeAnnotation::expand_schema_alias(&target);
+          let expanded_target = expand_wasm_value_type(&target);
           let mut annotation = infer_encoded_map_type(&target);
+          let mut codec_hint = infer_encoded_codec_hint(&target);
           if let Some(enum_def) = expanded_target.resolve_to_enum()
             && enum_def.name().ref_str() == "Option"
             && let CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) = expanded_target.as_ref()
@@ -6360,7 +6368,7 @@ fn infer_wasm_evidence_in_scope(
               if is_option_none_expr(input_expr) {
                 annotation = expanded_target.clone();
               } else if let Some(payload_expr) = option_some_payload_expr(input_expr) {
-                let expanded_arg0 = CalcitTypeAnnotation::expand_schema_alias(&args[0]);
+                let expanded_arg0 = expand_wasm_value_type(&args[0]);
                 if matches!(expanded_arg0.as_ref(), CalcitTypeAnnotation::Dynamic) {
                   if let Some(payload_ev) = infer_wasm_evidence_in_scope(ctx, payload_expr, local_types, closures, visiting) {
                     let payload_is_option = payload_ev
@@ -6371,17 +6379,19 @@ fn infer_wasm_evidence_in_scope(
                       annotation = expanded_target.clone();
                     } else {
                       annotation = infer_encoded_map_type(&payload_ev.annotation);
+                      codec_hint = infer_encoded_codec_hint(payload_ev.codec_hint.as_ref().unwrap_or(&payload_ev.annotation));
                     }
                   }
                 } else {
                   annotation = infer_encoded_map_type(&args[0]);
+                  codec_hint = infer_encoded_codec_hint(&args[0]);
                 }
               }
             }
           }
           Some(WasmTypeEvidence {
             annotation,
-            codec_hint: Some(infer_encoded_codec_hint(&target)),
+            codec_hint: Some(codec_hint),
             set_member_types: None,
             scalar_origin: None,
             exact_impls: false,
@@ -6468,17 +6478,30 @@ fn infer_wasm_evidence_in_scope(
               ev.annotation = Arc::new(CalcitTypeAnnotation::Map(first_k.clone(), val_ty.clone()));
             }
             ev.set_member_types = Some(key_types);
-          } else if def_name == Some("try-parse-json") {
-            ev.codec_hint = Some(Arc::new(CalcitTypeAnnotation::Map(
-              Arc::new(CalcitTypeAnnotation::Tag),
-              DYNAMIC_TYPE.clone(),
-            )));
           } else if matches!(def_name, Some("result:unwrap-or" | "option:unwrap-or"))
             && let Some(arg0) = items.get(1)
             && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg0, local_types, closures, visiting)
-            && arg_ev.codec_hint.is_some()
           {
-            ev.codec_hint = arg_ev.codec_hint;
+            if arg_ev.codec_hint.is_some() {
+              ev.codec_hint = arg_ev.codec_hint;
+            }
+            if nil_type_evidence_is_open(&ev.annotation)
+              && let Some(arg1) = items.get(2)
+              && let Some(fallback_ev) = infer_wasm_evidence_in_scope(ctx, arg1, local_types, closures, visiting)
+            {
+              let expanded_arg0 = expand_wasm_value_type(&arg_ev.annotation);
+              if let CalcitTypeAnnotation::Enum(_, type_args) | CalcitTypeAnnotation::TypeRef(_, type_args) = expanded_arg0.as_ref()
+                && let Some(payload_ty) = type_args.first()
+              {
+                let t0 = expand_wasm_value_type(payload_ty);
+                let t1 = expand_wasm_value_type(&fallback_ev.annotation);
+                if t0 == t1 || t1.is_proven_for(&t0) {
+                  ev.annotation = t0;
+                } else if t0.is_proven_for(&t1) {
+                  ev.annotation = t1;
+                }
+              }
+            }
           } else if def_name == Some("keys-non-nil")
             && let Some(arg0) = items.get(1)
             && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg0, local_types, closures, visiting)
@@ -6510,10 +6533,12 @@ fn infer_wasm_evidence_in_scope(
                 combined.push(elem_ty);
               }
             } else if def_name == Some("assoc") && items.len() >= 4 {
-              let key_ty = infer_wasm_evidence_in_scope(ctx, &items[2], local_types, closures, visiting)
-                .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
-                .unwrap_or_else(|| DYNAMIC_TYPE.clone());
-              combined.push(key_ty);
+              for key_expr in items.iter().skip(2).step_by(2) {
+                let key_ty = infer_wasm_evidence_in_scope(ctx, key_expr, local_types, closures, visiting)
+                  .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                combined.push(key_ty);
+              }
             }
             ev.set_member_types = Some(combined);
           } else if matches!(def_name, Some("merge" | "merge-non-nil" | "union" | "difference" | "intersection")) && items.len() > 1 {
@@ -6562,7 +6587,7 @@ fn infer_wasm_evidence_in_scope(
             let mut all_collection_members_known = items.len() > 1;
             for item in items.iter().skip(1) {
               if let Some(ev) = infer_wasm_evidence_in_scope(ctx, item, local_types, closures, visiting) {
-                let expanded = CalcitTypeAnnotation::expand_schema_alias(&ev.annotation);
+                let expanded = expand_wasm_value_type(&ev.annotation);
                 if matches!(expanded.as_ref(), CalcitTypeAnnotation::Dynamic) {
                   all_elems_known = false;
                 }
@@ -6595,11 +6620,13 @@ fn infer_wasm_evidence_in_scope(
             } else {
               let static_ty =
                 infer_static_type_from_expr(expr).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone())));
-              let is_open_list = matches!(
+              let preserves_tuple_slots = matches!(
                 static_ty.as_ref(),
-                CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-              );
-              if is_open_list && all_elems_known && items.len() == 3 && !all_collection_members_known {
+                CalcitTypeAnnotation::List(inner) if wasm_type_requires_scalar_specialization(inner)
+              ) && all_elems_known
+                && !all_collection_members_known
+                && elem_types.iter().any(|e| !wasm_type_requires_scalar_specialization(e));
+              if preserves_tuple_slots {
                 Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(elem_types)))
               } else {
                 static_ty
@@ -6668,10 +6695,7 @@ fn infer_wasm_evidence_in_scope(
           if matches!(proc, CalcitProc::JsonParse) {
             return Some(WasmTypeEvidence {
               annotation: DYNAMIC_TYPE.clone(),
-              codec_hint: Some(Arc::new(CalcitTypeAnnotation::Map(
-                Arc::new(CalcitTypeAnnotation::Tag),
-                DYNAMIC_TYPE.clone(),
-              ))),
+              codec_hint: None,
               set_member_types: None,
               scalar_origin: None,
               exact_impls: false,
@@ -6734,9 +6758,55 @@ fn infer_wasm_evidence_in_scope(
               infer_static_type_from_expr(expr)
                 .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone())))
             };
+            let codec_hint = if items.len() > 1 && items.iter().skip(1).step_by(2).all(|k| matches!(k, Calcit::Tag(_))) {
+              let mut fields: Vec<cirru_edn::EdnTag> = Vec::new();
+              let mut field_types: Vec<Arc<CalcitTypeAnnotation>> = Vec::new();
+              let mut any_val_hint = false;
+              for (k_expr, v_expr) in items.iter().skip(1).step_by(2).zip(items.iter().skip(2).step_by(2)) {
+                let Calcit::Tag(tag) = k_expr else { continue };
+                let v_ev = infer_wasm_evidence_in_scope(ctx, v_expr, local_types, closures, visiting);
+                if v_ev.as_ref().is_some_and(|ev| ev.codec_hint.is_some()) {
+                  any_val_hint = true;
+                }
+                let val_ty = v_ev
+                  .map(|ev| expand_wasm_value_type(ev.codec_hint.as_ref().unwrap_or(&ev.annotation)))
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                if let Some(pos) = fields.iter().position(|f| f == tag) {
+                  field_types[pos] = val_ty;
+                } else {
+                  fields.push(tag.clone());
+                  field_types.push(val_ty);
+                }
+              }
+              let is_dynamic_val = matches!(
+                expand_wasm_value_type(&annotation).as_ref(),
+                CalcitTypeAnnotation::Map(_, v) if matches!(v.as_ref(), CalcitTypeAnnotation::Dynamic)
+              );
+              let heterogeneous = field_types.first().is_some_and(|first| field_types.iter().any(|t| t != first));
+              if any_val_hint || is_dynamic_val || heterogeneous {
+                let synth = Arc::new(CalcitStructDef {
+                  definition_ref: None,
+                  name: cirru_edn::EdnTag::from("__wasm_literal_map__"),
+                  fields: Arc::new(fields),
+                  field_types: Arc::new(field_types),
+                  generics: Arc::new(vec![]),
+                  where_bounds: Arc::new(vec![]),
+                  field_defaults: Arc::new(vec![]),
+                  impls: vec![],
+                });
+                Some(Arc::new(CalcitTypeAnnotation::Map(
+                  Arc::new(CalcitTypeAnnotation::StructValue(synth.clone())),
+                  Arc::new(CalcitTypeAnnotation::Struct(synth, Arc::new(vec![]))),
+                )))
+              } else {
+                None
+              }
+            } else {
+              None
+            };
             return Some(WasmTypeEvidence {
               annotation,
-              codec_hint: None,
+              codec_hint,
               set_member_types: Some(key_types),
               scalar_origin: None,
               exact_impls: false,
@@ -6763,11 +6833,20 @@ fn infer_wasm_evidence_in_scope(
                 _ => vec![DYNAMIC_TYPE.clone()],
               }
             });
-            if matches!(proc, CalcitProc::NativeInclude | CalcitProc::NativeMapAssoc) {
-              let elem_ty = infer_wasm_evidence_in_scope(ctx, &items[2], local_types, closures, visiting)
-                .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
-                .unwrap_or_else(|| DYNAMIC_TYPE.clone());
-              combined.push(elem_ty);
+            if matches!(proc, CalcitProc::NativeInclude) {
+              for arg in items.iter().skip(2) {
+                let elem_ty = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting)
+                  .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                combined.push(elem_ty);
+              }
+            } else if matches!(proc, CalcitProc::NativeMapAssoc) {
+              for key_expr in items.iter().skip(2).step_by(2) {
+                let elem_ty = infer_wasm_evidence_in_scope(ctx, key_expr, local_types, closures, visiting)
+                  .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                combined.push(elem_ty);
+              }
             }
             let annotation = infer_static_type_from_expr(expr).unwrap_or_else(|| {
               if is_map_op {
@@ -7048,7 +7127,7 @@ fn infer_encoded_struct_map_value_type(def: &CalcitStructDef, args: &[Arc<Calcit
 }
 
 fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  let expanded = expand_wasm_value_type(annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(infer_encoded_map_type(inner))),
     CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(infer_encoded_map_type(inner))),
@@ -7108,7 +7187,7 @@ fn infer_encoded_map_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitT
 }
 
 fn infer_encoded_codec_hint(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  let expanded = expand_wasm_value_type(annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::List(inner) => Arc::new(CalcitTypeAnnotation::List(infer_encoded_codec_hint(inner))),
     CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(infer_encoded_codec_hint(inner))),
@@ -7400,6 +7479,7 @@ fn infer_wasm_callable_result(
   if declared.resolve_to_enum().is_none()
     && declared.resolve_to_struct().is_none()
     && !matches!(declared.as_ref(), CalcitTypeAnnotation::AnonymousEnum)
+    && !wasm_type_requires_scalar_specialization(&declared)
   {
     return Some(fallback);
   }
@@ -7450,7 +7530,14 @@ fn infer_wasm_callable_result(
   visiting.remove(&key);
   Some(
     inferred
-      .filter(|actual| actual.annotation.is_proven_for(&declared))
+      .filter(|actual| {
+        actual.annotation.is_proven_for(&declared)
+          || matches!(
+            (actual.annotation.as_ref(), declared.as_ref()),
+            (CalcitTypeAnnotation::Tuple(slots), CalcitTypeAnnotation::List(inner))
+              if slots.iter().all(|slot| slot.is_proven_for(inner))
+          )
+      })
       .unwrap_or(fallback),
   )
 }
@@ -11700,6 +11787,30 @@ fn is_nullable_nonzero_equality_pair(left: &CalcitTypeAnnotation, right: &Calcit
   }
 }
 
+fn resolve_match_payload_type(binding: &Calcit, sub_pt: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let sub_ty = expand_wasm_value_type(&sub_pt);
+  match binding {
+    Calcit::Local(local) => {
+      let local_ty = expand_wasm_value_type(&local.type_info);
+      if !nil_type_evidence_is_open(&local_ty)
+        && !matches!(
+          local_ty.as_ref(),
+          CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_) | CalcitTypeAnnotation::Never
+        )
+        && matches!(
+          sub_ty.as_ref(),
+          CalcitTypeAnnotation::TypeRef(..) | CalcitTypeAnnotation::Custom(_) | CalcitTypeAnnotation::Dynamic
+        )
+      {
+        local.type_info.clone()
+      } else {
+        sub_pt
+      }
+    }
+    _ => sub_pt,
+  }
+}
+
 fn expand_wasm_value_type(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   if matches!(ty.as_ref(), CalcitTypeAnnotation::TypeRef(..)) && (ty.resolve_to_struct().is_some() || ty.resolve_to_enum().is_some()) {
     ty.clone()
@@ -13050,7 +13161,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
           .get(bind_idx)
           .map(|pt| replace_unbound_type_vars_with_never(&pt.substitute_type_vars(&bindings)))
           .filter(|pt| !pt.contains_type_var())
-          .map(WasmTypeEvidence::contract)
+          .map(|sub_pt| WasmTypeEvidence::contract(resolve_match_payload_type(binding, sub_pt)))
       } else {
         None
       };
@@ -13133,7 +13244,28 @@ fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::cod
   if let Some(tail) = shape.tail {
     emit_list_rest(ctx, std::slice::from_ref(shape.subject))?;
     let idx = ctx.declare_local(tail);
-    if let Some(ev) = &subject_ev {
+    let tail_ev = subject_ev.as_ref().map(|ev| {
+      let rest_ty = |ty: &Arc<CalcitTypeAnnotation>| -> Arc<CalcitTypeAnnotation> {
+        match expand_wasm_value_type(ty).as_ref() {
+          CalcitTypeAnnotation::Tuple(slots) => {
+            if slots.len() > 1 {
+              Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(slots[1..].to_vec())))
+            } else {
+              Arc::new(CalcitTypeAnnotation::List(
+                crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone(),
+              ))
+            }
+          }
+          _ => ty.clone(),
+        }
+      };
+      WasmTypeEvidence {
+        annotation: rest_ty(&ev.annotation),
+        codec_hint: ev.codec_hint.as_ref().map(rest_ty),
+        ..ev.clone()
+      }
+    });
+    if let Some(ev) = &tail_ev {
       ctx.local_types.insert(tail.to_string(), ev.clone());
     } else {
       ctx.local_types.remove(tail.as_ref());
@@ -13631,7 +13763,14 @@ fn collect_json_keys_from_str(s: &str, tags: &mut Vec<String>) {
             }
             i += 4;
           }
-          other => unescaped.push(other as char),
+          _ => {
+            if let Some(ch) = s[i..].chars().next() {
+              unescaped.push(ch);
+              i += ch.len_utf8();
+              continue;
+            }
+            break;
+          }
         }
         i += 1;
       } else {

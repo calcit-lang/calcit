@@ -482,7 +482,7 @@ fn prepend_field_path(ctx: &mut WasmGenCtx, field: &str, child_path: u32) -> Res
 }
 
 fn expand_static_hint(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
-  hint.map(|ty| CalcitTypeAnnotation::expand_schema_alias(&Arc::new(ty.clone())).as_ref().clone())
+  hint.map(|ty| super::expand_wasm_value_type(&Arc::new(ty.clone())).as_ref().clone())
 }
 
 fn is_proven_numeric(hint: Option<&CalcitTypeAnnotation>) -> bool {
@@ -497,7 +497,7 @@ fn is_proven_numeric(hint: Option<&CalcitTypeAnnotation>) -> bool {
 fn hint_list_elem(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
   match hint {
     Some(CalcitTypeAnnotation::Never) => Some(CalcitTypeAnnotation::Never),
-    Some(CalcitTypeAnnotation::List(elem)) => Some(CalcitTypeAnnotation::expand_schema_alias(elem).as_ref().clone()),
+    Some(CalcitTypeAnnotation::List(elem)) => Some(super::expand_wasm_value_type(elem).as_ref().clone()),
     _ => None,
   }
 }
@@ -505,9 +505,7 @@ fn hint_list_elem(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnot
 fn hint_tuple_slot(hint: Option<&CalcitTypeAnnotation>, idx: usize) -> Option<CalcitTypeAnnotation> {
   match hint {
     Some(CalcitTypeAnnotation::Never) => Some(CalcitTypeAnnotation::Never),
-    Some(CalcitTypeAnnotation::Tuple(slots)) => slots
-      .get(idx)
-      .map(|s| CalcitTypeAnnotation::expand_schema_alias(s).as_ref().clone()),
+    Some(CalcitTypeAnnotation::Tuple(slots)) => slots.get(idx).map(|s| super::expand_wasm_value_type(s).as_ref().clone()),
     _ => None,
   }
 }
@@ -515,7 +513,7 @@ fn hint_tuple_slot(hint: Option<&CalcitTypeAnnotation>, idx: usize) -> Option<Ca
 fn hint_set_elem(hint: Option<&CalcitTypeAnnotation>) -> Option<CalcitTypeAnnotation> {
   match hint {
     Some(CalcitTypeAnnotation::Never) => Some(CalcitTypeAnnotation::Never),
-    Some(CalcitTypeAnnotation::Set(elem)) => Some(CalcitTypeAnnotation::expand_schema_alias(elem).as_ref().clone()),
+    Some(CalcitTypeAnnotation::Set(elem)) => Some(super::expand_wasm_value_type(elem).as_ref().clone()),
     _ => None,
   }
 }
@@ -527,14 +525,15 @@ fn hint_map_kv(hint: Option<&CalcitTypeAnnotation>) -> (Option<CalcitTypeAnnotat
       let val_hint = match v.as_ref() {
         CalcitTypeAnnotation::Struct(def, args) => super::infer_encoded_struct_map_value_type(def, args).as_ref().clone(),
         CalcitTypeAnnotation::StructValue(def) => super::infer_encoded_struct_map_value_type(def, &[]).as_ref().clone(),
-        other => CalcitTypeAnnotation::expand_schema_alias(&Arc::new(other.clone())).as_ref().clone(),
+        other => super::expand_wasm_value_type(&Arc::new(other.clone())).as_ref().clone(),
       };
       (Some(CalcitTypeAnnotation::Tag), Some(val_hint))
     }
     Some(CalcitTypeAnnotation::Map(k, v)) => (
-      Some(CalcitTypeAnnotation::expand_schema_alias(k).as_ref().clone()),
-      Some(CalcitTypeAnnotation::expand_schema_alias(v).as_ref().clone()),
+      Some(super::expand_wasm_value_type(k).as_ref().clone()),
+      Some(super::expand_wasm_value_type(v).as_ref().clone()),
     ),
+    None | Some(CalcitTypeAnnotation::Dynamic) => (Some(CalcitTypeAnnotation::Tag), None),
     _ => (None, None),
   }
 }
@@ -551,7 +550,7 @@ fn hint_option_inner(hint: Option<&CalcitTypeAnnotation>, option_nominal: &Calci
       Some(CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)) => args.as_slice(),
       _ => &[],
     };
-    return (args.len() == 1).then(|| CalcitTypeAnnotation::expand_schema_alias(&args[0]).as_ref().clone());
+    return (args.len() == 1).then(|| super::expand_wasm_value_type(&args[0]).as_ref().clone());
   }
   hint.cloned()
 }
@@ -561,14 +560,14 @@ fn substitute_type_vars_with_args(
   generics: &[Arc<str>],
   args: &[Arc<CalcitTypeAnnotation>],
 ) -> CalcitTypeAnnotation {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(ty);
+  let expanded = super::expand_wasm_value_type(ty);
   if generics.is_empty() || args.is_empty() {
     return expanded.as_ref().clone();
   }
   let bindings: std::collections::HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = generics
     .iter()
     .zip(args.iter())
-    .map(|(name, arg)| (name.clone(), CalcitTypeAnnotation::expand_schema_alias(arg)))
+    .map(|(name, arg)| (name.clone(), super::expand_wasm_value_type(arg)))
     .collect();
   expanded.substitute_type_vars(&bindings).as_ref().clone()
 }
@@ -614,14 +613,21 @@ fn hint_encoded_struct_field(
     }
     _ => return None,
   };
+  if let Some(actual) = struct_hint.resolve_to_struct()
+    && actual.name.ref_str() == "__wasm_literal_map__"
+  {
+    let field_name = nominal.fields.get(idx)?;
+    let pos = actual.fields.iter().position(|f| f == field_name)?;
+    return Some(super::expand_wasm_value_type(actual.field_types.get(pos)?).as_ref().clone());
+  }
   let field_ty = Arc::new(hint_struct_field(Some(struct_hint), nominal, idx)?);
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(&field_ty);
+  let expanded = super::expand_wasm_value_type(&field_ty);
   if let Some(enum_def) = expanded.resolve_to_enum()
     && enum_def.name().ref_str() == "Option"
     && let CalcitTypeAnnotation::Enum(_, opt_args) | CalcitTypeAnnotation::TypeRef(_, opt_args) = expanded.as_ref()
     && opt_args.len() == 1
   {
-    let inner = CalcitTypeAnnotation::expand_schema_alias(&opt_args[0]);
+    let inner = super::expand_wasm_value_type(&opt_args[0]);
     let inner_is_option = inner
       .resolve_to_enum()
       .is_some_and(|inner_enum| inner_enum.name().ref_str() == "Option");
@@ -720,8 +726,24 @@ fn emit_decode_map_node(
 
   match node {
     DataShapeNode::Dynamic => {
+      let is_boxed_nil = emit_has_heap_tag(ctx, input, "nil");
+      ctx.emit(Instruction::LocalGet(is_boxed_nil));
+      ctx.begin_block_if();
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::LocalSet(decoded));
+      ctx.emit(Instruction::Else);
+      let is_boxed_bool = emit_has_heap_tag(ctx, input, "bool");
+      ctx.emit(Instruction::LocalGet(is_boxed_bool));
+      ctx.begin_block_if();
+      ctx.emit(Instruction::LocalGet(input));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+      ctx.emit(Instruction::LocalSet(decoded));
+      ctx.emit(Instruction::Else);
       ctx.emit(Instruction::LocalGet(input));
       ctx.emit(Instruction::LocalSet(decoded));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::I32Const(1));
       ctx.emit(Instruction::LocalSet(ok));
     }
@@ -730,12 +752,15 @@ fn emit_decode_map_node(
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
       {
         let is_heap = emit_is_heap_value(ctx, input);
+        let is_boxed_nil = emit_has_heap_tag(ctx, input, "nil");
         ctx.emit(Instruction::LocalGet(is_heap));
         ctx.emit(Instruction::I32Eqz);
         ctx.emit(Instruction::LocalGet(input));
         ctx.emit(f64_const(0.0));
         ctx.emit(Instruction::F64Eq);
         ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::LocalGet(is_boxed_nil));
+        ctx.emit(Instruction::I32Or);
         ctx.begin_block_if();
         ctx.emit(f64_const(0.0));
         ctx.emit(Instruction::LocalSet(decoded));
@@ -767,6 +792,27 @@ fn emit_decode_map_node(
       if static_hint
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Never))
       {
+        let is_boxed_bool = emit_has_heap_tag(ctx, input, "bool");
+        ctx.emit(Instruction::LocalGet(is_boxed_bool));
+        ctx.begin_block_if();
+        let bool_val = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(input));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalTee(bool_val));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::LocalGet(bool_val));
+        ctx.emit(f64_const(1.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::I32Or);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::LocalGet(bool_val));
+        ctx.emit(Instruction::LocalSet(decoded));
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::LocalSet(ok));
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::Else);
         let is_heap = emit_is_heap_value(ctx, input);
         ctx.emit(Instruction::LocalGet(is_heap));
         ctx.emit(Instruction::I32Eqz);
@@ -783,6 +829,7 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::LocalSet(decoded));
         ctx.emit(Instruction::I32Const(1));
         ctx.emit(Instruction::LocalSet(ok));
+        ctx.emit(Instruction::End);
         ctx.emit(Instruction::End);
       }
     }
@@ -854,9 +901,7 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::End);
     }
     DataShapeNode::Tag => {
-      if static_hint
-        .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Never))
-      {
+      if matches!(static_hint, Some(CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Never)) {
         let max_tag = ctx.tag_index.values().copied().max().unwrap_or(0) as f64;
         let is_heap = emit_is_heap_value(ctx, input);
         ctx.emit(Instruction::LocalGet(is_heap));

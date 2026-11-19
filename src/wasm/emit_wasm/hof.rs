@@ -231,6 +231,7 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
     }
     e
   })?;
+  let acc_ev = validate_loop_accumulator_evidence(ctx, &fn_call_kind, acc_ev, std::slice::from_ref(&elem_ev));
 
   // Block + Loop pattern
   ctx.begin_block();
@@ -319,6 +320,34 @@ pub(super) enum FoldlCallKind {
   /// A local variable holding a function table index (f64) — uses call_indirect.
   /// Value is the WASM local index of the variable.
   Dynamic(u32),
+}
+
+/// Keep loop accumulator evidence only when an inline callback preserves that exact
+/// type/origin across iterations; otherwise fall back to open accumulator evidence.
+fn validate_loop_accumulator_evidence(
+  ctx: &WasmGenCtx,
+  fn_call_kind: &FoldlCallKind,
+  acc_ev: Option<WasmTypeEvidence>,
+  other_evs: &[Option<WasmTypeEvidence>],
+) -> Option<WasmTypeEvidence> {
+  let FoldlCallKind::Inline(closure) = fn_call_kind else {
+    return acc_ev;
+  };
+  let init_acc = acc_ev?;
+  let mut arg_evs = Vec::with_capacity(1 + other_evs.len());
+  arg_evs.push(init_acc.clone());
+  for ev in other_evs {
+    arg_evs.push(
+      ev.clone()
+        .unwrap_or_else(|| WasmTypeEvidence::contract(crate::wasm::host::calcit::DYNAMIC_TYPE.clone())),
+    );
+  }
+  let ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
+  let stable = ret_ev.annotation == init_acc.annotation
+    && ret_ev.codec_hint == init_acc.codec_hint
+    && ret_ev.set_member_types == init_acc.set_member_types
+    && ret_ev.scalar_origin == init_acc.scalar_origin;
+  stable.then_some(init_acc)
 }
 
 /// Emit a call to a native proc using two pre-allocated locals as arguments.
@@ -449,7 +478,6 @@ pub(super) fn emit_foldl_step(
 pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(4, args, "&list:foldl-shortcut")?;
 
-  let acc_ev = infer_wasm_value_evidence(ctx, &args[1]);
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   // Evaluate collection → i32 pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -485,7 +513,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::LocalSet(elem));
 
   // enum_ptr = trunc(fn(acc, elem))
-  emit_foldl_step(ctx, &fn_call_kind, acc, elem, [acc_ev, elem_ev])?;
+  emit_foldl_step(ctx, &fn_call_kind, acc, elem, [None, elem_ev])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
@@ -522,7 +550,6 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(4, args, "foldr-shortcut")?;
 
-  let acc_ev = infer_wasm_value_evidence(ctx, &args[1]);
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   // Resolve callee
   let fn_call_kind = resolve_callee_kind(ctx, &args[3], 0, 0) // temp indices; real ones allocated below
@@ -556,7 +583,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::LocalSet(elem));
 
   // enum_ptr = trunc(fn(acc, elem))
-  emit_foldl_step(ctx, &fn_call_kind, acc, elem, [acc_ev, elem_ev])?;
+  emit_foldl_step(ctx, &fn_call_kind, acc, elem, [None, elem_ev])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
@@ -877,6 +904,7 @@ pub(super) fn emit_map_fold_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   {
     return Err("&map:fold-kv inline lambda must accept 3 arguments".into());
   }
+  let acc_ev = validate_loop_accumulator_evidence(ctx, &kind, acc_ev, &[key_ev.clone(), val_ev.clone()]);
 
   let i = ctx.alloc_i32(0);
   let key = ctx.alloc_local();
