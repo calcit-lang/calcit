@@ -1599,15 +1599,210 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MergeNonNilFieldPolicy {
+  Keep,
+  Skip,
+  SkipZeroOrBoxedNil,
+}
+
+#[derive(Clone)]
+enum MergeNonNilPolicy {
+  KeepAll,
+  SkipAll,
+  SkipZeroOrBoxedNil,
+  PerTagField(Vec<(u32, MergeNonNilFieldPolicy)>),
+}
+
+fn classify_merge_non_nil_value_type(ty: &CalcitTypeAnnotation, op_name: &str) -> Result<MergeNonNilFieldPolicy, String> {
+  match ty {
+    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never => Ok(MergeNonNilFieldPolicy::Skip),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
+      let inner = expand_wasm_value_type(inner);
+      if wasm_non_nil_value_is_nonzero(&inner) {
+        Ok(MergeNonNilFieldPolicy::SkipZeroOrBoxedNil)
+      } else {
+        Err(format!(
+          "E_WASM_NIL_TYPE_EVIDENCE: {op_name} cannot distinguish nil from zero or false for nullable value type `{}` in the current scalar ABI",
+          ty.to_brief_string()
+        ))
+      }
+    }
+    other if !nil_type_evidence_is_open(other) => Ok(MergeNonNilFieldPolicy::Keep),
+    other => Err(format!(
+      "E_WASM_NIL_TYPE_EVIDENCE: {op_name} requires concrete value types to distinguish nil from 0 or false, found `{}`",
+      other.to_brief_string()
+    )),
+  }
+}
+
+fn resolve_merge_non_nil_struct_field_type(
+  def: &CalcitStructDef,
+  args: &[Arc<CalcitTypeAnnotation>],
+  idx: usize,
+) -> Arc<CalcitTypeAnnotation> {
+  let raw_field = &def.field_types[idx];
+  let substituted = if def.generics.is_empty() || args.is_empty() {
+    expand_wasm_value_type(raw_field)
+  } else {
+    let bindings: TypeBindings = def
+      .generics
+      .iter()
+      .zip(args.iter())
+      .map(|(name, arg)| (name.clone(), expand_wasm_value_type(arg)))
+      .collect();
+    expand_wasm_value_type(&raw_field.substitute_type_vars(&bindings))
+  };
+  if def.name.ref_str() != "__wasm_literal_map__"
+    && let Some(enum_def) = substituted.resolve_to_enum()
+    && enum_def.name().ref_str() == "Option"
+    && let CalcitTypeAnnotation::Enum(_, opt_args) | CalcitTypeAnnotation::TypeRef(_, opt_args) = substituted.as_ref()
+    && opt_args.len() == 1
+  {
+    return expand_wasm_value_type(&opt_args[0]);
+  }
+  substituted
+}
+
+fn infer_map_merge_non_nil_policy(ctx: &WasmGenCtx, map_expr: &Calcit, op_name: &str) -> Result<MergeNonNilPolicy, String> {
+  let evidence = infer_wasm_evidence(ctx, map_expr);
+  let struct_hint = evidence
+    .codec_hint
+    .as_ref()
+    .map(expand_wasm_value_type)
+    .and_then(|hint| match hint.as_ref() {
+      CalcitTypeAnnotation::Map(k, v) if matches!(k.as_ref(), CalcitTypeAnnotation::StructValue(_)) => {
+        match expand_wasm_value_type(v).as_ref() {
+          CalcitTypeAnnotation::Struct(def, args) => Some((def.clone(), args.to_vec())),
+          CalcitTypeAnnotation::StructValue(def) => Some((def.clone(), vec![])),
+          _ => None,
+        }
+      }
+      CalcitTypeAnnotation::Struct(def, args) => Some((def.clone(), args.to_vec())),
+      CalcitTypeAnnotation::StructValue(def) => Some((def.clone(), vec![])),
+      _ => None,
+    });
+
+  if let Some((def, args)) = struct_hint {
+    if def.fields.is_empty() {
+      return Ok(MergeNonNilPolicy::SkipAll);
+    }
+    let mut entries = Vec::with_capacity(def.fields.len());
+    let mut first_policy = None;
+    let mut uniform = true;
+    for (idx, field) in def.fields.iter().enumerate() {
+      let field_ty = resolve_merge_non_nil_struct_field_type(&def, &args, idx);
+      let policy = classify_merge_non_nil_value_type(&field_ty, op_name)?;
+      if let Some(first) = first_policy {
+        if first != policy {
+          uniform = false;
+        }
+      } else {
+        first_policy = Some(policy);
+      }
+      let tag_id = *ctx.tag_index.get(field.ref_str()).ok_or_else(|| {
+        format!(
+          "E_WASM_EDN_TAG: {op_name} field tag `:{}` is missing from tag index",
+          field.ref_str()
+        )
+      })?;
+      entries.push((tag_id, policy));
+    }
+    if uniform && let Some(policy) = first_policy {
+      return Ok(match policy {
+        MergeNonNilFieldPolicy::Keep => MergeNonNilPolicy::KeepAll,
+        MergeNonNilFieldPolicy::Skip => MergeNonNilPolicy::SkipAll,
+        MergeNonNilFieldPolicy::SkipZeroOrBoxedNil => MergeNonNilPolicy::SkipZeroOrBoxedNil,
+      });
+    }
+    return Ok(MergeNonNilPolicy::PerTagField(entries));
+  }
+
+  let expanded = expand_wasm_value_type(&evidence.annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Map(_, val_ty) => {
+      let val_ty = expand_wasm_value_type(val_ty);
+      match classify_merge_non_nil_value_type(&val_ty, op_name)? {
+        MergeNonNilFieldPolicy::Keep => Ok(MergeNonNilPolicy::KeepAll),
+        MergeNonNilFieldPolicy::Skip => Ok(MergeNonNilPolicy::SkipAll),
+        MergeNonNilFieldPolicy::SkipZeroOrBoxedNil => Ok(MergeNonNilPolicy::SkipZeroOrBoxedNil),
+      }
+    }
+    other => Err(format!(
+      "E_WASM_NIL_TYPE_EVIDENCE: {op_name} requires a statically typed Map, found `{}`",
+      other.to_brief_string()
+    )),
+  }
+}
+
+fn emit_merge_non_nil_keep_flag(ctx: &mut WasmGenCtx, bk: u32, bv: u32, policy: &MergeNonNilPolicy) -> u32 {
+  let keep = ctx.alloc_i32(0);
+  match policy {
+    MergeNonNilPolicy::KeepAll => {
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::LocalSet(keep));
+    }
+    MergeNonNilPolicy::SkipAll => {}
+    MergeNonNilPolicy::SkipZeroOrBoxedNil => {
+      let is_boxed_nil = emit_has_heap_tag(ctx, bv, "nil");
+      ctx.emit(Instruction::LocalGet(bv));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Ne);
+      ctx.emit(Instruction::LocalGet(is_boxed_nil));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::LocalSet(keep));
+    }
+    MergeNonNilPolicy::PerTagField(fields) => {
+      let needs_runtime_nil = fields.iter().any(|(_, p)| *p == MergeNonNilFieldPolicy::SkipZeroOrBoxedNil);
+      let non_nil_runtime = needs_runtime_nil.then(|| {
+        let is_boxed_nil = emit_has_heap_tag(ctx, bv, "nil");
+        let non_nil = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(bv));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Ne);
+        ctx.emit(Instruction::LocalGet(is_boxed_nil));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.emit(Instruction::I32And);
+        ctx.emit(Instruction::LocalSet(non_nil));
+        non_nil
+      });
+      for (tag_id, field_policy) in fields {
+        ctx.emit(Instruction::LocalGet(bk));
+        ctx.emit(f64_const(*tag_id as f64));
+        ctx.emit(Instruction::F64Eq);
+        ctx.begin_block_if();
+        match field_policy {
+          MergeNonNilFieldPolicy::Keep => {
+            ctx.emit(Instruction::I32Const(1));
+            ctx.emit(Instruction::LocalSet(keep));
+          }
+          MergeNonNilFieldPolicy::Skip => {
+            ctx.emit(Instruction::I32Const(0));
+            ctx.emit(Instruction::LocalSet(keep));
+          }
+          MergeNonNilFieldPolicy::SkipZeroOrBoxedNil => {
+            ctx.emit(Instruction::LocalGet(non_nil_runtime.expect("non_nil_runtime initialized")));
+            ctx.emit(Instruction::LocalSet(keep));
+          }
+        }
+        ctx.emit(Instruction::End);
+      }
+    }
+  }
+  keep
+}
+
 /// `&merge-non-nil a b` — map merge where nil values from `b` are skipped.
 pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err("&merge-non-nil expects 2 args".into());
   }
   check_map_pair_key_types(ctx, &args[0], &args[1], "&merge-non-nil")?;
+  let policy = infer_map_merge_non_nil_policy(ctx, &args[1], "&merge-non-nil")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let dst = emit_map_merge_non_nil_from_ptrs(ctx, a, b);
+  let dst = emit_map_merge_non_nil_from_ptrs(ctx, a, b, &policy);
   ctx.ptr_to_f64(dst);
   Ok(())
 }
@@ -1621,6 +1816,7 @@ pub(super) fn emit_map_merge_non_nil_variadic(ctx: &mut WasmGenCtx, args: &[Calc
     return emit_expr(ctx, &args[0]);
   }
   let mut all_keys = infer_map_key_types(ctx, &args[0], "merge-non-nil")?;
+  let mut policies = Vec::with_capacity(args.len() - 1);
   for arg in &args[1..] {
     let right_keys = infer_map_key_types(ctx, arg, "merge-non-nil")?;
     for left in &all_keys {
@@ -1635,17 +1831,18 @@ pub(super) fn emit_map_merge_non_nil_variadic(ctx: &mut WasmGenCtx, args: &[Calc
       }
     }
     all_keys.extend(right_keys);
+    policies.push(infer_map_merge_non_nil_policy(ctx, arg, "merge-non-nil")?);
   }
   let mut acc = emit_ptr_to_i32(ctx, &args[0])?;
-  for arg in &args[1..] {
+  for (arg, policy) in args[1..].iter().zip(policies.iter()) {
     let rhs = emit_ptr_to_i32(ctx, arg)?;
-    acc = emit_map_merge_non_nil_from_ptrs(ctx, acc, rhs);
+    acc = emit_map_merge_non_nil_from_ptrs(ctx, acc, rhs, policy);
   }
   ctx.ptr_to_f64(acc);
   Ok(())
 }
 
-fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
+fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32, policy: &MergeNonNilPolicy) -> u32 {
   let a_count = emit_load_count_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
   let b_count = emit_load_count_i32(ctx, b);
@@ -1666,13 +1863,7 @@ fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32
   ctx.emit(Instruction::LocalSet(total_slots));
   let dst_root = emit_alloc_with_count(ctx, max_count, total_slots, "map");
 
-  // Start by copying all non-nil-valued entries from b into a temporary HAMT via __rt_map_assoc
-  // Strategy: build result starting from an empty map, then:
-  //   1. Insert all a entries
-  //   2. Insert all b entries (skip if value is nil=0.0)
-  // Use __rt_map_make to build from flat linearised arrays.
-  // Simpler approach: re-use the same logic as emit_map_merge but skip nil values from b.
-
+  // Copy all entries from `a`, then overlay non-nil entries from `b` according to static value-type evidence.
   let write_idx = ctx.alloc_i32(0);
 
   // Copy all a entries
@@ -1742,10 +1933,8 @@ fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32
     ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
     ctx.emit(Instruction::LocalSet(bv));
 
-    // Skip if bv is nil (0.0)
-    ctx.emit(Instruction::LocalGet(bv));
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Ne);
+    let keep = emit_merge_non_nil_keep_flag(ctx, bk, bv, policy);
+    ctx.emit(Instruction::LocalGet(keep));
     ctx.begin_block_if();
     {
       // Scan existing dst for bk; update if found, else insert
@@ -1834,7 +2023,7 @@ fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32
   emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root)
 }
 
-pub(super) fn extract_pairs_list_key_exprs(pairs_arg: &Calcit) -> Option<Vec<Calcit>> {
+pub(super) fn extract_pairs_list_key_val_exprs(pairs_arg: &Calcit) -> Option<Vec<(Calcit, Calcit)>> {
   let is_core_call = |head: &Calcit, name: &str| match head {
     Calcit::Import(import) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == name,
     Calcit::Symbol { sym, info, .. } => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == name,
@@ -1851,10 +2040,18 @@ pub(super) fn extract_pairs_list_key_exprs(pairs_arg: &Calcit) -> Option<Vec<Cal
     && list_xs.first().is_some_and(is_list_head)
     && (list_xs.len() - 1).is_multiple_of(2)
   {
-    return Some(list_xs.iter().skip(1).step_by(2).cloned().collect());
+    return Some(
+      list_xs
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .cloned()
+        .zip(list_xs.iter().skip(2).step_by(2).cloned())
+        .collect(),
+    );
   }
   if xs.first().is_some_and(is_list_head) {
-    let mut keys = Vec::with_capacity(xs.len().saturating_sub(1));
+    let mut pairs = Vec::with_capacity(xs.len().saturating_sub(1));
     for item in xs.iter().skip(1) {
       let Calcit::List(pair_xs) = item else {
         return None;
@@ -1862,11 +2059,15 @@ pub(super) fn extract_pairs_list_key_exprs(pairs_arg: &Calcit) -> Option<Vec<Cal
       if pair_xs.len() != 3 || !pair_xs.first().is_some_and(is_list_head) {
         return None;
       }
-      keys.push(pair_xs[1].clone());
+      pairs.push((pair_xs[1].clone(), pair_xs[2].clone()));
     }
-    return Some(keys);
+    return Some(pairs);
   }
   None
+}
+
+pub(super) fn extract_pairs_list_key_exprs(pairs_arg: &Calcit) -> Option<Vec<Calcit>> {
+  extract_pairs_list_key_val_exprs(pairs_arg).map(|pairs| pairs.into_iter().map(|(k, _)| k).collect())
 }
 
 /// `calcit.core/pairs-map xs` — build a map from a list of `[key value]` pairs.

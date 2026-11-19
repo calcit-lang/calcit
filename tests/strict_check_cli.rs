@@ -2324,6 +2324,22 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
       "E_WASM_EDN_TYPE",
     ),
     ("if (&> 0 1) (json-stringify (&{} 1 2)) |ok", "E_WASM_EDN_MAP_KEY"),
+    (
+      "let ((m $ assert-type (&{} :kind :nested) Dynamic)) (decode-map-as m RuntimeMapMeta)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((m $ assert-type (&{} :kind :nested) Dynamic)) (try-decode-map-as m RuntimeMapMeta)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((xs $ assert-type ([] false) (List Bool)) (ys $ assert-type ([] 0) (List Number))) (&= xs ys)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((m $ assert-type (&{} :a 1) (Map Tag Dynamic))) (merge-non-nil (&{} :a 2) m)",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");

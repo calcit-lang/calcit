@@ -143,13 +143,14 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
   let ev = infer_wasm_value_evidence(ctx, source)?;
   let expanded = CalcitTypeAnnotation::expand_schema_alias(&ev.annotation);
   match expanded.as_ref() {
-    CalcitTypeAnnotation::List(element) | CalcitTypeAnnotation::Set(element) => Some(WasmTypeEvidence {
+    CalcitTypeAnnotation::List(element) => Some(WasmTypeEvidence {
       annotation: element.clone(),
       codec_hint: None,
       set_member_types: ev.set_member_types,
       scalar_origin: None,
       exact_impls: false,
     }),
+    CalcitTypeAnnotation::Set(element) => Some(WasmTypeEvidence::contract(element.clone())),
     CalcitTypeAnnotation::Tuple(slots) => {
       let annotation = if let Some(first) = slots.first()
         && slots.iter().all(|s| s == first)
@@ -342,12 +343,19 @@ fn validate_loop_accumulator_evidence(
         .unwrap_or_else(|| WasmTypeEvidence::contract(crate::wasm::host::calcit::DYNAMIC_TYPE.clone())),
     );
   }
-  let ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
-  let stable = ret_ev.annotation == init_acc.annotation
-    && ret_ev.codec_hint == init_acc.codec_hint
-    && ret_ev.set_member_types == init_acc.set_member_types
-    && ret_ev.scalar_origin == init_acc.scalar_origin;
-  stable.then_some(init_acc)
+  let mut candidate = init_acc;
+  let mut ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
+  if candidate.exact_impls && !ret_ev.exact_impls {
+    candidate.exact_impls = false;
+    arg_evs[0] = candidate.clone();
+    ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
+  }
+  let stable = ret_ev.annotation == candidate.annotation
+    && ret_ev.exact_impls == candidate.exact_impls
+    && ret_ev.codec_hint == candidate.codec_hint
+    && ret_ev.set_member_types == candidate.set_member_types
+    && ret_ev.scalar_origin == candidate.scalar_origin;
+  stable.then_some(candidate)
 }
 
 /// Emit a call to a native proc using two pre-allocated locals as arguments.

@@ -440,23 +440,6 @@ fn validate_map_decode_shape_with_budget(
   }
 }
 
-fn emit_has_heap_tag(ctx: &mut WasmGenCtx, val_local: u32, tag_name: &str) -> u32 {
-  let is_heap = emit_is_heap_value(ctx, val_local);
-  let matches_tag = ctx.alloc_i32(0);
-  ctx.emit(Instruction::LocalGet(is_heap));
-  ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(val_local));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(4));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(get_type_tag(ctx, tag_name) as i32));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::LocalSet(matches_tag));
-  ctx.emit(Instruction::End);
-  matches_tag
-}
-
 fn prepend_static_path(ctx: &mut WasmGenCtx, prefix: &str, child_path: u32) -> Result<u32, String> {
   let prefix_local = literal_local(ctx, prefix)?;
   Ok(concat_string_locals(ctx, prefix_local, child_path))
@@ -721,6 +704,14 @@ fn emit_decode_map_node(
   {
     return Err(
       "E_WASM_NIL_TYPE_EVIDENCE: encode-map-as requires concrete static scalar type evidence in the current WASM scalar ABI".into(),
+    );
+  }
+  if mode == MapCodecMode::Decode
+    && matches!(node, DataShapeNode::Tag)
+    && static_hint.is_none_or(|ty| nil_type_evidence_is_open(ty) && !matches!(ty, CalcitTypeAnnotation::Never))
+  {
+    return Err(
+      "E_WASM_NIL_TYPE_EVIDENCE: decode-map-as requires concrete static Tag type evidence in the current WASM scalar ABI".into(),
     );
   }
 

@@ -8112,10 +8112,633 @@ fn build_rt_blank() -> CompiledFn {
   }
 }
 
+#[derive(Clone, Copy)]
+struct ParseFloatLocals {
+  hi: u32,
+  lo: u32,
+  tz_count: u32,
+  sig_digits: u32,
+  sticky: u32,
+  exp10: u32,
+  exp2: u32,
+  digit: u32,
+  t_lo: u32,
+  t_hi: u32,
+  t2_lo: u32,
+  t2_hi: u32,
+  rem: u32,
+  shift: u32,
+}
+
+fn rt_emit_u128_mul10_add(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, add_digit: Option<u32>) {
+  // Compute `(hi, lo) * 8` and `(hi, lo) * 2` without overflow (`sig_digits < 38`).
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(3));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(3));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(61));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.t_hi));
+
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(locs.t2_lo));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(63));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.t2_hi));
+
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(locs.lo));
+
+  // Add optional digit `add_digit` and accumulate both 64-bit carries into `hi`.
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::LocalGet(locs.t2_hi));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64LtU);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
+  if let Some(digit) = add_digit {
+    b.emit(Instruction::LocalSet(locs.hi));
+    b.emit(Instruction::LocalGet(locs.lo));
+    b.emit(Instruction::LocalSet(locs.t_lo));
+    b.emit(Instruction::LocalGet(locs.t_lo));
+    b.emit(Instruction::LocalGet(digit));
+    b.emit(Instruction::I64ExtendI32U);
+    b.emit(Instruction::I64Add);
+    b.emit(Instruction::LocalSet(locs.lo));
+    b.emit(Instruction::LocalGet(locs.hi));
+    b.emit(Instruction::LocalGet(locs.lo));
+    b.emit(Instruction::LocalGet(locs.t_lo));
+    b.emit(Instruction::I64LtU);
+    b.emit(Instruction::I64ExtendI32U);
+    b.emit(Instruction::I64Add);
+  }
+  b.emit(Instruction::LocalSet(locs.hi));
+}
+
+fn rt_emit_u128_decimal_digit(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, in_frac: bool) {
+  b.emit(Instruction::LocalGet(locs.sig_digits));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(locs.digit));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  if in_frac {
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(-10_000_000));
+    b.emit(Instruction::I32GtS);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Sub);
+    b.emit(Instruction::LocalSet(locs.exp10));
+    b.emit(Instruction::End);
+  }
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.digit));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.tz_count));
+  b.emit(Instruction::I32Const(10_000_000));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.tz_count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.tz_count));
+  b.emit(Instruction::End);
+  if !in_frac {
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(10_000_000));
+    b.emit(Instruction::I32LtS);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(locs.exp10));
+    b.emit(Instruction::End);
+  }
+  b.emit(Instruction::Else);
+  // Flush pending zeros into the 128-bit significand before appending this non-zero digit.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.tz_count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LeS);
+  b.emit(Instruction::LocalGet(locs.sig_digits));
+  b.emit(Instruction::I32Const(38));
+  b.emit(Instruction::I32GeS);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::BrIf(1));
+  rt_emit_u128_mul10_add(b, locs, None);
+  b.emit(Instruction::LocalGet(locs.sig_digits));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.sig_digits));
+  b.emit(Instruction::LocalGet(locs.tz_count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.tz_count));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::I32Const(-10_000_000));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.exp10));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(locs.tz_count));
+
+  b.emit(Instruction::LocalGet(locs.sig_digits));
+  b.emit(Instruction::I32Const(38));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  rt_emit_u128_mul10_add(b, locs, Some(locs.digit));
+  b.emit(Instruction::LocalGet(locs.sig_digits));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.sig_digits));
+  if in_frac {
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(-10_000_000));
+    b.emit(Instruction::I32GtS);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Sub);
+    b.emit(Instruction::LocalSet(locs.exp10));
+    b.emit(Instruction::End);
+  }
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(locs.sticky));
+  if !in_frac {
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(10_000_000));
+    b.emit(Instruction::I32LtS);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(locs.exp10));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(locs.exp10));
+    b.emit(Instruction::End);
+  }
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+}
+
+fn rt_emit_u128_normalize(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals) {
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(64));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Clz);
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalTee(locs.shift));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.shift));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::LocalSet(locs.t_hi)); // shift as u64 (1..=63)
+  b.emit(Instruction::I64Const(64));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::I64Sub);
+  b.emit(Instruction::LocalSet(locs.t_lo)); // 64 - shift (1..=63)
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(locs.shift));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::End);
+}
+
+fn rt_emit_u128_mul_by_5_step(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals) {
+  // Ensure `(hi, lo) * 5 < 2^128` (`u128::MAX / 5 = 0x3333...`).
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(0x3333_3333_3333_3333u64 as i64));
+  b.emit(Instruction::I64LtU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(locs.sticky));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(63));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Multiply `(hi, lo)` by 5 (`((hi, lo) << 2) + (hi, lo)`).
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(2));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(2));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(62));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.t_hi));
+
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(locs.t2_lo));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64LtU);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.exp2));
+}
+
+fn rt_emit_u128_div_by_5_step(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals) {
+  // Normalize `(hi, lo)` first so division retains full 128-bit precision.
+  rt_emit_u128_normalize(b, locs);
+
+  // Divide 128-bit `(hi, lo)` by 5 via 64/32-bit chunks: `(q_hi, q_lo)` and `rem` (0..=4).
+  // Step 1: `hi / 5`.
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64RemU);
+  b.emit(Instruction::LocalSet(locs.t2_hi)); // r0 in 0..=4
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64DivU);
+  b.emit(Instruction::LocalSet(locs.hi)); // q_hi
+
+  // Step 2: `((r0 << 32) | (lo >> 32)) / 5`.
+  b.emit(Instruction::LocalGet(locs.t2_hi));
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalTee(locs.t_hi)); // num1
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64RemU);
+  b.emit(Instruction::LocalSet(locs.t2_lo)); // r1 in 0..=4
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64DivU);
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(locs.t_hi)); // q_mid << 32
+
+  // Step 3: `((r1 << 32) | (lo & 0xFFFF_FFFF)) / 5`.
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(0xFFFF_FFFFi64));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalTee(locs.t_lo)); // num2
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64RemU);
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalSet(locs.rem));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64DivU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.lo));
+
+  // Factor of 1/2 from dividing by 10 = 5 * 2.
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.exp2));
+
+  // Shift exact fractional bits from `rem / 5` while restoring bit 63 of `hi`.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64LtS);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(locs.rem));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::LocalSet(locs.rem));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(locs.digit));
+  b.emit(Instruction::LocalGet(locs.rem));
+  b.emit(Instruction::I32Const(5));
+  b.emit(Instruction::I32GeS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(locs.rem));
+  b.emit(Instruction::I32Const(5));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.rem));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(locs.digit));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(63));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(locs.digit));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(locs.rem));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(locs.sticky));
+  b.emit(Instruction::End);
+}
+
+fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, result: u32) {
+  let mant = locs.t_hi;
+  let extra_nonzero = locs.digit;
+  let round_up = locs.rem;
+
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1023));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(-1022));
+  b.emit(Instruction::I32GeS);
+  b.emit(Instruction::If(BlockType::Empty));
+  // Normal IEEE 754 binary64: round-to-nearest-even on top 53 bits of normalized `hi`.
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(11));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(mant));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::LocalGet(locs.sticky));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalSet(extra_nonzero));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(0x7FF));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::LocalTee(locs.t_lo));
+  b.emit(Instruction::I64Const(0x400));
+  b.emit(Instruction::I64GtU);
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64Const(0x400));
+  b.emit(Instruction::I64Eq);
+  b.emit(Instruction::LocalGet(extra_nonzero));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(mant));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(53));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(mant));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1023));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1023));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(52));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(0x000F_FFFF_FFFF_FFFFi64));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::F64ReinterpretI64);
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(-1074));
+  b.emit(Instruction::I32GeS);
+  b.emit(Instruction::If(BlockType::Empty));
+  // Subnormal IEEE 754 binary64: `total_shift` is strictly in 12..=63.
+  b.emit(Instruction::I32Const(-1011));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::LocalTee(locs.t2_hi)); // total_shift in 12..=63
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Sub);
+  b.emit(Instruction::LocalSet(locs.t2_lo)); // half_pos in 11..=62
+
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t2_hi));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(mant));
+
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Sub);
+  b.emit(Instruction::LocalSet(locs.t_lo)); // mask for bits below half
+
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(locs.sticky));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalSet(extra_nonzero));
+
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t2_lo));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::LocalGet(extra_nonzero));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(round_up));
+  b.emit(Instruction::LocalGet(round_up));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(mant));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(mant));
+  b.emit(Instruction::F64ReinterpretI64);
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(-1075));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  // Halfway to smallest subnormal `2^-1074`: round to even (0) only on exact tie.
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Const(0x7FFF_FFFF_FFFF_FFFFi64));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(locs.sticky));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::F64ReinterpretI64);
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+}
+
 /// `__rt_parse_float(s: f64) → f64`
 ///
-/// Parses a decimal string to f64. Handles optional sign, integer digits,
-/// optional fractional digits. No scientific notation.
+/// Parses decimal strings to correctly rounded f64 values using 128-bit integer
+/// decimal-to-binary scaling and a single IEEE 754 round-to-nearest-even step.
 fn build_rt_parse_float() -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1); // 0=s(f64)
   let ptr = b.alloc_i32();
@@ -8125,16 +8748,26 @@ fn build_rt_parse_float() -> CompiledFn {
   let is_neg = b.alloc_i32();
   let ch = b.alloc_i32();
   let result = b.alloc_f64();
-  let mantissa = b.alloc_i64();
-  let sig_digits = b.alloc_i32();
-  let exp10 = b.alloc_i32();
   let exp_val = b.alloc_i32();
   let exp_neg = b.alloc_i32();
   let is_special = b.alloc_i32();
-  let digit = b.alloc_i32();
-  let abs_exp = b.alloc_i32();
-  let scale = b.alloc_f64();
-  let pow10 = b.alloc_f64();
+  let scale_steps = b.alloc_i32();
+  let locs = ParseFloatLocals {
+    hi: b.alloc_i64(),
+    lo: b.alloc_i64(),
+    tz_count: b.alloc_i32(),
+    sig_digits: b.alloc_i32(),
+    sticky: b.alloc_i32(),
+    exp10: b.alloc_i32(),
+    exp2: b.alloc_i32(),
+    digit: b.alloc_i32(),
+    t_lo: b.alloc_i64(),
+    t_hi: b.alloc_i64(),
+    t2_lo: b.alloc_i64(),
+    t2_hi: b.alloc_i64(),
+    rem: b.alloc_i32(),
+    shift: b.alloc_i32(),
+  };
 
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32TruncF64U);
@@ -8211,11 +8844,19 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::LocalSet(mantissa));
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(locs.lo));
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(sig_digits));
+  b.emit(Instruction::LocalSet(locs.tz_count));
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(exp10));
+  b.emit(Instruction::LocalSet(locs.sig_digits));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(locs.sticky));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(locs.exp10));
+  b.emit(Instruction::I32Const(127));
+  b.emit(Instruction::LocalSet(locs.exp2));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(is_special));
 
@@ -8255,7 +8896,7 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 
-  // Integer digits accumulated in unsigned 64-bit mantissa (up to 19 significant digits).
+  // Integer digits accumulated in unsigned 128-bit significand (up to 38 significant digits).
   b.emit(Instruction::Block(BlockType::Empty));
   b.emit(Instruction::Loop(BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
@@ -8278,42 +8919,8 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::LocalGet(ch));
   b.emit(Instruction::I32Const(b'0' as i32));
   b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(digit));
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::I64Ne);
-  b.emit(Instruction::LocalGet(digit));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32Ne);
-  b.emit(Instruction::I32Or);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(sig_digits));
-  b.emit(Instruction::I32Const(19));
-  b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::I64Const(10));
-  b.emit(Instruction::I64Mul);
-  b.emit(Instruction::LocalGet(digit));
-  b.emit(Instruction::I64ExtendI32U);
-  b.emit(Instruction::I64Add);
-  b.emit(Instruction::LocalSet(mantissa));
-  b.emit(Instruction::LocalGet(sig_digits));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(sig_digits));
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(10_000));
-  b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(exp10));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
+  b.emit(Instruction::LocalSet(locs.digit));
+  rt_emit_u128_decimal_digit(&mut b, &locs, false);
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
@@ -8360,50 +8967,8 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::LocalGet(ch));
   b.emit(Instruction::I32Const(b'0' as i32));
   b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(digit));
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::I64Eq);
-  b.emit(Instruction::LocalGet(digit));
-  b.emit(Instruction::I32Eqz);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(-10_000));
-  b.emit(Instruction::I32GtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(exp10));
-  b.emit(Instruction::End);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(sig_digits));
-  b.emit(Instruction::I32Const(19));
-  b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::I64Const(10));
-  b.emit(Instruction::I64Mul);
-  b.emit(Instruction::LocalGet(digit));
-  b.emit(Instruction::I64ExtendI32U);
-  b.emit(Instruction::I64Add);
-  b.emit(Instruction::LocalSet(mantissa));
-  b.emit(Instruction::LocalGet(sig_digits));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(sig_digits));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(-10_000));
-  b.emit(Instruction::I32GtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(exp10));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
+  b.emit(Instruction::LocalSet(locs.digit));
+  rt_emit_u128_decimal_digit(&mut b, &locs, true);
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
@@ -8487,7 +9052,7 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::I32Or);
   b.emit(Instruction::BrIf(1));
   b.emit(Instruction::LocalGet(exp_val));
-  b.emit(Instruction::I32Const(10_000));
+  b.emit(Instruction::I32Const(10_000_000));
   b.emit(Instruction::I32LtS);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(exp_val));
@@ -8508,135 +9073,91 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(exp_neg));
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
+  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::LocalGet(exp_val));
   b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(exp10));
+  b.emit(Instruction::LocalSet(locs.exp10));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(exp10));
+  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::LocalGet(exp_val));
   b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(exp10));
+  b.emit(Instruction::LocalSet(locs.exp10));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 
-  // Convert accumulated mantissa and apply a single decimal scale step when needed.
+  // Convert accumulated 128-bit significand and scale by 10^exp10, then round once to f64.
   b.emit(Instruction::LocalGet(is_special));
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::I64Eq);
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64Eqz);
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Eqz);
+  b.emit(Instruction::I32And);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(mantissa));
-  b.emit(Instruction::F64ConvertI64U);
-  b.emit(Instruction::LocalSet(result));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(310));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::I32Const(315));
   b.emit(Instruction::I32GtS);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(-350));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::I32Const(-370));
   b.emit(Instruction::I32LtS);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(exp10));
+  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32Ne);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalSet(abs_exp));
-
-  // Keep `scale = 10^abs_exp` within finite f64 range even for subnormal targets.
-  b.emit(Instruction::LocalGet(abs_exp));
-  b.emit(Instruction::I32Const(308));
   b.emit(Instruction::I32GtS);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(exp10));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  b.emit(Instruction::LocalGet(result));
-  b.emit(Instruction::F64Const(Ieee64::from(1e300f64)));
-  b.emit(Instruction::F64Div);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(result));
-  b.emit(Instruction::F64Const(Ieee64::from(1e300f64)));
-  b.emit(Instruction::F64Mul);
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalSet(result));
-  b.emit(Instruction::LocalGet(abs_exp));
-  b.emit(Instruction::I32Const(300));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(abs_exp));
-  b.emit(Instruction::End);
-
-  b.emit(Instruction::F64Const(Ieee64::from(1.0f64)));
-  b.emit(Instruction::LocalSet(scale));
-  b.emit(Instruction::F64Const(Ieee64::from(10.0f64)));
-  b.emit(Instruction::LocalSet(pow10));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::LocalSet(scale_steps));
   b.emit(Instruction::Block(BlockType::Empty));
   b.emit(Instruction::Loop(BlockType::Empty));
-  b.emit(Instruction::LocalGet(abs_exp));
+  b.emit(Instruction::LocalGet(scale_steps));
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(abs_exp));
+  rt_emit_u128_mul_by_5_step(&mut b, &locs);
+  b.emit(Instruction::LocalGet(scale_steps));
   b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(scale));
-  b.emit(Instruction::LocalGet(pow10));
-  b.emit(Instruction::F64Mul);
-  b.emit(Instruction::LocalSet(scale));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(abs_exp));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32ShrU);
-  b.emit(Instruction::LocalTee(abs_exp));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32GtS);
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(pow10));
-  b.emit(Instruction::LocalGet(pow10));
-  b.emit(Instruction::F64Mul);
-  b.emit(Instruction::LocalSet(pow10));
-  b.emit(Instruction::End);
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(scale_steps));
   b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
-
-  b.emit(Instruction::LocalGet(exp10));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32LtS);
-  b.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  b.emit(Instruction::LocalGet(result));
-  b.emit(Instruction::LocalGet(scale));
-  b.emit(Instruction::F64Div);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(result));
-  b.emit(Instruction::LocalGet(scale));
-  b.emit(Instruction::F64Mul);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(scale_steps));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(scale_steps));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::BrIf(1));
+  rt_emit_u128_div_by_5_step(&mut b, &locs);
+  b.emit(Instruction::LocalGet(scale_steps));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(scale_steps));
+  b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  rt_emit_u128_normalize(&mut b, &locs);
+  rt_emit_u128_round_to_f64(&mut b, &locs, result);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
