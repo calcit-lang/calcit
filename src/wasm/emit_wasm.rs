@@ -5075,21 +5075,87 @@ impl WasmTypeEvidence {
   }
 }
 
+fn push_unique_member_type(out: &mut Vec<Arc<CalcitTypeAnnotation>>, ty: &Arc<CalcitTypeAnnotation>) {
+  let exp = CalcitTypeAnnotation::expand_schema_alias(ty);
+  if !matches!(exp.as_ref(), CalcitTypeAnnotation::Never) && !out.contains(&exp) {
+    out.push(exp);
+  }
+}
+
 fn join_branch_member_types(
   left: Option<Vec<Arc<CalcitTypeAnnotation>>>,
   right: Option<Vec<Arc<CalcitTypeAnnotation>>>,
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   match (left, right) {
-    (Some(mut l), Some(r)) => {
-      for ty in r {
-        if !l.contains(&ty) {
-          l.push(ty);
-        }
+    (Some(l), Some(r)) => {
+      let mut joined = Vec::with_capacity(l.len() + r.len());
+      for ty in l.iter().chain(r.iter()) {
+        push_unique_member_type(&mut joined, ty);
       }
-      Some(l)
+      Some(joined)
     }
     _ => None,
   }
+}
+
+/// Unresolved bare generic slots on empty collection literals act as bottom types
+/// until an element or key/value pair is inserted into them.
+fn is_placeholder_collection_slot(ty: &Arc<CalcitTypeAnnotation>) -> bool {
+  let exp = CalcitTypeAnnotation::expand_schema_alias(ty);
+  match exp.as_ref() {
+    CalcitTypeAnnotation::Never | CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::TypeSlot(_) => true,
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      args.is_empty() && exp.resolve_to_struct().is_none() && exp.resolve_to_enum().is_none() && exp.resolve_to_union().is_none()
+    }
+    _ => false,
+  }
+}
+
+fn join_collection_slot_type(current: &Arc<CalcitTypeAnnotation>, added: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let c = CalcitTypeAnnotation::expand_schema_alias(current);
+  let a = CalcitTypeAnnotation::expand_schema_alias(added);
+  if matches!(c.as_ref(), CalcitTypeAnnotation::Never) {
+    a
+  } else if matches!(a.as_ref(), CalcitTypeAnnotation::Never) || c == a || a.is_proven_for(&c) {
+    c
+  } else if c.is_proven_for(&a) {
+    a
+  } else {
+    DYNAMIC_TYPE.clone()
+  }
+}
+
+fn effective_collection_slot(slot: &Arc<CalcitTypeAnnotation>, is_empty: bool) -> Arc<CalcitTypeAnnotation> {
+  if is_empty && is_placeholder_collection_slot(slot) {
+    crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()
+  } else {
+    slot.clone()
+  }
+}
+
+fn join_collection_branch_evidences(left: &WasmTypeEvidence, right: &WasmTypeEvidence) -> Option<WasmTypeEvidence> {
+  let l_exp = CalcitTypeAnnotation::expand_schema_alias(&left.annotation);
+  let r_exp = CalcitTypeAnnotation::expand_schema_alias(&right.annotation);
+  let l_empty = left.set_member_types.as_deref() == Some(&[]);
+  let r_empty = right.set_member_types.as_deref() == Some(&[]);
+  let annotation = match (l_exp.as_ref(), r_exp.as_ref()) {
+    (CalcitTypeAnnotation::Map(lk, lv), CalcitTypeAnnotation::Map(rk, rv)) => Arc::new(CalcitTypeAnnotation::Map(
+      join_collection_slot_type(&effective_collection_slot(lk, l_empty), &effective_collection_slot(rk, r_empty)),
+      join_collection_slot_type(&effective_collection_slot(lv, l_empty), &effective_collection_slot(rv, r_empty)),
+    )),
+    (CalcitTypeAnnotation::Set(le), CalcitTypeAnnotation::Set(re)) => Arc::new(CalcitTypeAnnotation::Set(join_collection_slot_type(
+      &effective_collection_slot(le, l_empty),
+      &effective_collection_slot(re, r_empty),
+    ))),
+    _ => return None,
+  };
+  Some(WasmTypeEvidence {
+    annotation,
+    codec_hint: None,
+    set_member_types: join_branch_member_types(left.set_member_types.clone(), right.set_member_types.clone()),
+    scalar_origin: None,
+    exact_impls: false,
+  })
 }
 
 #[derive(Clone)]
@@ -5165,6 +5231,9 @@ struct WasmGenCtx {
   /// Immutable let values with exact definition targets. Fresh WASM local
   /// indices preserve lexical identity across shadowing and captured scopes.
   local_function_values: HashMap<u32, CalcitImport>,
+  /// Immutable let values bound to a compile-time Number literal. Fresh WASM
+  /// local indices preserve lexical identity across shadowing and captured scopes.
+  local_number_literals: HashMap<u32, f64>,
   /// Local declarations to add (beyond parameters)
   extra_locals: Vec<ValType>,
   /// Next local index (starts after parameters)
@@ -5272,6 +5341,7 @@ impl WasmGenCtx {
       locals: HashMap::new(),
       local_types: HashMap::new(),
       local_function_values: HashMap::new(),
+      local_number_literals: HashMap::new(),
       extra_locals: Vec::new(),
       next_local: num_params,
       uses_recur: false,
@@ -5963,6 +6033,7 @@ fn emit_inline_closure_call(
     } else {
       let annotation = infer_wasm_value_evidence(ctx, arg);
       let function_value = resolve_known_function_value(ctx, arg);
+      let number_literal = resolve_known_number_literal(ctx, arg);
       emit_expr(ctx, arg)?;
       let idx = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(idx));
@@ -5970,6 +6041,9 @@ fn emit_inline_closure_call(
       // `recur` may rebind it to another value.
       if let Some(definition) = function_value.filter(|_| !uses_recur) {
         ctx.local_function_values.insert(idx, definition);
+      }
+      if let Some(n) = number_literal.filter(|_| !uses_recur) {
+        ctx.local_number_literals.insert(idx, n);
       }
       bound.push((InlineArgument::Value(idx), annotation));
     }
@@ -6243,6 +6317,8 @@ fn infer_wasm_evidence_in_scope(
           set_member_types,
           ..consequent
         })
+      } else if let Some(merged) = join_collection_branch_evidences(&consequent, &alternative) {
+        Some(merged)
       } else {
         infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract)
       }
@@ -6381,9 +6457,13 @@ fn infer_wasm_evidence_in_scope(
                   prev.set_member_types = join_branch_member_types(prev.set_member_types.take(), body_ev.set_member_types);
                   prev.exact_impls = prev.exact_impls && body_ev.exact_impls;
                 }
-                Some(_) => {
-                  joined = infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract);
-                  break;
+                Some(prev) => {
+                  if let Some(merged) = join_collection_branch_evidences(prev, &body_ev) {
+                    *prev = merged;
+                  } else {
+                    joined = infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract);
+                    break;
+                  }
                 }
               }
             } else {
@@ -6614,6 +6694,25 @@ fn infer_wasm_evidence_in_scope(
             && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg0, local_types, closures, visiting)
           {
             ev.set_member_types = arg_ev.set_member_types;
+          } else if matches!(def_name, Some("&map:empty" | "&set:empty" | "empty"))
+            && items.len() == 2
+            && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
+          {
+            let expanded_arg = CalcitTypeAnnotation::expand_schema_alias(&arg_ev.annotation);
+            let is_collection = match def_name {
+              Some("&map:empty") => matches!(expanded_arg.as_ref(), CalcitTypeAnnotation::Map(_, _)),
+              Some("&set:empty") => matches!(expanded_arg.as_ref(), CalcitTypeAnnotation::Set(_)),
+              _ => matches!(
+                expanded_arg.as_ref(),
+                CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
+              ),
+            };
+            if is_collection {
+              if ev.annotation.contains_type_var() && !arg_ev.annotation.contains_type_var() {
+                ev.annotation = arg_ev.annotation;
+              }
+              ev.set_member_types = Some(vec![]);
+            }
           } else if matches!(def_name, Some("include" | "exclude" | "assoc" | "dissoc"))
             && items.len() > 1
             && let Some(base_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
@@ -6727,12 +6826,13 @@ fn infer_wasm_evidence_in_scope(
             } else {
               let static_ty =
                 infer_static_type_from_expr(expr).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone())));
-              let preserves_tuple_slots = matches!(
+              let preserves_tuple_slots = (matches!(
                 static_ty.as_ref(),
                 CalcitTypeAnnotation::List(inner) if wasm_type_requires_scalar_specialization(inner)
               ) && all_elems_known
                 && !all_collection_members_known
-                && elem_types.iter().any(|e| !wasm_type_requires_scalar_specialization(e));
+                && elem_types.iter().any(|e| !wasm_type_requires_scalar_specialization(e)))
+                || (matches!(static_ty.as_ref(), CalcitTypeAnnotation::Tuple(_)) && static_ty.contains_type_var() && all_elems_known);
               if preserves_tuple_slots {
                 Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(elem_types)))
               } else {
@@ -6888,41 +6988,80 @@ fn infer_wasm_evidence_in_scope(
             && let Some(base_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
           {
             let is_map_op = matches!(proc, CalcitProc::NativeMapAssoc | CalcitProc::NativeMapDissoc);
-            let mut combined = base_ev.set_member_types.unwrap_or_else(|| {
+            let base_is_empty = base_ev.set_member_types.as_deref() == Some(&[]);
+            let mut combined = Vec::new();
+            if let Some(base_members) = base_ev.set_member_types {
+              for ty in &base_members {
+                push_unique_member_type(&mut combined, ty);
+              }
+            } else {
               let expanded_base = CalcitTypeAnnotation::expand_schema_alias(&base_ev.annotation);
               match expanded_base.as_ref() {
-                CalcitTypeAnnotation::Set(k) | CalcitTypeAnnotation::Map(k, _) => {
-                  let k_exp = CalcitTypeAnnotation::expand_schema_alias(k);
-                  if matches!(k_exp.as_ref(), CalcitTypeAnnotation::Never) {
-                    vec![]
-                  } else {
-                    vec![k_exp]
-                  }
-                }
-                _ => vec![DYNAMIC_TYPE.clone()],
-              }
-            });
-            if matches!(proc, CalcitProc::NativeInclude) {
-              for arg in items.iter().skip(2) {
-                let elem_ty = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting)
-                  .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
-                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
-                combined.push(elem_ty);
-              }
-            } else if matches!(proc, CalcitProc::NativeMapAssoc) {
-              for key_expr in items.iter().skip(2).step_by(2) {
-                let elem_ty = infer_wasm_evidence_in_scope(ctx, key_expr, local_types, closures, visiting)
-                  .map(|e| CalcitTypeAnnotation::expand_schema_alias(&e.annotation))
-                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
-                combined.push(elem_ty);
+                CalcitTypeAnnotation::Set(k) | CalcitTypeAnnotation::Map(k, _) => push_unique_member_type(&mut combined, k),
+                _ => push_unique_member_type(&mut combined, &DYNAMIC_TYPE),
               }
             }
-            let annotation = infer_static_type_from_expr(expr).unwrap_or_else(|| {
-              if is_map_op {
-                Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()))
-              } else {
-                Arc::new(CalcitTypeAnnotation::Set(DYNAMIC_TYPE.clone()))
+            let expanded_base_ann = CalcitTypeAnnotation::expand_schema_alias(&base_ev.annotation);
+            let base_matches_kind = if is_map_op {
+              matches!(expanded_base_ann.as_ref(), CalcitTypeAnnotation::Map(_, _))
+            } else {
+              matches!(expanded_base_ann.as_ref(), CalcitTypeAnnotation::Set(_))
+            };
+            let annotation = if matches!(proc, CalcitProc::NativeInclude) {
+              let mut elem_ann = match expanded_base_ann.as_ref() {
+                CalcitTypeAnnotation::Set(base_e) => Some(effective_collection_slot(base_e, base_is_empty)),
+                _ => None,
+              };
+              for arg in items.iter().skip(2) {
+                let elem_ty = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting)
+                  .map(|e| e.annotation)
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                push_unique_member_type(&mut combined, &elem_ty);
+                if let Some(acc) = &mut elem_ann {
+                  *acc = join_collection_slot_type(acc, &elem_ty);
+                }
               }
+              elem_ann.map(|e| Arc::new(CalcitTypeAnnotation::Set(e)))
+            } else if matches!(proc, CalcitProc::NativeMapAssoc) {
+              let mut map_ann = match expanded_base_ann.as_ref() {
+                CalcitTypeAnnotation::Map(base_k, base_v) => Some((
+                  effective_collection_slot(base_k, base_is_empty),
+                  effective_collection_slot(base_v, base_is_empty),
+                )),
+                _ => None,
+              };
+              let mut rest = items.iter().skip(2);
+              while let Some(key_expr) = rest.next() {
+                let key_ty = infer_wasm_evidence_in_scope(ctx, key_expr, local_types, closures, visiting)
+                  .map(|e| e.annotation)
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                push_unique_member_type(&mut combined, &key_ty);
+                let val_ty = rest
+                  .next()
+                  .and_then(|val_expr| infer_wasm_evidence_in_scope(ctx, val_expr, local_types, closures, visiting))
+                  .map(|e| e.annotation)
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                if let Some((k_acc, v_acc)) = &mut map_ann {
+                  *k_acc = join_collection_slot_type(k_acc, &key_ty);
+                  *v_acc = join_collection_slot_type(v_acc, &val_ty);
+                }
+              }
+              map_ann.map(|(k, v)| Arc::new(CalcitTypeAnnotation::Map(k, v)))
+            } else if base_matches_kind {
+              Some(base_ev.annotation.clone())
+            } else {
+              None
+            }
+            .unwrap_or_else(|| {
+              infer_static_type_from_expr(expr)
+                .filter(|ty| !ty.contains_type_var())
+                .unwrap_or_else(|| {
+                  if is_map_op {
+                    Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()))
+                  } else {
+                    Arc::new(CalcitTypeAnnotation::Set(DYNAMIC_TYPE.clone()))
+                  }
+                })
             });
             return Some(WasmTypeEvidence {
               annotation,
@@ -6947,16 +7086,15 @@ fn infer_wasm_evidence_in_scope(
             for arg in items.iter().skip(1) {
               if let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting) {
                 if let Some(members) = arg_ev.set_member_types {
-                  combined.extend(members);
+                  for ty in &members {
+                    push_unique_member_type(&mut combined, ty);
+                  }
                   continue;
                 }
                 let expanded_arg = CalcitTypeAnnotation::expand_schema_alias(&arg_ev.annotation);
                 match expanded_arg.as_ref() {
                   CalcitTypeAnnotation::Map(k, _) | CalcitTypeAnnotation::Set(k) => {
-                    let k_exp = CalcitTypeAnnotation::expand_schema_alias(k);
-                    if !matches!(k_exp.as_ref(), CalcitTypeAnnotation::Never) {
-                      combined.push(k_exp);
-                    }
+                    push_unique_member_type(&mut combined, k);
                     continue;
                   }
                   _ => {}
@@ -7381,8 +7519,13 @@ fn join_optional_recur_evidence(init_ev: WasmTypeEvidence, r_ev: Option<WasmType
   }
   let init_expanded = expand_wasm_value_type(&init_ev.annotation);
   let r_expanded = expand_wasm_value_type(&r_ev.annotation);
-  if matches!(init_expanded.as_ref(), CalcitTypeAnnotation::Nil) && wasm_non_nil_value_is_nonzero(&r_expanded) {
-    return WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Nullable(r_ev.annotation, NullableOrigin::Inferred)));
+  if matches!(init_expanded.as_ref(), CalcitTypeAnnotation::Nil) {
+    if matches!(r_expanded.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Inferred)) {
+      return WasmTypeEvidence::contract(r_ev.annotation);
+    }
+    if !nil_type_evidence_is_open(&r_expanded) && !matches!(r_expanded.as_ref(), CalcitTypeAnnotation::Never) {
+      return WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Nullable(r_ev.annotation, NullableOrigin::Inferred)));
+    }
   }
   WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
 }
@@ -8112,6 +8255,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       bindings.push(InlineArgument::Closure(closure));
     } else {
       let function_value = (!uses_recur).then(|| resolve_known_function_value(ctx, arg)).flatten();
+      let number_literal = (!uses_recur).then(|| resolve_known_number_literal(ctx, arg)).flatten();
       emit_expr(ctx, arg)?;
       let local = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(local));
@@ -8119,6 +8263,9 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       // slot, just like an inline closure argument. A recur slot may change.
       if let Some(definition) = function_value {
         ctx.local_function_values.insert(local, definition);
+      }
+      if let Some(n) = number_literal {
+        ctx.local_number_literals.insert(local, n);
       }
       bindings.push(InlineArgument::Value(local));
     }
@@ -10274,64 +10421,12 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
     CalcitProc::Not => {
       expect_arity(1, args, "not")?;
-      let is_known_falsy_or_bool = infer_wasm_static_type(ctx, &args[0]).is_some_and(|ty| {
-        matches!(
-          expand_wasm_value_type(&ty).as_ref(),
-          CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never
-        )
-      });
-      if is_known_falsy_or_bool {
-        // not: 0.0 → 1.0, else → 0.0
-        ctx.emit(f64_const(1.0)); // true result
-        ctx.emit(f64_const(0.0)); // false result
-        emit_expr(ctx, &args[0])?;
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq); // i32 condition
-        ctx.emit(Instruction::Select);
-      } else {
-        let v = ctx.alloc_local();
-        emit_expr(ctx, &args[0])?;
-        ctx.emit(Instruction::LocalSet(v));
-        let is_heap = emit_is_heap_value(ctx, v);
-        ctx.emit(Instruction::LocalGet(is_heap));
-        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-        let tag = ctx.alloc_local_typed(ValType::I32);
-        ctx.emit(Instruction::LocalGet(v));
-        ctx.emit(Instruction::I32TruncF64U);
-        ctx.emit(Instruction::I32Const(4));
-        ctx.emit(Instruction::I32Sub);
-        ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-        ctx.emit(Instruction::LocalTee(tag));
-        ctx.emit(Instruction::I32Const(get_type_tag(ctx, "nil") as i32));
-        ctx.emit(Instruction::I32Eq);
-        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-        ctx.emit(f64_const(1.0));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::LocalGet(tag));
-        ctx.emit(Instruction::I32Const(get_type_tag(ctx, "bool") as i32));
-        ctx.emit(Instruction::I32Eq);
-        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-        ctx.emit(f64_const(1.0));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::LocalGet(v));
-        ctx.emit(Instruction::I32TruncF64U);
-        ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::Select);
-        ctx.emit(Instruction::Else);
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::End);
-        ctx.emit(Instruction::Else);
-        ctx.emit(f64_const(1.0));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::LocalGet(v));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::Select);
-        ctx.emit(Instruction::End);
-      }
+      let v = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(v));
+      emit_value_is_truthy_i32(ctx, v);
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::F64ConvertI32U);
       Ok(())
     }
 
@@ -11081,10 +11176,23 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
       ctx.emit(f64_const(1.0));
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if wasm_non_nil_value_is_nonzero(inner) => {
-      emit_expr(ctx, &args[0])?;
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq);
-      ctx.emit(Instruction::F64ConvertI32U);
+      if ctx.tag_index.contains_key("nil") {
+        let v = ctx.alloc_local();
+        emit_expr(ctx, &args[0])?;
+        ctx.emit(Instruction::LocalSet(v));
+        let is_boxed_nil = emit_has_heap_tag(ctx, v, "nil");
+        ctx.emit(Instruction::LocalGet(v));
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::LocalGet(is_boxed_nil));
+        ctx.emit(Instruction::I32Or);
+        ctx.emit(Instruction::F64ConvertI32U);
+      } else {
+        emit_expr(ctx, &args[0])?;
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::F64ConvertI32U);
+      }
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
       return Err(format!(
@@ -11891,6 +11999,61 @@ fn emit_is_heap_value(ctx: &mut WasmGenCtx, value: u32) -> u32 {
   result
 }
 
+/// Emits an i32 boolean (`1` = truthy, `0` = falsy) on the stack for a
+/// runtime f64 value, inspecting heap tags for boxed `nil` and `bool` values.
+fn emit_value_is_truthy_i32(ctx: &mut WasmGenCtx, value: u32) {
+  let nil_tag = ctx.tag_index.get("nil").copied().map(|tag| tag as i32);
+  let bool_tag = ctx.tag_index.get("bool").copied().map(|tag| tag as i32);
+  if nil_tag.is_none() && bool_tag.is_none() {
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ne);
+    return;
+  }
+  let is_heap = emit_is_heap_value(ctx, value);
+  ctx.emit(Instruction::LocalGet(is_heap));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  let tag = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalSet(tag));
+  let mut opened_if = 0usize;
+  if let Some(nil_tag) = nil_tag {
+    ctx.emit(Instruction::LocalGet(tag));
+    ctx.emit(Instruction::I32Const(nil_tag));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::Else);
+    opened_if += 1;
+  }
+  if let Some(bool_tag) = bool_tag {
+    ctx.emit(Instruction::LocalGet(tag));
+    ctx.emit(Instruction::I32Const(bool_tag));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ne);
+    ctx.emit(Instruction::Else);
+    opened_if += 1;
+  }
+  ctx.emit(Instruction::I32Const(1));
+  for _ in 0..opened_if {
+    ctx.emit(Instruction::End);
+  }
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::End);
+}
+
 fn emit_has_heap_tag(ctx: &mut WasmGenCtx, value: u32, tag_name: &str) -> u32 {
   let expected_tag = get_type_tag(ctx, tag_name) as i32;
   let result = ctx.alloc_local_typed(ValType::I32);
@@ -12091,6 +12254,44 @@ fn list_element_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, ri
   }
 }
 
+/// Resolve a compile-time Number literal, unwrapping immutable locals and
+/// identity-preserving `assert-type` / `unsafe-coerce` wrappers.
+fn resolve_known_number_literal(ctx: &WasmGenCtx, expr: &Calcit) -> Option<f64> {
+  match expr {
+    Calcit::Number(n) => Some(*n),
+    Calcit::Local(local) => ctx
+      .locals
+      .get(local.sym.as_ref())
+      .and_then(|index| ctx.local_number_literals.get(index))
+      .copied(),
+    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => ctx
+      .locals
+      .get(sym.as_ref())
+      .and_then(|index| ctx.local_number_literals.get(index))
+      .copied(),
+    Calcit::List(items) if items.len() == 3 => match items.first() {
+      Some(Calcit::Syntax(CalcitSyntax::AssertType, _)) => resolve_known_number_literal(ctx, &items[1]),
+      Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _))
+        if matches!(
+          CalcitTypeAnnotation::parse_type_annotation_form(&items[2]).as_ref(),
+          CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)
+        ) =>
+      {
+        resolve_known_number_literal(ctx, &items[1])
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// A compile-time Number literal that cannot collide with either raw `nil`
+/// (`0.0`) or a heap-boxed `nil` pointer in `[HEAP_BASE + 8, u32::MAX]`.
+fn is_non_nil_colliding_number_literal(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  resolve_known_number_literal(ctx, expr)
+    .is_some_and(|n| n != 0.0 && (!n.is_finite() || n.fract() != 0.0 || n < (HEAP_BASE + 8) as f64 || n > u32::MAX as f64))
+}
+
 fn validate_wasm_equality_operands(
   ctx: &mut WasmGenCtx,
   left_expr: &Calcit,
@@ -12140,6 +12341,21 @@ fn validate_wasm_equality_operands(
         right_type.to_brief_string()
       ));
     }
+    return Ok(None);
+  }
+
+  let is_nullable_number_pair = |nullable_ty: &CalcitTypeAnnotation, num_ty: &CalcitTypeAnnotation, num_expr: &Calcit| {
+    matches!(
+      nullable_ty,
+      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred)
+        if matches!(
+          expand_wasm_value_type(inner).as_ref(),
+          CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)
+        )
+    ) && matches!(num_ty, CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_))
+      && is_non_nil_colliding_number_literal(ctx, num_expr)
+  };
+  if is_nullable_number_pair(&left_type, &right_type, right_expr) || is_nullable_number_pair(&right_type, &left_type, left_expr) {
     return Ok(None);
   }
 
@@ -12955,14 +13171,16 @@ fn emit_if_condition(ctx: &mut WasmGenCtx, condition: &Calcit) -> Result<(), Str
     .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven condition type in the current scalar ABI".to_owned())?;
   let constant = scalar_truthiness_constant(&annotation)?;
   // Always evaluate once, including effects and errors in a statically
-  // decided condition. Only Bool and supported nullable values use F64Ne.
+  // decided condition. Bool and supported nullable values check both raw
+  // scalars and heap-boxed nil/bool values.
   emit_expr(ctx, condition)?;
   if let Some(truthy) = constant {
     ctx.emit(Instruction::Drop);
     ctx.emit(Instruction::I32Const(i32::from(truthy)));
   } else {
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Ne);
+    let v = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(v));
+    emit_value_is_truthy_i32(ctx, v);
   }
   Ok(())
 }
@@ -13177,6 +13395,7 @@ fn emit_scoped_let(
   let result = (|| {
     let binding_type = infer_wasm_value_evidence(ctx, value);
     let function_value = resolve_known_function_value(ctx, value);
+    let number_literal = resolve_known_number_literal(ctx, value);
     // Resolve/evaluate the RHS against the outer scope before binding its name.
     if let Some(closure) = resolve_inline_closure(ctx, value) {
       ctx.lambda_locals.insert(name.to_owned(), closure);
@@ -13198,6 +13417,9 @@ fn emit_scoped_let(
       ctx.emit(Instruction::LocalSet(index));
       if let Some(definition) = function_value {
         ctx.local_function_values.insert(index, definition);
+      }
+      if let Some(n) = number_literal {
+        ctx.local_number_literals.insert(index, n);
       }
     }
     if let Some(annotation) = binding_type {
@@ -17530,5 +17752,416 @@ mod tests {
       super::infer_wasm_static_type(&ctx, &guarded_call).as_deref(),
       Some(&CalcitTypeAnnotation::Number)
     );
+  }
+
+  #[test]
+  fn parse_float_matches_native_f64_rounding_on_long_and_halfway_inputs() {
+    use super::runtime::{build_rt_bigint_mul_add, build_rt_parse_float, build_rt_parse_float_exact_midpoint};
+
+    let decimal_mul_small = |digits: &mut Vec<u8>, mul: u32| {
+      let mut carry = 0u32;
+      for d in digits.iter_mut() {
+        let v = (*d as u32) * mul + carry;
+        *d = (v % 10) as u8;
+        carry = v / 10;
+      }
+      while carry > 0 {
+        digits.push((carry % 10) as u8);
+        carry /= 10;
+      }
+    };
+    let pow5_fraction = |coeff: u32, exp: usize| -> String {
+      let mut digits = vec![(coeff % 10) as u8];
+      let mut c = coeff / 10;
+      while c > 0 {
+        digits.push((c % 10) as u8);
+        c /= 10;
+      }
+      for _ in 0..exp {
+        decimal_mul_small(&mut digits, 5);
+      }
+      let frac_digits: String = digits.iter().rev().map(|d| (b'0' + d) as char).collect();
+      let zeros = "0".repeat(exp - digits.len());
+      format!("0.{zeros}{frac_digits}")
+    };
+    let overflow_midpoint = || -> String {
+      let mut m = (1u64 << 54) - 1;
+      let mut digits = Vec::new();
+      while m > 0 {
+        digits.push((m % 10) as u8);
+        m /= 10;
+      }
+      for _ in 0..970 {
+        decimal_mul_small(&mut digits, 2);
+      }
+      digits.iter().rev().map(|d| (b'0' + d) as char).collect()
+    };
+
+    let exact_sub_mid = pow5_fraction(1, 1075);
+    let above_sub_mid = format!("{exact_sub_mid}0000000000000000000001");
+    let exact_sub_mid_3 = pow5_fraction(3, 1075);
+    let exact_over_mid = overflow_midpoint();
+    let mut below_over_bytes = exact_over_mid.clone().into_bytes();
+    let last = below_over_bytes.last_mut().expect("nonempty midpoint");
+    assert_ne!(*last, b'0');
+    *last -= 1;
+    let below_over_mid = String::from_utf8(below_over_bytes).expect("ascii");
+    let many_zeros = format!("1{}e-309", "0".repeat(309));
+
+    let samples: Vec<String> = vec![
+      "0.3".into(),
+      "1.00000000000000033306690738754696212708950042724609375".into(),
+      "-1.00000000000000033306690738754696212708950042724609375".into(),
+      "1.00000000000000033306690738754696212708950042724609374999999999999999999999999".into(),
+      "1.00000000000000011102230246251565404236316680908203125".into(),
+      "1.00000000000000011102230246251565404236316680908203125000000000000000000000001".into(),
+      "1.1955648945602832e-75".into(),
+      "1.7976931348623157e308".into(),
+      "1e75".into(),
+      "5e-324".into(),
+      "-5e-324".into(),
+      "9007199254740993.0".into(),
+      "0.000000000000000000000000012345678901234567".into(),
+      many_zeros,
+      exact_sub_mid,
+      above_sub_mid,
+      exact_sub_mid_3,
+      exact_over_mid,
+      below_over_mid,
+    ];
+
+    let mut parse_float = build_rt_parse_float(1);
+    parse_float.export_name = Some("parse_float".into());
+    let bytes = build_wasm_module(
+      &[build_rt_bigint_mul_add(), build_rt_parse_float_exact_midpoint(0), parse_float],
+      &[],
+      HEAP_BASE,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 3,
+        table_fn_count: 0,
+        component_free_head: false,
+        rest_adapters: HashMap::new(),
+      },
+    )
+    .expect("valid parse_float module");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid wasm");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+    let parse_fn = instance
+      .get_typed_func::<f64, f64>(&mut store, "parse_float")
+      .expect("parse_float export");
+
+    for input in samples {
+      memory
+        .write(&mut store, 64, &(input.len() as f64).to_le_bytes())
+        .expect("write length");
+      memory.write(&mut store, 72, input.as_bytes()).expect("write bytes");
+      let got = parse_fn.call(&mut store, 64.0).expect("call parse_float");
+      let expected = input.parse::<f64>().expect("native parse::<f64>");
+      assert_eq!(
+        got.to_bits(),
+        expected.to_bits(),
+        "input={input:?}: wasm={got:?} ({:#018x}) != native={expected:?} ({:#018x})",
+        got.to_bits(),
+        expected.to_bits()
+      );
+    }
+  }
+
+  #[test]
+  fn not_if_and_nil_handle_boxed_json_bool_and_nil_under_assert_type() {
+    use super::HEAP_MAGIC;
+    use super::emit_expr;
+    use crate::wasm::host::calcit::NullableOrigin;
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::from([("nil".into(), 10), ("bool".into(), 11)]),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let local_x = |type_info: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from("x"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.truthy"),
+          at_def: Arc::from("check"),
+        }),
+        location: None,
+        type_info,
+      })
+    };
+    let compile_fn = |export: &str, expr: Calcit, local_ty: Arc<CalcitTypeAnnotation>| -> CompiledFn {
+      let mut ctx = WasmGenCtx::new(1, env.clone());
+      ctx.locals.insert("x".into(), 0);
+      ctx.local_types.insert("x".into(), WasmTypeEvidence::contract(local_ty));
+      emit_expr(&mut ctx, &expr).expect("emit expr");
+      CompiledFn {
+        export_name: Some(export.into()),
+        params: vec![ValType::F64],
+        results: vec![ValType::F64],
+        locals: ctx.extra_locals,
+        instructions: ctx.instructions,
+      }
+    };
+
+    let nullable_str_ty = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::String),
+      NullableOrigin::Inferred,
+    ));
+    let sym_bool = Calcit::Symbol {
+      sym: Arc::from("Bool"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.truthy"),
+        at_def: Arc::from("check"),
+      }),
+      location: None,
+    };
+    let sym_nil = Calcit::Symbol {
+      sym: Arc::from("Nil"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.truthy"),
+        at_def: Arc::from("check"),
+      }),
+      location: None,
+    };
+    let assert_bool = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::AssertType, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+      local_x(crate::wasm::host::calcit::DYNAMIC_TYPE.clone()),
+      sym_bool,
+    ]);
+    let assert_nil = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::AssertType, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+      local_x(crate::wasm::host::calcit::DYNAMIC_TYPE.clone()),
+      sym_nil,
+    ]);
+
+    let fns = vec![
+      compile_fn(
+        "not_assert_bool",
+        Calcit::from(vec![Calcit::Proc(CalcitProc::Not), assert_bool.clone()]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+      compile_fn(
+        "not_assert_nil",
+        Calcit::from(vec![Calcit::Proc(CalcitProc::Not), assert_nil]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+      compile_fn(
+        "if_assert_bool",
+        Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+          assert_bool,
+          Calcit::Number(1.0),
+          Calcit::Number(2.0),
+        ]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+      compile_fn(
+        "nil_q_nullable",
+        Calcit::from(vec![Calcit::Proc(CalcitProc::NilQuestion), local_x(nullable_str_ty.clone())]),
+        nullable_str_ty,
+      ),
+    ];
+
+    let bytes = build_wasm_module(
+      &fns,
+      &[],
+      HEAP_BASE + 96,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 0,
+        component_free_head: false,
+        rest_adapters: HashMap::new(),
+      },
+    )
+    .expect("valid truthiness module");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid wasm");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory");
+
+    let write_boxed = |store: &mut Store<()>, offset: usize, tag: u32, payload: f64| {
+      let base = HEAP_BASE as usize + offset;
+      memory.write(&mut *store, base, &HEAP_MAGIC.to_le_bytes()).expect("magic");
+      memory.write(&mut *store, base + 4, &tag.to_le_bytes()).expect("tag");
+      memory.write(&mut *store, base + 8, &payload.to_le_bytes()).expect("payload");
+      (base + 8) as f64
+    };
+    let boxed_nil = write_boxed(&mut store, 0, 10, 0.0);
+    let boxed_false = write_boxed(&mut store, 24, 11, 0.0);
+    let boxed_true = write_boxed(&mut store, 48, 11, 1.0);
+
+    let not_bool = instance
+      .get_typed_func::<f64, f64>(&mut store, "not_assert_bool")
+      .expect("not_assert_bool");
+    let not_nil = instance
+      .get_typed_func::<f64, f64>(&mut store, "not_assert_nil")
+      .expect("not_assert_nil");
+    let if_bool = instance
+      .get_typed_func::<f64, f64>(&mut store, "if_assert_bool")
+      .expect("if_assert_bool");
+    let nil_q = instance
+      .get_typed_func::<f64, f64>(&mut store, "nil_q_nullable")
+      .expect("nil_q_nullable");
+
+    assert_eq!(not_bool.call(&mut store, boxed_false).unwrap(), 1.0);
+    assert_eq!(not_bool.call(&mut store, boxed_true).unwrap(), 0.0);
+    assert_eq!(not_bool.call(&mut store, 0.0).unwrap(), 1.0);
+    assert_eq!(not_bool.call(&mut store, 1.0).unwrap(), 0.0);
+
+    assert_eq!(not_nil.call(&mut store, boxed_nil).unwrap(), 1.0);
+    assert_eq!(not_nil.call(&mut store, 0.0).unwrap(), 1.0);
+
+    assert_eq!(if_bool.call(&mut store, boxed_false).unwrap(), 2.0);
+    assert_eq!(if_bool.call(&mut store, boxed_true).unwrap(), 1.0);
+    assert_eq!(if_bool.call(&mut store, 0.0).unwrap(), 2.0);
+    assert_eq!(if_bool.call(&mut store, 1.0).unwrap(), 1.0);
+
+    assert_eq!(nil_q.call(&mut store, boxed_nil).unwrap(), 1.0);
+    assert_eq!(nil_q.call(&mut store, 0.0).unwrap(), 1.0);
+    assert_eq!(nil_q.call(&mut store, 1.0).unwrap(), 0.0);
+  }
+
+  #[test]
+  fn nullable_number_equality_allows_safe_nonzero_literal_and_rejects_zero_or_heap_range() {
+    use super::validate_wasm_equality_operands;
+    use crate::wasm::host::calcit::NullableOrigin;
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    let nullable_num_ty = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      NullableOrigin::Inferred,
+    ));
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.eq"),
+      at_def: Arc::from("check"),
+    });
+    let x_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("x")),
+      sym: Arc::from("x"),
+      info: info.clone(),
+      location: None,
+      type_info: nullable_num_ty.clone(),
+    });
+    let y_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("y")),
+      sym: Arc::from("y"),
+      info: info.clone(),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let va_idx = ctx.alloc_local();
+    ctx.locals.insert("va".to_owned(), va_idx);
+    ctx.local_number_literals.insert(va_idx, 1.0);
+    let va_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("va")),
+      sym: Arc::from("va"),
+      info: info.clone(),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let vz_idx = ctx.alloc_local();
+    ctx.locals.insert("vz".to_owned(), vz_idx);
+    ctx.local_number_literals.insert(vz_idx, 0.0);
+    let vz_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("vz")),
+      sym: Arc::from("vz"),
+      info,
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let dyn_form = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.eq")),
+      Calcit::Symbol {
+        sym: Arc::from("Dynamic"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.eq"),
+          at_def: Arc::from("check"),
+        }),
+        location: None,
+      },
+    ]);
+    let unsafe_wrap = |inner: Calcit| {
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, Arc::from("tests.eq")),
+        inner,
+        dyn_form.clone(),
+      ])
+    };
+    ctx.local_types.insert("x".to_owned(), WasmTypeEvidence::contract(nullable_num_ty));
+    ctx
+      .local_types
+      .insert("y".to_owned(), WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)));
+    ctx
+      .local_types
+      .insert("va".to_owned(), WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)));
+    ctx
+      .local_types
+      .insert("vz".to_owned(), WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)));
+
+    assert_eq!(
+      validate_wasm_equality_operands(&mut ctx, &Calcit::Number(1.0), &x_local, "="),
+      Ok(None)
+    );
+    assert_eq!(
+      validate_wasm_equality_operands(&mut ctx, &x_local, &Calcit::Number(-2.5), "="),
+      Ok(None)
+    );
+    assert_eq!(
+      validate_wasm_equality_operands(&mut ctx, &unsafe_wrap(va_local), &unsafe_wrap(x_local.clone()), "="),
+      Ok(None)
+    );
+
+    for unsafe_rhs in [
+      Calcit::Number(0.0),
+      Calcit::Number(-0.0),
+      Calcit::Number((HEAP_BASE + 8) as f64),
+      y_local,
+      unsafe_wrap(vz_local),
+    ] {
+      let err = validate_wasm_equality_operands(&mut ctx, &x_local, &unsafe_rhs, "=").expect_err("ambiguous equality must be rejected");
+      assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "unexpected error: {err}");
+    }
   }
 }

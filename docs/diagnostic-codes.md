@@ -309,7 +309,7 @@
 | `E_WASM_EDN_SHAPE` | `src/wasm/emit_wasm/edn_parse.rs` |
 | `E_WASM_EDN_STRUCT_SHAPE` | `src/wasm/emit_wasm/edn.rs` |
 | `E_WASM_EDN_SYNTAX` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
-| `E_WASM_EDN_TAG` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
+| `E_WASM_EDN_TAG` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs` |
 | `E_WASM_EDN_TOKEN_LIMIT` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
 | `E_WASM_EDN_TYPE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn.rs` |
 | `E_WASM_NIL_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/methods.rs` |

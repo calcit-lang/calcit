@@ -344,18 +344,45 @@ fn validate_loop_accumulator_evidence(
     );
   }
   let mut candidate = init_acc;
-  let mut ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
-  if candidate.exact_impls && !ret_ev.exact_impls {
-    candidate.exact_impls = false;
+  for _ in 0..4 {
     arg_evs[0] = candidate.clone();
-    ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
+    let ret_ev = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new())?;
+    let next_annotation = if ret_ev.annotation == candidate.annotation {
+      candidate.annotation.clone()
+    } else if candidate.set_member_types.as_deref() == Some(&[]) {
+      let cand_exp = CalcitTypeAnnotation::expand_schema_alias(&candidate.annotation);
+      let ret_exp = CalcitTypeAnnotation::expand_schema_alias(&ret_ev.annotation);
+      match (cand_exp.as_ref(), ret_exp.as_ref()) {
+        (CalcitTypeAnnotation::Map(_, _), CalcitTypeAnnotation::Map(_, _))
+        | (CalcitTypeAnnotation::Set(_), CalcitTypeAnnotation::Set(_)) => ret_ev.annotation.clone(),
+        _ => return None,
+      }
+    } else {
+      return None;
+    };
+    let next_exact_impls = candidate.exact_impls && ret_ev.exact_impls;
+    let next_codec_hint = (candidate.codec_hint == ret_ev.codec_hint)
+      .then(|| candidate.codec_hint.clone())
+      .flatten();
+    let next_scalar_origin = (candidate.scalar_origin == ret_ev.scalar_origin)
+      .then(|| candidate.scalar_origin.clone())
+      .flatten();
+    let next_set_member_types = super::join_branch_member_types(candidate.set_member_types.clone(), ret_ev.set_member_types);
+    if next_annotation == candidate.annotation
+      && next_exact_impls == candidate.exact_impls
+      && next_codec_hint == candidate.codec_hint
+      && next_scalar_origin == candidate.scalar_origin
+      && next_set_member_types == candidate.set_member_types
+    {
+      return Some(candidate);
+    }
+    candidate.annotation = next_annotation;
+    candidate.exact_impls = next_exact_impls;
+    candidate.codec_hint = next_codec_hint;
+    candidate.scalar_origin = next_scalar_origin;
+    candidate.set_member_types = next_set_member_types;
   }
-  let stable = ret_ev.annotation == candidate.annotation
-    && ret_ev.exact_impls == candidate.exact_impls
-    && ret_ev.codec_hint == candidate.codec_hint
-    && ret_ev.set_member_types == candidate.set_member_types
-    && ret_ev.scalar_origin == candidate.scalar_origin;
-  stable.then_some(candidate)
+  None
 }
 
 /// Emit a call to a native proc using two pre-allocated locals as arguments.

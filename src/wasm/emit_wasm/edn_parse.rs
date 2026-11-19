@@ -600,8 +600,10 @@ fn hint_encoded_struct_field(
     && actual.name.ref_str() == "__wasm_literal_map__"
   {
     let field_name = nominal.fields.get(idx)?;
-    let pos = actual.fields.iter().position(|f| f == field_name)?;
-    return Some(super::expand_wasm_value_type(actual.field_types.get(pos)?).as_ref().clone());
+    return Some(match actual.fields.iter().position(|f| f == field_name) {
+      Some(pos) => super::expand_wasm_value_type(actual.field_types.get(pos)?).as_ref().clone(),
+      None => CalcitTypeAnnotation::Never,
+    });
   }
   let field_ty = Arc::new(hint_struct_field(Some(struct_hint), nominal, idx)?);
   let expanded = super::expand_wasm_value_type(&field_ty);
@@ -1929,7 +1931,18 @@ fn emit_decode_map_struct(
     let f_ok = ctx.alloc_local_typed(ValType::I32);
     let f_err = ctx.alloc_local_typed(ValType::I32);
     let f_path = literal_local(ctx, "")?;
-    let field_hint = if static_hint
+    let field_hint = if matches!(static_hint, Some(CalcitTypeAnnotation::Never)) {
+      Some(CalcitTypeAnnotation::Never)
+    } else if let Some(hint) = static_hint
+      && !nil_type_evidence_is_open(hint)
+      && !matches!(
+        hint,
+        CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Struct(_, _) | CalcitTypeAnnotation::StructValue(_)
+      )
+      && hint.resolve_to_struct().is_none()
+    {
+      Some(CalcitTypeAnnotation::Never)
+    } else if static_hint
       .is_some_and(|ty| matches!(ty, CalcitTypeAnnotation::Map(k, _) if matches!(k.as_ref(), CalcitTypeAnnotation::StructValue(_))))
     {
       hint_encoded_struct_field(static_hint, nominal, idx)

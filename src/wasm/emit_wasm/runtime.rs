@@ -4925,10 +4925,19 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_blank"), blank_idx);
   fns.push(build_rt_blank());
 
+  // Bigint helper and exact midpoint comparator for parse-float fallback.
+  let bigint_mul_add_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_bigint_mul_add"), bigint_mul_add_idx);
+  fns.push(build_rt_bigint_mul_add());
+
+  let parse_float_exact_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_parse_float_exact_midpoint"), parse_float_exact_idx);
+  fns.push(build_rt_parse_float_exact_midpoint(bigint_mul_add_idx));
+
   // parse-float: __rt_parse_float(s: f64) → f64 (parsed number)
   let parse_float_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_parse_float"), parse_float_idx);
-  fns.push(build_rt_parse_float());
+  fns.push(build_rt_parse_float(parse_float_exact_idx));
 
   // &parse-float validity: __rt_parse_float_valid(s: f64) → f64 (1.0 when the text is a float literal)
   let parse_float_valid_idx = base_index + fns.len() as u32;
@@ -8547,15 +8556,19 @@ fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, 
   let mant = locs.t_hi;
   let extra_nonzero = locs.digit;
   let round_up = locs.rem;
+  let exp2_cur = b.alloc_i32();
 
   b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalSet(exp2_cur));
+
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(1023));
   b.emit(Instruction::I32GtS);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(-1022));
   b.emit(Instruction::I32GeS);
   b.emit(Instruction::If(BlockType::Empty));
@@ -8605,20 +8618,20 @@ fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, 
   b.emit(Instruction::I64Const(1));
   b.emit(Instruction::I64ShrU);
   b.emit(Instruction::LocalSet(mant));
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::LocalSet(exp2_cur));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(1023));
   b.emit(Instruction::I32GtS);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(1023));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::I64ExtendI32U);
@@ -8632,13 +8645,13 @@ fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, 
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(-1074));
   b.emit(Instruction::I32GeS);
   b.emit(Instruction::If(BlockType::Empty));
   // Subnormal IEEE 754 binary64: `total_shift` is strictly in 12..=63.
   b.emit(Instruction::I32Const(-1011));
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Sub);
   b.emit(Instruction::I64ExtendI32U);
   b.emit(Instruction::LocalTee(locs.t2_hi)); // total_shift in 12..=63
@@ -8700,7 +8713,7 @@ fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, 
   b.emit(Instruction::F64ReinterpretI64);
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::LocalGet(exp2_cur));
   b.emit(Instruction::I32Const(-1075));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
@@ -8735,21 +8748,653 @@ fn rt_emit_u128_round_to_f64(b: &mut RuntimeFnBuilder, locs: &ParseFloatLocals, 
   b.emit(Instruction::End);
 }
 
+/// `__rt_bigint_mul_add(base_ptr: i32, len: i32, mul: i64, add: i64) -> i32`
+///
+/// Multiplies a little-endian `u32` limb slice in place by `mul` and adds `add`,
+/// returning the updated limb length. Capacity is 128 limbs (4096 bits).
+pub(super) fn build_rt_bigint_mul_add() -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(4);
+  let base_ptr = 0;
+  let len = 1;
+  let mul = 2;
+  let add = 3;
+  let carry = b.alloc_i64();
+  let idx = b.alloc_i32();
+  let addr = b.alloc_i32();
+  let prod = b.alloc_i64();
+
+  b.emit(Instruction::LocalGet(add));
+  b.emit(Instruction::LocalSet(carry));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(base_ptr));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(addr));
+  b.emit(Instruction::LocalGet(addr));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::LocalGet(mul));
+  b.emit(Instruction::I64Mul);
+  b.emit(Instruction::LocalGet(carry));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalTee(prod));
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(prod));
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(carry));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(carry));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32Const(128));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(base_ptr));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(carry));
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(len));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(len));
+  b.finish(vec![ValType::I32, ValType::I32, ValType::I64, ValType::I64], vec![ValType::I32])
+}
+
+fn rt_emit_scale_bigint_pow5(b: &mut RuntimeFnBuilder, bigint_mul_add_idx: u32, buf_ptr: u32, buf_len: u32, count: u32) {
+  let rem = b.alloc_i32();
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::LocalSet(rem));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(13));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(buf_ptr));
+  b.emit(Instruction::LocalGet(buf_len));
+  b.emit(Instruction::I64Const(1_220_703_125i64));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(buf_len));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(13));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(rem));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LeS);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(buf_ptr));
+  b.emit(Instruction::LocalGet(buf_len));
+  b.emit(Instruction::I64Const(5));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(buf_len));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(rem));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+}
+
+fn rt_emit_scale_bigint_pow2(b: &mut RuntimeFnBuilder, bigint_mul_add_idx: u32, buf_ptr: u32, buf_len: u32, count: u32) {
+  let rem = b.alloc_i32();
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::LocalSet(rem));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(buf_ptr));
+  b.emit(Instruction::LocalGet(buf_len));
+  b.emit(Instruction::I64Const(1i64 << 24));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(buf_len));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(rem));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(buf_ptr));
+  b.emit(Instruction::LocalGet(buf_len));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::LocalGet(rem));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(buf_len));
+  b.emit(Instruction::End);
+}
+
+/// `__rt_parse_float_exact_midpoint(content: i32, byte_len: i32, start_i: i32, explicit_exp: i32, bits_low: i64) -> f64`
+///
+/// Compares the full decimal mantissa (up to 768 significant digits plus sticky)
+/// against the exact binary64 midpoint between `bits_low` and `bits_low + 1`.
+pub(super) fn build_rt_parse_float_exact_midpoint(bigint_mul_add_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(5);
+  let content = 0;
+  let byte_len = 1;
+  let start_i = 2;
+  let explicit_exp = 3;
+  let bits_low = 4;
+
+  let scratch_size = b.alloc_i64();
+  let managed_zero = b.alloc_i64();
+  let lhs_ptr = b.alloc_i32();
+  let rhs_ptr = b.alloc_i32();
+  let lhs_len = b.alloc_i32();
+  let rhs_len = b.alloc_i32();
+  let i = b.alloc_i32();
+  let ch = b.alloc_i32();
+  let in_frac = b.alloc_i32();
+  let sig_digits = b.alloc_i32();
+  let tz_count = b.alloc_i32();
+  let e_d = b.alloc_i32();
+  let extra_nonzero = b.alloc_i32();
+  let biased_exp = b.alloc_i32();
+  let p2 = b.alloc_i32();
+  let frac = b.alloc_i64();
+  let m2 = b.alloc_i64();
+  let m2_hi = b.alloc_i32();
+  let scale_steps = b.alloc_i32();
+  let shift2 = b.alloc_i32();
+  let cmp = b.alloc_i32();
+  let idx = b.alloc_i32();
+  let off = b.alloc_i32();
+  let lv = b.alloc_i32();
+  let rv = b.alloc_i32();
+
+  b.emit(Instruction::I64Const(1024));
+  b.emit(Instruction::LocalSet(scratch_size));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(managed_zero));
+  rt_emit_reserve_scratch(&mut b, scratch_size, managed_zero, lhs_ptr);
+  b.emit(Instruction::LocalGet(lhs_ptr));
+  b.emit(Instruction::I32Const(512));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(rhs_ptr));
+
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(lhs_len));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(rhs_len));
+  b.emit(Instruction::LocalGet(start_i));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(in_frac));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(sig_digits));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(tz_count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(extra_nonzero));
+
+  // Scan up to 768 significant digits of the decimal mantissa into `lhs`.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(byte_len));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(content));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalTee(ch));
+  b.emit(Instruction::I32Const(b'.' as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(in_frac));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::BrIf(2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(in_frac));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Const(b'0' as i32));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Const(b'9' as i32));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::BrIf(2));
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Const(b'0' as i32));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(ch)); // digit 0..=9
+  b.emit(Instruction::LocalGet(sig_digits));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(in_frac));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(-10_000_000));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(tz_count));
+  b.emit(Instruction::I32Const(10_000_000));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(tz_count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(tz_count));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(in_frac));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(10_000_000));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  // Flush pending zeros while within 768 significant digits.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(tz_count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LeS);
+  b.emit(Instruction::LocalGet(sig_digits));
+  b.emit(Instruction::I32Const(768));
+  b.emit(Instruction::I32GeS);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(lhs_ptr));
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::I64Const(10));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(lhs_len));
+  b.emit(Instruction::LocalGet(sig_digits));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(sig_digits));
+  b.emit(Instruction::LocalGet(tz_count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(tz_count));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(-10_000_000));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(tz_count));
+
+  b.emit(Instruction::LocalGet(sig_digits));
+  b.emit(Instruction::I32Const(768));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(lhs_ptr));
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::I64Const(10));
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(lhs_len));
+  b.emit(Instruction::LocalGet(sig_digits));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(sig_digits));
+  b.emit(Instruction::LocalGet(in_frac));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(-10_000_000));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(extra_nonzero));
+  b.emit(Instruction::LocalGet(in_frac));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(10_000_000));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(extra_nonzero));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(lhs_ptr));
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::I64Const(10));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::Call(bigint_mul_add_idx));
+  b.emit(Instruction::LocalSet(lhs_len));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(e_d));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::LocalGet(explicit_exp));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(e_d));
+
+  // Build exact binary64 midpoint `m2 * 2^p2` for `(bits_low, bits_low + 1)` into `rhs`.
+  b.emit(Instruction::LocalGet(bits_low));
+  b.emit(Instruction::I64Const(52));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I64Const(0x7FF));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalSet(biased_exp));
+
+  b.emit(Instruction::LocalGet(bits_low));
+  b.emit(Instruction::I64Const(0x000F_FFFF_FFFF_FFFFi64));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::LocalSet(frac));
+
+  b.emit(Instruction::LocalGet(biased_exp));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(frac));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(m2));
+  b.emit(Instruction::I32Const(-1075));
+  b.emit(Instruction::LocalSet(p2));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I64Const(1i64 << 52));
+  b.emit(Instruction::LocalGet(frac));
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Or);
+  b.emit(Instruction::LocalSet(m2));
+  b.emit(Instruction::LocalGet(biased_exp));
+  b.emit(Instruction::I32Const(1076));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(p2));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(rhs_ptr));
+  b.emit(Instruction::LocalGet(m2));
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(m2));
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalTee(m2_hi));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(rhs_ptr));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(m2_hi));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::LocalSet(rhs_len));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(rhs_len));
+  b.emit(Instruction::End);
+
+  // Align powers of 5: multiply `lhs` by 5^e_d when `e_d > 0`, or `rhs` by 5^(-e_d) when `e_d < 0`.
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::LocalSet(scale_steps));
+  rt_emit_scale_bigint_pow5(&mut b, bigint_mul_add_idx, lhs_ptr, lhs_len, scale_steps);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(scale_steps));
+  rt_emit_scale_bigint_pow5(&mut b, bigint_mul_add_idx, rhs_ptr, rhs_len, scale_steps);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Align powers of 2: `shift2 = e_d - p2`.
+  b.emit(Instruction::LocalGet(e_d));
+  b.emit(Instruction::LocalGet(p2));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalTee(shift2));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(shift2));
+  b.emit(Instruction::LocalSet(scale_steps));
+  rt_emit_scale_bigint_pow2(&mut b, bigint_mul_add_idx, lhs_ptr, lhs_len, scale_steps);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(shift2));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(shift2));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(scale_steps));
+  rt_emit_scale_bigint_pow2(&mut b, bigint_mul_add_idx, rhs_ptr, rhs_len, scale_steps);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Compare unsigned big integers `lhs` and `rhs`.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(cmp));
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::LocalGet(rhs_len));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(cmp));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::LocalGet(rhs_len));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(cmp));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(lhs_len));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32LtS);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::LocalSet(off));
+  b.emit(Instruction::LocalGet(lhs_ptr));
+  b.emit(Instruction::LocalGet(off));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(lv));
+  b.emit(Instruction::LocalGet(rhs_ptr));
+  b.emit(Instruction::LocalGet(off));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(rv));
+  b.emit(Instruction::LocalGet(lv));
+  b.emit(Instruction::LocalGet(rv));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalGet(lv));
+  b.emit(Instruction::LocalGet(rv));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::Select);
+  b.emit(Instruction::LocalSet(cmp));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Round up iff `lhs > mid` or exact tie with odd `bits_low`.
+  b.emit(Instruction::LocalGet(cmp));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtS);
+  b.emit(Instruction::LocalGet(cmp));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::LocalGet(bits_low));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  b.emit(Instruction::LocalGet(bits_low));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::F64ReinterpretI64);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(bits_low));
+  b.emit(Instruction::F64ReinterpretI64);
+  b.emit(Instruction::End);
+  b.finish(
+    vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I64],
+    vec![ValType::F64],
+  )
+}
+
 /// `__rt_parse_float(s: f64) → f64`
 ///
 /// Parses decimal strings to correctly rounded f64 values using 128-bit integer
-/// decimal-to-binary scaling and a single IEEE 754 round-to-nearest-even step.
-fn build_rt_parse_float() -> CompiledFn {
+/// decimal-to-binary scaling with an exact big-integer midpoint fallback.
+pub(super) fn build_rt_parse_float(parse_float_exact_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1); // 0=s(f64)
   let ptr = b.alloc_i32();
   let byte_len = b.alloc_i32();
   let content = b.alloc_i32();
   let i = b.alloc_i32();
+  let num_start_i = b.alloc_i32();
   let is_neg = b.alloc_i32();
   let ch = b.alloc_i32();
   let result = b.alloc_f64();
+  let result_hi = b.alloc_f64();
   let exp_val = b.alloc_i32();
   let exp_neg = b.alloc_i32();
+  let explicit_exp = b.alloc_i32();
   let is_special = b.alloc_i32();
   let scale_steps = b.alloc_i32();
   let locs = ParseFloatLocals {
@@ -8841,6 +9486,8 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalSet(num_start_i));
   b.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.emit(Instruction::LocalSet(result));
   b.emit(Instruction::I64Const(0));
@@ -8855,6 +9502,8 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::LocalSet(locs.sticky));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(locs.exp10));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(explicit_exp));
   b.emit(Instruction::I32Const(127));
   b.emit(Instruction::LocalSet(locs.exp2));
   b.emit(Instruction::I32Const(0));
@@ -9072,17 +9721,17 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(exp_neg));
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(locs.exp10));
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalGet(exp_val));
   b.emit(Instruction::I32Sub);
-  b.emit(Instruction::LocalSet(locs.exp10));
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::LocalGet(exp_val));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalTee(explicit_exp));
+  b.emit(Instruction::LocalGet(locs.exp10));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(locs.exp10));
-  b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 
@@ -9158,6 +9807,60 @@ fn build_rt_parse_float() -> CompiledFn {
   b.emit(Instruction::End);
   rt_emit_u128_normalize(&mut b, &locs);
   rt_emit_u128_round_to_f64(&mut b, &locs, result);
+  b.emit(Instruction::LocalGet(locs.sticky));
+  b.emit(Instruction::If(BlockType::Empty));
+  // Bound accumulated truncation/scaling error: check whether `V_computed + 65536 ULP_lo`
+  // could cross an f64 rounding midpoint, and fall back to exact big-integer comparison if so.
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64Const(65_536));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::LocalGet(locs.lo));
+  b.emit(Instruction::I64LtU);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(locs.t_hi));
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::LocalGet(locs.hi));
+  b.emit(Instruction::I64LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I64Const(0x8000_0000_0000_0000u64 as i64));
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::I64Const(1));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::LocalGet(locs.exp2));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(locs.exp2));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(locs.t_hi));
+  b.emit(Instruction::LocalSet(locs.hi));
+  b.emit(Instruction::LocalGet(locs.t_lo));
+  b.emit(Instruction::LocalSet(locs.lo));
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(locs.sticky));
+  rt_emit_u128_round_to_f64(&mut b, &locs, result_hi);
+  b.emit(Instruction::LocalGet(result));
+  b.emit(Instruction::I64ReinterpretF64);
+  b.emit(Instruction::LocalGet(result_hi));
+  b.emit(Instruction::I64ReinterpretF64);
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(content));
+  b.emit(Instruction::LocalGet(byte_len));
+  b.emit(Instruction::LocalGet(num_start_i));
+  b.emit(Instruction::LocalGet(explicit_exp));
+  b.emit(Instruction::LocalGet(result));
+  b.emit(Instruction::I64ReinterpretF64);
+  b.emit(Instruction::Call(parse_float_exact_idx));
+  b.emit(Instruction::LocalSet(result));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
