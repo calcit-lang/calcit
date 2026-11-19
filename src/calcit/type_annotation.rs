@@ -1541,6 +1541,14 @@ fn bounded_plain_type_relation<'a>(
         None => return Ok(Some((Mismatch, stats))),
       },
       (Type::TypeRef(actual_name, actual_args), Type::TypeRef(expected_name, expected_args)) => {
+        if actual_name != expected_name
+          && let (Some(actual_alias), Some(expected_alias)) = (actual.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual_alias.as_ref(), Type::StructDef(_) | Type::EnumDef(_) | Type::Custom(_))
+          && !matches!(expected_alias.as_ref(), Type::StructDef(_) | Type::EnumDef(_) | Type::Custom(_))
+        {
+          // Let the guarded alias-aware relation compare the expanded shapes.
+          return Ok(None);
+        }
         if matches!(mode, PlainRelationMode::Compatibility) && !expected_args.is_empty() && expected.resolve_to_struct().is_some() {
           return Ok(None);
         }
@@ -5908,6 +5916,19 @@ impl CalcitTypeAnnotation {
         }
       },
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if a_name != b_name
+          && let (Some(actual), Some(expected)) = (self.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+          && !matches!(expected.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+        {
+          let Ok(_actual_guard) = enter_alias_relation(a_name, expected.as_ref(), true, false) else {
+            return false;
+          };
+          let Ok(_expected_guard) = enter_alias_relation(b_name, actual.as_ref(), false, false) else {
+            return false;
+          };
+          return actual.compatible_with_bindings(expected.as_ref(), bindings);
+        }
         let nominal_matches = Self::type_ref_nominal_match(a_name, b_name)
           .unwrap_or_else(|| Self::type_ref_name_matches(a_name, b_name) || Self::type_ref_name_matches(b_name, a_name));
         if !nominal_matches {
@@ -6313,6 +6334,19 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if a_name != b_name
+          && let (Some(actual), Some(expected)) = (self.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+          && !matches!(expected.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+        {
+          let Ok(_actual_guard) = enter_alias_relation(a_name, expected.as_ref(), true, true) else {
+            return NeedsBoundary(Boundary::RecursiveTypeAlias);
+          };
+          let Ok(_expected_guard) = enter_alias_relation(b_name, actual.as_ref(), false, true) else {
+            return NeedsBoundary(Boundary::RecursiveTypeAlias);
+          };
+          return actual.prove_with_staged_bindings(expected.as_ref(), bindings);
+        }
         match Self::type_ref_nominal_match(a_name, b_name) {
           Some(true) => {}
           Some(false) => return Mismatch,

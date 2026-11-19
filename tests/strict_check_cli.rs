@@ -6,6 +6,65 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn equivalent_value_and_deftype_aliases_work_in_both_directions() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/equivalent-map-aliases.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "value alias to deftype");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/produce", "--code", "quote $ Fn (-> app.main/New)"],
+    ),
+    "return the deftype alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/consume", "--code", "quote $ Fn app.main/Old (-> Unit)"],
+    ),
+    "accept the value alias",
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "deftype to value alias");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/New",
+        "--overwrite",
+        "--code",
+        "quote $ deftype New (Map String Number)",
+      ],
+    ),
+    "narrow the new alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/produce", "--code", "quote $ Fn (-> app.main/Old)"],
+    ),
+    "return the open map",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/consume", "--code", "quote $ Fn app.main/New (-> Unit)"],
+    ),
+    "require the narrower map",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "an open map must not satisfy a narrow map alias");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  assert!(output.contains("E_CALL_ARGUMENT_UNPROVEN"), "{output}");
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {
