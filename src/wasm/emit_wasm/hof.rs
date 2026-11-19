@@ -141,16 +141,28 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
 
 pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calcit) -> Option<WasmTypeEvidence> {
   let ev = infer_wasm_value_evidence(ctx, source)?;
+  let elem_codec_hint = ev
+    .codec_hint
+    .as_ref()
+    .and_then(|hint| match CalcitTypeAnnotation::expand_schema_alias(hint).as_ref() {
+      CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) => Some(inner.clone()),
+      CalcitTypeAnnotation::Tuple(slots) => slots.first().filter(|first| slots.iter().all(|s| s == *first)).cloned(),
+      _ => None,
+    });
   let expanded = CalcitTypeAnnotation::expand_schema_alias(&ev.annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::List(element) => Some(WasmTypeEvidence {
       annotation: element.clone(),
-      codec_hint: None,
+      codec_hint: elem_codec_hint,
       set_member_types: ev.set_member_types,
       scalar_origin: None,
       exact_impls: false,
     }),
-    CalcitTypeAnnotation::Set(element) => Some(WasmTypeEvidence::contract(element.clone())),
+    CalcitTypeAnnotation::Set(element) => Some(WasmTypeEvidence {
+      annotation: element.clone(),
+      codec_hint: elem_codec_hint,
+      ..WasmTypeEvidence::contract(element.clone())
+    }),
     CalcitTypeAnnotation::Tuple(slots) => {
       let annotation = if let Some(first) = slots.first()
         && slots.iter().all(|s| s == first)
@@ -161,7 +173,7 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
       };
       Some(WasmTypeEvidence {
         annotation,
-        codec_hint: None,
+        codec_hint: elem_codec_hint,
         set_member_types: ev.set_member_types,
         scalar_origin: None,
         exact_impls: false,
@@ -331,8 +343,32 @@ fn validate_loop_accumulator_evidence(
   acc_ev: Option<WasmTypeEvidence>,
   other_evs: &[Option<WasmTypeEvidence>],
 ) -> Option<WasmTypeEvidence> {
+  match fn_call_kind {
+    FoldlCallKind::Inline(_) => {}
+    FoldlCallKind::Proc(proc) => {
+      let preserves_type = matches!(
+        proc,
+        CalcitProc::NativeAdd
+          | CalcitProc::NativeMinus
+          | CalcitProc::NativeMultiply
+          | CalcitProc::NativeDivide
+          | CalcitProc::NativeMerge
+          | CalcitProc::NativeMergeNonNil
+          | CalcitProc::NativeUnion
+          | CalcitProc::NativeSetIntersection
+          | CalcitProc::NativeDifference
+          | CalcitProc::NativeListConcat
+          | CalcitProc::NativeStrConcat
+          | CalcitProc::BitAnd
+          | CalcitProc::BitOr
+          | CalcitProc::BitXor
+      );
+      return if preserves_type { acc_ev } else { None };
+    }
+    FoldlCallKind::Static(_, _) | FoldlCallKind::Dynamic(_) => return acc_ev,
+  }
   let FoldlCallKind::Inline(closure) = fn_call_kind else {
-    return acc_ev;
+    unreachable!();
   };
   let init_acc = acc_ev?;
   let mut arg_evs = Vec::with_capacity(1 + other_evs.len());
@@ -506,6 +542,12 @@ pub(super) fn emit_foldl_step(
   }
 }
 
+fn emit_stack_is_truthy_i32(ctx: &mut WasmGenCtx) {
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  super::emit_value_is_truthy_i32(ctx, value);
+}
+
 /// `&list:foldl-shortcut xs acc default fn` — like foldl but fn returns `:: bool new_acc`.
 /// If bool is true, return new_acc immediately (short-circuit). Otherwise continue.
 /// After exhausting xs, return default.
@@ -552,11 +594,10 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(enum_ptr + 8) — bool flag (1.0 = true → early exit)
+  // tag = F64Load(enum_ptr + 8) — bool flag (truthy → early exit)
   ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::F64Eq); // → i32
+  emit_stack_is_truthy_i32(ctx); // → i32
 
   ctx.begin_block_if();
   // Early exit: result = payload at enum_ptr + 16
@@ -625,8 +666,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   // tag = F64Load(enum_ptr + 8) — bool flag
   ctx.emit(Instruction::LocalGet(enum_ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::F64Eq);
+  emit_stack_is_truthy_i32(ctx);
 
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(enum_ptr));
@@ -713,9 +753,9 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
       element_type.map(WasmTypeEvidence::contract),
     ],
   )?;
-  // if condition == 0.0: result = false, break
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq); // i32: 1 if condition was 0.0 (false)
+  // if condition is falsy: result = false, break
+  emit_stack_is_truthy_i32(ctx);
+  ctx.emit(Instruction::I32Eqz); // i32: 1 if condition was falsy (false/nil)
   ctx.begin_block_if();
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
@@ -1118,8 +1158,7 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne);
+  emit_stack_is_truthy_i32(ctx);
   ctx.begin_block_if();
   emit_list_store_elem(ctx, dst_ptr, result_count, elem);
   ctx.i32_inc(result_count);
@@ -1142,8 +1181,7 @@ pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   ctx.emit(Instruction::LocalSet(result));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne);
+  emit_stack_is_truthy_i32(ctx);
   ctx.begin_block_if();
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::LocalSet(result));
@@ -1165,8 +1203,8 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(Instruction::LocalSet(result));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq);
+  emit_stack_is_truthy_i32(ctx);
+  ctx.emit(Instruction::I32Eqz);
   ctx.begin_block_if();
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
@@ -1191,8 +1229,7 @@ pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
   ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne);
+  emit_stack_is_truthy_i32(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(elem));
   ctx.emit(Instruction::LocalSet(result));
@@ -1232,8 +1269,8 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq); // keep when f returns falsy (== 0.0)
+  emit_stack_is_truthy_i32(ctx);
+  ctx.emit(Instruction::I32Eqz); // keep when f returns falsy (false/nil)
   ctx.begin_block_if();
   emit_list_store_elem(ctx, dst_ptr, result_count, elem);
   ctx.i32_inc(result_count);
@@ -1333,8 +1370,7 @@ pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalSet(found));
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne);
+  emit_stack_is_truthy_i32(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(i));
   ctx.emit(Instruction::F64ConvertI32U);

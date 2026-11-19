@@ -543,6 +543,7 @@ fn emit_wasm_impl(
       *tag_index.get("struct").expect("struct tag must exist") as i32,
       *tag_index.get("nil").expect("nil tag must exist") as i32,
       *tag_index.get("bool").expect("bool tag must exist") as i32,
+      *tag_index.get("number").expect("number tag must exist") as i32,
     ),
     &tag_index,
   )?;
@@ -5295,6 +5296,10 @@ struct WasmGenCtx {
   recur_selectors: Vec<Option<ImplSelector>>,
   /// Back-edge identities missing from the current loop's alternatives.
   recur_missing: Vec<(usize, WasmTypeEvidence)>,
+  /// Parameters whose initial scalar origin was invalidated on a specialized back edge.
+  recur_drop_scalar_origin: Vec<usize>,
+  /// True while compiling a loop body inside `emit_selected_recur_loop`.
+  in_selected_recur_loop: bool,
   /// Tracks expanded `DataShapeGraph` node visits during a single map codec emission.
   map_codec_expanded_nodes: usize,
 }
@@ -5316,6 +5321,9 @@ impl ImplSelector {
 /// Internal marker, never surfaced: the loop is retried with wider
 /// alternatives once a back edge reveals another impl.
 const RECUR_IMPL_RETRY: &str = "RETRY_RECUR_IMPL_SELECTION";
+/// Internal marker, never surfaced: the loop is retried with scalar origin cleared
+/// once a back edge changes the runtime origin of an open loop parameter.
+const RECUR_SCALAR_ORIGIN_RETRY: &str = "RETRY_RECUR_SCALAR_ORIGIN";
 /// Ends the error for a loop parameter past `MAX_IMPL_ALTERNATIVES`.
 const IMPL_LIMIT: &str = "implementation identities";
 /// Bound the code duplicated per dispatch on a selected value.
@@ -5369,6 +5377,8 @@ impl WasmGenCtx {
       impl_selectors: HashMap::new(),
       recur_selectors: vec![],
       recur_missing: vec![],
+      recur_drop_scalar_origin: vec![],
+      in_selected_recur_loop: false,
       map_codec_expanded_nodes: 0,
     }
   }
@@ -6239,6 +6249,88 @@ fn prove_wasm_arg_bindings(actual: &Arc<CalcitTypeAnnotation>, expected: &Calcit
   false
 }
 
+fn data_shape_node_to_annotation(graph: &DataShapeGraph, node_id: usize, depth: usize) -> Arc<CalcitTypeAnnotation> {
+  if depth >= 32 {
+    return DYNAMIC_TYPE.clone();
+  }
+  let Some(node) = graph.nodes.get(node_id) else {
+    return DYNAMIC_TYPE.clone();
+  };
+  match node {
+    DataShapeNode::Dynamic => DYNAMIC_TYPE.clone(),
+    DataShapeNode::Nil => Arc::new(CalcitTypeAnnotation::Nil),
+    DataShapeNode::Unit => Arc::new(CalcitTypeAnnotation::Unit),
+    DataShapeNode::Bool => Arc::new(CalcitTypeAnnotation::Bool),
+    DataShapeNode::Number => Arc::new(CalcitTypeAnnotation::Number),
+    DataShapeNode::Numeric(kind) => Arc::new(CalcitTypeAnnotation::Numeric(*kind)),
+    DataShapeNode::String => Arc::new(CalcitTypeAnnotation::String),
+    DataShapeNode::Symbol => Arc::new(CalcitTypeAnnotation::Symbol),
+    DataShapeNode::Tag => Arc::new(CalcitTypeAnnotation::Tag),
+    DataShapeNode::Buffer => Arc::new(CalcitTypeAnnotation::Buffer),
+    DataShapeNode::CirruQuote => Arc::new(CalcitTypeAnnotation::CirruQuote),
+    DataShapeNode::List(inner) => Arc::new(CalcitTypeAnnotation::List(data_shape_node_to_annotation(graph, *inner, depth + 1))),
+    DataShapeNode::Tuple(items) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
+      items
+        .iter()
+        .map(|item| data_shape_node_to_annotation(graph, *item, depth + 1))
+        .collect(),
+    ))),
+    DataShapeNode::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(data_shape_node_to_annotation(graph, *inner, depth + 1))),
+    DataShapeNode::Map { key, value } => Arc::new(CalcitTypeAnnotation::Map(
+      data_shape_node_to_annotation(graph, *key, depth + 1),
+      data_shape_node_to_annotation(graph, *value, depth + 1),
+    )),
+    DataShapeNode::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(data_shape_node_to_annotation(graph, *inner, depth + 1))),
+    DataShapeNode::MapOption { nominal, inner, .. } => Arc::new(CalcitTypeAnnotation::Enum(
+      nominal.clone(),
+      Arc::new(vec![data_shape_node_to_annotation(graph, *inner, depth + 1)]),
+    )),
+    DataShapeNode::Struct { nominal, type_args, .. } => {
+      if type_args.is_empty() {
+        Arc::new(CalcitTypeAnnotation::StructValue(nominal.clone()))
+      } else {
+        Arc::new(CalcitTypeAnnotation::Struct(nominal.clone(), Arc::new(type_args.to_vec())))
+      }
+    }
+    DataShapeNode::Enum { nominal, type_args, .. } => {
+      Arc::new(CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(type_args.to_vec())))
+    }
+    DataShapeNode::Union { name, nominal_path, .. } => {
+      if let Some((ns, def)) = nominal_path {
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])))
+      } else {
+        Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(vec![])))
+      }
+    }
+  }
+}
+
+fn resolve_codec_target_annotation(items: &crate::wasm::host::calcit::CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
+  items
+    .get(3)
+    .and_then(DataShapeGraph::from_calcit_handle)
+    .map(|graph| data_shape_node_to_annotation(&graph, graph.root, 0))
+    .or_else(|| {
+      items
+        .get(2)
+        .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]))
+    })
+}
+
+fn resolved_struct_fields_for_annotation(
+  annotation: &Arc<CalcitTypeAnnotation>,
+) -> Option<Vec<(cirru_edn::EdnTag, Arc<CalcitTypeAnnotation>)>> {
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Struct(nominal, args) => edn::resolved_struct_fields(nominal, args).ok(),
+    CalcitTypeAnnotation::StructValue(nominal) => edn::resolved_struct_fields(nominal, &[]).ok(),
+    CalcitTypeAnnotation::TypeRef(_, args) => expanded
+      .resolve_to_struct()
+      .and_then(|nominal| edn::resolved_struct_fields(&nominal, args).ok()),
+    _ => None,
+  }
+}
+
 fn infer_wasm_evidence_in_scope(
   ctx: &WasmGenCtx,
   expr: &Calcit,
@@ -6535,7 +6627,7 @@ fn infer_wasm_evidence_in_scope(
           })
         }
         Calcit::Syntax(CalcitSyntax::EncodeMapAs, _) => {
-          let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(items.get(2)?, &[]);
+          let target = resolve_codec_target_annotation(items)?;
           let expanded_target = expand_wasm_value_type(&target);
           let mut annotation = infer_encoded_map_type(&target);
           let mut codec_hint = infer_encoded_codec_hint(&target);
@@ -6580,6 +6672,17 @@ fn infer_wasm_evidence_in_scope(
             scalar_origin: None,
             exact_impls: false,
           })
+        }
+        Calcit::Syntax(CalcitSyntax::DecodeMapAs | CalcitSyntax::ParseCirruEdnAs, _) => {
+          let target = resolve_codec_target_annotation(items)?;
+          Some(WasmTypeEvidence::contract(target))
+        }
+        Calcit::Syntax(CalcitSyntax::TryDecodeMapAs | CalcitSyntax::TryParseCirruEdnAs, _) => {
+          let target = resolve_codec_target_annotation(items)?;
+          Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::TypeRef(
+            Arc::from("calcit.core/Result"),
+            Arc::new(vec![target, Arc::new(CalcitTypeAnnotation::String)]),
+          ))))
         }
         Calcit::Method(name, MethodKind::Invoke(_)) => {
           let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, closures, visiting)?;
@@ -6788,6 +6891,8 @@ fn infer_wasm_evidence_in_scope(
         Calcit::Proc(proc) => {
           if matches!(proc, CalcitProc::List) {
             let mut elem_types = Vec::with_capacity(items.len().saturating_sub(1));
+            let mut elem_hints = Vec::with_capacity(items.len().saturating_sub(1));
+            let mut any_elem_has_codec_hint = false;
             let mut all_elems_known = true;
             let mut combined_collection_members = Vec::new();
             let mut all_collection_members_known = items.len() > 1;
@@ -6797,6 +6902,15 @@ fn infer_wasm_evidence_in_scope(
                 if matches!(expanded.as_ref(), CalcitTypeAnnotation::Dynamic) {
                   all_elems_known = false;
                 }
+                if ev.codec_hint.is_some() {
+                  any_elem_has_codec_hint = true;
+                }
+                let item_hint = ev
+                  .codec_hint
+                  .as_ref()
+                  .map(expand_wasm_value_type)
+                  .unwrap_or_else(|| expanded.clone());
+                elem_hints.push(item_hint);
                 if let Some(members) = ev.set_member_types {
                   combined_collection_members.extend(members);
                 } else {
@@ -6817,8 +6931,16 @@ fn infer_wasm_evidence_in_scope(
                 all_elems_known = false;
                 all_collection_members_known = false;
                 elem_types.push(DYNAMIC_TYPE.clone());
+                elem_hints.push(DYNAMIC_TYPE.clone());
               }
             }
+            let list_codec_hint = (any_elem_has_codec_hint && !elem_hints.is_empty()).then(|| {
+              if elem_hints.iter().all(|h| h == &elem_hints[0]) {
+                Arc::new(CalcitTypeAnnotation::List(elem_hints[0].clone()))
+              } else {
+                Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(elem_hints)))
+              }
+            });
             let annotation = if items.len() == 1 {
               Arc::new(CalcitTypeAnnotation::List(
                 crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone(),
@@ -6835,13 +6957,20 @@ fn infer_wasm_evidence_in_scope(
                 || (matches!(static_ty.as_ref(), CalcitTypeAnnotation::Tuple(_)) && static_ty.contains_type_var() && all_elems_known);
               if preserves_tuple_slots {
                 Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(elem_types)))
+              } else if matches!(
+                static_ty.as_ref(),
+                CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Never)
+              ) && all_elems_known
+                && elem_types.first().is_some_and(|first| elem_types.iter().all(|t| t == first))
+              {
+                Arc::new(CalcitTypeAnnotation::List(elem_types[0].clone()))
               } else {
                 static_ty
               }
             };
             return Some(WasmTypeEvidence {
               annotation,
-              codec_hint: None,
+              codec_hint: list_codec_hint,
               set_member_types: all_collection_members_known.then_some(combined_collection_members),
               scalar_origin: None,
               exact_impls: false,
@@ -6851,6 +6980,23 @@ fn infer_wasm_evidence_in_scope(
             && items.len() == 3
             && let Some(list_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
           {
+            let elem_codec_hint = list_ev.codec_hint.as_ref().and_then(|hint| {
+              let exp_hint = expand_wasm_value_type(hint);
+              match exp_hint.as_ref() {
+                CalcitTypeAnnotation::List(inner) => Some(inner.clone()),
+                CalcitTypeAnnotation::Tuple(slots) => {
+                  if let Calcit::Number(idx) = &items[2]
+                    && idx.fract() == 0.0
+                    && *idx >= 0.0
+                  {
+                    slots.get(*idx as usize).cloned()
+                  } else {
+                    slots.first().filter(|first| slots.iter().all(|s| s == *first)).cloned()
+                  }
+                }
+                _ => None,
+              }
+            });
             let expanded = CalcitTypeAnnotation::expand_schema_alias(&list_ev.annotation);
             match expanded.as_ref() {
               CalcitTypeAnnotation::Tuple(slots) => {
@@ -6859,13 +7005,19 @@ fn infer_wasm_evidence_in_scope(
                   && *idx >= 0.0
                   && let Some(slot_ty) = slots.get(*idx as usize)
                 {
-                  return Some(WasmTypeEvidence::contract(slot_ty.clone()));
+                  return Some(WasmTypeEvidence {
+                    annotation: slot_ty.clone(),
+                    codec_hint: elem_codec_hint,
+                    set_member_types: None,
+                    scalar_origin: None,
+                    exact_impls: false,
+                  });
                 }
               }
               CalcitTypeAnnotation::List(elem_ty) => {
                 return Some(WasmTypeEvidence {
                   annotation: elem_ty.clone(),
-                  codec_hint: None,
+                  codec_hint: elem_codec_hint,
                   set_member_types: list_ev.set_member_types,
                   scalar_origin: None,
                   exact_impls: false,
@@ -6908,19 +7060,22 @@ fn infer_wasm_evidence_in_scope(
               exact_impls: false,
             });
           }
+          if matches!(proc, CalcitProc::NativeStructNth)
+            && items.len() >= 3
+            && let Calcit::Number(idx) = &items[2]
+            && idx.fract() == 0.0
+            && *idx >= 0.0
+            && let Some(struct_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
+            && let Some(fields) = resolved_struct_fields_for_annotation(&struct_ev.annotation)
+            && let Some((_, field_ty)) = fields.get(*idx as usize)
+          {
+            return Some(WasmTypeEvidence::contract(field_ty.clone()));
+          }
           if matches!(proc, CalcitProc::NativeStructToMap)
             && items.len() == 2
             && let Some(struct_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
           {
-            let expanded = CalcitTypeAnnotation::expand_schema_alias(&struct_ev.annotation);
-            let resolved_fields = match expanded.as_ref() {
-              CalcitTypeAnnotation::Struct(nominal, args) => edn::resolved_struct_fields(nominal, args).ok(),
-              CalcitTypeAnnotation::StructValue(nominal) => edn::resolved_struct_fields(nominal, &[]).ok(),
-              CalcitTypeAnnotation::TypeRef(_, args) => expanded
-                .resolve_to_struct()
-                .and_then(|nominal| edn::resolved_struct_fields(&nominal, args).ok()),
-              _ => None,
-            };
+            let resolved_fields = resolved_struct_fields_for_annotation(&struct_ev.annotation);
             let val_ty = if let Some(fields) = resolved_fields {
               if fields.is_empty() {
                 crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()
@@ -8764,6 +8919,7 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
   }
   let mut assignments = Vec::with_capacity(args.len());
   let mut changed = None;
+  let mut changed_origin = None;
   for (index, (arg, expected)) in args.iter().zip(&expected).enumerate() {
     let actual = infer_wasm_value_evidence(ctx, arg).ok_or_else(|| {
       format!(
@@ -8773,6 +8929,15 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
     })?;
     let proven = actual.annotation.is_proven_for(&expected.annotation);
     let nominal_identity = actual.exact_impls && is_nominal_value_annotation(&actual.annotation);
+    let same_scalar_origin = match &expected.scalar_origin {
+      None => true,
+      Some(expected_origin) => {
+        let actual_origin = actual.scalar_origin.as_ref().unwrap_or(&actual.annotation);
+        let exp_ty = expand_wasm_value_type(expected_origin);
+        let act_ty = expand_wasm_value_type(actual_origin);
+        act_ty == exp_ty || act_ty.is_proven_for(&exp_ty)
+      }
+    };
     if let Some(selector) = ctx.recur_selectors.get(index).cloned().flatten()
       && proven
       && nominal_identity
@@ -8801,6 +8966,10 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
       // a selector over every identity instead of guessing the first one.
       ctx.recur_missing.push((index, actual));
       changed.get_or_insert(index);
+      if !same_scalar_origin {
+        ctx.recur_drop_scalar_origin.push(index);
+        changed_origin.get_or_insert(index);
+      }
       assignments.push(None);
       continue;
     }
@@ -8810,11 +8979,29 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
         index + 1
       ));
     }
+    if !same_scalar_origin {
+      if ctx.in_selected_recur_loop {
+        ctx.recur_drop_scalar_origin.push(index);
+        changed_origin.get_or_insert(index);
+        assignments.push(None);
+        continue;
+      }
+      return Err(format!(
+        "E_WASM_CALL_SPECIALIZATION: recur argument {} does not preserve the loop-carried scalar origin",
+        index + 1
+      ));
+    }
     assignments.push(None);
   }
   if let Some(index) = changed {
     return Err(format!(
       "{RECUR_IMPL_RETRY}: recur argument {} changes the loop-carried implementation identity",
+      index + 1
+    ));
+  }
+  if let Some(index) = changed_origin {
+    return Err(format!(
+      "{RECUR_SCALAR_ORIGIN_RETRY}: recur argument {} changes the loop-carried scalar origin",
       index + 1
     ));
   }
@@ -8834,7 +9021,8 @@ fn emit_selected_recur_loop(
   argument_types: Vec<WasmTypeEvidence>,
   body: &[Calcit],
 ) -> Result<(), String> {
-  let mut alternatives: Vec<Vec<WasmTypeEvidence>> = argument_types.iter().map(|evidence| vec![evidence.clone()]).collect();
+  let mut effective_types = argument_types;
+  let mut alternatives: Vec<Vec<WasmTypeEvidence>> = effective_types.iter().map(|evidence| vec![evidence.clone()]).collect();
   let start = ctx.instructions.len();
   loop {
     ctx.instructions.truncate(start);
@@ -8848,7 +9036,7 @@ fn emit_selected_recur_loop(
       })
       .collect();
     let mut old_types = vec![];
-    for ((selector, local), (param, initial)) in selectors.iter().zip(&parameter_locals).zip(params.iter().zip(&argument_types)) {
+    for ((selector, local), (param, initial)) in selectors.iter().zip(&parameter_locals).zip(params.iter().zip(&effective_types)) {
       if let Some(selector) = selector {
         // The argument value enters the loop as the first identity.
         ctx.emit(Instruction::I32Const(0));
@@ -8856,16 +9044,26 @@ fn emit_selected_recur_loop(
         ctx.impl_selectors.insert(*local, selector.clone());
         old_types.push((
           param.clone(),
-          ctx
-            .local_types
-            .insert(param.clone(), WasmTypeEvidence::contract(initial.annotation.clone())),
+          ctx.local_types.insert(
+            param.clone(),
+            WasmTypeEvidence {
+              scalar_origin: initial.scalar_origin.clone(),
+              ..WasmTypeEvidence::contract(initial.annotation.clone())
+            },
+          ),
         ));
+      } else {
+        old_types.push((param.clone(), ctx.local_types.insert(param.clone(), initial.clone())));
       }
     }
     let old_selectors = std::mem::replace(&mut ctx.recur_selectors, selectors.clone());
     let old_missing = std::mem::take(&mut ctx.recur_missing);
-    let result = emit_recur_loop(ctx, parameter_locals.clone(), None, Some(argument_types.clone()), body);
+    let old_drop_origin = std::mem::take(&mut ctx.recur_drop_scalar_origin);
+    let old_in_selected = std::mem::replace(&mut ctx.in_selected_recur_loop, true);
+    let result = emit_recur_loop(ctx, parameter_locals.clone(), None, Some(effective_types.clone()), body);
+    ctx.in_selected_recur_loop = old_in_selected;
     let missing = std::mem::replace(&mut ctx.recur_missing, old_missing);
+    let dropped_origins = std::mem::replace(&mut ctx.recur_drop_scalar_origin, old_drop_origin);
     ctx.recur_selectors = old_selectors;
     for (selector, local) in selectors.iter().zip(&parameter_locals) {
       if selector.is_some() {
@@ -8891,9 +9089,26 @@ fn emit_selected_recur_loop(
             ));
           }
         }
+        for index in dropped_origins {
+          effective_types[index].scalar_origin = None;
+          for alt in &mut alternatives[index] {
+            alt.scalar_origin = None;
+          }
+        }
+      }
+      Err(error) if error.starts_with(RECUR_SCALAR_ORIGIN_RETRY) && !dropped_origins.is_empty() => {
+        for index in dropped_origins {
+          effective_types[index].scalar_origin = None;
+          for alt in &mut alternatives[index] {
+            alt.scalar_origin = None;
+          }
+        }
       }
       Err(error) if error.starts_with(RECUR_IMPL_RETRY) => {
         return Err(error.replacen(RECUR_IMPL_RETRY, "E_WASM_CALL_SPECIALIZATION", 1));
+      }
+      Err(error) if error.starts_with(RECUR_SCALAR_ORIGIN_RETRY) => {
+        return Err(error.replacen(RECUR_SCALAR_ORIGIN_RETRY, "E_WASM_CALL_SPECIALIZATION", 1));
       }
       other => return other,
     }
@@ -9076,14 +9291,15 @@ fn emit_inline_iife(
     .flatten()
     .filter(|types| {
       types.len() == params.len()
-        && types
-          .iter()
-          .any(|evidence| evidence.exact_impls && is_nominal_value_annotation(&evidence.annotation))
+        && types.iter().any(|evidence| {
+          (evidence.exact_impls && is_nominal_value_annotation(&evidence.annotation)) || evidence.scalar_origin.is_some()
+        })
     });
   if uses_recur && selected_types.is_none() {
-    // The initial call cannot establish an impl identity for later loop values.
+    // The initial call cannot establish an impl identity or scalar origin for later loop values.
     for evidence in param_types.iter_mut().flatten() {
       evidence.exact_impls = false;
+      evidence.scalar_origin = None;
     }
   }
   for (i, name) in params.iter().enumerate() {
@@ -9113,6 +9329,7 @@ fn emit_inline_iife(
               name.clone(),
               WasmTypeEvidence {
                 exact_impls: false,
+                scalar_origin: None,
                 ..evidence.clone()
               },
             );
@@ -9345,7 +9562,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         Ok(())
       }
       CalcitSyntax::AssertType => {
-        // assert-type checks type at preprocess time; at runtime just evaluate the expression
+        // assert-type checks type at preprocess time; unbox open JSON scalar boxes
+        // when narrowing to a concrete scalar representation.
         if args_list.is_empty() {
           return Err("assert-type expects at least 1 arg".into());
         }
@@ -9354,6 +9572,26 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         {
           ctx.emit(f64_const(0.0));
           return Ok(());
+        }
+        if args_list.len() == 2 {
+          let src_ev = infer_wasm_evidence(ctx, &args_list[0]);
+          let src_ty = expand_wasm_value_type(src_ev.scalar_origin.as_ref().unwrap_or(&src_ev.annotation));
+          if nil_type_evidence_is_open(&src_ty) {
+            let target = expand_wasm_value_type(&CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&args_list[1], &[]));
+            emit_expr(ctx, &args_list[0])?;
+            let value_local = ctx.alloc_local();
+            ctx.emit(Instruction::LocalSet(value_local));
+            match target.as_ref() {
+              CalcitTypeAnnotation::Bool => emit_unbox_scalar_if_tag(ctx, value_local, "bool", false),
+              CalcitTypeAnnotation::Nil => emit_unbox_scalar_if_tag(ctx, value_local, "nil", true),
+              CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => {
+                emit_unbox_scalar_if_tag(ctx, value_local, "number", false)
+              }
+              _ => {}
+            }
+            ctx.emit(Instruction::LocalGet(value_local));
+            return Ok(());
+          }
         }
         emit_expr(ctx, &args_list[0])
       }
@@ -12001,7 +12239,8 @@ fn emit_is_heap_value(ctx: &mut WasmGenCtx, value: u32) -> u32 {
 
 /// Emits an i32 boolean (`1` = truthy, `0` = falsy) on the stack for a
 /// runtime f64 value, inspecting heap tags for boxed `nil` and `bool` values.
-fn emit_value_is_truthy_i32(ctx: &mut WasmGenCtx, value: u32) {
+#[allow(private_interfaces)]
+pub(super) fn emit_value_is_truthy_i32(ctx: &mut WasmGenCtx, value: u32) {
   let nil_tag = ctx.tag_index.get("nil").copied().map(|tag| tag as i32);
   let bool_tag = ctx.tag_index.get("bool").copied().map(|tag| tag as i32);
   if nil_tag.is_none() && bool_tag.is_none() {
@@ -12072,6 +12311,51 @@ fn emit_has_heap_tag(ctx: &mut WasmGenCtx, value: u32, tag_name: &str) -> u32 {
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::End);
   result
+}
+
+fn emit_unbox_scalar_if_tag(ctx: &mut WasmGenCtx, local: u32, tag_name: &str, replace_with_zero: bool) {
+  if !ctx.tag_index.contains_key(tag_name) {
+    return;
+  }
+  let has_tag = emit_has_heap_tag(ctx, local, tag_name);
+  ctx.emit(Instruction::LocalGet(has_tag));
+  ctx.begin_block_if();
+  if replace_with_zero {
+    ctx.emit(f64_const(0.0));
+  } else {
+    ctx.emit(Instruction::LocalGet(local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  }
+  ctx.emit(Instruction::LocalSet(local));
+  ctx.emit(Instruction::End);
+}
+
+fn emit_normalize_proven_scalar_pair(ctx: &mut WasmGenCtx, left_expr: &Calcit, right_expr: &Calcit, a: u32, b: u32) {
+  let left_ev = infer_wasm_evidence(ctx, left_expr);
+  let right_ev = infer_wasm_evidence(ctx, right_expr);
+  let left_type = expand_wasm_value_type(left_ev.scalar_origin.as_ref().unwrap_or(&left_ev.annotation));
+  let right_type = expand_wasm_value_type(right_ev.scalar_origin.as_ref().unwrap_or(&right_ev.annotation));
+  match (proven_scalar_kind(&left_type), proven_scalar_kind(&right_type)) {
+    (Some("bool"), Some("bool")) => {
+      emit_unbox_scalar_if_tag(ctx, a, "bool", false);
+      emit_unbox_scalar_if_tag(ctx, b, "bool", false);
+    }
+    (Some("nil"), Some("nil")) => {
+      emit_unbox_scalar_if_tag(ctx, a, "nil", true);
+      emit_unbox_scalar_if_tag(ctx, b, "nil", true);
+    }
+    _ => {}
+  }
+}
+
+fn is_proven_number_pair(ctx: &WasmGenCtx, left_expr: &Calcit, right_expr: &Calcit) -> bool {
+  let is_proven_num = |expr: &Calcit| {
+    let ev = infer_wasm_evidence(ctx, expr);
+    let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
+    proven_scalar_kind(&ty) == Some("number")
+  };
+  is_proven_num(left_expr) && is_proven_num(right_expr)
 }
 
 /// Emits an i32 local that is 1 when the f64 value is a live string heap
@@ -12292,6 +12576,66 @@ fn is_non_nil_colliding_number_literal(ctx: &WasmGenCtx, expr: &Calcit) -> bool 
     .is_some_and(|n| n != 0.0 && (!n.is_finite() || n.fract() != 0.0 || n < (HEAP_BASE + 8) as f64 || n > u32::MAX as f64))
 }
 
+enum MapValueShape {
+  Fields(std::collections::BTreeMap<String, Arc<CalcitTypeAnnotation>>),
+  Uniform(Arc<CalcitTypeAnnotation>),
+}
+
+impl MapValueShape {
+  fn from_evidence(ev: &WasmTypeEvidence) -> Self {
+    let hint_or_ann = ev
+      .codec_hint
+      .as_ref()
+      .map(expand_wasm_value_type)
+      .unwrap_or_else(|| expand_wasm_value_type(&ev.annotation));
+    if let CalcitTypeAnnotation::Map(k, v) = hint_or_ann.as_ref()
+      && matches!(k.as_ref(), CalcitTypeAnnotation::StructValue(_))
+      && let Some(def) = v.resolve_to_struct()
+    {
+      let type_args: &[Arc<CalcitTypeAnnotation>] = match v.as_ref() {
+        CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args.as_slice(),
+        _ => &[],
+      };
+      let bindings: TypeBindings = def.generics.iter().cloned().zip(type_args.iter().cloned()).collect();
+      let unwrap_option = def.name.ref_str() != "__wasm_literal_map__";
+      let mut fields = std::collections::BTreeMap::new();
+      for (name, field_ty) in def.fields.iter().zip(def.field_types.iter()) {
+        let mut resolved = expand_wasm_value_type(&field_ty.substitute_type_vars(&bindings));
+        if unwrap_option
+          && resolved.resolve_to_enum().is_some_and(|e| e.name().ref_str() == "Option")
+          && let CalcitTypeAnnotation::Enum(_, opt_args) | CalcitTypeAnnotation::TypeRef(_, opt_args) = resolved.as_ref()
+          && opt_args.len() == 1
+        {
+          let inner = expand_wasm_value_type(&opt_args[0]);
+          if !inner.resolve_to_enum().is_some_and(|e| e.name().ref_str() == "Option") {
+            resolved = inner;
+          }
+        }
+        fields.insert(name.ref_str().to_owned(), resolved);
+      }
+      return Self::Fields(fields);
+    }
+    match expand_wasm_value_type(&ev.annotation).as_ref() {
+      CalcitTypeAnnotation::Map(_, val_ty) => Self::Uniform(val_ty.clone()),
+      _ => Self::Uniform(DYNAMIC_TYPE.clone()),
+    }
+  }
+}
+
+fn map_value_types_have_scalar_collision(left_ev: &WasmTypeEvidence, right_ev: &WasmTypeEvidence) -> bool {
+  let left = MapValueShape::from_evidence(left_ev);
+  let right = MapValueShape::from_evidence(right_ev);
+  match (left, right) {
+    (MapValueShape::Fields(lm), MapValueShape::Fields(rm)) => lm
+      .iter()
+      .any(|(k, lv)| rm.get(k).is_some_and(|rv| list_element_types_have_scalar_collision(lv, rv, 0))),
+    (MapValueShape::Fields(fm), MapValueShape::Uniform(u)) | (MapValueShape::Uniform(u), MapValueShape::Fields(fm)) => {
+      fm.values().any(|fv| list_element_types_have_scalar_collision(fv, &u, 0))
+    }
+    (MapValueShape::Uniform(lv), MapValueShape::Uniform(rv)) => list_element_types_have_scalar_collision(&lv, &rv, 0),
+  }
+}
+
 fn validate_wasm_equality_operands(
   ctx: &mut WasmGenCtx,
   left_expr: &Calcit,
@@ -12314,6 +12658,13 @@ fn validate_wasm_equality_operands(
       sets::check_set_union_types(ctx, left_expr, right_expr)?;
     } else if left_kind == "map" {
       maps::check_map_pair_key_types(ctx, left_expr, right_expr, op_name)?;
+      if map_value_types_have_scalar_collision(&left_ev, &right_ev) {
+        return Err(format!(
+          "E_WASM_NIL_TYPE_EVIDENCE: {op_name} requires statically non-colliding Map value types in the current scalar ABI, found `{}` and `{}`",
+          left_type.to_brief_string(),
+          right_type.to_brief_string()
+        ));
+      }
     } else if left_kind == "list" {
       if let (Some(left_slots), Some(right_slots)) = (
         extract_fixed_list_slot_types(ctx, left_expr, &left_type),
@@ -12410,12 +12761,28 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(b));
 
+  if is_proven_number_pair(ctx, &args[0], &args[1]) {
+    ctx.emit(Instruction::LocalGet(a));
+    ctx.emit(Instruction::LocalGet(b));
+    emit_f64_value_eq(ctx);
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
+
+  emit_normalize_proven_scalar_pair(ctx, &args[0], &args[1], a, b);
+
   let result = emit_equals_core(ctx, a, b)?;
   ctx.emit(Instruction::LocalGet(result));
   Ok(())
 }
 
 fn emit_variadic_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() == 1 {
+    emit_expr(ctx, &args[0])?;
+    ctx.emit(Instruction::Drop);
+    ctx.emit(f64_const(1.0));
+    return Ok(());
+  }
   if args.len() <= 2 {
     return emit_equals(ctx, args);
   }
@@ -12437,12 +12804,23 @@ fn emit_variadic_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
     return Ok(());
   }
   let all_eq = ctx.alloc_i32(1);
-  for pair in locals.windows(2) {
-    let eq_local = emit_equals_core(ctx, pair[0], pair[1])?;
+  let pair_eq = ctx.alloc_local_typed(ValType::I32);
+  for idx in 0..locals.len().saturating_sub(1) {
+    if is_proven_number_pair(ctx, &args[idx], &args[idx + 1]) {
+      ctx.emit(Instruction::LocalGet(locals[idx]));
+      ctx.emit(Instruction::LocalGet(locals[idx + 1]));
+      emit_f64_value_eq(ctx);
+      ctx.emit(Instruction::LocalSet(pair_eq));
+    } else {
+      emit_normalize_proven_scalar_pair(ctx, &args[idx], &args[idx + 1], locals[idx], locals[idx + 1]);
+      let eq_local = emit_equals_core(ctx, locals[idx], locals[idx + 1])?;
+      ctx.emit(Instruction::LocalGet(eq_local));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Ne);
+      ctx.emit(Instruction::LocalSet(pair_eq));
+    }
     ctx.emit(Instruction::LocalGet(all_eq));
-    ctx.emit(Instruction::LocalGet(eq_local));
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Ne);
+    ctx.emit(Instruction::LocalGet(pair_eq));
     ctx.emit(Instruction::I32And);
     ctx.emit(Instruction::LocalSet(all_eq));
   }
@@ -12895,16 +13273,24 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::End); // end map if
 
-  // --- Enum/Struct comparison: identity and recursive payloads ---
+  // --- Enum/Struct/boxed-scalar comparison: delegate to __rt_value_equal ---
   ctx.emit(Instruction::LocalGet(tag_a));
   ctx.emit(Instruction::I32Const(enum_tag));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::LocalGet(tag_a));
-  ctx.emit(Instruction::I32Const(
-    *ctx.tag_index.get("struct").expect("struct tag must exist") as i32
-  ));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32Or);
+  if let Some(&struct_tag) = ctx.tag_index.get("struct") {
+    ctx.emit(Instruction::LocalGet(tag_a));
+    ctx.emit(Instruction::I32Const(struct_tag as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::I32Or);
+  }
+  for scalar_tag in ["nil", "bool", "number"] {
+    if let Some(&tag_id) = ctx.tag_index.get(scalar_tag) {
+      ctx.emit(Instruction::LocalGet(tag_a));
+      ctx.emit(Instruction::I32Const(tag_id as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.emit(Instruction::I32Or);
+    }
+  }
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(Instruction::LocalGet(b));
@@ -14330,7 +14716,7 @@ fn collect_json_keys_from_str(s: &str, tags: &mut Vec<String>) {
     while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
       i += 1;
     }
-    if valid && i < bytes.len() && bytes[i] == b':' && !unescaped.is_empty() {
+    if valid && i < bytes.len() && bytes[i] == b':' {
       tags.push(unescaped);
     }
   }
@@ -18163,5 +18549,217 @@ mod tests {
       let err = validate_wasm_equality_operands(&mut ctx, &x_local, &unsafe_rhs, "=").expect_err("ambiguous equality must be rejected");
       assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "unexpected error: {err}");
     }
+  }
+
+  /// Specialized `recur` back edges must preserve or drop `scalar_origin` consistently.
+  #[test]
+  fn recur_back_edge_validates_and_invalidates_scalar_origin() {
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::from([
+        ("__rt_str_compare".to_owned(), 0),
+        ("__rt_set_find_elem".to_owned(), 1),
+        ("__rt_map_equal".to_owned(), 2),
+        ("__rt_value_equal".to_owned(), 3),
+        ("__rt_f64_value_eq".to_owned(), 4),
+      ]),
+      tag_index: HashMap::from([
+        ("nil".to_owned(), 0),
+        ("bool".to_owned(), 1),
+        ("number".to_owned(), 2),
+        ("string".to_owned(), 3),
+        ("keyword".to_owned(), 4),
+        ("list".to_owned(), 5),
+        ("map".to_owned(), 6),
+        ("set".to_owned(), 7),
+        ("enum".to_owned(), 8),
+        ("struct".to_owned(), 9),
+      ]),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.wasm"),
+      at_def: Arc::from("recur-scalar-origin"),
+    });
+    let dyn_num = WasmTypeEvidence {
+      annotation: super::DYNAMIC_TYPE.clone(),
+      codec_hint: None,
+      set_member_types: None,
+      scalar_origin: Some(Arc::new(CalcitTypeAnnotation::Number)),
+      exact_impls: false,
+    };
+    let dyn_bool = WasmTypeEvidence {
+      scalar_origin: Some(Arc::new(CalcitTypeAnnotation::Bool)),
+      ..dyn_num.clone()
+    };
+
+    let mut ctx = WasmGenCtx::new(2, env.clone());
+    ctx.locals.insert("x".to_owned(), 0);
+    ctx.locals.insert("b".to_owned(), 1);
+    ctx.local_types.insert("x".to_owned(), dyn_num.clone());
+    ctx.local_types.insert("b".to_owned(), dyn_bool.clone());
+    ctx.recur_evidence = Some(vec![dyn_num.clone()]);
+
+    validate_recur_evidence(&mut ctx, &[Calcit::Number(2.0)]).expect("literal Number preserves Number scalar_origin");
+    let b_ref = Calcit::Symbol {
+      sym: Arc::from("b"),
+      info: info.clone(),
+      location: None,
+    };
+    let err = validate_recur_evidence(&mut ctx, std::slice::from_ref(&b_ref))
+      .expect_err("Bool scalar_origin back edge must reject outside selected recur loop");
+    assert!(err.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{err}");
+    ctx.in_selected_recur_loop = true;
+    let retry = validate_recur_evidence(&mut ctx, &[b_ref])
+      .expect_err("Bool scalar_origin back edge must request retry inside selected recur loop");
+    assert!(retry.starts_with(super::RECUR_SCALAR_ORIGIN_RETRY), "{retry}");
+    assert_eq!(ctx.recur_drop_scalar_origin.len(), 1);
+
+    // Loop with Bool scalar_origin back edge drops `scalar_origin`, so `(&= x 1)` rejects open Dynamic.
+    let c_sym = Calcit::Local(CalcitLocal {
+      idx: 10,
+      sym: Arc::from("c"),
+      info: info.clone(),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Number),
+    });
+    let x_sym = Calcit::Local(CalcitLocal {
+      idx: 11,
+      sym: Arc::from("x"),
+      info: info.clone(),
+      location: None,
+      type_info: super::DYNAMIC_TYPE.clone(),
+    });
+    let b_sym = Calcit::Local(CalcitLocal {
+      idx: 12,
+      sym: Arc::from("b"),
+      info,
+      location: None,
+      type_info: super::DYNAMIC_TYPE.clone(),
+    });
+    let bad_body = [Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEquals), c_sym.clone(), Calcit::Number(0.0)]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), Calcit::Number(1.0), b_sym]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEquals), x_sym.clone(), Calcit::Number(1.0)]),
+    ])];
+    let mut bad_ctx = WasmGenCtx::new(3, env.clone());
+    bad_ctx.locals.insert("b".to_owned(), 2);
+    bad_ctx.local_types.insert("b".to_owned(), dyn_bool);
+    let c_param = bad_ctx.alloc_local();
+    let x_param = bad_ctx.alloc_local();
+    bad_ctx.locals.insert("c".to_owned(), c_param);
+    bad_ctx.locals.insert("x".to_owned(), x_param);
+    let err = super::emit_selected_recur_loop(
+      &mut bad_ctx,
+      &["c".to_owned(), "x".to_owned()],
+      vec![c_param, x_param],
+      vec![WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)), dyn_num.clone()],
+      &bad_body,
+    )
+    .expect_err("retry with dropped scalar_origin must reject open Dynamic equality");
+    assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "{err}");
+
+    // Loop whose back edge preserves Number scalar_origin compiles cleanly.
+    let good_body = [Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEquals), c_sym, Calcit::Number(0.0)]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), Calcit::Number(1.0), Calcit::Number(42.0)]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::NativeEquals), x_sym, Calcit::Number(1.0)]),
+    ])];
+    let mut good_ctx = WasmGenCtx::new(2, env);
+    let c_param = good_ctx.alloc_local();
+    let x_param = good_ctx.alloc_local();
+    good_ctx.locals.insert("c".to_owned(), c_param);
+    good_ctx.locals.insert("x".to_owned(), x_param);
+    super::emit_selected_recur_loop(
+      &mut good_ctx,
+      &["c".to_owned(), "x".to_owned()],
+      vec![c_param, x_param],
+      vec![WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)), dyn_num],
+      &good_body,
+    )
+    .expect("matching Number back edge must retain scalar_origin");
+  }
+
+  /// Map equality must reject open or colliding scalar value contracts while allowing disjoint/safe shapes.
+  #[test]
+  fn map_equality_checks_value_scalar_collision() {
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.wasm"),
+      at_def: Arc::from("map-eq"),
+    });
+    let tag_ty = Arc::new(CalcitTypeAnnotation::Tag);
+    let num_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Number)));
+    let bool_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Bool)));
+    let nil_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Nil)));
+    let list_map = Arc::new(CalcitTypeAnnotation::Map(
+      tag_ty,
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    ));
+
+    assert!(super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(num_map.clone()),
+      &WasmTypeEvidence::contract(bool_map.clone()),
+    ));
+    assert!(super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(num_map.clone()),
+      &WasmTypeEvidence::contract(nil_map.clone()),
+    ));
+    assert!(!super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(list_map.clone()),
+      &WasmTypeEvidence::contract(num_map.clone()),
+    ));
+
+    let mut ctx = WasmGenCtx::new(4, env);
+    let mk_local = |idx, name, ty| {
+      Calcit::Local(CalcitLocal {
+        idx,
+        sym: Arc::from(name),
+        info: info.clone(),
+        location: None,
+        type_info: ty,
+      })
+    };
+    let m_num = mk_local(0, "m-num", num_map);
+    let m_bool = mk_local(1, "m-bool", bool_map);
+    let m_nil = mk_local(2, "m-nil", nil_map);
+    let m_list = mk_local(3, "m-list", list_map);
+
+    for (lhs, rhs) in [(&m_num, &m_bool), (&m_num, &m_nil)] {
+      let err = super::validate_wasm_equality_operands(&mut ctx, lhs, rhs, "=").expect_err("colliding map values must be rejected");
+      assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "{err}");
+    }
+    super::validate_wasm_equality_operands(&mut ctx, &m_num, &m_num, "=").expect("homogeneous Number maps are safe");
+    super::validate_wasm_equality_operands(&mut ctx, &m_list, &m_num, "=").expect("heap List values do not collide with Number values");
   }
 }

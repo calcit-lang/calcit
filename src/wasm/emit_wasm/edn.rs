@@ -124,9 +124,8 @@ fn emit_edn_value(
     CalcitTypeAnnotation::Nil => literal_local(ctx, "nil"),
     CalcitTypeAnnotation::Bool => {
       let result = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(value));
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq);
+      super::emit_value_is_truthy_i32(ctx, value);
+      ctx.emit(Instruction::I32Eqz);
       ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
       emit_literal(ctx, "false")?;
       ctx.emit(Instruction::Else);
@@ -1075,9 +1074,8 @@ fn emit_json_value(
     CalcitTypeAnnotation::Nil => literal_local(ctx, "null"),
     CalcitTypeAnnotation::Bool => {
       let result = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(value));
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq);
+      super::emit_value_is_truthy_i32(ctx, value);
+      ctx.emit(Instruction::I32Eqz);
       ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
       emit_literal(ctx, "false")?;
       ctx.emit(Instruction::Else);

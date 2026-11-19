@@ -2340,6 +2340,8 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
       "let ((m $ assert-type (&{} :a 1) (Map Tag Dynamic))) (merge-non-nil (&{} :a 2) m)",
       "E_WASM_NIL_TYPE_EVIDENCE",
     ),
+    ("&= (&{} :a 0) (&{} :a false)", "E_WASM_NIL_TYPE_EVIDENCE"),
+    ("&= (&{} :a 0 :b |x) (&{} :a false :b |x)", "E_WASM_NIL_TYPE_EVIDENCE"),
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");
@@ -2751,4 +2753,250 @@ fn effect_error_policy_blocks_native_runs_without_the_proof_audit() {
       "{args:?} env_off={env_off} must block the run\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
   }
+}
+
+#[test]
+fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
+  use wasmtime::{Engine, Func, Linker, Module, Store, StoreLimitsBuilder, Val};
+
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+
+  for (name, code) in [
+    (
+      "DynBox",
+      "quote $ defstruct DynBox (:payload Dynamic) (:empty Dynamic) (:n Dynamic)",
+    ),
+    ("NilBox", "quote $ defstruct NilBox (:v Nil)"),
+    ("BoolBox", "quote $ defstruct BoolBox (:b Bool)"),
+    ("NumBox", "quote $ defstruct NumBox (:n Number)"),
+    ("StrBox", "quote $ defstruct StrBox (:s String)"),
+    ("PairBox", "quote $ defstruct PairBox (:name String) (:count Number)"),
+    ("FlatEntry", "quote $ defstruct FlatEntry (:a Number)"),
+  ] {
+    edit_definition(&snapshot, name, code, false);
+    set_schema(&snapshot, name, "quote StructDef");
+  }
+
+  let dup_obj = format!("{{{}{}}}", "\"a\":0,".repeat(1800), "\"a\":7");
+  let big_json = format!("[{}]", [dup_obj.as_str(); 6].join(","));
+  assert!(big_json.len() > 64_000, "big_json should exceed 64KB, got {}", big_json.len());
+  let escaped_big_json = big_json.replace('\\', "\\\\").replace('"', "\\\"");
+  let big_json_file = directory.0.join("big-json.cirru");
+  fs::write(&big_json_file, format!("quote $ defn big-json () \"|{escaped_big_json}\"\n")).expect("big-json snippet should write");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/big-json",
+        "--input-format",
+        "cirru",
+        "--file",
+        big_json_file.to_str().expect("utf8 path"),
+      ],
+    ),
+    "add big-json helper",
+  );
+  edit_schema(&snapshot, "big-json", "String");
+
+  let oom_json = format!("[{}]", vec!["0"; 300_000].join(","));
+  let oom_json_file = directory.0.join("oom-json.cirru");
+  fs::write(&oom_json_file, format!("quote $ defn oom-json () \"|{oom_json}\"\n")).expect("oom-json snippet should write");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/oom-json",
+        "--input-format",
+        "cirru",
+        "--file",
+        oom_json_file.to_str().expect("utf8 path"),
+      ],
+    ),
+    "add oom-json helper",
+  );
+  edit_schema(&snapshot, "oom-json", "String");
+
+  edit_definition(&snapshot, "main!", "quote $ defwasm-export main! () 0", true);
+  edit_schema(&snapshot, "main!", "Number");
+  edit_definition(&snapshot, "reload!", "quote $ defn reload! () nil", true);
+  edit_schema(&snapshot, "reload!", "Nil");
+
+  let exports: &[(&str, &str)] = &[
+    (
+      "check-boxed-scalar-eq",
+      concat!(
+        "quote $ defwasm-export check-boxed-scalar-eq ()\n",
+        "  let\n",
+        "      b $ assert-type (json-parse \"|false\") Bool\n",
+        "      n $ assert-type (json-parse \"|null\") Bool\n",
+        "      nilv $ assert-type (json-parse \"|null\") Nil\n",
+        "      z $ assert-type (json-parse \"|0\") Number\n",
+        "    if (and (&= b false) (not (&= n false)) (&= nilv nil) (&= z 0)) 1 0",
+      ),
+    ),
+    (
+      "check-foldl-compare-false",
+      concat!(
+        "quote $ defwasm-export check-foldl-compare-false ()\n",
+        "  if (foldl-compare ([] 1 2) 0 (fn (_a _b) (assert-type (json-parse \"|false\") Bool))) 1 0",
+      ),
+    ),
+    (
+      "check-foldl-compare-true",
+      concat!(
+        "quote $ defwasm-export check-foldl-compare-true ()\n",
+        "  if (foldl-compare ([] 1 2) 0 (fn (_a _b) (assert-type (json-parse \"|true\") Bool))) 1 0",
+      ),
+    ),
+    (
+      "check-dynamic-decode",
+      concat!(
+        "quote $ defwasm-export check-dynamic-decode ()\n",
+        "  let\n",
+        "      d $ decode-map-as (json-parse \"|{\\\"payload\\\":false,\\\"empty\\\":null,\\\"n\\\":16392}\") DynBox\n",
+        "    if (and (= (type-of (:payload d)) :bool) (= (type-of (:empty d)) :nil) (= (type-of (:n d)) :number) (= (assert-type (:payload d) Bool) false) (= (assert-type (:n d) Number) 16392)) 1 0",
+      ),
+    ),
+    (
+      "check-strict-nil-bool-json-decode",
+      concat!(
+        "quote $ defwasm-export check-strict-nil-bool-json-decode ()\n",
+        "  let\n",
+        "      err-nil $ try-decode-map-as (json-parse \"|{\\\"v\\\":0}\") NilBox\n",
+        "      ok-nil $ try-decode-map-as (json-parse \"|{\\\"v\\\":null}\") NilBox\n",
+        "      err-bool0 $ try-decode-map-as (json-parse \"|{\\\"b\\\":0}\") BoolBox\n",
+        "      err-bool1 $ try-decode-map-as (json-parse \"|{\\\"b\\\":1}\") BoolBox\n",
+        "      ok-bool $ try-decode-map-as (json-parse \"|{\\\"b\\\":false}\") BoolBox\n",
+        "    if (and (.err? err-nil) (.ok? ok-nil) (.err? err-bool0) (.err? err-bool1) (.ok? ok-bool)) 1 0",
+      ),
+    ),
+    (
+      "check-dup-key-flat-json",
+      concat!(
+        "quote $ defwasm-export check-dup-key-flat-json ()\n",
+        "  match (try-parse-json (big-json))\n",
+        "    (:err _e) 0\n",
+        "    (:ok v)\n",
+        "      let\n",
+        "          items $ decode-map-as v (List FlatEntry)\n",
+        "        if (and (= (count items) 6) (= (:a (&list:nth items 0)) 7) (= (:a (&list:nth items 5)) 7)) 1 0",
+      ),
+    ),
+    (
+      "check-json-oom",
+      concat!(
+        "quote $ defwasm-export check-json-oom ()\n",
+        "  if (.err? (try-parse-json (oom-json))) 1 0",
+      ),
+    ),
+    (
+      "check-boxed-json-numbers",
+      concat!(
+        "quote $ defwasm-export check-boxed-json-numbers ()\n",
+        "  let\n",
+        "      _b1 $ json-parse \"|999\"\n",
+        "      _b2 $ json-parse \"|999\"\n",
+        "      s-err $ try-decode-map-as (json-parse \"|{\\\"s\\\":16392}\") StrBox\n",
+        "      raw-ok $ loop ((n 16384) (ok true))\n",
+        "        if (> n 16600) ok\n",
+        "          let\n",
+        "              next-ok $ and ok (= (json-stringify n) (str n)) (not (= n (&+ n 16)))\n",
+        "            recur (&+ n 1) next-ok\n",
+        "    if (and (= (type-of (json-parse \"|16392\")) :number) (= (:n (decode-map-as (json-parse \"|{\\\"n\\\":16392}\") NumBox)) 16392) (.err? s-err) raw-ok) 1 0",
+      ),
+    ),
+    (
+      "check-empty-key-unary-eq-and-list-hints",
+      concat!(
+        "quote $ defwasm-export check-empty-key-unary-eq-and-list-hints ()\n",
+        "  let\n",
+        "      one $ map ([] (encode-map-as (PairBox :name |a :count 1) PairBox)) (fn (row) (json-stringify row))\n",
+        "      two $ map ([] (encode-map-as (PairBox :name |a :count 1) PairBox) (encode-map-as (PairBox :name |b :count 2) PairBox)) (fn (row) (json-stringify row))\n",
+        "      d1 $ decode-map-as (json-parse (&list:nth one 0)) PairBox\n",
+        "      d2 $ decode-map-as (json-parse (&list:nth two 1)) PairBox\n",
+        "    if (and (.ok? (try-parse-json \"|{\\\"\\\":1}\")) (= 7) (= (count one) 1) (= (count two) 2) (= (:name d1) |a) (= (:count d1) 1) (= (:name d2) |b) (= (:count d2) 2)) 1 0",
+      ),
+    ),
+  ];
+
+  for (name, code) in exports {
+    edit_definition(&snapshot, name, code, false);
+    edit_schema(&snapshot, name, "Number");
+  }
+
+  let out_dir = directory.0.join("wasm-out");
+  let emit = run_calcit(&snapshot, &["wasm", "--emit-path", out_dir.to_str().expect("utf8 emit path")]);
+  assert_success(&emit, "compile wasm module for JSON codec and scalar identity checks");
+
+  let wasm_bytes = fs::read(out_dir.join("program.wasm")).expect("compiled program.wasm should exist");
+  let engine = Engine::default();
+  let module = Module::new(&engine, &wasm_bytes).expect("program.wasm should compile in wasmtime");
+
+  let instantiate = |limits: Option<usize>| {
+    let mut store = Store::new(
+      &engine,
+      limits
+        .map(|bytes| StoreLimitsBuilder::new().memory_size(bytes).build())
+        .unwrap_or_else(|| StoreLimitsBuilder::new().build()),
+    );
+    store.limiter(|lim| lim);
+    let mut linker = Linker::new(&engine);
+    for import in module.imports() {
+      let func_ty = import
+        .ty()
+        .func()
+        .expect("core wasm module imports are expected to be functions")
+        .clone();
+      let func = Func::new(&mut store, func_ty.clone(), move |_caller, _params, results| {
+        for (slot, res_ty) in results.iter_mut().zip(func_ty.results()) {
+          *slot = match res_ty {
+            wasmtime::ValType::I32 => Val::I32(0),
+            wasmtime::ValType::I64 => Val::I64(0),
+            wasmtime::ValType::F32 => Val::F32(0),
+            wasmtime::ValType::F64 => Val::F64(0.0f64.to_bits()),
+            _ => Val::I32(0),
+          };
+        }
+        Ok(())
+      });
+      linker
+        .define(&store, import.module(), import.name(), func)
+        .expect("host stub import should register");
+    }
+    let instance = linker.instantiate(&mut store, &module).expect("module should instantiate");
+    (store, instance)
+  };
+
+  let (mut store, instance) = instantiate(None);
+  let call_export = |store: &mut Store<_>, inst: &wasmtime::Instance, name: &str| -> f64 {
+    inst
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .unwrap_or_else(|e| panic!("missing export {name}: {e}"))
+      .call(store, ())
+      .unwrap_or_else(|e| panic!("calling export {name} failed: {e}"))
+  };
+
+  assert_eq!(call_export(&mut store, &instance, "check-boxed-scalar-eq"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-foldl-compare-false"), 0.0);
+  assert_eq!(call_export(&mut store, &instance, "check-foldl-compare-true"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-dynamic-decode"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-strict-nil-bool-json-decode"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-dup-key-flat-json"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-boxed-json-numbers"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-empty-key-unary-eq-and-list-hints"), 1.0);
+
+  // Under a capped linear memory limit that rejects growth, `try-parse-json` must
+  // return `:err` instead of trapping on OOM/OOB.
+  let initial_bytes = instance
+    .get_memory(&mut store, "memory")
+    .expect("wasm module should export linear memory")
+    .data_size(&store);
+  let (mut oom_store, oom_instance) = instantiate(Some(initial_bytes));
+  assert_eq!(call_export(&mut oom_store, &oom_instance, "check-json-oom"), 1.0);
 }

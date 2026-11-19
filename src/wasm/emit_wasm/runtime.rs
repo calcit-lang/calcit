@@ -4576,7 +4576,7 @@ pub(super) fn build_runtime_fns(
   map_tag: i32,
   list_tag: i32,
   string_tag: i32,
-  (enum_tag, set_tag, struct_tag, nil_tag, bool_tag): (i32, i32, i32, i32, i32),
+  (enum_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (i32, i32, i32, i32, i32, i32),
   tag_index: &HashMap<String, u32>,
 ) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
   let mut fn_index = HashMap::new();
@@ -4983,12 +4983,12 @@ pub(super) fn build_runtime_fns(
   let json_parse_at_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_json_parse_at"), json_parse_at_idx);
   fns.push(build_rt_json_parse_at(
-    (string_tag, list_tag, map_tag, nil_tag, bool_tag),
+    (string_tag, list_tag, map_tag, nil_tag, bool_tag, number_tag),
     (
       json_parse_at_idx,
       json_parse_str_at_idx,
       tag_from_str_idx,
-      map_assoc_idx,
+      map_from_flat_idx,
       parse_float_valid_idx,
       parse_float_idx,
     ),
@@ -5023,7 +5023,9 @@ pub(super) fn build_runtime_fns(
   let set_equal_idx = value_equal_idx + 2;
   fn_index.insert(String::from("__rt_value_equal"), value_equal_idx);
   fns.push(build_rt_value_equal(
-    (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag),
+    (
+      string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
+    ),
     (str_compare_idx, value_equal_idx, map_equal_idx, set_equal_idx),
   ));
 
@@ -5035,7 +5037,9 @@ pub(super) fn build_runtime_fns(
   fns.push(build_rt_set_equal(value_equal_idx));
 
   fns[value_hash_slot] = build_rt_value_hash(
-    (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag),
+    (
+      string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
+    ),
     (hash_idx, map_key_hash_idx, map_linearize_idx),
   );
   fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
@@ -5142,6 +5146,58 @@ fn rt_emit_alloc_dynamic(builder: &mut RuntimeFnBuilder, size_local: u32, dst_lo
   builder.emit(Instruction::LocalGet(size_local));
   builder.emit(Instruction::I32Add);
   builder.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+}
+
+/// Ensures linear memory covers `HEAP_PTR_GLOBAL + needed_bytes`, growing memory
+/// if needed, and pushes `1` (`i32`) on success or `0` if capacity is exhausted.
+fn rt_emit_ensure_heap_capacity(builder: &mut RuntimeFnBuilder, needed_bytes_local: u32) {
+  let end = builder.alloc_i64();
+  let desired_pages = builder.alloc_i32();
+  let current_pages = builder.alloc_i32();
+  let ok = builder.alloc_i32();
+
+  builder.emit(Instruction::I32Const(0));
+  builder.emit(Instruction::LocalSet(ok));
+  builder.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::LocalGet(needed_bytes_local));
+  builder.emit(Instruction::I64ExtendI32U);
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::LocalTee(end));
+  builder.emit(Instruction::I64Const(i64::from(u32::MAX)));
+  builder.emit(Instruction::I64LeU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::LocalGet(end));
+  builder.emit(Instruction::I64Const(65_535));
+  builder.emit(Instruction::I64Add);
+  builder.emit(Instruction::I64Const(16));
+  builder.emit(Instruction::I64ShrU);
+  builder.emit(Instruction::I32WrapI64);
+  builder.emit(Instruction::LocalSet(desired_pages));
+  builder.emit(Instruction::MemorySize(0));
+  builder.emit(Instruction::LocalTee(current_pages));
+  builder.emit(Instruction::LocalGet(desired_pages));
+  builder.emit(Instruction::I32LtU);
+  builder.emit(Instruction::If(BlockType::Empty));
+  builder.emit(Instruction::LocalGet(desired_pages));
+  builder.emit(Instruction::LocalGet(current_pages));
+  builder.emit(Instruction::I32Sub);
+  builder.emit(Instruction::MemoryGrow(0));
+  builder.emit(Instruction::I32Const(-1));
+  builder.emit(Instruction::I32Ne);
+  builder.emit(Instruction::LocalSet(ok));
+  builder.emit(Instruction::Else);
+  builder.emit(Instruction::I32Const(1));
+  builder.emit(Instruction::LocalSet(ok));
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::LocalGet(ok));
+}
+
+fn rt_emit_ensure_heap_capacity_const(builder: &mut RuntimeFnBuilder, needed_bytes: i32, scratch_local: u32) {
+  builder.emit(Instruction::I32Const(needed_bytes));
+  builder.emit(Instruction::LocalSet(scratch_local));
+  rt_emit_ensure_heap_capacity(builder, scratch_local);
 }
 
 fn rt_emit_table_child_addr(builder: &mut RuntimeFnBuilder, table_local: u32, child_idx_local: u32, dst_local: u32) {
@@ -5276,7 +5332,17 @@ fn build_rt_hash_f64() -> CompiledFn {
 /// Hash the same recursive value structure that participates in equality.
 /// The numeric hash is backend-local; equal values must share a hash.
 fn build_rt_value_hash(
-  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag): (i32, i32, i32, i32, i32, i32, i32, i32),
+  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+  ),
   (scalar_hash_idx, self_idx, map_linearize_idx): (u32, u32, u32),
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
@@ -5333,6 +5399,17 @@ fn build_rt_value_hash(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::I32Const((bool_tag as u32).wrapping_mul(0x0100_0193) as i32));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(number_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Const((number_tag as u32).wrapping_mul(0x0100_0193) as i32));
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -11445,6 +11522,7 @@ fn build_rt_json_parse_str_at(string_tag: i32) -> CompiledFn {
   let max_len = b.alloc_i32();
   let padded = b.alloc_i32();
   let payload = b.alloc_i32();
+  let req_bytes = b.alloc_i32();
   let heap_mark = b.alloc_i32();
   let out = b.alloc_i32();
   let dst = b.alloc_i32();
@@ -11508,6 +11586,18 @@ fn build_rt_json_parse_str_at(string_tag: i32) -> CompiledFn {
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(payload));
+  b.emit(Instruction::LocalGet(payload));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(req_bytes));
+  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   b.emit(Instruction::LocalSet(heap_mark));
   rt_emit_alloc_dynamic(&mut b, payload, out, string_tag);
@@ -11959,8 +12049,15 @@ fn build_rt_json_parse_str_at(string_tag: i32) -> CompiledFn {
 
 /// `__rt_json_parse_at(src_ptr: i32, pos: i32, end: i32, depth: i32) → (val: f64, next_pos: i32, ok: i32)`
 fn build_rt_json_parse_at(
-  (string_tag, list_tag, map_tag, nil_tag, bool_tag): (i32, i32, i32, i32, i32),
-  (self_idx, parse_str_idx, tag_from_str_idx, map_assoc_idx, parse_float_valid_idx, parse_float_idx): (u32, u32, u32, u32, u32, u32),
+  (string_tag, list_tag, map_tag, nil_tag, bool_tag, number_tag): (i32, i32, i32, i32, i32, i32),
+  (self_idx, parse_str_idx, tag_from_str_idx, map_from_flat_idx, parse_float_valid_idx, parse_float_idx): (
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+  ),
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4); // 0=src_ptr, 1=pos, 2=end, 3=depth
   let cur = b.alloc_i32();
@@ -11973,6 +12070,15 @@ fn build_rt_json_parse_at(
   let list_cap = b.alloc_i32();
   let list_cnt = b.alloc_i32();
   let list_alloc_size = b.alloc_i32();
+  let obj_buf = b.alloc_i32();
+  let obj_cap = b.alloc_i32();
+  let pair_cnt = b.alloc_i32();
+  let member_cnt = b.alloc_i32();
+  let obj_alloc_size = b.alloc_i32();
+  let key_heap_mark = b.alloc_i32();
+  let j = b.alloc_i32();
+  let found_key = b.alloc_i32();
+  let req_bytes = b.alloc_i32();
   let map_ptr = b.alloc_i32();
   let key_tag = b.alloc_f64();
   let num_start = b.alloc_i32();
@@ -12065,6 +12171,11 @@ fn build_rt_json_parse_at(
       fail_return(&mut b, cur);
       b.emit(Instruction::End);
     }
+    rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(BlockType::Empty));
+    fail_return(&mut b, cur);
+    b.emit(Instruction::End);
     rt_emit_alloc_const(&mut b, 8, boxed_ptr, kind_tag);
     b.emit(Instruction::LocalGet(boxed_ptr));
     b.emit(f64_const(result_val));
@@ -12128,6 +12239,11 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::I32Const(b']' as i32));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
   rt_emit_alloc_const(&mut b, 8, list_buf, list_tag);
   b.emit(Instruction::LocalGet(list_buf));
   b.emit(f64_const(0.0));
@@ -12147,6 +12263,11 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::LocalSet(list_cnt));
   b.emit(Instruction::I32Const(8 + 8 * 8));
   b.emit(Instruction::LocalSet(list_alloc_size));
+  rt_emit_ensure_heap_capacity_const(&mut b, 8 + 8 + 8 * 8, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
   rt_emit_alloc_dynamic(&mut b, list_alloc_size, list_buf, list_tag);
 
   b.emit(Instruction::Block(BlockType::Empty));
@@ -12189,6 +12310,15 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Mul);
   b.emit(Instruction::LocalSet(list_alloc_size));
+  b.emit(Instruction::LocalGet(list_alloc_size));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(req_bytes));
+  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
   let new_list_buf = b.alloc_i32();
   rt_emit_alloc_dynamic(&mut b, list_alloc_size, new_list_buf, list_tag);
   b.emit(Instruction::LocalGet(new_list_buf));
@@ -12280,14 +12410,6 @@ fn build_rt_json_parse_at(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
 
-  rt_emit_alloc_const(&mut b, 16, map_ptr, map_tag);
-  b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Store(mem_arg_f64(8)));
-
   // Empty object `{}`
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::LocalGet(cur));
@@ -12296,6 +12418,18 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::I32Const(b'}' as i32));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  rt_emit_ensure_heap_capacity_const(&mut b, 24, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+  rt_emit_alloc_const(&mut b, 16, map_ptr, map_tag);
+  b.emit(Instruction::LocalGet(map_ptr));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(map_ptr));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::F64Store(mem_arg_f64(8)));
   b.emit(Instruction::LocalGet(map_ptr));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::LocalGet(cur));
@@ -12305,11 +12439,24 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
 
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::LocalSet(obj_cap));
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(list_cnt));
+  b.emit(Instruction::LocalSet(pair_cnt));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(member_cnt));
+  b.emit(Instruction::I32Const(8 + 8 * 16));
+  b.emit(Instruction::LocalSet(obj_alloc_size));
+  rt_emit_ensure_heap_capacity_const(&mut b, 8 + 8 + 8 * 16, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+  rt_emit_alloc_dynamic(&mut b, obj_alloc_size, obj_buf, map_tag);
+
   b.emit(Instruction::Block(BlockType::Empty));
   b.emit(Instruction::Loop(BlockType::Empty));
-  b.emit(Instruction::LocalGet(list_cnt));
+  b.emit(Instruction::LocalGet(member_cnt));
   b.emit(Instruction::I32Const(2048));
   b.emit(Instruction::I32GeU);
   b.emit(Instruction::If(BlockType::Empty));
@@ -12317,6 +12464,8 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::End);
 
   skip_ws(&mut b, 0, cur, 2, byte);
+  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.emit(Instruction::LocalSet(key_heap_mark));
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::LocalGet(2));
@@ -12333,6 +12482,14 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::LocalGet(str_ptr));
   b.emit(Instruction::Call(tag_from_str_idx));
   b.emit(Instruction::LocalSet(key_tag));
+  // Reclaim temporary key string now that tag_from_str has resolved it to a tag ID.
+  b.emit(Instruction::LocalGet(str_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(key_heap_mark));
+  b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
   b.emit(Instruction::LocalGet(key_tag));
   b.emit(f64_const(0.0));
   b.emit(Instruction::F64Eq);
@@ -12377,15 +12534,119 @@ fn build_rt_json_parse_at(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
 
-  b.emit(Instruction::LocalGet(map_ptr));
+  // Update duplicate key in place inside the parser-owned flat buffer; append only new keys.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(found_key));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(j));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(key_tag));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(j));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalGet(val));
-  b.emit(Instruction::Call(map_assoc_idx));
-  b.emit(Instruction::LocalSet(map_ptr));
-  b.emit(Instruction::LocalGet(list_cnt));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(found_key));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(j));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(list_cnt));
+  b.emit(Instruction::LocalSet(j));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(found_key));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::LocalGet(obj_cap));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(obj_cap));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Shl);
+  b.emit(Instruction::LocalSet(obj_cap));
+  b.emit(Instruction::LocalGet(obj_cap));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(obj_alloc_size));
+  b.emit(Instruction::LocalGet(obj_alloc_size));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(req_bytes));
+  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+  let new_obj_buf = b.alloc_i32();
+  rt_emit_alloc_dynamic(&mut b, obj_alloc_size, new_obj_buf, map_tag);
+  b.emit(Instruction::LocalGet(new_obj_buf));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.emit(Instruction::LocalGet(new_obj_buf));
+  b.emit(Instruction::LocalSet(obj_buf));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(key_tag));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(val));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(pair_cnt));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(member_cnt));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(member_cnt));
 
   skip_ws(&mut b, 0, cur, 2, byte);
   b.emit(Instruction::LocalGet(cur));
@@ -12408,6 +12669,25 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::I32Const(b'}' as i32));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  // Reserve worst-case typical HAMT allocation (tables + bucket + map header) before building.
+  b.emit(Instruction::LocalGet(pair_cnt));
+  b.emit(Instruction::I32Const(2080));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Const(512));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(req_bytes));
+  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::Call(map_from_flat_idx));
+  b.emit(Instruction::LocalSet(map_ptr));
   b.emit(Instruction::LocalGet(map_ptr));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::LocalGet(cur));
@@ -12661,6 +12941,15 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(num_payload));
+  b.emit(Instruction::LocalGet(num_payload));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(req_bytes));
+  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
   b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   b.emit(Instruction::LocalSet(num_heap_mark));
   rt_emit_alloc_dynamic(&mut b, num_payload, num_str, string_tag);
@@ -12715,7 +13004,19 @@ fn build_rt_json_parse_at(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
 
+  // Box parsed JSON numbers with `number_tag` so integer values in the heap
+  // range remain distinguishable from heap pointers under `type-of` and decoding.
+  rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+  rt_emit_alloc_const(&mut b, 8, boxed_ptr, number_tag);
+  b.emit(Instruction::LocalGet(boxed_ptr));
   b.emit(Instruction::LocalGet(val));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(boxed_ptr));
+  b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.finish(vec![ValType::I32; 4], vec![ValType::F64, ValType::I32, ValType::I32])
@@ -13503,7 +13804,17 @@ fn build_rt_set_equal(value_equal_idx: u32) -> CompiledFn {
 /// - Maps and Sets: recursive structural comparison.
 /// - Other heap objects: pointer (f64) equality.
 fn build_rt_value_equal(
-  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag): (i32, i32, i32, i32, i32, i32, i32, i32),
+  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+  ),
   (str_compare_idx, self_idx, map_equal_idx, set_equal_idx): (u32, u32, u32, u32),
 ) -> CompiledFn {
   // params: 0 = a (f64), 1 = b (f64)
@@ -13805,7 +14116,18 @@ fn build_rt_value_equal(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::F64Eq);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(number_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::Else);
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // number if
   b.emit(Instruction::End); // bool if
   b.emit(Instruction::End); // nil if
   b.emit(Instruction::End); // set if

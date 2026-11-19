@@ -719,24 +719,10 @@ fn emit_decode_map_node(
 
   match node {
     DataShapeNode::Dynamic => {
-      let is_boxed_nil = emit_has_heap_tag(ctx, input, "nil");
-      ctx.emit(Instruction::LocalGet(is_boxed_nil));
-      ctx.begin_block_if();
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::Else);
-      let is_boxed_bool = emit_has_heap_tag(ctx, input, "bool");
-      ctx.emit(Instruction::LocalGet(is_boxed_bool));
-      ctx.begin_block_if();
-      ctx.emit(Instruction::LocalGet(input));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-      ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::Else);
+      // Preserve boxed JSON scalar tags (`nil`, `bool`, `number`) so Dynamic
+      // fields keep their runtime `type-of` kind until decoded or narrowed.
       ctx.emit(Instruction::LocalGet(input));
       ctx.emit(Instruction::LocalSet(decoded));
-      ctx.emit(Instruction::End);
-      ctx.emit(Instruction::End);
       ctx.emit(Instruction::I32Const(1));
       ctx.emit(Instruction::LocalSet(ok));
     }
@@ -744,16 +730,25 @@ fn emit_decode_map_node(
       if static_hint
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
       {
-        let is_heap = emit_is_heap_value(ctx, input);
+        let allow_raw_zero = matches!(static_hint, Some(CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
+          || matches!(
+            static_hint,
+            Some(CalcitTypeAnnotation::Nullable(inner, _)) if super::wasm_non_nil_value_is_nonzero(inner)
+          );
         let is_boxed_nil = emit_has_heap_tag(ctx, input, "nil");
-        ctx.emit(Instruction::LocalGet(is_heap));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32And);
-        ctx.emit(Instruction::LocalGet(is_boxed_nil));
-        ctx.emit(Instruction::I32Or);
+        if allow_raw_zero {
+          let is_heap = emit_is_heap_value(ctx, input);
+          ctx.emit(Instruction::LocalGet(is_heap));
+          ctx.emit(Instruction::I32Eqz);
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(f64_const(0.0));
+          ctx.emit(Instruction::F64Eq);
+          ctx.emit(Instruction::I32And);
+          ctx.emit(Instruction::LocalGet(is_boxed_nil));
+          ctx.emit(Instruction::I32Or);
+        } else {
+          ctx.emit(Instruction::LocalGet(is_boxed_nil));
+        }
         ctx.begin_block_if();
         ctx.emit(f64_const(0.0));
         ctx.emit(Instruction::LocalSet(decoded));
@@ -785,6 +780,7 @@ fn emit_decode_map_node(
       if static_hint
         .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Never))
       {
+        let allow_raw_bool = matches!(static_hint, Some(CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Never));
         let is_boxed_bool = emit_has_heap_tag(ctx, input, "bool");
         ctx.emit(Instruction::LocalGet(is_boxed_bool));
         ctx.begin_block_if();
@@ -805,24 +801,26 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::I32Const(1));
         ctx.emit(Instruction::LocalSet(ok));
         ctx.emit(Instruction::End);
-        ctx.emit(Instruction::Else);
-        let is_heap = emit_is_heap_value(ctx, input);
-        ctx.emit(Instruction::LocalGet(is_heap));
-        ctx.emit(Instruction::I32Eqz);
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(f64_const(1.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::I32Or);
-        ctx.emit(Instruction::I32And);
-        ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(input));
-        ctx.emit(Instruction::LocalSet(decoded));
-        ctx.emit(Instruction::I32Const(1));
-        ctx.emit(Instruction::LocalSet(ok));
-        ctx.emit(Instruction::End);
+        if allow_raw_bool {
+          ctx.emit(Instruction::Else);
+          let is_heap = emit_is_heap_value(ctx, input);
+          ctx.emit(Instruction::LocalGet(is_heap));
+          ctx.emit(Instruction::I32Eqz);
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(f64_const(0.0));
+          ctx.emit(Instruction::F64Eq);
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(f64_const(1.0));
+          ctx.emit(Instruction::F64Eq);
+          ctx.emit(Instruction::I32Or);
+          ctx.emit(Instruction::I32And);
+          ctx.begin_block_if();
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::LocalSet(decoded));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(ok));
+          ctx.emit(Instruction::End);
+        }
         ctx.emit(Instruction::End);
       }
     }
@@ -840,6 +838,16 @@ fn emit_decode_map_node(
           ctx.emit(Instruction::I32Const(1));
           ctx.emit(Instruction::LocalSet(ok));
         } else {
+          let is_boxed_num = emit_has_heap_tag(ctx, input, "number");
+          ctx.emit(Instruction::LocalGet(is_boxed_num));
+          ctx.begin_block_if();
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::I32TruncF64U);
+          ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+          ctx.emit(Instruction::LocalSet(decoded));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(ok));
+          ctx.emit(Instruction::Else);
           let is_heap = emit_is_heap_value(ctx, input);
           ctx.emit(Instruction::LocalGet(is_heap));
           ctx.emit(Instruction::I32Eqz);
@@ -848,6 +856,7 @@ fn emit_decode_map_node(
           ctx.emit(Instruction::LocalSet(decoded));
           ctx.emit(Instruction::I32Const(1));
           ctx.emit(Instruction::LocalSet(ok));
+          ctx.emit(Instruction::End);
           ctx.emit(Instruction::End);
         }
       }
@@ -860,17 +869,42 @@ fn emit_decode_map_node(
             CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) | CalcitTypeAnnotation::Never
           )
       }) {
-        if !is_proven_numeric(static_hint) {
+        let num_val = ctx.alloc_local();
+        let is_num_candidate = ctx.alloc_i32(0);
+        if is_proven_numeric(static_hint) {
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::LocalSet(num_val));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(is_num_candidate));
+        } else {
+          let is_boxed_num = emit_has_heap_tag(ctx, input, "number");
+          ctx.emit(Instruction::LocalGet(is_boxed_num));
+          ctx.begin_block_if();
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::I32TruncF64U);
+          ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+          ctx.emit(Instruction::LocalSet(num_val));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(is_num_candidate));
+          ctx.emit(Instruction::Else);
           let is_heap = emit_is_heap_value(ctx, input);
           ctx.emit(Instruction::LocalGet(is_heap));
           ctx.emit(Instruction::I32Eqz);
           ctx.begin_block_if();
+          ctx.emit(Instruction::LocalGet(input));
+          ctx.emit(Instruction::LocalSet(num_val));
+          ctx.emit(Instruction::I32Const(1));
+          ctx.emit(Instruction::LocalSet(is_num_candidate));
+          ctx.emit(Instruction::End);
+          ctx.emit(Instruction::End);
         }
+        ctx.emit(Instruction::LocalGet(is_num_candidate));
+        ctx.begin_block_if();
         let in_range = ctx.alloc_local_typed(ValType::I32);
-        emit_numeric_refinement_check(ctx, input, *kind, in_range);
+        emit_numeric_refinement_check(ctx, num_val, *kind, in_range);
         ctx.emit(Instruction::LocalGet(in_range));
         ctx.begin_block_if();
-        ctx.emit(Instruction::LocalGet(input));
+        ctx.emit(Instruction::LocalGet(num_val));
         ctx.emit(Instruction::LocalSet(decoded));
         ctx.emit(Instruction::I32Const(1));
         ctx.emit(Instruction::LocalSet(ok));
@@ -878,9 +912,7 @@ fn emit_decode_map_node(
         ctx.emit(Instruction::I32Const(1));
         ctx.emit(Instruction::LocalSet(error_kind));
         ctx.emit(Instruction::End);
-        if !is_proven_numeric(static_hint) {
-          ctx.emit(Instruction::End);
-        }
+        ctx.emit(Instruction::End);
       }
     }
     DataShapeNode::String => {
