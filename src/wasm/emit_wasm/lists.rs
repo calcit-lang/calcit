@@ -504,7 +504,8 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
       [Some(elem_ty.clone()), Some(elem_ty.clone())],
     )?;
   } else {
-    emit_foldl_step(ctx, &comparator, left, key)?;
+    let elem_ev = super::hof::infer_collection_element_evidence(ctx, &args[0]);
+    emit_foldl_step(ctx, &comparator, left, key, [elem_ev.clone(), elem_ev])?;
   }
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Gt);
@@ -832,6 +833,67 @@ pub(super) fn emit_list_assoc_after(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 /// Uses same O(n²) dedup as emit_list_distinct but allocates a "set"-tagged block.
 pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&list:to-set expects 1 arg")?;
+  if let Some(items) = list_literal_items(&args[0]) {
+    let elem_types = items
+      .iter()
+      .map(|item| CalcitTypeAnnotation::expand_schema_alias(&infer_wasm_evidence(ctx, item).annotation))
+      .collect::<Vec<_>>();
+    for (idx, left) in elem_types.iter().enumerate() {
+      if sets::set_comparison_can_erase_kind(left, left, 0) {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: &list:to-set requires statically non-colliding element types in the current scalar ABI, found `{}`",
+          left.to_brief_string()
+        ));
+      }
+      for right in elem_types.iter().skip(idx + 1) {
+        if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: &list:to-set cannot mix `{}` and `{}` in the current scalar ABI",
+            left.to_brief_string(),
+            right.to_brief_string()
+          ));
+        }
+      }
+    }
+  } else {
+    let list_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+    match list_ty.as_deref() {
+      Some(CalcitTypeAnnotation::List(elem_ty)) => {
+        let elem_ty = CalcitTypeAnnotation::expand_schema_alias(elem_ty);
+        if sets::set_comparison_can_erase_kind(&elem_ty, &elem_ty, 0) {
+          return Err(format!(
+            "E_WASM_SET_ELEMENT_KIND: &list:to-set requires a statically non-colliding element type in the current scalar ABI, found `{}`",
+            elem_ty.to_brief_string()
+          ));
+        }
+      }
+      Some(CalcitTypeAnnotation::Tuple(items)) => {
+        for (idx, left) in items.iter().enumerate() {
+          if sets::set_comparison_can_erase_kind(left, left, 0) {
+            return Err(format!(
+              "E_WASM_SET_ELEMENT_KIND: &list:to-set requires statically non-colliding element types in the current scalar ABI, found `{}`",
+              left.to_brief_string()
+            ));
+          }
+          for right in items.iter().skip(idx + 1) {
+            if sets::set_comparison_can_erase_kind(left, right, 0) && !sets::are_disjoint_number_and_heap_types(left, right) {
+              return Err(format!(
+                "E_WASM_SET_ELEMENT_KIND: &list:to-set cannot mix `{}` and `{}` in the current scalar ABI",
+                left.to_brief_string(),
+                right.to_brief_string()
+              ));
+            }
+          }
+        }
+      }
+      other => {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: &list:to-set requires a List with statically proven element types, found `{}`",
+          other.map(|t| t.to_brief_string()).unwrap_or_else(|| "Dynamic".to_owned())
+        ));
+      }
+    }
+  }
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let n = emit_load_count_i32(ctx, src);
 
@@ -858,7 +920,7 @@ pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.loop_exit_if_ge(j, write_idx);
   emit_list_load_elem(ctx, dst, j);
   ctx.emit(Instruction::LocalGet(elem));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -1066,7 +1128,7 @@ pub(super) fn emit_list_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(target));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
 
   ctx.begin_block_if();
   ctx.emit(f64_const(1.0));
@@ -1614,7 +1676,7 @@ pub(super) fn emit_list_distinct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   // existing = dst[(1 + j) * 8]
   emit_list_load_elem(ctx, dst, j);
   ctx.emit(Instruction::LocalGet(elem));
-  emit_f64_value_eq(ctx);
+  ctx.call_rt("__rt_value_equal");
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));

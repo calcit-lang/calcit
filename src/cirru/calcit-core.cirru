@@ -4060,6 +4060,29 @@
                 assert= false $ &= not-a-number 0
                 assert= true $ &= ([] 1 not-a-number) ([] 1 not-a-number)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-disjoint-scalar-kinds)
+              :code $ quote $ let
+                  x $ assert-type 1 Dynamic
+                  z $ assert-type 0 Dynamic
+                  f $ assert-type false Dynamic
+                assert= false $ = x true
+                assert= false $ = true x
+                assert= false $ = z false
+                assert= false $ = false z
+                assert= false $ = z nil
+                assert= false $ = nil z
+                assert= false $ = f nil
+                assert= false $ = nil f
+                assert= false $ = :a x
+                assert= false $ = x :a
+                assert= true $ not= x true
+                assert= true $ not= z false
+                assert= true $ not= z nil
+                assert= true $ not= f nil
+                assert= false $ &=
+                  do (println |left) 1
+                  do (println |right) true
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
           :code $ quote $ defn > (x & ys)
@@ -7965,18 +7988,44 @@
                       {} $ :kind :nested
                     encode-map-as rows $ List RuntimeMapMeta
                   assert= None $ encode-map-as None $ Option RuntimeMapMeta
-                  assert= 7 $ encode-map-as (Some 7) $ Option Number
-                  assert= (Some 7) $ decode-map-as
-                    encode-map-as (Some 7) $ Option Number
-                    Option Number
-                  assert= (Some None) $ encode-map-as (Some None) $ Option Dynamic
-                  assert= (Some None) $ decode-map-as
-                    encode-map-as (Some None) $ Option Dynamic
-                    Option Dynamic
-                  assert= 7 $ encode-map-as (Some 7) $ Option Dynamic
-                  assert= (Some 7) $ decode-map-as
-                    encode-map-as (Some 7) $ Option Dynamic
-                    Option Dynamic
+                  assert= 7 $ encode-map-as (Some 7) (Option Number)
+                  assert= (Some 7)
+                    decode-map-as
+                      encode-map-as (Some 7) (Option Number)
+                      Option Number
+                  assert= (Some None)
+                    encode-map-as (Some None) (Option Dynamic)
+                  assert= (Some None)
+                    decode-map-as
+                      encode-map-as (Some None) (Option Dynamic)
+                      Option Dynamic
+                  assert= 7 $ encode-map-as (Some 7) (Option Dynamic)
+                  assert= (Some 7)
+                    decode-map-as
+                      encode-map-as (Some 7) (Option Dynamic)
+                      Option Dynamic
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |round-trips-json-codec)
+              :code $ quote $ do
+                let
+                    present $ %{} MapEntry (:key |count)
+                      :value $ Some 42
+                    absent $ %{} MapEntry (:key |empty) (:value None)
+                    ok-entry $ Result :ok $ %{} MapEntry (:key |ok) (:value 7)
+                    encoded-present $ encode-map-as present $ MapEntry String (Option Number)
+                    encoded-absent $ encode-map-as absent $ MapEntry String (Option Number)
+                    encoded-ok $ encode-map-as ok-entry $ Result (MapEntry String Number) String
+                    json-present $ json-stringify encoded-present
+                    json-absent $ json-pretty encoded-absent
+                    json-ok $ json-stringify encoded-ok
+                    parsed-present $ .unwrap-or (.parse-json json-present) ({})
+                    parsed-absent $ .unwrap-or (try-parse-json json-absent) ({})
+                    direct-parsed $ json-parse json-present
+                  assert= (Result :ok present)
+                    try-decode-map-as parsed-present $ MapEntry String $ Option Number
+                  assert= absent $ decode-map-as parsed-absent $ MapEntry String (Option Number)
+                  assert= present $ decode-map-as direct-parsed $ MapEntry String (Option Number)
+                  assert= "|[\"ok\",{\"key\":\"ok\",\"value\":7}]" json-ok
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
@@ -9230,6 +9279,31 @@
                     option:unwrap $ get @states 1
                     , :status
                   , :active
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |distinguishes-disjoint-scalar-map-keys-and-set-deduplication
+              :code $ quote $ let
+                  numeric $ assert-type (&{} 1 10) (Map Dynamic Number)
+                  zeroed $ assert-type (&{} 0 10) (Map Dynamic Number)
+                  nums $ assert-type (#{} 1) (Set Dynamic)
+                  zeros $ assert-type (#{} 0) (Set Dynamic)
+                  expanded $ &map:assoc (&{} 1 10) 2 20
+                  replaced $ &map:assoc expanded 1 30
+                assert= None $ &map:get numeric true
+                assert= false $ &map:contains? numeric true
+                assert= numeric $ &map:dissoc numeric true
+                assert= None $ &map:get zeroed false
+                assert= None $ &map:get zeroed nil
+                assert= 2 $ &map:count expanded
+                assert= (Some 10) (&map:get expanded 1)
+                assert= (Some 20) (&map:get expanded 2)
+                assert= 2 $ &map:count replaced
+                assert= (Some 30) (&map:get replaced 1)
+                assert= 1 $ &set:count $ #{} 1 1
+                assert= (#{} 1 2) (#{} 1 2 1)
+                assert= false $ &set:includes? nums true
+                assert= false $ &set:includes? zeros false
+                assert= false $ &set:includes? zeros nil
               :tags $ #{} :core :unit
         'get-args $ %{} 'CodeEntry (:doc "|读取宿主进程传入的完整参数列表，包含第 0 项。")
           :code $ quote $ defn get-args () (&get-args)

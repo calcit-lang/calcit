@@ -31,7 +31,7 @@ aliases:
 | 具体标量输入的 `type-of`、`number?`、`bool?` | supported | 已证明的 Number（含数值 refinement）、Bool、Nil、Unit 优先使用真实类型证据，实参仍求值一次；不会将 false／nil／Unit 的零值重新解释为 Number，合法 Number 也不会被同值堆地址覆盖 | `calcit.core/number?` 的 `:scalar-kind-evidence` 测试与 WASM 参数失败路径回归 |
 | `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-collection-and-missing-paths` 等开放遍历排除项；静态 Map 与字面量空路径用例已通过 |
 | 数值排序比较 `&<`、`&>` 及其表层调用 | supported-with-type-evidence | 操作数需要 Number 证据；已知非 Number 保留实参求值后 trap，开放类型在 scalar 擦除前报告 `E_WASM_NIL_TYPE_EVIDENCE`。具体 Number 的泛型调用复用调用点特化；`identical?` 不受数值限制 | `calcit.core/contains?` 的 `:enum-numeric-evidence` 测试与 WASM 宿主失败路径回归 |
-| List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
+| List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量与 `&list:to-set` 按静态元素类型去重 | core `:tests` |
 | `foldl` / `&list:foldl` | supported | List 和 Set 逐项传给回调。Map 逐项传入二元 List `[key, value]`，静态已知的 Map 为回调保留 `Tuple K V` 类型，可用 `let[]` 分别取得键和值，也可显式接收 `List Dynamic`。空集合返回初始值；开放接收者按实际容器分派，其他值会 trap | `calcit.core/foldl#folds-map-as-key-value-lists`、`calcit.core/foldl#keeps-map-key-and-value-types`、`calcit.core/&list:foldl#keeps-map-key-and-value-types` |
 | `update` 作用于 List / Map / Enum | supported | 按运行时类型分派：List 下标越界或 Map key 不存在时原样返回且不调用回调；Enum 下标越界时 trap，对应 native 的 range error | `calcit.core/update#updates-list-by-index-and-skips-missing-slots` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 普通方法复用接收者的实际实现：List、Map、Set 等内建类型使用固定方法表，成员类型仍可为泛型；名义值还需证明实际附带的实现身份。显式 trait 调用仍需具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `test-types-inference.main/find-last-positive-index#typed-number-receiver`、`find-last-matching-index#keeps-number-and-string-element-types`；名义实现由 `:impl-origin-portable` 测试覆盖 |
@@ -52,11 +52,11 @@ aliases:
 | 运行时 quote 值、`macroexpand`、`format-to-lisp` 非静态表达式 | unsupported | 宏在编译前展开，不受影响 | `calcit.core/deftrait#requires-head-accepts-bare-and-quoted`、`calcit.core/data-view#classifies-symbol-struct-ref` 排除项 |
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |
-| `decode-map-as`、`try-decode-map-as`、`encode-map-as`、`parse-cirru-edn-as` | supported-with-type-evidence | `decode-map-as` / `try-decode-map-as` / `encode-map-as` 复用闭合 `DataShapeGraph` 编解码受支持的标量种类（`Nil`、`Unit`、`Bool`、`Number` 与数值 refinement、`String`、`Tag`）、开放原样透传节点 `Dynamic`（含声明为 `Dynamic` 的 Struct 字段，编码时无需标量类型证据）、容器（`List`、`Tuple`、`Set`、`Map`）及名义 `Struct` / `Enum` / `Option` / `Result`；`parse-cirru-edn-as` 支持上述闭合标量、`List`、标量键 `Map` 及 `Struct` / `Enum`。编译期排除项与运行期失败严格区分：不支持的图节点（`Union`、`Ref`、`Symbol`、`Buffer`、`CirruQuote`，以及 `parse-cirru-edn-as` 中的 `Tuple` / `Set`）在 WASM 编译期以 `E_WASM_EDN_SHAPE` 拒绝模块，`encode-map-as` 中缺少具体静态类型证据的开放 `Nil` / `Unit` / `Bool` / `Number` / `Numeric` / `Tag` 标量节点或开放 `Option` 节点在编译期以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝，共享节点展开超限在编译期以 `E_WASM_EDN_DEPTH` 拒绝；已通过编译的受支持形状在运行期遇到值或范围不匹配时，`try-decode-map-as` 返回 `Result :err`，`decode-map-as`、`encode-map-as` 与 `parse-cirru-edn-as` 在运行期 trap | `calcit.core/decode-map-as#decodes-struct-and-option`、`calcit.core/try-decode-map-as#result-contract`、`calcit.core/encode-map-as#round-trips-struct-and-option`、`calcit.core/encode-map-as#encodes-structs-inside-enum-payloads`、`calcit.core/try-parse-cirru-edn-as#parse-form-inside-typed-nth` |
+| `decode-map-as`、`try-decode-map-as`、`encode-map-as`、`parse-cirru-edn-as` | supported-with-type-evidence | `decode-map-as` / `try-decode-map-as` / `encode-map-as` 复用闭合 `DataShapeGraph` 编解码受支持的标量种类（`Nil`、`Unit`、`Bool`、`Number` 与数值 refinement、`String`、`Tag`）、开放原样透传节点 `Dynamic`（含声明为 `Dynamic` 的 Struct 字段，编码时无需标量类型证据）、容器（`List`、`Tuple`、`Set`、`Map`）及名义 `Struct` / `Enum` / `Option` / `Result`；`parse-cirru-edn-as` 支持上述闭合标量、`List`、标量键 `Map` 及 `Struct` / `Enum`。编译期排除项与运行期失败严格区分：不支持的图节点（`Union`、`Ref`、`Symbol`、`Buffer`、`CirruQuote`，以及 `parse-cirru-edn-as` 中的 `Tuple` / `Set`）在 WASM 编译期以 `E_WASM_EDN_SHAPE` 拒绝模块，`decode-map-as` / `try-decode-map-as` 中缺少具体静态 `:tag` 证据的开放 `Tag` 节点，以及 `encode-map-as` 中缺少具体静态类型证据的开放 `Nil` / `Unit` / `Bool` / `Number` / `Numeric` / `Tag` 标量节点或开放 `Option` 节点在编译期以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝，共享节点展开超限在编译期以 `E_WASM_EDN_DEPTH` 拒绝；已通过编译的受支持形状在运行期遇到值或范围不匹配时，`try-decode-map-as` 返回 `Result :err`，`decode-map-as`、`encode-map-as` 与 `parse-cirru-edn-as` 在运行期 trap | `calcit.core/decode-map-as#decodes-struct-and-option`、`calcit.core/try-decode-map-as#result-contract`、`calcit.core/encode-map-as#round-trips-struct-and-option`、`calcit.core/encode-map-as#encodes-structs-inside-enum-payloads`、`calcit.core/try-parse-cirru-edn-as#parse-form-inside-typed-nth` |
+| `json-parse`、`try-parse-json`（`String .parse-json`）、`json-stringify`、`json-pretty` | supported-with-type-evidence | `json-stringify` 与 `json-pretty` 支持闭合静态类型（`Nil`、`Bool`、`Number` 与数值 refinement、`String`、`Tag`、`List`、`Tuple`、`Set`、`:tag` 或 `:string` 键的 `Map`、名义 `Struct` / `Enum`，以及 `encode-map-as` 生成的结构化 `Map`），开放 `Dynamic` 输入在编译期报告 `E_WASM_EDN_TYPE`，非 `:tag` / `:string` 的 Map 键报告 `E_WASM_EDN_MAP_KEY`，非有限浮点数在运行期 trap；`json-parse` 与 `try-parse-json`（`.parse-json`）将 JSON 文本解析为 Calcit 值（JSON 对象键映射为编译期已登记的 `Tag`），可与 `decode-map-as` / `try-decode-map-as` 组合完成闭合类型边界解码 | `calcit.core/try-parse-json#result-method-contract`、`calcit.core/encode-map-as#round-trips-json-codec` |
 | `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
-| 差集与交集的元素比较 | supported-with-type-evidence | 元素类型必须能排除不同标量种类的数值表示冲突，例如 Number 与 Bool 或 Tag。列表、Tuple、Map 和 Set 的对应成员也受检查。缺少证据时报告 `E_WASM_SET_ELEMENT_KIND` | WASM / WASI CLI 拒绝用例 |
-| `&exclude` 排除不同种类的标量 | supported-with-type-evidence | 如果集合成员与待排除值已证明属于不同标量种类，按原顺序求值后返回原集合。适用于 Number 与 Bool 等共享 WASM 数值表示的种类 | `calcit.core/exclude#distinguishes-disjoint-scalar-kinds` |
+| `=` / `&=` / `not=`、Map 键操作与 Set 构造／成员／并差交运算 | supported-with-type-evidence | 顶层相等操作数、Map 键与 Set 元素类型（以及作为 Map 键或 Set 元素的列表、Tuple、Map 和 Set 的递归成员）必须能排除不同标量种类的数值表示冲突（如 `Number`、`Bool`、`Nil`、`Unit`、`Tag` 之间的擦除碰撞）；列表与 Tuple 的相等比较也会递归检查静态已知的元素类型（定长列表／Tuple 字面量对应位置为不同具体种类时直接收敛为不相等，已知具体元素标量种类可能发生擦除碰撞时报告 `E_WASM_NIL_TYPE_EVIDENCE`）；静态已知属于不同具体标量种类时直接收敛为不相等／不命中，至少一侧为已知非标量堆类型时按运行时堆头校验安全分区（其中 Set 与 Map 仍检查成员／键类型不碰撞）。缺少安全区分证据时，`=` / `&=` / `not=` 报告 `E_WASM_NIL_TYPE_EVIDENCE`（若涉及不安全 Set 成员或 Map 键类型则报告 `E_WASM_SET_ELEMENT_KIND`），Map 与 Set 操作报告 `E_WASM_SET_ELEMENT_KIND` | `calcit.core/=#distinguishes-disjoint-scalar-kinds`、`calcit.core/exclude#distinguishes-disjoint-scalar-kinds` 与 WASM / WASI CLI 拒绝用例 |
 | 默认比较器的 `sort` | supported（静态证明的同种标量/字符串列表或 Tuple） | Tag 及开放/异构元素类型仍需显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator`、`calcit.core/sort#sorts-nan-after-numbers` |
 | `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
@@ -94,9 +94,6 @@ format-cirru-one-liner
 format-to-cirru
 generate-id!
 is-spreading-mark?
-json-parse
-json-pretty
-json-stringify
 parse-cirru
 parse-cirru-edn
 parse-cirru-list
@@ -115,20 +112,20 @@ write-file
 | `E_WASM_TARGET` | 未知的 `--target`，只接受 `core` 或 `wasi` | 修正命令参数 |
 | `E_WASM_BOUNDARY` | 未知的 `--boundary`，只接受 `native` 或 `component` | 修正命令参数 |
 | `E_WASM_CAPABILITY` | 目标不提供所需宿主能力，或 `wasi` 目标出现未登记的自定义 import | 改用目标提供的能力，或换用 native / JS |
-| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型上无法区分 nil、false 与 0；数值排序操作数缺少 Number 证据 | 缺失值边界使用具体类型或 Option；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
+| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型上无法区分 nil、false、Unit、Tag 与 Number 的标量表示（含 `if`、`nil?`、`=` / `&=` / `not=` 及 `encode-map-as`）；数值排序操作数缺少 Number 证据 | 缺失值与判等边界使用具体闭合类型或 Option；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |
 | `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或特化展开中再次调用自身（尾部 `recur` 不在此列，见上方的特化循环；但回边缺少类型证据、或一个循环参数带来超过 8 个实现身份时也报此错误）；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用；非尾部的递归高阶调用改写为尾部 `recur`；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
-| `E_WASM_SET_ELEMENT_KIND` | 差集或交集缺少类型证据来排除不同标量种类的数值表示冲突 | 在比较前收窄元素类型，或使用 native / JS |
+| `E_WASM_SET_ELEMENT_KIND` | Set 元素或 Map 键操作缺少静态类型证据来排除不同标量种类的数值表示冲突 | 在构造、查询或集合运算前收窄元素与键类型，或使用 native / JS |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
-| `E_WASM_EDN_TYPE` | `format-cirru-edn` 的输入类型不闭合 | 写出闭合类型 |
+| `E_WASM_EDN_TYPE` | `format-cirru-edn`、`json-stringify` 或 `json-pretty` 的输入类型不闭合 | 写出闭合类型 |
 | `E_WASM_EDN_SHAPE` | 解析缺少预处理生成的数据形状 | 使用 `try-parse-cirru-edn-as` 并给出目标类型 |
 | `E_WASM_EDN_FORMAT_MODE` | 容器格式化只支持省略或字面量 `true` 的 inline 参数 | 去掉运行时布局参数 |
-| `E_WASM_EDN_MAP_KEY` | Map key 类型无法保持 native 的排序 | 使用标量 key |
+| `E_WASM_EDN_MAP_KEY` | Map key 类型无法保持 native 的排序，或 JSON 对象键不是 `:tag` / `:string` | 使用受支持的标量 key |
 | `E_WASM_EDN_STRUCT_SHAPE` / `E_WASM_EDN_ENUM_SHAPE` | Struct / Enum 的类型参数个数不符 | 修正类型标注 |
 | `E_WASM_EDN_DEPTH` | 数据形状嵌套过深 | 拆分数据结构 |
 | `E_WASM_EDN_SYNTAX`、`E_WASM_EDN_TAG`、`E_WASM_EDN_ENUM`、`E_WASM_EDN_RANGE` | 运行时解析失败：语法错误、未知 tag、Enum 不匹配、数值越界；返回 `Result :err` | 按 Result 分支处理 |
