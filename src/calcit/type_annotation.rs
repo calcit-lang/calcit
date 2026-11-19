@@ -5434,7 +5434,7 @@ impl CalcitTypeAnnotation {
   /// definitions (structs, enums, unions) carry no such schema and stay `None`.
   /// Alias chains are followed to the first non-alias schema; a cycle yields `None`.
   pub(crate) fn resolve_schema_alias(&self) -> Option<Arc<Self>> {
-    let mut visited = HashSet::new();
+    let mut visited = Vec::new();
     let mut current: Option<Arc<Self>> = None;
     loop {
       let node = current.as_deref().unwrap_or(self);
@@ -5442,9 +5442,13 @@ impl CalcitTypeAnnotation {
         return current;
       };
       let name = name.trim_start_matches('\'').trim_start_matches(':');
-      if (!args.is_empty() && !is_type_alias_definition(name)) || !visited.insert(name.to_owned()) {
+      // A generic alias may legitimately wrap itself with different arguments,
+      // such as Id<Id<Number>>. Reject repeated applications, not just names,
+      // and bound aliases whose arguments grow on every expansion.
+      if (!args.is_empty() && !is_type_alias_definition(name)) || visited.len() >= 256 || visited.contains(node) {
         return None;
       }
+      visited.push(node.clone());
       current = Some(resolve_type_ref_as_schema(name, args)?);
     }
   }
@@ -6148,7 +6152,7 @@ impl CalcitTypeAnnotation {
       // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
       // try to resolve it as a type alias by looking up the definition's schema.
       (Self::TypeRef(name, args), other) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
+        if let Some(resolved) = self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
           let Ok(_guard) = enter_alias_relation(name, other, true, false) else {
             return false;
           };
@@ -6157,7 +6161,7 @@ impl CalcitTypeAnnotation {
         false
       }
       (other, Self::TypeRef(name, args)) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
+        if let Some(resolved) = expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
           let Ok(_guard) = enter_alias_relation(name, other, false, false) else {
             return false;
           };
@@ -6546,14 +6550,14 @@ impl CalcitTypeAnnotation {
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (Self::TypeRef(name, args), other) => match resolve_type_ref_as_schema(name, args) {
+      (Self::TypeRef(name, args), other) => match self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
           Ok(_guard) => resolved.prove_with_staged_bindings(other, bindings),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
       },
-      (other, Self::TypeRef(name, args)) => match resolve_type_ref_as_schema(name, args) {
+      (other, Self::TypeRef(name, args)) => match expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
         Some(resolved) => match enter_alias_relation(name, other, false, true) {
           Ok(_guard) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
           Err(reason) => NeedsBoundary(reason),

@@ -65,6 +65,53 @@ fn equivalent_value_and_deftype_aliases_work_in_both_directions() {
   assert!(output.contains("E_CALL_ARGUMENT_UNPROVEN"), "{output}");
 }
 
+#[test]
+fn nested_generic_aliases_expand_without_accepting_different_types() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/nested-generic-aliases.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "nested identity aliases");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/consume",
+        "--code",
+        "quote $ Fn (app.main/New String) (-> Unit)",
+      ],
+    ),
+    "require a string alias",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "a number alias must not satisfy a string alias");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  assert!(output.contains("E_FN_ARG_TYPE_MISMATCH"), "{output}");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/Old",
+        "--overwrite",
+        "--code",
+        "quote $ deftype Old (:generics T) (Old (List T))",
+      ],
+    ),
+    "create a growing recursive alias",
+  );
+  assert!(
+    !run_calcit(&snapshot, &["--check-only", "--all-defs"]).status.success(),
+    "a growing recursive alias must not prove a type"
+  );
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {
