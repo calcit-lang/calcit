@@ -155,6 +155,7 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
       annotation: element.clone(),
       codec_hint: elem_codec_hint,
       set_member_types: ev.set_member_types,
+      list_element_types: None,
       scalar_origin: None,
       exact_impls: false,
     }),
@@ -175,6 +176,7 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
         annotation,
         codec_hint: elem_codec_hint,
         set_member_types: ev.set_member_types,
+        list_element_types: None,
         scalar_origin: None,
         exact_impls: false,
       })

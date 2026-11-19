@@ -2367,6 +2367,10 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
       "let ((d $ assert-type (&{} :a 0) (Map Tag Dynamic))) (&= (merge (&{} :a false) d) (&{} :a false))",
       "E_WASM_NIL_TYPE_EVIDENCE",
     ),
+    (
+      "let ((combine $ fn (xs) (hint-fn $ Fn (List Dynamic) (-> (List Dynamic))) (&list:concat xs ([] false)))) (&= (combine ([] 0)) ([] 0 false))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");
