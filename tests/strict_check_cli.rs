@@ -106,9 +106,16 @@ fn nested_generic_aliases_expand_without_accepting_different_types() {
     ),
     "create a growing recursive alias",
   );
+  let recursive = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&recursive.stdout),
+    String::from_utf8_lossy(&recursive.stderr)
+  );
+  assert_eq!(recursive.status.code(), Some(1), "expected a normal type-check failure: {output}");
   assert!(
-    !run_calcit(&snapshot, &["--check-only", "--all-defs"]).status.success(),
-    "a growing recursive alias must not prove a type"
+    output.contains("E_FN_RETURN_TYPE_MISMATCH") && output.contains("app.main/produce"),
+    "{output}"
   );
 }
 
