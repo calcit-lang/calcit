@@ -2342,6 +2342,31 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
     ),
     ("&= (&{} :a 0) (&{} :a false)", "E_WASM_NIL_TYPE_EVIDENCE"),
     ("&= (&{} :a 0 :b |x) (&{} :a false :b |x)", "E_WASM_NIL_TYPE_EVIDENCE"),
+    (
+      "let ((m $ assert-type (&{} :a false) (Map Tag Dynamic))) (&= m (&{} :a 0))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((xs $ assert-type ([] false) (List Dynamic))) (&= xs ([] 0))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    ("&= (json-parse \"|[1,2]\") ([] 1 2)", "E_WASM_NIL_TYPE_EVIDENCE"),
+    (
+      "let ((d $ assert-type (&{} :a 1) Dynamic)) (&= d (&{} :a :b))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((d $ assert-type (Some false) Dynamic)) (&= d (Some 0))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((d $ json-parse \"|[\\\"some\\\",0]\")) (&= d (Some 0))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
+    (
+      "let ((d $ assert-type (&{} :a 0) (Map Tag Dynamic))) (&= (merge (&{} :a false) d) (&{} :a false))",
+      "E_WASM_NIL_TYPE_EVIDENCE",
+    ),
   ] {
     edit_definition(&snapshot, "main!", &format!("quote $ defn main! () ({expression}) &unit"), true);
     edit_schema(&snapshot, "main!", "Unit");
@@ -2923,6 +2948,26 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
         "    if (and (.ok? (try-parse-json \"|{\\\"\\\":1}\")) (= 7) (= (count one) 1) (= (count two) 2) (= (:name d1) |a) (= (:count d1) 1) (= (:name d2) |b) (= (:count d2) 2)) 1 0",
       ),
     ),
+    (
+      "check-not-zero-and-boxed",
+      concat!(
+        "quote $ defwasm-export check-not-zero-and-boxed ()\n",
+        "  let\n",
+        "      bf $ assert-type (json-parse \"|false\") Bool\n",
+        "      nz $ assert-type (json-parse \"|0\") Number\n",
+        "    if (and (= (not 0) false) (= (not 1) false) (= (not nil) true) (= (not false) true) (= (not true) false) (= (not bf) true) (= (not nz) false)) 1 0",
+      ),
+    ),
+    (
+      "check-midpoint-scratch-oom",
+      concat!(
+        "quote $ defwasm-export check-midpoint-scratch-oom ()\n",
+        "  loop ()\n",
+        "    match (try-parse-json \"|0.1234567890123456789012345\")\n",
+        "      (:err _e) 1\n",
+        "      (:ok _v) (recur)",
+      ),
+    ),
   ];
 
   for (name, code) in exports {
@@ -2990,13 +3035,19 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
   assert_eq!(call_export(&mut store, &instance, "check-dup-key-flat-json"), 1.0);
   assert_eq!(call_export(&mut store, &instance, "check-boxed-json-numbers"), 1.0);
   assert_eq!(call_export(&mut store, &instance, "check-empty-key-unary-eq-and-list-hints"), 1.0);
+  assert_eq!(call_export(&mut store, &instance, "check-not-zero-and-boxed"), 1.0);
 
   // Under a capped linear memory limit that rejects growth, `try-parse-json` must
-  // return `:err` instead of trapping on OOM/OOB.
+  // return `:err` instead of trapping on OOM/OOB, including exact midpoint scratch.
   let initial_bytes = instance
     .get_memory(&mut store, "memory")
     .expect("wasm module should export linear memory")
     .data_size(&store);
   let (mut oom_store, oom_instance) = instantiate(Some(initial_bytes));
   assert_eq!(call_export(&mut oom_store, &oom_instance, "check-json-oom"), 1.0);
+  let (mut oom_mid_store, oom_mid_instance) = instantiate(Some(initial_bytes));
+  assert_eq!(
+    call_export(&mut oom_mid_store, &oom_mid_instance, "check-midpoint-scratch-oom"),
+    1.0
+  );
 }

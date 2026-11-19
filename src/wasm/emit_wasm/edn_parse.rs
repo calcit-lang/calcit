@@ -555,12 +555,30 @@ fn substitute_type_vars_with_args(
   expanded.substitute_type_vars(&bindings).as_ref().clone()
 }
 
+fn is_same_or_refined_struct_hint(actual: &CalcitStructDef, nominal: &CalcitStructDef) -> bool {
+  if actual.same_nominal_definition(nominal) {
+    return true;
+  }
+  actual.definition_ref.is_some()
+    && actual.definition_ref == nominal.definition_ref
+    && actual.name == nominal.name
+    && actual.fields == nominal.fields
+    && actual.generics == nominal.generics
+    && actual.where_bounds == nominal.where_bounds
+    && actual.field_types.len() == nominal.field_types.len()
+    && actual
+      .field_types
+      .iter()
+      .zip(nominal.field_types.iter())
+      .all(|(a, n)| a == n || matches!(super::expand_wasm_value_type(n).as_ref(), CalcitTypeAnnotation::Dynamic))
+}
+
 fn hint_struct_field(hint: Option<&CalcitTypeAnnotation>, nominal: &Arc<CalcitStructDef>, idx: usize) -> Option<CalcitTypeAnnotation> {
   if matches!(hint, Some(CalcitTypeAnnotation::Never)) {
     return Some(CalcitTypeAnnotation::Never);
   }
   let actual = hint.and_then(|ty| ty.resolve_to_struct())?;
-  if !actual.same_nominal_definition(nominal) {
+  if !is_same_or_refined_struct_hint(&actual, nominal) {
     return None;
   }
   let args: &[Arc<CalcitTypeAnnotation>] = match hint {
@@ -727,14 +745,12 @@ fn emit_decode_map_node(
       ctx.emit(Instruction::LocalSet(ok));
     }
     DataShapeNode::Nil => {
-      if static_hint
-        .is_none_or(|ty| nil_type_evidence_is_open(ty) || matches!(ty, CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
-      {
-        let allow_raw_zero = matches!(static_hint, Some(CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
-          || matches!(
-            static_hint,
-            Some(CalcitTypeAnnotation::Nullable(inner, _)) if super::wasm_non_nil_value_is_nonzero(inner)
-          );
+      let allow_raw_zero = matches!(static_hint, Some(CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never))
+        || matches!(
+          static_hint,
+          Some(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred)) if super::wasm_non_nil_value_is_nonzero(inner)
+        );
+      if allow_raw_zero || static_hint.is_none_or(nil_type_evidence_is_open) {
         let is_boxed_nil = emit_has_heap_tag(ctx, input, "nil");
         if allow_raw_zero {
           let is_heap = emit_is_heap_value(ctx, input);
@@ -4000,6 +4016,76 @@ mod tests {
     assert_eq!(
       super::super::infer_encoded_map_type(&single_field_ty),
       Arc::new(CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), state_ty))
+    );
+  }
+
+  #[test]
+  fn nil_decode_guard_accepts_inferred_nonzero_nullable_raw_zero() {
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::from([("nil".to_owned(), 0)]),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let graph = DataShapeGraph::from_nodes(0, vec![DataShapeNode::Nil]).expect("nil shape");
+    let path = literal_local(&mut WasmGenCtx::new(0, env.clone()), "").ok();
+    assert!(
+      path.is_none(),
+      "minimal env omits string pool; emit_decode_map_node uses empty error_path"
+    );
+
+    let emit_nil_case = |hint: Option<&CalcitTypeAnnotation>| {
+      let mut ctx = WasmGenCtx::new(1, env.clone());
+      let input = 0;
+      let decoded = ctx.alloc_local();
+      let ok = ctx.alloc_i32(0);
+      let err_kind = ctx.alloc_i32(0);
+      let err_path = ctx.alloc_local();
+      ctx.map_codec_expanded_nodes = 0;
+      emit_decode_map_node(
+        &mut ctx,
+        &graph,
+        0,
+        input,
+        hint,
+        (decoded, ok, err_kind, err_path),
+        MapCodecMode::Decode,
+      )
+      .expect("nil decode emission succeeds");
+      ctx.instructions
+    };
+
+    let has_raw_zero_eq = |insns: &[Instruction]| {
+      insns
+        .windows(2)
+        .any(|w| matches!(w, [Instruction::F64Const(v), Instruction::F64Eq] if f64::from_bits(v.bits()) == 0.0))
+    };
+
+    let inferred_nullable_str = CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::String),
+      crate::wasm::host::calcit::NullableOrigin::Inferred,
+    );
+    let inferred_insns = emit_nil_case(Some(&inferred_nullable_str));
+    assert!(
+      has_raw_zero_eq(&inferred_insns),
+      "Nullable(String, Inferred) must allow raw 0.0 nil check"
+    );
+
+    let dynamic_insns = emit_nil_case(Some(&CalcitTypeAnnotation::Dynamic));
+    assert!(
+      !has_raw_zero_eq(&dynamic_insns),
+      "open Dynamic must require boxed nil tag rather than raw 0.0"
     );
   }
 }

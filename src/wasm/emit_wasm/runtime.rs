@@ -4849,6 +4849,10 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_map_from_flat"), map_from_flat_idx);
   fns.push(build_rt_map_from_flat(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
 
+  let map_from_flat_checked_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_map_from_flat_checked"), map_from_flat_checked_idx);
+  fns.push(build_rt_map_from_flat_checked(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
+
   let map_root_from_flat_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_from_flat"), map_root_from_flat_idx);
   fns.push(build_rt_map_root_from_flat(map_key_hash_idx, map_root_assoc_idx));
@@ -4988,7 +4992,7 @@ pub(super) fn build_runtime_fns(
       json_parse_at_idx,
       json_parse_str_at_idx,
       tag_from_str_idx,
-      map_from_flat_idx,
+      map_from_flat_checked_idx,
       parse_float_valid_idx,
       parse_float_idx,
     ),
@@ -6172,6 +6176,14 @@ fn build_rt_map_root_write_pairs() -> CompiledFn {
 }
 
 fn build_rt_map_from_flat(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32) -> CompiledFn {
+  build_rt_map_from_flat_impl(hash_idx, root_assoc_idx, map_make_idx, false)
+}
+
+fn build_rt_map_from_flat_checked(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32) -> CompiledFn {
+  build_rt_map_from_flat_impl(hash_idx, root_assoc_idx, map_make_idx, true)
+}
+
+fn build_rt_map_from_flat_impl(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32, checked: bool) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
   let count = b.alloc_i32();
   let i = b.alloc_i32();
@@ -6181,6 +6193,7 @@ fn build_rt_map_from_flat(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32)
   let val = b.alloc_f64();
   let hash = b.alloc_i32();
   let added = b.alloc_i32();
+  let req_bytes = if checked { Some(b.alloc_i32()) } else { None };
 
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -6216,6 +6229,23 @@ fn build_rt_map_from_flat(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32)
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalSet(val));
+  if let Some(req) = req_bytes {
+    // Each assoc allocates at most two 272-byte HAMT tables plus one bucket of up to `actual + 1` entries (`16 * (actual + 1) + 24`).
+    b.emit(Instruction::LocalGet(actual));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::I32Const(16));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Const(568));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(req));
+    rt_emit_ensure_heap_capacity(&mut b, req);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::Return);
+    b.emit(Instruction::End);
+  }
   b.emit(Instruction::LocalGet(key));
   b.emit(Instruction::Call(hash_idx));
   b.emit(Instruction::LocalSet(hash));
@@ -6237,6 +6267,14 @@ fn build_rt_map_from_flat(hash_idx: u32, root_assoc_idx: u32, map_make_idx: u32)
   b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
   b.emit(Instruction::End);
+  if let Some(req) = req_bytes {
+    rt_emit_ensure_heap_capacity_const(&mut b, 24, req);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::Return);
+    b.emit(Instruction::End);
+  }
   b.emit(Instruction::LocalGet(actual));
   b.emit(Instruction::LocalGet(root));
   b.emit(Instruction::Call(map_make_idx));
@@ -12673,21 +12711,14 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::LocalGet(pair_cnt));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  // Reserve worst-case typical HAMT allocation (tables + bucket + map header) before building.
-  b.emit(Instruction::LocalGet(pair_cnt));
-  b.emit(Instruction::I32Const(2080));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Const(512));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(req_bytes));
-  rt_emit_ensure_heap_capacity(&mut b, req_bytes);
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::Call(map_from_flat_idx));
+  b.emit(Instruction::LocalSet(map_ptr));
+  b.emit(Instruction::LocalGet(map_ptr));
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(BlockType::Empty));
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(obj_buf));
-  b.emit(Instruction::Call(map_from_flat_idx));
-  b.emit(Instruction::LocalSet(map_ptr));
   b.emit(Instruction::LocalGet(map_ptr));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::LocalGet(cur));
@@ -12983,6 +13014,15 @@ fn build_rt_json_parse_at(
   b.emit(Instruction::Call(parse_float_valid_idx));
   b.emit(f64_const(0.0));
   b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  reclaim_num_str(&mut b);
+  fail_return(&mut b, cur);
+  b.emit(Instruction::End);
+
+  // Guarantee `__rt_parse_float` can reserve its 1024-byte midpoint scratch
+  // buffer without trapping when memory cannot grow.
+  rt_emit_ensure_heap_capacity_const(&mut b, 1024, req_bytes);
+  b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(BlockType::Empty));
   reclaim_num_str(&mut b);
   fail_return(&mut b, cur);

@@ -337,6 +337,93 @@ fn emit_edn_enum_variants(
   Ok(result)
 }
 
+fn append_literal(ctx: &mut WasmGenCtx, acc: u32, text: &str) -> Result<(), String> {
+  let next = concat_with_literal_after(ctx, acc, text)?;
+  ctx.emit(Instruction::LocalGet(next));
+  ctx.emit(Instruction::LocalSet(acc));
+  Ok(())
+}
+
+fn is_standard_option_variants(nominal: &CalcitEnumDef, args: &[Arc<CalcitTypeAnnotation>], variants: &[ResolvedEnumVariant]) -> bool {
+  nominal.name().ref_str() == "Option"
+    && args.len() == 1
+    && variants.len() == 2
+    && variants.iter().any(|(v, payloads)| v.ref_str() == "none" && payloads.is_empty())
+    && variants
+      .iter()
+      .any(|(v, payloads)| v.ref_str() == "some" && payloads.len() == 1 && payloads[0] == args[0])
+}
+
+fn emit_extract_option_parts(ctx: &mut WasmGenCtx, value: u32, enum_name: &str) -> Result<(u32, u32, u32), String> {
+  let none_tag = *ctx
+    .tag_index
+    .get("none")
+    .ok_or_else(|| format!("E_WASM_EDN_ENUM_SHAPE: enum :{enum_name} variant :none is not present in the compiled program"))?
+    as f64;
+  let some_tag = *ctx
+    .tag_index
+    .get("some")
+    .ok_or_else(|| format!("E_WASM_EDN_ENUM_SHAPE: enum :{enum_name} variant :some is not present in the compiled program"))?
+    as f64;
+  let is_option_enum = emit_is_option_enum_runtime(ctx, value)?;
+  let is_none = ctx.alloc_i32(0);
+  let is_some = ctx.alloc_i32(0);
+  let payload = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::LocalSet(payload));
+
+  ctx.emit(Instruction::LocalGet(is_option_enum));
+  ctx.begin_block_if();
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(ptr));
+  let payload_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(payload_count));
+  let variant_tag = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(variant_tag));
+
+  ctx.emit(Instruction::LocalGet(variant_tag));
+  ctx.emit(f64_const(none_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(payload_count));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(is_none));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(variant_tag));
+  ctx.emit(f64_const(some_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(payload_count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Ne);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::LocalSet(payload));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(is_some));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  Ok((is_none, is_some, payload))
+}
+
 fn emit_edn_enum(
   ctx: &mut WasmGenCtx,
   value: u32,
@@ -353,6 +440,44 @@ fn emit_edn_enum(
   }
 
   if nominal.name().ref_str() == "Option" && args.len() == 1 {
+    if nested && is_standard_option_variants(nominal, args, &variants) {
+      let (is_none, is_some, payload) = emit_extract_option_parts(ctx, value, nominal.name().ref_str())?;
+      let enum_tag_lit = format!("'{}", nominal.name());
+      let out = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(is_none));
+      ctx.begin_block_if();
+      let none_str = literal_local(ctx, "(%::")?;
+      append_literal(ctx, none_str, " ")?;
+      append_literal(ctx, none_str, &enum_tag_lit)?;
+      append_literal(ctx, none_str, " ")?;
+      append_literal(ctx, none_str, "'none")?;
+      append_literal(ctx, none_str, ")")?;
+      ctx.emit(Instruction::LocalGet(none_str));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::Else);
+      let formatted = emit_edn_value(ctx, payload, &args[0], depth + 1, true)?;
+      ctx.emit(Instruction::LocalGet(is_some));
+      ctx.begin_block_if();
+      let some_str = literal_local(ctx, "(%::")?;
+      append_literal(ctx, some_str, " ")?;
+      append_literal(ctx, some_str, &enum_tag_lit)?;
+      append_literal(ctx, some_str, " ")?;
+      append_literal(ctx, some_str, "'some")?;
+      append_literal(ctx, some_str, " ")?;
+      let with_payload = concat_string_locals(ctx, some_str, formatted);
+      ctx.emit(Instruction::LocalGet(with_payload));
+      ctx.emit(Instruction::LocalSet(some_str));
+      append_literal(ctx, some_str, ")")?;
+      ctx.emit(Instruction::LocalGet(some_str));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(formatted));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      return Ok(out);
+    }
+
     let is_option_enum = emit_is_option_enum_runtime(ctx, value)?;
     let out = ctx.alloc_local();
     ctx.emit(Instruction::LocalGet(is_option_enum));
@@ -1655,6 +1780,67 @@ fn emit_json_enum(
   }
 
   if nominal.name().ref_str() == "Option" && args.len() == 1 {
+    if is_standard_option_variants(nominal, args, &variants) {
+      let (is_none, is_some, payload) = emit_extract_option_parts(ctx, value, nominal.name().ref_str())?;
+      let child_indent = "  ".repeat(depth + 1);
+      let close_indent = format!("\n{}", "  ".repeat(depth));
+      let out = ctx.alloc_local();
+
+      let emit_json_tag_str = |ctx: &mut WasmGenCtx, acc: u32, tag_name: &str| -> Result<(), String> {
+        let raw = literal_local(ctx, tag_name)?;
+        let encoded = ctx.alloc_local();
+        ctx.emit(Instruction::LocalGet(raw));
+        ctx.call_rt("__rt_json_string");
+        ctx.emit(Instruction::LocalSet(encoded));
+        let next = concat_string_locals(ctx, acc, encoded);
+        ctx.emit(Instruction::LocalGet(next));
+        ctx.emit(Instruction::LocalSet(acc));
+        Ok(())
+      };
+
+      ctx.emit(Instruction::LocalGet(is_none));
+      ctx.begin_block_if();
+      let none_str = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
+      if pretty {
+        append_literal(ctx, none_str, &child_indent)?;
+      }
+      emit_json_tag_str(ctx, none_str, "none")?;
+      if pretty {
+        append_literal(ctx, none_str, &close_indent)?;
+      }
+      append_literal(ctx, none_str, "]")?;
+      ctx.emit(Instruction::LocalGet(none_str));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::Else);
+      let formatted = emit_json_value(ctx, payload, &args[0], depth + 1, pretty, op_name)?;
+      ctx.emit(Instruction::LocalGet(is_some));
+      ctx.begin_block_if();
+      let some_str = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
+      if pretty {
+        append_literal(ctx, some_str, &child_indent)?;
+      }
+      emit_json_tag_str(ctx, some_str, "some")?;
+      append_literal(ctx, some_str, if pretty { ",\n" } else { "," })?;
+      if pretty {
+        append_literal(ctx, some_str, &child_indent)?;
+      }
+      let with_payload = concat_string_locals(ctx, some_str, formatted);
+      ctx.emit(Instruction::LocalGet(with_payload));
+      ctx.emit(Instruction::LocalSet(some_str));
+      if pretty {
+        append_literal(ctx, some_str, &close_indent)?;
+      }
+      append_literal(ctx, some_str, "]")?;
+      ctx.emit(Instruction::LocalGet(some_str));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(formatted));
+      ctx.emit(Instruction::LocalSet(out));
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::End);
+      return Ok(out);
+    }
+
     let is_option_enum = emit_is_option_enum_runtime(ctx, value)?;
     let out = ctx.alloc_local();
     ctx.emit(Instruction::LocalGet(is_option_enum));
@@ -2090,5 +2276,106 @@ mod tests {
     }
     let error = validate_edn_type(schema.as_ref(), 0).expect_err("deep schemas must be rejected");
     assert!(error.starts_with("E_WASM_EDN_DEPTH:"));
+  }
+
+  #[test]
+  fn nested_option_formatters_avoid_exponential_emission() {
+    let mut struct_def = CalcitStructDef::from_fields(
+      cirru_edn::EdnTag::new("Option"),
+      vec![cirru_edn::EdnTag::new("none"), cirru_edn::EdnTag::new("some")],
+    );
+    struct_def.definition_ref = Some(Arc::from("calcit.core/Option"));
+    struct_def.generics = Arc::new(vec![Arc::from("T")]);
+    let t_sym = Calcit::Symbol {
+      sym: Arc::from("T"),
+      info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
+        at_ns: Arc::from("calcit.core"),
+        at_def: Arc::from("Option"),
+      }),
+      location: None,
+    };
+    let option_enum = Arc::new(
+      CalcitEnumDef::from_struct(crate::wasm::host::calcit::CalcitStructValue {
+        struct_ref: Arc::new(struct_def),
+        values: Arc::new(vec![Calcit::from(vec![]), Calcit::from(vec![t_sym])]),
+      })
+      .expect("valid Option enum def"),
+    );
+
+    let mut nested_12 = Arc::new(CalcitTypeAnnotation::String);
+    for _ in 0..12 {
+      nested_12 = Arc::new(CalcitTypeAnnotation::Enum(option_enum.clone(), Arc::new(vec![nested_12])));
+    }
+    let mut nested_24 = nested_12.clone();
+    for _ in 0..12 {
+      nested_24 = Arc::new(CalcitTypeAnnotation::Enum(option_enum.clone(), Arc::new(vec![nested_24])));
+    }
+
+    let mut string_pool = HashMap::new();
+    for (idx, lit) in [
+      "[", "]", ",", "none", "some", "Option", "(%::", "%::", "'Option", "'none", "'some", " ", ")",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+      string_pool.insert(lit.to_owned(), (super::HEAP_BASE as u32) + 8 + (idx as u32) * 32);
+    }
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::from([("__rt_json_string".to_owned(), 0), ("__rt_edn_string".to_owned(), 1)]),
+      tag_index: HashMap::from([
+        ("string".to_owned(), 0),
+        ("enum".to_owned(), 1),
+        ("Option".to_owned(), 2),
+        ("none".to_owned(), 3),
+        ("some".to_owned(), 4),
+      ]),
+      struct_layouts: Default::default(),
+      string_pool,
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+
+    let mut json_12 = WasmGenCtx::new(1, env.clone());
+    emit_json_value(&mut json_12, 0, &nested_12, 0, false, "json-stringify").expect("12-deep JSON Option must emit");
+    let mut json_24 = WasmGenCtx::new(1, env.clone());
+    emit_json_value(&mut json_24, 0, &nested_24, 0, false, "json-stringify").expect("24-deep JSON Option must emit linearly");
+    assert!(
+      json_24.instructions.len() < json_12.instructions.len() * 3 && json_24.instructions.len() < 40_000,
+      "24-deep JSON Option should scale linearly: len12={}, len24={}",
+      json_12.instructions.len(),
+      json_24.instructions.len()
+    );
+
+    let mut edn_nested_12 = WasmGenCtx::new(1, env.clone());
+    emit_edn_value(&mut edn_nested_12, 0, &nested_12, 0, true).expect("12-deep nested EDN Option must emit");
+    let mut edn_nested_24 = WasmGenCtx::new(1, env.clone());
+    emit_edn_value(&mut edn_nested_24, 0, &nested_24, 0, true).expect("24-deep nested EDN Option must emit linearly");
+    assert!(
+      edn_nested_24.instructions.len() < edn_nested_12.instructions.len() * 3 && edn_nested_24.instructions.len() < 50_000,
+      "24-deep nested EDN Option should scale linearly: len12={}, len24={}",
+      edn_nested_12.instructions.len(),
+      edn_nested_24.instructions.len()
+    );
+
+    let mut edn_12 = WasmGenCtx::new(1, env.clone());
+    emit_edn_value(&mut edn_12, 0, &nested_12, 0, false).expect("12-deep root EDN Option must emit");
+    let mut edn_24 = WasmGenCtx::new(1, env);
+    emit_edn_value(&mut edn_24, 0, &nested_24, 0, false).expect("24-deep root EDN Option must emit without exponential blowup");
+    assert!(
+      edn_24.instructions.len() < edn_12.instructions.len() * 5 && edn_24.instructions.len() < 650_000,
+      "24-deep root EDN Option should avoid exponential growth: len12={}, len24={}",
+      edn_12.instructions.len(),
+      edn_24.instructions.len()
+    );
   }
 }

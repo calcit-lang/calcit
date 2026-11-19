@@ -5117,7 +5117,11 @@ fn join_collection_slot_type(current: &Arc<CalcitTypeAnnotation>, added: &Arc<Ca
   let a = CalcitTypeAnnotation::expand_schema_alias(added);
   if matches!(c.as_ref(), CalcitTypeAnnotation::Never) {
     a
-  } else if matches!(a.as_ref(), CalcitTypeAnnotation::Never) || c == a || a.is_proven_for(&c) {
+  } else if matches!(a.as_ref(), CalcitTypeAnnotation::Never) || c == a {
+    c
+  } else if c.contains_type_var() || a.contains_type_var() {
+    DYNAMIC_TYPE.clone()
+  } else if a.is_proven_for(&c) {
     c
   } else if c.is_proven_for(&a) {
     a
@@ -5132,6 +5136,44 @@ fn effective_collection_slot(slot: &Arc<CalcitTypeAnnotation>, is_empty: bool) -
   } else {
     slot.clone()
   }
+}
+
+/// Strip `Nil` from non-first `merge-non-nil` operand values since runtime keeps earlier values when RHS is `nil`.
+fn strip_nil_for_merge_non_nil(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match CalcitTypeAnnotation::expand_schema_alias(ty).as_ref() {
+    CalcitTypeAnnotation::Nil => crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone(),
+    CalcitTypeAnnotation::Nullable(inner, _) => inner.clone(),
+    _ => ty.clone(),
+  }
+}
+
+/// Join one `merge` / `merge-non-nil` operand's Map key and value types into the accumulated pair.
+fn join_merge_map_operand(
+  joined_map: &mut Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)>,
+  arg_ev: &WasmTypeEvidence,
+  skip_rhs_nil: bool,
+  arg_idx: usize,
+) -> bool {
+  let arg_ty = expand_wasm_value_type(arg_ev.scalar_origin.as_ref().unwrap_or(&arg_ev.annotation));
+  let is_empty = arg_ev.set_member_types.as_deref() == Some(&[]);
+  let CalcitTypeAnnotation::Map(k, v) = arg_ty.as_ref() else {
+    return false;
+  };
+  let eff_k = effective_collection_slot(k, is_empty);
+  let mut eff_v = effective_collection_slot(v, is_empty);
+  if skip_rhs_nil && arg_idx > 0 {
+    eff_v = strip_nil_for_merge_non_nil(&eff_v);
+  }
+  match joined_map {
+    None => {
+      *joined_map = Some((eff_k, eff_v));
+    }
+    Some((k_acc, v_acc)) => {
+      *k_acc = join_collection_slot_type(k_acc, &eff_k);
+      *v_acc = join_collection_slot_type(v_acc, &eff_v);
+    }
+  }
+  true
 }
 
 fn join_collection_branch_evidences(left: &WasmTypeEvidence, right: &WasmTypeEvidence) -> Option<WasmTypeEvidence> {
@@ -6442,9 +6484,38 @@ fn infer_wasm_evidence_in_scope(
       .get(1)
       .and_then(|definition| resolve_struct_ref(definition).ok())
       .map(|definition| {
-        let codec_hint = (!definition.generics.is_empty())
+        let mut codec_hint = (!definition.generics.is_empty())
           .then(|| infer_static_type_from_expr(expr))
           .flatten();
+        if definition.generics.is_empty()
+          && items.len() == 2 + definition.fields.len() * 2
+          && definition
+            .field_types
+            .iter()
+            .any(|ty| nil_type_evidence_is_open(&expand_wasm_value_type(ty)))
+        {
+          let mut refined_field_types = (*definition.field_types).clone();
+          let mut refined = false;
+          let pair_items: Vec<&Calcit> = items.iter().skip(2).collect();
+          for pair in pair_items.as_chunks::<2>().0 {
+            if let [Calcit::Tag(tag), val_expr] = *pair
+              && let Some(idx) = definition.fields.iter().position(|f| f == tag)
+              && nil_type_evidence_is_open(&expand_wasm_value_type(&refined_field_types[idx]))
+              && let Some(val_ev) = infer_wasm_evidence_in_scope(ctx, val_expr, local_types, closures, visiting)
+            {
+              let expanded = expand_wasm_value_type(val_ev.codec_hint.as_ref().unwrap_or(&val_ev.annotation));
+              if !nil_type_evidence_is_open(&expanded) {
+                refined_field_types[idx] = expanded;
+                refined = true;
+              }
+            }
+          }
+          if refined {
+            let mut refined_def = definition.clone();
+            refined_def.field_types = Arc::new(refined_field_types);
+            codec_hint = Some(Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(refined_def))));
+          }
+        }
         WasmTypeEvidence {
           annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(definition))),
           codec_hint,
@@ -6571,6 +6642,23 @@ fn infer_wasm_evidence_in_scope(
           expand_literal_spread_args("spread", &items.drop_left().drop_left().to_vec(), &mut plain, &mut runtime_spreads).ok()?;
           if runtime_spreads.is_empty() {
             infer_wasm_evidence_in_scope(ctx, &Calcit::from(plain), local_types, closures, visiting)
+          } else if items.len() >= 4
+            && !matches!(items.get(2), Some(Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+            && (direct_definition_reference(&items[1]).as_deref() == Some("calcit.core/dissoc")
+              || matches!(items[1], Calcit::Proc(CalcitProc::NativeMapDissoc)))
+            && let Some(base_ev) = infer_wasm_evidence_in_scope(ctx, &items[2], local_types, closures, visiting)
+            && matches!(
+              expand_wasm_value_type(&base_ev.annotation).as_ref(),
+              CalcitTypeAnnotation::Map(_, _)
+            )
+          {
+            Some(WasmTypeEvidence {
+              annotation: base_ev.annotation,
+              codec_hint: None,
+              set_member_types: base_ev.set_member_types,
+              scalar_origin: None,
+              exact_impls: false,
+            })
           } else {
             None
           }
@@ -6631,6 +6719,17 @@ fn infer_wasm_evidence_in_scope(
           let expanded_target = expand_wasm_value_type(&target);
           let mut annotation = infer_encoded_map_type(&target);
           let mut codec_hint = infer_encoded_codec_hint(&target);
+          if let Some(target_def) = expanded_target.resolve_to_struct()
+            && target_def.generics.is_empty()
+            && let Some(input_expr) = items.get(1)
+            && let Some(input_ev) = infer_wasm_evidence_in_scope(ctx, input_expr, local_types, closures, visiting)
+            && let Some(hint) = input_ev.codec_hint.as_ref()
+            && let Some(hint_def) = hint.resolve_to_struct()
+            && hint_def.name == target_def.name
+            && hint_def.fields == target_def.fields
+          {
+            codec_hint = infer_encoded_codec_hint(hint);
+          }
           if let Some(enum_def) = expanded_target.resolve_to_enum()
             && enum_def.name().ref_str() == "Option"
             && let CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) = expanded_target.as_ref()
@@ -6722,7 +6821,38 @@ fn infer_wasm_evidence_in_scope(
           infer_inline_closure_result(ctx, &closure, &items.drop_left().to_vec(), local_types, closures, visiting)
         }
         Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Fn { .. } => {
-          let mut ev = infer_wasm_callable_result(ctx, expr, &items.drop_left().to_vec(), local_types, closures, visiting)?;
+          let aliased_proc = match head {
+            Calcit::Import(import) => {
+              let qualified = format!("{}/{}", import.ns, import.def);
+              if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "'" {
+                Some(CalcitProc::List)
+              } else if let Some(Calcit::Proc(proc)) = ctx.value_imports.get(&qualified) {
+                Some(*proc)
+              } else {
+                None
+              }
+            }
+            Calcit::Symbol { sym, info, .. }
+              if !local_types.contains_key(sym.as_ref())
+                && !ctx.locals.contains_key(sym.as_ref())
+                && !closures.contains_key(sym.as_ref()) =>
+            {
+              let qualified = format!("{}/{}", info.at_ns, sym);
+              if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == "'" {
+                Some(CalcitProc::List)
+              } else if let Some(Calcit::Proc(proc)) = ctx.value_imports.get(&qualified) {
+                Some(*proc)
+              } else {
+                None
+              }
+            }
+            _ => None,
+          };
+          if let Some(proc) = aliased_proc {
+            let mut rewritten = vec![Calcit::Proc(proc)];
+            rewritten.extend(items.iter().skip(1).cloned());
+            return infer_wasm_evidence_in_scope(ctx, &Calcit::from(rewritten), local_types, closures, visiting);
+          }
           let def_name = match head {
             Calcit::Import(import) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => Some(import.def.as_ref()),
             Calcit::Symbol { sym, info, .. }
@@ -6745,6 +6875,30 @@ fn infer_wasm_evidence_in_scope(
               }
             }
             _ => None,
+          };
+          let Some(mut ev) = infer_wasm_callable_result(ctx, expr, &items.drop_left().to_vec(), local_types, closures, visiting)
+            .or_else(|| {
+              matches!(def_name, Some("merge" | "merge-non-nil"))
+                .then(|| WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()))))
+            })
+          else {
+            if def_name == Some("dissoc")
+              && items.len() > 1
+              && let Some(base_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
+              && matches!(
+                expand_wasm_value_type(&base_ev.annotation).as_ref(),
+                CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::List(_)
+              )
+            {
+              return Some(WasmTypeEvidence {
+                annotation: base_ev.annotation,
+                codec_hint: None,
+                set_member_types: base_ev.set_member_types,
+                scalar_origin: None,
+                exact_impls: false,
+              });
+            }
+            return None;
           };
           if def_name == Some("pairs-map")
             && let Some(arg0) = items.get(1)
@@ -6849,12 +7003,28 @@ fn infer_wasm_evidence_in_scope(
                 combined.push(key_ty);
               }
             }
+            if def_name == Some("dissoc")
+              && nil_type_evidence_is_open(&ev.annotation)
+              && matches!(
+                expand_wasm_value_type(&base_ev.annotation).as_ref(),
+                CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::List(_)
+              )
+            {
+              ev.annotation = base_ev.annotation;
+            }
             ev.set_member_types = Some(combined);
           } else if matches!(def_name, Some("merge" | "merge-non-nil" | "union" | "difference" | "intersection")) && items.len() > 1 {
+            let is_map_op = matches!(def_name, Some("merge" | "merge-non-nil"));
+            let skip_rhs_nil = def_name == Some("merge-non-nil");
+            let mut joined_map: Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)> = None;
+            let mut map_types_known = is_map_op;
             let mut combined = Vec::new();
             let mut all_known = true;
-            for arg in items.iter().skip(1) {
+            for (arg_idx, arg) in items.iter().skip(1).enumerate() {
               if let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting) {
+                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev, skip_rhs_nil, arg_idx) {
+                  map_types_known = false;
+                }
                 if let Some(members) = arg_ev.set_member_types {
                   combined.extend(members);
                   continue;
@@ -6872,18 +7042,23 @@ fn infer_wasm_evidence_in_scope(
                 }
               }
               all_known = false;
+              map_types_known = false;
               break;
             }
             if all_known {
               if combined.is_empty() {
                 let never = crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone();
-                if matches!(def_name, Some("merge" | "merge-non-nil")) {
+                if is_map_op {
                   ev.annotation = Arc::new(CalcitTypeAnnotation::Map(never.clone(), never));
                 } else {
                   ev.annotation = Arc::new(CalcitTypeAnnotation::Set(never));
                 }
+              } else if map_types_known && let Some((k_ty, v_ty)) = joined_map {
+                ev.annotation = Arc::new(CalcitTypeAnnotation::Map(k_ty, v_ty));
               }
               ev.set_member_types = Some(combined);
+            } else if map_types_known && let Some((k_ty, v_ty)) = joined_map {
+              ev.annotation = Arc::new(CalcitTypeAnnotation::Map(k_ty, v_ty));
             }
           }
           Some(ev)
@@ -6954,14 +7129,30 @@ fn infer_wasm_evidence_in_scope(
               ) && all_elems_known
                 && !all_collection_members_known
                 && elem_types.iter().any(|e| !wasm_type_requires_scalar_specialization(e)))
-                || (matches!(static_ty.as_ref(), CalcitTypeAnnotation::Tuple(_)) && static_ty.contains_type_var() && all_elems_known);
+                || (matches!(
+                  static_ty.as_ref(),
+                  CalcitTypeAnnotation::Tuple(slots)
+                    if static_ty.contains_type_var()
+                      || slots.iter().any(|slot| nil_type_evidence_is_open(&expand_wasm_value_type(slot)))
+                ) && all_elems_known);
               if preserves_tuple_slots {
                 Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(elem_types)))
               } else if matches!(
                 static_ty.as_ref(),
-                CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Never)
+                CalcitTypeAnnotation::List(inner) if {
+                  let exp_inner = expand_wasm_value_type(inner);
+                  matches!(exp_inner.as_ref(), CalcitTypeAnnotation::Never)
+                    || nil_type_evidence_is_open(&exp_inner)
+                    || matches!(
+                      (exp_inner.as_ref(), elem_types.first().map(|e| e.as_ref())),
+                      (CalcitTypeAnnotation::List(list_elem), Some(CalcitTypeAnnotation::Tuple(_)))
+                        if nil_type_evidence_is_open(&expand_wasm_value_type(list_elem))
+                    )
+                }
               ) && all_elems_known
-                && elem_types.first().is_some_and(|first| elem_types.iter().all(|t| t == first))
+                && elem_types
+                  .first()
+                  .is_some_and(|first| !first.contains_type_var() && elem_types.iter().all(|t| t == first))
               {
                 Arc::new(CalcitTypeAnnotation::List(elem_types[0].clone()))
               } else {
@@ -7113,13 +7304,6 @@ fn infer_wasm_evidence_in_scope(
                   .unwrap_or_else(|| DYNAMIC_TYPE.clone())
               })
               .collect::<Vec<_>>();
-            let annotation = if items.len() == 1 {
-              let never = crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone();
-              Arc::new(CalcitTypeAnnotation::Map(never.clone(), never))
-            } else {
-              infer_static_type_from_expr(expr)
-                .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone())))
-            };
             let kv_pairs: Vec<(Calcit, Calcit)> = items
               .iter()
               .skip(1)
@@ -7127,6 +7311,38 @@ fn infer_wasm_evidence_in_scope(
               .cloned()
               .zip(items.iter().skip(2).step_by(2).cloned())
               .collect();
+            let never = crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone();
+            let annotation = if items.len() == 1 {
+              Arc::new(CalcitTypeAnnotation::Map(never.clone(), never))
+            } else {
+              let inferred_k = key_types.iter().fold(never.clone(), |acc, k| join_collection_slot_type(&acc, k));
+              let inferred_v = kv_pairs.iter().fold(never, |acc, (_, v_expr)| {
+                let val_ty = infer_wasm_evidence_in_scope(ctx, v_expr, local_types, closures, visiting)
+                  .map(|ev| CalcitTypeAnnotation::expand_schema_alias(&ev.annotation))
+                  .unwrap_or_else(|| DYNAMIC_TYPE.clone());
+                join_collection_slot_type(&acc, &val_ty)
+              });
+              let refine_slot = |static_slot: &Arc<CalcitTypeAnnotation>, inferred: &Arc<CalcitTypeAnnotation>| {
+                if (nil_type_evidence_is_open(&expand_wasm_value_type(static_slot)) || static_slot.contains_type_var())
+                  && !inferred.contains_type_var()
+                  && !nil_type_evidence_is_open(&expand_wasm_value_type(inferred))
+                {
+                  inferred.clone()
+                } else {
+                  static_slot.clone()
+                }
+              };
+              match infer_static_type_from_expr(expr) {
+                Some(static_ty) => match CalcitTypeAnnotation::expand_schema_alias(&static_ty).as_ref() {
+                  CalcitTypeAnnotation::Map(sk, sv) => Arc::new(CalcitTypeAnnotation::Map(
+                    refine_slot(sk, &inferred_k),
+                    refine_slot(sv, &inferred_v),
+                  )),
+                  _ => static_ty,
+                },
+                None => Arc::new(CalcitTypeAnnotation::Map(inferred_k, inferred_v)),
+              }
+            };
             let codec_hint = infer_literal_tag_map_codec_hint(ctx, &kv_pairs, &annotation, local_types, closures, visiting);
             return Some(WasmTypeEvidence {
               annotation,
@@ -7236,10 +7452,16 @@ fn infer_wasm_evidence_in_scope(
           ) && items.len() > 1
           {
             let is_map_op = matches!(proc, CalcitProc::NativeMerge | CalcitProc::NativeMergeNonNil);
+            let skip_rhs_nil = matches!(proc, CalcitProc::NativeMergeNonNil);
+            let mut joined_map: Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)> = None;
+            let mut map_types_known = is_map_op;
             let mut combined = Vec::new();
             let mut all_known = true;
-            for arg in items.iter().skip(1) {
+            for (arg_idx, arg) in items.iter().skip(1).enumerate() {
               if let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting) {
+                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev, skip_rhs_nil, arg_idx) {
+                  map_types_known = false;
+                }
                 if let Some(members) = arg_ev.set_member_types {
                   for ty in &members {
                     push_unique_member_type(&mut combined, ty);
@@ -7256,6 +7478,7 @@ fn infer_wasm_evidence_in_scope(
                 }
               }
               all_known = false;
+              map_types_known = false;
               break;
             }
             if all_known {
@@ -7266,6 +7489,8 @@ fn infer_wasm_evidence_in_scope(
                 } else {
                   Arc::new(CalcitTypeAnnotation::Set(never))
                 }
+              } else if map_types_known && let Some((k_ty, v_ty)) = joined_map {
+                Arc::new(CalcitTypeAnnotation::Map(k_ty, v_ty))
               } else {
                 infer_static_type_from_expr(expr).unwrap_or_else(|| {
                   if is_map_op {
@@ -7858,9 +8083,11 @@ fn infer_wasm_callable_result(
   closures: &HashMap<String, Arc<InlineClosure>>,
   visiting: &mut HashSet<String>,
 ) -> Option<WasmTypeEvidence> {
-  let mut declared = infer_static_type_from_expr(expr)?;
+  let static_declared = infer_static_type_from_expr(expr);
+  let mut declared = static_declared.clone().unwrap_or_else(|| DYNAMIC_TYPE.clone());
+  let mut inferred_from_signature = false;
   let Calcit::List(items) = expr else {
-    return Some(WasmTypeEvidence::contract(declared));
+    return static_declared.map(WasmTypeEvidence::contract);
   };
   if let Some(head) = items.first()
     && let Some(key) = direct_definition_reference(head)
@@ -7872,10 +8099,6 @@ fn infer_wasm_callable_result(
     let mut matched = true;
     for (index, argument) in args.iter().enumerate() {
       let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
-        matched = false;
-        break;
-      };
-      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, closures, visiting) else {
         matched = false;
         break;
       };
@@ -7896,6 +8119,10 @@ fn infer_wasm_callable_result(
           continue;
         }
       }
+      let Some(actual) = infer_wasm_evidence_in_scope(ctx, argument, locals, closures, visiting) else {
+        matched = false;
+        break;
+      };
       let actual_ty = actual.scalar_origin.as_ref().unwrap_or(&actual.annotation);
       if !prove_wasm_arg_bindings(actual_ty, expected, &mut bindings) {
         matched = false;
@@ -7915,16 +8142,16 @@ fn infer_wasm_callable_result(
           ))
       {
         declared = substituted;
+        inferred_from_signature = true;
       }
     }
   }
-  let fallback = WasmTypeEvidence::contract(declared.clone());
   if declared.resolve_to_enum().is_none()
     && declared.resolve_to_struct().is_none()
     && !matches!(declared.as_ref(), CalcitTypeAnnotation::AnonymousEnum)
     && !wasm_type_requires_scalar_specialization(&declared)
   {
-    return Some(fallback);
+    return (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared));
   }
   let (key, params, body, expected) = match items.first()? {
     Calcit::Fn { id, info } if info.scope.is_empty() && matches!(info.args.as_ref(), CalcitFnArgs::Args(_)) => (
@@ -7935,10 +8162,10 @@ fn infer_wasm_callable_result(
     ),
     head => {
       let Some(key) = direct_definition_reference(head) else {
-        return Some(fallback);
+        return (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared));
       };
       let Some(definition) = ctx.static_fn_defs.get(&key).filter(|definition| definition.fixed_arity) else {
-        return Some(fallback);
+        return (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared));
       };
       (
         key,
@@ -7949,12 +8176,16 @@ fn infer_wasm_callable_result(
     }
   };
   if params.len() != args.len() || expected.len() != args.len() || visiting.contains(&key) {
-    return Some(fallback);
+    return (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared));
   }
+  let mut body_closures = HashMap::new();
   let scope = (|| {
     let mut bindings = TypeBindings::new();
     let mut scope = HashMap::with_capacity(params.len());
     for ((name, argument), expected) in params.iter().zip(args).zip(&expected) {
+      if let Some(closure) = resolve_inline_closure_in_scope(ctx, argument, locals, closures) {
+        body_closures.insert(name.clone(), closure);
+      }
       let actual = infer_wasm_evidence_in_scope(ctx, argument, locals, closures, visiting)?;
       if !prove_wasm_arg_bindings(&actual.annotation, expected, &mut bindings) {
         return None;
@@ -7963,26 +8194,26 @@ fn infer_wasm_callable_result(
     }
     Some(scope)
   })();
-  let Some(scope) = scope else { return Some(fallback) };
-  let empty_closures = HashMap::new();
+  let Some(scope) = scope else {
+    return (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared));
+  };
   visiting.insert(key.clone());
   let inferred = body
     .iter()
     .rfind(|form| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(form))
-    .and_then(|tail| infer_wasm_evidence_in_scope(ctx, tail, &scope, &empty_closures, visiting));
+    .and_then(|tail| infer_wasm_evidence_in_scope(ctx, tail, &scope, &body_closures, visiting));
   visiting.remove(&key);
-  Some(
-    inferred
-      .filter(|actual| {
-        actual.annotation.is_proven_for(&declared)
-          || matches!(
-            (actual.annotation.as_ref(), declared.as_ref()),
-            (CalcitTypeAnnotation::Tuple(slots), CalcitTypeAnnotation::List(inner))
-              if slots.iter().all(|slot| slot.is_proven_for(inner))
-          )
-      })
-      .unwrap_or(fallback),
-  )
+  inferred
+    .filter(|actual| {
+      (static_declared.is_none() && !inferred_from_signature)
+        || actual.annotation.is_proven_for(&declared)
+        || matches!(
+          (actual.annotation.as_ref(), declared.as_ref()),
+          (CalcitTypeAnnotation::Tuple(slots), CalcitTypeAnnotation::List(inner))
+            if slots.iter().all(|slot| slot.is_proven_for(inner))
+        )
+    })
+    .or_else(|| (static_declared.is_some() || inferred_from_signature).then(|| WasmTypeEvidence::contract(declared)))
 }
 
 fn proven_scalar_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
@@ -10659,12 +10890,20 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     }
     CalcitProc::Not => {
       expect_arity(1, args, "not")?;
-      let v = ctx.alloc_local();
+      let ev = infer_wasm_evidence(ctx, &args[0]);
+      let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
+      let constant = scalar_truthiness_constant(&ty).ok().flatten();
       emit_expr(ctx, &args[0])?;
-      ctx.emit(Instruction::LocalSet(v));
-      emit_value_is_truthy_i32(ctx, v);
-      ctx.emit(Instruction::I32Eqz);
-      ctx.emit(Instruction::F64ConvertI32U);
+      if let Some(truthy) = constant {
+        ctx.emit(Instruction::Drop);
+        ctx.emit(f64_const(if truthy { 0.0 } else { 1.0 }));
+      } else {
+        let v = ctx.alloc_local();
+        ctx.emit(Instruction::LocalSet(v));
+        emit_value_is_truthy_i32(ctx, v);
+        ctx.emit(Instruction::I32Eqz);
+        ctx.emit(Instruction::F64ConvertI32U);
+      }
       Ok(())
     }
 
@@ -12512,7 +12751,97 @@ fn fixed_list_slots_are_statically_disjoint(
   })
 }
 
+fn is_safe_heap_type_against_open_dynamic(annotation: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  if depth >= 32 {
+    return false;
+  }
+  let expanded = expand_wasm_value_type(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Never | CalcitTypeAnnotation::String | CalcitTypeAnnotation::Buffer => true,
+    CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::StructValue(_)
+    | CalcitTypeAnnotation::Enum(_, _)
+    | CalcitTypeAnnotation::EnumValue(_)
+    | CalcitTypeAnnotation::TypeRef(_, _) => {
+      if let Some(def) = expanded.resolve_to_struct() {
+        if def.generics.is_empty() {
+          def
+            .field_types
+            .iter()
+            .all(|field| !sets::set_comparison_can_erase_kind(field, field, depth + 1))
+        } else {
+          resolved_struct_fields_for_annotation(&expanded)
+            .is_some_and(|fields| fields.iter().all(|(_, ty)| is_safe_heap_type_against_open_dynamic(ty, depth + 1)))
+        }
+      } else if let Some(def) = expanded.resolve_to_enum() {
+        if def.generics().is_empty() {
+          def.variants().iter().all(|variant| {
+            variant
+              .payload_types()
+              .iter()
+              .all(|payload| !sets::set_comparison_can_erase_kind(payload, payload, depth + 1))
+          })
+        } else {
+          let type_args: &[Arc<CalcitTypeAnnotation>] = match expanded.as_ref() {
+            CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args.as_slice(),
+            _ => &[],
+          };
+          if type_args.len() != def.generics().len() {
+            return false;
+          }
+          let bindings: TypeBindings = def.generics().iter().cloned().zip(type_args.iter().cloned()).collect();
+          def.variants().iter().all(|variant| {
+            variant.payload_types().iter().all(|payload| {
+              let substituted = expand_wasm_value_type(&payload.substitute_type_vars(&bindings));
+              is_safe_heap_type_against_open_dynamic(&substituted, depth + 1)
+            })
+          })
+        }
+      } else {
+        false
+      }
+    }
+    CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) => is_safe_heap_type_against_open_dynamic(inner, depth + 1),
+    CalcitTypeAnnotation::Tuple(slots) => slots.iter().all(|slot| is_safe_heap_type_against_open_dynamic(slot, depth + 1)),
+    CalcitTypeAnnotation::Map(key, value) => {
+      is_safe_heap_type_against_open_dynamic(key, depth + 1) && is_safe_heap_type_against_open_dynamic(value, depth + 1)
+    }
+    _ => false,
+  }
+}
+
 fn list_element_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  use CalcitTypeAnnotation as T;
+
+  if depth >= 32 {
+    return false;
+  }
+  let left = expand_wasm_value_type(left);
+  let right = expand_wasm_value_type(right);
+  if matches!(left.as_ref(), T::Never) || matches!(right.as_ref(), T::Never) {
+    return false;
+  }
+  if (nil_type_evidence_is_open(&left) && !is_safe_heap_type_against_open_dynamic(&right, depth + 1))
+    || (nil_type_evidence_is_open(&right) && !is_safe_heap_type_against_open_dynamic(&left, depth + 1))
+  {
+    return true;
+  }
+  if let (Some(l), Some(r)) = (proven_scalar_kind(&left), proven_scalar_kind(&right)) {
+    return l != r && !matches!((l, r), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
+  }
+  let cmp = |a: &Arc<T>, b: &Arc<T>| list_element_types_have_scalar_collision(a, b, depth + 1);
+  match (left.as_ref(), right.as_ref()) {
+    (T::Nullable(inner, NullableOrigin::Inferred), _) => cmp(inner, &right) || cmp(&Arc::new(T::Nil), &right),
+    (_, T::Nullable(inner, NullableOrigin::Inferred)) => cmp(&left, inner) || cmp(&left, &Arc::new(T::Nil)),
+    (T::List(l), T::List(r)) | (T::Set(l), T::Set(r)) => cmp(l, r),
+    (T::Tuple(ls), T::Tuple(rs)) => ls.len() == rs.len() && ls.iter().zip(rs.iter()).any(|(l, r)| cmp(l, r)),
+    (T::List(m), T::Tuple(slots)) | (T::Tuple(slots), T::List(m)) => slots.iter().any(|slot| cmp(m, slot)),
+    (T::Map(lk, lv), T::Map(rk, rv)) => cmp(lk, rk) || cmp(lv, rv),
+    _ => false,
+  }
+}
+
+fn concrete_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
   use CalcitTypeAnnotation as T;
 
   if depth >= 32 {
@@ -12526,7 +12855,29 @@ fn list_element_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, ri
   if let (Some(l), Some(r)) = (proven_scalar_kind(&left), proven_scalar_kind(&right)) {
     return l != r && !matches!((l, r), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
   }
-  let cmp = |a: &Arc<T>, b: &Arc<T>| list_element_types_have_scalar_collision(a, b, depth + 1);
+  let cmp = |a: &Arc<T>, b: &Arc<T>| concrete_types_have_scalar_collision(a, b, depth + 1);
+  if let (Some(ld), Some(rd)) = (left.resolve_to_enum(), right.resolve_to_enum()) {
+    if enum_identity_tag(&ld) != enum_identity_tag(&rd) {
+      return false;
+    }
+    fn extract_args(ty: &CalcitTypeAnnotation) -> &[Arc<CalcitTypeAnnotation>] {
+      match ty {
+        T::Enum(_, args) | T::TypeRef(_, args) => args.as_slice(),
+        _ => &[],
+      }
+    }
+    let l_bindings: TypeBindings = ld.generics().iter().cloned().zip(extract_args(&left).iter().cloned()).collect();
+    let r_bindings: TypeBindings = rd.generics().iter().cloned().zip(extract_args(&right).iter().cloned()).collect();
+    return ld.variants().iter().zip(rd.variants().iter()).any(|(lv, rv)| {
+      lv.tag == rv.tag
+        && lv.payload_types().len() == rv.payload_types().len()
+        && lv.payload_types().iter().zip(rv.payload_types().iter()).any(|(lp, rp)| {
+          let l_sub = expand_wasm_value_type(&lp.substitute_type_vars(&l_bindings));
+          let r_sub = expand_wasm_value_type(&rp.substitute_type_vars(&r_bindings));
+          cmp(&l_sub, &r_sub)
+        })
+    });
+  }
   match (left.as_ref(), right.as_ref()) {
     (T::Nullable(inner, NullableOrigin::Inferred), _) => cmp(inner, &right) || cmp(&Arc::new(T::Nil), &right),
     (_, T::Nullable(inner, NullableOrigin::Inferred)) => cmp(&left, inner) || cmp(&left, &Arc::new(T::Nil)),
@@ -12680,6 +13031,12 @@ fn validate_wasm_equality_operands(
           right_type.to_brief_string()
         ));
       }
+    } else if left_kind == "enum" && concrete_types_have_scalar_collision(&left_type, &right_type, 0) {
+      return Err(format!(
+        "E_WASM_NIL_TYPE_EVIDENCE: {op_name} requires statically non-colliding enum payload types in the current scalar ABI, found `{}` and `{}`",
+        left_type.to_brief_string(),
+        right_type.to_brief_string()
+      ));
     }
     return Ok(None);
   }
@@ -12710,7 +13067,7 @@ fn validate_wasm_equality_operands(
     return Ok(None);
   }
 
-  if sets::is_proven_non_scalar_heap_type(&left_type) || sets::is_proven_non_scalar_heap_type(&right_type) {
+  if is_safe_heap_type_against_open_dynamic(&left_type, 0) || is_safe_heap_type_against_open_dynamic(&right_type, 0) {
     if matches!(left_type.as_ref(), CalcitTypeAnnotation::Set(_)) {
       sets::check_set_union_types(ctx, left_expr, left_expr)?;
     }
@@ -18722,10 +19079,27 @@ mod tests {
     let num_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Number)));
     let bool_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Bool)));
     let nil_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), Arc::new(CalcitTypeAnnotation::Nil)));
-    let list_map = Arc::new(CalcitTypeAnnotation::Map(
-      tag_ty,
-      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    let str_ty = Arc::new(CalcitTypeAnnotation::String);
+    let num_ty = Arc::new(CalcitTypeAnnotation::Number);
+    let dyn_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), super::DYNAMIC_TYPE.clone()));
+    let tag_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), tag_ty.clone()));
+    let str_map = Arc::new(CalcitTypeAnnotation::Map(str_ty.clone(), str_ty.clone()));
+    let list_num = Arc::new(CalcitTypeAnnotation::List(num_ty.clone()));
+    let list_dyn = Arc::new(CalcitTypeAnnotation::List(super::DYNAMIC_TYPE.clone()));
+    let list_str = Arc::new(CalcitTypeAnnotation::List(str_ty.clone()));
+    let option_enum = super::tests_option_enum_def_for_codec();
+    let opt_str = Arc::new(CalcitTypeAnnotation::Enum(option_enum.clone(), Arc::new(vec![str_ty])));
+    let opt_num = Arc::new(CalcitTypeAnnotation::Enum(option_enum.clone(), Arc::new(vec![num_ty])));
+    let opt_bool = Arc::new(CalcitTypeAnnotation::Enum(
+      option_enum.clone(),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Bool)]),
     ));
+    let opt_never = Arc::new(CalcitTypeAnnotation::Enum(
+      option_enum,
+      Arc::new(vec![crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone()]),
+    ));
+    let list_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), list_num.clone()));
+    let list_str_map = Arc::new(CalcitTypeAnnotation::Map(tag_ty, list_str.clone()));
 
     assert!(super::map_value_types_have_scalar_collision(
       &WasmTypeEvidence::contract(num_map.clone()),
@@ -18735,12 +19109,24 @@ mod tests {
       &WasmTypeEvidence::contract(num_map.clone()),
       &WasmTypeEvidence::contract(nil_map.clone()),
     ));
+    assert!(super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(dyn_map.clone()),
+      &WasmTypeEvidence::contract(num_map.clone()),
+    ));
+    assert!(super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(dyn_map.clone()),
+      &WasmTypeEvidence::contract(tag_map.clone()),
+    ));
+    assert!(!super::map_value_types_have_scalar_collision(
+      &WasmTypeEvidence::contract(dyn_map.clone()),
+      &WasmTypeEvidence::contract(list_str_map),
+    ));
     assert!(!super::map_value_types_have_scalar_collision(
       &WasmTypeEvidence::contract(list_map.clone()),
       &WasmTypeEvidence::contract(num_map.clone()),
     ));
 
-    let mut ctx = WasmGenCtx::new(4, env);
+    let mut ctx = WasmGenCtx::new(9, env);
     let mk_local = |idx, name, ty| {
       Calcit::Local(CalcitLocal {
         idx,
@@ -18754,12 +19140,40 @@ mod tests {
     let m_bool = mk_local(1, "m-bool", bool_map);
     let m_nil = mk_local(2, "m-nil", nil_map);
     let m_list = mk_local(3, "m-list", list_map);
+    let m_dyn = mk_local(4, "m-dyn", dyn_map);
+    let dyn_val = mk_local(5, "dyn-val", super::DYNAMIC_TYPE.clone());
+    let l_num = mk_local(6, "l-num", list_num);
+    let l_dyn = mk_local(7, "l-dyn", list_dyn);
+    let l_str = mk_local(8, "l-str", list_str);
+    let s_str = mk_local(9, "s-str", Arc::new(CalcitTypeAnnotation::String));
+    let m_tag = mk_local(10, "m-tag", tag_map);
+    let m_str = mk_local(11, "m-str", str_map);
+    let o_str = mk_local(12, "o-str", opt_str);
+    let o_num = mk_local(13, "o-num", opt_num);
+    let o_bool = mk_local(14, "o-bool", opt_bool);
+    let o_never = mk_local(15, "o-never", opt_never);
 
-    for (lhs, rhs) in [(&m_num, &m_bool), (&m_num, &m_nil)] {
-      let err = super::validate_wasm_equality_operands(&mut ctx, lhs, rhs, "=").expect_err("colliding map values must be rejected");
+    for (lhs, rhs) in [
+      (&m_num, &m_bool),
+      (&m_num, &m_nil),
+      (&m_dyn, &m_num),
+      (&l_dyn, &l_num),
+      (&dyn_val, &l_num),
+      (&dyn_val, &m_tag),
+      (&dyn_val, &o_num),
+      (&o_bool, &o_num),
+    ] {
+      let err =
+        super::validate_wasm_equality_operands(&mut ctx, lhs, rhs, "=").expect_err("colliding container values must be rejected");
       assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "{err}");
     }
     super::validate_wasm_equality_operands(&mut ctx, &m_num, &m_num, "=").expect("homogeneous Number maps are safe");
     super::validate_wasm_equality_operands(&mut ctx, &m_list, &m_num, "=").expect("heap List values do not collide with Number values");
+    super::validate_wasm_equality_operands(&mut ctx, &dyn_val, &s_str, "=").expect("Dynamic vs String is safe");
+    super::validate_wasm_equality_operands(&mut ctx, &dyn_val, &l_str, "=").expect("Dynamic vs List<String> is safe");
+    super::validate_wasm_equality_operands(&mut ctx, &dyn_val, &m_str, "=").expect("Dynamic vs Map<String,String> is safe");
+    super::validate_wasm_equality_operands(&mut ctx, &dyn_val, &o_str, "=").expect("Dynamic vs Option<String> is safe");
+    super::validate_wasm_equality_operands(&mut ctx, &o_num, &o_num, "=").expect("Option<Number> vs Option<Number> is safe");
+    super::validate_wasm_equality_operands(&mut ctx, &o_never, &o_num, "=").expect("Option<Never> vs Option<Number> is safe");
   }
 }
