@@ -118,7 +118,7 @@
             :tags $ #{} :core :unit
         '&<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote $ defn &<= (a b)
-            assert "|expects numbers for &<=" $ if (number? a) (number? b)
+            assert "|expects numbers for &<=" $ and (number? a) (number? b)
             if (&< a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &<= 3 5
@@ -140,7 +140,7 @@
           :tags $ #{} :builtin :internal
         '&>= $ %{} 'CodeEntry (:doc "|Greater than or equal comparison for two values")
           :code $ quote $ defn &>= (a b)
-            assert "|expects numbers for &>=" $ if (number? a) (number? b)
+            assert "|expects numbers for &>=" $ and (number? a) (number? b)
             if (&> a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &>= 5 3
@@ -228,8 +228,7 @@
                 buf $ &buf-list:new
               assert-type buf BufList
               assert= :buf-list $ type-of buf
-              assert= 1 $ if buf 1 0
-              assert= 1 $ if (&buf-list:push buf 1) 1 0
+              &buf-list:push buf 1
               &buf-list:concat buf $ [] |x
               let
                   frozen $ &buf-list:to-list buf
@@ -2851,7 +2850,7 @@
             :tags $ #{} :core :unit
         '&max $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &max (a b)
-            assert "|expects numbers for &max" $ if (number? a) (number? b)
+            assert "|expects numbers for &max" $ and (number? a) (number? b)
             if (&> a b) a b
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
@@ -2882,7 +2881,7 @@
           :tags $ #{} :builtin :internal
         '&min $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &min (a b)
-            assert "|expects numbers for &min" $ if (number? a) (number? b)
+            assert "|expects numbers for &min" $ and (number? a) (number? b)
             if (&< a b) a b
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
@@ -4653,30 +4652,21 @@
                 assert= 8 $ deref observed
               :tags $ #{} :core :open-callback-input :state :unit
         'and $ %{} 'CodeEntry
-          :doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right."
-          :code $ quote $ defmacro and (& xs)
-            if (&list:empty? xs) (raise "|and expects at least 1 expression")
-            &let
-              item $ &list:nth xs 0
-              &let
-                rest-xs $ &list:rest xs
-                if (&list:empty? rest-xs)
-                  if (list? item)
-                    &let
-                      v1# $ gensym |v1
-                      quasiquote $ &let (~v1# ~item) (if ~v1# ~v1# false)
-                    quasiquote $ if ~item ~item false
-                  quasiquote $ if ~item
-                    and
-                      ~ $ &list:nth rest-xs 0
-                      ~@ $ &list:rest rest-xs
-                    , false
+          :doc "|Logical conjunction macro for Bool expressions with left-to-right short-circuit evaluation.\nReturns true when every condition evaluates to true, false otherwise. Rejects non-Bool conditions statically and at runtime."
+          :code $ quote $ defmacro and (item & xs)
+            if (&list:empty? xs)
+              quasiquote $ if ~item true false
+              quasiquote $ if ~item
+                and
+                  ~ $ &list:nth xs 0
+                  ~@ $ &list:rest xs
+                , false
           :examples $ []
             quote $ assert= false $ and true false true
-            quote $ assert= |done $ and true |done
-          :schema $ quote $ Macro
-            & $ Expr Dynamic
-            -> $ Expr Dynamic
+            quote $ assert= true $ and (&> 3 1) (&< 1 2)
+          :schema $ quote $ Macro (Expr Bool)
+            & $ Expr Bool
+            -> $ Expr Bool
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |bool-operands-infer-bool)
@@ -4685,47 +4675,66 @@
                 assert-type both Bool
                 assert= true both
               :tags $ #{} :core :types :unit
-            %{} 'TestEntry (:name |chains-truthy-and-falls-to-false)
+            %{} 'TestEntry (:name |rejects-non-bool-operands-at-runtime)
+              :code $ quote $ let
+                  as-bool $ fn (v)
+                    hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                    unsafe-coerce v Bool
+                assert= true $ try
+                  &let ()
+                    and (as-bool 0) true
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    and (as-bool nil) true
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    and true $ as-bool |text
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    and $ as-bool &unit
+                    , false
+                  fn (_e) true
+              :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |evaluates-bool-conjunction)
               :code $ quote $ do
-                assert= 1 $ and 1
-                assert= false $ and nil
-                assert= false $ and 1 nil
-                assert= false $ and nil 1
-                assert= 1 $ and 1 1
-                assert= 1 $ and 1 1 1
-                assert= false $ and 1 1 nil
-                assert= false $ and nil 1 1
+                assert= true $ and true
+                assert= false $ and false
                 assert= true $ and (&> 10 9) (&> 10 8)
                 assert= false $ and (&> 10 11) (&> 10 8)
                 assert= false $ and (&> 10 9) (&> 10 11)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry
-              :name |zero-empty-and-falsey-values-preserve-existing-contract
-              :code $ quote $ do
-                assert= 0 $ and true 0
-                assert= | $ and 0 |
-                assert= |done $ and 0 | |done
-                assert= false $ and nil $ raise |unselected
                 assert= false $ and false $ raise |unselected
-                assert= false $ and &unit $ raise |unselected
+                assert= true $ and true true true
+                assert= false $ and true false $ raise |unselected
               :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |short-circuit-and-original-value-identity)
+            %{} 'TestEntry (:name |short-circuits-side-effects)
               :code $ quote $ let
                   effects $ ref 0
-                  original $ ref 7
-                assert= |done $ and
-                  let ()
+                  hit $ fn ()
                     reset! effects $ inc $ deref effects
-                    , 0
-                  , |done
-                assert= 1 $ deref effects
-                assert= true $ identical? original $ and true original
+                    , true
+                  miss $ fn ()
+                    reset! effects $ inc $ deref effects
+                    , false
+                assert= true $ and (hit) (hit)
+                assert= 2 $ deref effects
+                assert= false $ and (miss) (hit)
+                assert= 3 $ deref effects
               :tags $ #{} :core :truthiness :unit
         'any? $ %{} 'CodeEntry
           :doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation"
           :code $ quote $ defn any? (xs f)
             &list:foldl-shortcut xs false false $ defn %any? (acc x)
-              if (f x) (:: true true) (:: false acc)
+              &let
+                matched $ f x
+                if (bool? matched)
+                  if matched (:: true true) (:: false acc)
+                  raise "|any? predicate must return Bool"
           :examples $ []
             quote $ assert= true $ any? ([] 1 2 3 4) even?
             quote $ assert= false $ any? ([] 1 3 5 7) even?
@@ -4868,7 +4877,7 @@
                 assert= 3 $ deref state
               :tags $ #{} :core :count-contract :unit
         'assert $ %{} 'CodeEntry
-          :doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success."
+          :doc "|Assert that a Bool expression evaluates to true, raise with a message when false, and return Unit on success."
           :code $ quote $ defmacro assert (message xs)
             if
               if (string? xs)
@@ -5172,6 +5181,21 @@
                   &{} :a $ &{} :b $ &{} :c 10
                   assoc-in nil ([] :a :b :c) 10
                 assert= 9 $ assoc-in (&{}) ([]) 9
+                assert=
+                  &{} 7 $ &{} 0 42
+                  assoc-in
+                    assert-type ({})
+                      Map Number $ List Number
+                    [] 7 0
+                    , 42
+                assert=
+                  &{} 7 $ [] 42 20
+                  assoc-in
+                    assert-type
+                      &{} 7 $ [] 10 20
+                      Map Number $ List Number
+                    [] 7 0
+                    , 42
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |open-map-write-keeps-root-and-siblings)
               :code $ quote $ let
@@ -8130,7 +8154,11 @@
           :doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure."
           :code $ quote $ defn every? (xs f)
             &list:foldl-shortcut xs true true $ defn %every? (acc x)
-              if (f x) (:: false acc) (:: true false)
+              &let
+                matched $ f x
+                if (bool? matched)
+                  if matched (:: false acc) (:: true false)
+                  raise "|every? predicate must return Bool"
           :examples $ []
             quote $ assert= true $ every? ([] 2 4 6)
               defn %even (x)
@@ -9274,7 +9302,7 @@
                     ref $ {} $ 1
                       {} $ :status :active
                     Ref $ Map Number $ Map Tag Dynamic
-                assert= :active $ when
+                assert= &unit $ when
                   = :active $ option:unwrap $ get
                     option:unwrap $ get @states 1
                     , :status
@@ -9926,7 +9954,7 @@
               assert= 1 $ f1 1
             :tags $ #{} :core :unit
         'if $ %{} 'CodeEntry
-          :doc "|Conditional syntax. Only nil, false and Unit select the else branch; all other values, including zero and empty String, select the then branch. Evaluates the condition once and only the selected branch. Missing else returns nil."
+          :doc "|Conditional syntax requiring a Bool condition: only true selects the then branch and only false selects the else branch (or nil in 2-arg form when evaluated). Evaluates the condition once and only the selected branch."
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ if (> x 0) |positive |non-positive
@@ -9934,48 +9962,6 @@
           :schema $ quote Dynamic
           :tags $ #{} :builtin :internal :syntax
           :tests $ []
-            %{} 'TestEntry (:name |only-nil-false-unit-select-else)
-              :code $ quote $ do
-                assert= |no $ if nil |yes |no
-                assert= |no $ if false |yes |no
-                assert= |no $ if &unit |yes |no
-              :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |zero-empty-and-nominal-values-select-then)
-              :code $ quote $ do
-                assert= |yes $ if true |yes |no
-                assert= |yes $ if 0 |yes |no
-                assert= |yes $ if -0 |yes |no
-                assert= |yes $ if | |yes |no
-                assert= |yes $ if -2 |yes |no
-                assert= |yes $ if |text |yes |no
-                assert= |yes $ if :tag |yes |no
-                assert= |yes $ if ([]) |yes |no
-                assert= |yes $ if ({}) |yes |no
-                assert= |yes $ if (#{}) |yes |no
-                assert= |yes $ if None |yes |no
-                assert= |yes $ if (Result :err |failure) |yes |no
-              :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |open-values-have-the-same-truthiness)
-              :code $ quote $ let
-                  choose $ fn (condition)
-                    hint-fn $ Fn Dynamic $ -> String
-                    if condition |yes |no
-                assert= |no $ choose nil
-                assert= |no $ choose false
-                assert= |no $ choose &unit
-                assert= |yes $ choose true
-                assert= |yes $ choose 0
-                assert= |yes $ choose -0
-                assert= |yes $ choose |
-                assert= |yes $ choose -2
-                assert= |yes $ choose |text
-                assert= |yes $ choose :tag
-                assert= |yes $ choose $ []
-                assert= |yes $ choose $ {}
-                assert= |yes $ choose $ #{}
-                assert= |yes $ choose None
-                assert= |yes $ choose $ Result :err |failure
-              :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |typed-bool-conditions-preserve-both-branches)
               :code $ quote $ let
                   choose $ fn (condition)
@@ -9988,12 +9974,12 @@
             %{} 'TestEntry (:name |nested-expression-and-tail-conditions)
               :code $ quote $ let
                   tail $ fn (x)
-                    hint-fn $ Fn Dynamic $ -> String
+                    hint-fn $ Fn Bool $ -> String
                     if false |wrong $ if x |yes |no
-                  expression $ if false |wrong $ if 0 |yes |no
+                  expression $ if false |wrong $ if (&= 1 1) |yes |no
                 assert= |yes expression
-                assert= |yes $ tail 0
-                assert= |no $ tail &unit
+                assert= |yes $ tail true
+                assert= |no $ tail false
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry
               :name |condition-evaluates-once-and-only-one-branch-runs
@@ -10002,14 +9988,14 @@
                 assert= |yes $ if
                   let ()
                     reset! effects $ .append (deref effects) |condition
-                    , 0
+                    , true
                   let ()
                     reset! effects $ .append (deref effects) |then
                     , |yes
                   raise |unselected
                 assert= ([] |start |condition |then) (deref effects)
-                assert= |no $ if &unit (raise |unselected) |no
-                assert= nil $ if &unit $ raise |unselected
+                assert= |no $ if false (raise |unselected) |no
+                assert= nil $ if false $ raise |unselected
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |condition-and-selected-branch-errors-propagate)
               :code $ quote $ do
@@ -10017,127 +10003,53 @@
                   if (raise |condition-failure) |yes |no
                   fn (message) message
                 assert= |then-failure $ try
-                  if 0 (raise |then-failure) |no
+                  if (&= 1 1) (raise |then-failure) |no
                   fn (message) message
                 assert= |else-failure $ try
-                  if &unit |yes $ raise |else-failure
+                  if (&= 1 2) |yes $ raise |else-failure
                   fn (message) message
               :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |direct-unsafe-bool-keeps-runtime-truthiness)
+            %{} 'TestEntry (:name |narrows-non-nil-and-bool-predicates)
               :code $ quote $ let
-                  choose $ fn (condition)
-                    hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
-                    if (unsafe-coerce condition Bool) |yes |no
-                assert= |no $ choose nil
-                assert= |no $ choose false
-                assert= |no $ choose &unit
-                assert= |yes $ choose true
-                assert= |yes $ choose 0
-                assert= |yes $ choose -0
-                assert= |yes $ choose |
-                assert= |yes $ let
-                    choose-expression $ fn (condition)
-                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
-                      let
-                          result $ if (unsafe-coerce condition Bool) |yes |no
-                        , result
-                  choose-expression 0
-                let
-                    choose-local $ fn (condition)
-                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
-                      let
-                          flag $ unsafe-coerce condition Bool
-                        if flag |yes |no
-                    choose-nested $ fn (condition)
-                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
-                      if
-                        let
-                            flag $ unsafe-coerce condition Bool
-                          , flag
-                        , |yes |no
-                    choose-producer $ fn (condition)
-                      hint-fn $ Fn Dynamic (-> String) (:features :js-ffi)
-                      let
-                          as-bool $ fn (condition)
-                            hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
-                            unsafe-coerce condition Bool
-                        if (as-bool condition) |yes |no
-                  assert= |yes $ choose-local 0
-                  assert= |yes $ choose-local |
-                  assert= |no $ choose-local false
-                  assert= |no $ choose-local &unit
-                  assert= |yes $ choose-nested 0
-                  assert= |yes $ choose-nested |
-                  assert= |no $ choose-nested false
-                  assert= |no $ choose-nested &unit
-                  assert= |yes $ choose-producer 0
-                  assert= |yes $ choose-producer |
-                  assert= |no $ choose-producer false
-                  assert= |no $ choose-producer &unit
+                  describe-bool $ fn (x)
+                    hint-fn $ Fn Dynamic $ -> String
+                    if (bool? x) (if x |true |false) |other
+                  describe-text $ fn (flag)
+                    hint-fn $ Fn Bool $ -> String
+                    let
+                        maybe $ if flag |ok nil
+                      if (non-nil? maybe) (&str:concat maybe |!) |none
+                assert= |true $ describe-bool true
+                assert= |false $ describe-bool false
+                assert= |other $ describe-bool 0
+                assert= |ok! $ describe-text true
+                assert= |none $ describe-text false
               :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |typed-number-conditions-are-truthy)
+            %{} 'TestEntry (:name |rejects-non-bool-conditions-at-runtime)
               :code $ quote $ let
-                  choose-number $ fn (value)
-                    hint-fn $ Fn Number $ -> String
-                    if value |yes |no
-                  choose-alias $ fn (value)
-                    hint-fn $ Fn Number $ -> String
-                    let
-                        alias value
-                      if alias |yes |no
-                  erase-refinement $ fn (value)
-                    hint-fn $ Fn UInt32 (-> Number) (:features :js-ffi)
-                    unsafe-coerce value Number
-                assert= |yes $ choose-number 0
-                assert= |yes $ choose-alias 0
-                assert= |yes $ choose-number -0
-                assert= |yes $ choose-alias -0
-                assert= |yes $ choose-number 7
-                assert= |yes $ choose-alias 7
-                assert= |yes $ choose-number -7
-                assert= |yes $ choose-alias -7
-                assert= |yes $ choose-number $ &/ 0 0
-                assert= |yes $ choose-alias $ &/ 0 0
-                assert= |yes $ choose-number $ &/ 1 0
-                assert= |yes $ choose-alias $ &/ 1 0
-                assert= |yes $ choose-number $ &/ -1 0
-                assert= |yes $ choose-alias $ &/ -1 0
-                assert= 0 $ erase-refinement $ assert-type 0 UInt32
-                assert= |yes $ if
-                  erase-refinement $ assert-type 0 UInt32
-                  , |yes |no
-                assert= 7 $ erase-refinement $ assert-type 7 UInt32
-                assert= |yes $ if
-                  erase-refinement $ assert-type 7 UInt32
-                  , |yes |no
-                assert= 4294967295 $ erase-refinement $ assert-type 4294967295 UInt32
-                assert= |yes $ if
-                  erase-refinement $ assert-type 4294967295 UInt32
-                  , |yes |no
-              :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |nullable-bool-and-text-conditions)
-              :code $ quote $ let
-                  choose-bool $ fn (present value)
-                    hint-fn $ Fn Bool Bool $ -> String
-                    let
-                        maybe $ when present value
-                      if maybe |yes |no
-                  choose-text $ fn (present value)
-                    hint-fn $ Fn Bool String $ -> String
-                    let
-                        maybe $ when present value
-                      if maybe |yes |no
-                assert= |no $ choose-bool false true
-                assert= |no $ choose-bool true false
-                assert= |yes $ choose-bool true true
-                assert= |no $ choose-text false |text
-                assert= |yes $ choose-text true |
-                assert= |yes $ choose-text true |text
-              :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |function-and-definition-values-are-truthy)
-              :code $ quote $ do
-                assert= |yes $ if inc |yes |no
-                assert= |yes $ if MapEntry |yes |no
+                  as-bool $ fn (v)
+                    hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                    unsafe-coerce v Bool
+                assert= true $ try
+                  &let ()
+                    if (as-bool nil) |yes |no
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    if (as-bool &unit) |yes |no
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    if (as-bool 0) |yes |no
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    if (as-bool |) |yes |no
+                    , false
+                  fn (_e) true
               :tags $ #{} :core :truthiness :unit
         'if-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
@@ -10169,28 +10081,41 @@
                 present $ assert-type (Some 1) (Option Dynamic)
               assert= 1 $ if-let (value present) value 0
             :tags $ #{} :core :unit
-        'if-not $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defmacro if-not (& xs)
+        'if-not $ %{} 'CodeEntry
+          :doc "|Negated conditional macro: requires a Bool condition. With 3 arguments, evaluates else when true and then when false; with 2 arguments, evaluates then when false and returns &unit (Unit)."
+          :code $ quote $ defmacro if-not (condition true-branch & rest-branches)
             if
-              not $ or
-                &= 2 $ &list:count xs
-                &= 3 $ &list:count xs
-              raise $ str-spaced "|if-not expects (condition then) or (condition then else), got:" xs
-            &let
-              condition $ &list:nth xs 0
+              &> (&list:count rest-branches) 1
+              raise $ str-spaced "|if-not expects (condition then) or (condition then else), got:" rest-branches
+            if (&list:empty? rest-branches)
+              quasiquote $ if ~condition &unit $ &let () ~true-branch &unit
               &let
-                true-branch $ &list:nth xs 1
-                &let
-                  false-branch $ if
-                    &= 3 $ &list:count xs
-                    &list:nth xs 2
-                    quote nil
-                  quasiquote $ if ~condition ~false-branch ~true-branch
+                false-branch $ &list:nth rest-branches 0
+                quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
-          :schema $ quote $ Macro
+            quote $ assert= 1 $ if-not false 1 2
+            quote $ assert= &unit $ if-not true 1
+          :schema $ quote $ Macro (Expr Bool) (Expr Dynamic)
             & $ Expr Dynamic
             -> $ Expr Dynamic
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |strict-bool-and-unit-two-arg)
+              :code $ quote $ do
+                assert= 2 $ if-not true (raise |unselected) 2
+                assert= 1 $ if-not false 1 $ raise |unselected
+                assert= &unit $ if-not true $ raise |unselected
+                assert= &unit $ if-not false 1
+                assert-type (if-not false 1) Unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-side-effects)
+              :code $ quote $ let
+                  effects $ ref 0
+                assert= &unit $ if-not false $ reset! effects 1
+                assert= 1 $ deref effects
+                assert= &unit $ if-not true $ reset! effects 9
+                assert= 1 $ deref effects
+              :tags $ #{} :core :unit
         'impl-origin $ %{} 'CodeEntry
           :doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none."
           :code $ quote $ defn impl-origin (impl) (&impl:origin impl)
@@ -11385,9 +11310,6 @@
                   from-nil-join $ fn (x)
                     hint-fn $ Fn Number $ -> (Option String)
                     nil->option $ if (> x 0) |pos nil
-                  from-when $ fn (x)
-                    hint-fn $ Fn Number $ -> (Option String)
-                    nil->option $ when (> x 0) |pos
                   from-do-nil $ fn (x)
                     hint-fn $ Fn Number $ -> (Option String)
                     nil->option $ if (> x 0) |pos $ do nil
@@ -11400,8 +11322,6 @@
                 assert= None $ explicit-option -1
                 assert= (Some |pos) (from-nil-join 2)
                 assert= None $ from-nil-join -2
-                assert= (Some |pos) (from-when 3)
-                assert= None $ from-when -3
                 assert= (Some |pos) (from-do-nil 4)
                 assert= None $ from-do-nil -4
                 assert= (Some |pos) (from-nil-local 5)
@@ -11430,6 +11350,24 @@
                 assert=
                   [] (Some 1) (Some 2)
                   map numbers nil->option
+              :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |lowers-nested-nullable-if-without-wrapping-nil)
+              :code $ quote $ let
+                  from-nested $ fn (flag other)
+                    hint-fn $ Fn Bool Bool $ -> (Option Number)
+                    nil->option $ if flag (if other 1 nil) nil
+                  from-let-nil $ fn ()
+                    hint-fn $ Fn $ -> (Option Number)
+                    nil->option $ do 1 nil
+                  from-if-let-nil $ fn (flag)
+                    hint-fn $ Fn Bool $ -> (Option Number)
+                    nil->option $ if flag 1 $ do 2 nil
+                assert= (Some 1) (from-nested true true)
+                assert= None $ from-nested true false
+                assert= None $ from-nested false true
+                assert= None $ from-let-nil
+                assert= (Some 1) (from-if-let-nil true)
+                assert= None $ from-if-let-nil false
               :tags $ #{} :core :types :unit
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
@@ -11492,11 +11430,39 @@
                   assert= true $ forward None
               :tags $ #{} :core :naming-contract :unit :wasm
         'not $ %{} 'CodeEntry
-          :doc "|internal function for logical not\nSyntax: (not value)\nParams: value (boolean, nil, or Unit)\nReturns: boolean\nReturns true if value is falsy (nil, false, or Unit), false otherwise"
+          :doc "|Logical negation of a Bool value.\nSyntax: (not value)\nParams: value (Bool)\nReturns: Bool\nRaises a type error for non-Bool inputs; use `nil?` to test nil."
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn T (-> Bool) (:generics T)
+          :schema $ quote $ Fn Bool (-> Bool)
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |strict-bool-negation)
+              :code $ quote $ do
+                assert= false $ not true
+                assert= true $ not false
+                assert-type (not true) Bool
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-bool-at-runtime)
+              :code $ quote $ let
+                  as-bool $ fn (v)
+                    hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                    unsafe-coerce v Bool
+                assert= true $ try
+                  &let ()
+                    not $ as-bool nil
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    not $ as-bool 0
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    not $ as-bool &unit
+                    , false
+                  fn (_e) true
+              :tags $ #{} :core :unit
         'not= $ %{} 'CodeEntry
           :doc "|Returns true when two values of the same static type are not equal. Mixed-type callers must normalize values or narrow them before comparing."
           :code $ quote $ defn not= (x y)
@@ -12030,33 +11996,8 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |erased-consumer-rewrites-keep-results)
               :code $ quote $ let
-                  calls $ ref 0
-                  check $ fn (subject expected-calls)
-                    hint-fn $ Fn (Option Dynamic) Number $ -> Unit
-                    reset! calls 0
-                    let
-                        erased $ or (option:unwrap-or subject nil)
-                          do
-                            reset! calls $ inc $ deref calls
-                            , 0
-                        erased-calls $ deref calls
-                      reset! calls 0
-                      assert= erased $ match subject
-                        (:some v)
-                          or v $ do
-                            reset! calls $ inc $ deref calls
-                            , 0
-                        (:none)
-                          do
-                            reset! calls $ inc $ deref calls
-                            , 0
-                      assert= erased-calls $ deref calls
-                      assert= expected-calls erased-calls
-                    assert=
-                      if (option:unwrap-or subject nil) |yes |no
-                      match subject
-                        (:some v) (if v |yes |no)
-                        (:none) |no
+                  check $ fn (subject)
+                    hint-fn $ Fn (Option Dynamic) (-> Unit)
                     assert=
                       nil? $ option:unwrap-or subject nil
                       match subject
@@ -12068,89 +12009,83 @@
                         (:some v) (non-nil? v)
                         (:none) false
                     , &unit
-                check
-                  assert-type (Some 1) (Option Dynamic)
-                  , 0
-                check
-                  assert-type (Some nil) (Option Dynamic)
-                  , 1
-                check
-                  assert-type (Some false) (Option Dynamic)
-                  , 1
-                check
-                  assert-type None $ Option Dynamic
-                  , 1
+                check $ assert-type (Some 1) (Option Dynamic)
+                check $ assert-type (Some nil) (Option Dynamic)
+                check $ assert-type (Some false) (Option Dynamic)
+                check $ assert-type None $ Option Dynamic
               :tags $ #{} :core :unit
         'or $ %{} 'CodeEntry
-          :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
+          :doc "|Logical disjunction macro for Bool expressions with left-to-right short-circuit evaluation.\nReturns true on the first true expression and evaluates later forms only while earlier ones are false. For value fallback on Option or nullable values, use `either` or `Option .unwrap-or`."
           :code $ quote $ defmacro or (item & xs)
-            if (&list:empty? xs) item $ if (list? item)
-              &let
-                v1# $ gensym |v1
-                quasiquote $ &let (~v1# ~item)
-                  if ~v1# (~ v1#)
-                    or
-                      ~ $ &list:nth xs 0
-                      ~@ $ &list:rest xs
-              quasiquote $ if ~item (~ item)
-                or
-                  ~ $ &list:nth xs 0
-                  ~@ $ &list:rest xs
+            if (&list:empty? xs)
+              quasiquote $ if ~item true false
+              quasiquote $ if ~item true $ or
+                ~ $ &list:nth xs 0
+                ~@ $ &list:rest xs
           :examples $ []
-            quote $ assert= |done $ or nil |done false
-            quote $ assert= nil $ or false nil
-            quote $ assert= 2 $ or nil 2 3
-          :schema $ quote $ Macro (Expr Dynamic)
-            & $ Expr Dynamic
-            -> $ Expr Dynamic
+            quote $ assert= true $ or false true false
+            quote $ assert= false $ or (&> 1 2) (&< 3 2)
+          :schema $ quote $ Macro (Expr Bool)
+            & $ Expr Bool
+            -> $ Expr Bool
           :tags $ #{} :macro
           :tests $ []
             %{} 'TestEntry (:name |bool-operands-infer-bool)
               :code $ quote $ let
                   either-side $ or (&> 1 2) (&< 1 2)
-                  fallback $ or nil 2
                 assert-type either-side Bool
                 assert= true either-side
-                assert-type fallback Number
-                assert= 2 fallback
               :tags $ #{} :core :types :unit
-            %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
-              :code $ quote $ assert= |next (or &unit |next)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-first-truthy-or-nil)
+            %{} 'TestEntry (:name |rejects-non-bool-operands-at-runtime)
+              :code $ quote $ let
+                  as-bool $ fn (v)
+                    hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                    unsafe-coerce v Bool
+                assert= true $ try
+                  &let ()
+                    or (as-bool 0) true
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    or (as-bool nil) false
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    or false $ as-bool |fallback
+                    , false
+                  fn (_e) true
+                assert= true $ try
+                  &let ()
+                    or $ as-bool &unit
+                    , false
+                  fn (_e) true
+              :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |evaluates-bool-disjunction)
               :code $ quote $ do
-                assert= 1 $ or 1
-                assert= nil $ or nil
-                assert= 1 $ or 1 nil
-                assert= 1 $ or nil 1
-                assert= 1 $ or nil nil 1
-                assert= nil $ or nil nil nil
+                assert= true $ or true
+                assert= false $ or false
                 assert= true $ or (&> 10 9) (&> 10 8)
                 assert= true $ or (&> 10 11) (&> 10 8)
                 assert= true $ or (&> 10 9) (&> 10 11)
                 assert= false $ or (&> 10 12) (&> 10 11)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |zero-and-empty-string-do-not-use-fallback)
-              :code $ quote $ do
-                assert= 0 $ or 0 7
-                assert= -0 $ or -0 7
-                assert= | $ or | |fallback
-                assert= |fallback $ or nil |fallback
-                assert= |fallback $ or false |fallback
-                assert= |fallback $ or &unit |fallback
-                assert= &unit $ or nil false &unit
+                assert= true $ or true $ raise |unselected
+                assert= true $ or false true $ raise |unselected
               :tags $ #{} :core :truthiness :unit
-            %{} 'TestEntry (:name |short-circuit-and-original-value-identity)
+            %{} 'TestEntry (:name |short-circuits-side-effects)
               :code $ quote $ let
                   effects $ ref 0
-                  original $ ref 7
-                assert= 0 $ or
-                  let ()
+                  hit $ fn ()
                     reset! effects $ inc $ deref effects
-                    , 0
-                  raise |unselected
+                    , true
+                  miss $ fn ()
+                    reset! effects $ inc $ deref effects
+                    , false
+                assert= true $ or (hit) (miss)
                 assert= 1 $ deref effects
-                assert= true $ identical? original $ or original (ref 8)
+                assert= true $ or (miss) (hit)
+                assert= 3 $ deref effects
               :tags $ #{} :core :truthiness :unit
         'pairs-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn pairs-map (xs)
@@ -12382,6 +12317,7 @@
                       x 3
                     quote x
                   choose $ fn (flag)
+                    hint-fn $ Fn Bool $ -> Dynamic
                     if flag (quote left) (quote right)
                   compose $ fn () $ [] (quote left)
                     quote $ + 1 2
@@ -12399,6 +12335,7 @@
                   quoted $ fn (ignored)
                     quote $ raise |must-not-run
                   branches $ fn (flag)
+                    hint-fn $ Fn Bool $ -> Dynamic
                     if
                       do (swap! hits inc) flag
                       do (swap! hits inc)
@@ -14311,6 +14248,23 @@
                   update-in (&{}) ([] :a :b)
                     fn (value)
                       if (option:none? value) 1 $ raise |expected-missing-value
+                assert= ([] nil)
+                  update-in ([] nil) ([] 0)
+                    fn (value)
+                      assert= (Some nil) value
+                      , nil
+                assert= (&{} :a nil)
+                  update-in (&{} :a nil) ([] :a)
+                    fn (value)
+                      assert= (Some nil) value
+                      , nil
+                assert=
+                  &{} 7 $ &{} 0 42
+                  update-in
+                    assert-type ({})
+                      Map Number $ List Number
+                    [] 7 0
+                    fn (value) (assert= None value) 42
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |checked-open-path-keeps-numeric-boundary)
               :code $ quote $ let
@@ -14448,25 +14402,35 @@
                     (:err message) (string? message)
               :tags $ #{} :core :time :unit :wasi
         'when $ %{} 'CodeEntry
-          :doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value."
+          :doc "|Conditional macro that evaluates its body expressions only when the Bool condition is true, always returning &unit (Unit)."
           :code $ quote $ defmacro when (condition & body)
             if (&list:empty? body) (raise "|when expects at least 1 body expression")
-            if
-              &= 1 $ &list:count body
-              quasiquote $ if ~condition $ ~ (&list:nth body 0)
-              quasiquote $ if ~condition $ &let () ~@body
+            quasiquote $ if ~condition
+              &let () ~@body &unit
+              , &unit
           :examples $ []
-            quote $ assert= 4 $ when (&> 3 2) (inc 3)
-            quote $ assert= nil $ when false (inc 1)
-          :schema $ quote $ Macro (Expr Dynamic)
+            quote $ when (&> 3 2) (println |ok)
+            quote $ assert= &unit $ when false (println |skipped)
+          :schema $ quote $ Macro (Expr Bool)
             & $ Expr Dynamic
-            -> $ Expr Dynamic
+            -> $ Expr Unit
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
-            :code $ quote $ do
-              assert= 1 $ when true 1
-              assert= 1 $ when true 2 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |gates-single-and-body)
+              :code $ quote $ do
+                assert= &unit $ when true 1
+                assert= &unit $ when true 2 1
+                assert= &unit $ when false $ raise |unselected
+                assert-type (when true 1) Unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-side-effects)
+              :code $ quote $ let
+                  effects $ ref 0
+                assert= &unit $ when true (reset! effects 1) 1
+                assert= 1 $ deref effects
+                assert= &unit $ when false (reset! effects 9) (raise |unselected)
+                assert= 1 $ deref effects
+              :tags $ #{} :core :unit
         'when-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, evaluate the body only for some, and return Option<R>."
           :code $ quote $ defmacro when-let (pair & body)
@@ -14489,25 +14453,33 @@
             & $ Expr Dynamic
             -> $ Expr $ Option Dynamic
           :tags $ #{} :macro
-        'when-not $ %{} 'CodeEntry (:doc |)
+        'when-not $ %{} 'CodeEntry
+          :doc "|Conditional macro that evaluates its body expressions only when the Bool condition is false, always returning &unit (Unit)."
           :code $ quote $ defmacro when-not (condition & body)
             if (&list:empty? body) (raise "|when-not expects at least 1 body expression")
-            if
-              &= 1 $ &list:count body
-              quasiquote $ if (not ~condition)
-                ~ $ &list:nth body 0
-              quasiquote $ if (not ~condition)
-                &let () ~@body
-          :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic)
+            quasiquote $ if ~condition &unit $ &let () ~@body &unit
+          :examples $ [] $ quote
+            assert= &unit $ when-not true $ raise |unselected
+          :schema $ quote $ Macro (Expr Bool)
             & $ Expr Dynamic
-            -> $ Expr Dynamic
+            -> $ Expr Unit
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |gates-single-and-body)
-            :code $ quote $ do
-              assert= 1 $ when-not false 1
-              assert= 1 $ when-not false 2 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |gates-single-and-body)
+              :code $ quote $ do
+                assert= &unit $ when-not false 1
+                assert= &unit $ when-not false 2 1
+                assert= &unit $ when-not true $ raise |unselected
+                assert-type (when-not false 1) Unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-side-effects)
+              :code $ quote $ let
+                  effects $ ref 0
+                assert= &unit $ when-not false (reset! effects 1) 1
+                assert= 1 $ deref effects
+                assert= &unit $ when-not true (reset! effects 9) (raise |unselected)
+                assert= 1 $ deref effects
+              :tags $ #{} :core :unit
         'with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro with-cpu-time (x)
             let
@@ -14898,11 +14870,12 @@
             :code $ quote $ is
               throws? $ fail |boom
             :tags $ #{} :unit
-        'is $ %{} 'CodeEntry (:doc "|Assert that a test expression is truthy.")
+        'is $ %{} 'CodeEntry
+          :doc "|Assert that a Bool test expression evaluates to true."
           :code $ quote $ defmacro is (expr)
             quasiquote $ assert |Expected-truthy-expression: ~expr
           :examples $ []
-          :schema $ quote $ Macro (Expr Dynamic)
+          :schema $ quote $ Macro (Expr Bool)
             -> $ Expr Unit
           :tags $ #{} :control :macro :test
           :tests $ []

@@ -282,7 +282,7 @@
                 {} $ :color |red
                 {}
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Number)
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-rest-exits)
             :code $ quote $ do
               assert= 1 $ rest-count true
@@ -294,7 +294,7 @@
               {} $ :color |red
               {}
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Number)
+          :schema $ quote $ Fn Bool (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |both-exits)
             :code $ quote $ do
               assert= 1 $ style-count true
@@ -306,7 +306,7 @@
               {} $ 1 |red
               {}
           :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Number)
+          :schema $ quote $ Fn Bool (-> Number)
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.branch-call
     'app.callback-left $ %{} 'FileEntry
@@ -527,8 +527,7 @@
           :examples $ []
           :schema $ quote $ Fn
             Fn T $ -> Unit
-            , T (-> Unit) (:generics T)
-            :features :state
+            , T (-> Unit) (:generics T) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
             :code $ quote $ let
                 received $ ref |before
@@ -798,25 +797,10 @@
         :code $ quote $ ns app.collection-shadow
     'app.collection-value $ %{} 'FileEntry
       :defs $ {}
-        'DecisionField $ %{} 'CodeEntry
-          :code $ quote $ defunion DecisionField String $ Option Scalar
+        'DecisionField $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion DecisionField String (Option Scalar)
           :examples $ []
           :schema $ quote UnionDef
-        'keep-fields $ %{} 'CodeEntry
-          :code $ quote $ defn keep-fields (text date time)
-            MapEntryDecision :keep |id $ {} (:text text) (:date date) (:time time)
-          :examples $ []
-          :schema $ quote $ Fn String (Option String) (Option Number)
-            -> $ MapEntryDecision String $ Map Tag DecisionField
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-heterogeneous-field-map)
-              :code $ quote $ match (keep-fields |hello (Some |2026) (Some 123))
-                (:keep key fields)
-                  do
-                    assert= |id key
-                    assert= 3 $ count fields
-                (:drop) (raise |unexpected-drop)
-              :tags $ #{} :collection-value-contract
         'Pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion Pair String (Tuple Number String)
           :examples $ []
@@ -849,6 +833,20 @@
           :code $ quote $ defunion Sequence String (List Scalar)
           :examples $ []
           :schema $ quote UnionDef
+        'keep-fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn keep-fields (text date time)
+            MapEntryDecision :keep |id $ {} (:text text) (:date date) (:time time)
+          :examples $ []
+          :schema $ quote $ Fn String (Option String) (Option Number)
+            -> $ MapEntryDecision String $ Map Tag DecisionField
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-heterogeneous-field-map)
+            :code $ quote $ match
+              keep-fields |hello (Some |2026) (Some 123)
+              (:keep key fields)
+                do (assert= |id key)
+                  assert= 3 $ count fields
+              (:drop) (raise |unexpected-drop)
+            :tags $ #{} :collection-value-contract
         'members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def members (#{} 12 :block |sans)
           :examples $ []
@@ -1378,7 +1376,8 @@
               :tags $ #{} :checked-struct-write :nullable-write :unit
         'checked-assoc-at $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-assoc-at (base key value)
-            if (struct? base)
+            if
+              and (struct? base) (tag? key)
               try (&struct:assoc-at base 0 key value)
                 fn (_error) nil
               , nil
@@ -2753,6 +2752,16 @@
           :require $ app.values :as values
     'app.short-circuit $ %{} 'FileEntry
       :defs $ {}
+        'add-with-user-guard $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn add-with-user-guard (k)
+            if (guarded-number? k) (&+ k 1) 0
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |uses-proven-definition-guard)
+            :code $ quote $ do
+              assert= 2 $ add-with-user-guard 1
+              assert= 0 $ add-with-user-guard |text
+            :tags $ #{} :short-circuit-proof :unit
         'common-or $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn common-or (k flag)
             if
@@ -2797,13 +2806,31 @@
                   reset! calls $ inc $ deref calls
                   , true
                 assert= 0 $ deref calls
-                assert= 7 $ and true $ do
+                assert= true $ and true $ do
                   reset! calls $ inc $ deref calls
-                  , 7
+                  , true
                 assert= 1 $ deref calls
-                assert= 7 $ or 7 $ do (reset! calls 99) false
+                assert= true $ or true $ do (reset! calls 99) false
                 assert= 1 $ deref calls
               :tags $ #{} :short-circuit-proof :unit
+        'false-branch-effect $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn false-branch-effect (k flag effect)
+            if
+              if (number? k)
+                if flag true $ do (effect k) false
+                , false
+              &+ k 1
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Bool
+            Fn Dynamic $ -> Unit
+            -> Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-true-path-after-false-only-effect)
+            :code $ quote $ do
+              assert= 2 $ false-branch-effect 1 true $ fn (x) (raise |unexpected-call)
+              assert= 0 $ false-branch-effect 1 false $ fn (x) &unit
+              assert= 0 $ false-branch-effect |text true $ fn (x) (raise |unexpected-call)
+            :tags $ #{} :short-circuit-proof :unit
         'false-path $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn false-path (k)
             if
@@ -2816,6 +2843,12 @@
               assert= 2 $ false-path 1
               assert= 0 $ false-path |bad
             :tags $ #{} :short-circuit-proof :unit
+        'guarded-number? $ %{} 'CodeEntry
+          :doc "|Checks whether the incoming argument is numeric."
+          :code $ quote $ defn guarded-number? (k)
+            if (number? k) true false
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Bool) (:guard Number)
         'lexical-guard $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-guard (k)
             if
@@ -2831,25 +2864,11 @@
               assert= 2 $ lexical-guard 1
               assert= 0 $ lexical-guard |bad
             :tags $ #{} :short-circuit-proof :unit
-        'guarded-number? $ %{} 'CodeEntry (:doc "|Checks whether the incoming argument is numeric.")
-          :code $ quote $ defn guarded-number? (k)
-            if (number? k) true false
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Bool) (:guard Number)
-        'add-with-user-guard $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn add-with-user-guard (k)
-            if (guarded-number? k) (&+ k 1) 0
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (-> Number)
-          :tests $ [] $ %{} 'TestEntry (:name |uses-proven-definition-guard)
-            :code $ quote $ do
-              assert= 2 $ add-with-user-guard 1
-              assert= 0 $ add-with-user-guard |text
-            :tags $ #{} :short-circuit-proof :unit
         'match-guard $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn match-guard (k flag)
             if
-              match (if flag (Some 3) None)
+              match
+                if flag (Some 3) None
                 (:some ignored) (number? k)
                 (:none) false
               &+ k 1
@@ -2861,22 +2880,6 @@
               assert= 2 $ match-guard 1 true
               assert= 0 $ match-guard |bad true
               assert= 0 $ match-guard 1 false
-            :tags $ #{} :short-circuit-proof :unit
-        'false-branch-effect $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn false-branch-effect (k flag effect)
-            if
-              if (number? k)
-                if flag true $ do (effect k) false
-                , false
-              &+ k 1
-              , 0
-          :examples $ []
-          :schema $ quote $ Fn Dynamic Bool (Fn Dynamic (-> Unit)) (-> Number)
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-true-path-after-false-only-effect)
-            :code $ quote $ do
-              assert= 2 $ false-branch-effect 1 true $ fn (x) (raise |unexpected-call)
-              assert= 0 $ false-branch-effect 1 false $ fn (x) &unit
-              assert= 0 $ false-branch-effect |text true $ fn (x) (raise |unexpected-call)
             :tags $ #{} :short-circuit-proof :unit
         'nested $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested (k)

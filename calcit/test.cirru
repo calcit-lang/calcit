@@ -128,7 +128,7 @@
             inside-js: $ test-js/main!
             do true
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :state :io)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi :state)
         'query-search-node-kinds $ %{} 'CodeEntry
           :doc "|Fixture for machine-readable leaf and call search results"
           :code $ quote $ def query-search-node-kinds
@@ -261,16 +261,16 @@
             assert= true $ or false true false
             assert= true $ or false false true
             assert= true $ or false true
-            assert= true $ or nil true
+            assert= true $ or false false true
             assert=
               or true $ raise "|raise in or"
               , true
             assert=
               and false $ raise "|raise in and"
               , false
-            assert= 2 $ when-not (> 1 2) 1 2
+            assert= &unit $ when-not (> 1 2) 1 2
             assert= 1 $ if-not (> 2 1) 2 1
-            assert= nil $ if-not (> 2 1) 2
+            assert= &unit $ if-not (> 2 1) 2
             assert-detect identity $ /= 1 2
             assert-detect identity $ not= 1 2
             assert= true $ .ok? $ get-in ({,} :a 1) ([] :a)
@@ -335,11 +335,35 @@
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-if $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing if with nil")
-            assert= (if false 1) (if nil 1)
-            assert= (if false 1 2) (if nil 1 2)
-            assert= (if false 1) (if &unit 1)
-            assert= (if false 1 2) (if &unit 1 2)
-            assert= true $ not &unit
+            let
+                as-bool $ fn (v)
+                  hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)
+                  unsafe-coerce v Bool
+              assert= 1 $ if true 1 2
+              assert= 2 $ if false 1 2
+              assert= nil $ if false 1
+              assert= &unit $ if-not true 1
+              assert= 2 $ if-not true 1 2
+              assert= true $ try
+                &let ()
+                  if (as-bool nil) 1 2
+                  , false
+                fn (_e) true
+              assert= true $ try
+                &let ()
+                  if (as-bool &unit) 1 2
+                  , false
+                fn (_e) true
+              assert= true $ try
+                &let ()
+                  not $ as-bool nil
+                  , false
+                fn (_e) true
+              assert= true $ try
+                &let ()
+                  not $ as-bool &unit
+                  , false
+                fn (_e) true
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-json $ %{} 'CodeEntry (:doc |)
@@ -433,7 +457,7 @@
               assert= 2 $ reset! watched 2
               assert= 1 @notifications
           :examples $ []
-          :schema $ quote $ Fn (-> Unit) (:features :state :io)
+          :schema $ quote $ Fn (-> Unit) (:features :io :state)
         'test-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-tag ()
             ; assert "|tag function" $ =

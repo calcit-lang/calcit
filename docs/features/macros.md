@@ -14,29 +14,27 @@ Calcit macros extend the language by transforming syntax trees during preprocess
 
 ## 条件与短路求值
 
-`if` 只把 `nil`、`false` 和 `&unit` 视为假值；`0`、负零、空字符串、空集合和 `Option :none` 都是真值。
-条件只求值一次，只执行选中的分支；省略 else 时，假值分支返回 `nil`。
-`or` 返回遇到的第一个真值，全部为假时返回最后一个值；`and` 遇到假值时返回 `false`，否则返回最后一个值。
-这些是 Calcit 语义，不使用 JavaScript 的自动布尔转换。
-条件的静态类型已证明为 Number、String、List、Map、Set、Struct 或函数时，这个条件恒为真，检查会报告
-`E_CONSTANT_TRUTHY_CONDITION`；请改写为 `empty?`、`blank?` 或显式比较。`and` 的最后一个操作数是返回值，不算条件。
+`if`、`when`、`when-not`、`if-not`、`and`、`or` 的条件在静态检查与运行时都严格要求为 `Bool`；`nil`、`&unit`、`0`、字符串、集合、`Option :none` 与未证明的 `Dynamic` 都会被拒绝（静态报 `E_NON_BOOL_CONDITION`）。
+条件只求值一次，只执行选中的分支：
+
+- `if condition then-expr else-expr`：省略 `else-expr` 时假分支返回 `nil`（仅允许用于无需值的语句位置；需要值请显式返回 `Option :some` / `Option :none`）。
+- `when`、`when-not` 与两参数 `if-not` 始终返回 `&unit`（`Unit`）；三参数 `if-not` 在条件为 `false` 时求值第二参数、为 `true` 时求值第三参数。
+- `and` 与 `or` 按从左到右短路求值并仅接受和返回 `Bool`。若需做缺省值回退，请使用 `either` 或 `Option .unwrap-or`。
+- 这些规则在 native、JS 与 WASM/WASI 之间一致；JavaScript 生成代码在必要时调用 `assert_bool` 守卫，不使用 JS 自动真假转换。
+
+条件的静态类型已证明为 Number、String、List、Map、Set 等非布尔类型时，检查会报告 `E_CONSTANT_TRUTHY_CONDITION` 并提示改写为 `>`、`=`、`empty?` 或 `blank?`。可空值请先用 `non-nil?` / `nil?` 转为 `Bool`，`Dynamic` 请先用 `(bool? x)` 或 `(= x true)` 收窄。
 
 ```cirru
-assert= |then $ if 0 |then |else
-assert= |then $ if | |then |else
-assert= |else $ if &unit |then |else
-assert= 0 $ or 0 7
-assert= | $ or | |fallback
-assert= |done $ and 0 | |done
-assert= false $ and nil |unselected
+assert= |then $ if true |then |else
+assert= |else $ if false |then |else
+assert= false $ if (&= 0 1) true false
+assert= false $ and (&> 2 3) true
+assert= true $ or false (&= 1 1)
+assert= 7 $ either nil 7
+assert= |fallback $ .unwrap-or (assert-type (Option :none) (Option String)) |fallback
 ```
 
-JS 条件统一生成一次求值的真假值表达式；`Bool` 和其他条件都遵守以上规则，不依赖新增 runtime helper。
-JS 的 `null`/`undefined` 分别承载 `nil`/`Unit`；真假值判断不是宿主对象的受检解码，不能替代 FFI 类型边界。
-
-WASM/WASI 根据已证明的条件类型生成相同语义：`Number`（包括 0、负零、NaN 和无穷大）、字符串、集合、名义值和函数值是真值；`nil`/`Unit` 是假值；`Bool` 保留运行时分支。
-内部推导出的可空合并 `Bool?` 与具有非零地址表示的可空值（如 `String?`）也保留运行时分支，空字符串仍是真值；公开 schema 仍使用名义 `Option` 表达缺席。
-已知调用参数通过现有静态调用特化补充类型证据；即使类型已经决定真假，条件中的副作用与错误仍会执行一次。
+WASM/WASI 依据相同的 `Bool` 静态条件语义生成代码；已知恒真／恒假常量分支仍先求值条件表达式以保留其中的副作用与检查，对开放类型条件直接拒绝编译。
 
 ## Quick Recipes
 
@@ -54,9 +52,13 @@ defmacro noted (x0 & xs)
 
 A normal way to use macro is to use `quasiquote` paired with `~x` and `~@xs` to insert one or a span of items. Also notice that `~x` is internally expanded to `(~ x)`, so you can also use `(~ x)` and `(~@ xs)` as well:
 
-```cirru
-defmacro if-not (condition true-branch ? false-branch)
-  quasiquote $ if ~condition ~false-branch ~true-branch
+```cirru.no-check
+defmacro if-not (condition true-branch & rest-branches)
+  if (&> (&list:count rest-branches) 1)
+    raise $ str-spaced "|if-not expects (condition then) or (condition then else)" rest-branches
+  if (&list:empty? rest-branches)
+    quasiquote $ if ~condition &unit $ &let () ~true-branch &unit
+    quasiquote $ if ~condition (~ $ &list:nth rest-branches 0) ~true-branch
 ```
 
 To create new variables inside macro definitions, use `(gensym)` or `(gensym |name)`:
@@ -146,6 +148,6 @@ $ calcit eval 'println $ format-to-cirru $ macroexpand $ quote $ let ((a 1) (b 2
 
 ## 限制
 
-- 当前 WASM 标量 ABI 无法区分未证明的开放条件或可空数字中的 nil 与 0，这些路径报告 `E_WASM_NIL_TYPE_EVIDENCE`。
-- WASM 的 `unsafe-coerce` 支持保持相同类型、已证明的静态提升（如 UInt32 擦除到 Number）或擦除到 Dynamic，未证明的重新标注报告 `E_WASM_UNSUPPORTED_JS_FFI`。
-- 共同真假值语义不表示 WASM 已支持所有条件中的运算；尚未支持的操作仍按目标边界报错。
+- `if`、`when`、`when-not`、`if-not`、`and` 与 `or` 仅接受 `Bool` 条件，未收窄的非布尔或 `Dynamic` 条件会被拒绝。
+- WASM 的 `unsafe-coerce` 只支持保持相同类型、已证明的静态提升（如 UInt32 擦除到 Number）或擦除到 Dynamic，未证明的重新标注报告 `E_WASM_UNSUPPORTED_JS_FFI`。
+- WASM 的 `nil?` / `=` 仍要求具体闭合类型以避开开放标量表示碰撞，缺少证据时报告 `E_WASM_NIL_TYPE_EVIDENCE`。

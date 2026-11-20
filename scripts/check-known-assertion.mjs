@@ -1975,31 +1975,49 @@ try {
       const truthinessOriginal = await readFile(truthinessCore);
       const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
       const truthinessReport = JSON.parse(truthinessRun("test", "--tag", "truthiness", "--summary-only", "--require-match", "--format", "json"));
-      assert.equal(truthinessReport.selected, 15);
-      assert.equal(truthinessReport.passed, 15);
+      assert.equal(truthinessReport.selected, 12);
+      assert.equal(truthinessReport.passed, 12);
       const truthinessTests = ["if", "or", "and"].flatMap(name =>
         JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
           .filter(test => test.tags.includes("truthiness")));
-      assert.equal(truthinessTests.length, 15);
+      assert.equal(truthinessTests.length, 12);
       const truthinessSnapshot = join(project, "truthiness.cirru");
       await copyFile(truthinessCore, truthinessSnapshot);
       const replay = (...args) => execFileSync(binary, [truthinessSnapshot, ...args], options);
-      const truthinessOperations = [["edit", "add-ns", "calcit.core-truthiness"]];
-      for (const [name, type] of [["choose-open", "'Dynamic"], ["choose-bool", "'Bool"]]) {
-        truthinessOperations.push(
-          ["edit", "def", `calcit.core-truthiness/${name}`, "--input-format", "json-ast", "--code",
-            JSON.stringify(["defn", name, ["condition"], ["if", "condition", "|yes", "|no"]])],
-          ["edit", "schema", `calcit.core-truthiness/${name}`, "--input-format", "cirru", "--code",
-            `quote $ :: 'Fn $ {} (:args ([] ${type})) (:return 'String)`],
-        );
-      }
-      truthinessOperations.push(
+
+      // Non-Bool `if` conditions (including Dynamic) are statically rejected before codegen (#2881).
+      const rejectedOpenSnapshot = join(project, "truthiness-open.cirru");
+      await copyFile(truthinessCore, rejectedOpenSnapshot);
+      const rejectedOpenRev = JSON.parse(execFileSync(binary, [rejectedOpenSnapshot, "query", "config", "--format", "json"], options)).revision;
+      execFileSync(binary, [rejectedOpenSnapshot, "edit", "transaction", "--expect-revision", rejectedOpenRev, "--code", JSON.stringify([
+        ["edit", "add-ns", "calcit.core-truthiness-open"],
+        ["edit", "def", "calcit.core-truthiness-open/choose-open", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "choose-open", ["condition"], ["if", "condition", "|yes", "|no"]])],
+        ["edit", "schema", "calcit.core-truthiness-open/choose-open", "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'String)"],
+        ["edit", "def", "calcit.core-truthiness-open/main!", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "main!", [], ["choose-open", "true"], "&unit"])],
+        ["edit", "schema", "calcit.core-truthiness-open/main!", "--input-format", "cirru", "--code",
+          "quote $ Fn (-> Unit)"],
+      ])], options);
+      const beforeOpenReject = await readFile(rejectedOpenSnapshot);
+      const openRejected = spawnSync(binary, [rejectedOpenSnapshot, "--check-only", "--init-fn", "calcit.core-truthiness-open/main!", "--reload-fn", "calcit.core-truthiness-open/main!"], options);
+      assert.notEqual(openRejected.status, 0, "Dynamic condition in `if` must be statically rejected");
+      assert.match(openRejected.stdout + openRejected.stderr, /E_NON_BOOL_CONDITION/);
+      assert.deepEqual(await readFile(rejectedOpenSnapshot), beforeOpenReject);
+
+      const truthinessOperations = [
+        ["edit", "add-ns", "calcit.core-truthiness"],
+        ["edit", "def", "calcit.core-truthiness/choose-bool", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "choose-bool", ["condition"], ["if", "condition", "|yes", "|no"]])],
+        ["edit", "schema", "calcit.core-truthiness/choose-bool", "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args ([] 'Bool)) (:return 'String)"],
         ["edit", "def", "calcit.core-truthiness/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defn", "run-tests", [], ...truthinessTests.map(test => test.code),
-            ["assert=", "|yes", ["choose-open", "0"]], ["assert=", "|no", ["choose-bool", "false"]], "&unit"])],
+            ["assert=", "|yes", ["choose-bool", "true"]], ["assert=", "|no", ["choose-bool", "false"]], "&unit"])],
         ["edit", "schema", "calcit.core-truthiness/run-tests", "--input-format", "cirru", "--code",
           "quote $ Fn (-> Unit)"],
-      );
+      ];
       const truthinessRevision = JSON.parse(replay("query", "config", "--format", "json")).revision;
       const truthinessTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessOperations),
         "--expect-revision", truthinessRevision, "--format", "json"];
@@ -2011,32 +2029,29 @@ try {
       replay(...truthinessEntry, "--emit-path", truthinessOutput, "js");
       const truthinessModule = await import(pathToFileURL(join(truthinessOutput, "calcit.core-truthiness.mjs")).href);
       truthinessModule.run_tests();
-      // Host-only values are not Calcit source literals. Strict identity checks
-      // must never invoke coercion hooks or treat NaN/zero/empty text as falsey.
-      for (const value of [null, undefined, false]) assert.equal(truthinessModule.choose_open(value), "no");
-      for (const value of [0, -0, "", NaN, Infinity, {}, [], Symbol("host"),
-        { [Symbol.toPrimitive]() { throw new Error("coercion must not run"); } }]) {
-        assert.equal(truthinessModule.choose_open(value), "yes");
-      }
+      // Host-only and non-Bool values must trigger the runtime strict Bool guard without coercing.
       assert.equal(truthinessModule.choose_bool(true), "yes");
       assert.equal(truthinessModule.choose_bool(false), "no");
+      for (const value of [null, undefined, 0, -0, "", NaN, Infinity, {}, [], Symbol("host"),
+        { [Symbol.toPrimitive]() { throw new Error("coercion must not run"); } }]) {
+        assert.throws(() => truthinessModule.choose_bool(value), /if condition expects a Bool/,
+          `non-Bool JS value must throw in choose_bool`);
+      }
       const truthinessCode = await readFile(join(truthinessOutput, "calcit.core-truthiness.mjs"), "utf8");
-      assert.match(truthinessCode, /if \(\(\(condition\) \?\? false\) !== false\)/,
-        "Bool and open conditions must share single-evaluation Calcit truthiness");
+      assert.match(truthinessCode, /assert_bool\(condition\)/,
+        "unchecked Bool parameter conditions must enforce runtime strict Bool check");
       assert.doesNotMatch(truthinessCode, /_calcit_truthy/, "conditional lowering must not require a new runtime export");
       assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
 
-      // Replay every stored group whose operations have a supported WASM
-      // representation. Local closures specialize their concrete inputs.
-      // Atom allocation, try and JS FFI escapes remain separate target boundaries.
+      // Replay the pure WASM-compatible strict-Bool contracts + runtime error propagation traps.
       const truthinessWasmTests = truthinessTests.filter(test => [
-        "only-nil-false-unit-select-else", "zero-empty-and-nominal-values-select-then",
-        "open-values-have-the-same-truthiness", "typed-bool-conditions-preserve-both-branches",
-        "nested-expression-and-tail-conditions", "typed-number-conditions-are-truthy",
-        "nullable-bool-and-text-conditions", "zero-and-empty-string-do-not-use-fallback",
-        "zero-empty-and-falsey-values-preserve-existing-contract", "function-and-definition-values-are-truthy",
+        "typed-bool-conditions-preserve-both-branches",
+        "nested-expression-and-tail-conditions",
+        "narrows-non-nil-and-bool-predicates",
+        "evaluates-bool-disjunction",
+        "evaluates-bool-conjunction",
       ].includes(test.name));
-      assert.equal(truthinessWasmTests.length, 10);
+      assert.equal(truthinessWasmTests.length, 5);
       // Preserve the stored error expressions, but leave the native/JS try handler
       // outside the WASM boundary: raise must propagate as a real runtime trap.
       const truthinessErrorTest = truthinessTests.find(test => test.name === "condition-and-selected-branch-errors-propagate");
@@ -2091,27 +2106,28 @@ try {
       }
       assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
 
-      // Use a stored global-backed Calcit contract to verify single evaluation
-      // and the selected branch, rather than replacing the effects with JS code.
+      // Verify single-evaluation condition semantics and branch selection with Bool conditions across backends,
+      // and confirm Number conditions fail preprocessing with E_CONSTANT_TRUTHY_CONDITION (#2881).
       const effectsSnapshot = join(project, "truthiness-effects.cirru");
       await copyFile(truthinessCore, effectsSnapshot);
       const effectsRun = (...args) => execFileSync(binary, [effectsSnapshot, ...args], options);
-      // A typed Number condition is constant-truthy on purpose here, so the
-      // contract lives in a `calcit.core-*` namespace that E_CONSTANT_TRUTHY_CONDITION
-      // leaves to the language's own backend tests.
       const bumpCount = ["let", [], ["reset!", "truthiness-count", ["inc", ["deref", "truthiness-count"]]]];
       const effectsTest = ["do",
-        ...["0", "-0", "7"].flatMap(value => [["reset!", "truthiness-count", "0"],
-          ["assert=", "1", ["truthiness-number-once", value]], ["assert=", "2", ["deref", "truthiness-count"]]])];
+        ["reset!", "truthiness-count", "0"],
+        ["assert=", "1", ["truthiness-bool-once", "true"]],
+        ["assert=", "2", ["deref", "truthiness-count"]],
+        ["reset!", "truthiness-count", "0"],
+        ["assert=", "2", ["truthiness-bool-once", "false"]],
+        ["assert=", "2", ["deref", "truthiness-count"]]];
       const effectsOperations = [
         ["edit", "add-ns", "calcit.core-truthiness-effects"],
         ["edit", "def", "calcit.core-truthiness-effects/truthiness-count", "--input-format", "json-ast", "--code",
           JSON.stringify(["defref", "truthiness-count", "0"])],
-        ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
-          JSON.stringify(["defn", "truthiness-number-once", ["value"],
-            ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],
-        ["edit", "schema", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "cirru", "--code",
-          "quote $ Fn Number (-> Number) (:features :state)"],
+        ["edit", "def", "calcit.core-truthiness-effects/truthiness-bool-once", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "truthiness-bool-once", ["value"],
+            ["if", [...bumpCount, "value"], [...bumpCount, "1"], [...bumpCount, "2"]]])],
+        ["edit", "schema", "calcit.core-truthiness-effects/truthiness-bool-once", "--input-format", "cirru", "--code",
+          "quote $ Fn Bool (-> Number) (:features :state)"],
         ["edit", "def", "calcit.core-truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
           JSON.stringify(["defwasm-export", "run-tests", [], effectsTest, "&unit"])],
         ["edit", "schema", "calcit.core-truthiness-effects/run-tests", "--input-format", "cirru", "--code",
@@ -2136,15 +2152,23 @@ try {
         (effectsImports[module] ??= {})[name] = () => { throw new Error(`unexpected conditional effect host call: ${module}/${name}`); };
       }
       new WebAssembly.Instance(effectsModule, effectsImports).exports["run-tests"]();
+      const effectsNumberRev = JSON.parse(effectsRun("query", "config", "--format", "json")).revision;
+      effectsRun("edit", "transaction", "--expect-revision", effectsNumberRev, "--code", JSON.stringify([
+        ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defn", "truthiness-number-once", ["value"], ["if", "value", "1", "2"]])],
+        ["edit", "schema", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "cirru", "--code",
+          "quote $ Fn Number (-> Number)"],
+        ["edit", "def", "calcit.core-truthiness-effects/run-tests", "--overwrite", "--input-format", "json-ast", "--code",
+          JSON.stringify(["defwasm-export", "run-tests", [], ["truthiness-number-once", "1"], "&unit"])],
+      ]));
+      const effectsRejected = spawnSync(binary, [effectsSnapshot, "--check-only", ...effectsEntry], options);
+      assert.notEqual(effectsRejected.status, 0, "Number condition must be rejected statically");
+      assert.match(effectsRejected.stdout + effectsRejected.stderr, /E_CONSTANT_TRUTHY_CONDITION/);
     },
     async () => {
       const truthinessCore = "src/cirru/calcit-core.cirru";
-      const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
-      // Runtime ABI inputs must not pass only because a literal call was inlined.
-      // The attached core tests above remain the shared language contract.
       const scalarSnapshot = join(project, "truthiness-scalars.cirru");
       await copyFile(truthinessCore, scalarSnapshot);
-      // Typed conditions here are constant-truthy on purpose; see the effects contract.
       const scalarNs = "calcit.core-truthiness-scalars";
       const scalarEntry = ["--init-fn", `${scalarNs}/main!`, "--reload-fn", `${scalarNs}/main!`];
       const scalarRun = (...args) => execFileSync(binary, [scalarSnapshot, ...args], options);
@@ -2167,20 +2191,11 @@ try {
         ["edit", "def", `${scalarNs}/main!`, "--input-format", "json-ast", "--code", JSON.stringify(["defn", "main!", [], "&unit"])],
         ["edit", "schema", `${scalarNs}/main!`, "--input-format", "cirru", "--code",
           "quote $ Fn (-> Unit)"],
-        ...scalarDefinition("choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"]),
         ...scalarDefinition("erase-refinement", ["value"], ["'UInt32"], ["unsafe-coerce", "value", "'Number"], "'Number", [":js-ffi"]),
-        ...scalarDefinition("choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]]),
         ...scalarDefinition("choose-bool", ["value"], ["'Bool"], ["if", "value", "1", "2"]),
-        // Nullable evidence is inferred inside the function; public schemas keep
-        // the current nominal-absence contract rather than exposing legacy Optional.
-        ...scalarDefinition("choose-nullable-bool", ["flag"], ["'Bool"],
-          ["let", [["value", ["if", "flag", "true", "nil"]]], ["if", "value", "1", "2"]]),
-        ...scalarDefinition("choose-nullable-text", ["flag"], ["'Bool"],
-          ["let", [["value", ["if", "flag", "|", "nil"]]], ["if", "value", "1", "2"]]),
         ...scalarDefinition("empty-text", [], [], "|", "'String"),
         ...scalarDefinition("a-first-function", [], [], "0"),
         ...scalarDefinition("first-function", [], [], "a-first-function", ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]]),
-        ...scalarDefinition("choose-function", [], [], ["if", "a-first-function", "1", "2"]),
       ]);
       const scalarOutput = join(project, "truthiness-scalars-wasm");
       scalarRun(...scalarEntry, "--emit-path", scalarOutput, "wasm");
@@ -2191,46 +2206,43 @@ try {
         (scalarImports[module] ??= {})[name] = () => { throw new Error(`unexpected scalar host call: ${module}/${name}`); };
       }
       const scalarExports = new WebAssembly.Instance(scalarModule, scalarImports).exports;
-      for (const value of [0, -0, 7, -7, NaN, Infinity, -Infinity]) {
-        assert.equal(scalarExports["choose-number"](value), 1);
-        assert.equal(scalarExports["choose-alias"](value), 1);
-      }
       for (const value of [0, 7, 4294967295]) assert.equal(scalarExports["erase-refinement"](value), value);
-      for (const name of ["choose-bool", "choose-nullable-bool"]) {
-        assert.equal(scalarExports[name](0), 2);
-        assert.equal(scalarExports[name](1), 1);
-      }
-      assert.equal(scalarExports["choose-nullable-text"](0), 2);
+      assert.equal(scalarExports["choose-bool"](0), 2);
+      assert.equal(scalarExports["choose-bool"](1), 1);
       const emptyText = scalarExports["empty-text"]();
       assert.notEqual(emptyText, 0, "an empty String must retain a nonzero heap identity");
-      assert.equal(scalarExports["choose-nullable-text"](1), 1);
       assert.equal(scalarExports["first-function"](), 0, "exercise the zero-based function table slot");
-      assert.equal(scalarExports["choose-function"](), 1);
 
-      // Ambiguous open/nullable scalar inputs and unsafe reinterpretations fail
-      // closed on both core WASM and the explicit Preview 1 command boundary.
+      // Non-Bool, dynamic WASM boundary, and unsafe scalar-to-condition rewrites fail closed on both core WASM and WASI.
       const scalarPositive = await readFile(scalarSnapshot);
       for (const [label, parameters, types, body, diagnostic, features] of [
-        ["open", ["value"], ["'Dynamic"], ["if", "value", "1", "2"], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+        ["choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"], /E_CONSTANT_TRUTHY_CONDITION/, []],
+        ["choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]], /E_CONSTANT_TRUTHY_CONDITION/, []],
+        ["choose-function", [], [], ["if", "a-first-function", "1", "2"], /E_CONSTANT_TRUTHY_CONDITION/, []],
+        ["choose-nullable-bool", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "true", "nil"]]],
+          ["if", "value", "1", "2"]], /E_NON_BOOL_CONDITION/, []],
+        ["choose-nullable-text", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "|", "nil"]]],
+          ["if", "value", "1", "2"]], /E_NON_BOOL_CONDITION/, []],
+        ["open", ["value"], ["'Dynamic"], ["if", "value", "1", "2"], /E_WASM_BOUNDARY_DYNAMIC/, []],
         ["nullable-number", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "0", "nil"]]],
-          ["if", "value", "1", "2"]], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+          ["if", "value", "1", "2"]], /E_NON_BOOL_CONDITION/, []],
         ["nullable-function", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "a-first-function", "nil"]]],
-          ["if", "value", "1", "2"]], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+          ["if", "value", "1", "2"]], /E_NON_BOOL_CONDITION/, []],
         ["unsafe-direct", [], [], ["if", ["unsafe-coerce", "0", "'Bool"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
         ["unsafe-alias", [], [], ["let", [["flag", ["unsafe-coerce", "0", "'Bool"]]], ["if", "flag", "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
         ["unsafe-producer", [], [], ["let", [["as-bool", ["fn", [],
           ["hint-fn", ["{}", [":args", ["[]"]], [":return", "'Bool"], [":features", ["#{}", ":js-ffi"]]]],
           ["unsafe-coerce", "0", "'Bool"]]]], ["if", ["as-bool"], "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
-        ["unsafe-nil", [], [], ["if", ["unsafe-coerce", "nil", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
-        ["unsafe-unit", [], [], ["if", ["unsafe-coerce", "&unit", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+        ["unsafe-nil", [], [], ["if", ["unsafe-coerce", "nil", "'Number"], "1", "2"], /E_CONSTANT_TRUTHY_CONDITION/, [":js-ffi"]],
+        ["unsafe-unit", [], [], ["if", ["unsafe-coerce", "&unit", "'Number"], "1", "2"], /E_CONSTANT_TRUTHY_CONDITION/, [":js-ffi"]],
         ["unsafe-refinement", ["value"], ["'Number"], ["let", [["refined", ["unsafe-coerce", "value", "'UInt32"]]],
-          ["if", "refined", "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+          ["if", "refined", "1", "2"]], /E_CONSTANT_TRUTHY_CONDITION/, [":js-ffi"]],
       ]) {
         scalarEdit(scalarDefinition(`reject-${label}`, parameters, types, body, "'Number", features));
         for (const [target, extra] of [["wasm", []], ["wasi", ["--boundary", "native"]]]) {
           const output = join(project, `truthiness-${label}-${target}`);
           const result = spawnSync(binary, [target, scalarSnapshot, ...scalarEntry, ...extra, "--emit-path", output], options);
-          assert.notEqual(result.status, 0, `${label}/${target} must reject ambiguous representation`);
+          assert.notEqual(result.status, 0, `${label}/${target} must reject non-Bool or unsupported representation`);
           assert.match(result.stderr, diagnostic);
           await assertRejectedArtifacts(output, `${label}/${target}`, diagnostic);
         }
@@ -3768,7 +3780,7 @@ try {
         ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
         ["require-string-expression", "defmacro require-string-expression (value) (quasiquote 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr 'String) (:expansion $ :: 'Expr 'Number)"],
         ["require-string-option", "defmacro require-string-option (value) (quasiquote 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr 'Number)"],
-        ["string-option-recur", "defmacro string-option-recur (value replacement pending?) (if pending? (recur replacement replacement false) (quasiquote 42))", ":: 'Macro $ {} (:required $ [] (:: 'Expr (:: 'Option 'String)) 'Syntax 'Syntax) (:expansion $ :: 'Expr 'Number)"],
+        ["string-option-recur", "defmacro string-option-recur (value replacement pending?) (if (and (bool? pending?) pending?) (recur replacement replacement false) (quasiquote 42))", ":: 'Macro $ {} (:required $ [] (:: 'Expr (:: 'Option 'String)) 'Syntax 'Syntax) (:expansion $ :: 'Expr 'Number)"],
         ["string-option-result", "defmacro string-option-result (value) , value", ":: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr $ :: 'Option 'String)"],
         ["string-option-head", "defmacro string-option-head (value) (quasiquote $ fn () 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr $ :: 'Fn $ {} (:args $ []) (:return 'Number))"],
         ["string-option-type", "defmacro string-option-type (value) (quasiquote Option)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr 'EnumDef)"],

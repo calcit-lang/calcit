@@ -689,11 +689,22 @@ pub fn syntax_if(
   let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
   runner::reject_escaping_recur(&cond_value, call_stack)?;
   match cond_value {
-    Calcit::Nil | Calcit::Unit | Calcit::Bool(false) => match expr.get(2) {
+    Calcit::Bool(true) => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
+    Calcit::Bool(false) => match expr.get(2) {
       Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
       None => Ok(Calcit::Nil),
     },
-    _ => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
+    other => Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "if condition expects a Bool, got {} ({}); use `non-nil?`, `empty?`, `blank?`, or explicit comparison",
+        crate::builtins::meta::type_of(std::slice::from_ref(&other))?.lisp_str(),
+        other
+      ),
+      "E_NON_BOOL_CONDITION",
+      call_stack,
+      cond.get_location(),
+    )),
   }
 }
 

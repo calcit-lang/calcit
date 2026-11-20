@@ -24,6 +24,17 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.46.0 严格 `Bool` 条件与 `Dynamic` 消费边界收紧（#2881）
+
+本版本在预处理与各运行后端统一收紧布尔条件语义与开放 `Dynamic` 返回值的消费边界，以消除隐式 nil/truthiness 歧义并匹配 WASM 闭合类型模型：
+
+- **条件严格要求 `Bool`（`E_NON_BOOL_CONDITION`）**：`if`、`when`、`when-not`、`if-not`、`and`、`or`、`not`、`assert` 以及 `calcit.test/is` 的条件位置在静态与运行时（native、JS、WASM/WASI）一律只接受 `Bool`。传入 `nil`、`&unit`、数字、字符串、集合、可空值或未证明的 `Dynamic` 会在预处理期失败，运行时强转也会抛出错误。
+  - 可空值判断改用 `non-nil?` / `nil?`，集合或字符串判断改用 `empty?` / `blank?`，`Dynamic` 值先通过 `(bool? x)` 或 `(= x true)` 收窄。
+  - `and` 与 `or` 的所有操作数都必须是 `Bool` 且仅返回 `Bool`。若原本借助 `or` 做 nil/缺省值回退，请改用 `either` 或 `Option` 的 `.unwrap-or` / `match`。
+- **`when`、`when-not` 与双参数 `if-not` 统一返回 `&unit`（`Unit`）**：`when`、`when-not` 与两参数 `if-not` 的真假分支统一收敛为 `Unit`，不再返回分支最后表达式的值或隐式 `nil`。需要返回值时改用三参数 `if` 或返回 `Option :some` / `Option :none`。
+- **WASM 边界拒绝 `Dynamic`（`E_WASM_BOUNDARY_DYNAMIC`）**：`defwasm-export` 与 `defwasm-import` 的参数、rest 或返回 schema 中不得包含 `Dynamic`（无 schema 的零参入口仍保留兼容）。请改为具体标量、容器或名义 `Struct`/`Enum`/`Option`/`Result`。
+- **非局部 `Fn ... (-> Dynamic)` 返回值消费收紧（`E_CALL_ARGUMENT_UNPROVEN`）**：调用非局部声明返回 `Dynamic` 的函数（带 `(:open :intrinsic)` 标记的底层内建除外）得到的开放值，在直接或经 `let` 绑定传入具体类型参数（含 `&+`、`not` 等有具体类型契约的调用）时，即使在 `CALCIT_PROOF_AUDIT=0` 下也必须先通过 `decode-map-as` / `try-decode-map-as`、`assert-type` 或类型谓词（如 `number?`、`bool?`）提供证明。
+
 ## 0.43.0 List 插入检查元素类型（#2735）
 
 `append`、`prepend` 及其 List 方法和底层原语会检查已知的元素类型。例如，向 `List<Number>` 插入 String 会在编译时报错。空列表可以从插入项推断元素类型。确实需要存放混合元素时，给列表声明 `List<Dynamic>`；读取后在具体使用处按实际类型检查。

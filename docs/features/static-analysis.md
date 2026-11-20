@@ -309,17 +309,16 @@ quiet. A call in between consumes the nil first, so `js/f $ str (.unwrap-or x ni
 still reports, and neither a `:js-ffi` feature nor a `JsNullish` return exempts
 business erasures in local binding initializers or other non-tail expressions.
 
-When the erased value is only tested, by `or`, `if`, `nil?` or `non-nil?`, the
-error's hint gives a `match` that keeps every result:
-`or (.unwrap-or x nil) d` becomes `match x ((:some v) (or v d)) ((:none) d)`.
-It returns the same value for Some, Some nil, Some false and None, and still
-evaluates the fallback only when the original would. Other consumers get no
-hint, because no rewrite keeps their result without a decision by the author.
-No hint is given either for an `if` without an else branch (its rewrite would
-keep a `(:none) nil` branch), for a fallback that reads the name the `match`
-binds in its `:some` branch, or when `or`, `if`, `do` or `let` is a local or
-project binding rather than the core form; such a local call also consumes the
-value, so it is not a result position for the host exemption. For now the report is a
+在严格模式下，除 `E_OPTION_NIL_CHECK`、`E_CONSTANT_TRUTHY_CONDITION` 与 `E_OPTION_ERASED_TO_NIL` 外，条件位置与 `Dynamic` 消费边界还启用三项检查：
+
+- **`E_NON_BOOL_CONDITION`**：`if`、`when`、`when-not`、`if-not`、`and`、`or` 的条件必须具有可证明的 `Bool` 类型；`nil`、`Unit`、数字、字符串、`Nullable` 与未收窄的 `Dynamic` 均会被拒绝。
+- **`E_WASM_BOUNDARY_DYNAMIC`**：`defwasm-export` 与 `defwasm-import` 的参数、rest 或返回类型声明不得包含 `Dynamic`。
+- **非局部 `Fn ... (-> Dynamic)` 调用返回值（`E_CALL_ARGUMENT_UNPROVEN`）**：除标记了 `(:open :intrinsic)` 的底层定义外，非局部 `Fn ... (-> Dynamic)` 调用返回的开放值在传入任何具体类型参数（包括直接调用与经 `let` 绑定传入，如 `&+`、`not` 或具名 `defn`）时，即使在 `CALCIT_PROOF_AUDIT=0` 下也必须先通过解码、`assert-type` 或类型谓词证明具体类型。
+
+When the erased value is only tested by `nil?` or `non-nil?`, the error's hint gives a `match` that keeps every result:
+`nil? (.unwrap-or x nil)` becomes `match x ((:some v) (nil? v)) ((:none) true)`.
+Because `if` and `or` require proven `Bool` conditions, `if` / `or` over erased `Dynamic` Option payloads and other consumers get no automatic rewrite hint and require an explicit decision by the author.
+No hint is given either when `nil?` or `non-nil?` is shadowed by a local or project binding rather than calling `calcit.core`; such a local call also consumes the value, so it is not a result position for the host exemption. For now the report is a
 note: `--check-only` lists it and still passes, and it becomes a blocking
 warning once the ecosystem libraries have migrated.
 
