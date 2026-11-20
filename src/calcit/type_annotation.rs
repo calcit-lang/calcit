@@ -1541,6 +1541,14 @@ fn bounded_plain_type_relation<'a>(
         None => return Ok(Some((Mismatch, stats))),
       },
       (Type::TypeRef(actual_name, actual_args), Type::TypeRef(expected_name, expected_args)) => {
+        if actual_name != expected_name
+          && let (Some(actual_alias), Some(expected_alias)) = (actual.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual_alias.as_ref(), Type::StructDef(_) | Type::EnumDef(_) | Type::Custom(_))
+          && !matches!(expected_alias.as_ref(), Type::StructDef(_) | Type::EnumDef(_) | Type::Custom(_))
+        {
+          // Let the guarded alias-aware relation compare the expanded shapes.
+          return Ok(None);
+        }
         if matches!(mode, PlainRelationMode::Compatibility) && !expected_args.is_empty() && expected.resolve_to_struct().is_some() {
           return Ok(None);
         }
@@ -5426,7 +5434,7 @@ impl CalcitTypeAnnotation {
   /// definitions (structs, enums, unions) carry no such schema and stay `None`.
   /// Alias chains are followed to the first non-alias schema; a cycle yields `None`.
   pub(crate) fn resolve_schema_alias(&self) -> Option<Arc<Self>> {
-    let mut visited = HashSet::new();
+    let mut visited = Vec::new();
     let mut current: Option<Arc<Self>> = None;
     loop {
       let node = current.as_deref().unwrap_or(self);
@@ -5434,9 +5442,13 @@ impl CalcitTypeAnnotation {
         return current;
       };
       let name = name.trim_start_matches('\'').trim_start_matches(':');
-      if (!args.is_empty() && !is_type_alias_definition(name)) || !visited.insert(name.to_owned()) {
+      // A generic alias may legitimately wrap itself with different arguments,
+      // such as Id<Id<Number>>. Reject repeated applications, not just names,
+      // and bound aliases whose arguments grow on every expansion.
+      if (!args.is_empty() && !is_type_alias_definition(name)) || visited.len() >= 256 || visited.contains(node) {
         return None;
       }
+      visited.push(node.clone());
       current = Some(resolve_type_ref_as_schema(name, args)?);
     }
   }
@@ -5908,6 +5920,19 @@ impl CalcitTypeAnnotation {
         }
       },
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if a_name != b_name
+          && let (Some(actual), Some(expected)) = (self.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+          && !matches!(expected.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+        {
+          let Ok(_actual_guard) = enter_alias_relation(a_name, expected.as_ref(), true, false) else {
+            return false;
+          };
+          let Ok(_expected_guard) = enter_alias_relation(b_name, actual.as_ref(), false, false) else {
+            return false;
+          };
+          return actual.compatible_with_bindings(expected.as_ref(), bindings);
+        }
         let nominal_matches = Self::type_ref_nominal_match(a_name, b_name)
           .unwrap_or_else(|| Self::type_ref_name_matches(a_name, b_name) || Self::type_ref_name_matches(b_name, a_name));
         if !nominal_matches {
@@ -6127,7 +6152,7 @@ impl CalcitTypeAnnotation {
       // TypeRef schema resolution: when a TypeRef doesn't match any concrete type above,
       // try to resolve it as a type alias by looking up the definition's schema.
       (Self::TypeRef(name, args), other) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
+        if let Some(resolved) = self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
           let Ok(_guard) = enter_alias_relation(name, other, true, false) else {
             return false;
           };
@@ -6136,7 +6161,7 @@ impl CalcitTypeAnnotation {
         false
       }
       (other, Self::TypeRef(name, args)) => {
-        if let Some(resolved) = resolve_type_ref_as_schema(name, args) {
+        if let Some(resolved) = expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
           let Ok(_guard) = enter_alias_relation(name, other, false, false) else {
             return false;
           };
@@ -6313,6 +6338,19 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => {
+        if a_name != b_name
+          && let (Some(actual), Some(expected)) = (self.resolve_schema_alias(), expected.resolve_schema_alias())
+          && !matches!(actual.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+          && !matches!(expected.as_ref(), Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_))
+        {
+          let Ok(_actual_guard) = enter_alias_relation(a_name, expected.as_ref(), true, true) else {
+            return NeedsBoundary(Boundary::RecursiveTypeAlias);
+          };
+          let Ok(_expected_guard) = enter_alias_relation(b_name, actual.as_ref(), false, true) else {
+            return NeedsBoundary(Boundary::RecursiveTypeAlias);
+          };
+          return actual.prove_with_staged_bindings(expected.as_ref(), bindings);
+        }
         match Self::type_ref_nominal_match(a_name, b_name) {
           Some(true) => {}
           Some(false) => return Mismatch,
@@ -6512,14 +6550,14 @@ impl CalcitTypeAnnotation {
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (Self::TypeRef(name, args), other) => match resolve_type_ref_as_schema(name, args) {
+      (Self::TypeRef(name, args), other) => match self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
           Ok(_guard) => resolved.prove_with_staged_bindings(other, bindings),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
       },
-      (other, Self::TypeRef(name, args)) => match resolve_type_ref_as_schema(name, args) {
+      (other, Self::TypeRef(name, args)) => match expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
         Some(resolved) => match enter_alias_relation(name, other, false, true) {
           Ok(_guard) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
           Err(reason) => NeedsBoundary(reason),
