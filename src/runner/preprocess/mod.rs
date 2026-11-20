@@ -1605,19 +1605,31 @@ fn contextual_generic_typing_enabled() -> bool {
   strict_types_enabled() || REQUIRE_ASSERTION_PROOF.with(Cell::get)
 }
 
-fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+pub(super) fn output_only_callback_generics(
+  generics: &[Arc<str>],
+  arguments: &[Arc<CalcitTypeAnnotation>],
+  rest: Option<&Arc<CalcitTypeAnnotation>>,
+) -> HashSet<Arc<str>> {
   // Only defer a callback result variable when the same call has a separate,
   // non-callback argument that can establish it. A result-only variable such
   // as `K` in `Fn<T> -> K` must still be inferred from the callback body when no
   // other argument contributes evidence (for example `group-by`).
+  fn unwrap_variadic(annotation: &Arc<CalcitTypeAnnotation>) -> &Arc<CalcitTypeAnnotation> {
+    match annotation.as_ref() {
+      CalcitTypeAnnotation::Variadic(inner) => inner,
+      _ => annotation,
+    }
+  }
   let ordinary_variables = arguments
     .iter()
+    .chain(rest)
+    .map(unwrap_variadic)
     .filter(|argument| argument.resolve_to_nonoptional_fn().is_none())
     .flat_map(|argument| crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(argument)))
     .filter(|variable| generics.contains(variable))
     .collect::<HashSet<_>>();
   let mut output_only = HashSet::new();
-  for argument in arguments {
+  for argument in arguments.iter().chain(rest).map(unwrap_variadic) {
     let Some(callback) = argument.resolve_to_nonoptional_fn() else {
       continue;
     };
@@ -1668,30 +1680,11 @@ fn pregathered_callback_generics(
   arguments: &[Arc<CalcitTypeAnnotation>],
   rest: Option<&Arc<CalcitTypeAnnotation>>,
 ) -> HashSet<Arc<str>> {
-  let mut pregathered = output_only_callback_generics(generics, arguments);
+  let mut pregathered = output_only_callback_generics(generics, arguments, rest);
   // Rest values follow every fixed parameter, so they are later evidence too.
   let with_rest = arguments.iter().chain(rest).cloned().collect::<Vec<_>>();
   pregathered.extend(later_evidenced_callback_generics(generics, &with_rest));
   pregathered
-}
-
-fn all_output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
-  let mut output_only = HashSet::new();
-  for argument in arguments {
-    let Some(callback) = argument.resolve_to_nonoptional_fn() else {
-      continue;
-    };
-    let mut callback_inputs = callback.arg_types.clone();
-    callback_inputs.extend(callback.rest_type.iter().cloned());
-    let input_variables = crate::calcit::type_annotation::free_type_variable_names(&callback_inputs);
-    let output_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&callback.return_type));
-    for variable in output_variables {
-      if generics.contains(&variable) && !input_variables.iter().any(|input| input == &variable) {
-        output_only.insert(variable);
-      }
-    }
-  }
-  output_only
 }
 
 pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
@@ -9542,14 +9535,18 @@ fn expected_method_argument_types(
     let mut expected_context = fn_annotation.arg_types.clone();
     expected_context.extend(fn_annotation.rest_type.iter().cloned());
     let mut proof = scope_types.call_type_proof(&generics, &expected_context, &actual_context);
-    proof.prepare_inputs(
+    type_inference::prepare_generic_call_inputs(
+      &mut proof,
+      &generics,
+      &fn_annotation.arg_types,
+      fn_annotation.rest_type.as_ref(),
       args
         .iter()
         .zip(&actual_types)
         .enumerate()
         .filter_map(|(index, (argument, actual))| {
           let expected = fn_annotation.arg_types.get(index).or(fn_annotation.rest_type.as_ref())?;
-          type_inference::generic_input_evidence(argument, actual.as_deref()?, expected)
+          Some((argument, actual.as_deref()?, expected.as_ref()))
         }),
     );
     proof.prove(type_value, fn_annotation.arg_types.first().or(fn_annotation.rest_type.as_ref())?);
@@ -18851,17 +18848,25 @@ fn find_unproven_generic_argument(
   let actual_types = args.iter().map(|arg| resolve_type_value(arg, scope_types)).collect::<Vec<_>>();
   let actual_context = actual_types.iter().flatten().cloned().collect::<Vec<_>>();
   let mut call_proof = scope_types.call_type_proof(&signature.generics, &expected_types, &actual_context);
-  let inputs = argument_contracts
+  let resolved_inputs = argument_contracts
     .iter()
     .filter_map(|(index, argument, expected)| {
       let actual = actual_types[*index].clone().or_else(|| match argument {
         Calcit::Local(local) => Some(local.type_info.clone()),
         _ => None,
       })?;
-      type_inference::generic_input_evidence(argument, &actual, expected).map(|(actual, expected)| (actual.clone(), expected.clone()))
+      Some((*argument, actual, *expected))
     })
     .collect::<Vec<_>>();
-  call_proof.prepare_inputs(inputs.iter().map(|(actual, expected)| (actual, expected)));
+  type_inference::prepare_generic_call_inputs(
+    &mut call_proof,
+    &signature.generics,
+    &signature.arg_types,
+    signature.rest_type.as_ref(),
+    resolved_inputs
+      .iter()
+      .map(|(argument, actual, expected)| (*argument, actual.as_ref(), expected.as_ref())),
+  );
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       return None;
