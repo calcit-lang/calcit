@@ -69,6 +69,9 @@ pub(super) fn note_value_type_aliases(
 
 /// The schema in compact type syntax, falling back to the brief form.
 fn compact_type_text(schema: &CalcitTypeAnnotation) -> String {
+  if let Some(name) = schema.open_family_name() {
+    return name.to_owned();
+  }
   crate::calcit::type_expr::print_type_compact(&schema.to_type_edn())
     .ok()
     .and_then(|form| cirru_parser::format_expr_one_liner(&form).ok())

@@ -162,6 +162,7 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
     if let CalcitTypeAnnotation::TypeRef(path, args) = binding.as_ref()
       && args.is_empty()
       && let Some((ns, def)) = path.rsplit_once('/')
+      && !is_type_alias_definition(path)
       && crate::snapshot::schema_annotation_is_missing(&crate::program::lookup_def_schema(ns, def))
       && binding.resolve_to_enum().is_none()
       && binding.resolve_to_struct().is_none()
