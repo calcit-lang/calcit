@@ -128,7 +128,7 @@ defn shape-area (shape)
 ## `try` 在 WASI/WASM 的退役边界与兼容规则
 
 - **WASI server / WASM 退役**：`try` 在 `calcit wasm` 与 `calcit wasi` 中已退役，编译可达的 `try` 表达式会立即失败并报告 `E_WASM_UNSUPPORTED_TRY`，提示将可恢复分支改写为 `Result :ok` / `Result :err` 与 `match`，并将真正不可恢复的不变量失败保留给 `raise` trap。
-- **核心库零隐藏 `try`**：`calcit.core` 自身已移除 `try`（包括 `try-parse-*` 与 `try-read-dir` / `.walk-dir`），因此所有标准库 `Result` 接口均可直接参与 WASM/WASI 静态检查与编译；仅 `calcit.test/throws?` 与 `is-throws` 保留为 native/JS 的断言异常捕获辅助。
+- **核心库零隐藏 `try`**：`calcit.core` 自身已移除 `try`（包括 `try-parse-*` 与 `try-read-dir` / `.walk-dir`）。这消除了这些函数对异常捕获的隐式依赖；动态 Cirru 解析和递归目录读取仍受 WASM/WASI 能力限制。WASI 的 `try-read-dir` 支持非递归读取，递归请求返回含 `E_WASM_CAPABILITY` 的 `Result :err`；直接使用 `.walk-dir` 在编译时报告此限制。`calcit.test/throws?` 与 `is-throws` 保留为 native/JS 的断言异常捕获辅助。
 - **native / JS 宿主兼容边界**：在 native 与生成 JavaScript 中，`try body handler` 仍可作为调用遗留会 `raise` 的第三方/宿主 API 时的最外层转换边界，把捕获的错误归一化为 `String` 后立刻转为 `Result :err`：
 
 ```cirru

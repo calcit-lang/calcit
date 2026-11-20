@@ -14031,7 +14031,7 @@
                 assert= true $ .err? $ decode-numbers |[1,false]
               :tags $ #{} :core :unit
         'try-read-dir $ %{} 'CodeEntry
-          :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass `Option :some true` for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported."
+          :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass Option :some true for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection. WASI supports non-recursive reads and returns E_WASM_CAPABILITY for dynamic recursive requests; core WASM does not support file effects."
           :code $ quote $ defn try-read-dir (path recursive?)
             result:map
               &fs-read-dir Result FsPath path "|try-read-dir failed" $ match recursive?
@@ -14045,27 +14045,41 @@
           :schema $ quote $ Fn String (Option Bool)
             -> $ Result (List String) String
           :tags $ #{} :file :io
-          :tests $ [] $ %{} 'TestEntry (:name |lists-directory-and-reports-missing-as-result)
-            :code $ quote $ do
-              assert=
-                Result :ok $ [] |tests/fixtures/read-dir/child.txt
-                try-read-dir |tests/fixtures/read-dir
-              assert=
-                Result :ok $ [] |tests/fixtures/read-dir/child.txt
-                try-read-dir |tests/fixtures/read-dir $ Some true
-              assert=
-                Result :ok $ [] $ fs:path |tests/fixtures/read-dir/child.txt
-                .walk-dir $ fs:path |tests/fixtures/read-dir
-              match (try-read-dir |tests/fixtures/read-dir/does-not-exist)
-                (:ok _) (assert= true false)
-                (:err message)
-                  assert= true $ string? message
-              match
-                .walk-dir $ fs:path |tests/fixtures/read-dir/does-not-exist
-                (:ok _) (assert= true false)
-                (:err message)
-                  assert= true $ string? message
-            :tags $ #{} :file :native
+          :tests $ []
+            %{} 'TestEntry (:name |lists-directory-and-reports-missing-as-result)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                  try-read-dir |tests/fixtures/read-dir
+                assert=
+                  Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                  try-read-dir |tests/fixtures/read-dir $ Some true
+                assert=
+                  Result :ok $ [] $ fs:path |tests/fixtures/read-dir/child.txt
+                  .walk-dir $ fs:path |tests/fixtures/read-dir
+                match (try-read-dir |tests/fixtures/read-dir/does-not-exist)
+                  (:ok _) (assert= true false)
+                  (:err message)
+                    assert= true $ string? message
+                match
+                  .walk-dir $ fs:path |tests/fixtures/read-dir/does-not-exist
+                  (:ok _) (assert= true false)
+                  (:err message)
+                    assert= true $ string? message
+              :tags $ #{} :file :native
+            %{} 'TestEntry (:name |nonrecursive-directory-and-missing)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                  try-read-dir |tests/fixtures/read-dir
+                assert=
+                  Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                  try-read-dir |tests/fixtures/read-dir $ Some false
+                match (try-read-dir |tests/fixtures/read-dir/does-not-exist)
+                  (:ok _) (assert= true false)
+                  (:err message)
+                    assert= true $ string? message
+              :tags $ #{} :file
         'turn-symbol $ %{} 'CodeEntry
           :doc "|内部 String → Symbol 转换。严格类型调用只接受 String，成功返回 Symbol；不支持的输入会报错。native 运行时仍接受 Tag/Symbol 作为历史兼容，但这不是静态类型契约；新代码不应依赖该隐式转换。"
           :code $ quote &runtime-implementation

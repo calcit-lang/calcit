@@ -11449,6 +11449,15 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::JsonParse => edn_parse::emit_json_parse(ctx, args),
     CalcitProc::NativeTryParseJson => {
       expect_arity(2, args, "&try-parse-json")?;
+      let prototype_type = infer_wasm_static_type(ctx, &args[0]);
+      if !prototype_type.as_ref().is_some_and(|annotation| {
+        let expanded = expand_wasm_value_type(annotation);
+        matches!(expanded.as_ref(), CalcitTypeAnnotation::Never) || proven_disjoint_value_kind(&expanded) == Some("enum-def")
+      }) {
+        return Err("E_WASM_EDN_TYPE: &try-parse-json requires a statically known enum definition".into());
+      }
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
       edn_parse::emit_try_parse_json(ctx, &args[1..2])
     }
     CalcitProc::Split => emit_split(ctx, args),
@@ -12240,16 +12249,35 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
   }
-  if args.len() == 5 && !matches!(args[4], Calcit::Bool(false)) {
+  if args.len() == 5 && matches!(args[4], Calcit::Bool(true)) {
     return Err("E_WASM_CAPABILITY: recursive `&fs-read-dir` (`FsPath .walk-dir`) is not yet supported on WASI".into());
   }
   if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_read_dir") {
     return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-dir` needs a reachable WASI 0.3 filesystem effect".into());
   }
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::Drop);
+  let path_type = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(path_type));
   let path = emit_ptr_to_i32(ctx, &args[2])?;
   let host_error = ctx.alloc_local();
   emit_expr(ctx, &args[3])?;
   ctx.emit(Instruction::LocalSet(host_error));
+  let dynamic_recursive = args.len() == 5 && !matches!(args[4], Calcit::Bool(false));
+  if dynamic_recursive {
+    emit_if_condition(ctx, &args[4])?;
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    let message_ptr = *ctx
+      .string_pool
+      .get("E_WASM_CAPABILITY: recursive directory reads are not supported on WASI")
+      .ok_or_else(|| "missing recursive directory capability message in WASM string pool".to_owned())?;
+    let message = ctx.alloc_local();
+    ctx.emit(f64_const(message_ptr as f64));
+    ctx.emit(Instruction::LocalSet(message));
+    emit_result_enum(ctx, "err", message)?;
+    ctx.emit(Instruction::Else);
+  }
   ctx.emit(Instruction::LocalGet(path));
   ctx.call_rt("__rt_wasi_read_dir");
   let list = ctx.alloc_local_typed(ValType::I32);
@@ -12282,7 +12310,7 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(struct_ptr));
-  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalGet(path_type));
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalGet(struct_ptr));
   ctx.emit(Instruction::LocalGet(value));
@@ -12310,6 +12338,9 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(Instruction::LocalSet(list_value));
   emit_result_enum(ctx, "ok", list_value)?;
   ctx.emit(Instruction::End);
+  if dynamic_recursive {
+    ctx.emit(Instruction::End);
+  }
   Ok(())
 }
 
@@ -14977,6 +15008,7 @@ fn build_string_pool(
   if target == WasmTarget::Wasi {
     strings.push(" ".into());
     strings.push("\n".into());
+    strings.push("E_WASM_CAPABILITY: recursive directory reads are not supported on WASI".into());
   }
   strings.push("true".into());
   strings.push("false".into());
@@ -15356,7 +15388,9 @@ fn expr_uses_wasi_read_dir(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_read_dir),
     Calcit::Proc(CalcitProc::NativeFsReadDir) => true,
-    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "fs-path:read-dir",
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-dir" | "fs-path:walk-dir" | "try-read-dir")
+    }
     Calcit::Method(name, MethodKind::Invoke(receiver)) => {
       name.as_ref() == "read-dir"
         && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")

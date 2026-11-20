@@ -226,8 +226,7 @@ pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
-  let err_msg = literal_local(ctx, "E_WASM_EDN_SYNTAX: invalid JSON input")?;
-  emit_result_enum(ctx, "err", err_msg)?;
+  ctx.emit(Instruction::Unreachable);
   ctx.emit(Instruction::End);
   Ok(())
 }

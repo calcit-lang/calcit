@@ -215,6 +215,7 @@
       |calcit.core/try-parse-cirru-list#lexer-state-contract "|unsupported: reaches `calcit.core/try-parse-cirru-list`: unsupported proc in WASM: &try-parse-cirru-list"
       |calcit.core/try-parse-cirru-list#result-method-contract "|unsupported: reaches `calcit.core/try-parse-cirru-list`: unsupported proc in WASM: &try-parse-cirru-list"
       |calcit.core/try-read-dir#lists-directory-and-reports-missing-as-result "|unsupported: E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target"
+      |calcit.core/try-read-dir#nonrecursive-directory-and-missing "|unsupported: E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target"
       |calcit.core/turn-symbol#returns-typed-symbol-from-string "|unsupported: unsupported proc in WASM: turn-symbol"
       |calcit.core/unix-time-ms#reports-nonnegative-epoch-milliseconds "|unsupported: E_WASM_CAPABILITY: unix-time-ms is unavailable for the core WASM target"
       |calcit.core/update#preserves-struct-and-enum-slots "|unsupported: local StructDef construction reaches &struct-def:new, rejected by shared WASM codegen"

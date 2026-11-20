@@ -530,6 +530,105 @@ fn component_file_capabilities_check_only_without_writing_an_artifact() {
 }
 
 #[test]
+fn directory_compatibility_reports_recursive_capability_on_wasi() {
+  let directory = tempfile::tempdir().expect("temporary directory");
+  let snapshot = directory.path().join("directory.cirru");
+  fs::copy("calcit/add.cirru", &snapshot).expect("copy minimal snapshot");
+  let snapshot_name = snapshot.to_str().expect("UTF-8 snapshot path");
+  let edit = |code: &str| {
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .args([
+        "--tips-level",
+        "none",
+        snapshot_name,
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        code,
+      ])
+      .output()
+      .expect("edit test definition");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  };
+  edit(
+    "quote $ defn main! () (match (try-read-dir |tests/fixtures/read-dir (Some true)) ((:err message) (println message)) ((:ok _) (raise |unexpected-recursive-success)))",
+  );
+  let schema = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args([
+      "--tips-level",
+      "none",
+      snapshot_name,
+      "edit",
+      "schema",
+      "app.main/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ Fn (-> Unit) (:features :io)",
+    ])
+    .output()
+    .expect("edit test schema");
+  assert!(schema.status.success(), "{}", String::from_utf8_lossy(&schema.stderr));
+  let emitted = calcit(&[snapshot_name, "wasi", "--boundary", "component"], directory.path());
+  assert!(emitted.status.success(), "{}", String::from_utf8_lossy(&emitted.stderr));
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let run = || {
+      Command::new(&cli)
+        .args([
+          "run",
+          "-S",
+          "p3",
+          "-W",
+          "component-model-async-stackful=y",
+          "-W",
+          "component-model-more-async-builtins=y",
+          "--dir",
+          "tests/fixtures::tests/fixtures",
+        ])
+        .arg(directory.path().join("program.wasm"))
+        .output()
+        .expect("run directory compatibility command")
+    };
+    let emit = || {
+      let output = calcit(&[snapshot_name, "wasi", "--boundary", "component"], directory.path());
+      assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    };
+    let result = run();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("E_WASM_CAPABILITY"));
+
+    for code in [
+      "quote $ defn main! () (do (&fs-read-dir (do (raise |first-prototype) Result) FsPath |tests/fixtures/read-dir |error false) (println |unexpected-success))",
+      "quote $ defn main! () (do (&fs-read-dir Result (do (raise |second-prototype) FsPath) |tests/fixtures/read-dir/does-not-exist |error false) (println |unexpected-success))",
+    ] {
+      edit(code);
+      emit();
+      let result = run();
+      assert!(!result.status.success(), "a failing prototype expression must trap");
+      assert!(!String::from_utf8_lossy(&result.stdout).contains("unexpected-success"));
+    }
+
+    edit("quote $ defn main! () (do (&fs-read-dir Result (do (println |type-evaluated) FsPath) |tests/fixtures |error false) &unit)");
+    emit();
+    let result = run();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert_eq!(String::from_utf8_lossy(&result.stdout).matches("type-evaluated").count(), 1);
+  }
+
+  edit("quote $ defn main! () (do (.walk-dir (fs:path |tests/fixtures/read-dir)) &unit)");
+  let rejected = calcit(
+    &[snapshot_name, "wasi", "--boundary", "component", "--check-only"],
+    directory.path(),
+  );
+  assert!(!rejected.status.success(), "statically recursive walk-dir must be rejected");
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("E_WASM_CAPABILITY"));
+}
+
+#[test]
 fn command_environment_preserves_option_and_utf8_content() {
   let output = tempfile::tempdir().expect("output directory");
   let fixture = "tests/fixtures/wasi-command-03-get-env.cirru";
