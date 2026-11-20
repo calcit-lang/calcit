@@ -249,6 +249,224 @@ fn enum_slot_accepts_nominal_enum_but_rejects_other_values() {
 }
 
 #[test]
+fn deftype_enum_slot_preserves_open_enum_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-nominal-argument.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn consume (op) &unit",
+      ],
+    ),
+    "declare a consumer of the value-style alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "demo.main/consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn demo.main/ViewDispatch (-> Unit)",
+      ],
+    ),
+    "reference the value alias in a schema",
+  );
+  let legacy = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert_success(&legacy, "the original representative binding remains valid");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! () (consume $ :: :sample)",
+      ],
+    ),
+    "reach the value alias from the entry",
+  );
+  let advisory = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&advisory, "the value alias advisory does not reject valid code");
+  let text = format!(
+    "{}{}",
+    String::from_utf8_lossy(&advisory.stdout),
+    String::from_utf8_lossy(&advisory.stderr)
+  );
+  assert!(text.contains("deftype ViewDispatch $ AnyEnum"), "{text}");
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "demo.main/ViewDispatch",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ deftype ViewDispatch AnyEnum",
+    ],
+    vec!["edit", "schema", "demo.main/ViewDispatch", "--clear"],
+    vec![
+      "edit",
+      "def",
+      "demo.main/anonymous",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn anonymous (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f $ :: :sample)",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "configure a deftype-bound enum slot");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "a deftype AnyEnum slot accepts nominal and anonymous enum callback arguments",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/anonymous",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn anonymous (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f 42)",
+      ],
+    ),
+    "replace the anonymous enum with a number",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "a deftype enum slot must reject numbers");
+  let output = format!(
+    "{}{}",
+    String::from_utf8_lossy(&rejected.stdout),
+    String::from_utf8_lossy(&rejected.stderr)
+  );
+  assert!(output.contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"), "{output}");
+}
+
+#[test]
+fn deftype_struct_slot_preserves_family_and_nominal_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-nominal-argument.cirru", &snapshot).unwrap();
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "demo.main/ViewDispatch",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ deftype ViewDispatch AnyStruct",
+    ],
+    vec!["edit", "schema", "demo.main/ViewDispatch", "--clear"],
+    vec![
+      "edit",
+      "def",
+      "demo.main/RemoteOp",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defstruct RemoteOp (:send String)",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "demo.main/RemoteOp",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote StructDef",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "configure a deftype AnyStruct slot");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "a deftype AnyStruct slot accepts a named struct",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/invoke",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn invoke (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f 42)",
+      ],
+    ),
+    "pass an unrelated number to the open struct slot",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "AnyStruct must reject Number");
+  assert!(String::from_utf8_lossy(&rejected.stdout).contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/invoke",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn invoke (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f $ RemoteOp :send |hello)",
+      ],
+    ),
+    "restore the named struct argument",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/ViewDispatch",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct ViewDispatch (:send String)",
+      ],
+    ),
+    "bind the slot to a different nominal struct",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(
+    !rejected.status.success(),
+    "a nominal slot must reject a different struct with the same fields"
+  );
+  assert!(String::from_utf8_lossy(&rejected.stdout).contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"));
+}
+
+#[test]
 fn enum_payload_lambdas_take_the_declared_payload_type() {
   // A lambda passed as a variant payload gets the declared `Fn Task (-> String)`
   // like a Struct field does, so a misspelled field on `t` is caught (#2644).

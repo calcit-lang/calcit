@@ -162,6 +162,7 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
     if let CalcitTypeAnnotation::TypeRef(path, args) = binding.as_ref()
       && args.is_empty()
       && let Some((ns, def)) = path.rsplit_once('/')
+      && !is_type_alias_definition(path)
       && crate::snapshot::schema_annotation_is_missing(&crate::program::lookup_def_schema(ns, def))
       && binding.resolve_to_enum().is_none()
       && binding.resolve_to_struct().is_none()
@@ -5499,7 +5500,8 @@ impl CalcitTypeAnnotation {
   // not an instance of that nominal type.
   fn expand_slot_schema_alias(type_value: &Arc<Self>) -> Arc<Self> {
     let expanded = Self::expand_schema_alias(type_value);
-    if matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
+    // An explicit open family describes instances, not a nominal constructor.
+    if expanded.open_family_name().is_none() && matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
       type_value.clone()
     } else {
       expanded
